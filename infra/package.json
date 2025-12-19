@@ -1,0 +1,25 @@
+{
+	"name": "@doc-platform/infra",
+	"version": "0.0.1",
+	"private": true,
+	"scripts": {
+		"build": "tsc",
+		"cdk": "cdk",
+		"synth": "cdk synth",
+		"deploy": "cdk deploy",
+		"diff": "cdk diff",
+		"lint": "eslint bin lib",
+		"lint:fix": "eslint bin lib --fix",
+		"clean": "rm -rf cdk.out"
+	},
+	"dependencies": {
+		"aws-cdk-lib": "^2.173.2",
+		"constructs": "^10.4.2"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"aws-cdk": "^2.173.2",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.7.2"
+	}
+}

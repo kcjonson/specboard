@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Doc-platform is a monorepo containing two products:
 1. **Documentation Editor** - Git-backed markdown editor with WYSIWYG/raw modes, commenting, and AI assistance
-2. **Kanban Board** - Lightweight task manager with epic/task hierarchy
+2. **Planning** - Lightweight task manager with epic/task hierarchy
 
 Built with Preact, TypeScript, and AWS services. For full details, see [docs/tech-stack.md](docs/tech-stack.md).
 
@@ -164,19 +164,22 @@ function doOperation(): Result {
 
 **Monorepo Structure:**
 ```
-packages/           # Shared libraries
-  core/            # Shared types, utilities
-  platform/        # Platform abstraction interfaces
-  platform-electron/
-  platform-web/
-  editor/          # Markdown editor component
-  ui/              # Shared UI components
-apps/
-  docs/            # Documentation editor app
-  kanban/          # Kanban board app
-  api/             # Backend API
-  mcp/             # MCP server
-  desktop/         # Electron shell
+shared/                    # Shared libraries
+  core/                    # Shared types, utilities
+  ui/                      # Shared Preact components
+  platform/                # Platform abstraction interfaces
+  platform-electron/       # Electron implementations
+  platform-web/            # Web implementations
+  models/                  # State management (Model/SyncModel)
+  router/                  # Custom client-side router
+  fetch/                   # Custom HTTP client wrapper
+editor-web/                # Documentation editor (Preact)
+editor-desktop/            # Documentation editor (Electron)
+planning-web/              # Planning/task management (Preact)
+planning-desktop/          # Planning/task management (Electron)
+api/                       # Backend API (Node.js)
+mcp/                       # MCP server
+infra/                     # AWS CDK infrastructure
 ```
 
 **Naming:**

@@ -1,0 +1,33 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"esModuleInterop": true,
+		"strict": true,
+		"strictNullChecks": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": true,
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"baseUrl": ".",
+		"paths": {
+			"@doc-platform/core": ["./shared/core/src"],
+			"@doc-platform/ui": ["./shared/ui/src"],
+			"@doc-platform/platform": ["./shared/platform/src"],
+			"@doc-platform/platform-electron": ["./shared/platform-electron/src"],
+			"@doc-platform/platform-web": ["./shared/platform-web/src"],
+			"@doc-platform/models": ["./shared/models/src"],
+			"@doc-platform/router": ["./shared/router/src"],
+			"@doc-platform/fetch": ["./shared/fetch/src"]
+		}
+	},
+	"exclude": ["node_modules", "dist"]
+}

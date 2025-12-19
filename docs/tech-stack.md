@@ -54,20 +54,25 @@ Both share a common infrastructure and are developed in a single monorepo.
 
 ```
 doc-platform/
-├── apps/
-│   ├── web/                 # Preact web application
-│   ├── desktop/             # Electron wrapper
-│   └── api/                 # Node.js backend API
-├── packages/
-│   ├── ui/                  # Shared Preact components
-│   ├── models/              # State management (Model/SyncModel)
-│   ├── router/              # Custom router
-│   ├── fetch/               # Custom fetch wrapper
-│   └── types/               # Shared TypeScript types
-├── infra/                   # AWS CDK infrastructure
-├── docs/                    # Documentation
-│   ├── tech-stack.md        # This file
-│   └── specs/               # Detailed specifications
+├── shared/                    # Shared libraries
+│   ├── core/                  # Shared types, utilities
+│   ├── ui/                    # Shared Preact components
+│   ├── platform/              # Platform abstraction interfaces
+│   ├── platform-electron/     # Electron implementations
+│   ├── platform-web/          # Web implementations
+│   ├── models/                # State management (Model/SyncModel)
+│   ├── router/                # Custom client-side router
+│   └── fetch/                 # Custom HTTP client wrapper
+├── editor-web/                # Documentation editor (Preact)
+├── editor-desktop/            # Documentation editor (Electron)
+├── planning-web/              # Planning/task management (Preact)
+├── planning-desktop/          # Planning/task management (Electron)
+├── api/                       # Backend API (Node.js)
+├── mcp/                       # MCP server
+├── infra/                     # AWS CDK infrastructure
+├── docs/                      # Project documentation
+│   ├── tech-stack.md          # This file
+│   └── specs/                 # Detailed specifications
 ├── .editorconfig
 ├── eslint.config.js
 ├── turbo.json

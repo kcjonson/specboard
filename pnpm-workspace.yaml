@@ -1,0 +1,9 @@
+packages:
+  - 'shared/*'
+  - 'editor-web'
+  - 'editor-desktop'
+  - 'planning-web'
+  - 'planning-desktop'
+  - 'api'
+  - 'mcp'
+  - 'infra'

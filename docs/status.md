@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-19 (Initial Planning Complete)
+Last Updated: 2025-12-19 (Monorepo Scaffolding Complete)
 
 ## Epic/Story/Task Template
 
@@ -44,7 +44,7 @@ Use this template for all work items:
   - [x] MCP integration spec
   - [x] Platform abstraction spec
   - [x] API & database spec
-  - [x] Kanban UI spec
+  - [x] Planning UI spec
   - [x] File tree & command palette spec
 - [x] Project setup
   - [x] LICENSE (PolyForm Noncommercial)
@@ -57,35 +57,42 @@ Use this template for all work items:
 
 ## In Progress Epics
 
-(None currently)
+(None currently - Monorepo Scaffolding just completed)
 
 ---
 
 ## Planned Epics
 
-### Monorepo Scaffolding
+### ✅ Monorepo Scaffolding
 **Spec/Documentation:** `/docs/tech-stack.md`
 **Dependencies:** None
-**Status:** ready
+**Status:** complete
 
 **Goal:** Set up the pnpm workspace with Turborepo, configure build tooling, and create package structure.
 
 **Tasks:**
-- [ ] Initialize pnpm workspace
-  - [ ] Create pnpm-workspace.yaml
-  - [ ] Create turbo.json
-  - [ ] Configure base tsconfig.json
-- [ ] Create package structure
-  - [ ] packages/core (shared types, utilities)
-  - [ ] packages/platform (interfaces)
-  - [ ] packages/ui (shared components)
-  - [ ] apps/docs (documentation editor)
-  - [ ] apps/kanban (kanban board)
-  - [ ] apps/api (backend)
-- [ ] Configure tooling
-  - [ ] ESLint configuration
-  - [ ] Vitest setup
-  - [ ] Vite configuration for apps
+- [x] Initialize pnpm workspace
+  - [x] Create pnpm-workspace.yaml
+  - [x] Create turbo.json
+  - [x] Configure base tsconfig.json
+  - [x] Configure ESLint (eslint.config.js)
+- [x] Create shared packages
+  - [x] shared/core (types, utilities)
+  - [x] shared/ui (Preact components)
+  - [x] shared/platform (abstraction interfaces)
+  - [x] shared/platform-electron
+  - [x] shared/platform-web
+  - [x] shared/models (state management)
+  - [x] shared/router (custom router)
+  - [x] shared/fetch (HTTP client)
+- [x] Create apps
+  - [x] editor-web (documentation editor, Preact)
+  - [x] editor-desktop (documentation editor, Electron)
+  - [x] planning-web (task management, Preact)
+  - [x] planning-desktop (task management, Electron)
+  - [x] api (backend)
+  - [x] mcp (MCP server)
+  - [x] infra (AWS CDK)
 
 ---
 
@@ -235,12 +242,12 @@ Use this template for all work items:
 
 ---
 
-### Kanban Board UI
+### Planning UI
 **Spec/Documentation:** `/docs/specs/kanban-ui.md`
 **Dependencies:** Custom State Management, Custom Router
 **Status:** ready
 
-**Goal:** Build lightweight kanban board with drag-drop and keyboard navigation.
+**Goal:** Build lightweight planning board with drag-drop and keyboard navigation.
 
 **Tasks:**
 - [ ] Board layout
@@ -283,7 +290,7 @@ Use this template for all work items:
   - [ ] Repository management
   - [ ] Document CRUD
   - [ ] Git operations
-- [ ] Kanban endpoints
+- [ ] Planning endpoints
   - [ ] Epic CRUD
   - [ ] Task CRUD
   - [ ] Document-task links
@@ -307,7 +314,7 @@ Use this template for all work items:
   - [ ] Task tools (get, search, create, update)
 - [ ] MCP resources
   - [ ] docs:// URI scheme
-  - [ ] kanban:// URI scheme
+  - [ ] planning:// URI scheme
 - [ ] CLI tool
   - [ ] Connect command (OAuth flow)
   - [ ] Status command
@@ -353,12 +360,12 @@ Use this template for all work items:
 4. Save and commit changes
 5. Desktop app only (Electron)
 
-**Kanban Board MVP:**
+**Planning MVP:**
 1. View three-column board
 2. Create/edit epics and tasks
 3. Drag to change status
 4. Keyboard navigation works
-5. Web app only
+5. Web app only (desktop comes later)
 
 **Stack Validation:**
 - Preact renders correctly
