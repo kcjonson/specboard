@@ -1,7 +1,15 @@
 /**
  * @doc-platform/fetch
- * Custom HTTP client with retry logic and typed responses.
+ *
+ * Thin fetch wrapper for auth middleware and global error handling.
  */
 
-// Placeholder - fetch wrapper implementation per tech-stack.md
-export const FETCH_VERSION = '0.0.1';
+export { FetchClient, fetchClient } from './client';
+export { FetchError } from './types';
+export type {
+	FetchConfig,
+	RequestConfig,
+	RequestInterceptor,
+	ResponseInterceptor,
+	ErrorInterceptor,
+} from './types';

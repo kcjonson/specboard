@@ -20,7 +20,12 @@
 		"test": "vitest run",
 		"test:watch": "vitest"
 	},
+	"dependencies": {
+		"@doc-platform/fetch": "workspace:*",
+		"preact": "^10.25.4"
+	},
 	"devDependencies": {
+		"@testing-library/preact": "^3.2.4",
 		"typescript": "^5.7.2"
 	}
 }

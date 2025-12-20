@@ -1,7 +1,12 @@
 /**
  * @doc-platform/models
+ *
  * State management with Model and SyncModel classes.
  */
 
-// Placeholder - Model and SyncModel implementations per tech-stack.md
-export const MODELS_VERSION = '0.0.1';
+export { defineProperties } from './prop';
+export { Model } from './Model';
+export { SyncModel } from './SyncModel';
+export { useModel, useSyncModel } from './hooks';
+export { compileUrl } from './url-template';
+export type { ChangeCallback, ModelMeta } from './types';
