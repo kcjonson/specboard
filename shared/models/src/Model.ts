@@ -2,9 +2,6 @@
  * @doc-platform/models - Model base class
  *
  * Observable state container with change subscriptions.
- * Properties are registered via the @prop decorator.
- *
- * Based on: https://github.com/kcjonson/greenhouse-controller/blob/master/packages/web/src/client/Models/Model.js
  */
 
 import { type ChangeCallback } from './types';
@@ -64,10 +61,10 @@ export class Model<T extends Record<string, unknown> = Record<string, unknown>> 
 	static properties: Set<string> = new Set();
 
 	/** Internal data storage (non-enumerable) */
-	declare readonly __data: Record<string, unknown>;
+	protected declare readonly __data: Record<string, unknown>;
 
 	/** Event listeners (non-enumerable) */
-	declare readonly __listeners: Record<string, ChangeCallback[]>;
+	protected declare readonly __listeners: Record<string, ChangeCallback[]>;
 
 	/** Metadata (non-enumerable) */
 	declare readonly $meta: Record<string, unknown>;
