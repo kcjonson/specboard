@@ -38,6 +38,26 @@ describe('Model', () => {
 			expect(() => new Empty()).toThrow('has no properties');
 		});
 
+		it('should throw if property name starts with __', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid property name
+				class Bad extends Model {
+					@prop accessor __internal!: string;
+				}
+				return Bad;
+			}).toThrow('reserved prefix');
+		});
+
+		it('should throw if property name starts with $', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid property name
+				class Bad extends Model {
+					@prop accessor $meta!: string;
+				}
+				return Bad;
+			}).toThrow('reserved prefix');
+		});
+
 		it('should work without an id field', () => {
 			class Settings extends Model {
 				@prop accessor theme!: string;

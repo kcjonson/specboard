@@ -31,6 +31,13 @@ export function prop<T, V>(
 ): ClassAccessorDecoratorResult<T, V> {
 	const name = context.name as string;
 
+	// Prevent reserved property names
+	if (name.startsWith('__') || name.startsWith('$')) {
+		throw new Error(
+			`Property "${name}" uses a reserved prefix. Property names cannot start with "__" or "$".`
+		);
+	}
+
 	// Register property in metadata
 	if (!context.metadata[PROPERTIES]) {
 		context.metadata[PROPERTIES] = new Set<string>();
