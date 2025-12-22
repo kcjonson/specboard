@@ -4,7 +4,7 @@
  * State management with Model and SyncModel classes.
  */
 
-export { defineProperties } from './prop';
+export { prop } from './prop';
 export { Model } from './Model';
 export { SyncModel } from './SyncModel';
 export { useModel, useSyncModel } from './hooks';

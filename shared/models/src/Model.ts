@@ -2,114 +2,48 @@
  * @doc-platform/models - Model base class
  *
  * Observable state container with change subscriptions.
+ * Use the @prop decorator on accessor fields to define properties.
  */
 
 import { type ChangeCallback } from './types';
+import { PROPERTIES } from './prop';
 
 /**
- * Emits a change event to all listeners.
- */
-function emit(this: Model): void {
-	const listeners = this.__listeners['change'];
-	if (listeners) {
-		for (const listener of listeners) {
-			listener();
-		}
-	}
-}
-
-/**
- * Gets the static properties Set from a Model class.
+ * Gets the properties Set from decorator metadata.
  */
 function getProperties(model: Model): Set<string> | undefined {
-	const ctor = model.constructor as typeof Model;
-	return ctor.properties as Set<string> | undefined;
-}
-
-/**
- * Gets a property value from internal data.
- */
-function get(this: Model, property: string): unknown {
-	const properties = getProperties(this);
-
-	if (properties?.has(property)) {
-		return this.__data[property];
-	} else {
-		console.warn(`Skipping get: property "${property}" is invalid on "${this.constructor.name}" model`);
-		return undefined;
-	}
-}
-
-/**
- * Sets a property value on internal data.
- */
-function setProp(this: Model, property: string, value: unknown, doEmit = true): void {
-	const properties = getProperties(this);
-
-	if (properties?.has(property)) {
-		this.__data[property] = value;
-		if (doEmit) {
-			emit.call(this);
-		}
-	} else {
-		console.warn(`Skipping set: property "${property}" is invalid on "${this.constructor.name}" model`);
-	}
+	const ctor = model.constructor as { [Symbol.metadata]?: Record<symbol, unknown> };
+	const metadata = ctor[Symbol.metadata];
+	return metadata?.[PROPERTIES] as Set<string> | undefined;
 }
 
 export class Model<T extends Record<string, unknown> = Record<string, unknown>> {
-	/** Static properties Set - subclasses must override this */
-	static properties: Set<string> = new Set();
+	/** Internal data storage */
+	protected __data: Record<string, unknown> = {};
 
-	/** Internal data storage (non-enumerable) */
-	protected declare readonly __data: Record<string, unknown>;
+	/** Event listeners */
+	protected __listeners: Record<string, ChangeCallback[]> = {};
 
-	/** Event listeners (non-enumerable) */
-	protected declare readonly __listeners: Record<string, ChangeCallback[]>;
-
-	/** Metadata (non-enumerable) */
-	declare readonly $meta: Record<string, unknown>;
+	/** Metadata */
+	readonly $meta: Record<string, unknown> = {};
 
 	constructor(initialData?: Partial<T>) {
-		Object.defineProperty(this, '__data', {
-			value: {},
-			enumerable: false,
-			writable: false,
-		});
-
-		Object.defineProperty(this, '__listeners', {
-			value: {},
-			enumerable: false,
-			writable: false,
-		});
-
-		Object.defineProperty(this, '$meta', {
-			value: {},
-			enumerable: false,
-			writable: false,
-		});
-
-		// Create getters/setters for each registered property
+		// Verify properties are registered via @prop decorator
 		const properties = getProperties(this);
 
 		if (!properties || properties.size === 0) {
-			throw new Error(`Model "${this.constructor.name}" has no properties. Define static properties on the class.`);
+			throw new Error(`Model "${this.constructor.name}" has no properties. Use @prop decorator on accessor fields.`);
 		}
 
-		for (const property of properties) {
-			Object.defineProperty(this, property, {
-				enumerable: true,
-				get: get.bind(this, property),
-				set: setProp.bind(this, property),
-			});
-		}
-
-		// Set initial data
+		// Set initial data using the setters (which are defined by @prop decorator)
 		if (initialData) {
-			this.set(initialData);
+			for (const [key, value] of Object.entries(initialData)) {
+				if (properties.has(key)) {
+					// Use the setter, but don't emit changes during initialization
+					this.__data[key] = value;
+				}
+			}
 		}
-
-		// Freeze the instance to prevent adding new properties
-		Object.freeze(this);
 	}
 
 	/**
@@ -135,15 +69,32 @@ export class Model<T extends Record<string, unknown> = Record<string, unknown>> 
 	set(data: Partial<T>): void;
 	set(property: keyof T, value: T[keyof T]): void;
 	set(dataOrProperty: Partial<T> | keyof T, value?: T[keyof T]): void {
+		const properties = getProperties(this);
+
 		if (typeof dataOrProperty === 'object' && dataOrProperty !== null) {
 			// Batch update - set all properties, emit once
 			for (const [property, propValue] of Object.entries(dataOrProperty)) {
-				setProp.call(this, property, propValue, false);
+				if (properties?.has(property)) {
+					this.__data[property] = propValue;
+				} else {
+					console.warn(`Skipping set: property "${property}" is invalid on "${this.constructor.name}" model`);
+				}
 			}
-			emit.call(this);
+			// Emit single change event
+			const listeners = this.__listeners['change'];
+			if (listeners) {
+				for (const listener of listeners) {
+					listener();
+				}
+			}
 		} else if (typeof dataOrProperty === 'string') {
-			// Single property update
-			setProp.call(this, dataOrProperty, value);
+			// Single property update - use the setter which emits
+			if (properties?.has(dataOrProperty)) {
+				// Access via this[property] to use the accessor's setter
+				(this as Record<string, unknown>)[dataOrProperty] = value;
+			} else {
+				console.warn(`Skipping set: property "${dataOrProperty}" is invalid on "${this.constructor.name}" model`);
+			}
 		} else {
 			console.warn(`Unable to set properties of type: ${typeof dataOrProperty} on Model`);
 		}
