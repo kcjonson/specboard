@@ -4,11 +4,10 @@
 
 ## Overview
 
-Port the existing Model/SyncModel pattern from greenhouse-controller to doc-platform, upgraded with:
-- TypeScript + native decorators (zero property duplication)
+Implement custom state management with:
+- Observable Model/SyncModel pattern for data modeling
+- TypeScript with static property registration
 - Preact hooks for component integration
-
-**Reference:** https://github.com/kcjonson/greenhouse-controller/blob/master/packages/web/src/client/Models/Model.js
 
 ---
 
@@ -75,12 +74,12 @@ user.on('change', () => console.log('changed'));
 |------|---------|
 | `shared/models/src/types.ts` | Interfaces |
 | `shared/models/src/prop.ts` | `@prop` decorator |
-| `shared/models/src/Model.ts` | Base Model (matches your existing pattern) |
+| `shared/models/src/Model.ts` | Base Model class |
 | `shared/models/src/SyncModel.ts` | REST-synced Model |
 | `shared/models/src/hooks.ts` | useModel, useSyncModel |
 | `shared/models/src/index.ts` | Exports |
 
-### Model API (matching your existing pattern)
+### Model API
 
 ```typescript
 class Model<T = unknown> {
@@ -154,8 +153,8 @@ function useSyncModel<T>(model: SyncModel<T>): {
 ## Implementation Order
 
 1. **Fetch** - types, client, tests
-2. **@prop decorator** - property registration via native decorators
-3. **Model** - port from greenhouse-controller, add TypeScript
+2. **@prop decorator** - property registration helper
+3. **Model** - observable base class with change events
 4. **SyncModel** - extend Model with fetch/save/destroy
 5. **Hooks** - useModel, useSyncModel
 6. **Tests**
