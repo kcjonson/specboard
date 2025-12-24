@@ -1,7 +1,7 @@
 import { startRouter } from '@doc-platform/router';
 import { fetchClient } from '@doc-platform/fetch';
-import { Board } from './pages/Board';
-import { EpicDetail } from './pages/EpicDetail';
+import { Board } from './routes/board/Board';
+import { EpicDetail } from './routes/epic/EpicDetail';
 
 // Global styles
 import './styles/tokens.css';

@@ -2,9 +2,9 @@ import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
-import { Column } from '../components/Column';
-import { EpicDialog } from '../components/EpicDialog';
-import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
+import { Column } from './Column';
+import { EpicDialog } from './EpicDialog';
+import { useKeyboardNavigation } from './useKeyboardNavigation';
 import styles from './Board.module.css';
 
 const COLUMNS: { status: Status; title: string }[] = [

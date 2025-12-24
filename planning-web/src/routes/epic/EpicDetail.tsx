@@ -3,7 +3,7 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { useModel, EpicModel } from '@doc-platform/models';
-import { EpicView } from '../components/EpicView';
+import { EpicView } from './EpicView';
 import styles from './EpicDetail.module.css';
 
 export function EpicDetail({ params }: RouteProps): JSX.Element {
