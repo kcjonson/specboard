@@ -1,21 +1,35 @@
 /**
  * @doc-platform/models - Preact hooks
  *
- * Hooks for subscribing to Model changes in Preact components.
+ * Hooks for subscribing to Model and Collection changes in Preact components.
  */
 
 import { useState, useEffect } from 'preact/hooks';
-import { Model } from './Model';
+import type { Observable } from './types';
 
 /**
- * Subscribe to a Model's changes and trigger re-renders.
- * Works with both Model and SyncModel.
+ * Subscribe to an Observable's changes and trigger re-renders.
+ * Works with Model, SyncModel, and Collection.
  *
  * @example
  * ```tsx
+ * // Subscribe to a Model
  * function UserCard({ user }: { user: User }) {
  *   useModel(user);
  *   return <div>{user.name}</div>;
+ * }
+ * ```
+ *
+ * @example
+ * ```tsx
+ * // Subscribe to a Collection directly (granular updates)
+ * function TaskList({ epic }: { epic: Epic }) {
+ *   useModel(epic.tasks); // Only re-renders when tasks change
+ *   return (
+ *     <ul>
+ *       {epic.tasks.map(task => <TaskItem task={task} />)}
+ *     </ul>
+ *   );
  * }
  * ```
  *
@@ -37,7 +51,7 @@ import { Model } from './Model';
  * }
  * ```
  */
-export function useModel<T extends Model>(model: T): T {
+export function useModel<T extends Observable>(observable: T): T {
 	const [, forceUpdate] = useState(0);
 
 	useEffect(() => {
@@ -45,12 +59,12 @@ export function useModel<T extends Model>(model: T): T {
 			forceUpdate((n) => n + 1);
 		};
 
-		model.on('change', handleChange);
+		observable.on('change', handleChange);
 
 		return () => {
-			model.off('change', handleChange);
+			observable.off('change', handleChange);
 		};
-	}, [model]);
+	}, [observable]);
 
-	return model;
+	return observable;
 }

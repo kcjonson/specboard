@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-23 (Custom Router Complete)
+Last Updated: 2025-12-24 (Collection & Nested Models Complete)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,21 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ Collection & Nested Models
+**Spec/Documentation:** `shared/models/src/`
+**Dependencies:** Custom State Management
+**Status:** complete
+
+**Tasks:**
+- [x] Create Observable interface for Model and Collection
+- [x] Implement Collection<T> class with event bubbling
+- [x] Create @collection decorator for child model arrays
+- [x] Create @model decorator for single nested models
+- [x] Update useModel hook to accept Observable
+- [x] Write comprehensive tests (26 new tests)
+
+---
 
 ### ✅ Custom Router
 **Spec/Documentation:** `/docs/tech-stack.md`
@@ -62,34 +77,6 @@ Use this template for all work items:
 - [x] Initialize pnpm workspace
 - [x] Create shared packages (core, ui, platform, models, router, fetch)
 - [x] Create apps (editor-web, editor-desktop, planning-web, planning-desktop, api, mcp, infra)
-
----
-
-### ✅ Initial Project Planning
-**Spec/Documentation:** `/docs/specs/`
-**Dependencies:** None
-**Status:** complete
-
-**Tasks:**
-- [x] Tech stack decisions
-  - [x] Choose frontend framework (Preact)
-  - [x] Choose build tools (pnpm, Turborepo, Vite)
-  - [x] Choose backend services (AWS: ECS, Aurora, Cognito, Bedrock)
-  - [x] Define custom infrastructure approach (router, fetch, state)
-- [x] Write feature specifications
-  - [x] Markdown editor spec
-  - [x] Authentication spec
-  - [x] MCP integration spec
-  - [x] Platform abstraction spec
-  - [x] API & database spec
-  - [x] Planning UI spec
-  - [x] File tree & command palette spec
-- [x] Project setup
-  - [x] LICENSE (PolyForm Noncommercial)
-  - [x] CONTRIBUTING.md
-  - [x] CLAUDE.md
-  - [x] .editorconfig
-  - [x] .gitignore
 
 ---
 
