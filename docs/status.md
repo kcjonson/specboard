@@ -82,7 +82,33 @@ Use this template for all work items:
 
 ## In Progress Epics
 
-(None currently)
+### Planning UI
+**Spec/Documentation:** `/docs/specs/kanban-ui.md`
+**Dependencies:** Custom State Management, Custom Router
+**Status:** in progress
+
+**Goal:** Build lightweight planning board with drag-drop and keyboard navigation.
+
+**Tasks:**
+- [ ] API stub (Hono with in-memory data)
+  - [ ] Epic CRUD endpoints
+  - [ ] Task CRUD endpoints
+- [ ] Board layout
+  - [ ] Three-column layout (Ready, In Progress, Done)
+  - [ ] Column component
+  - [ ] Epic card component
+- [ ] Drag and drop
+  - [ ] Native drag events
+  - [ ] Drop zone highlighting
+  - [ ] Optimistic reordering
+- [ ] Epic detail modal
+  - [ ] Task list
+  - [ ] Linked documents
+  - [ ] Status/assignee controls
+- [ ] Keyboard navigation
+  - [ ] Arrow key navigation
+  - [ ] Keyboard shortcuts
+  - [ ] Quick create (N for epic, C for task)
 
 ---
 
@@ -192,33 +218,6 @@ Use this template for all work items:
 
 ---
 
-### Planning UI
-**Spec/Documentation:** `/docs/specs/kanban-ui.md`
-**Dependencies:** Custom State Management, Custom Router
-**Status:** ready
-
-**Goal:** Build lightweight planning board with drag-drop and keyboard navigation.
-
-**Tasks:**
-- [ ] Board layout
-  - [ ] Three-column layout (Ready, In Progress, Done)
-  - [ ] Column component
-  - [ ] Epic card component
-- [ ] Drag and drop
-  - [ ] Native drag events
-  - [ ] Drop zone highlighting
-  - [ ] Optimistic reordering
-- [ ] Epic detail modal
-  - [ ] Task list
-  - [ ] Linked documents
-  - [ ] Status/assignee controls
-- [ ] Keyboard navigation
-  - [ ] Arrow key navigation
-  - [ ] Keyboard shortcuts
-  - [ ] Quick create (N for epic, C for task)
-
----
-
 ### REST API & Database
 **Spec/Documentation:** `/docs/specs/api-database.md`
 **Dependencies:** Authentication System
@@ -232,7 +231,7 @@ Use this template for all work items:
   - [ ] Schema migrations
   - [ ] Connection pooling
 - [ ] API framework
-  - [ ] Express or Fastify setup
+  - [ ] Hono server setup
   - [ ] Auth middleware
   - [ ] Error handling
 - [ ] Core endpoints

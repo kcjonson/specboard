@@ -14,6 +14,8 @@ export { Model } from './Model';
 export { SyncModel } from './SyncModel';
 export { createCollection } from './Collection';
 export type { Collection } from './Collection';
+export { SyncCollection } from './SyncCollection';
+export type { CollectionMeta } from './SyncCollection';
 
 // Hooks
 export { useModel } from './hooks';
@@ -24,3 +26,7 @@ export { compileUrl } from './url-template';
 // Types
 export type { ChangeCallback, ModelMeta, ModelData, Observable } from './types';
 export type { ModelConstructor } from './Collection';
+
+// Planning models
+export { TaskModel, EpicModel, EpicsCollection } from './planning';
+export type { Status, TaskStats } from './planning';

@@ -13,7 +13,9 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
-		"@doc-platform/core": "workspace:*"
+		"@doc-platform/core": "workspace:*",
+		"@hono/node-server": "^1.19.7",
+		"hono": "^4.11.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.2",

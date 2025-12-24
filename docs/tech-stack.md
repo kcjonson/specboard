@@ -27,6 +27,13 @@ Both share a common infrastructure and are developed in a single monorepo.
 | Vitest | Unit and component testing |
 | Electron | Desktop application wrapper |
 
+### API Framework
+
+| Technology | Purpose |
+|------------|---------|
+| Hono | Lightweight HTTP framework |
+| Node.js | Runtime environment |
+
 ### Backend (AWS)
 
 | AWS Service | Purpose |
