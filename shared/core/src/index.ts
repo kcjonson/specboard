@@ -5,6 +5,37 @@
 
 export const VERSION = '0.0.1';
 
+// Planning types
+export type Status = 'ready' | 'in_progress' | 'done';
+
+export interface Task {
+	id: string;
+	epicId: string;
+	title: string;
+	status: Status;
+	assignee?: string;
+	dueDate?: string;
+	rank: number;
+}
+
+export interface TaskStats {
+	total: number;
+	done: number;
+}
+
+export interface Epic {
+	id: string;
+	title: string;
+	description?: string;
+	status: Status;
+	assignee?: string;
+	rank: number;
+	createdAt: string;
+	updatedAt: string;
+	taskStats?: TaskStats;
+	tasks?: Task[];
+}
+
 /**
  * Creates a unique identifier.
  */

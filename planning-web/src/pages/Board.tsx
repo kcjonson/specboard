@@ -1,14 +1,151 @@
+import { useState, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
+import { navigate } from '@doc-platform/router';
+import type { Epic, Status } from '@doc-platform/core';
+import { Column } from '../components/Column';
+import styles from './Board.module.css';
+
+const API_BASE = 'http://localhost:3001';
+
+const COLUMNS: { status: Status; title: string }[] = [
+	{ status: 'ready', title: 'Ready' },
+	{ status: 'in_progress', title: 'In Progress' },
+	{ status: 'done', title: 'Done' },
+];
 
 export function Board(_props: RouteProps): JSX.Element {
+	const [epics, setEpics] = useState<Epic[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState<string | null>(null);
+	const [selectedEpicId, setSelectedEpicId] = useState<string | undefined>();
+
+	useEffect(() => {
+		fetchEpics();
+	}, []);
+
+	async function fetchEpics(): Promise<void> {
+		try {
+			setLoading(true);
+			const res = await fetch(`${API_BASE}/api/epics`);
+			if (!res.ok) throw new Error('Failed to fetch epics');
+			const data = await res.json();
+			setEpics(data);
+			setError(null);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Unknown error');
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	function getEpicsByStatus(status: Status): Epic[] {
+		return epics
+			.filter((e) => e.status === status)
+			.sort((a, b) => a.rank - b.rank);
+	}
+
+	function handleSelectEpic(epic: Epic): void {
+		setSelectedEpicId(epic.id);
+	}
+
+	function handleOpenEpic(epic: Epic): void {
+		navigate(`/epics/${epic.id}`);
+	}
+
+	function handleDragStart(e: DragEvent, epic: Epic): void {
+		e.dataTransfer?.setData('text/plain', epic.id);
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'move';
+		}
+	}
+
+	function handleDragEnd(): void {
+		// Drag ended - could add visual feedback here
+	}
+
+	async function handleDropEpic(epicId: string, newStatus: Status, _index: number): Promise<void> {
+		// Optimistic update
+		setEpics((prev) =>
+			prev.map((e) => (e.id === epicId ? { ...e, status: newStatus } : e))
+		);
+
+		try {
+			const res = await fetch(`${API_BASE}/api/epics/${epicId}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status: newStatus }),
+			});
+			if (!res.ok) throw new Error('Failed to update epic');
+			// Refresh to get accurate data
+			fetchEpics();
+		} catch (err) {
+			// Revert on error
+			fetchEpics();
+			console.error('Failed to move epic:', err);
+		}
+	}
+
+	async function handleCreateEpic(): Promise<void> {
+		const title = prompt('Epic title:');
+		if (!title) return;
+
+		try {
+			const res = await fetch(`${API_BASE}/api/epics`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ title }),
+			});
+			if (!res.ok) throw new Error('Failed to create epic');
+			fetchEpics();
+		} catch (err) {
+			console.error('Failed to create epic:', err);
+		}
+	}
+
+	if (loading) {
+		return (
+			<div class={styles.container}>
+				<div class={styles.loading}>Loading...</div>
+			</div>
+		);
+	}
+
+	if (error) {
+		return (
+			<div class={styles.container}>
+				<div class={styles.error}>Error: {error}</div>
+			</div>
+		);
+	}
+
 	return (
-		<div>
-			<h1>Planning Board</h1>
-			<p>Three-column kanban board will be implemented here.</p>
-			<nav>
-				<a href="/epics/1">View Epic 1</a>
-			</nav>
+		<div class={styles.container}>
+			<header class={styles.header}>
+				<h1 class={styles.title}>Planning Board</h1>
+				<div class={styles.actions}>
+					<button class={styles.button} onClick={handleCreateEpic}>
+						+ New Epic
+					</button>
+				</div>
+			</header>
+
+			<div class={styles.board}>
+				{COLUMNS.map(({ status, title }) => (
+					<Column
+						key={status}
+						status={status}
+						title={title}
+						epics={getEpicsByStatus(status)}
+						selectedEpicId={selectedEpicId}
+						onSelectEpic={handleSelectEpic}
+						onOpenEpic={handleOpenEpic}
+						onDropEpic={handleDropEpic}
+						onDragStart={handleDragStart}
+						onDragEnd={handleDragEnd}
+					/>
+				))}
+			</div>
 		</div>
 	);
 }

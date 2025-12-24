@@ -1,0 +1,46 @@
+/**
+ * Design tokens for Planning UI
+ * Based on the kanban-ui.md spec
+ */
+
+:root {
+	/* Colors */
+	--color-background: #f8f9fa;
+	--color-surface: #ffffff;
+	--color-surface-hover: #f1f3f4;
+	--color-card: #ffffff;
+	--color-text: #1a1a1a;
+	--color-text-muted: #6b7280;
+	--color-border: #e5e7eb;
+
+	/* Status colors */
+	--color-ready: #3b82f6;
+	--color-in-progress: #f59e0b;
+	--color-done: #10b981;
+
+	/* Interactive colors */
+	--color-primary: #3b82f6;
+	--color-primary-hover: #2563eb;
+	--color-success: #10b981;
+	--color-error: #ef4444;
+
+	/* Dimensions */
+	--column-width: 320px;
+	--card-padding: 12px;
+	--card-margin: 8px;
+	--card-radius: 6px;
+	--column-radius: 8px;
+
+	/* Shadows */
+	--shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1);
+	--shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.15);
+	--shadow-card-dragging: 0 8px 24px rgba(0, 0, 0, 0.2);
+
+	/* Typography */
+	--font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	--font-mono: 'SF Mono', Consolas, monospace;
+
+	/* Transitions */
+	--transition-fast: 150ms ease;
+	--transition-normal: 250ms ease;
+}
