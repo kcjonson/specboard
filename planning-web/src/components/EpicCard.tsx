@@ -1,13 +1,13 @@
 import type { JSX } from 'preact';
-import type { Epic } from '@doc-platform/core';
+import type { EpicModel } from '@doc-platform/models';
 import styles from './EpicCard.module.css';
 
 interface EpicCardProps {
-	epic: Epic;
+	epic: EpicModel;
 	isSelected?: boolean;
-	onSelect?: (epic: Epic) => void;
-	onOpen?: (epic: Epic) => void;
-	onDragStart?: (e: DragEvent, epic: Epic) => void;
+	onSelect?: (epic: EpicModel) => void;
+	onOpen?: (epic: EpicModel) => void;
+	onDragStart?: (e: DragEvent, epic: EpicModel) => void;
 	onDragEnd?: (e: DragEvent) => void;
 }
 
@@ -44,7 +44,7 @@ export function EpicCard({
 	onDragStart,
 	onDragEnd,
 }: EpicCardProps): JSX.Element {
-	const taskStats = epic.taskStats ?? { total: 0, done: 0 };
+	const taskStats = epic.taskStats;
 	const progressPercent = taskStats.total > 0 ? (taskStats.done / taskStats.total) * 100 : 0;
 
 	const handleClick = (): void => {

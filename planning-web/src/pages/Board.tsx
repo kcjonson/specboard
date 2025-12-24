@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
-import type { Epic, Status } from '@doc-platform/core';
+import { useModel, createEpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
 import { Column } from '../components/Column';
 import styles from './Board.module.css';
 
@@ -15,7 +15,10 @@ const COLUMNS: { status: Status; title: string }[] = [
 ];
 
 export function Board(_props: RouteProps): JSX.Element {
-	const [epics, setEpics] = useState<Epic[]>([]);
+	// Create collection once, subscribe to changes with useModel
+	const epics = useMemo(() => createEpicsCollection(), []);
+	useModel(epics);
+
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [selectedEpicId, setSelectedEpicId] = useState<string | undefined>();
@@ -30,7 +33,8 @@ export function Board(_props: RouteProps): JSX.Element {
 			const res = await fetch(`${API_BASE}/api/epics`);
 			if (!res.ok) throw new Error('Failed to fetch epics');
 			const data = await res.json();
-			setEpics(data);
+			// Populate collection with fetched data
+			epics.clear(data);
 			setError(null);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Unknown error');
@@ -39,21 +43,21 @@ export function Board(_props: RouteProps): JSX.Element {
 		}
 	}
 
-	function getEpicsByStatus(status: Status): Epic[] {
+	function getEpicsByStatus(status: Status): EpicModel[] {
 		return epics
 			.filter((e) => e.status === status)
 			.sort((a, b) => a.rank - b.rank);
 	}
 
-	function handleSelectEpic(epic: Epic): void {
+	function handleSelectEpic(epic: EpicModel): void {
 		setSelectedEpicId(epic.id);
 	}
 
-	function handleOpenEpic(epic: Epic): void {
+	function handleOpenEpic(epic: EpicModel): void {
 		navigate(`/epics/${epic.id}`);
 	}
 
-	function handleDragStart(e: DragEvent, epic: Epic): void {
+	function handleDragStart(e: DragEvent, epic: EpicModel): void {
 		e.dataTransfer?.setData('text/plain', epic.id);
 		if (e.dataTransfer) {
 			e.dataTransfer.effectAllowed = 'move';
@@ -65,10 +69,12 @@ export function Board(_props: RouteProps): JSX.Element {
 	}
 
 	async function handleDropEpic(epicId: string, newStatus: Status, _index: number): Promise<void> {
-		// Optimistic update
-		setEpics((prev) =>
-			prev.map((e) => (e.id === epicId ? { ...e, status: newStatus } : e))
-		);
+		// Find the epic and update optimistically
+		const epic = epics.find((e) => e.id === epicId);
+		if (!epic) return;
+
+		const oldStatus = epic.status;
+		epic.status = newStatus; // Triggers change event via Model
 
 		try {
 			const res = await fetch(`${API_BASE}/api/epics/${epicId}`, {
@@ -77,11 +83,9 @@ export function Board(_props: RouteProps): JSX.Element {
 				body: JSON.stringify({ status: newStatus }),
 			});
 			if (!res.ok) throw new Error('Failed to update epic');
-			// Refresh to get accurate data
-			fetchEpics();
 		} catch (err) {
 			// Revert on error
-			fetchEpics();
+			epic.status = oldStatus;
 			console.error('Failed to move epic:', err);
 		}
 	}
@@ -97,7 +101,9 @@ export function Board(_props: RouteProps): JSX.Element {
 				body: JSON.stringify({ title }),
 			});
 			if (!res.ok) throw new Error('Failed to create epic');
-			fetchEpics();
+			const newEpic = await res.json();
+			// Add to collection (triggers change event)
+			epics.add(newEpic);
 		} catch (err) {
 			console.error('Failed to create epic:', err);
 		}

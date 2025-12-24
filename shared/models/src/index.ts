@@ -24,3 +24,7 @@ export { compileUrl } from './url-template';
 // Types
 export type { ChangeCallback, ModelMeta, ModelData, Observable } from './types';
 export type { ModelConstructor } from './Collection';
+
+// Planning models
+export { TaskModel, EpicModel, createEpicsCollection } from './planning';
+export type { Status, TaskStats } from './planning';

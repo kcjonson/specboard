@@ -1,18 +1,18 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { Epic, Status } from '@doc-platform/core';
+import type { Status, EpicModel } from '@doc-platform/models';
 import { EpicCard } from './EpicCard';
 import styles from './Column.module.css';
 
 interface ColumnProps {
 	status: Status;
 	title: string;
-	epics: Epic[];
+	epics: EpicModel[];
 	selectedEpicId?: string;
-	onSelectEpic?: (epic: Epic) => void;
-	onOpenEpic?: (epic: Epic) => void;
+	onSelectEpic?: (epic: EpicModel) => void;
+	onOpenEpic?: (epic: EpicModel) => void;
 	onDropEpic?: (epicId: string, status: Status, index: number) => void;
-	onDragStart?: (e: DragEvent, epic: Epic) => void;
+	onDragStart?: (e: DragEvent, epic: EpicModel) => void;
 	onDragEnd?: (e: DragEvent) => void;
 }
 
