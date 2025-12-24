@@ -105,10 +105,10 @@ Use this template for all work items:
   - [x] Task list
   - [x] Status/assignee controls
   - [ ] Linked documents (stubbed)
-- [ ] Keyboard navigation
-  - [ ] Arrow key navigation
-  - [ ] Keyboard shortcuts
-  - [ ] Quick create (N for epic, C for task)
+- [x] Keyboard navigation
+  - [x] Arrow key navigation
+  - [x] Keyboard shortcuts (N, 1/2/3, Enter, Escape)
+  - [x] Quick create (N for epic)
 
 ---
 

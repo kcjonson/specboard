@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'preact/hooks';
+import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
 import { Column } from '../components/Column';
 import { EpicDialog } from '../components/EpicDialog';
+import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
 import styles from './Board.module.css';
 
 const COLUMNS: { status: Status; title: string }[] = [
@@ -20,13 +21,54 @@ export function Board(_props: RouteProps): JSX.Element {
 	const [selectedEpicId, setSelectedEpicId] = useState<string | undefined>();
 	const [dialogEpic, setDialogEpic] = useState<EpicModel | null>(null);
 
-	function handleSelectEpic(epic: EpicModel): void {
-		setSelectedEpicId(epic.id);
-	}
+	// Memoize epics by status for keyboard navigation
+	const epicsByStatus = useMemo(
+		() => ({
+			ready: epics.byStatus('ready'),
+			in_progress: epics.byStatus('in_progress'),
+			done: epics.byStatus('done'),
+		}),
+		[epics]
+	);
 
-	function handleOpenEpic(epic: EpicModel): void {
+	const handleSelectEpic = useCallback((epic: EpicModel | undefined): void => {
+		setSelectedEpicId(epic?.id);
+	}, []);
+
+	// Wrapper for Column component (which only passes EpicModel, not undefined)
+	const handleColumnSelectEpic = useCallback((epic: EpicModel): void => {
+		handleSelectEpic(epic);
+	}, [handleSelectEpic]);
+
+	const handleOpenEpic = useCallback((epic: EpicModel): void => {
 		setDialogEpic(epic);
-	}
+	}, []);
+
+	const handleMoveEpic = useCallback(
+		(epic: EpicModel, status: Status): void => {
+			epic.status = status;
+			epic.rank = epics.byStatus(status).length + 1;
+			epic.save();
+		},
+		[epics]
+	);
+
+	const handleCreateEpicKeyboard = useCallback((): void => {
+		const title = prompt('Epic title:');
+		if (!title) return;
+		epics.add({ title, status: 'ready', rank: epics.length + 1 });
+	}, [epics]);
+
+	// Keyboard navigation hook
+	useKeyboardNavigation({
+		epicsByStatus,
+		selectedEpicId,
+		dialogOpen: dialogEpic !== null,
+		onSelectEpic: handleSelectEpic,
+		onOpenEpic: handleOpenEpic,
+		onCreateEpic: handleCreateEpicKeyboard,
+		onMoveEpic: handleMoveEpic,
+	});
 
 	function handleCloseDialog(): void {
 		setDialogEpic(null);
@@ -116,13 +158,6 @@ export function Board(_props: RouteProps): JSX.Element {
 		});
 	}
 
-	function handleCreateEpic(): void {
-		const title = prompt('Epic title:');
-		if (!title) return;
-
-		epics.add({ title, status: 'ready', rank: epics.length + 1 }); // $meta tracks state
-	}
-
 	// Loading state from collection's $meta
 	if (epics.$meta.working && epics.length === 0) {
 		return (
@@ -146,7 +181,7 @@ export function Board(_props: RouteProps): JSX.Element {
 			<header class={styles.header}>
 				<h1 class={styles.title}>Planning Board</h1>
 				<div class={styles.actions}>
-					<button class={styles.button} onClick={handleCreateEpic}>
+					<button class={styles.button} onClick={handleCreateEpicKeyboard}>
 						+ New Epic
 					</button>
 				</div>
@@ -160,7 +195,7 @@ export function Board(_props: RouteProps): JSX.Element {
 						title={title}
 						epics={epics.byStatus(status)}
 						selectedEpicId={selectedEpicId}
-						onSelectEpic={handleSelectEpic}
+						onSelectEpic={handleColumnSelectEpic}
 						onOpenEpic={handleOpenEpic}
 						onDropEpic={handleDropEpic}
 						onDragStart={handleDragStart}
