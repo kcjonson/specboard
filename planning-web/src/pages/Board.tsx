@@ -44,29 +44,19 @@ export function Board(_props: RouteProps): JSX.Element {
 		// Drag ended
 	}
 
-	async function handleDropEpic(epicId: string, newStatus: Status, _index: number): Promise<void> {
+	function handleDropEpic(epicId: string, newStatus: Status, _index: number): void {
 		const epic = epics.find((e) => e.id === epicId);
 		if (!epic) return;
 
-		const oldStatus = epic.status;
-		epic.status = newStatus; // Optimistic update triggers re-render
-
-		try {
-			await epic.save(); // SyncModel handles the PUT
-		} catch {
-			epic.status = oldStatus; // Revert on error
-		}
+		epic.status = newStatus;
+		epic.save(); // SyncModel handles the PUT, $meta tracks state
 	}
 
-	async function handleCreateEpic(): Promise<void> {
+	function handleCreateEpic(): void {
 		const title = prompt('Epic title:');
 		if (!title) return;
 
-		try {
-			await epics.add({ title, status: 'ready', rank: epics.length + 1 });
-		} catch (err) {
-			console.error('Failed to create epic:', err);
-		}
+		epics.add({ title, status: 'ready', rank: epics.length + 1 }); // $meta tracks state
 	}
 
 	// Loading state from collection's $meta
