@@ -48,12 +48,72 @@ export function Board(_props: RouteProps): JSX.Element {
 		// Drag ended
 	}
 
-	function handleDropEpic(epicId: string, newStatus: Status, _index: number): void {
+	function handleDropEpic(epicId: string, newStatus: Status, dropIndex: number): void {
 		const epic = epics.find((e) => e.id === epicId);
 		if (!epic) return;
 
+		// Get epics in the target column (excluding the dragged epic if same column)
+		const targetColumnEpics = epics
+			.filter((e) => e.status === newStatus && e.id !== epicId)
+			.sort((a, b) => a.rank - b.rank);
+
+		// Calculate new rank based on drop position
+		let newRank: number;
+		const firstEpic = targetColumnEpics[0];
+		const lastEpic = targetColumnEpics[targetColumnEpics.length - 1];
+
+		if (targetColumnEpics.length === 0 || !firstEpic || !lastEpic) {
+			newRank = 1;
+		} else if (dropIndex === 0) {
+			// Before first item
+			newRank = firstEpic.rank - 1;
+		} else if (dropIndex >= targetColumnEpics.length) {
+			// After last item
+			newRank = lastEpic.rank + 1;
+		} else {
+			// Between two items - use midpoint
+			const prevEpic = targetColumnEpics[dropIndex - 1];
+			const nextEpic = targetColumnEpics[dropIndex];
+			if (prevEpic && nextEpic) {
+				newRank = (prevEpic.rank + nextEpic.rank) / 2;
+			} else {
+				newRank = dropIndex + 1;
+			}
+		}
+
+		// Update epic
 		epic.status = newStatus;
-		epic.save(); // SyncModel handles the PUT, $meta tracks state
+		epic.rank = newRank;
+		epic.save();
+
+		// If ranks get too close (fractional precision issues), normalize the column
+		if (shouldNormalizeRanks(targetColumnEpics, newRank)) {
+			normalizeColumnRanks(newStatus);
+		}
+	}
+
+	function shouldNormalizeRanks(columnEpics: EpicModel[], newRank: number): boolean {
+		// Check if any ranks are getting too close together
+		const allRanks = [...columnEpics.map((e) => e.rank), newRank].sort((a, b) => a - b);
+		for (let i = 1; i < allRanks.length; i++) {
+			const current = allRanks[i];
+			const previous = allRanks[i - 1];
+			if (current !== undefined && previous !== undefined && Math.abs(current - previous) < 0.001) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function normalizeColumnRanks(status: Status): void {
+		const columnEpics = epics
+			.filter((e) => e.status === status)
+			.sort((a, b) => a.rank - b.rank);
+
+		columnEpics.forEach((epic, index) => {
+			epic.rank = index + 1;
+			epic.save();
+		});
 	}
 
 	function handleCreateEpic(): void {

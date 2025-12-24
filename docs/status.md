@@ -97,10 +97,10 @@ Use this template for all work items:
   - [x] Three-column layout (Ready, In Progress, Done)
   - [x] Column component
   - [x] Epic card component
-- [ ] Drag and drop
+- [x] Drag and drop
   - [x] Native drag events
   - [x] Drop zone highlighting
-  - [ ] Optimistic reordering within columns
+  - [x] Optimistic reordering within columns
 - [x] Epic detail dialog
   - [x] Task list
   - [x] Status/assignee controls

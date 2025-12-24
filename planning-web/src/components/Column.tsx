@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useState, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Status, EpicModel } from '@doc-platform/models';
 import { EpicCard } from './EpicCard';
@@ -40,14 +40,44 @@ export function Column({
 	onDragEnd,
 }: ColumnProps): JSX.Element {
 	const [isDragOver, setIsDragOver] = useState(false);
+	const [dropIndex, setDropIndex] = useState<number | null>(null);
+	const dropZoneRef = useRef<HTMLDivElement>(null);
+
+	// Calculate drop index based on mouse position
+	const calculateDropIndex = useCallback((e: DragEvent): number => {
+		if (!dropZoneRef.current) return epics.length;
+
+		const cards = dropZoneRef.current.querySelectorAll('[data-epic-card]');
+		if (cards.length === 0) return 0;
+
+		const mouseY = e.clientY;
+
+		for (let i = 0; i < cards.length; i++) {
+			const card = cards[i] as HTMLElement;
+			const rect = card.getBoundingClientRect();
+			const cardMiddle = rect.top + rect.height / 2;
+
+			if (mouseY < cardMiddle) {
+				return i;
+			}
+		}
+
+		return epics.length;
+	}, [epics.length]);
 
 	const handleDragOver = (e: DragEvent): void => {
 		e.preventDefault();
 		setIsDragOver(true);
+		setDropIndex(calculateDropIndex(e));
 	};
 
-	const handleDragLeave = (): void => {
-		setIsDragOver(false);
+	const handleDragLeave = (e: DragEvent): void => {
+		// Only clear if we're leaving the drop zone entirely
+		const relatedTarget = e.relatedTarget as Node | null;
+		if (!dropZoneRef.current?.contains(relatedTarget)) {
+			setIsDragOver(false);
+			setDropIndex(null);
+		}
 	};
 
 	const handleDrop = (e: DragEvent): void => {
@@ -55,8 +85,11 @@ export function Column({
 		setIsDragOver(false);
 
 		const epicId = e.dataTransfer?.getData('text/plain');
+		const index = dropIndex ?? epics.length;
+		setDropIndex(null);
+
 		if (epicId && onDropEpic) {
-			onDropEpic(epicId, status, epics.length);
+			onDropEpic(epicId, status, index);
 		}
 	};
 
@@ -77,6 +110,7 @@ export function Column({
 
 			<div class={styles.content}>
 				<div
+					ref={dropZoneRef}
 					class={dropZoneClass}
 					onDragOver={handleDragOver}
 					onDragLeave={handleDragLeave}
@@ -85,17 +119,24 @@ export function Column({
 					{epics.length === 0 ? (
 						<div class={styles.empty}>No epics</div>
 					) : (
-						epics.map((epic) => (
-							<EpicCard
-								key={epic.id}
-								epic={epic}
-								isSelected={epic.id === selectedEpicId}
-								onSelect={onSelectEpic}
-								onOpen={onOpenEpic}
-								onDragStart={onDragStart}
-								onDragEnd={onDragEnd}
-							/>
+						epics.map((epic, index) => (
+							<div key={epic.id} class={styles.cardWrapper}>
+								{isDragOver && dropIndex === index && (
+									<div class={styles.dropIndicator} />
+								)}
+								<EpicCard
+									epic={epic}
+									isSelected={epic.id === selectedEpicId}
+									onSelect={onSelectEpic}
+									onOpen={onOpenEpic}
+									onDragStart={onDragStart}
+									onDragEnd={onDragEnd}
+								/>
+							</div>
 						))
+					)}
+					{isDragOver && dropIndex === epics.length && epics.length > 0 && (
+						<div class={styles.dropIndicator} />
 					)}
 				</div>
 			</div>

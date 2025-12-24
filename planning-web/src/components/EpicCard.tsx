@@ -73,6 +73,7 @@ export function EpicCard({
 	return (
 		<div
 			class={cardClass}
+			data-epic-card
 			onClick={handleClick}
 			onDblClick={handleDoubleClick}
 			onKeyDown={handleKeyDown}
