@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
+import { Button } from '@doc-platform/ui';
 import { Column } from './Column';
 import { EpicDialog } from './EpicDialog';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
@@ -181,9 +182,7 @@ export function Board(_props: RouteProps): JSX.Element {
 			<header class={styles.header}>
 				<h1 class={styles.title}>Planning Board</h1>
 				<div class={styles.actions}>
-					<button class={styles.button} onClick={handleCreateEpicKeyboard}>
-						+ New Epic
-					</button>
+					<Button onClick={handleCreateEpicKeyboard}>+ New Epic</Button>
 				</div>
 			</header>
 

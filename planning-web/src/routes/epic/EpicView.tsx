@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { useModel, EpicModel, type TaskModel, type Status } from '@doc-platform/models';
+import { Button, Textarea, Select, Text } from '@doc-platform/ui';
 import { TaskCard } from './TaskCard';
 import styles from './EpicView.module.css';
 
@@ -86,9 +87,9 @@ export function EpicView({ epic, onClose, onDelete }: EpicViewProps): JSX.Elemen
 					{epic.title}
 				</h2>
 				{onClose && (
-					<button class={styles.closeButton} onClick={onClose} aria-label="Close">
+					<Button class="variant-text" onClick={onClose} aria-label="Close">
 						×
-					</button>
+					</Button>
 				)}
 			</div>
 
@@ -97,27 +98,26 @@ export function EpicView({ epic, onClose, onDelete }: EpicViewProps): JSX.Elemen
 				<div class={styles.sectionHeader}>
 					<h3 class={styles.sectionTitle}>Description</h3>
 					{!isEditingDescription && (
-						<button class={styles.textButton} onClick={handleEditDescription}>
+						<Button class="variant-text" onClick={handleEditDescription}>
 							Edit
-						</button>
+						</Button>
 					)}
 				</div>
 				{isEditingDescription ? (
 					<div class={styles.descriptionEdit}>
-						<textarea
-							class={styles.textarea}
+						<Textarea
 							value={descriptionDraft}
 							onInput={(e) => setDescriptionDraft((e.target as HTMLTextAreaElement).value)}
 							rows={3}
 							placeholder="Add a description..."
 						/>
 						<div class={styles.descriptionActions}>
-							<button class={styles.button} onClick={handleSaveDescription}>
+							<Button onClick={handleSaveDescription}>
 								Save
-							</button>
-							<button class={styles.textButton} onClick={handleCancelDescription}>
+							</Button>
+							<Button class="variant-text" onClick={handleCancelDescription}>
 								Cancel
-							</button>
+							</Button>
 						</div>
 					</div>
 				) : (
@@ -140,21 +140,19 @@ export function EpicView({ epic, onClose, onDelete }: EpicViewProps): JSX.Elemen
 					))}
 				</div>
 				<div class={styles.addTask}>
-					<input
-						type="text"
-						class={styles.addTaskInput}
+					<Text
 						value={newTaskTitle}
 						onInput={(e) => setNewTaskTitle((e.target as HTMLInputElement).value)}
 						onKeyDown={handleAddTaskKeyDown}
 						placeholder="Add a task..."
 					/>
-					<button
-						class={styles.textButton}
+					<Button
+						class="variant-text"
 						onClick={handleAddTask}
 						disabled={!newTaskTitle.trim()}
 					>
 						+ Add
-					</button>
+					</Button>
 				</div>
 			</section>
 
@@ -162,9 +160,9 @@ export function EpicView({ epic, onClose, onDelete }: EpicViewProps): JSX.Elemen
 			<section class={styles.section}>
 				<div class={styles.sectionHeader}>
 					<h3 class={styles.sectionTitle}>Linked Documents</h3>
-					<button class={styles.textButton} disabled>
+					<Button class="variant-text" disabled>
 						+ Link Doc
-					</button>
+					</Button>
 				</div>
 				<p class={styles.placeholder}>No linked documents</p>
 			</section>
@@ -173,13 +171,7 @@ export function EpicView({ epic, onClose, onDelete }: EpicViewProps): JSX.Elemen
 			<section class={styles.controls}>
 				<div class={styles.controlGroup}>
 					<label class={styles.controlLabel}>Status</label>
-					<select class={styles.select} value={epic.status} onChange={handleStatusChange}>
-						{STATUS_OPTIONS.map((opt) => (
-							<option key={opt.value} value={opt.value}>
-								{opt.label}
-							</option>
-						))}
-					</select>
+					<Select value={epic.status} options={STATUS_OPTIONS} onChange={handleStatusChange} />
 				</div>
 				<div class={styles.controlGroup}>
 					<label class={styles.controlLabel}>Assignee</label>
@@ -189,9 +181,9 @@ export function EpicView({ epic, onClose, onDelete }: EpicViewProps): JSX.Elemen
 
 			{/* Footer */}
 			<div class={styles.footer}>
-				<button class={styles.dangerButton} onClick={handleDelete}>
+				<Button class="variant-danger" onClick={handleDelete}>
 					Delete Epic
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

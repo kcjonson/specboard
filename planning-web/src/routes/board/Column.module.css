@@ -26,24 +26,6 @@
 	gap: 8px;
 }
 
-.statusDot {
-	width: 8px;
-	height: 8px;
-	border-radius: 50%;
-}
-
-.statusDot.ready {
-	background: var(--color-ready);
-}
-
-.statusDot.inProgress {
-	background: var(--color-in-progress);
-}
-
-.statusDot.done {
-	background: var(--color-done);
-}
-
 .count {
 	background: var(--color-surface-hover);
 	color: var(--color-text-muted);

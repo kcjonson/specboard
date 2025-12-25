@@ -28,20 +28,6 @@
 	color: var(--color-primary);
 }
 
-.closeButton {
-	background: none;
-	border: none;
-	font-size: 24px;
-	color: var(--color-text-muted);
-	cursor: pointer;
-	padding: 0;
-	line-height: 1;
-}
-
-.closeButton:hover {
-	color: var(--color-text);
-}
-
 /* Sections */
 .section {
 	display: flex;
@@ -81,22 +67,6 @@
 	gap: 8px;
 }
 
-.textarea {
-	width: 100%;
-	padding: 12px;
-	border: 1px solid var(--color-border);
-	border-radius: var(--card-radius);
-	font-size: 14px;
-	font-family: inherit;
-	resize: vertical;
-	min-height: 80px;
-}
-
-.textarea:focus {
-	outline: none;
-	border-color: var(--color-primary);
-}
-
 /* Task list */
 .taskList {
 	display: flex;
@@ -108,19 +78,6 @@
 	display: flex;
 	gap: 8px;
 	align-items: center;
-}
-
-.addTaskInput {
-	flex: 1;
-	padding: 8px 12px;
-	border: 1px solid var(--color-border);
-	border-radius: var(--card-radius);
-	font-size: 14px;
-}
-
-.addTaskInput:focus {
-	outline: none;
-	border-color: var(--color-primary);
 }
 
 /* Controls */
@@ -143,20 +100,6 @@
 	color: var(--color-text-muted);
 }
 
-.select {
-	padding: 6px 12px;
-	border: 1px solid var(--color-border);
-	border-radius: var(--card-radius);
-	font-size: 14px;
-	background: var(--color-surface);
-	cursor: pointer;
-}
-
-.select:focus {
-	outline: none;
-	border-color: var(--color-primary);
-}
-
 .assigneeValue {
 	font-size: 14px;
 	color: var(--color-text);
@@ -168,61 +111,6 @@
 	justify-content: flex-start;
 	padding-top: 16px;
 	border-top: 1px solid var(--color-border);
-}
-
-/* Buttons */
-.button {
-	background: var(--color-primary);
-	color: white;
-	border: none;
-	padding: 8px 16px;
-	border-radius: var(--card-radius);
-	font-size: 14px;
-	font-weight: 500;
-	cursor: pointer;
-	transition: background var(--transition-fast);
-}
-
-.button:hover {
-	background: var(--color-primary-hover);
-}
-
-.textButton {
-	background: none;
-	border: none;
-	color: var(--color-primary);
-	font-size: 14px;
-	cursor: pointer;
-	padding: 4px 8px;
-}
-
-.textButton:hover {
-	text-decoration: underline;
-}
-
-.textButton:disabled {
-	color: var(--color-text-muted);
-	cursor: not-allowed;
-}
-
-.textButton:disabled:hover {
-	text-decoration: none;
-}
-
-.dangerButton {
-	background: none;
-	border: 1px solid var(--color-error);
-	color: var(--color-error);
-	padding: 8px 16px;
-	border-radius: var(--card-radius);
-	font-size: 14px;
-	cursor: pointer;
-	transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.dangerButton:hover {
-	background: var(--color-error);
-	color: white;
 }
 
 /* Placeholder text */
