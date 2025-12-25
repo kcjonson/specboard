@@ -8,6 +8,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { Redis } from 'ioredis';
 import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
+import { renderLoginPage } from './pages/login.js';
+import { renderSignupPage } from './pages/signup.js';
 
 const app = new Hono<{ Variables: AuthVariables }>();
 
@@ -26,13 +28,22 @@ redis.on('connect', () => {
 // Health check (no auth required)
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
+// Login page (no auth required)
+app.get('/login', (c) => {
+	return c.html(renderLoginPage());
+});
+
+// Signup page (no auth required)
+app.get('/signup', (c) => {
+	return c.html(renderSignupPage());
+});
+
 // Auth middleware for all other routes
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/login.html'],
+		excludePaths: ['/health', '/login', '/signup'],
 		onUnauthenticated: () => {
-			// Redirect to login page (served by API or external)
 			return Response.redirect('/login', 302);
 		},
 	})
@@ -44,9 +55,8 @@ app.use(
 	'/*',
 	serveStatic({
 		root: './static',
-		// Fallback to index.html for SPA routing
 		onNotFound: (path) => {
-			// For non-file requests (no extension), serve index.html
+			// For non-file requests (no extension), fall through to SPA handler
 			if (!path.includes('.')) {
 				return;
 			}
