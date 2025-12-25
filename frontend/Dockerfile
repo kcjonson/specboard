@@ -7,7 +7,9 @@ RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
 WORKDIR /app
 
 # Copy workspace config first (for better layer caching)
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+# Use Docker-specific workspace that only includes packages we need
+COPY frontend/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
+COPY package.json pnpm-lock.yaml ./
 
 # Copy only package.json files to install dependencies
 # Frontend server dependencies
@@ -52,7 +54,8 @@ RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
 WORKDIR /app
 
 # Copy workspace config
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY frontend/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
+COPY package.json pnpm-lock.yaml ./
 COPY shared/core/package.json ./shared/core/
 COPY shared/auth/package.json ./shared/auth/
 COPY frontend/package.json ./frontend/
