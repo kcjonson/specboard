@@ -1,0 +1,61 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs (we rebuild in Docker)
+dist
+**/dist
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Test and config
+coverage
+.nyc_output
+*.test.ts
+*.spec.ts
+vitest.config.ts
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Desktop apps (not needed for API)
+editor-desktop
+planning-desktop
+*-desktop
+
+# Web apps (not needed for API container)
+editor-web
+planning-web
+*-web
+
+# Infrastructure (not needed in container)
+infra
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Docker files themselves
+Dockerfile
+docker-compose*.yml
+.dockerignore
