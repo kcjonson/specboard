@@ -91,6 +91,7 @@ Use this template for all work items:
 
 **Tasks:**
 - [x] Create tokens.css with design system values
+- [x] Add dark mode support (respects system preference via prefers-color-scheme)
 - [x] Button component (primary, secondary, text, danger, icon variants)
 - [x] Dialog component (modal with backdrop)
 - [x] Text component (text input field)

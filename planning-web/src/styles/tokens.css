@@ -44,3 +44,33 @@
 	--transition-fast: 150ms ease;
 	--transition-normal: 250ms ease;
 }
+
+/* Dark mode - respects system preference */
+@media (prefers-color-scheme: dark) {
+	:root {
+		/* Colors */
+		--color-background: #0f0f0f;
+		--color-surface: #1a1a1a;
+		--color-surface-hover: #2a2a2a;
+		--color-card: #1a1a1a;
+		--color-text: #f0f0f0;
+		--color-text-muted: #9ca3af;
+		--color-border: #333333;
+
+		/* Status colors (slightly brighter for dark mode) */
+		--color-ready: #60a5fa;
+		--color-in-progress: #fbbf24;
+		--color-done: #34d399;
+
+		/* Interactive colors */
+		--color-primary: #60a5fa;
+		--color-primary-hover: #3b82f6;
+		--color-success: #34d399;
+		--color-error: #f87171;
+
+		/* Shadows - adjusted for dark backgrounds */
+		--shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+		--shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.5);
+		--shadow-card-dragging: 0 8px 24px rgba(0, 0, 0, 0.6);
+	}
+}

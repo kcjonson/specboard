@@ -84,3 +84,41 @@
 	--z-modal: 100;
 	--z-tooltip: 150;
 }
+
+/* Dark mode - respects system preference */
+@media (prefers-color-scheme: dark) {
+	:root {
+		/* Colors - Background */
+		--color-background: #0f0f0f;
+		--color-surface: #1a1a1a;
+		--color-surface-hover: #2a2a2a;
+		--color-card: #1a1a1a;
+
+		/* Colors - Text */
+		--color-text: #f0f0f0;
+		--color-text-muted: #9ca3af;
+		--color-text-inverse: #1a1a1a;
+
+		/* Colors - Border */
+		--color-border: #333333;
+
+		/* Colors - Status (slightly muted for dark mode) */
+		--color-ready: #60a5fa;
+		--color-in-progress: #fbbf24;
+		--color-done: #34d399;
+
+		/* Colors - Interactive */
+		--color-primary: #60a5fa;
+		--color-primary-hover: #3b82f6;
+		--color-success: #34d399;
+		--color-error: #f87171;
+		--color-warning: #fbbf24;
+
+		/* Shadows - adjusted for dark backgrounds */
+		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+		--shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+		--shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.5);
+		--shadow-card-dragging: 0 8px 24px rgba(0, 0, 0, 0.6);
+		--shadow-dialog: 0 20px 40px rgba(0, 0, 0, 0.5);
+	}
+}
