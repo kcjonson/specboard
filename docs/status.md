@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-25 (GitHub Actions CI)
+Last Updated: 2025-12-25 (Authentication System)
 
 ## Epic/Story/Task Template
 
@@ -134,34 +134,50 @@ Use this template for all work items:
 
 ---
 
-## Planned Epics
-
 ### Authentication System
 **Spec/Documentation:** `/docs/specs/authentication.md`
 **Dependencies:** Monorepo Scaffolding
-**Status:** ready
+**Status:** in progress
 
-**Goal:** Implement Cognito auth with GitHub OAuth for storage connection.
+**Goal:** Session-based auth with Cognito identity, Redis sessions shared between containers.
 
 **Tasks:**
+- [x] Container infrastructure
+  - [x] Docker Compose for local dev
+  - [x] API Dockerfile
+  - [x] CI Docker build verification
+- [x] Database foundation
+  - [x] @doc-platform/db package
+  - [x] PostgreSQL connection pool
+  - [x] Migration runner (raw SQL)
+  - [x] Initial schema migration (users, emails, connections)
+- [ ] Session infrastructure
+  - [ ] Add Redis to Docker Compose
+  - [ ] @doc-platform/auth package
+  - [ ] Session middleware for Hono
+- [ ] Frontend container
+  - [ ] Hono server for static files
+  - [ ] Frontend Dockerfile
+  - [ ] Auth middleware integration
 - [ ] AWS Cognito setup
   - [ ] CDK stack for User Pool
   - [ ] App client configuration
   - [ ] Post-confirmation Lambda trigger
 - [ ] Auth API endpoints
   - [ ] Signup/login/logout
-  - [ ] Token refresh
+  - [ ] Session creation in Redis
   - [ ] Password reset
 - [ ] GitHub OAuth
   - [ ] Connect flow
   - [ ] Token encryption (KMS)
   - [ ] GitHub API proxy
-- [ ] Frontend auth
-  - [ ] Auth context/provider
+- [ ] Frontend auth UI
   - [ ] Login/signup forms
-  - [ ] Protected routes
+  - [ ] Protected routes redirect
 
 ---
+
+## Planned Epics
 
 ### Platform Abstraction Layer
 **Spec/Documentation:** `/docs/specs/platform-abstraction.md`

@@ -1,28 +1,23 @@
 {
-	"name": "@doc-platform/api",
+	"name": "@doc-platform/auth",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
 	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
 	"scripts": {
 		"build": "tsc",
-		"dev": "tsx watch src/index.ts",
-		"start": "node dist/index.js",
+		"dev": "tsc --watch",
 		"lint": "eslint src",
 		"lint:fix": "eslint src --fix",
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
-		"@doc-platform/auth": "workspace:*",
-		"@doc-platform/core": "workspace:*",
-		"@doc-platform/db": "workspace:*",
-		"@hono/node-server": "^1.19.7",
 		"hono": "^4.11.1",
-		"ioredis": "^5.4.2"
+		"ioredis": "^5.6.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.2",
-		"tsx": "^4.19.2",
 		"typescript": "^5.7.2"
 	}
 }

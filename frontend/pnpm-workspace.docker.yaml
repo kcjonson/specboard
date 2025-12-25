@@ -1,0 +1,9 @@
+packages:
+  - 'shared/core'
+  - 'shared/auth'
+  - 'shared/ui'
+  - 'shared/models'
+  - 'shared/router'
+  - 'shared/fetch'
+  - 'frontend'
+  - 'planning-web'

@@ -8,8 +8,8 @@ This specification defines the authentication and authorization architecture for
 
 The authentication system handles:
 1. **User accounts** - Email/password via AWS Cognito
-2. **Storage provider connections** - GitHub OAuth (others in future)
-3. **API authentication** - JWT tokens
+2. **Session management** - Redis-backed sessions shared across containers
+3. **Storage provider connections** - GitHub OAuth (others in future)
 4. **MCP authentication** - OAuth 2.1 + PKCE for Claude Code
 
 Key principles:
@@ -17,6 +17,62 @@ Key principles:
 - GitHub is a connected storage provider, not identity
 - Email is NOT the primary key
 - Backend proxies all GitHub API calls
+- **Protected SPA** - Static files require authentication (not public)
+
+---
+
+## Architecture
+
+### Container Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Load Balancer (ALB)                   │
+│                                                          │
+│    /*        → Frontend Container                        │
+│    /api/*    → API Container                             │
+│    /auth/*   → API Container                             │
+└───────────────────────┬──────────────────────────────────┘
+                        │
+         ┌──────────────┴──────────────┐
+         │                             │
+┌────────▼────────┐          ┌────────▼────────┐
+│    Frontend     │          │      API        │
+│    (Hono)       │          │    (Hono)       │
+│                 │          │                 │
+│ Serves static   │          │ /api/* routes   │
+│ files + SPA     │          │ /auth/* routes  │
+│                 │          │ /oauth/* routes │
+└────────┬────────┘          └────────┬────────┘
+         │                             │
+         │    ┌─────────────┐          │
+         └────►   Redis     ◄──────────┘
+              │ (sessions)  │
+              └─────────────┘
+                    │
+         ┌──────────┴──────────┐
+         │                     │
+┌────────▼────────┐   ┌───────▼────────┐
+│   PostgreSQL    │   │    Cognito     │
+│   (users, etc)  │   │  (identity)    │
+└─────────────────┘   └────────────────┘
+```
+
+### Session-Based Authentication
+
+Both containers share authentication state via Redis sessions:
+
+1. **Login**: User authenticates via API → Cognito validates → API creates Redis session
+2. **Session cookie**: API sets HttpOnly session ID cookie
+3. **Frontend requests**: Hono middleware checks session in Redis before serving files
+4. **API requests**: Same middleware validates session for API calls
+5. **Logout**: Session deleted from Redis, cookie cleared
+
+**Why sessions over JWT-only:**
+- Both containers validate auth with simple Redis lookup
+- Cognito tokens stay server-side (more secure)
+- Instant session revocation (delete from Redis)
+- Simpler token refresh (API handles it)
 
 ---
 
@@ -93,35 +149,18 @@ CREATE TABLE oauth_codes (
 );
 ```
 
-### Data Structures
+### Redis Session Structure
 
 ```
-User:
-  id: UUID (primary key)
-  cognitoSub: string (from Cognito)
-  displayName: string
-  avatarUrl: string (optional)
-  createdAt: timestamp
-  updatedAt: timestamp
+session:{session_id}:
+  user_id: UUID
+  cognito_access_token: string
+  cognito_refresh_token: string
+  cognito_expires_at: timestamp
+  created_at: timestamp
+  last_accessed: timestamp
 
-UserEmail:
-  id: UUID
-  userId: UUID (foreign key)
-  email: string (unique)
-  isPrimary: boolean
-  isVerified: boolean
-  verifiedAt: timestamp (optional)
-
-GitHubConnection:
-  id: UUID
-  userId: UUID (foreign key)
-  githubUserId: string
-  githubUsername: string
-  accessToken: string (encrypted)
-  refreshToken: string (optional, encrypted)
-  tokenExpiresAt: timestamp (optional)
-  scopes: string[]
-  connectedAt: timestamp
+TTL: 30 days (matches Cognito refresh token)
 ```
 
 ---
@@ -190,34 +229,71 @@ Browser                        API                         Cognito
    │ Redirect to login          │                            │
 ```
 
-### 2. User Login
+### 2. User Login (Session-Based)
 
 ```
-Browser                        API                         Cognito
+Browser                        API                    Cognito        Redis
+   │                            │                        │             │
+   │ POST /auth/login           │                        │             │
+   │ {email, password}          │                        │             │
+   │───────────────────────────►│                        │             │
+   │                            │                        │             │
+   │                            │ InitiateAuth           │             │
+   │                            │───────────────────────►│             │
+   │                            │◄───────────────────────│             │
+   │                            │ {tokens}               │             │
+   │                            │                        │             │
+   │                            │ Create session         │             │
+   │                            │────────────────────────────────────►│
+   │                            │                        │             │
+   │◄───────────────────────────│                        │             │
+   │ Set-Cookie: session_id     │                        │             │
+   │ {user}                     │                        │             │
+```
+
+### 3. Authenticated Request (Frontend or API)
+
+```
+Browser                     Frontend/API              Redis
+   │                            │                       │
+   │ GET /some-page             │                       │
+   │ Cookie: session_id=xxx     │                       │
+   │───────────────────────────►│                       │
+   │                            │                       │
+   │                            │ GET session:xxx       │
+   │                            │──────────────────────►│
+   │                            │◄──────────────────────│
+   │                            │ {user_id, tokens}     │
+   │                            │                       │
+   │                            │ (valid session)       │
+   │◄───────────────────────────│                       │
+   │ Response                   │                       │
+```
+
+### 4. Token Refresh (Transparent)
+
+When Cognito access token expires, API automatically refreshes:
+1. Middleware detects expired token in session
+2. API calls Cognito REFRESH_TOKEN_AUTH
+3. Updates session in Redis with new tokens
+4. Request proceeds normally
+
+### 5. Logout
+
+```
+Browser                        API                         Redis
    │                            │                            │
-   │ POST /auth/login           │                            │
-   │ {email, password}          │                            │
+   │ POST /auth/logout          │                            │
+   │ Cookie: session_id=xxx     │                            │
    │───────────────────────────►│                            │
    │                            │                            │
-   │                            │ InitiateAuth (USER_SRP)    │
+   │                            │ DEL session:xxx            │
    │                            │───────────────────────────►│
-   │                            │◄───────────────────────────│
    │                            │                            │
    │◄───────────────────────────│                            │
-   │ {                          │                            │
-   │   accessToken,             │                            │
-   │   idToken,                 │                            │
-   │   refreshToken (cookie)    │                            │
-   │ }                          │                            │
+   │ Clear-Cookie: session_id   │                            │
+   │ Redirect to /login         │                            │
 ```
-
-### 3. Token Refresh
-
-When access token expires:
-1. Frontend calls POST /auth/refresh
-2. Backend reads refresh token from HttpOnly cookie
-3. Backend calls Cognito REFRESH_TOKEN_AUTH
-4. Returns new access + ID tokens
 
 ---
 
@@ -232,7 +308,7 @@ Browser                        API                         GitHub
    │───────────────────────────►│                            │
    │                            │                            │
    │                            │ Generate state token       │
-   │                            │ Store in session           │
+   │                            │ Store in Redis session     │
    │                            │                            │
    │◄───────────────────────────│                            │
    │ Redirect to:               │                            │
@@ -252,7 +328,7 @@ Browser                        API                         GitHub
    │ ?code=xxx&state=xxx        │                            │
    │───────────────────────────►│                            │
    │                            │                            │
-   │                            │ Verify state               │
+   │                            │ Verify state from session  │
    │                            │                            │
    │                            │ POST /access_token         │
    │                            │ {code, client_secret}      │
@@ -327,7 +403,7 @@ Returns:
    - state
    - code_challenge
    - code_challenge_method=S256
-3. User logs in (if not already)
+3. User logs in (if not already, via session)
 4. Backend generates authorization code
 5. Redirects back with code and state
 6. Claude Code exchanges code for tokens via /oauth/token:
@@ -348,24 +424,34 @@ Returns:
 
 ---
 
-## API Authentication Middleware
+## Shared Auth Package
 
-### Token Validation
+Both containers use `@doc-platform/auth` for session validation:
 
-For each authenticated request:
-1. Extract Bearer token from Authorization header
-2. Try to verify as Cognito JWT
-3. If Cognito fails, try to verify as MCP token
-4. Load user from database
-5. Attach user to request context
+```
+shared/auth/
+├── src/
+│   ├── index.ts           # Main exports
+│   ├── session.ts         # Redis session management
+│   ├── middleware.ts      # Hono auth middleware
+│   ├── cognito.ts         # Cognito client (API only)
+│   └── types.ts           # Session types
+├── package.json
+└── tsconfig.json
+```
 
-### Scope Enforcement (MCP only)
+### Session Middleware
 
-For MCP tokens, check required scope before executing:
-- docs:read for document read operations
-- docs:write for document write operations
-- tasks:read for task read operations
-- tasks:write for task write operations
+```typescript
+// Used by both frontend and API containers
+import { authMiddleware } from '@doc-platform/auth';
+
+app.use('*', authMiddleware({
+  redis: redisClient,
+  excludePaths: ['/auth/login', '/auth/signup', '/health'],
+  onUnauthenticated: (c) => c.redirect('/login'),
+}));
+```
 
 ---
 
@@ -373,8 +459,9 @@ For MCP tokens, check required scope before executing:
 
 | Token | Lifetime | Refresh |
 |-------|----------|---------|
-| Cognito Access Token | 1 hour | Via refresh token |
-| Cognito ID Token | 1 hour | Via refresh token |
+| Session | 30 days | Sliding window on access |
+| Cognito Access Token | 1 hour | Auto-refresh by API |
+| Cognito ID Token | 1 hour | Auto-refresh by API |
 | Cognito Refresh Token | 30 days | Re-authenticate |
 | MCP Access Token | 1 hour | Via refresh token |
 | MCP Refresh Token | 30 days | Re-authorize |
@@ -386,11 +473,12 @@ For MCP tokens, check required scope before executing:
 
 ## Security Considerations
 
-### Token Storage (Frontend)
+### Session Security
 
-- Access/ID tokens: Memory only (NOT localStorage)
-- Refresh token: HttpOnly cookie (set by server)
-- On page refresh: Call /auth/refresh to get new access token
+- Session ID: Cryptographically random, 256-bit
+- Cookie flags: HttpOnly, Secure, SameSite=Lax
+- Session stored server-side (Redis), not in cookie
+- Sliding expiration: Session TTL refreshed on each access
 
 ### CSRF Protection
 
@@ -414,51 +502,92 @@ For MCP tokens, check required scope before executing:
 
 | Resource | Purpose |
 |----------|---------|
+| ECS Fargate (Frontend) | Hono server for static files |
+| ECS Fargate (API) | Hono server for API |
+| ElastiCache Redis | Session storage |
+| Aurora PostgreSQL | User data, connections |
 | Cognito User Pool | User authentication |
 | Cognito App Client | Web app authentication |
 | KMS Key | GitHub token encryption |
 | Lambda (Post-Confirmation) | Create user records on signup |
+| ALB | Load balancer with path routing |
 
-### KMS Key Configuration
+### Container Configuration
 
-- Enable key rotation
-- Grant access to API service role
-- Use for encrypt/decrypt of GitHub tokens only
+```yaml
+# docker-compose.yml (local dev)
+services:
+  frontend:
+    build: ./frontend
+    ports: ["3000:3000"]
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on: [redis]
+
+  api:
+    build: ./api
+    ports: ["3001:3001"]
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://...
+      COGNITO_USER_POOL_ID: ...
+      COGNITO_CLIENT_ID: ...
+    depends_on: [redis, db]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  db:
+    image: postgres:16-alpine
+    # ...
+```
 
 ---
 
 ## API Routes Summary
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /auth/signup | None | Create account |
-| POST | /auth/login | None | Login |
-| POST | /auth/refresh | Cookie | Refresh tokens |
-| POST | /auth/logout | JWT | Logout |
-| GET | /auth/github/connect | JWT | Start GitHub OAuth |
-| GET | /auth/github/callback | Session | GitHub OAuth callback |
-| DELETE | /auth/github | JWT | Disconnect GitHub |
-| GET | /oauth/authorize | JWT | MCP OAuth authorize |
-| POST | /oauth/token | None | MCP token exchange |
-| POST | /oauth/revoke | None | Revoke MCP token |
+| Method | Path | Auth | Container | Description |
+|--------|------|------|-----------|-------------|
+| POST | /auth/signup | None | API | Create account |
+| POST | /auth/login | None | API | Login, create session |
+| POST | /auth/logout | Session | API | Logout, destroy session |
+| GET | /auth/me | Session | API | Get current user |
+| GET | /auth/github/connect | Session | API | Start GitHub OAuth |
+| GET | /auth/github/callback | Session | API | GitHub OAuth callback |
+| DELETE | /auth/github | Session | API | Disconnect GitHub |
+| GET | /oauth/authorize | Session | API | MCP OAuth authorize |
+| POST | /oauth/token | None | API | MCP token exchange |
+| POST | /oauth/revoke | None | API | Revoke MCP token |
+| GET | /* | Session | Frontend | Serve static files |
 
 ---
 
 ## File Structure
 
 ```
-apps/api/src/
+shared/auth/
+├── src/
+│   ├── index.ts           # Main exports
+│   ├── session.ts         # Redis session CRUD
+│   ├── middleware.ts      # Hono auth middleware
+│   ├── cognito.ts         # Cognito client
+│   └── types.ts           # Session/user types
+
+api/src/
 ├── auth/
-│   ├── routes.ts           # Auth endpoints
-│   ├── cognito.ts          # Cognito client
-│   ├── github.ts           # GitHub OAuth
-│   ├── mcp-oauth.ts        # MCP OAuth endpoints
-│   ├── middleware.ts       # Auth middleware
-│   └── tokens.ts           # Token utilities
+│   ├── routes.ts          # Auth endpoints
+│   ├── github.ts          # GitHub OAuth
+│   └── mcp-oauth.ts       # MCP OAuth endpoints
 ├── middleware/
-│   ├── auth.ts             # Auth middleware
-│   ├── csrf.ts             # CSRF protection
-│   └── rate-limit.ts       # Rate limiting
+│   ├── csrf.ts            # CSRF protection
+│   └── rate-limit.ts      # Rate limiting
 └── utils/
-    └── encryption.ts       # KMS encryption
+    └── encryption.ts      # KMS encryption
+
+frontend/src/
+├── index.ts               # Hono server entry
+├── middleware/
+│   └── auth.ts            # Uses @doc-platform/auth
+└── static/                # Built SPA files
 ```

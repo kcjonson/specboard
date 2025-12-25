@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/api",
+	"name": "@doc-platform/frontend",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -14,11 +14,9 @@
 	},
 	"dependencies": {
 		"@doc-platform/auth": "workspace:*",
-		"@doc-platform/core": "workspace:*",
-		"@doc-platform/db": "workspace:*",
 		"@hono/node-server": "^1.19.7",
 		"hono": "^4.11.1",
-		"ioredis": "^5.4.2"
+		"ioredis": "^5.6.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.2",

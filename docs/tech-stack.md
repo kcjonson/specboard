@@ -38,12 +38,14 @@ Both share a common infrastructure and are developed in a single monorepo.
 
 | AWS Service | Purpose |
 |-------------|---------|
-| ECS Fargate | Container hosting for API |
+| ECS Fargate | Container hosting (frontend + API) |
 | Aurora Serverless v2 | PostgreSQL database |
+| ElastiCache Redis | Session storage |
 | Amazon Bedrock | AI features (Claude) |
-| Cognito | Authentication (with GitHub OAuth) |
+| Cognito | User identity management |
 | S3 | File and asset storage |
 | CloudFront | CDN for static assets |
+| ALB | Load balancer with path routing |
 | AWS CDK | Infrastructure as code |
 
 ### Tooling
@@ -64,6 +66,8 @@ doc-platform/
 ├── shared/                    # Shared libraries
 │   ├── core/                  # Shared types, utilities
 │   ├── ui/                    # Shared Preact components
+│   ├── db/                    # Database connection, migrations
+│   ├── auth/                  # Session management, auth middleware
 │   ├── platform/              # Platform abstraction interfaces
 │   ├── platform-electron/     # Electron implementations
 │   ├── platform-web/          # Web implementations
@@ -74,12 +78,14 @@ doc-platform/
 ├── editor-desktop/            # Documentation editor (Electron)
 ├── planning-web/              # Planning/task management (Preact)
 ├── planning-desktop/          # Planning/task management (Electron)
-├── api/                       # Backend API (Node.js)
+├── api/                       # Backend API (Hono)
+├── frontend/                  # Frontend server (Hono, serves SPA)
 ├── mcp/                       # MCP server
 ├── infra/                     # AWS CDK infrastructure
 ├── docs/                      # Project documentation
 │   ├── tech-stack.md          # This file
 │   └── specs/                 # Detailed specifications
+├── docker-compose.yml         # Local development containers
 ├── .editorconfig
 ├── eslint.config.js
 ├── turbo.json
@@ -228,13 +234,78 @@ CI enforces ESLint on all PRs.
 
 ---
 
+## Container Architecture
+
+### Overview
+
+The application runs as two separate containers that share authentication via Redis:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Load Balancer (ALB)                   │
+│                                                          │
+│    /*        → Frontend Container                        │
+│    /api/*    → API Container                             │
+│    /auth/*   → API Container                             │
+└───────────────────────┬──────────────────────────────────┘
+                        │
+         ┌──────────────┴──────────────┐
+         │                             │
+┌────────▼────────┐          ┌────────▼────────┐
+│    Frontend     │          │      API        │
+│    (Hono)       │          │    (Hono)       │
+│                 │          │                 │
+│ Serves static   │          │ /api/* routes   │
+│ files + SPA     │          │ /auth/* routes  │
+└────────┬────────┘          └────────┬────────┘
+         │                             │
+         └──────────────┬──────────────┘
+                        │
+               ┌────────▼────────┐
+               │     Redis       │
+               │   (sessions)    │
+               └─────────────────┘
+```
+
+### Frontend Container
+- Hono server serving built SPA static files
+- Auth middleware validates session via Redis before serving
+- No Cognito/database access needed
+
+### API Container
+- Hono server handling API routes and authentication
+- Creates/validates sessions in Redis
+- Communicates with Cognito for user identity
+- Connects to PostgreSQL for data
+
+### Local Development
+
+```bash
+# Start all services (db, redis, api, frontend)
+docker compose up
+
+# Or hybrid mode (faster frontend iteration)
+docker compose up db redis api
+pnpm --filter planning-web dev
+```
+
+---
+
 ## AWS Architecture
 
 ### Compute
-ECS Fargate runs the Node.js API in containers:
-- Same Docker image runs locally and in AWS
+ECS Fargate runs containers:
+- **Frontend container**: Hono server serving static SPA files
+- **API container**: Hono server handling API/auth routes
+- Same Docker images run locally and in AWS
 - Auto-scaling based on load
-- No server management
+- ALB routes traffic by path
+
+### Session Storage
+ElastiCache Redis:
+- Stores user sessions (shared between containers)
+- Session ID in HttpOnly cookie
+- 30-day TTL with sliding expiration
 
 ### Database
 Aurora Serverless v2 (PostgreSQL):
@@ -254,10 +325,11 @@ Amazon Bedrock with Claude:
 - Sidebar chat assistance
 
 ### Authentication
-Cognito with GitHub OAuth:
-- GitHub OAuth for user identity
-- JWT tokens for API authentication
-- Required for GitHub repository access
+Session-based auth with Cognito:
+- Cognito manages user identity (email/password)
+- API creates Redis session on login (stores Cognito tokens)
+- Both containers validate via Redis session lookup
+- GitHub OAuth for repository access (separate from identity)
 
 ### Infrastructure as Code
 AWS CDK (TypeScript):
