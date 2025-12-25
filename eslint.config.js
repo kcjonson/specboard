@@ -69,9 +69,17 @@ export default [
 			'no-var': 'error',
 		},
 	},
-	// Node.js files (api, mcp, infra, desktop)
+	// Node.js files (api, mcp, infra, desktop, frontend server, shared server packages)
 	{
-		files: ['api/**/*.ts', 'mcp/**/*.ts', 'infra/**/*.ts', '*-desktop/**/*.ts'],
+		files: [
+			'api/**/*.ts',
+			'mcp/**/*.ts',
+			'infra/**/*.ts',
+			'*-desktop/**/*.ts',
+			'frontend/**/*.ts',
+			'shared/db/**/*.ts',
+			'shared/auth/**/*.ts',
+		],
 		languageOptions: {
 			globals: {
 				process: 'readonly',
@@ -80,6 +88,7 @@ export default [
 				module: 'readonly',
 				require: 'readonly',
 				Buffer: 'readonly',
+				URL: 'readonly',
 			},
 		},
 		rules: {

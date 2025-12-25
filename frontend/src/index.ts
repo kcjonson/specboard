@@ -32,11 +32,65 @@ app.get('/login', (c) => {
 	return c.html(renderLoginPage());
 });
 
+// Proxy auth requests to API
+const apiUrl = process.env.API_URL || 'http://localhost:3001';
+
+app.post('/auth/login', async (c) => {
+	const body = await c.req.json();
+	const response = await fetch(`${apiUrl}/auth/login`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	});
+
+	const data = await response.json();
+
+	// Forward the response including Set-Cookie header
+	const result = c.json(data, response.status as 200 | 401 | 400);
+
+	// Copy session cookie from API response
+	const setCookieHeader = response.headers.get('Set-Cookie');
+	if (setCookieHeader) {
+		result.headers.set('Set-Cookie', setCookieHeader);
+	}
+
+	return result;
+});
+
+app.post('/auth/logout', async (c) => {
+	const cookie = c.req.header('Cookie') || '';
+	const response = await fetch(`${apiUrl}/auth/logout`, {
+		method: 'POST',
+		headers: { Cookie: cookie },
+	});
+
+	const data = await response.json();
+	const result = c.json(data, response.status as 200);
+
+	// Copy Set-Cookie header to clear the cookie
+	const setCookieHeader = response.headers.get('Set-Cookie');
+	if (setCookieHeader) {
+		result.headers.set('Set-Cookie', setCookieHeader);
+	}
+
+	return result;
+});
+
+app.get('/auth/me', async (c) => {
+	const cookie = c.req.header('Cookie') || '';
+	const response = await fetch(`${apiUrl}/auth/me`, {
+		headers: { Cookie: cookie },
+	});
+
+	const data = await response.json();
+	return c.json(data, response.status as 200 | 401);
+});
+
 // Auth middleware for all other routes
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login'],
+		excludePaths: ['/health', '/login', '/auth/login', '/auth/logout', '/auth/me'],
 		onUnauthenticated: () => {
 			return Response.redirect('/login', 302);
 		},

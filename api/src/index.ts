@@ -5,7 +5,52 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { setCookie, deleteCookie } from 'hono/cookie';
 import { serve } from '@hono/node-server';
+import { Redis } from 'ioredis';
+import {
+	generateSessionId,
+	createSession,
+	deleteSession,
+	getSession,
+	SESSION_COOKIE_NAME,
+	SESSION_TTL_SECONDS,
+} from '@doc-platform/auth';
+
+// Redis connection
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const redis = new Redis(redisUrl);
+
+redis.on('error', (err) => {
+	console.error('Redis connection error:', err);
+});
+
+redis.on('connect', () => {
+	console.log('Connected to Redis');
+});
+
+// Mock users for local development
+// In production, this will be replaced by Cognito
+const MOCK_USERS = new Map([
+	[
+		'test@example.com',
+		{
+			id: 'user-1',
+			email: 'test@example.com',
+			password: 'password123',
+			displayName: 'Test User',
+		},
+	],
+	[
+		'admin@example.com',
+		{
+			id: 'user-2',
+			email: 'admin@example.com',
+			password: 'admin123',
+			displayName: 'Admin User',
+		},
+	],
+]);
 
 // Types
 interface Task {
@@ -121,6 +166,95 @@ app.use('*', cors());
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok' }));
+
+// Auth endpoints
+
+interface LoginRequest {
+	email: string;
+	password: string;
+}
+
+app.post('/auth/login', async (c) => {
+	const body = await c.req.json<LoginRequest>();
+	const { email, password } = body;
+
+	if (!email || !password) {
+		return c.json({ error: 'Email and password are required' }, 400);
+	}
+
+	// Mock authentication - replace with Cognito in production
+	const user = MOCK_USERS.get(email.toLowerCase());
+	if (!user || user.password !== password) {
+		return c.json({ error: 'Invalid email or password' }, 401);
+	}
+
+	// Create session
+	const sessionId = generateSessionId();
+	await createSession(redis, sessionId, {
+		userId: user.id,
+		email: user.email,
+		displayName: user.displayName,
+		// Mock tokens for development
+		cognitoAccessToken: 'mock-access-token',
+		cognitoRefreshToken: 'mock-refresh-token',
+		cognitoExpiresAt: Date.now() + 3600000, // 1 hour
+	});
+
+	// Set session cookie
+	setCookie(c, SESSION_COOKIE_NAME, sessionId, {
+		httpOnly: true,
+		secure: process.env.NODE_ENV === 'production',
+		sameSite: 'Lax',
+		path: '/',
+		maxAge: SESSION_TTL_SECONDS,
+	});
+
+	return c.json({
+		user: {
+			id: user.id,
+			email: user.email,
+			displayName: user.displayName,
+		},
+	});
+});
+
+app.post('/auth/logout', async (c) => {
+	const sessionId = c.req.header('Cookie')
+		?.split(';')
+		.find((cookie) => cookie.trim().startsWith(`${SESSION_COOKIE_NAME}=`))
+		?.split('=')[1];
+
+	if (sessionId) {
+		await deleteSession(redis, sessionId);
+	}
+
+	deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
+	return c.json({ success: true });
+});
+
+app.get('/auth/me', async (c) => {
+	const sessionId = c.req.header('Cookie')
+		?.split(';')
+		.find((cookie) => cookie.trim().startsWith(`${SESSION_COOKIE_NAME}=`))
+		?.split('=')[1];
+
+	if (!sessionId) {
+		return c.json({ error: 'Not authenticated' }, 401);
+	}
+
+	const session = await getSession(redis, sessionId);
+	if (!session) {
+		return c.json({ error: 'Session expired' }, 401);
+	}
+
+	return c.json({
+		user: {
+			id: session.userId,
+			email: session.email,
+			displayName: session.displayName,
+		},
+	});
+});
 
 // Epic endpoints
 app.get('/api/epics', (c) => {

@@ -53,8 +53,11 @@ services:
     environment:
       PORT: 3000
       REDIS_URL: redis://redis:6379
+      API_URL: http://api:3001
       NODE_ENV: development
     depends_on:
+      api:
+        condition: service_started
       redis:
         condition: service_healthy
 

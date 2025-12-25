@@ -13,10 +13,12 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
+		"@doc-platform/auth": "workspace:*",
 		"@doc-platform/core": "workspace:*",
 		"@doc-platform/db": "workspace:*",
 		"@hono/node-server": "^1.19.7",
-		"hono": "^4.11.1"
+		"hono": "^4.11.1",
+		"ioredis": "^5.4.2"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.2",
