@@ -9,7 +9,7 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const MIGRATIONS_DIR = path.join(import.meta.dirname, '../../migrations');
+const MIGRATIONS_DIR = path.join(import.meta.dirname, '../migrations');
 
 async function migrate(): Promise<void> {
 	const databaseUrl = process.env.DATABASE_URL;

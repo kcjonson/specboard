@@ -1,5 +1,7 @@
 import pg from 'pg';
 
+export * from './types.js';
+
 const { Pool } = pg;
 
 // Connection pool - reused across requests
