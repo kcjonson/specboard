@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-24 (UI Component Library)
+Last Updated: 2025-12-25 (GitHub Actions CI)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,18 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ GitHub Actions CI
+**Spec/Documentation:** `.github/workflows/ci.yml`
+**Dependencies:** None
+**Status:** complete
+
+**Tasks:**
+- [x] Create CI workflow for build, test, lint
+- [x] Add missing DOM globals to ESLint config
+- [x] Fix existing lint errors in models package
+
+---
 
 ### ✅ Collection & Nested Models
 **Spec/Documentation:** `shared/models/src/`
@@ -65,18 +77,6 @@ Use this template for all work items:
 **Tasks:**
 - [x] Implement @doc-platform/fetch (FetchClient with interceptors)
 - [x] Implement @doc-platform/models (Model, SyncModel, Preact hooks)
-
----
-
-### ✅ Monorepo Scaffolding
-**Spec/Documentation:** `/docs/tech-stack.md`
-**Dependencies:** None
-**Status:** complete
-
-**Tasks:**
-- [x] Initialize pnpm workspace
-- [x] Create shared packages (core, ui, platform, models, router, fetch)
-- [x] Create apps (editor-web, editor-desktop, planning-web, planning-desktop, api, mcp, infra)
 
 ---
 
