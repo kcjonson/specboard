@@ -1,0 +1,23 @@
+{
+	"name": "@doc-platform/auth",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch",
+		"lint": "eslint src",
+		"lint:fix": "eslint src --fix",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"hono": "^4.11.1",
+		"ioredis": "^5.6.1"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"typescript": "^5.7.2"
+	}
+}

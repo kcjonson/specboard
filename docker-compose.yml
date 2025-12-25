@@ -15,6 +15,18 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: .
@@ -24,10 +36,28 @@ services:
     environment:
       PORT: 3001
       DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
+      REDIS_URL: redis://redis:6379
       NODE_ENV: development
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  redis_data:
