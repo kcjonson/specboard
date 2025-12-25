@@ -4,17 +4,28 @@ import type { EpicModel, Status } from '@doc-platform/models';
 import { EpicView } from '../epic/EpicView';
 import styles from './EpicDialog.module.css';
 
-interface EpicDialogProps {
-	epic?: EpicModel;
+/** Props for viewing/editing an existing epic */
+interface EpicDialogExistingProps {
+	epic: EpicModel;
+	isNew?: false;
 	onClose: () => void;
 	onDelete?: (epic: EpicModel) => void;
-	/** Called when creating a new epic */
-	onCreate?: (data: { title: string; description?: string; status: Status }) => void;
-	/** Whether this is a new epic being created */
-	isNew?: boolean;
+	onCreate?: never;
 }
 
-export function EpicDialog({ epic, onClose, onDelete, onCreate, isNew = false }: EpicDialogProps): JSX.Element {
+/** Props for creating a new epic */
+interface EpicDialogCreateProps {
+	epic?: never;
+	isNew: true;
+	onClose: () => void;
+	onDelete?: never;
+	onCreate: (data: { title: string; description?: string; status: Status }) => void;
+}
+
+export type EpicDialogProps = EpicDialogExistingProps | EpicDialogCreateProps;
+
+export function EpicDialog(props: EpicDialogProps): JSX.Element {
+	const { onClose } = props;
 	// Handle escape key
 	const handleKeyDown = useCallback(
 		(e: KeyboardEvent) => {
@@ -52,13 +63,19 @@ export function EpicDialog({ epic, onClose, onDelete, onCreate, isNew = false }:
 			aria-labelledby="epic-dialog-title"
 		>
 			<div class={styles.dialog}>
-				<EpicView
-					epic={epic}
-					onClose={onClose}
-					onDelete={onDelete}
-					onCreate={onCreate}
-					isNew={isNew}
-				/>
+				{props.isNew ? (
+					<EpicView
+						isNew
+						onClose={onClose}
+						onCreate={props.onCreate}
+					/>
+				) : (
+					<EpicView
+						epic={props.epic}
+						onClose={onClose}
+						onDelete={props.onDelete}
+					/>
+				)}
 			</div>
 		</div>
 	);

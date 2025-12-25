@@ -5,15 +5,25 @@ import { Button, Textarea, Select, Text } from '@doc-platform/ui';
 import { TaskCard } from './TaskCard';
 import styles from './EpicView.module.css';
 
-interface EpicViewProps {
-	epic?: EpicModel;
+/** Props for viewing/editing an existing epic */
+interface EpicViewExistingProps {
+	epic: EpicModel;
+	isNew?: false;
 	onClose?: () => void;
 	onDelete?: (epic: EpicModel) => void;
-	/** Called when creating a new epic */
-	onCreate?: (data: { title: string; description?: string; status: Status }) => void;
-	/** Whether this is a new epic being created */
-	isNew?: boolean;
+	onCreate?: never;
 }
+
+/** Props for creating a new epic */
+interface EpicViewCreateProps {
+	epic?: never;
+	isNew: true;
+	onClose?: () => void;
+	onDelete?: never;
+	onCreate: (data: { title: string; description?: string; status: Status }) => void;
+}
+
+export type EpicViewProps = EpicViewExistingProps | EpicViewCreateProps;
 
 const STATUS_OPTIONS: { value: Status; label: string }[] = [
 	{ value: 'ready', label: 'Ready' },
@@ -21,11 +31,14 @@ const STATUS_OPTIONS: { value: Status; label: string }[] = [
 	{ value: 'done', label: 'Done' },
 ];
 
-export function EpicView({ epic, onClose, onDelete, onCreate, isNew = false }: EpicViewProps): JSX.Element {
-	// Only use model subscription for existing epics
-	if (epic) {
-		useModel(epic);
-	}
+export function EpicView(props: EpicViewProps): JSX.Element {
+	const { onClose, isNew = false } = props;
+	const epic = isNew ? undefined : props.epic;
+	const onDelete = isNew ? undefined : props.onDelete;
+	const onCreate = isNew ? props.onCreate : undefined;
+
+	// Always call hook unconditionally (hook now handles undefined)
+	useModel(epic);
 
 	// State for create mode
 	const [titleDraft, setTitleDraft] = useState(epic?.title || '');

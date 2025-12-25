@@ -16,14 +16,21 @@ export interface UserMenuProps {
 }
 
 function getInitials(name: string): string {
-	const parts = name.trim().split(/\s+/);
+	const trimmed = name.trim();
+	if (!trimmed) {
+		return '?';
+	}
+	const parts = trimmed.split(/\s+/);
 	if (parts.length >= 2) {
 		const first = parts[0];
 		const last = parts[parts.length - 1];
 		return (first?.[0] || '').toUpperCase() + (last?.[0] || '').toUpperCase();
 	}
-	return (name[0] || '?').toUpperCase();
+	return trimmed[0]?.toUpperCase() || '?';
 }
+
+const MENU_ITEMS = ['settings', 'logout'] as const;
+type MenuItemId = typeof MENU_ITEMS[number];
 
 export function UserMenu({
 	displayName,
@@ -33,7 +40,9 @@ export function UserMenu({
 	class: className,
 }: UserMenuProps): JSX.Element {
 	const [isOpen, setIsOpen] = useState(false);
+	const [focusedIndex, setFocusedIndex] = useState(-1);
 	const menuRef = useRef<HTMLDivElement>(null);
+	const menuItemRefs = useRef<Map<MenuItemId, HTMLButtonElement>>(new Map());
 
 	const initials = getInitials(displayName);
 
@@ -51,7 +60,26 @@ export function UserMenu({
 		onLogoutClick?.();
 	}, [onLogoutClick]);
 
-	// Close menu when clicking outside
+	const activateItem = useCallback((index: number): void => {
+		if (index === 0) {
+			handleSettingsClick();
+		} else if (index === 1) {
+			handleLogoutClick();
+		}
+	}, [handleSettingsClick, handleLogoutClick]);
+
+	// Focus first item when menu opens
+	useEffect(() => {
+		if (isOpen) {
+			setFocusedIndex(0);
+			const firstItem = menuItemRefs.current.get('settings');
+			firstItem?.focus();
+		} else {
+			setFocusedIndex(-1);
+		}
+	}, [isOpen]);
+
+	// Close menu when clicking outside and handle keyboard navigation
 	useEffect(() => {
 		if (!isOpen) return;
 
@@ -61,20 +89,47 @@ export function UserMenu({
 			}
 		};
 
-		const handleEscape = (e: KeyboardEvent): void => {
-			if (e.key === 'Escape') {
-				setIsOpen(false);
+		const handleKeyDown = (e: KeyboardEvent): void => {
+			switch (e.key) {
+				case 'Escape':
+					setIsOpen(false);
+					break;
+				case 'ArrowDown':
+					e.preventDefault();
+					setFocusedIndex((prev) => {
+						const next = prev < MENU_ITEMS.length - 1 ? prev + 1 : 0;
+						const item = MENU_ITEMS[next];
+						if (item) menuItemRefs.current.get(item)?.focus();
+						return next;
+					});
+					break;
+				case 'ArrowUp':
+					e.preventDefault();
+					setFocusedIndex((prev) => {
+						const next = prev > 0 ? prev - 1 : MENU_ITEMS.length - 1;
+						const item = MENU_ITEMS[next];
+						if (item) menuItemRefs.current.get(item)?.focus();
+						return next;
+					});
+					break;
+				case 'Enter':
+				case ' ':
+					if (focusedIndex >= 0) {
+						e.preventDefault();
+						activateItem(focusedIndex);
+					}
+					break;
 			}
 		};
 
 		document.addEventListener('mousedown', handleClickOutside);
-		document.addEventListener('keydown', handleEscape);
+		document.addEventListener('keydown', handleKeyDown);
 
 		return () => {
 			document.removeEventListener('mousedown', handleClickOutside);
-			document.removeEventListener('keydown', handleEscape);
+			document.removeEventListener('keydown', handleKeyDown);
 		};
-	}, [isOpen]);
+	}, [isOpen, focusedIndex, activateItem]);
 
 	return (
 		<div class={`${styles.container} ${className || ''}`} ref={menuRef}>
@@ -101,6 +156,10 @@ export function UserMenu({
 						class={styles.menuItem}
 						onClick={handleSettingsClick}
 						role="menuitem"
+						tabIndex={isOpen ? 0 : -1}
+						ref={(el) => {
+							if (el) menuItemRefs.current.set('settings', el);
+						}}
 					>
 						Settings
 					</button>
@@ -109,6 +168,10 @@ export function UserMenu({
 						class={styles.menuItem}
 						onClick={handleLogoutClick}
 						role="menuitem"
+						tabIndex={isOpen ? 0 : -1}
+						ref={(el) => {
+							if (el) menuItemRefs.current.set('logout', el);
+						}}
 					>
 						Log out
 					</button>

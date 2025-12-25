@@ -19,7 +19,24 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 		}
 	}, [user]);
 
+	// Validation and change detection
+	const trimmedDisplayName = displayName.trim();
+	const isValid = trimmedDisplayName.length > 0;
+	const hasChanges = user ? trimmedDisplayName !== user.displayName : false;
+	const canSave = isValid && hasChanges && !isSaving;
+
+	const handleDisplayNameChange = (e: Event): void => {
+		const value = (e.target as HTMLInputElement).value;
+		setDisplayName(value);
+		// Clear message when user makes changes
+		if (message) {
+			setMessage(null);
+		}
+	};
+
 	const handleSave = async (): Promise<void> => {
+		if (!canSave) return;
+
 		setIsSaving(true);
 		setMessage(null);
 
@@ -83,9 +100,14 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 							<Text
 								id="displayName"
 								value={displayName}
-								onInput={(e) => setDisplayName((e.target as HTMLInputElement).value)}
+								onInput={handleDisplayNameChange}
 								placeholder="Enter your display name"
 							/>
+							{!isValid && displayName.length > 0 && (
+								<span class={styles.hint} style="color: var(--color-error)">
+									Display name cannot be empty
+								</span>
+							)}
 						</div>
 
 						<div class={styles.field}>
@@ -102,7 +124,7 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 						</div>
 
 						<div class={styles.actions}>
-							<Button onClick={handleSave} disabled={isSaving}>
+							<Button onClick={handleSave} disabled={!canSave}>
 								{isSaving ? 'Saving...' : 'Save Changes'}
 							</Button>
 						</div>

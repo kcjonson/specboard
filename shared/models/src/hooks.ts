@@ -51,10 +51,12 @@ import type { Observable } from './types';
  * }
  * ```
  */
-export function useModel<T extends Observable>(observable: T): T {
+export function useModel<T extends Observable>(observable: T | null | undefined): T | null | undefined {
 	const [, forceUpdate] = useState(0);
 
 	useEffect(() => {
+		if (!observable) return;
+
 		const handleChange = (): void => {
 			forceUpdate((n) => n + 1);
 		};
