@@ -4,7 +4,8 @@ import { Board } from './routes/board/Board';
 import { EpicDetail } from './routes/epic/EpicDetail';
 import { UIDemo } from './routes/ui-demo/UIDemo';
 
-// Global styles
+// Global styles - shared UI tokens first, then planning-specific tokens
+import '@doc-platform/ui/tokens.css';
 import './styles/tokens.css';
 import './styles/global.css';
 
