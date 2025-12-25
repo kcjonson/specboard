@@ -21,6 +21,7 @@ COPY api/package.json ./api/
 RUN pnpm install --frozen-lockfile
 
 # Copy source code
+COPY tsconfig.json ./
 COPY shared/core ./shared/core
 COPY shared/db ./shared/db
 COPY shared/auth ./shared/auth

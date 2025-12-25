@@ -27,6 +27,7 @@ COPY planning-web/package.json ./planning-web/
 RUN pnpm install --frozen-lockfile
 
 # Copy source code
+COPY tsconfig.json ./
 COPY shared/core ./shared/core
 COPY shared/auth ./shared/auth
 COPY shared/ui ./shared/ui
