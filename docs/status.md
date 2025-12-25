@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-24 (API Stub & Board Layout Complete)
+Last Updated: 2025-12-24 (UI Component Library)
 
 ## Epic/Story/Task Template
 
@@ -81,6 +81,28 @@ Use this template for all work items:
 ---
 
 ## In Progress Epics
+
+### UI Component Library
+**Spec/Documentation:** `shared/ui/src/`
+**Dependencies:** Monorepo Scaffolding
+**Status:** in progress
+
+**Goal:** Build reusable UI component library for consistent design across apps.
+
+**Tasks:**
+- [x] Create tokens.css with design system values
+- [x] Button component (primary, secondary, text, danger, icon variants)
+- [x] Dialog component (modal with backdrop)
+- [x] Text component (text input field)
+- [x] Textarea component
+- [x] Select component
+- [x] Card component (default, interactive, selected variants)
+- [x] Badge component (default, primary, success, warning, error)
+- [x] StatusDot component (ready, in_progress, done)
+- [x] Demo page at /ui route
+- [ ] Migrate existing planning-web components to use @doc-platform/ui
+
+---
 
 ### Planning UI
 **Spec/Documentation:** `/docs/specs/kanban-ui.md`

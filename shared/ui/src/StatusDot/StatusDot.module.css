@@ -1,0 +1,36 @@
+.dot {
+	display: inline-block;
+	border-radius: 50%;
+	flex-shrink: 0;
+	/* Default size (md) */
+	width: 8px;
+	height: 8px;
+}
+
+/* Size modifiers - apply via class="size-sm" */
+.dot:global(.size-sm) {
+	width: 6px;
+	height: 6px;
+}
+
+.dot:global(.size-lg) {
+	width: 10px;
+	height: 10px;
+}
+
+/* Status colors */
+.default {
+	background: var(--color-text-muted);
+}
+
+.ready {
+	background: var(--color-ready);
+}
+
+.in_progress {
+	background: var(--color-in-progress);
+}
+
+.done {
+	background: var(--color-done);
+}
