@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Upload artifacts
+      - name: Upload workspace
         uses: actions/upload-artifact@v4
         with:
           name: workspace
@@ -43,15 +43,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Download artifacts
+      - name: Download workspace
         uses: actions/download-artifact@v4
         with:
           name: workspace
@@ -67,15 +59,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Download artifacts
+      - name: Download workspace
         uses: actions/download-artifact@v4
         with:
           name: workspace
@@ -84,9 +68,9 @@ jobs:
         run: pnpm test
 
   docker:
-    name: Docker Build
+    name: Build Production Images
     runs-on: ubuntu-latest
-    needs: setup
+    needs: [lint, test]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
