@@ -4,13 +4,9 @@ import styles from './Card.module.css';
 export interface CardProps {
 	/** Card content */
 	children: ComponentChildren;
-	/** Card variant */
-	variant?: 'default' | 'interactive' | 'selected';
-	/** Padding size */
-	padding?: 'none' | 'sm' | 'md' | 'lg';
-	/** Click handler (makes card interactive) */
+	/** Click handler (adds clickable styling) */
 	onClick?: (e: MouseEvent) => void;
-	/** Additional CSS class */
+	/** Additional CSS class (use variant-*, padding-* for modifiers) */
 	class?: string;
 	/** Tab index for keyboard navigation */
 	tabIndex?: number;
@@ -20,8 +16,6 @@ export interface CardProps {
 
 export function Card({
 	children,
-	variant = 'default',
-	padding = 'md',
 	onClick,
 	class: className,
 	tabIndex,
@@ -29,8 +23,6 @@ export function Card({
 }: CardProps): JSX.Element {
 	const classes = [
 		styles.card,
-		styles[variant],
-		styles[`padding-${padding}`],
 		onClick && styles.clickable,
 		className,
 	].filter(Boolean).join(' ');

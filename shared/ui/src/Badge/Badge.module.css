@@ -4,41 +4,36 @@
 	justify-content: center;
 	font-weight: var(--font-medium);
 	border-radius: var(--radius-full);
-}
-
-/* Sizes */
-.sm {
-	padding: var(--space-1) var(--space-2);
-	font-size: var(--text-xs);
-}
-
-.md {
+	/* Default styles */
 	padding: var(--space-1) var(--space-3);
 	font-size: var(--text-sm);
-}
-
-/* Variants */
-.default {
 	background: var(--color-surface-hover);
 	color: var(--color-text-muted);
 }
 
-.primary {
+/* Size modifiers - apply via class="size-sm" */
+.badge:global(.size-sm) {
+	padding: var(--space-1) var(--space-2);
+	font-size: var(--text-xs);
+}
+
+/* Variant modifiers - apply via class="variant-primary" */
+.badge:global(.variant-primary) {
 	background: var(--color-primary);
 	color: var(--color-text-inverse);
 }
 
-.success {
+.badge:global(.variant-success) {
 	background: var(--color-success);
 	color: var(--color-text-inverse);
 }
 
-.warning {
+.badge:global(.variant-warning) {
 	background: var(--color-warning);
 	color: var(--color-text-inverse);
 }
 
-.error {
+.badge:global(.variant-error) {
 	background: var(--color-error);
 	color: var(--color-text-inverse);
 }

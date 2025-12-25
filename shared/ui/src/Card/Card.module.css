@@ -2,24 +2,10 @@
 	background: var(--color-card);
 	border-radius: var(--radius-md);
 	box-shadow: var(--shadow-card);
+	border: 1px solid transparent;
 	transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
-}
-
-/* Variants */
-.default {
-	border: 1px solid transparent;
-}
-
-.interactive {
-	border: 1px solid transparent;
-}
-
-.interactive:hover {
-	box-shadow: var(--shadow-card-hover);
-}
-
-.selected {
-	border: 2px solid var(--color-primary);
+	/* Default padding (md) */
+	padding: var(--space-3);
 }
 
 /* Clickable state */
@@ -32,19 +18,24 @@
 	outline-offset: 2px;
 }
 
-/* Padding variants */
-.padding-none {
+/* Variant modifiers - apply via class="variant-interactive" */
+.card:global(.variant-interactive):hover {
+	box-shadow: var(--shadow-card-hover);
+}
+
+.card:global(.variant-selected) {
+	border: 2px solid var(--color-primary);
+}
+
+/* Padding modifiers - apply via class="padding-none" */
+.card:global(.padding-none) {
 	padding: 0;
 }
 
-.padding-sm {
+.card:global(.padding-sm) {
 	padding: var(--space-2);
 }
 
-.padding-md {
-	padding: var(--space-3);
-}
-
-.padding-lg {
+.card:global(.padding-lg) {
 	padding: var(--space-6);
 }

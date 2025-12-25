@@ -8,8 +8,8 @@ export interface SelectOption {
 }
 
 export interface SelectProps {
-	/** Current selected value */
-	value?: string;
+	/** Current selected value (controlled) */
+	value: string;
 	/** Select options */
 	options: SelectOption[];
 	/** Called when selection changes */
@@ -18,11 +18,7 @@ export interface SelectProps {
 	placeholder?: string;
 	/** Disabled state */
 	disabled?: boolean;
-	/** Error state */
-	error?: boolean;
-	/** Select size */
-	size?: 'sm' | 'md' | 'lg';
-	/** Additional CSS class */
+	/** Additional CSS class (use size-sm, size-lg, error for modifiers) */
 	class?: string;
 	/** Select name */
 	name?: string;
@@ -36,22 +32,13 @@ export function Select({
 	onChange,
 	placeholder,
 	disabled = false,
-	error = false,
-	size = 'md',
 	class: className,
 	name,
 	id,
 }: SelectProps): JSX.Element {
-	const classes = [
-		styles.select,
-		styles[size],
-		error && styles.error,
-		className,
-	].filter(Boolean).join(' ');
-
 	return (
 		<select
-			class={classes}
+			class={`${styles.select} ${className || ''}`}
 			value={value}
 			onChange={onChange}
 			disabled={disabled}

@@ -8,6 +8,16 @@
 	border-radius: var(--radius-md);
 	cursor: pointer;
 	transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+	/* Default: primary variant, md size */
+	padding: var(--space-2) var(--space-4);
+	font-size: var(--text-sm);
+	background: var(--color-primary);
+	color: var(--color-text-inverse);
+	border: none;
+}
+
+.button:hover:not(:disabled) {
+	background: var(--color-primary-hover);
 }
 
 .button:disabled {
@@ -15,44 +25,29 @@
 	cursor: not-allowed;
 }
 
-/* Sizes */
-.sm {
+/* Size modifiers - apply via class="size-sm" */
+.button:global(.size-sm) {
 	padding: var(--space-1) var(--space-2);
 	font-size: var(--text-xs);
 }
 
-.md {
-	padding: var(--space-2) var(--space-4);
-	font-size: var(--text-sm);
-}
-
-.lg {
+.button:global(.size-lg) {
 	padding: var(--space-3) var(--space-6);
 	font-size: var(--text-base);
 }
 
-/* Variants */
-.primary {
-	background: var(--color-primary);
-	color: var(--color-text-inverse);
-	border: none;
-}
-
-.primary:hover:not(:disabled) {
-	background: var(--color-primary-hover);
-}
-
-.secondary {
+/* Variant modifiers - apply via class="variant-secondary" */
+.button:global(.variant-secondary) {
 	background: var(--color-surface);
 	color: var(--color-text);
 	border: 1px solid var(--color-border);
 }
 
-.secondary:hover:not(:disabled) {
+.button:global(.variant-secondary):hover:not(:disabled) {
 	background: var(--color-surface-hover);
 }
 
-.text {
+.button:global(.variant-text) {
 	background: none;
 	color: var(--color-primary);
 	border: none;
@@ -60,22 +55,23 @@
 	padding-right: var(--space-2);
 }
 
-.text:hover:not(:disabled) {
+.button:global(.variant-text):hover:not(:disabled) {
 	text-decoration: underline;
+	background: none;
 }
 
-.danger {
+.button:global(.variant-danger) {
 	background: none;
 	color: var(--color-error);
 	border: 1px solid var(--color-error);
 }
 
-.danger:hover:not(:disabled) {
+.button:global(.variant-danger):hover:not(:disabled) {
 	background: var(--color-error);
 	color: var(--color-text-inverse);
 }
 
-.icon {
+.button:global(.variant-icon) {
 	background: none;
 	border: none;
 	color: var(--color-text-muted);
@@ -83,18 +79,15 @@
 	line-height: 1;
 }
 
-.icon:hover:not(:disabled) {
+.button:global(.variant-icon):hover:not(:disabled) {
 	color: var(--color-text);
+	background: none;
 }
 
-.icon.sm {
+.button:global(.variant-icon):global(.size-sm) {
 	font-size: var(--text-lg);
 }
 
-.icon.md {
-	font-size: var(--text-xl);
-}
-
-.icon.lg {
+.button:global(.variant-icon):global(.size-lg) {
 	font-size: var(--text-2xl);
 }

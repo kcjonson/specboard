@@ -1,11 +1,17 @@
 /**
  * @doc-platform/ui
  * Shared Preact UI components.
+ *
+ * Styling is done via CSS class modifiers:
+ * - Size: class="size-sm" or class="size-lg"
+ * - Variants: class="variant-secondary", class="variant-danger", etc.
+ * - States: class="error"
+ * - Padding: class="padding-sm", class="padding-lg", class="padding-none"
  */
 
 // Button
 export { Button } from './Button/Button';
-export type { ButtonProps, ButtonVariant, ButtonSize } from './Button/Button';
+export type { ButtonProps } from './Button/Button';
 
 // Dialog
 export { Dialog } from './Dialog/Dialog';

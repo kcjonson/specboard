@@ -6,6 +6,9 @@
 	color: var(--color-text);
 	cursor: pointer;
 	transition: border-color var(--transition-fast);
+	/* Default size (md) */
+	padding: var(--space-2) var(--space-3);
+	font-size: var(--text-sm);
 }
 
 .select:focus {
@@ -19,27 +22,22 @@
 	background: var(--color-surface-hover);
 }
 
-/* Sizes */
-.sm {
+/* Size modifiers - apply via class="size-sm" */
+.select:global(.size-sm) {
 	padding: var(--space-1) var(--space-2);
 	font-size: var(--text-xs);
 }
 
-.md {
-	padding: var(--space-2) var(--space-3);
-	font-size: var(--text-sm);
-}
-
-.lg {
+.select:global(.size-lg) {
 	padding: var(--space-3) var(--space-4);
 	font-size: var(--text-base);
 }
 
-/* Error state */
-.error {
+/* Error state - apply via class="error" */
+.select:global(.error) {
 	border-color: var(--color-error);
 }
 
-.error:focus {
+.select:global(.error):focus {
 	border-color: var(--color-error);
 }

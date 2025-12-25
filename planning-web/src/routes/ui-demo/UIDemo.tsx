@@ -17,6 +17,11 @@ export function UIDemo(): JSX.Element {
 	const [textValue, setTextValue] = useState('');
 	const [textareaValue, setTextareaValue] = useState('');
 	const [selectValue, setSelectValue] = useState('ready');
+	const [disabledTextValue] = useState('');
+	const [readonlyTextValue] = useState('Read-only value');
+	const [errorTextValue, setErrorTextValue] = useState('');
+	const [disabledTextareaValue] = useState('');
+	const [errorTextareaValue, setErrorTextareaValue] = useState('');
 
 	const selectOptions = [
 		{ value: 'ready', label: 'Ready' },
@@ -35,25 +40,25 @@ export function UIDemo(): JSX.Element {
 				{/* Buttons */}
 				<section class={styles.section}>
 					<h2 class={styles.sectionTitle}>Button</h2>
-					<p class={styles.sectionDesc}>Buttons trigger actions or navigate.</p>
+					<p class={styles.sectionDesc}>Buttons trigger actions. Default is primary variant.</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Variants</h3>
+						<h3 class={styles.subsectionTitle}>Variants (via class)</h3>
 						<div class={styles.row}>
-							<Button variant="primary">Primary</Button>
-							<Button variant="secondary">Secondary</Button>
-							<Button variant="text">Text</Button>
-							<Button variant="danger">Danger</Button>
-							<Button variant="icon" aria-label="Close">×</Button>
+							<Button>Primary (default)</Button>
+							<Button class="variant-secondary">Secondary</Button>
+							<Button class="variant-text">Text</Button>
+							<Button class="variant-danger">Danger</Button>
+							<Button class="variant-icon" aria-label="Close">×</Button>
 						</div>
 					</div>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes</h3>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
 						<div class={styles.row}>
-							<Button size="sm">Small</Button>
-							<Button size="md">Medium</Button>
-							<Button size="lg">Large</Button>
+							<Button class="size-sm">Small</Button>
+							<Button>Medium (default)</Button>
+							<Button class="size-lg">Large</Button>
 						</div>
 					</div>
 
@@ -82,7 +87,7 @@ export function UIDemo(): JSX.Element {
 					>
 						<p>This is the dialog content. Press Escape or click outside to close.</p>
 						<div class={styles.dialogActions}>
-							<Button variant="text" onClick={() => setDialogOpen(false)}>Cancel</Button>
+							<Button class="variant-text" onClick={() => setDialogOpen(false)}>Cancel</Button>
 							<Button onClick={() => setDialogOpen(false)}>Confirm</Button>
 						</div>
 					</Dialog>
@@ -91,14 +96,14 @@ export function UIDemo(): JSX.Element {
 				{/* Text Input */}
 				<section class={styles.section}>
 					<h2 class={styles.sectionTitle}>Text</h2>
-					<p class={styles.sectionDesc}>Single-line text input field.</p>
+					<p class={styles.sectionDesc}>Single-line text input field. Controlled component (requires value).</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes</h3>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
 						<div class={styles.stack}>
-							<Text size="sm" placeholder="Small input" />
-							<Text size="md" placeholder="Medium input (default)" />
-							<Text size="lg" placeholder="Large input" />
+							<Text class="size-sm" placeholder="Small input" value="" onInput={() => {}} />
+							<Text placeholder="Medium input (default)" value="" onInput={() => {}} />
+							<Text class="size-lg" placeholder="Large input" value="" onInput={() => {}} />
 						</div>
 					</div>
 
@@ -106,9 +111,9 @@ export function UIDemo(): JSX.Element {
 						<h3 class={styles.subsectionTitle}>States</h3>
 						<div class={styles.stack}>
 							<Text placeholder="Default" value={textValue} onInput={(e) => setTextValue((e.target as HTMLInputElement).value)} />
-							<Text placeholder="Disabled" disabled />
-							<Text placeholder="Read-only" value="Read-only value" readOnly />
-							<Text placeholder="Error state" error />
+							<Text placeholder="Disabled" value={disabledTextValue} disabled />
+							<Text placeholder="Read-only" value={readonlyTextValue} readOnly />
+							<Text class="error" placeholder="Error state" value={errorTextValue} onInput={(e) => setErrorTextValue((e.target as HTMLInputElement).value)} />
 						</div>
 					</div>
 				</section>
@@ -116,7 +121,7 @@ export function UIDemo(): JSX.Element {
 				{/* Textarea */}
 				<section class={styles.section}>
 					<h2 class={styles.sectionTitle}>Textarea</h2>
-					<p class={styles.sectionDesc}>Multi-line text input field.</p>
+					<p class={styles.sectionDesc}>Multi-line text input field. Controlled component (requires value).</p>
 
 					<div class={styles.subsection}>
 						<div class={styles.stack}>
@@ -125,8 +130,8 @@ export function UIDemo(): JSX.Element {
 								value={textareaValue}
 								onInput={(e) => setTextareaValue((e.target as HTMLTextAreaElement).value)}
 							/>
-							<Textarea placeholder="Disabled" disabled />
-							<Textarea placeholder="Error state" error />
+							<Textarea placeholder="Disabled" value={disabledTextareaValue} disabled />
+							<Textarea class="error" placeholder="Error state" value={errorTextareaValue} onInput={(e) => setErrorTextareaValue((e.target as HTMLTextAreaElement).value)} />
 						</div>
 					</div>
 				</section>
@@ -134,14 +139,14 @@ export function UIDemo(): JSX.Element {
 				{/* Select */}
 				<section class={styles.section}>
 					<h2 class={styles.sectionTitle}>Select</h2>
-					<p class={styles.sectionDesc}>Dropdown selection field.</p>
+					<p class={styles.sectionDesc}>Dropdown selection field. Controlled component (requires value).</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes</h3>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
 						<div class={styles.row}>
-							<Select size="sm" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
-							<Select size="md" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
-							<Select size="lg" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
+							<Select class="size-sm" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
+							<Select options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
+							<Select class="size-lg" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
 						</div>
 					</div>
 
@@ -149,8 +154,8 @@ export function UIDemo(): JSX.Element {
 						<h3 class={styles.subsectionTitle}>States</h3>
 						<div class={styles.row}>
 							<Select options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
-							<Select options={selectOptions} disabled />
-							<Select options={selectOptions} error />
+							<Select options={selectOptions} value="" disabled />
+							<Select class="error" options={selectOptions} value="" />
 						</div>
 					</div>
 				</section>
@@ -161,17 +166,17 @@ export function UIDemo(): JSX.Element {
 					<p class={styles.sectionDesc}>Container for grouped content.</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Variants</h3>
+						<h3 class={styles.subsectionTitle}>Variants (via class)</h3>
 						<div class={styles.cardGrid}>
 							<Card>
 								<strong>Default Card</strong>
 								<p>Basic card with shadow</p>
 							</Card>
-							<Card variant="interactive" onClick={() => alert('Clicked!')}>
+							<Card class="variant-interactive" onClick={() => alert('Clicked!')}>
 								<strong>Interactive Card</strong>
 								<p>Hover to see effect</p>
 							</Card>
-							<Card variant="selected">
+							<Card class="variant-selected">
 								<strong>Selected Card</strong>
 								<p>With primary border</p>
 							</Card>
@@ -179,14 +184,14 @@ export function UIDemo(): JSX.Element {
 					</div>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Padding</h3>
+						<h3 class={styles.subsectionTitle}>Padding (via class)</h3>
 						<div class={styles.cardGrid}>
-							<Card padding="none">
-								<div style={{ padding: '8px', background: '#f0f0f0' }}>padding: none</div>
+							<Card class="padding-none">
+								<div style={{ padding: '8px', background: '#f0f0f0' }}>padding-none</div>
 							</Card>
-							<Card padding="sm">padding: sm</Card>
-							<Card padding="md">padding: md</Card>
-							<Card padding="lg">padding: lg</Card>
+							<Card class="padding-sm">padding-sm</Card>
+							<Card>padding (default)</Card>
+							<Card class="padding-lg">padding-lg</Card>
 						</div>
 					</div>
 				</section>
@@ -197,21 +202,21 @@ export function UIDemo(): JSX.Element {
 					<p class={styles.sectionDesc}>Labels for status or counts.</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Variants</h3>
+						<h3 class={styles.subsectionTitle}>Variants (via class)</h3>
 						<div class={styles.row}>
 							<Badge>Default</Badge>
-							<Badge variant="primary">Primary</Badge>
-							<Badge variant="success">Success</Badge>
-							<Badge variant="warning">Warning</Badge>
-							<Badge variant="error">Error</Badge>
+							<Badge class="variant-primary">Primary</Badge>
+							<Badge class="variant-success">Success</Badge>
+							<Badge class="variant-warning">Warning</Badge>
+							<Badge class="variant-error">Error</Badge>
 						</div>
 					</div>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes</h3>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
 						<div class={styles.row}>
-							<Badge size="sm">Small</Badge>
-							<Badge size="md">Medium</Badge>
+							<Badge class="size-sm">Small</Badge>
+							<Badge>Medium (default)</Badge>
 						</div>
 					</div>
 				</section>
@@ -219,10 +224,10 @@ export function UIDemo(): JSX.Element {
 				{/* StatusDot */}
 				<section class={styles.section}>
 					<h2 class={styles.sectionTitle}>StatusDot</h2>
-					<p class={styles.sectionDesc}>Visual status indicators.</p>
+					<p class={styles.sectionDesc}>Visual status indicators. Status prop determines color.</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Status Types</h3>
+						<h3 class={styles.subsectionTitle}>Status Types (via prop)</h3>
 						<div class={styles.row}>
 							<span class={styles.statusItem}><StatusDot status="default" /> Default</span>
 							<span class={styles.statusItem}><StatusDot status="ready" /> Ready</span>
@@ -232,11 +237,11 @@ export function UIDemo(): JSX.Element {
 					</div>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes</h3>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
 						<div class={styles.row}>
-							<span class={styles.statusItem}><StatusDot status="ready" size="sm" /> Small</span>
-							<span class={styles.statusItem}><StatusDot status="ready" size="md" /> Medium</span>
-							<span class={styles.statusItem}><StatusDot status="ready" size="lg" /> Large</span>
+							<span class={styles.statusItem}><StatusDot status="ready" class="size-sm" /> Small</span>
+							<span class={styles.statusItem}><StatusDot status="ready" /> Medium (default)</span>
+							<span class={styles.statusItem}><StatusDot status="ready" class="size-lg" /> Large</span>
 						</div>
 					</div>
 				</section>

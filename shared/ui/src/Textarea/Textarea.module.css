@@ -31,11 +31,11 @@
 	background: var(--color-surface-hover);
 }
 
-/* Error state */
-.error {
+/* Error state - apply via class="error" */
+.textarea:global(.error) {
 	border-color: var(--color-error);
 }
 
-.error:focus {
+.textarea:global(.error):focus {
 	border-color: var(--color-error);
 }

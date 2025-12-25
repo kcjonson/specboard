@@ -2,10 +2,8 @@ import type { JSX } from 'preact';
 import styles from './Text.module.css';
 
 export interface TextProps {
-	/** Input value */
-	value?: string;
-	/** Default value for uncontrolled input */
-	defaultValue?: string;
+	/** Input value (controlled) */
+	value: string;
 	/** Input type */
 	type?: 'text' | 'email' | 'password' | 'number' | 'search' | 'tel' | 'url';
 	/** Placeholder text */
@@ -22,11 +20,7 @@ export interface TextProps {
 	disabled?: boolean;
 	/** Read-only state */
 	readOnly?: boolean;
-	/** Error state */
-	error?: boolean;
-	/** Input size */
-	size?: 'sm' | 'md' | 'lg';
-	/** Additional CSS class */
+	/** Additional CSS class (use size-sm, size-lg, error for modifiers) */
 	class?: string;
 	/** Input name */
 	name?: string;
@@ -40,7 +34,6 @@ export interface TextProps {
 
 export function Text({
 	value,
-	defaultValue,
 	type = 'text',
 	placeholder,
 	onInput,
@@ -49,27 +42,17 @@ export function Text({
 	onFocus,
 	disabled = false,
 	readOnly = false,
-	error = false,
-	size = 'md',
 	class: className,
 	name,
 	id,
 	autoFocus,
 	autoComplete,
 }: TextProps): JSX.Element {
-	const classes = [
-		styles.text,
-		styles[size],
-		error && styles.error,
-		className,
-	].filter(Boolean).join(' ');
-
 	return (
 		<input
 			type={type}
-			class={classes}
+			class={`${styles.text} ${className || ''}`}
 			value={value}
-			defaultValue={defaultValue}
 			placeholder={placeholder}
 			onInput={onInput}
 			onKeyDown={onKeyDown}
