@@ -185,8 +185,9 @@ const app = new Hono();
 // Middleware
 app.use('*', cors());
 
-// Health check
+// Health check (both paths for direct and ALB-routed access)
 app.get('/health', (c) => c.json({ status: 'ok' }));
+app.get('/api/health', (c) => c.json({ status: 'ok' }));
 
 // Auth endpoints
 

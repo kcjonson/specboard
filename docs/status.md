@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-25 (Authentication System)
+Last Updated: 2025-12-26 (Staging Deployment)
 
 ## Epic/Story/Task Template
 
@@ -81,6 +81,28 @@ Use this template for all work items:
 ---
 
 ## In Progress Epics
+
+### Staging Deployment
+**Spec/Documentation:** `infra/lib/`, `docs/tech-stack.md`
+**Dependencies:** Container Infrastructure (done)
+**Status:** in progress
+
+**Goal:** Deploy to AWS staging environment with CD from main branch.
+
+**Tasks:**
+- [ ] CDK Infrastructure
+  - [ ] VPC and networking
+  - [ ] ECR repositories for container images
+  - [ ] ECS Cluster with Fargate services
+  - [ ] RDS Postgres (single-AZ)
+  - [ ] ElastiCache Redis
+  - [ ] ALB with path-based routing
+- [ ] GitHub Actions CD
+  - [ ] Build and push Docker images to ECR
+  - [ ] Deploy to ECS on push to main
+- [ ] Mock auth middleware (bypass for staging)
+
+---
 
 ### UI Component Library
 **Spec/Documentation:** `shared/ui/src/`

@@ -1,15 +1,333 @@
 import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as elasticache from 'aws-cdk-lib/aws-elasticache';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as rds from 'aws-cdk-lib/aws-rds';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 export class DocPlatformStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
 		super(scope, id, props);
 
-		// Infrastructure will be added here:
-		// - ECS Fargate for API
-		// - Aurora Serverless v2 for database
-		// - Cognito for authentication
-		// - S3 for file storage
-		// - CloudFront for CDN
+		// ===========================================
+		// VPC
+		// ===========================================
+		const vpc = new ec2.Vpc(this, 'Vpc', {
+			maxAzs: 2,
+			natGateways: 1, // Cost optimization: 1 NAT gateway for staging
+			subnetConfiguration: [
+				{
+					cidrMask: 24,
+					name: 'Public',
+					subnetType: ec2.SubnetType.PUBLIC,
+				},
+				{
+					cidrMask: 24,
+					name: 'Private',
+					subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+				},
+				{
+					cidrMask: 24,
+					name: 'Isolated',
+					subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+				},
+			],
+		});
+
+		// ===========================================
+		// ECR Repositories
+		// ===========================================
+		const apiRepository = new ecr.Repository(this, 'ApiRepository', {
+			repositoryName: 'doc-platform/api',
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+			emptyOnDelete: true,
+		});
+
+		const frontendRepository = new ecr.Repository(this, 'FrontendRepository', {
+			repositoryName: 'doc-platform/frontend',
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+			emptyOnDelete: true,
+		});
+
+		// ===========================================
+		// RDS PostgreSQL (Single-AZ for staging)
+		// ===========================================
+		const dbSecurityGroup = new ec2.SecurityGroup(this, 'DbSecurityGroup', {
+			vpc,
+			description: 'Security group for RDS PostgreSQL',
+			allowAllOutbound: false,
+		});
+
+		const dbCredentials = new secretsmanager.Secret(this, 'DbCredentials', {
+			secretName: 'doc-platform/db-credentials',
+			generateSecretString: {
+				secretStringTemplate: JSON.stringify({ username: 'postgres' }),
+				generateStringKey: 'password',
+				excludePunctuation: true,
+				passwordLength: 32,
+			},
+		});
+
+		const database = new rds.DatabaseInstance(this, 'Database', {
+			engine: rds.DatabaseInstanceEngine.postgres({
+				version: rds.PostgresEngineVersion.VER_16,
+			}),
+			instanceType: ec2.InstanceType.of(
+				ec2.InstanceClass.T4G,
+				ec2.InstanceSize.MICRO
+			),
+			vpc,
+			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+			securityGroups: [dbSecurityGroup],
+			credentials: rds.Credentials.fromSecret(dbCredentials),
+			databaseName: 'doc_platform',
+			allocatedStorage: 20,
+			maxAllocatedStorage: 100,
+			multiAz: false, // Single-AZ for staging (cost optimization)
+			deletionProtection: false,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+			backupRetention: cdk.Duration.days(1),
+		});
+
+		// ===========================================
+		// ElastiCache Redis
+		// ===========================================
+		const redisSecurityGroup = new ec2.SecurityGroup(this, 'RedisSecurityGroup', {
+			vpc,
+			description: 'Security group for ElastiCache Redis',
+			allowAllOutbound: false,
+		});
+
+		const redisSubnetGroup = new elasticache.CfnSubnetGroup(this, 'RedisSubnetGroup', {
+			description: 'Subnet group for Redis',
+			subnetIds: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_ISOLATED }).subnetIds,
+			cacheSubnetGroupName: 'doc-platform-redis-subnet-group',
+		});
+
+		const redis = new elasticache.CfnCacheCluster(this, 'Redis', {
+			cacheNodeType: 'cache.t4g.micro',
+			engine: 'redis',
+			numCacheNodes: 1,
+			vpcSecurityGroupIds: [redisSecurityGroup.securityGroupId],
+			cacheSubnetGroupName: redisSubnetGroup.cacheSubnetGroupName,
+		});
+		redis.addDependency(redisSubnetGroup);
+
+		// ===========================================
+		// ECS Cluster
+		// ===========================================
+		const cluster = new ecs.Cluster(this, 'Cluster', {
+			vpc,
+			clusterName: 'doc-platform',
+			containerInsights: true,
+		});
+
+		// ===========================================
+		// Application Load Balancer
+		// ===========================================
+		const alb = new elbv2.ApplicationLoadBalancer(this, 'Alb', {
+			vpc,
+			internetFacing: true,
+			loadBalancerName: 'doc-platform-alb',
+		});
+
+		const listener = alb.addListener('HttpListener', {
+			port: 80,
+			open: true,
+		});
+
+		// ===========================================
+		// Security Groups for ECS Services
+		// ===========================================
+		const apiSecurityGroup = new ec2.SecurityGroup(this, 'ApiSecurityGroup', {
+			vpc,
+			description: 'Security group for API service',
+			allowAllOutbound: true,
+		});
+
+		const frontendSecurityGroup = new ec2.SecurityGroup(this, 'FrontendSecurityGroup', {
+			vpc,
+			description: 'Security group for Frontend service',
+			allowAllOutbound: true,
+		});
+
+		// Allow ALB to reach services
+		apiSecurityGroup.addIngressRule(
+			ec2.Peer.securityGroupId(alb.connections.securityGroups[0]!.securityGroupId),
+			ec2.Port.tcp(3001),
+			'Allow ALB to API'
+		);
+		frontendSecurityGroup.addIngressRule(
+			ec2.Peer.securityGroupId(alb.connections.securityGroups[0]!.securityGroupId),
+			ec2.Port.tcp(3000),
+			'Allow ALB to Frontend'
+		);
+
+		// Allow services to reach database
+		dbSecurityGroup.addIngressRule(
+			apiSecurityGroup,
+			ec2.Port.tcp(5432),
+			'Allow API to PostgreSQL'
+		);
+
+		// Allow services to reach Redis
+		redisSecurityGroup.addIngressRule(
+			apiSecurityGroup,
+			ec2.Port.tcp(6379),
+			'Allow API to Redis'
+		);
+		redisSecurityGroup.addIngressRule(
+			frontendSecurityGroup,
+			ec2.Port.tcp(6379),
+			'Allow Frontend to Redis'
+		);
+
+		// ===========================================
+		// API Service (Fargate)
+		// ===========================================
+		const apiTaskDefinition = new ecs.FargateTaskDefinition(this, 'ApiTaskDef', {
+			memoryLimitMiB: 512,
+			cpu: 256,
+		});
+
+		apiTaskDefinition.addContainer('api', {
+			image: ecs.ContainerImage.fromEcrRepository(apiRepository, 'latest'),
+			logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
+			environment: {
+				PORT: '3001',
+				NODE_ENV: 'staging',
+				REDIS_URL: `redis://${redis.attrRedisEndpointAddress}:${redis.attrRedisEndpointPort}`,
+				// Database connection built from components
+				DB_HOST: database.instanceEndpoint.hostname,
+				DB_PORT: database.instanceEndpoint.port.toString(),
+				DB_NAME: 'doc_platform',
+				DB_USER: 'postgres',
+			},
+			secrets: {
+				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
+			},
+			portMappings: [{ containerPort: 3001 }],
+		});
+
+		const apiService = new ecs.FargateService(this, 'ApiService', {
+			cluster,
+			taskDefinition: apiTaskDefinition,
+			desiredCount: 1,
+			securityGroups: [apiSecurityGroup],
+			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+			serviceName: 'api',
+		});
+
+		// ===========================================
+		// Frontend Service (Fargate)
+		// ===========================================
+		const frontendTaskDefinition = new ecs.FargateTaskDefinition(this, 'FrontendTaskDef', {
+			memoryLimitMiB: 512,
+			cpu: 256,
+		});
+
+		frontendTaskDefinition.addContainer('frontend', {
+			image: ecs.ContainerImage.fromEcrRepository(frontendRepository, 'latest'),
+			logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'frontend' }),
+			environment: {
+				PORT: '3000',
+				NODE_ENV: 'staging',
+				// Frontend calls API through the ALB (same origin)
+				API_URL: `http://${alb.loadBalancerDnsName}`,
+				REDIS_URL: `redis://${redis.attrRedisEndpointAddress}:${redis.attrRedisEndpointPort}`,
+			},
+			portMappings: [{ containerPort: 3000 }],
+		});
+
+		const frontendService = new ecs.FargateService(this, 'FrontendService', {
+			cluster,
+			taskDefinition: frontendTaskDefinition,
+			desiredCount: 1,
+			securityGroups: [frontendSecurityGroup],
+			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+			serviceName: 'frontend',
+		});
+
+		// ===========================================
+		// ALB Target Groups & Routing
+		// ===========================================
+		const apiTargetGroup = new elbv2.ApplicationTargetGroup(this, 'ApiTargetGroup', {
+			vpc,
+			port: 3001,
+			protocol: elbv2.ApplicationProtocol.HTTP,
+			targetType: elbv2.TargetType.IP,
+			healthCheck: {
+				path: '/api/health',
+				interval: cdk.Duration.seconds(30),
+				healthyThresholdCount: 2,
+				unhealthyThresholdCount: 3,
+			},
+		});
+		apiService.attachToApplicationTargetGroup(apiTargetGroup);
+
+		const frontendTargetGroup = new elbv2.ApplicationTargetGroup(this, 'FrontendTargetGroup', {
+			vpc,
+			port: 3000,
+			protocol: elbv2.ApplicationProtocol.HTTP,
+			targetType: elbv2.TargetType.IP,
+			healthCheck: {
+				path: '/health',
+				interval: cdk.Duration.seconds(30),
+				healthyThresholdCount: 2,
+				unhealthyThresholdCount: 3,
+			},
+		});
+		frontendService.attachToApplicationTargetGroup(frontendTargetGroup);
+
+		// Path-based routing: /api/* and /auth/* -> API, everything else -> Frontend
+		listener.addTargetGroups('ApiRoutes', {
+			targetGroups: [apiTargetGroup],
+			priority: 10,
+			conditions: [
+				elbv2.ListenerCondition.pathPatterns(['/api/*', '/auth/*']),
+			],
+		});
+
+		listener.addTargetGroups('DefaultRoute', {
+			targetGroups: [frontendTargetGroup],
+			priority: 100,
+			conditions: [elbv2.ListenerCondition.pathPatterns(['/*'])],
+		});
+
+		// ===========================================
+		// Outputs
+		// ===========================================
+		new cdk.CfnOutput(this, 'AlbDnsName', {
+			value: alb.loadBalancerDnsName,
+			description: 'Application Load Balancer DNS Name',
+		});
+
+		new cdk.CfnOutput(this, 'ApiRepositoryUri', {
+			value: apiRepository.repositoryUri,
+			description: 'ECR Repository URI for API',
+		});
+
+		new cdk.CfnOutput(this, 'FrontendRepositoryUri', {
+			value: frontendRepository.repositoryUri,
+			description: 'ECR Repository URI for Frontend',
+		});
+
+		new cdk.CfnOutput(this, 'ClusterName', {
+			value: cluster.clusterName,
+			description: 'ECS Cluster Name',
+		});
+
+		new cdk.CfnOutput(this, 'DatabaseEndpoint', {
+			value: database.instanceEndpoint.hostname,
+			description: 'RDS PostgreSQL Endpoint',
+		});
+
+		new cdk.CfnOutput(this, 'RedisEndpoint', {
+			value: redis.attrRedisEndpointAddress,
+			description: 'ElastiCache Redis Endpoint',
+		});
 	}
 }
