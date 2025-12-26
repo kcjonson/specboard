@@ -38,6 +38,7 @@ export default [
 				FocusEvent: 'readonly',
 				Event: 'readonly',
 				HTMLDivElement: 'readonly',
+				HTMLButtonElement: 'readonly',
 				HTMLInputElement: 'readonly',
 				HTMLTextAreaElement: 'readonly',
 				HTMLSelectElement: 'readonly',

@@ -1,11 +1,13 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
+import { navigate } from '@doc-platform/router';
 import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
-import { Button } from '@doc-platform/ui';
+import { Button, UserMenu } from '@doc-platform/ui';
 import { Column } from './Column';
 import { EpicDialog } from './EpicDialog';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
+import { useAuth } from '../../hooks/useAuth';
 import styles from './Board.module.css';
 
 const COLUMNS: { status: Status; title: string }[] = [
@@ -15,12 +17,16 @@ const COLUMNS: { status: Status; title: string }[] = [
 ];
 
 export function Board(_props: RouteProps): JSX.Element {
+	// Auth state
+	const { user, loading: authLoading, logout } = useAuth();
+
 	// Collection auto-fetches on construction, useModel subscribes to changes
 	const epics = useMemo(() => new EpicsCollection(), []);
 	useModel(epics);
 
 	const [selectedEpicId, setSelectedEpicId] = useState<string | undefined>();
 	const [dialogEpic, setDialogEpic] = useState<EpicModel | null>(null);
+	const [isNewEpicDialogOpen, setIsNewEpicDialogOpen] = useState(false);
 
 	// Memoize epics by status for keyboard navigation
 	const epicsByStatus = useMemo(
@@ -54,20 +60,30 @@ export function Board(_props: RouteProps): JSX.Element {
 		[epics]
 	);
 
-	const handleCreateEpicKeyboard = useCallback((): void => {
-		const title = prompt('Epic title:');
-		if (!title) return;
-		epics.add({ title, status: 'ready', rank: epics.length + 1 });
-	}, [epics]);
+	const handleOpenNewEpicDialog = useCallback((): void => {
+		setIsNewEpicDialogOpen(true);
+	}, []);
+
+	const handleCreateEpic = useCallback(
+		(data: { title: string; description?: string; status: Status }): void => {
+			epics.add({ ...data, rank: epics.length + 1 });
+			setIsNewEpicDialogOpen(false);
+		},
+		[epics]
+	);
+
+	const handleCloseNewEpicDialog = useCallback((): void => {
+		setIsNewEpicDialogOpen(false);
+	}, []);
 
 	// Keyboard navigation hook
 	useKeyboardNavigation({
 		epicsByStatus,
 		selectedEpicId,
-		dialogOpen: dialogEpic !== null,
+		dialogOpen: dialogEpic !== null || isNewEpicDialogOpen,
 		onSelectEpic: handleSelectEpic,
 		onOpenEpic: handleOpenEpic,
-		onCreateEpic: handleCreateEpicKeyboard,
+		onCreateEpic: handleOpenNewEpicDialog,
 		onMoveEpic: handleMoveEpic,
 	});
 
@@ -78,6 +94,15 @@ export function Board(_props: RouteProps): JSX.Element {
 	function handleDeleteEpic(epic: EpicModel): void {
 		epics.remove(epic);
 		setDialogEpic(null);
+	}
+
+	function handleSettingsClick(): void {
+		navigate('/settings');
+	}
+
+	async function handleLogoutClick(): Promise<void> {
+		await logout();
+		navigate('/');
 	}
 
 	function handleDragStart(e: DragEvent, epic: EpicModel): void {
@@ -159,8 +184,8 @@ export function Board(_props: RouteProps): JSX.Element {
 		});
 	}
 
-	// Loading state from collection's $meta
-	if (epics.$meta.working && epics.length === 0) {
+	// Loading state
+	if (authLoading || (epics.$meta.working && epics.length === 0)) {
 		return (
 			<div class={styles.container}>
 				<div class={styles.loading}>Loading...</div>
@@ -182,7 +207,15 @@ export function Board(_props: RouteProps): JSX.Element {
 			<header class={styles.header}>
 				<h1 class={styles.title}>Planning Board</h1>
 				<div class={styles.actions}>
-					<Button onClick={handleCreateEpicKeyboard}>+ New Epic</Button>
+					<Button onClick={handleOpenNewEpicDialog}>+ New Epic</Button>
+					{user && (
+						<UserMenu
+							displayName={user.displayName}
+							email={user.email}
+							onSettingsClick={handleSettingsClick}
+							onLogoutClick={handleLogoutClick}
+						/>
+					)}
 				</div>
 			</header>
 
@@ -208,6 +241,14 @@ export function Board(_props: RouteProps): JSX.Element {
 					epic={dialogEpic}
 					onClose={handleCloseDialog}
 					onDelete={handleDeleteEpic}
+				/>
+			)}
+
+			{isNewEpicDialogOpen && (
+				<EpicDialog
+					isNew
+					onClose={handleCloseNewEpicDialog}
+					onCreate={handleCreateEpic}
 				/>
 			)}
 		</div>

@@ -40,3 +40,7 @@ export type { BadgeProps } from './Badge/Badge';
 // StatusDot
 export { StatusDot } from './StatusDot/StatusDot';
 export type { StatusDotProps, StatusType } from './StatusDot/StatusDot';
+
+// UserMenu
+export { UserMenu } from './UserMenu/UserMenu';
+export type { UserMenuProps } from './UserMenu/UserMenu';
