@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-27 (Backend-Frontend Integration)
+Last Updated: 2025-12-27 (Pages Layout Setup)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,29 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ Pages Layout Setup
+**Spec/Documentation:** `docs/specs/kanban-ui.md` (header layout)
+**Dependencies:** Pages Scaffolding, UI Component Library
+**Status:** complete
+
+**Tasks:**
+- [x] Create shared AppHeader component
+  - [x] Project name display
+  - [x] Navigation tabs (Planning | Pages)
+  - [x] User menu integration
+- [x] Create Pages three-panel layout
+  - [x] FileBrowser placeholder (left sidebar)
+  - [x] Editor content area (center)
+  - [x] CommentsPanel placeholder (right sidebar)
+- [x] Add project-scoped routes
+  - [x] /projects/:projectId/planning
+  - [x] /projects/:projectId/pages
+  - [x] Root redirect to default project
+- [x] Update Planning Board to use shared AppHeader
+- [x] Move "+ New Epic" button to board-specific toolbar
+
+---
 
 ### ✅ Pages Scaffolding
 **Spec/Documentation:** `docs/tech-stack.md`
@@ -89,17 +112,6 @@ Use this template for all work items:
 
 ---
 
-### ✅ Custom State Management
-**Spec/Documentation:** `/docs/tech-stack.md`, `.claude/plans/custom-state-management.md`
-**Dependencies:** Monorepo Scaffolding
-**Status:** complete
-
-**Tasks:**
-- [x] Implement @doc-platform/fetch (FetchClient with interceptors)
-- [x] Implement @doc-platform/models (Model, SyncModel, Preact hooks)
-
----
-
 ## In Progress Epics
 
 ### Staging Deployment
@@ -146,6 +158,7 @@ Use this template for all work items:
 - [x] Badge component (default, primary, success, warning, error)
 - [x] StatusDot component (ready, in_progress, done)
 - [x] UserMenu component (avatar with initials + dropdown menu)
+- [x] AppHeader component (project name, nav tabs, user menu)
 - [x] Demo page at /ui route
 - [x] Migrate components to shared/planning using @doc-platform/ui
 
