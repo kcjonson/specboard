@@ -6,7 +6,7 @@ export default defineConfig({
 	plugins: [preact()],
 	build: {
 		outDir: 'dist',
-		manifest: true,
+		manifest: '.vite/manifest.json',
 		rollupOptions: {
 			input: {
 				main: resolve(__dirname, 'index.html'),
