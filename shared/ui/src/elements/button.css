@@ -1,0 +1,97 @@
+/**
+ * Button element styles
+ */
+
+button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	font-family: inherit;
+	font-weight: var(--font-medium);
+	border-radius: var(--radius-md);
+	cursor: pointer;
+	transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+	/* Default: primary variant, md size */
+	padding: var(--space-2) var(--space-4);
+	font-size: var(--text-sm);
+	background: var(--color-primary);
+	color: var(--color-text-inverse);
+	border: none;
+}
+
+button:hover:not(:disabled) {
+	background: var(--color-primary-hover);
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Button sizes */
+button.size-sm {
+	padding: var(--space-1) var(--space-2);
+	font-size: var(--text-xs);
+}
+
+button.size-lg {
+	padding: var(--space-3) var(--space-6);
+	font-size: var(--text-base);
+}
+
+/* Button variants */
+button.secondary {
+	background: var(--color-surface);
+	color: var(--color-text);
+	border: 1px solid var(--color-border);
+}
+
+button.secondary:hover:not(:disabled) {
+	background: var(--color-surface-hover);
+}
+
+button.text {
+	background: none;
+	color: var(--color-primary);
+	border: none;
+	padding-left: var(--space-2);
+	padding-right: var(--space-2);
+}
+
+button.text:hover:not(:disabled) {
+	text-decoration: underline;
+	background: none;
+}
+
+button.danger {
+	background: none;
+	color: var(--color-error);
+	border: 1px solid var(--color-error);
+}
+
+button.danger:hover:not(:disabled) {
+	background: var(--color-error);
+	color: var(--color-text-inverse);
+}
+
+button.icon {
+	background: none;
+	border: none;
+	color: var(--color-text-muted);
+	padding: var(--space-1);
+	line-height: 1;
+}
+
+button.icon:hover:not(:disabled) {
+	color: var(--color-text);
+	background: none;
+}
+
+button.icon.size-sm {
+	font-size: var(--text-lg);
+}
+
+button.icon.size-lg {
+	font-size: var(--text-2xl);
+}
