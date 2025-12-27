@@ -29,8 +29,8 @@ function getDatabaseUrl(): string {
 		const encodedPassword = encodeURIComponent(password);
 		const encodedHost = encodeURIComponent(host);
 		const encodedName = encodeURIComponent(name);
-		// RDS requires SSL connections
-		return `postgresql://${encodedUser}:${encodedPassword}@${encodedHost}:${port}/${encodedName}?sslmode=require`;
+		// RDS requires SSL connections (no-verify for RDS CA certificate)
+		return `postgresql://${encodedUser}:${encodedPassword}@${encodedHost}:${port}/${encodedName}?sslmode=no-verify`;
 	}
 
 	console.error('DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD required');
