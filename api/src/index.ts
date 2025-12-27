@@ -17,6 +17,7 @@ import {
 	SESSION_COOKIE_NAME,
 	SESSION_TTL_SECONDS,
 } from '@doc-platform/auth';
+import { query, type Epic as DbEpic, type Task as DbTask, type EpicStatus } from '@doc-platform/db';
 
 // Redis connection
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -73,109 +74,56 @@ function isValidEmail(email: string): boolean {
 	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-// Types
-interface Task {
+// API types (camelCase for JSON responses)
+interface ApiTask {
 	id: string;
 	epicId: string;
 	title: string;
-	status: 'ready' | 'in_progress' | 'done';
+	status: EpicStatus;
 	assignee?: string;
 	dueDate?: string;
 	rank: number;
 }
 
-interface Epic {
+interface ApiEpic {
 	id: string;
 	title: string;
 	description?: string;
-	status: 'ready' | 'in_progress' | 'done';
+	status: EpicStatus;
 	assignee?: string;
 	rank: number;
 	createdAt: string;
 	updatedAt: string;
 }
 
-// In-memory storage
-const epics: Map<string, Epic> = new Map();
-const tasks: Map<string, Task> = new Map();
-
-// Seed sample data
-function seedData(): void {
-	const sampleEpics: Epic[] = [
-		{
-			id: '1',
-			title: 'User Authentication',
-			description: 'Implement login, signup, and password reset flows.',
-			status: 'in_progress',
-			assignee: 'alice',
-			rank: 1,
-			createdAt: '2025-12-20T10:00:00Z',
-			updatedAt: '2025-12-23T14:30:00Z',
-		},
-		{
-			id: '2',
-			title: 'Dashboard Analytics',
-			description: 'Build analytics dashboard with charts and metrics.',
-			status: 'ready',
-			rank: 2,
-			createdAt: '2025-12-21T09:00:00Z',
-			updatedAt: '2025-12-21T09:00:00Z',
-		},
-		{
-			id: '3',
-			title: 'API Documentation',
-			description: 'Write comprehensive API docs with examples.',
-			status: 'done',
-			assignee: 'bob',
-			rank: 1,
-			createdAt: '2025-12-18T11:00:00Z',
-			updatedAt: '2025-12-22T16:00:00Z',
-		},
-		{
-			id: '4',
-			title: 'Performance Optimization',
-			description: 'Improve load times and reduce bundle size.',
-			status: 'ready',
-			rank: 3,
-			createdAt: '2025-12-22T08:00:00Z',
-			updatedAt: '2025-12-22T08:00:00Z',
-		},
-	];
-
-	const sampleTasks: Task[] = [
-		{ id: '101', epicId: '1', title: 'Design login UI', status: 'done', rank: 1 },
-		{ id: '102', epicId: '1', title: 'Implement login API', status: 'done', rank: 2 },
-		{ id: '103', epicId: '1', title: 'Implement login form', status: 'in_progress', assignee: 'alice', rank: 3 },
-		{ id: '104', epicId: '1', title: 'Add form validation', status: 'ready', rank: 4 },
-		{ id: '105', epicId: '1', title: 'Implement password reset', status: 'ready', rank: 5 },
-		{ id: '201', epicId: '2', title: 'Design dashboard layout', status: 'ready', rank: 1 },
-		{ id: '202', epicId: '2', title: 'Implement chart components', status: 'ready', rank: 2 },
-		{ id: '301', epicId: '3', title: 'Write endpoint docs', status: 'done', rank: 1 },
-		{ id: '302', epicId: '3', title: 'Add code examples', status: 'done', rank: 2 },
-	];
-
-	sampleEpics.forEach((epic) => epics.set(epic.id, epic));
-	sampleTasks.forEach((task) => tasks.set(task.id, task));
+interface TaskStats {
+	total: number;
+	done: number;
 }
 
-seedData();
-
-// Utility
-function generateId(): string {
-	return Date.now().toString(36) + Math.random().toString(36).slice(2);
-}
-
-function getTasksForEpic(epicId: string): Task[] {
-	return Array.from(tasks.values())
-		.filter((t) => t.epicId === epicId)
-		.sort((a, b) => a.rank - b.rank);
-}
-
-function getTaskStats(epicId: string): { total: number; done: number } {
-	const epicTasks = getTasksForEpic(epicId);
+// Transform database rows to API format
+function dbEpicToApi(epic: DbEpic): ApiEpic {
 	return {
-		total: epicTasks.length,
-		done: epicTasks.filter((t) => t.status === 'done').length,
+		id: epic.id,
+		title: epic.title,
+		description: epic.description ?? undefined,
+		status: epic.status,
+		assignee: epic.assignee ?? undefined,
+		rank: epic.rank,
+		createdAt: epic.created_at.toISOString(),
+		updatedAt: epic.updated_at.toISOString(),
+	};
+}
+
+function dbTaskToApi(task: DbTask): ApiTask {
+	return {
+		id: task.id,
+		epicId: task.epic_id,
+		title: task.title,
+		status: task.status,
+		assignee: task.assignee ?? undefined,
+		dueDate: task.due_date?.toISOString().split('T')[0],
+		rank: task.rank,
 	};
 }
 
@@ -297,147 +245,266 @@ app.get('/api/auth/me', async (c) => {
 });
 
 // Epic endpoints
-app.get('/api/epics', (c) => {
-	const epicList = Array.from(epics.values())
-		.sort((a, b) => a.rank - b.rank)
-		.map((epic) => ({
-			...epic,
-			taskStats: getTaskStats(epic.id),
-		}));
+app.get('/api/epics', async (c) => {
+	const result = await query<DbEpic>(`
+		SELECT * FROM epics ORDER BY rank ASC
+	`);
+
+	// Get task stats for each epic
+	const statsResult = await query<{ epic_id: string; total: string; done: string }>(`
+		SELECT
+			epic_id,
+			COUNT(*)::text as total,
+			COUNT(*) FILTER (WHERE status = 'done')::text as done
+		FROM tasks
+		GROUP BY epic_id
+	`);
+
+	const statsMap = new Map(
+		statsResult.rows.map((row) => [
+			row.epic_id,
+			{ total: parseInt(row.total, 10), done: parseInt(row.done, 10) },
+		])
+	);
+
+	const epicList = result.rows.map((epic) => ({
+		...dbEpicToApi(epic),
+		taskStats: statsMap.get(epic.id) || { total: 0, done: 0 },
+	}));
+
 	return c.json(epicList);
 });
 
-app.get('/api/epics/:id', (c) => {
-	const epic = epics.get(c.req.param('id'));
-	if (!epic) {
+app.get('/api/epics/:id', async (c) => {
+	const id = c.req.param('id');
+
+	const epicResult = await query<DbEpic>(`SELECT * FROM epics WHERE id = $1`, [id]);
+	if (epicResult.rows.length === 0) {
 		return c.json({ error: 'Epic not found' }, 404);
 	}
+
+	const epic = epicResult.rows[0]!;
+
+	const tasksResult = await query<DbTask>(
+		`SELECT * FROM tasks WHERE epic_id = $1 ORDER BY rank ASC`,
+		[id]
+	);
+
+	const tasks = tasksResult.rows.map(dbTaskToApi);
+	const taskStats: TaskStats = {
+		total: tasks.length,
+		done: tasks.filter((t) => t.status === 'done').length,
+	};
+
 	return c.json({
-		...epic,
-		tasks: getTasksForEpic(epic.id),
-		taskStats: getTaskStats(epic.id),
+		...dbEpicToApi(epic),
+		tasks,
+		taskStats,
 	});
 });
 
 app.post('/api/epics', async (c) => {
-	const body = await c.req.json<Partial<Epic>>();
-	const now = new Date().toISOString();
+	const body = await c.req.json<Partial<ApiEpic>>();
+	const status = body.status || 'ready';
 
 	// Calculate next rank for the status column
-	const sameStatusEpics = Array.from(epics.values()).filter(
-		(e) => e.status === (body.status || 'ready')
+	const rankResult = await query<{ max_rank: number | null }>(
+		`SELECT MAX(rank) as max_rank FROM epics WHERE status = $1`,
+		[status]
 	);
-	const maxRank = Math.max(0, ...sameStatusEpics.map((e) => e.rank));
+	const maxRank = rankResult.rows[0]?.max_rank ?? 0;
 
-	const epic: Epic = {
-		id: generateId(),
-		title: body.title || 'Untitled Epic',
-		description: body.description,
-		status: body.status || 'ready',
-		assignee: body.assignee,
-		rank: maxRank + 1,
-		createdAt: now,
-		updatedAt: now,
-	};
+	const result = await query<DbEpic>(
+		`INSERT INTO epics (title, description, status, assignee, rank)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING *`,
+		[body.title || 'Untitled Epic', body.description || null, status, body.assignee || null, maxRank + 1]
+	);
 
-	epics.set(epic.id, epic);
-	return c.json(epic, 201);
+	const epic = result.rows[0]!;
+	return c.json(dbEpicToApi(epic), 201);
 });
 
 app.put('/api/epics/:id', async (c) => {
 	const id = c.req.param('id');
-	const existing = epics.get(id);
-	if (!existing) {
+	const body = await c.req.json<Partial<ApiEpic>>();
+
+	// Build dynamic update query
+	const updates: string[] = [];
+	const values: unknown[] = [];
+	let paramIndex = 1;
+
+	if (body.title !== undefined) {
+		updates.push(`title = $${paramIndex++}`);
+		values.push(body.title);
+	}
+	if (body.description !== undefined) {
+		updates.push(`description = $${paramIndex++}`);
+		values.push(body.description || null);
+	}
+	if (body.status !== undefined) {
+		updates.push(`status = $${paramIndex++}`);
+		values.push(body.status);
+	}
+	if (body.assignee !== undefined) {
+		updates.push(`assignee = $${paramIndex++}`);
+		values.push(body.assignee || null);
+	}
+	if (body.rank !== undefined) {
+		updates.push(`rank = $${paramIndex++}`);
+		values.push(body.rank);
+	}
+
+	if (updates.length === 0) {
+		// No updates, just return the existing epic
+		const result = await query<DbEpic>(`SELECT * FROM epics WHERE id = $1`, [id]);
+		if (result.rows.length === 0) {
+			return c.json({ error: 'Epic not found' }, 404);
+		}
+		return c.json(dbEpicToApi(result.rows[0]!));
+	}
+
+	values.push(id);
+	const result = await query<DbEpic>(
+		`UPDATE epics SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+		values
+	);
+
+	if (result.rows.length === 0) {
 		return c.json({ error: 'Epic not found' }, 404);
 	}
 
-	const body = await c.req.json<Partial<Epic>>();
-	const updated: Epic = {
-		...existing,
-		...body,
-		id, // Prevent ID change
-		updatedAt: new Date().toISOString(),
-	};
-
-	epics.set(id, updated);
-	return c.json(updated);
+	return c.json(dbEpicToApi(result.rows[0]!));
 });
 
-app.delete('/api/epics/:id', (c) => {
+app.delete('/api/epics/:id', async (c) => {
 	const id = c.req.param('id');
-	if (!epics.has(id)) {
+
+	// Tasks are deleted automatically via ON DELETE CASCADE
+	const result = await query(`DELETE FROM epics WHERE id = $1 RETURNING id`, [id]);
+
+	if (result.rowCount === 0) {
 		return c.json({ error: 'Epic not found' }, 404);
 	}
 
-	// Delete associated tasks
-	Array.from(tasks.values())
-		.filter((t) => t.epicId === id)
-		.forEach((t) => tasks.delete(t.id));
-
-	epics.delete(id);
 	return c.json({ success: true });
 });
 
 // Task endpoints
-app.get('/api/epics/:epicId/tasks', (c) => {
+app.get('/api/epics/:epicId/tasks', async (c) => {
 	const epicId = c.req.param('epicId');
-	if (!epics.has(epicId)) {
+
+	// Check if epic exists
+	const epicResult = await query(`SELECT id FROM epics WHERE id = $1`, [epicId]);
+	if (epicResult.rows.length === 0) {
 		return c.json({ error: 'Epic not found' }, 404);
 	}
-	return c.json(getTasksForEpic(epicId));
+
+	const result = await query<DbTask>(
+		`SELECT * FROM tasks WHERE epic_id = $1 ORDER BY rank ASC`,
+		[epicId]
+	);
+
+	return c.json(result.rows.map(dbTaskToApi));
 });
 
 app.post('/api/epics/:epicId/tasks', async (c) => {
 	const epicId = c.req.param('epicId');
-	if (!epics.has(epicId)) {
+
+	// Check if epic exists
+	const epicResult = await query(`SELECT id FROM epics WHERE id = $1`, [epicId]);
+	if (epicResult.rows.length === 0) {
 		return c.json({ error: 'Epic not found' }, 404);
 	}
 
-	const body = await c.req.json<Partial<Task>>();
+	const body = await c.req.json<Partial<ApiTask>>();
 
 	// Calculate next rank
-	const epicTasks = getTasksForEpic(epicId);
-	const maxRank = Math.max(0, ...epicTasks.map((t) => t.rank));
+	const rankResult = await query<{ max_rank: number | null }>(
+		`SELECT MAX(rank) as max_rank FROM tasks WHERE epic_id = $1`,
+		[epicId]
+	);
+	const maxRank = rankResult.rows[0]?.max_rank ?? 0;
 
-	const task: Task = {
-		id: generateId(),
-		epicId,
-		title: body.title || 'Untitled Task',
-		status: body.status || 'ready',
-		assignee: body.assignee,
-		dueDate: body.dueDate,
-		rank: maxRank + 1,
-	};
+	const result = await query<DbTask>(
+		`INSERT INTO tasks (epic_id, title, status, assignee, due_date, rank)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 RETURNING *`,
+		[
+			epicId,
+			body.title || 'Untitled Task',
+			body.status || 'ready',
+			body.assignee || null,
+			body.dueDate || null,
+			maxRank + 1,
+		]
+	);
 
-	tasks.set(task.id, task);
-	return c.json(task, 201);
+	const task = result.rows[0]!;
+	return c.json(dbTaskToApi(task), 201);
 });
 
 app.put('/api/tasks/:id', async (c) => {
 	const id = c.req.param('id');
-	const existing = tasks.get(id);
-	if (!existing) {
+	const body = await c.req.json<Partial<ApiTask>>();
+
+	// Build dynamic update query
+	const updates: string[] = [];
+	const values: unknown[] = [];
+	let paramIndex = 1;
+
+	if (body.title !== undefined) {
+		updates.push(`title = $${paramIndex++}`);
+		values.push(body.title);
+	}
+	if (body.status !== undefined) {
+		updates.push(`status = $${paramIndex++}`);
+		values.push(body.status);
+	}
+	if (body.assignee !== undefined) {
+		updates.push(`assignee = $${paramIndex++}`);
+		values.push(body.assignee || null);
+	}
+	if (body.dueDate !== undefined) {
+		updates.push(`due_date = $${paramIndex++}`);
+		values.push(body.dueDate || null);
+	}
+	if (body.rank !== undefined) {
+		updates.push(`rank = $${paramIndex++}`);
+		values.push(body.rank);
+	}
+
+	if (updates.length === 0) {
+		// No updates, just return the existing task
+		const result = await query<DbTask>(`SELECT * FROM tasks WHERE id = $1`, [id]);
+		if (result.rows.length === 0) {
+			return c.json({ error: 'Task not found' }, 404);
+		}
+		return c.json(dbTaskToApi(result.rows[0]!));
+	}
+
+	values.push(id);
+	const result = await query<DbTask>(
+		`UPDATE tasks SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+		values
+	);
+
+	if (result.rows.length === 0) {
 		return c.json({ error: 'Task not found' }, 404);
 	}
 
-	const body = await c.req.json<Partial<Task>>();
-	const updated: Task = {
-		...existing,
-		...body,
-		id, // Prevent ID change
-		epicId: existing.epicId, // Prevent epic change
-	};
-
-	tasks.set(id, updated);
-	return c.json(updated);
+	return c.json(dbTaskToApi(result.rows[0]!));
 });
 
-app.delete('/api/tasks/:id', (c) => {
+app.delete('/api/tasks/:id', async (c) => {
 	const id = c.req.param('id');
-	if (!tasks.has(id)) {
+
+	const result = await query(`DELETE FROM tasks WHERE id = $1 RETURNING id`, [id]);
+
+	if (result.rowCount === 0) {
 		return c.json({ error: 'Task not found' }, 404);
 	}
-	tasks.delete(id);
+
 	return c.json({ success: true });
 });
 
