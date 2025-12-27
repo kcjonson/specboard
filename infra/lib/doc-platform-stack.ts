@@ -324,9 +324,7 @@ export class DocPlatformStack extends cdk.Stack {
 				{
 					StringEquals: {
 						'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
-					},
-					StringLike: {
-						'token.actions.githubusercontent.com:sub': 'repo:kcjonson/doc-platform:*',
+						'token.actions.githubusercontent.com:sub': 'repo:kcjonson/doc-platform:ref:refs/heads/main',
 					},
 				},
 				'sts:AssumeRoleWithWebIdentity'
