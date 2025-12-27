@@ -51,7 +51,7 @@ interface LoginRequest {
 	password: string;
 }
 
-export async function handleLogin(context: Context, redis: Redis) {
+export async function handleLogin(context: Context, redis: Redis): Promise<Response> {
 	const body = await context.req.json<LoginRequest>();
 	const { email, password } = body;
 
@@ -104,7 +104,7 @@ export async function handleLogin(context: Context, redis: Redis) {
 	});
 }
 
-export async function handleLogout(context: Context, redis: Redis) {
+export async function handleLogout(context: Context, redis: Redis): Promise<Response> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 
 	if (sessionId) {
@@ -119,7 +119,7 @@ export async function handleLogout(context: Context, redis: Redis) {
 	return context.json({ success: true });
 }
 
-export async function handleGetMe(context: Context, redis: Redis) {
+export async function handleGetMe(context: Context, redis: Redis): Promise<Response> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 
 	if (!sessionId) {

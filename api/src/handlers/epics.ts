@@ -15,7 +15,7 @@ import {
 	MAX_TITLE_LENGTH,
 } from '../validation.js';
 
-export async function handleListEpics(context: Context) {
+export async function handleListEpics(context: Context): Promise<Response> {
 	try {
 		const result = await query<DbEpic>(`
 			SELECT * FROM epics ORDER BY rank ASC
@@ -49,7 +49,7 @@ export async function handleListEpics(context: Context) {
 	}
 }
 
-export async function handleGetEpic(context: Context) {
+export async function handleGetEpic(context: Context): Promise<Response> {
 	const id = context.req.param('id');
 
 	if (!isValidUUID(id)) {
@@ -89,7 +89,7 @@ export async function handleGetEpic(context: Context) {
 	}
 }
 
-export async function handleCreateEpic(context: Context) {
+export async function handleCreateEpic(context: Context): Promise<Response> {
 	const body = await context.req.json<Partial<ApiEpic>>();
 	const status = body.status || 'ready';
 	const title = body.title || 'Untitled Epic';
@@ -143,7 +143,7 @@ export async function handleCreateEpic(context: Context) {
 	}
 }
 
-export async function handleUpdateEpic(context: Context) {
+export async function handleUpdateEpic(context: Context): Promise<Response> {
 	const id = context.req.param('id');
 
 	if (!isValidUUID(id)) {
@@ -241,7 +241,7 @@ export async function handleUpdateEpic(context: Context) {
 	}
 }
 
-export async function handleDeleteEpic(context: Context) {
+export async function handleDeleteEpic(context: Context): Promise<Response> {
 	const id = context.req.param('id');
 
 	if (!isValidUUID(id)) {

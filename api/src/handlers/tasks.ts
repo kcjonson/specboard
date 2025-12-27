@@ -16,7 +16,7 @@ import {
 	MAX_TITLE_LENGTH,
 } from '../validation.js';
 
-export async function handleListTasks(context: Context) {
+export async function handleListTasks(context: Context): Promise<Response> {
 	const epicId = context.req.param('epicId');
 
 	if (!isValidUUID(epicId)) {
@@ -41,7 +41,7 @@ export async function handleListTasks(context: Context) {
 	}
 }
 
-export async function handleCreateTask(context: Context) {
+export async function handleCreateTask(context: Context): Promise<Response> {
 	const epicId = context.req.param('epicId');
 
 	if (!isValidUUID(epicId)) {
@@ -105,7 +105,7 @@ export async function handleCreateTask(context: Context) {
 	}
 }
 
-export async function handleUpdateTask(context: Context) {
+export async function handleUpdateTask(context: Context): Promise<Response> {
 	const id = context.req.param('id');
 
 	if (!isValidUUID(id)) {
@@ -197,7 +197,7 @@ export async function handleUpdateTask(context: Context) {
 	}
 }
 
-export async function handleDeleteTask(context: Context) {
+export async function handleDeleteTask(context: Context): Promise<Response> {
 	const id = context.req.param('id');
 
 	if (!isValidUUID(id)) {
