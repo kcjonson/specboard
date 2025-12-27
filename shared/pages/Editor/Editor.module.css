@@ -28,13 +28,13 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	padding: var(--spacing-lg);
+	padding: var(--space-4);
 	overflow: auto;
 }
 
 .placeholder {
 	color: var(--color-text-muted);
-	font-size: var(--font-size-lg);
+	font-size: var(--text-lg);
 }
 
 .commentsPanel {
