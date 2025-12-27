@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-27 (Auth spec update - PostgreSQL + bcrypt)
+Last Updated: 2025-12-27 (Real user auth implementation)
 
 ## Epic/Story/Task Template
 
@@ -158,11 +158,11 @@ Use this template for all work items:
   - [x] Login/logout handlers
   - [x] Session creation in Redis
   - [x] /api/auth/me endpoint
-- [ ] Real user auth (PostgreSQL + bcrypt)
-  - [ ] Add bcrypt to @doc-platform/auth
-  - [ ] Database migration for user_passwords table
-  - [ ] Signup endpoint with email verification
-  - [ ] Login against database users
+- [x] Real user auth (PostgreSQL + bcrypt)
+  - [x] Add bcrypt to @doc-platform/auth
+  - [x] Database migration for user_passwords table
+  - [x] Signup endpoint (email verification TODO)
+  - [x] Login against database users
   - [ ] Password reset flow
 - [ ] Email sending (SES)
   - [ ] Verification emails

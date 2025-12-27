@@ -1,13 +1,8 @@
 /**
- * Session data stored in Redis
+ * Session data stored in Redis (auth-only, minimal)
  */
 export interface Session {
 	userId: string;
-	email: string;
-	displayName: string;
-	cognitoAccessToken: string;
-	cognitoRefreshToken: string;
-	cognitoExpiresAt: number; // Unix timestamp
 	createdAt: number;
 	lastAccessedAt: number;
 }
@@ -17,8 +12,6 @@ export interface Session {
  */
 export interface AuthUser {
 	id: string;
-	email: string;
-	displayName: string;
 }
 
 /**

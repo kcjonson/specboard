@@ -8,7 +8,7 @@ import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import { Redis } from 'ioredis';
 
-import { handleLogin, handleLogout, handleGetMe } from './handlers/auth.js';
+import { handleLogin, handleLogout, handleGetMe, handleSignup } from './handlers/auth.js';
 import {
 	handleListEpics,
 	handleGetEpic,
@@ -47,6 +47,7 @@ app.get('/api/health', (context) => context.json({ status: 'ok' }));
 
 // Auth routes
 app.post('/api/auth/login', (context) => handleLogin(context, redis));
+app.post('/api/auth/signup', (context) => handleSignup(context, redis));
 app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
 

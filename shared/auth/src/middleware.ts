@@ -89,11 +89,9 @@ export function authMiddleware(
 			return onUnauthenticated(requestUrl);
 		}
 
-		// Attach user to context
+		// Attach user to context (id only, fetch details from DB if needed)
 		c.set('user', {
 			id: session.userId,
-			email: session.email,
-			displayName: session.displayName,
 		});
 		c.set('sessionId', sessionId);
 

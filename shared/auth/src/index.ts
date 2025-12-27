@@ -16,6 +16,15 @@ export {
 	type AuthVariables,
 } from './middleware.js';
 
+// Password utilities
+export {
+	validatePassword,
+	hashPassword,
+	verifyPassword,
+	type PasswordValidationError,
+	type PasswordValidationResult,
+} from './password.js';
+
 // Types
 export {
 	type Session,

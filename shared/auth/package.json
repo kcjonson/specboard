@@ -13,10 +13,12 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
+		"bcrypt": "^6.0.0",
 		"hono": "^4.11.1",
 		"ioredis": "^5.6.1"
 	},
 	"devDependencies": {
+		"@types/bcrypt": "^6.0.0",
 		"@types/node": "^22.10.2",
 		"typescript": "^5.7.2"
 	}

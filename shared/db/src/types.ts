@@ -5,20 +5,39 @@
 
 export interface User {
 	id: string;
-	cognito_sub: string;
-	display_name: string;
+	username: string;
+	first_name: string;
+	last_name: string;
+	email: string;
+	email_verified: boolean;
+	email_verified_at: Date | null;
+	phone_number: string | null;
 	avatar_url: string | null;
 	created_at: Date;
 	updated_at: Date;
 }
 
-export interface UserEmail {
+export interface UserPassword {
+	user_id: string;
+	password_hash: string;
+	created_at: Date;
+	updated_at: Date;
+}
+
+export interface EmailVerificationToken {
 	id: string;
 	user_id: string;
 	email: string;
-	is_primary: boolean;
-	is_verified: boolean;
-	verified_at: Date | null;
+	token_hash: string;
+	expires_at: Date;
+	created_at: Date;
+}
+
+export interface PasswordResetToken {
+	id: string;
+	user_id: string;
+	token_hash: string;
+	expires_at: Date;
 	created_at: Date;
 }
 
