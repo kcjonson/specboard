@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { EpicModel, Status } from '@doc-platform/models';
-import { EpicView } from '../epic/EpicView';
+import { EpicView } from '../EpicView/EpicView';
 import styles from './EpicDialog.module.css';
 
 /** Props for viewing/editing an existing epic */

@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { useModel, EpicModel, type TaskModel, type Status } from '@doc-platform/models';
 import { Button, Textarea, Select, Text } from '@doc-platform/ui';
-import { TaskCard } from './TaskCard';
+import { TaskCard } from '../TaskCard/TaskCard';
 import styles from './EpicView.module.css';
 
 /** Props for viewing/editing an existing epic */
@@ -144,7 +144,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				<div class={styles.headerActions}>
 					{!isNew && epic && onClose && (
 						<a
-							href={`/epics/${epic.id}`}
+							href={`/planning/epics/${epic.id}`}
 							target="_blank"
 							rel="noopener noreferrer"
 							class={styles.openInNewTab}

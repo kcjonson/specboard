@@ -3,7 +3,7 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { useModel, EpicModel } from '@doc-platform/models';
-import { EpicView } from './EpicView';
+import { EpicView } from '../EpicView/EpicView';
 import styles from './EpicDetail.module.css';
 
 export function EpicDetail({ params }: RouteProps): JSX.Element {
@@ -15,7 +15,7 @@ export function EpicDetail({ params }: RouteProps): JSX.Element {
 
 	const handleDelete = (): void => {
 		epic.delete().then(() => {
-			navigate('/');
+			navigate('/planning');
 		});
 	};
 
@@ -34,7 +34,7 @@ export function EpicDetail({ params }: RouteProps): JSX.Element {
 			<div class={styles.container}>
 				<div class={styles.error}>
 					<p>Error: {epic.$meta.error.message}</p>
-					<a href="/">Back to Board</a>
+					<a href="/planning">Back to Board</a>
 				</div>
 			</div>
 		);
@@ -44,7 +44,7 @@ export function EpicDetail({ params }: RouteProps): JSX.Element {
 		<div class={styles.container}>
 			<div class={styles.content}>
 				<nav class={styles.nav}>
-					<a href="/" class={styles.backLink}>
+					<a href="/planning" class={styles.backLink}>
 						← Back to Board
 					</a>
 				</nav>

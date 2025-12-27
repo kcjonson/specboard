@@ -63,21 +63,22 @@ Both share a common infrastructure and are developed in a single monorepo.
 
 ```
 doc-platform/
-├── shared/                    # Shared libraries
-│   ├── core/                  # Shared types, utilities
-│   ├── ui/                    # Shared Preact components
-│   ├── db/                    # Database connection, migrations
-│   ├── auth/                  # Session management, auth middleware
-│   ├── platform/              # Platform abstraction interfaces
-│   ├── platform-electron/     # Electron implementations
-│   ├── platform-web/          # Web implementations
-│   ├── models/                # State management (Model/SyncModel)
-│   ├── router/                # Custom client-side router
-│   └── fetch/                 # Custom HTTP client wrapper
-├── editor-web/                # Documentation editor (Preact)
-├── editor-desktop/            # Documentation editor (Electron)
-├── planning-web/              # Planning/task management (Preact)
-├── planning-desktop/          # Planning/task management (Electron)
+├── shared/
+│   ├── pages/                 # Pages feature source (no build step)
+│   ├── planning/              # Planning feature source (no build step)
+│   ├── core/                  # Shared types, utilities (package)
+│   ├── ui/                    # Shared Preact components (package, open-sourceable)
+│   ├── db/                    # Database connection, migrations (package)
+│   ├── auth/                  # Session management, auth middleware (package)
+│   ├── platform/              # Platform abstraction interfaces (package)
+│   ├── platform-electron/     # Electron implementations (package)
+│   ├── platform-web/          # Web implementations (package)
+│   ├── models/                # State management (package, open-sourceable)
+│   ├── router/                # Custom client-side router (package)
+│   └── fetch/                 # Custom HTTP client wrapper (package)
+├── web/                       # Unified web app (/pages + /planning routes)
+├── docs-desktop/              # Pages Electron app
+├── planning-desktop/          # Planning Electron app
 ├── api/                       # Backend API (Hono)
 ├── frontend/                  # Frontend server (Hono, serves SPA)
 ├── mcp/                       # MCP server
@@ -92,6 +93,24 @@ doc-platform/
 ├── pnpm-workspace.yaml
 └── package.json
 ```
+
+### Package Types
+
+**Feature source (no build step):**
+- `shared/pages/` - Pages editor components, compiled by apps
+- `shared/planning/` - Planning board components, compiled by apps
+- Files colocated: `Component.tsx`, `Component.module.css`, `Component.test.ts`
+- Imported via `@shared/pages` and `@shared/planning` aliases
+
+**Packages (built, publishable):**
+- `shared/ui/` - UI component library (will be open-sourced)
+- `shared/models/` - State management core (will be open-sourced)
+- Other shared/* packages are internal
+
+**Apps:**
+- `web/` - Single web app serving both `/pages` and `/planning` routes
+- `docs-desktop/` - Standalone Electron app for Pages
+- `planning-desktop/` - Standalone Electron app for Planning
 
 ---
 

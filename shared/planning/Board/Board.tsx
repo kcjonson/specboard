@@ -4,10 +4,10 @@ import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
 import { Button, UserMenu } from '@doc-platform/ui';
-import { Column } from './Column';
-import { EpicDialog } from './EpicDialog';
-import { useKeyboardNavigation } from './useKeyboardNavigation';
-import { useAuth } from '../../hooks/useAuth';
+import { Column } from '../Column/Column';
+import { EpicDialog } from '../EpicDialog/EpicDialog';
+import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
+import { useAuth } from '../hooks/useAuth';
 import styles from './Board.module.css';
 
 const COLUMNS: { status: Status; title: string }[] = [
