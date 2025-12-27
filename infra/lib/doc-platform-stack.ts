@@ -371,6 +371,8 @@ export class DocPlatformStack extends cdk.Stack {
 		// ECS permissions - scoped to cluster for mutations
 		const serviceArnPattern = `arn:aws:ecs:${this.region}:${this.account}:service/${cluster.clusterName}/*`;
 		const taskArnPattern = `arn:aws:ecs:${this.region}:${this.account}:task/${cluster.clusterName}/*`;
+		// Use wildcard for task definition revisions - specific ARN breaks when CDK updates the revision
+		const taskDefArnPattern = `arn:aws:ecs:${this.region}:${this.account}:task-definition/${apiTaskDefinition.family}:*`;
 
 		deployRole.addToPolicy(new iam.PolicyStatement({
 			effect: iam.Effect.ALLOW,
@@ -381,7 +383,7 @@ export class DocPlatformStack extends cdk.Stack {
 		deployRole.addToPolicy(new iam.PolicyStatement({
 			effect: iam.Effect.ALLOW,
 			actions: ['ecs:RunTask'],
-			resources: [apiTaskDefinition.taskDefinitionArn],
+			resources: [taskDefArnPattern],
 		}));
 
 		deployRole.addToPolicy(new iam.PolicyStatement({

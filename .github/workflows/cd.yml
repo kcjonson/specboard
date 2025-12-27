@@ -89,6 +89,7 @@ jobs:
           echo "security_group=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ApiSecurityGroupId") | .OutputValue')" >> $GITHUB_OUTPUT
           echo "alb_dns=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="AlbDnsName") | .OutputValue')" >> $GITHUB_OUTPUT
           echo "log_group=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ApiLogGroupName") | .OutputValue')" >> $GITHUB_OUTPUT
+          echo "cluster=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ClusterName") | .OutputValue')" >> $GITHUB_OUTPUT
 
       - name: Run database migrations
         id: migrate
@@ -96,9 +97,17 @@ jobs:
           # Parse subnets into JSON array format
           SUBNETS_JSON=$(echo '${{ steps.stack.outputs.subnets }}' | tr ',' '\n' | jq -R . | jq -s .)
 
+          # Validate subnets array is non-empty
+          SUBNET_COUNT=$(echo "$SUBNETS_JSON" | jq 'length')
+          if [ "$SUBNET_COUNT" -eq 0 ]; then
+            echo "Error: No subnets found in stack outputs"
+            exit 1
+          fi
+          echo "Found $SUBNET_COUNT subnets"
+
           # Run migration task using the API task definition with overridden command
           TASK_ARN=$(aws ecs run-task \
-            --cluster doc-platform \
+            --cluster ${{ steps.stack.outputs.cluster }} \
             --task-definition ${{ steps.stack.outputs.task_def }} \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[\"${{ steps.stack.outputs.security_group }}\"],assignPublicIp=DISABLED}" \
@@ -119,13 +128,13 @@ jobs:
         run: |
           echo "Waiting for migration task to complete..."
           aws ecs wait tasks-stopped \
-            --cluster doc-platform \
+            --cluster ${{ steps.stack.outputs.cluster }} \
             --tasks ${{ steps.migrate.outputs.task_arn }} \
             --region ${{ env.AWS_REGION }}
 
           # Check exit code
           EXIT_CODE=$(aws ecs describe-tasks \
-            --cluster doc-platform \
+            --cluster ${{ steps.stack.outputs.cluster }} \
             --tasks ${{ steps.migrate.outputs.task_arn }} \
             --query 'tasks[0].containers[0].exitCode' \
             --output text \
@@ -168,7 +177,7 @@ jobs:
       - name: Deploy API service
         run: |
           aws ecs update-service \
-            --cluster doc-platform \
+            --cluster ${{ steps.stack.outputs.cluster }} \
             --service api \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
@@ -176,7 +185,7 @@ jobs:
       - name: Deploy Frontend service
         run: |
           aws ecs update-service \
-            --cluster doc-platform \
+            --cluster ${{ steps.stack.outputs.cluster }} \
             --service frontend \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
@@ -184,14 +193,14 @@ jobs:
       - name: Wait for API deployment
         run: |
           aws ecs wait services-stable \
-            --cluster doc-platform \
+            --cluster ${{ steps.stack.outputs.cluster }} \
             --services api \
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for Frontend deployment
         run: |
           aws ecs wait services-stable \
-            --cluster doc-platform \
+            --cluster ${{ steps.stack.outputs.cluster }} \
             --services frontend \
             --region ${{ env.AWS_REGION }}
 
