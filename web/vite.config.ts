@@ -25,7 +25,7 @@ export default defineConfig({
 			'@doc-platform/ui/tokens.css': resolve(__dirname, '../shared/ui/src/tokens.css'),
 			'@doc-platform/ui/elements.css': resolve(__dirname, '../shared/ui/src/elements.css'),
 			'@doc-platform/ui/shared.css': resolve(__dirname, '../shared/ui/src/shared.css'),
-			'@doc-platform/ui/pages/login.css': resolve(__dirname, '../shared/ui/src/pages/login.css'),
+			'@frontend/styles/login.css': resolve(__dirname, '../frontend/src/styles/login.css'),
 			'@doc-platform/router': resolve(__dirname, '../shared/router/dist'),
 			'@doc-platform/models': resolve(__dirname, '../shared/models/dist'),
 			'@doc-platform/fetch': resolve(__dirname, '../shared/fetch/dist'),
