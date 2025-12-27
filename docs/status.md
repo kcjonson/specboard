@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-27 (GitHub Actions CD)
+Last Updated: 2025-12-27 (Pages Scaffolding)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,26 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ Pages Scaffolding
+**Spec/Documentation:** `docs/tech-stack.md`
+**Dependencies:** Planning UI
+**Status:** complete
+
+**Tasks:**
+- [x] Restructure packages for unified web app
+  - [x] Rename planning-web → web
+  - [x] Delete empty editor-web
+  - [x] Rename editor-desktop → docs-desktop
+- [x] Create shared feature source directories
+  - [x] Create shared/planning/ (moved components from planning-web)
+  - [x] Create shared/pages/ (new Pages feature components)
+- [x] Update routes to use /planning and /pages prefixes
+- [x] Add basic Pages placeholder page
+- [x] Configure Vite aliases for @shared/planning and @shared/pages
+- [x] Update pnpm-workspace.yaml and tsconfig.json
+
+---
 
 ### ✅ GitHub Actions CI
 **Spec/Documentation:** `.github/workflows/ci.yml`
@@ -127,7 +147,7 @@ Use this template for all work items:
 - [x] StatusDot component (ready, in_progress, done)
 - [x] UserMenu component (avatar with initials + dropdown menu)
 - [x] Demo page at /ui route
-- [ ] Migrate existing planning-web components to use @doc-platform/ui
+- [x] Migrate components to shared/planning using @doc-platform/ui
 
 ---
 

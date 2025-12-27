@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { Button, Text } from '@doc-platform/ui';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth } from '@shared/planning';
 import styles from './UserSettings.module.css';
 
 export function UserSettings(_props: RouteProps): JSX.Element {
@@ -78,7 +78,7 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 		<div class={styles.container}>
 			<div class={styles.content}>
 				<nav class={styles.nav}>
-					<a href="/" class={styles.backLink}>
+					<a href="/planning" class={styles.backLink}>
 						← Back to Board
 					</a>
 				</nav>
