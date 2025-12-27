@@ -67,7 +67,8 @@ export interface Epic {
 	title: string;
 	description: string | null;
 	status: EpicStatus;
-	userId: string | null;
+	creator: string | null;
+	assignee: string | null;
 	rank: number;
 	createdAt: Date;
 	updatedAt: Date;
@@ -78,7 +79,7 @@ export interface Task {
 	epicId: string;
 	title: string;
 	status: EpicStatus;
-	userId: string | null;
+	assignee: string | null;
 	dueDate: Date | null;
 	rank: number;
 	createdAt: Date;

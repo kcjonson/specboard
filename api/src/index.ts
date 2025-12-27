@@ -87,7 +87,7 @@ interface ApiTask {
 	epicId: string;
 	title: string;
 	status: EpicStatus;
-	userId?: string;
+	assignee?: string;
 	dueDate?: string;
 	rank: number;
 }
@@ -97,7 +97,8 @@ interface ApiEpic {
 	title: string;
 	description?: string;
 	status: EpicStatus;
-	userId?: string;
+	creator?: string;
+	assignee?: string;
 	rank: number;
 	createdAt: string;
 	updatedAt: string;
@@ -115,7 +116,8 @@ function dbEpicToApi(epic: DbEpic): ApiEpic {
 		title: epic.title,
 		description: epic.description ?? undefined,
 		status: epic.status,
-		userId: epic.userId ?? undefined,
+		creator: epic.creator ?? undefined,
+		assignee: epic.assignee ?? undefined,
 		rank: epic.rank,
 		createdAt: epic.createdAt.toISOString(),
 		updatedAt: epic.updatedAt.toISOString(),
@@ -128,7 +130,7 @@ function dbTaskToApi(task: DbTask): ApiTask {
 		epicId: task.epicId,
 		title: task.title,
 		status: task.status,
-		userId: task.userId ?? undefined,
+		assignee: task.assignee ?? undefined,
 		dueDate: task.dueDate?.toISOString().split('T')[0],
 		rank: task.rank,
 	};
@@ -327,10 +329,10 @@ app.post('/api/epics', async (c) => {
 	const maxRank = rankResult.rows[0]?.max_rank ?? 0;
 
 	const result = await query<DbEpic>(
-		`INSERT INTO epics (title, description, status, "userId", rank)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO epics (title, description, status, creator, assignee, rank)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING *`,
-		[body.title || 'Untitled Epic', body.description || null, status, body.userId || null, maxRank + 1]
+		[body.title || 'Untitled Epic', body.description || null, status, body.creator || null, body.assignee || null, maxRank + 1]
 	);
 
 	const epic = result.rows[0]!;
@@ -363,9 +365,13 @@ app.put('/api/epics/:id', async (c) => {
 		updates.push(`status = $${paramIndex++}`);
 		values.push(body.status);
 	}
-	if (body.userId !== undefined) {
-		updates.push(`"userId" = $${paramIndex++}`);
-		values.push(body.userId || null);
+	if (body.creator !== undefined) {
+		updates.push(`creator = $${paramIndex++}`);
+		values.push(body.creator || null);
+	}
+	if (body.assignee !== undefined) {
+		updates.push(`assignee = $${paramIndex++}`);
+		values.push(body.assignee || null);
 	}
 	if (body.rank !== undefined) {
 		updates.push(`rank = $${paramIndex++}`);
@@ -449,14 +455,14 @@ app.post('/api/epics/:epicId/tasks', async (c) => {
 	const maxRank = rankResult.rows[0]?.max_rank ?? 0;
 
 	const result = await query<DbTask>(
-		`INSERT INTO tasks ("epicId", title, status, "userId", "dueDate", rank)
+		`INSERT INTO tasks ("epicId", title, status, assignee, "dueDate", rank)
 		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING *`,
 		[
 			epicId,
 			body.title || 'Untitled Task',
 			body.status || 'ready',
-			body.userId || null,
+			body.assignee || null,
 			body.dueDate || null,
 			maxRank + 1,
 		]
@@ -488,9 +494,9 @@ app.put('/api/tasks/:id', async (c) => {
 		updates.push(`status = $${paramIndex++}`);
 		values.push(body.status);
 	}
-	if (body.userId !== undefined) {
-		updates.push(`"userId" = $${paramIndex++}`);
-		values.push(body.userId || null);
+	if (body.assignee !== undefined) {
+		updates.push(`assignee = $${paramIndex++}`);
+		values.push(body.assignee || null);
 	}
 	if (body.dueDate !== undefined) {
 		updates.push(`"dueDate" = $${paramIndex++}`);
