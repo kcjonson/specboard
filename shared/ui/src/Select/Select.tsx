@@ -1,5 +1,4 @@
 import type { JSX } from 'preact';
-import styles from './Select.module.css';
 
 export interface SelectOption {
 	value: string;
@@ -18,7 +17,7 @@ export interface SelectProps {
 	placeholder?: string;
 	/** Disabled state */
 	disabled?: boolean;
-	/** Additional CSS class (use size-sm, size-lg, error for modifiers) */
+	/** CSS classes (e.g., "size-sm error") */
 	class?: string;
 	/** Select name */
 	name?: string;
@@ -38,7 +37,7 @@ export function Select({
 }: SelectProps): JSX.Element {
 	return (
 		<select
-			class={`${styles.select} ${className || ''}`}
+			class={className || undefined}
 			value={value}
 			onChange={onChange}
 			disabled={disabled}

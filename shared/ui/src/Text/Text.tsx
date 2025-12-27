@@ -1,5 +1,4 @@
 import type { JSX } from 'preact';
-import styles from './Text.module.css';
 
 export interface TextProps {
 	/** Input value (controlled) */
@@ -20,7 +19,7 @@ export interface TextProps {
 	disabled?: boolean;
 	/** Read-only state */
 	readOnly?: boolean;
-	/** Additional CSS class (use size-sm, size-lg, error for modifiers) */
+	/** CSS classes (e.g., "size-sm error") */
 	class?: string;
 	/** Input name */
 	name?: string;
@@ -51,7 +50,7 @@ export function Text({
 	return (
 		<input
 			type={type}
-			class={`${styles.text} ${className || ''}`}
+			class={className || undefined}
 			value={value}
 			placeholder={placeholder}
 			onInput={onInput}

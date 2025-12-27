@@ -1,0 +1,14 @@
+/**
+ * Base element styles for @doc-platform/ui
+ *
+ * Styles native HTML elements (button, input, textarea) using design tokens.
+ * Works with both SSR pages (native elements) and Preact components.
+ *
+ * Dark mode is handled automatically via tokens.css.
+ */
+
+@import './elements/button.css';
+@import './elements/input.css';
+@import './elements/textarea.css';
+@import './elements/select.css';
+@import './elements/form.css';

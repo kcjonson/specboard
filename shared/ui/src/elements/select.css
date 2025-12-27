@@ -1,4 +1,8 @@
-.select {
+/**
+ * Select element styles
+ */
+
+select {
 	font-family: inherit;
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);
@@ -11,33 +15,33 @@
 	font-size: var(--text-sm);
 }
 
-.select:focus {
+select:focus {
 	outline: none;
 	border-color: var(--color-primary);
 }
 
-.select:disabled {
+select:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
 	background: var(--color-surface-hover);
 }
 
-/* Size modifiers - apply via class="size-sm" */
-.select:global(.size-sm) {
+/* Select sizes */
+select.size-sm {
 	padding: var(--space-1) var(--space-2);
 	font-size: var(--text-xs);
 }
 
-.select:global(.size-lg) {
+select.size-lg {
 	padding: var(--space-3) var(--space-4);
 	font-size: var(--text-base);
 }
 
-/* Error state - apply via class="error" */
-.select:global(.error) {
+/* Select error state */
+select.error {
 	border-color: var(--color-error);
 }
 
-.select:global(.error):focus {
+select.error:focus {
 	border-color: var(--color-error);
 }

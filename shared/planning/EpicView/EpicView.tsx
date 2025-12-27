@@ -154,7 +154,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 						</a>
 					)}
 					{onClose && (
-						<Button class="variant-text" onClick={onClose} aria-label="Close">
+						<Button class="text" onClick={onClose} aria-label="Close">
 							×
 						</Button>
 					)}
@@ -166,7 +166,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				<div class={styles.sectionHeader}>
 					<h3 class={styles.sectionTitle}>Description</h3>
 					{!isNew && !isEditingDescription && (
-						<Button class="variant-text" onClick={handleEditDescription}>
+						<Button class="text" onClick={handleEditDescription}>
 							Edit
 						</Button>
 					)}
@@ -184,7 +184,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 								<Button onClick={handleSaveDescription}>
 									Save
 								</Button>
-								<Button class="variant-text" onClick={handleCancelDescription}>
+								<Button class="text" onClick={handleCancelDescription}>
 									Cancel
 								</Button>
 							</div>
@@ -218,7 +218,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 							placeholder="Add a task..."
 						/>
 						<Button
-							class="variant-text"
+							class="text"
 							onClick={handleAddTask}
 							disabled={!newTaskTitle.trim()}
 						>
@@ -233,7 +233,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				<section class={styles.section}>
 					<div class={styles.sectionHeader}>
 						<h3 class={styles.sectionTitle}>Linked Documents</h3>
-						<Button class="variant-text" disabled>
+						<Button class="text" disabled>
 							+ Link Doc
 						</Button>
 					</div>
@@ -266,7 +266,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 						Create Epic
 					</Button>
 				) : (
-					<Button class="variant-danger" onClick={handleDelete}>
+					<Button class="danger" onClick={handleDelete}>
 						Delete Epic
 					</Button>
 				)}
