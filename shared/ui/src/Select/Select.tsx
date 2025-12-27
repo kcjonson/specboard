@@ -1,7 +1,5 @@
 import type { JSX } from 'preact';
 
-export type SelectSize = 'sm' | 'md' | 'lg';
-
 export interface SelectOption {
 	value: string;
 	label: string;
@@ -19,11 +17,7 @@ export interface SelectProps {
 	placeholder?: string;
 	/** Disabled state */
 	disabled?: boolean;
-	/** Size */
-	size?: SelectSize;
-	/** Error state */
-	error?: boolean;
-	/** Additional CSS class */
+	/** CSS classes (e.g., "size-sm error") */
 	class?: string;
 	/** Select name */
 	name?: string;
@@ -37,23 +31,13 @@ export function Select({
 	onChange,
 	placeholder,
 	disabled = false,
-	size = 'md',
-	error = false,
 	class: className,
 	name,
 	id,
 }: SelectProps): JSX.Element {
-	const classes = [
-		size !== 'md' ? `size-${size}` : '',
-		error ? 'error' : '',
-		className || '',
-	]
-		.filter(Boolean)
-		.join(' ');
-
 	return (
 		<select
-			class={classes || undefined}
+			class={className}
 			value={value}
 			onChange={onChange}
 			disabled={disabled}

@@ -43,22 +43,22 @@ export function UIDemo(): JSX.Element {
 					<p class={styles.sectionDesc}>Buttons trigger actions. Default is primary variant.</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Variants</h3>
+						<h3 class={styles.subsectionTitle}>Variants (via class)</h3>
 						<div class={styles.row}>
 							<Button>Primary (default)</Button>
-							<Button variant="secondary">Secondary</Button>
-							<Button variant="text">Text</Button>
-							<Button variant="danger">Danger</Button>
-							<Button variant="icon" aria-label="Close">×</Button>
+							<Button class="secondary">Secondary</Button>
+							<Button class="text">Text</Button>
+							<Button class="danger">Danger</Button>
+							<Button class="icon" aria-label="Close">×</Button>
 						</div>
 					</div>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes</h3>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
 						<div class={styles.row}>
-							<Button size="sm">Small</Button>
+							<Button class="size-sm">Small</Button>
 							<Button>Medium (default)</Button>
-							<Button size="lg">Large</Button>
+							<Button class="size-lg">Large</Button>
 						</div>
 					</div>
 
@@ -87,7 +87,7 @@ export function UIDemo(): JSX.Element {
 					>
 						<p>This is the dialog content. Press Escape or click outside to close.</p>
 						<div class={styles.dialogActions}>
-							<Button variant="text" onClick={() => setDialogOpen(false)}>Cancel</Button>
+							<Button class="text" onClick={() => setDialogOpen(false)}>Cancel</Button>
 							<Button onClick={() => setDialogOpen(false)}>Confirm</Button>
 						</div>
 					</Dialog>
@@ -99,11 +99,11 @@ export function UIDemo(): JSX.Element {
 					<p class={styles.sectionDesc}>Single-line text input field. Controlled component (requires value).</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes</h3>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
 						<div class={styles.stack}>
-							<Text size="sm" placeholder="Small input" value="" onInput={() => {}} />
+							<Text class="size-sm" placeholder="Small input" value="" onInput={() => {}} />
 							<Text placeholder="Medium input (default)" value="" onInput={() => {}} />
-							<Text size="lg" placeholder="Large input" value="" onInput={() => {}} />
+							<Text class="size-lg" placeholder="Large input" value="" onInput={() => {}} />
 						</div>
 					</div>
 
@@ -113,7 +113,7 @@ export function UIDemo(): JSX.Element {
 							<Text placeholder="Default" value={textValue} onInput={(e) => setTextValue((e.target as HTMLInputElement).value)} />
 							<Text placeholder="Disabled" value={disabledTextValue} disabled />
 							<Text placeholder="Read-only" value={readonlyTextValue} readOnly />
-							<Text error placeholder="Error state" value={errorTextValue} onInput={(e) => setErrorTextValue((e.target as HTMLInputElement).value)} />
+							<Text class="error" placeholder="Error state" value={errorTextValue} onInput={(e) => setErrorTextValue((e.target as HTMLInputElement).value)} />
 						</div>
 					</div>
 				</section>
@@ -131,7 +131,7 @@ export function UIDemo(): JSX.Element {
 								onInput={(e) => setTextareaValue((e.target as HTMLTextAreaElement).value)}
 							/>
 							<Textarea placeholder="Disabled" value={disabledTextareaValue} disabled />
-							<Textarea error placeholder="Error state" value={errorTextareaValue} onInput={(e) => setErrorTextareaValue((e.target as HTMLTextAreaElement).value)} />
+							<Textarea class="error" placeholder="Error state" value={errorTextareaValue} onInput={(e) => setErrorTextareaValue((e.target as HTMLTextAreaElement).value)} />
 						</div>
 					</div>
 				</section>
@@ -142,11 +142,11 @@ export function UIDemo(): JSX.Element {
 					<p class={styles.sectionDesc}>Dropdown selection field. Controlled component (requires value).</p>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes</h3>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
 						<div class={styles.row}>
-							<Select size="sm" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
+							<Select class="size-sm" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
 							<Select options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
-							<Select size="lg" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
+							<Select class="size-lg" options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
 						</div>
 					</div>
 
@@ -155,7 +155,7 @@ export function UIDemo(): JSX.Element {
 						<div class={styles.row}>
 							<Select options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
 							<Select options={selectOptions} value="" disabled />
-							<Select error options={selectOptions} value="" />
+							<Select class="error" options={selectOptions} value="" />
 						</div>
 					</div>
 				</section>

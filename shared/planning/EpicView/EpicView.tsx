@@ -132,7 +132,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 							value={titleDraft}
 							onInput={(e) => setTitleDraft((e.target as HTMLInputElement).value)}
 							placeholder="Epic title..."
-							size="lg"
+							class="size-lg"
 						/>
 					</div>
 				) : (
@@ -154,7 +154,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 						</a>
 					)}
 					{onClose && (
-						<Button variant="text" onClick={onClose} aria-label="Close">
+						<Button class="text" onClick={onClose} aria-label="Close">
 							×
 						</Button>
 					)}
@@ -166,7 +166,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				<div class={styles.sectionHeader}>
 					<h3 class={styles.sectionTitle}>Description</h3>
 					{!isNew && !isEditingDescription && (
-						<Button variant="text" onClick={handleEditDescription}>
+						<Button class="text" onClick={handleEditDescription}>
 							Edit
 						</Button>
 					)}
@@ -184,7 +184,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 								<Button onClick={handleSaveDescription}>
 									Save
 								</Button>
-								<Button variant="text" onClick={handleCancelDescription}>
+								<Button class="text" onClick={handleCancelDescription}>
 									Cancel
 								</Button>
 							</div>
@@ -218,7 +218,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 							placeholder="Add a task..."
 						/>
 						<Button
-							variant="text"
+							class="text"
 							onClick={handleAddTask}
 							disabled={!newTaskTitle.trim()}
 						>
@@ -233,7 +233,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				<section class={styles.section}>
 					<div class={styles.sectionHeader}>
 						<h3 class={styles.sectionTitle}>Linked Documents</h3>
-						<Button variant="text" disabled>
+						<Button class="text" disabled>
 							+ Link Doc
 						</Button>
 					</div>
@@ -266,7 +266,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 						Create Epic
 					</Button>
 				) : (
-					<Button variant="danger" onClick={handleDelete}>
+					<Button class="danger" onClick={handleDelete}>
 						Delete Epic
 					</Button>
 				)}
