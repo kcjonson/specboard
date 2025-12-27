@@ -499,7 +499,7 @@ app.use('*', authMiddleware({
 
 **Implementation:**
 - bcrypt with cost factor 12
-- Check against common password list (npm: `common-password-checker`)
+- Check against bundled common password list (top 10k from SecLists)
 - Passwords never logged or stored in plaintext
 
 ### Session Security
