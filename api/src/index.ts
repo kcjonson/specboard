@@ -98,6 +98,25 @@ function isValidTitle(title: string): boolean {
 }
 
 /**
+ * Date format validation (YYYY-MM-DD)
+ */
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidDateFormat(dateStr: string): boolean {
+	if (!DATE_REGEX.test(dateStr)) return false;
+	const date = new Date(dateStr);
+	return !isNaN(date.getTime());
+}
+
+/**
+ * Validate optional UUID field (allows empty string to clear)
+ */
+function isValidOptionalUUID(value: string | undefined): boolean {
+	if (value === undefined || value === '') return true;
+	return isValidUUID(value);
+}
+
+/**
  * Normalize optional string fields:
  * - undefined -> undefined (field not provided)
  * - empty string -> null (explicitly cleared)
@@ -373,6 +392,16 @@ app.post('/api/epics', async (c) => {
 		return c.json({ error: `Title must be between 1 and ${MAX_TITLE_LENGTH} characters` }, 400);
 	}
 
+	// Validate creator UUID if provided
+	if (!isValidOptionalUUID(body.creator)) {
+		return c.json({ error: 'Invalid creator. Must be a valid UUID' }, 400);
+	}
+
+	// Validate assignee UUID if provided
+	if (!isValidOptionalUUID(body.assignee)) {
+		return c.json({ error: 'Invalid assignee. Must be a valid UUID' }, 400);
+	}
+
 	try {
 		// Calculate next rank for the status column
 		// Note: Concurrent inserts may result in duplicate ranks, which is acceptable
@@ -427,6 +456,16 @@ app.put('/api/epics/:id', async (c) => {
 	// Validate title length if provided
 	if (body.title !== undefined && !isValidTitle(body.title)) {
 		return c.json({ error: `Title must be between 1 and ${MAX_TITLE_LENGTH} characters` }, 400);
+	}
+
+	// Validate creator UUID if provided
+	if (!isValidOptionalUUID(body.creator)) {
+		return c.json({ error: 'Invalid creator. Must be a valid UUID' }, 400);
+	}
+
+	// Validate assignee UUID if provided
+	if (!isValidOptionalUUID(body.assignee)) {
+		return c.json({ error: 'Invalid assignee. Must be a valid UUID' }, 400);
 	}
 
 	try {
@@ -577,6 +616,16 @@ app.post('/api/epics/:epicId/tasks', async (c) => {
 		return c.json({ error: `Title must be between 1 and ${MAX_TITLE_LENGTH} characters` }, 400);
 	}
 
+	// Validate assignee UUID if provided
+	if (!isValidOptionalUUID(body.assignee)) {
+		return c.json({ error: 'Invalid assignee. Must be a valid UUID' }, 400);
+	}
+
+	// Validate dueDate format if provided
+	if (body.dueDate !== undefined && body.dueDate !== '' && !isValidDateFormat(body.dueDate)) {
+		return c.json({ error: 'Invalid dueDate. Must be in YYYY-MM-DD format' }, 400);
+	}
+
 	try {
 		// Check if epic exists
 		const epicResult = await query(`SELECT id FROM epics WHERE id = $1`, [epicId]);
@@ -636,6 +685,16 @@ app.put('/api/tasks/:id', async (c) => {
 	// Validate title length if provided
 	if (body.title !== undefined && !isValidTitle(body.title)) {
 		return c.json({ error: `Title must be between 1 and ${MAX_TITLE_LENGTH} characters` }, 400);
+	}
+
+	// Validate assignee UUID if provided
+	if (!isValidOptionalUUID(body.assignee)) {
+		return c.json({ error: 'Invalid assignee. Must be a valid UUID' }, 400);
+	}
+
+	// Validate dueDate format if provided
+	if (body.dueDate !== undefined && body.dueDate !== '' && !isValidDateFormat(body.dueDate)) {
+		return c.json({ error: 'Invalid dueDate. Must be in YYYY-MM-DD format' }, 400);
 	}
 
 	try {

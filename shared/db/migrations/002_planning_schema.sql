@@ -31,7 +31,7 @@ CREATE INDEX idx_epics_status ON epics(status);
 CREATE INDEX idx_epics_rank ON epics(rank);
 CREATE INDEX idx_epics_creator ON epics(creator);
 CREATE INDEX idx_epics_assignee ON epics(assignee);
-CREATE INDEX "idx_tasks_epicId" ON tasks("epicId");
+CREATE INDEX idx_tasks_epic_id ON tasks("epicId");
 CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_rank ON tasks(rank);
 CREATE INDEX idx_tasks_assignee ON tasks(assignee);
