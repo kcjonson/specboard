@@ -196,7 +196,7 @@ interface LoginRequest {
 	password: string;
 }
 
-app.post('/auth/login', async (c) => {
+app.post('/api/auth/login', async (c) => {
 	const body = await c.req.json<LoginRequest>();
 	const { email, password } = body;
 
@@ -254,7 +254,7 @@ app.post('/auth/login', async (c) => {
 	});
 });
 
-app.post('/auth/logout', async (c) => {
+app.post('/api/auth/logout', async (c) => {
 	const sessionId = getCookie(c, SESSION_COOKIE_NAME);
 
 	if (sessionId) {
@@ -270,7 +270,7 @@ app.post('/auth/logout', async (c) => {
 	return c.json({ success: true });
 });
 
-app.get('/auth/me', async (c) => {
+app.get('/api/auth/me', async (c) => {
 	const sessionId = getCookie(c, SESSION_COOKIE_NAME);
 
 	if (!sessionId) {

@@ -174,7 +174,7 @@ export function renderLoginPage(options: LoginPageOptions = {}): string {
 				submitBtn.disabled = true;
 				submitBtn.textContent = 'Signing in...';
 
-				fetch('/auth/login', {
+				fetch('/api/auth/login', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ email: email, password: password }),

@@ -21,7 +21,7 @@ COPY shared/ui/package.json ./shared/ui/
 COPY shared/models/package.json ./shared/models/
 COPY shared/router/package.json ./shared/router/
 COPY shared/fetch/package.json ./shared/fetch/
-COPY planning-web/package.json ./planning-web/
+COPY web/package.json ./web/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -35,7 +35,9 @@ COPY shared/models ./shared/models
 COPY shared/router ./shared/router
 COPY shared/fetch ./shared/fetch
 COPY frontend ./frontend
-COPY planning-web ./planning-web
+COPY web ./web
+COPY shared/planning ./shared/planning
+COPY shared/pages ./shared/pages
 
 # Build shared packages first, then frontend server, then SPA
 # Order matters: core first, then packages that depend on it
@@ -45,7 +47,7 @@ RUN pnpm --filter @doc-platform/core build && \
     pnpm --filter @doc-platform/router build && \
     pnpm --filter @doc-platform/models build && \
     pnpm --filter @doc-platform/frontend build && \
-    pnpm --filter planning-web build
+    pnpm --filter @doc-platform/web build
 
 # Production stage
 FROM node:20-alpine AS runner
@@ -70,7 +72,7 @@ COPY --from=builder /app/shared/auth/dist ./shared/auth/dist
 COPY --from=builder /app/frontend/dist ./frontend/dist
 
 # Copy built SPA to static directory
-COPY --from=builder /app/planning-web/dist ./frontend/static
+COPY --from=builder /app/web/dist ./frontend/static
 
 WORKDIR /app/frontend
 

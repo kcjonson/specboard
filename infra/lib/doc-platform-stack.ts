@@ -293,12 +293,12 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 		frontendService.attachToApplicationTargetGroup(frontendTargetGroup);
 
-		// Path-based routing: /api/* and /auth/* -> API, everything else -> Frontend
+		// Path-based routing: /api/* -> API, everything else -> Frontend
 		listener.addTargetGroups('ApiRoutes', {
 			targetGroups: [apiTargetGroup],
 			priority: 10,
 			conditions: [
-				elbv2.ListenerCondition.pathPatterns(['/api/*', '/auth/*']),
+				elbv2.ListenerCondition.pathPatterns(['/api/*']),
 			],
 		});
 

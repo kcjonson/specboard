@@ -6,4 +6,4 @@ packages:
   - 'shared/router'
   - 'shared/fetch'
   - 'frontend'
-  - 'planning-web'
+  - 'web'

@@ -29,7 +29,7 @@ export function useAuth(): UseAuthResult {
 		setState((prev) => ({ ...prev, loading: true, error: null }));
 
 		try {
-			const response = await fetchClient.get<{ user: AuthUser }>('/auth/me');
+			const response = await fetchClient.get<{ user: AuthUser }>('/api/auth/me');
 			setState({ user: response.user, loading: false, error: null });
 		} catch (err) {
 			// 401 means not logged in - not an error state
@@ -48,7 +48,7 @@ export function useAuth(): UseAuthResult {
 
 	const logout = useCallback(async (): Promise<void> => {
 		try {
-			await fetchClient.post('/auth/logout', {});
+			await fetchClient.post('/api/auth/logout', {});
 		} catch {
 			// Even if logout fails, continue to clear local state
 		}

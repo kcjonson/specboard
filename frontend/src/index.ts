@@ -35,9 +35,9 @@ app.get('/login', (c) => {
 // Proxy auth requests to API
 const apiUrl = process.env.API_URL || 'http://localhost:3001';
 
-app.post('/auth/login', async (c) => {
+app.post('/api/auth/login', async (c) => {
 	const body = await c.req.json();
-	const response = await fetch(`${apiUrl}/auth/login`, {
+	const response = await fetch(`${apiUrl}/api/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(body),
@@ -57,9 +57,9 @@ app.post('/auth/login', async (c) => {
 	return result;
 });
 
-app.post('/auth/logout', async (c) => {
+app.post('/api/auth/logout', async (c) => {
 	const cookie = c.req.header('Cookie') || '';
-	const response = await fetch(`${apiUrl}/auth/logout`, {
+	const response = await fetch(`${apiUrl}/api/auth/logout`, {
 		method: 'POST',
 		headers: { Cookie: cookie },
 	});
@@ -76,9 +76,9 @@ app.post('/auth/logout', async (c) => {
 	return result;
 });
 
-app.get('/auth/me', async (c) => {
+app.get('/api/auth/me', async (c) => {
 	const cookie = c.req.header('Cookie') || '';
-	const response = await fetch(`${apiUrl}/auth/me`, {
+	const response = await fetch(`${apiUrl}/api/auth/me`, {
 		headers: { Cookie: cookie },
 	});
 
@@ -90,7 +90,7 @@ app.get('/auth/me', async (c) => {
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/auth/login', '/auth/logout', '/auth/me'],
+		excludePaths: ['/health', '/login', '/api/auth/login', '/api/auth/logout', '/api/auth/me'],
 		onUnauthenticated: (requestUrl) => {
 			// Redirect to login using the request's origin
 			return Response.redirect(new URL('/login', requestUrl.origin).toString(), 302);
