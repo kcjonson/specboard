@@ -3,7 +3,7 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
-import { Button, UserMenu } from '@doc-platform/ui';
+import { Button, AppHeader } from '@doc-platform/ui';
 import { Column } from '../Column/Column';
 import { EpicDialog } from '../EpicDialog/EpicDialog';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
@@ -204,20 +204,13 @@ export function Board(_props: RouteProps): JSX.Element {
 
 	return (
 		<div class={styles.container}>
-			<header class={styles.header}>
-				<h1 class={styles.title}>Planning Board</h1>
-				<div class={styles.actions}>
-					<Button onClick={handleOpenNewEpicDialog}>+ New Epic</Button>
-					{user && (
-						<UserMenu
-							displayName={user.displayName}
-							email={user.email}
-							onSettingsClick={handleSettingsClick}
-							onLogoutClick={handleLogoutClick}
-						/>
-					)}
-				</div>
-			</header>
+			<AppHeader
+				title="Planning Board"
+				actions={<Button onClick={handleOpenNewEpicDialog}>+ New Epic</Button>}
+				user={user ? { displayName: user.displayName, email: user.email } : undefined}
+				onSettingsClick={handleSettingsClick}
+				onLogoutClick={handleLogoutClick}
+			/>
 
 			<div class={styles.board}>
 				{COLUMNS.map(({ status, title }) => (

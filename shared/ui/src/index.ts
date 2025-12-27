@@ -44,3 +44,7 @@ export type { StatusDotProps, StatusType } from './StatusDot/StatusDot';
 // UserMenu
 export { UserMenu } from './UserMenu/UserMenu';
 export type { UserMenuProps } from './UserMenu/UserMenu';
+
+// AppHeader
+export { AppHeader } from './AppHeader/AppHeader';
+export type { AppHeaderProps } from './AppHeader/AppHeader';

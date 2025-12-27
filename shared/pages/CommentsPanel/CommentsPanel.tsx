@@ -1,0 +1,20 @@
+import type { JSX } from 'preact';
+import styles from './CommentsPanel.module.css';
+
+export interface CommentsPanelProps {
+	/** Additional CSS class */
+	class?: string;
+}
+
+export function CommentsPanel({ class: className }: CommentsPanelProps): JSX.Element {
+	return (
+		<div class={`${styles.container} ${className || ''}`}>
+			<div class={styles.header}>Comments</div>
+			<div class={styles.content}>
+				<div class={styles.placeholder}>
+					Comments coming soon...
+				</div>
+			</div>
+		</div>
+	);
+}
