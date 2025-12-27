@@ -50,7 +50,7 @@ export function Text({
 	return (
 		<input
 			type={type}
-			class={className}
+			class={className || undefined}
 			value={value}
 			placeholder={placeholder}
 			onInput={onInput}

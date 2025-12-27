@@ -49,7 +49,7 @@ export function Textarea({
 }: TextareaProps): JSX.Element {
 	return (
 		<textarea
-			class={className}
+			class={className || undefined}
 			value={value}
 			placeholder={placeholder}
 			rows={rows}

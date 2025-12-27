@@ -37,7 +37,7 @@ export function Select({
 }: SelectProps): JSX.Element {
 	return (
 		<select
-			class={className}
+			class={className || undefined}
 			value={value}
 			onChange={onChange}
 			disabled={disabled}

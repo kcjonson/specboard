@@ -26,7 +26,7 @@ export function Button({
 	return (
 		<button
 			type={type}
-			class={className}
+			class={className || undefined}
 			onClick={onClick}
 			disabled={disabled}
 			aria-label={ariaLabel}
