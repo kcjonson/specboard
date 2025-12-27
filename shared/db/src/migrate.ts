@@ -11,13 +11,28 @@ const { Pool } = pg;
 
 const MIGRATIONS_DIR = path.join(import.meta.dirname, '../migrations');
 
-async function migrate(): Promise<void> {
-	const databaseUrl = process.env.DATABASE_URL;
-	if (!databaseUrl) {
-		console.error('DATABASE_URL environment variable is required');
-		process.exit(1);
+function getDatabaseUrl(): string {
+	// Support both DATABASE_URL and individual vars
+	if (process.env.DATABASE_URL) {
+		return process.env.DATABASE_URL;
 	}
 
+	const host = process.env.DB_HOST;
+	const port = process.env.DB_PORT || '5432';
+	const name = process.env.DB_NAME;
+	const user = process.env.DB_USER;
+	const password = process.env.DB_PASSWORD;
+
+	if (host && name && user && password) {
+		return `postgresql://${user}:${password}@${host}:${port}/${name}`;
+	}
+
+	console.error('DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD required');
+	process.exit(1);
+}
+
+async function migrate(): Promise<void> {
+	const databaseUrl = getDatabaseUrl();
 	const pool = new Pool({ connectionString: databaseUrl });
 
 	try {

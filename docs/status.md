@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-26 (Staging Deployment)
+Last Updated: 2025-12-27 (GitHub Actions CD)
 
 ## Epic/Story/Task Template
 
@@ -90,16 +90,19 @@ Use this template for all work items:
 **Goal:** Deploy to AWS staging environment with CD from main branch.
 
 **Tasks:**
-- [ ] CDK Infrastructure
-  - [ ] VPC and networking
-  - [ ] ECR repositories for container images
-  - [ ] ECS Cluster with Fargate services
-  - [ ] RDS Postgres (single-AZ)
-  - [ ] ElastiCache Redis
-  - [ ] ALB with path-based routing
-- [ ] GitHub Actions CD
-  - [ ] Build and push Docker images to ECR
-  - [ ] Deploy to ECS on push to main
+- [x] CDK Infrastructure
+  - [x] VPC and networking
+  - [x] ECR repositories for container images
+  - [x] ECS Cluster with Fargate services
+  - [x] RDS Postgres (single-AZ)
+  - [x] ElastiCache Redis
+  - [x] ALB with path-based routing
+  - [x] GitHub OIDC provider + IAM deploy role
+- [x] GitHub Actions CD
+  - [x] Build and push Docker images to ECR
+  - [x] Run database migrations before deploy
+  - [x] Deploy to ECS on push to main
+- [ ] Configure GitHub secret (AWS_DEPLOY_ROLE_ARN)
 - [ ] Mock auth middleware (bypass for staging)
 
 ---

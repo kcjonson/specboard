@@ -4,6 +4,7 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elasticache from 'aws-cdk-lib/aws-elasticache';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -298,8 +299,130 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 
 		// ===========================================
+		// GitHub Actions OIDC & IAM Role
+		// ===========================================
+		const githubOidcProvider = new iam.OpenIdConnectProvider(this, 'GitHubOidcProvider', {
+			url: 'https://token.actions.githubusercontent.com',
+			clientIds: ['sts.amazonaws.com'],
+			thumbprints: ['ffffffffffffffffffffffffffffffffffffffff'], // GitHub's OIDC doesn't require thumbprint validation
+		});
+
+		const deployRole = new iam.Role(this, 'GitHubActionsDeployRole', {
+			roleName: 'doc-platform-github-actions-deploy',
+			assumedBy: new iam.FederatedPrincipal(
+				githubOidcProvider.openIdConnectProviderArn,
+				{
+					StringEquals: {
+						'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+					},
+					StringLike: {
+						'token.actions.githubusercontent.com:sub': 'repo:kcjonson/doc-platform:*',
+					},
+				},
+				'sts:AssumeRoleWithWebIdentity'
+			),
+			description: 'Role for GitHub Actions to deploy to ECS',
+		});
+
+		// ECR permissions - push images
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'ecr:GetAuthorizationToken',
+			],
+			resources: ['*'],
+		}));
+
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'ecr:BatchCheckLayerAvailability',
+				'ecr:GetDownloadUrlForLayer',
+				'ecr:BatchGetImage',
+				'ecr:PutImage',
+				'ecr:InitiateLayerUpload',
+				'ecr:UploadLayerPart',
+				'ecr:CompleteLayerUpload',
+			],
+			resources: [
+				apiRepository.repositoryArn,
+				frontendRepository.repositoryArn,
+			],
+		}));
+
+		// ECS permissions - deploy services and run migration tasks
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'ecs:UpdateService',
+				'ecs:DescribeServices',
+				'ecs:DescribeTasks',
+				'ecs:RunTask',
+				'ecs:StopTask',
+				'ecs:DescribeTaskDefinition',
+			],
+			resources: ['*'],
+			conditions: {
+				ArnLike: {
+					'ecs:cluster': cluster.clusterArn,
+				},
+			},
+		}));
+
+		// Allow describing services without cluster condition (for waiter)
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'ecs:DescribeServices',
+				'ecs:DescribeTasks',
+			],
+			resources: ['*'],
+		}));
+
+		// Allow running tasks (needs broader permissions for run-task)
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'ecs:RunTask',
+			],
+			resources: ['*'],
+		}));
+
+		// Pass role to ECS tasks
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['iam:PassRole'],
+			resources: [
+				apiTaskDefinition.taskRole.roleArn,
+				apiTaskDefinition.executionRole!.roleArn,
+			],
+		}));
+
+		// CloudFormation - read stack outputs
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['cloudformation:DescribeStacks'],
+			resources: [this.stackId],
+		}));
+
+		// CloudWatch Logs - for viewing migration task logs
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'logs:GetLogEvents',
+				'logs:DescribeLogStreams',
+			],
+			resources: ['*'],
+		}));
+
+		// ===========================================
 		// Outputs
 		// ===========================================
+		new cdk.CfnOutput(this, 'GitHubActionsRoleArn', {
+			value: deployRole.roleArn,
+			description: 'ARN of IAM role for GitHub Actions deployment',
+		});
+
 		new cdk.CfnOutput(this, 'AlbDnsName', {
 			value: alb.loadBalancerDnsName,
 			description: 'Application Load Balancer DNS Name',
@@ -328,6 +451,21 @@ export class DocPlatformStack extends cdk.Stack {
 		new cdk.CfnOutput(this, 'RedisEndpoint', {
 			value: redis.attrRedisEndpointAddress,
 			description: 'ElastiCache Redis Endpoint',
+		});
+
+		new cdk.CfnOutput(this, 'ApiTaskDefinitionArn', {
+			value: apiTaskDefinition.taskDefinitionArn,
+			description: 'API Task Definition ARN (for running migrations)',
+		});
+
+		new cdk.CfnOutput(this, 'PrivateSubnetIds', {
+			value: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }).subnetIds.join(','),
+			description: 'Private subnet IDs for ECS tasks',
+		});
+
+		new cdk.CfnOutput(this, 'ApiSecurityGroupId', {
+			value: apiSecurityGroup.securityGroupId,
+			description: 'API security group ID',
 		});
 	}
 }

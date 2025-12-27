@@ -75,6 +75,82 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Get stack outputs
+        id: stack
+        run: |
+          OUTPUTS=$(aws cloudformation describe-stacks \
+            --stack-name DocPlatformStack \
+            --query "Stacks[0].Outputs" \
+            --output json \
+            --region ${{ env.AWS_REGION }})
+
+          echo "task_def=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ApiTaskDefinitionArn") | .OutputValue')" >> $GITHUB_OUTPUT
+          echo "subnets=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="PrivateSubnetIds") | .OutputValue')" >> $GITHUB_OUTPUT
+          echo "security_group=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ApiSecurityGroupId") | .OutputValue')" >> $GITHUB_OUTPUT
+          echo "alb_dns=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="AlbDnsName") | .OutputValue')" >> $GITHUB_OUTPUT
+
+      - name: Run database migrations
+        id: migrate
+        run: |
+          # Parse subnets into JSON array format
+          SUBNETS_JSON=$(echo '${{ steps.stack.outputs.subnets }}' | tr ',' '\n' | jq -R . | jq -s .)
+
+          # Run migration task using the API task definition with overridden command
+          TASK_ARN=$(aws ecs run-task \
+            --cluster doc-platform \
+            --task-definition ${{ steps.stack.outputs.task_def }} \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[\"${{ steps.stack.outputs.security_group }}\"],assignPublicIp=DISABLED}" \
+            --overrides '{
+              "containerOverrides": [{
+                "name": "api",
+                "command": ["node", "shared/db/dist/migrate.js"]
+              }]
+            }' \
+            --query 'tasks[0].taskArn' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+
+          echo "task_arn=$TASK_ARN" >> $GITHUB_OUTPUT
+          echo "Started migration task: $TASK_ARN"
+
+      - name: Wait for migration to complete
+        run: |
+          echo "Waiting for migration task to complete..."
+          aws ecs wait tasks-stopped \
+            --cluster doc-platform \
+            --tasks ${{ steps.migrate.outputs.task_arn }} \
+            --region ${{ env.AWS_REGION }}
+
+          # Check exit code
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster doc-platform \
+            --tasks ${{ steps.migrate.outputs.task_arn }} \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+
+          echo "Migration task exit code: $EXIT_CODE"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration failed! Fetching logs..."
+
+            # Get log stream name from task ID
+            TASK_ID=$(echo "${{ steps.migrate.outputs.task_arn }}" | rev | cut -d'/' -f1 | rev)
+
+            aws logs get-log-events \
+              --log-group-name "/ecs/DocPlatformStack-ApiTaskDef" \
+              --log-stream-name "api/api/${TASK_ID}" \
+              --limit 100 \
+              --region ${{ env.AWS_REGION }} \
+              --query 'events[*].message' \
+              --output text || echo "Could not fetch logs"
+
+            exit 1
+          fi
+
+          echo "Migration completed successfully!"
+
       - name: Deploy API service
         run: |
           aws ecs update-service \
@@ -105,13 +181,6 @@ jobs:
             --services frontend \
             --region ${{ env.AWS_REGION }}
 
-      - name: Get ALB DNS Name
-        id: alb
+      - name: Deployment complete
         run: |
-          ALB_DNS=$(aws cloudformation describe-stacks \
-            --stack-name DocPlatformStack \
-            --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "dns=$ALB_DNS" >> $GITHUB_OUTPUT
-          echo "Deployed to: http://$ALB_DNS"
+          echo "Deployed to: http://${{ steps.stack.outputs.alb_dns }}"
