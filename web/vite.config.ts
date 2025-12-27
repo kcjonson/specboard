@@ -6,23 +6,12 @@ export default defineConfig({
 	plugins: [preact()],
 	build: {
 		outDir: 'dist',
+		manifest: true,
 		rollupOptions: {
 			input: {
 				main: resolve(__dirname, 'index.html'),
 				'shared-styles': resolve(__dirname, 'src/shared-styles.ts'),
 				'login-styles': resolve(__dirname, 'src/login-styles.ts'),
-			},
-			output: {
-				// Stable filenames for SSR page CSS (no hash) so server can reference them
-				assetFileNames: (assetInfo) => {
-					if (assetInfo.name === 'shared-styles.css') {
-						return 'assets/shared.css';
-					}
-					if (assetInfo.name === 'login-styles.css') {
-						return 'assets/login.css';
-					}
-					return 'assets/[name]-[hash][extname]';
-				},
 			},
 		},
 	},

@@ -6,10 +6,18 @@
 export interface LoginPageOptions {
 	error?: string;
 	email?: string;
+	sharedCssPath?: string;
+	loginCssPath?: string;
 }
 
 export function renderLoginPage(options: LoginPageOptions = {}): string {
-	const { error, email = '' } = options;
+	const { error, email = '', sharedCssPath, loginCssPath } = options;
+
+	// Build CSS links from manifest paths
+	const cssLinks = [sharedCssPath, loginCssPath]
+		.filter(Boolean)
+		.map(path => `<link rel="stylesheet" href="${path}">`)
+		.join('\n\t');
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -17,8 +25,7 @@ export function renderLoginPage(options: LoginPageOptions = {}): string {
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Login - Doc Platform</title>
-	<link rel="stylesheet" href="/assets/shared.css">
-	<link rel="stylesheet" href="/assets/login.css">
+	${cssLinks}
 </head>
 <body>
 	<div class="login-container">

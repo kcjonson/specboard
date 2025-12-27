@@ -3,12 +3,40 @@
  * Serves static SPA files with authentication
  */
 
+import { readFileSync } from 'node:fs';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { Redis } from 'ioredis';
 import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
 import { renderLoginPage } from './pages/login.js';
+
+// Load Vite manifest for asset paths
+interface ManifestEntry {
+	file: string;
+	css?: string[];
+}
+type Manifest = Record<string, ManifestEntry>;
+
+let manifest: Manifest = {};
+try {
+	const manifestPath = './static/.vite/manifest.json';
+	manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+} catch {
+	console.warn('Vite manifest not found - CSS paths will be unavailable');
+}
+
+// Get CSS paths from manifest
+function getAssetPath(entry: string): string | undefined {
+	const manifestEntry = manifest[entry];
+	if (manifestEntry?.css?.[0]) {
+		return '/' + manifestEntry.css[0];
+	}
+	return undefined;
+}
+
+const sharedCssPath = getAssetPath('src/shared-styles.ts');
+const loginCssPath = getAssetPath('src/login-styles.ts');
 
 const app = new Hono<{ Variables: AuthVariables }>();
 
@@ -29,7 +57,10 @@ app.get('/health', (c) => c.json({ status: 'ok' }));
 
 // Login page (no auth required)
 app.get('/login', (c) => {
-	return c.html(renderLoginPage());
+	return c.html(renderLoginPage({
+		sharedCssPath,
+		loginCssPath,
+	}));
 });
 
 // Proxy auth requests to API
@@ -90,7 +121,7 @@ app.get('/api/auth/me', async (c) => {
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/assets/shared.css', '/assets/login.css', '/api/auth/login', '/api/auth/logout', '/api/auth/me'],
+		excludePaths: ['/health', '/login', '/assets/', '/api/auth/login', '/api/auth/logout', '/api/auth/me'],
 		onUnauthenticated: (requestUrl) => {
 			// Redirect to login using the request's origin
 			return Response.redirect(new URL('/login', requestUrl.origin).toString(), 302);
