@@ -3,12 +3,21 @@
  * Backend API server using Hono.
  */
 
+import * as Sentry from '@sentry/node';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
 import { serve } from '@hono/node-server';
 import { Redis } from 'ioredis';
 import crypto from 'node:crypto';
+
+// Initialize Sentry error tracking
+if (process.env.SENTRY_DSN) {
+	Sentry.init({
+		dsn: process.env.SENTRY_DSN,
+		environment: process.env.NODE_ENV || 'development',
+	});
+}
 import {
 	generateSessionId,
 	createSession,
@@ -71,6 +80,23 @@ function safeCompare(a: string, b: string): boolean {
  */
 function isValidEmail(email: string): boolean {
 	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
+ * Structured auth event logging for CloudWatch Logs Insights
+ */
+function logAuthEvent(
+	event: 'login_success' | 'login_failure' | 'logout' | 'session_expired',
+	data: Record<string, unknown>
+): void {
+	console.log(
+		JSON.stringify({
+			type: 'auth',
+			event,
+			timestamp: new Date().toISOString(),
+			...data,
+		})
+	);
 }
 
 // Types
@@ -189,6 +215,46 @@ app.use('*', cors());
 app.get('/health', (c) => c.json({ status: 'ok' }));
 app.get('/api/health', (c) => c.json({ status: 'ok' }));
 
+// Sentry tunnel endpoint - forwards error reports to Sentry without exposing DSN to clients
+app.post('/api/metrics', async (c) => {
+	try {
+		const envelope = await c.req.text();
+		const lines = envelope.split('\n');
+		const firstLine = lines[0];
+		if (!firstLine) {
+			return c.text('invalid envelope', 400);
+		}
+
+		// Parse the envelope header to extract DSN
+		const header = JSON.parse(firstLine);
+		if (!header.dsn) {
+			return c.text('missing dsn', 400);
+		}
+
+		// Extract project ID from DSN
+		const dsnUrl = new URL(header.dsn);
+		const projectId = dsnUrl.pathname.slice(1);
+
+		// Forward to Sentry
+		const response = await fetch(`https://sentry.io/api/${projectId}/envelope/`, {
+			method: 'POST',
+			body: envelope,
+			headers: {
+				'Content-Type': 'application/x-sentry-envelope',
+			},
+		});
+
+		if (!response.ok) {
+			console.error('Sentry forwarding failed:', response.status);
+		}
+
+		return c.text('ok');
+	} catch (err) {
+		console.error('Metrics endpoint error:', err);
+		return c.text('ok'); // Don't expose errors to client
+	}
+});
+
 // Auth endpoints
 
 interface LoginRequest {
@@ -216,6 +282,7 @@ app.post('/auth/login', async (c) => {
 	// Mock authentication - replace with Cognito in production
 	const user = MOCK_USERS.get(email.toLowerCase());
 	if (!user || !safeCompare(password, user.password)) {
+		logAuthEvent('login_failure', { email: email.toLowerCase(), reason: 'invalid_credentials' });
 		return c.json({ error: 'Invalid email or password' }, 401);
 	}
 
@@ -245,6 +312,8 @@ app.post('/auth/login', async (c) => {
 		maxAge: SESSION_TTL_SECONDS,
 	});
 
+	logAuthEvent('login_success', { userId: user.id, email: user.email });
+
 	return c.json({
 		user: {
 			id: user.id,
@@ -256,14 +325,21 @@ app.post('/auth/login', async (c) => {
 
 app.post('/auth/logout', async (c) => {
 	const sessionId = getCookie(c, SESSION_COOKIE_NAME);
+	let userId: string | undefined;
 
 	if (sessionId) {
 		try {
+			const session = await getSession(redis, sessionId);
+			userId = session?.userId;
 			await deleteSession(redis, sessionId);
 		} catch (err) {
 			console.error('Failed to delete session:', err);
 			// Continue with logout even if Redis fails
 		}
+	}
+
+	if (userId) {
+		logAuthEvent('logout', { userId });
 	}
 
 	deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });

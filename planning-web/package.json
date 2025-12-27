@@ -17,6 +17,7 @@
 		"@doc-platform/models": "workspace:*",
 		"@doc-platform/router": "workspace:*",
 		"@doc-platform/fetch": "workspace:*",
+		"@sentry/browser": "^8.47.0",
 		"preact": "^10.25.4"
 	},
 	"devDependencies": {

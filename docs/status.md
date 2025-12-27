@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-26 (Staging Deployment)
+Last Updated: 2025-12-27 (Logging & Monitoring)
 
 ## Epic/Story/Task Template
 
@@ -81,6 +81,31 @@ Use this template for all work items:
 ---
 
 ## In Progress Epics
+
+### Logging & Monitoring
+**Spec/Documentation:** `/docs/specs/logging-monitoring.md`
+**Dependencies:** Staging Deployment
+**Status:** in progress
+
+**Goal:** Error tracking, resource monitoring, and audit logging with minimal external services.
+
+**Tasks:**
+- [x] Sentry integration (tunneled through our API)
+  - [x] Add `/api/metrics` tunnel endpoint to API
+  - [x] Add Sentry SDK to planning-web (frontend)
+  - [x] Add Sentry SDK to API (backend)
+- [x] CloudWatch alarms
+  - [x] CPU utilization alarm (>80%)
+  - [x] Memory utilization alarm (>80%)
+  - [x] 5xx error rate alarm
+- [x] Audit logging
+  - [x] Log successful logins
+  - [x] Log failed login attempts
+  - [x] Log logout events
+- [ ] Configure Sentry DSN in environment variables
+- [ ] Add uptime monitoring (external service)
+
+---
 
 ### Staging Deployment
 **Spec/Documentation:** `infra/lib/`, `docs/tech-stack.md`
