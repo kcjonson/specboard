@@ -10,7 +10,9 @@
 			"types": "./src/index.ts",
 			"import": "./src/index.ts"
 		},
-		"./tokens.css": "./src/tokens.css"
+		"./tokens.css": "./src/tokens.css",
+		"./elements.css": "./src/elements.css",
+		"./shared.css": "./src/shared.css"
 	},
 	"scripts": {
 		"build": "tsc --noEmit",

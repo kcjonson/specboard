@@ -1,0 +1,51 @@
+/**
+ * Modern CSS Reset
+ * Based on Josh Comeau's CSS Reset
+ */
+
+/* Use border-box for all elements */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+/* Remove default margins */
+* {
+	margin: 0;
+}
+
+/* Sensible body defaults */
+body {
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* Responsive media defaults */
+img,
+picture,
+video,
+canvas,
+svg {
+	display: block;
+	max-width: 100%;
+}
+
+/* Form elements inherit fonts */
+input,
+button,
+textarea,
+select {
+	font: inherit;
+}
+
+/* Avoid text overflow */
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	overflow-wrap: break-word;
+}

@@ -46,10 +46,10 @@ export function UIDemo(): JSX.Element {
 						<h3 class={styles.subsectionTitle}>Variants (via class)</h3>
 						<div class={styles.row}>
 							<Button>Primary (default)</Button>
-							<Button class="variant-secondary">Secondary</Button>
-							<Button class="variant-text">Text</Button>
-							<Button class="variant-danger">Danger</Button>
-							<Button class="variant-icon" aria-label="Close">×</Button>
+							<Button class="secondary">Secondary</Button>
+							<Button class="text">Text</Button>
+							<Button class="danger">Danger</Button>
+							<Button class="icon" aria-label="Close">×</Button>
 						</div>
 					</div>
 
@@ -87,7 +87,7 @@ export function UIDemo(): JSX.Element {
 					>
 						<p>This is the dialog content. Press Escape or click outside to close.</p>
 						<div class={styles.dialogActions}>
-							<Button class="variant-text" onClick={() => setDialogOpen(false)}>Cancel</Button>
+							<Button class="text" onClick={() => setDialogOpen(false)}>Cancel</Button>
 							<Button onClick={() => setDialogOpen(false)}>Confirm</Button>
 						</div>
 					</Dialog>
