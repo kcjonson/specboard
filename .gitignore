@@ -37,6 +37,7 @@ out/
 
 # AWS CDK
 cdk.out/
+cdk.context.json
 
 # Misc
 .cache/
