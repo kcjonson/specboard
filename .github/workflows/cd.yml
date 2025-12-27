@@ -88,6 +88,7 @@ jobs:
           echo "subnets=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="PrivateSubnetIds") | .OutputValue')" >> $GITHUB_OUTPUT
           echo "security_group=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ApiSecurityGroupId") | .OutputValue')" >> $GITHUB_OUTPUT
           echo "alb_dns=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="AlbDnsName") | .OutputValue')" >> $GITHUB_OUTPUT
+          echo "log_group=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ApiLogGroupName") | .OutputValue')" >> $GITHUB_OUTPUT
 
       - name: Run database migrations
         id: migrate
@@ -135,16 +136,29 @@ jobs:
           if [ "$EXIT_CODE" != "0" ]; then
             echo "Migration failed! Fetching logs..."
 
-            # Get log stream name from task ID
+            # Get task ID from ARN
             TASK_ID=$(echo "${{ steps.migrate.outputs.task_arn }}" | rev | cut -d'/' -f1 | rev)
 
-            aws logs get-log-events \
-              --log-group-name "/ecs/DocPlatformStack-ApiTaskDef" \
-              --log-stream-name "api/api/${TASK_ID}" \
-              --limit 100 \
-              --region ${{ env.AWS_REGION }} \
-              --query 'events[*].message' \
-              --output text || echo "Could not fetch logs"
+            # Dynamically discover the log stream
+            LOG_STREAM=$(aws logs describe-log-streams \
+              --log-group-name "${{ steps.stack.outputs.log_group }}" \
+              --log-stream-name-prefix "api/api/${TASK_ID}" \
+              --query 'logStreams[0].logStreamName' \
+              --output text \
+              --region ${{ env.AWS_REGION }}) || true
+
+            if [ -n "$LOG_STREAM" ] && [ "$LOG_STREAM" != "None" ]; then
+              echo "Log stream: $LOG_STREAM"
+              aws logs get-log-events \
+                --log-group-name "${{ steps.stack.outputs.log_group }}" \
+                --log-stream-name "$LOG_STREAM" \
+                --limit 100 \
+                --region ${{ env.AWS_REGION }} \
+                --query 'events[*].message' \
+                --output text || echo "Could not fetch log events"
+            else
+              echo "Could not find log stream for task ${TASK_ID}"
+            fi
 
             exit 1
           fi

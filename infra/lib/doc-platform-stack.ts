@@ -5,6 +5,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elasticache from 'aws-cdk-lib/aws-elasticache';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -189,6 +190,12 @@ export class DocPlatformStack extends cdk.Stack {
 		// ===========================================
 		// API Service (Fargate)
 		// ===========================================
+		const apiLogGroup = new logs.LogGroup(this, 'ApiLogGroup', {
+			logGroupName: '/ecs/api',
+			retention: logs.RetentionDays.TWO_WEEKS,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+		});
+
 		const apiTaskDefinition = new ecs.FargateTaskDefinition(this, 'ApiTaskDef', {
 			memoryLimitMiB: 512,
 			cpu: 256,
@@ -196,7 +203,10 @@ export class DocPlatformStack extends cdk.Stack {
 
 		apiTaskDefinition.addContainer('api', {
 			image: ecs.ContainerImage.fromEcrRepository(apiRepository, 'latest'),
-			logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
+			logging: ecs.LogDrivers.awsLogs({
+				logGroup: apiLogGroup,
+				streamPrefix: 'api',
+			}),
 			environment: {
 				PORT: '3001',
 				NODE_ENV: 'staging',
@@ -304,7 +314,7 @@ export class DocPlatformStack extends cdk.Stack {
 		const githubOidcProvider = new iam.OpenIdConnectProvider(this, 'GitHubOidcProvider', {
 			url: 'https://token.actions.githubusercontent.com',
 			clientIds: ['sts.amazonaws.com'],
-			thumbprints: ['ffffffffffffffffffffffffffffffffffffffff'], // GitHub's OIDC doesn't require thumbprint validation
+			thumbprints: ['6938fd4d98bab03faadb97b34396831e3780aea1'],
 		});
 
 		const deployRole = new iam.Role(this, 'GitHubActionsDeployRole', {
@@ -324,15 +334,14 @@ export class DocPlatformStack extends cdk.Stack {
 			description: 'Role for GitHub Actions to deploy to ECS',
 		});
 
-		// ECR permissions - push images
+		// ECR permissions - GetAuthorizationToken requires * resource
 		deployRole.addToPolicy(new iam.PolicyStatement({
 			effect: iam.Effect.ALLOW,
-			actions: [
-				'ecr:GetAuthorizationToken',
-			],
+			actions: ['ecr:GetAuthorizationToken'],
 			resources: ['*'],
 		}));
 
+		// ECR permissions - push images to specific repositories
 		deployRole.addToPolicy(new iam.PolicyStatement({
 			effect: iam.Effect.ALLOW,
 			actions: [
@@ -350,42 +359,37 @@ export class DocPlatformStack extends cdk.Stack {
 			],
 		}));
 
-		// ECS permissions - deploy services and run migration tasks
+		// ECS permissions - consolidated (DescribeServices/Tasks need * for waiters)
 		deployRole.addToPolicy(new iam.PolicyStatement({
 			effect: iam.Effect.ALLOW,
 			actions: [
-				'ecs:UpdateService',
 				'ecs:DescribeServices',
 				'ecs:DescribeTasks',
-				'ecs:RunTask',
-				'ecs:StopTask',
 				'ecs:DescribeTaskDefinition',
 			],
 			resources: ['*'],
-			conditions: {
-				ArnLike: {
-					'ecs:cluster': cluster.clusterArn,
-				},
-			},
 		}));
 
-		// Allow describing services without cluster condition (for waiter)
+		// ECS permissions - scoped to cluster for mutations
+		const serviceArnPattern = `arn:aws:ecs:${this.region}:${this.account}:service/${cluster.clusterName}/*`;
+		const taskArnPattern = `arn:aws:ecs:${this.region}:${this.account}:task/${cluster.clusterName}/*`;
+
 		deployRole.addToPolicy(new iam.PolicyStatement({
 			effect: iam.Effect.ALLOW,
-			actions: [
-				'ecs:DescribeServices',
-				'ecs:DescribeTasks',
-			],
-			resources: ['*'],
+			actions: ['ecs:UpdateService'],
+			resources: [serviceArnPattern],
 		}));
 
-		// Allow running tasks (needs broader permissions for run-task)
 		deployRole.addToPolicy(new iam.PolicyStatement({
 			effect: iam.Effect.ALLOW,
-			actions: [
-				'ecs:RunTask',
-			],
-			resources: ['*'],
+			actions: ['ecs:RunTask'],
+			resources: [apiTaskDefinition.taskDefinitionArn],
+		}));
+
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['ecs:StopTask'],
+			resources: [taskArnPattern],
 		}));
 
 		// Pass role to ECS tasks
@@ -405,14 +409,14 @@ export class DocPlatformStack extends cdk.Stack {
 			resources: [this.stackId],
 		}));
 
-		// CloudWatch Logs - for viewing migration task logs
+		// CloudWatch Logs - scoped to API log group for viewing migration logs
 		deployRole.addToPolicy(new iam.PolicyStatement({
 			effect: iam.Effect.ALLOW,
 			actions: [
 				'logs:GetLogEvents',
 				'logs:DescribeLogStreams',
 			],
-			resources: ['*'],
+			resources: [apiLogGroup.logGroupArn, `${apiLogGroup.logGroupArn}:*`],
 		}));
 
 		// ===========================================
@@ -466,6 +470,11 @@ export class DocPlatformStack extends cdk.Stack {
 		new cdk.CfnOutput(this, 'ApiSecurityGroupId', {
 			value: apiSecurityGroup.securityGroupId,
 			description: 'API security group ID',
+		});
+
+		new cdk.CfnOutput(this, 'ApiLogGroupName', {
+			value: apiLogGroup.logGroupName,
+			description: 'API CloudWatch Log Group name',
 		});
 	}
 }
