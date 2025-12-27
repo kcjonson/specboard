@@ -102,7 +102,7 @@ export function Board(_props: RouteProps): JSX.Element {
 
 	async function handleLogoutClick(): Promise<void> {
 		await logout();
-		navigate('/');
+		navigate('/login');
 	}
 
 	function handleDragStart(e: DragEvent, epic: EpicModel): void {

@@ -304,8 +304,6 @@ export class DocPlatformStack extends cdk.Stack {
 
 		listener.addTargetGroups('DefaultRoute', {
 			targetGroups: [frontendTargetGroup],
-			priority: 100,
-			conditions: [elbv2.ListenerCondition.pathPatterns(['/*'])],
 		});
 
 		// ===========================================

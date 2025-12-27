@@ -27,8 +27,8 @@ export interface AuthUser {
 export interface AuthMiddlewareOptions {
 	/** Paths that don't require authentication */
 	excludePaths?: string[];
-	/** Custom handler for unauthenticated requests */
-	onUnauthenticated?: (path: string) => Response | Promise<Response>;
+	/** Custom handler for unauthenticated requests. Receives the full request URL. */
+	onUnauthenticated?: (requestUrl: URL) => Response | Promise<Response>;
 }
 
 /**

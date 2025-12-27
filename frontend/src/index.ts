@@ -91,10 +91,9 @@ app.use(
 	'*',
 	authMiddleware(redis, {
 		excludePaths: ['/health', '/login', '/auth/login', '/auth/logout', '/auth/me'],
-		onUnauthenticated: (_path) => {
-			// Build absolute URL for redirect
-			const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-			return Response.redirect(new URL('/login', baseUrl).toString(), 302);
+		onUnauthenticated: (requestUrl) => {
+			// Redirect to login using the request's origin
+			return Response.redirect(new URL('/login', requestUrl.origin).toString(), 302);
 		},
 	})
 );
