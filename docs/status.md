@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-27 (Pages Scaffolding)
+Last Updated: 2025-12-27 (Backend-Frontend Integration)
 
 ## Epic/Story/Task Template
 
@@ -310,17 +310,17 @@ Use this template for all work items:
 ### REST API & Database
 **Spec/Documentation:** `/docs/specs/api-database.md`
 **Dependencies:** Authentication System
-**Status:** ready
+**Status:** in progress
 
 **Goal:** Build backend API with Aurora Postgres database.
 
 **Tasks:**
 - [ ] Database setup
   - [ ] CDK stack for Aurora Serverless v2
-  - [ ] Schema migrations
-  - [ ] Connection pooling
-- [ ] API framework
-  - [ ] Hono server setup
+  - [x] Schema migrations (epics, tasks tables)
+  - [x] Connection pooling (@doc-platform/db)
+- [x] API framework
+  - [x] Hono server setup
   - [ ] Auth middleware
   - [ ] Error handling
 - [ ] Core endpoints
@@ -328,9 +328,9 @@ Use this template for all work items:
   - [ ] Repository management
   - [ ] Document CRUD
   - [ ] Git operations
-- [ ] Planning endpoints
-  - [ ] Epic CRUD
-  - [ ] Task CRUD
+- [x] Planning endpoints
+  - [x] Epic CRUD (PostgreSQL-backed)
+  - [x] Task CRUD (PostgreSQL-backed)
   - [ ] Document-task links
 
 ---

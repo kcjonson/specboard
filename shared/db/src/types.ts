@@ -55,3 +55,33 @@ export interface OAuthCode {
 	redirect_uri: string;
 	expires_at: Date;
 }
+
+/**
+ * Planning entity types
+ */
+
+export type EpicStatus = 'ready' | 'in_progress' | 'done';
+
+export interface Epic {
+	id: string;
+	title: string;
+	description: string | null;
+	status: EpicStatus;
+	creator: string | null;
+	assignee: string | null;
+	rank: number;
+	created_at: Date;
+	updated_at: Date;
+}
+
+export interface Task {
+	id: string;
+	epic_id: string;
+	title: string;
+	status: EpicStatus;
+	assignee: string | null;
+	due_date: Date | null;
+	rank: number;
+	created_at: Date;
+	updated_at: Date;
+}

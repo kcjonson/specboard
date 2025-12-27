@@ -45,6 +45,7 @@ export class EpicModel extends SyncModel {
 	@prop accessor title!: string;
 	@prop accessor description!: string | undefined;
 	@prop accessor status!: Status;
+	@prop accessor creator!: string | undefined;
 	@prop accessor assignee!: string | undefined;
 	@prop accessor rank!: number;
 	@prop accessor createdAt!: string;
