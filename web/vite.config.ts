@@ -38,7 +38,15 @@ export default defineConfig({
 			'preact': resolve(__dirname, 'node_modules/preact'),
 			'preact/hooks': resolve(__dirname, 'node_modules/preact/hooks'),
 			'preact/jsx-runtime': resolve(__dirname, 'node_modules/preact/jsx-runtime'),
+			// Alias React to Preact for slate-react compatibility
+			'react': resolve(__dirname, 'node_modules/preact/compat'),
+			'react-dom': resolve(__dirname, 'node_modules/preact/compat'),
+			// Ensure slate packages resolve from web's node_modules
+			'slate': resolve(__dirname, 'node_modules/slate'),
+			'slate-react': resolve(__dirname, 'node_modules/slate-react'),
+			'slate-history': resolve(__dirname, 'node_modules/slate-history'),
+			'is-hotkey': resolve(__dirname, 'node_modules/is-hotkey'),
 		},
-		dedupe: ['preact'],
+		dedupe: ['preact', 'slate', 'slate-react', 'slate-history'],
 	},
 });
