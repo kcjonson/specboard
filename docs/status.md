@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-27 (Real user auth implementation)
+Last Updated: 2025-12-28 (Markdown Editor Setup)
 
 ## Epic/Story/Task Template
 
@@ -175,6 +175,37 @@ Use this template for all work items:
 
 ---
 
+### Markdown Editor
+**Spec/Documentation:** `/docs/specs/markdown-editor.md`
+**Dependencies:** Platform Abstraction Layer
+**Status:** in progress
+
+**Goal:** Build dual-mode Slate.js editor with WYSIWYG and raw markdown modes.
+
+**Tasks:**
+- [x] Slate.js setup
+  - [x] Configure with Preact (via preact/compat)
+  - [x] Define node types (paragraph, heading, blockquote, code-block, lists, link, thematic-break)
+  - [x] Define text marks (bold, italic, code, strikethrough)
+- [x] WYSIWYG rendering
+  - [x] Element renderers
+  - [x] Leaf renderers
+  - [ ] Prism syntax highlighting for code
+- [x] Toolbar with formatting controls
+- [x] In-memory mock document for testing
+- [ ] Raw mode rendering
+  - [ ] Markdown syntax highlighting
+  - [ ] Cursor position preservation
+- [ ] Serialization
+  - [ ] Markdown → Slate (remark-slate)
+  - [ ] Slate → Markdown
+- [ ] Comment system
+  - [ ] Comment marks on text
+  - [ ] Comment panel UI
+  - [ ] Comment storage in markdown
+
+---
+
 ## Planned Epics
 
 ### Platform Abstraction Layer
@@ -198,35 +229,6 @@ Use this template for all work items:
   - [ ] REST API client for Git
   - [ ] Browser APIs for System
 - [ ] Preact provider
-
----
-
-### Markdown Editor
-**Spec/Documentation:** `/docs/specs/markdown-editor.md`
-**Dependencies:** Platform Abstraction Layer
-**Status:** ready
-
-**Goal:** Build dual-mode Slate.js editor with WYSIWYG and raw markdown modes.
-
-**Tasks:**
-- [ ] Slate.js setup
-  - [ ] Configure with Preact
-  - [ ] Define node types
-  - [ ] Define text marks
-- [ ] WYSIWYG rendering
-  - [ ] Element renderers
-  - [ ] Leaf renderers
-  - [ ] Prism syntax highlighting for code
-- [ ] Raw mode rendering
-  - [ ] Markdown syntax highlighting
-  - [ ] Cursor position preservation
-- [ ] Serialization
-  - [ ] Markdown → Slate (remark-slate)
-  - [ ] Slate → Markdown
-- [ ] Comment system
-  - [ ] Comment marks on text
-  - [ ] Comment panel UI
-  - [ ] Comment storage in markdown
 
 ---
 

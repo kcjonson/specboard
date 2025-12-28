@@ -30,3 +30,7 @@ export type { ModelConstructor } from './Collection';
 // Planning models
 export { TaskModel, EpicModel, EpicsCollection } from './planning';
 export type { Status, TaskStats } from './planning';
+
+// Document models
+export { DocumentModel, EMPTY_DOCUMENT } from './DocumentModel';
+export type { SlateContent } from './DocumentModel';

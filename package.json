@@ -23,5 +23,11 @@
 	},
 	"dependencies": {
 		"polyfill-symbol-metadata": "^0.0.2"
+	},
+	"pnpm": {
+		"overrides": {
+			"react": "npm:@preact/compat@^10.25.4",
+			"react-dom": "npm:@preact/compat@^10.25.4"
+		}
 	}
 }
