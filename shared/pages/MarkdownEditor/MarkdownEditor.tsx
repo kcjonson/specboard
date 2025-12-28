@@ -74,12 +74,25 @@ function toggleBlock(editor: Editor, format: CustomElement['type']): void {
 	});
 
 	// Handle heading with required level property
-	const newProperties: Partial<CustomElement> =
-		!isActive && format === 'heading'
-			? { type: 'heading', level: 1 }
-			: { type: isActive ? 'paragraph' : isList ? 'list-item' : format };
+	// When toggling to heading, set level; when toggling away from heading, unset level
+	let newProperties: Partial<CustomElement>;
+	if (!isActive && format === 'heading') {
+		newProperties = { type: 'heading', level: 1 };
+	} else if (isActive && format === 'heading') {
+		// Toggling heading off - remove level property
+		newProperties = { type: 'paragraph' };
+	} else {
+		newProperties = { type: isActive ? 'paragraph' : isList ? 'list-item' : format };
+	}
 
 	Transforms.setNodes<CustomElement>(editor, newProperties);
+
+	// Clean up stale properties when switching away from heading
+	if (isActive && format === 'heading') {
+		Transforms.unsetNodes(editor, 'level', {
+			match: n => SlateElement.isElement(n) && n.type === 'paragraph',
+		});
+	}
 
 	if (!isActive && isList) {
 		const block: CustomElement = { type: format, children: [] };
