@@ -70,9 +70,21 @@ export type FormattedText = {
 	italic?: boolean;
 	code?: boolean;
 	strikethrough?: boolean;
+	commentId?: string; // Links text to a comment
 };
 
 export type CustomText = FormattedText;
+
+// Comment data structure
+export interface Comment {
+	id: string;
+	text: string;
+	author: string;
+	authorEmail: string;
+	timestamp: string; // ISO 8601
+	resolved: boolean;
+	replies: Comment[];
+}
 
 // Editor type combining all plugins
 export type CustomEditor = BaseEditor & ReactEditor & HistoryEditor;

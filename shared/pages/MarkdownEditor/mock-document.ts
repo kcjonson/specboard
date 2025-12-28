@@ -1,4 +1,5 @@
 import type { Descendant } from 'slate';
+import type { Comment } from './types';
 
 /**
  * Mock document for in-memory editing.
@@ -14,7 +15,7 @@ export const mockDocument: Descendant[] = [
 		type: 'paragraph',
 		children: [
 			{ text: 'This is a ' },
-			{ text: 'rich text', bold: true },
+			{ text: 'rich text', bold: true, commentId: 'comment-1' },
 			{ text: ' editor built with ' },
 			{ text: 'Slate.js', italic: true },
 			{ text: ' and ' },
@@ -88,7 +89,8 @@ export const mockDocument: Descendant[] = [
 			{
 				type: 'paragraph',
 				children: [
-					{ text: 'The best way to predict the future is to invent it.' },
+					{ text: 'The best way to predict the future is to ', commentId: 'comment-2' },
+					{ text: 'invent it.' },
 				],
 			},
 		],
@@ -112,5 +114,39 @@ export const mockDocument: Descendant[] = [
 			{ text: 'Ctrl+I', code: true },
 			{ text: ' for italic.' },
 		],
+	},
+];
+
+/**
+ * Mock comments for testing the inline comments UI.
+ */
+export const mockComments: Comment[] = [
+	{
+		id: 'comment-1',
+		text: 'Consider making this more descriptive. Maybe "formatted rich text" would be better?',
+		author: 'Jane Doe',
+		authorEmail: 'jane@example.com',
+		timestamp: '2025-12-28T10:30:00Z',
+		resolved: false,
+		replies: [
+			{
+				id: 'reply-1',
+				text: 'Good point! I\'ll update this.',
+				author: 'John Smith',
+				authorEmail: 'john@example.com',
+				timestamp: '2025-12-28T11:15:00Z',
+				resolved: false,
+				replies: [],
+			},
+		],
+	},
+	{
+		id: 'comment-2',
+		text: 'Great quote! Should we add the attribution year (1971)?',
+		author: 'Alex Johnson',
+		authorEmail: 'alex@example.com',
+		timestamp: '2025-12-28T09:45:00Z',
+		resolved: false,
+		replies: [],
 	},
 ];
