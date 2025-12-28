@@ -1,7 +1,5 @@
 import bcrypt from 'bcrypt';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import commonPasswordsList from './common-passwords.json' with { type: 'json' };
 
 const BCRYPT_COST = 12;
 const MIN_LENGTH = 12;
@@ -23,19 +21,8 @@ export interface PasswordValidationResult {
 	errors: PasswordValidationError[];
 }
 
-// Load common passwords list once at module load
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const commonPasswordsPath = join(__dirname, 'common-passwords.txt');
-
-let commonPasswords: Set<string>;
-try {
-	const content = readFileSync(commonPasswordsPath, 'utf-8');
-	commonPasswords = new Set(content.split('\n').map((p) => p.trim().toLowerCase()));
-} catch {
-	// Fallback to empty set if file not found (e.g., in tests)
-	commonPasswords = new Set();
-}
+// Common passwords set loaded at import time
+const commonPasswords = new Set<string>(commonPasswordsList);
 
 /**
  * Validate a password against all requirements
