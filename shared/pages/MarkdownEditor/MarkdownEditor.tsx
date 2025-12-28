@@ -195,6 +195,8 @@ function renderLeaf(props: RenderLeafProps): JSX.Element {
 			<span
 				class={styles.commentHighlight}
 				data-comment-id={text.commentId}
+				role="mark"
+				aria-label="Text with comment"
 			>
 				{content}
 			</span>
@@ -287,7 +289,7 @@ export function MarkdownEditor({
 					/>
 				)}
 				<div class={styles.editorWithComments}>
-					<div ref={editableRef} class={styles.editorWrapper} onClick={handleEditableClick}>
+					<div ref={editableRef} class={styles.editorWrapper} data-editor-wrapper onClick={handleEditableClick}>
 						<Editable
 							class={styles.editable}
 							renderElement={renderElement}

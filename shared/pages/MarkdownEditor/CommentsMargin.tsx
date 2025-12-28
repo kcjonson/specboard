@@ -86,7 +86,7 @@ export function CommentsMargin({
 
 		// Update on scroll and resize
 		const editor = editorRef.current;
-		const scrollContainer = editor?.closest('[class*="editorWrapper"]');
+		const scrollContainer = (editor?.closest('[data-editor-wrapper]') as HTMLElement | null) ?? editor ?? null;
 
 		if (scrollContainer) {
 			scrollContainer.addEventListener('scroll', scheduleUpdate);

@@ -17,6 +17,12 @@ function formatTimestamp(timestamp: string): string {
 	const date = new Date(timestamp);
 	const now = new Date();
 	const diffMs = now.getTime() - date.getTime();
+
+	// Handle future timestamps
+	if (diffMs < 0) {
+		return date.toLocaleDateString();
+	}
+
 	const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
 	const diffDays = Math.floor(diffHours / 24);
 
@@ -32,12 +38,16 @@ function formatTimestamp(timestamp: string): string {
 }
 
 function getInitials(name: string): string {
+	if (!name || !name.trim()) {
+		return '?';
+	}
 	return name
 		.split(' ')
+		.filter(word => word.length > 0)
 		.map(word => word[0])
 		.join('')
 		.toUpperCase()
-		.slice(0, 2);
+		.slice(0, 2) || '?';
 }
 
 export function InlineComment({
@@ -46,11 +56,22 @@ export function InlineComment({
 	onClick,
 	top,
 }: InlineCommentProps): JSX.Element {
+	const handleKeyDown = (event: KeyboardEvent): void => {
+		if (!onClick) return;
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			onClick();
+		}
+	};
+
 	return (
 		<div
 			class={`${styles.container} ${isActive ? styles.active : ''}`}
 			style={{ top: `${top}px` }}
 			onClick={onClick}
+			role={onClick ? 'button' : undefined}
+			tabIndex={onClick ? 0 : -1}
+			onKeyDown={handleKeyDown}
 		>
 			<div class={styles.connector} />
 			<div class={styles.card}>
