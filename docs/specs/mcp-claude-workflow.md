@@ -54,8 +54,7 @@ Human (Dev Manager)                    Claude (Developer)
 |--------|-------------|
 | Read epic + spec | Get requirements and context |
 | Create tasks under epic | Break down work into implementable units |
-| Update task status | Track progress (ready → in_progress → done) |
-| Add subtasks | Further decompose as complexity discovered |
+| Update task status/details | Track progress (ready → in_progress → done) |
 | Open PR | Signal "ready for review" |
 | Request clarification | Ask human for input when blocked |
 
@@ -128,13 +127,6 @@ Claude can freely manage task status. Completing all tasks does NOT auto-complet
 | `complete_task` | Finish task | taskId |
 | `block_task` | Mark blocked | taskId, reason |
 | `unblock_task` | Resume work | taskId |
-
-### Subtask Management
-
-| Tool | Purpose | Input |
-|------|---------|-------|
-| `add_subtasks` | Break down task | taskId, subtasks[] |
-| `complete_subtask` | Mark subtask done | taskId, subtaskId |
 
 ### Progress & Communication
 
@@ -312,35 +304,19 @@ interface Task {
   id: string;
   epicId: string;
   title: string;
-  description?: string;
+  details?: string;           // Freeform markdown - Claude's working notes
   status: 'ready' | 'in_progress' | 'blocked' | 'done';
   blockReason?: string;
 
   // Created by Claude
   createdBy: 'claude';
 
-  // Breakdown
-  subtasks: Subtask[];
-
-  // Progress
+  // Progress - timestamped activity log
   progressNotes: ProgressNote[];
 
   // Timestamps
   createdAt: string;
   startedAt?: string;
-  completedAt?: string;
-}
-```
-
-### Subtask
-
-```typescript
-interface Subtask {
-  id: string;
-  taskId: string;
-  title: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  order: number;
   completedAt?: string;
 }
 ```
@@ -397,7 +373,7 @@ interface CurrentWorkResponse {
       id: string;
       title: string;
       status: string;
-      subtasks: Subtask[];
+      details?: string;       // My working notes
     };
     pendingClarifications: Clarification[];
     recentNotes: ProgressNote[];
@@ -424,9 +400,9 @@ interface CurrentWorkResponse {
 4. `start_task`, `complete_task` - Basic lifecycle
 5. `signal_ready_for_review` - Handoff to human
 
-### Phase 2: Progress Tracking
-6. `add_subtasks`, `complete_subtask` - Granular progress
-7. `add_progress_note` - Visibility for humans
+### Phase 2: Progress & Context
+6. `add_progress_note` - Visibility for humans
+7. `update_task` - Update details as work progresses
 8. `get_current_work` - Context loading
 
 ### Phase 3: Communication
@@ -465,8 +441,8 @@ Claude does NOT have `epics:write` (only humans can create/complete epics).
 
 ## Next Steps
 
-1. Update database schema for clarifications, subtasks
-2. Implement MCP tools in priority order
+1. Update database schema: add clarifications table, details field on tasks
+2. Implement MCP tools in priority order (Phase 1 first)
 3. Build human UI for answering clarifications
 4. Add "in_review" status to epic model
 5. Connect PR webhooks to auto-detect review state
