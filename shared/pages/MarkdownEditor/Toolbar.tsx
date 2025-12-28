@@ -12,18 +12,29 @@ export interface ToolbarProps {
 
 interface ToolbarButtonProps {
 	active: boolean;
-	onMouseDown: (event: MouseEvent) => void;
+	onAction: () => void;
 	children: JSX.Element | string;
 	title: string;
 	ariaLabel: string;
 }
 
-function ToolbarButton({ active, onMouseDown, children, title, ariaLabel }: ToolbarButtonProps): JSX.Element {
+function ToolbarButton({ active, onAction, children, title, ariaLabel }: ToolbarButtonProps): JSX.Element {
 	return (
 		<button
 			type="button"
 			class={`${styles.button} ${active ? styles.active : ''}`}
-			onMouseDown={onMouseDown}
+			onMouseDown={(event) => {
+				// Prevent editor from losing focus on mouse click
+				event.preventDefault();
+				onAction();
+			}}
+			onClick={(event) => {
+				// Handle keyboard activation (Enter/Space)
+				// Only fire if not from mouse (mousedown already handled it)
+				if (event.detail === 0) {
+					onAction();
+				}
+			}}
 			title={title}
 			aria-label={ariaLabel}
 			aria-pressed={active}
@@ -49,10 +60,7 @@ function MarkButton({ format, icon, title, ariaLabel, isActive, toggle }: MarkBu
 	return (
 		<ToolbarButton
 			active={isActive(format)}
-			onMouseDown={(event) => {
-				event.preventDefault();
-				toggle(format);
-			}}
+			onAction={() => toggle(format)}
 			title={title}
 			ariaLabel={ariaLabel}
 		>
@@ -77,10 +85,7 @@ function BlockButton({ format, icon, title, ariaLabel, isActive, toggle }: Block
 	return (
 		<ToolbarButton
 			active={isActive(format)}
-			onMouseDown={(event) => {
-				event.preventDefault();
-				toggle(format);
-			}}
+			onAction={() => toggle(format)}
 			title={title}
 			ariaLabel={ariaLabel}
 		>
