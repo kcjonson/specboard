@@ -10,10 +10,10 @@ export default defineConfig({
 		rollupOptions: {
 			input: {
 				main: resolve(__dirname, 'index.html'),
-				'shared-styles': resolve(__dirname, 'src/shared-styles.ts'),
-				'login-styles': resolve(__dirname, 'src/login-styles.ts'),
-				'signup-styles': resolve(__dirname, 'src/signup-styles.ts'),
-				'not-found-styles': resolve(__dirname, 'src/not-found-styles.ts'),
+				'shared-styles': resolve(__dirname, '../shared/ui/src/shared.css'),
+				'login-styles': resolve(__dirname, '../frontend/src/styles/login.css'),
+				'signup-styles': resolve(__dirname, '../frontend/src/styles/signup.css'),
+				'not-found-styles': resolve(__dirname, '../frontend/src/styles/not-found.css'),
 			},
 		},
 	},

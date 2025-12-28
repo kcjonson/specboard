@@ -29,18 +29,19 @@ try {
 }
 
 // Get CSS paths from manifest
-function getAssetPath(entry: string): string | undefined {
+// When CSS files are used as entry points, the 'file' property contains the CSS path directly
+function getCssPath(entry: string): string | undefined {
 	const manifestEntry = manifest[entry];
-	if (manifestEntry?.css?.[0]) {
-		return '/' + manifestEntry.css[0];
+	if (manifestEntry?.file) {
+		return '/' + manifestEntry.file;
 	}
 	return undefined;
 }
 
-const sharedCssPath = getAssetPath('src/shared-styles.ts');
-const loginCssPath = getAssetPath('src/login-styles.ts');
-const signupCssPath = getAssetPath('src/signup-styles.ts');
-const notFoundCssPath = getAssetPath('src/not-found-styles.ts');
+const sharedCssPath = getCssPath('../shared/ui/src/shared.css');
+const loginCssPath = getCssPath('../frontend/src/styles/login.css');
+const signupCssPath = getCssPath('../frontend/src/styles/signup.css');
+const notFoundCssPath = getCssPath('../frontend/src/styles/not-found.css');
 
 const app = new Hono<{ Variables: AuthVariables }>();
 
