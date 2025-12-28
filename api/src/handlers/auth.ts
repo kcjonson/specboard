@@ -291,11 +291,17 @@ export async function handleGetMe(
 			return context.json({ error: 'User not found' }, 401);
 		}
 
+		// Build display name from available fields
+		const displayName = user.first_name && user.last_name
+			? `${user.first_name} ${user.last_name}`
+			: user.first_name || user.last_name || user.username || user.email;
+
 		return context.json({
 			user: {
 				id: user.id,
 				username: user.username,
 				email: user.email,
+				displayName,
 				first_name: user.first_name,
 				last_name: user.last_name,
 				email_verified: user.email_verified,

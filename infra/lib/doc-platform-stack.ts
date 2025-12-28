@@ -54,6 +54,12 @@ export class DocPlatformStack extends cdk.Stack {
 			emptyOnDelete: true,
 		});
 
+		const mcpRepository = new ecr.Repository(this, 'McpRepository', {
+			repositoryName: 'doc-platform/mcp',
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+			emptyOnDelete: true,
+		});
+
 		// ===========================================
 		// RDS PostgreSQL (Single-AZ for staging)
 		// ===========================================
@@ -156,6 +162,12 @@ export class DocPlatformStack extends cdk.Stack {
 			allowAllOutbound: true,
 		});
 
+		const mcpSecurityGroup = new ec2.SecurityGroup(this, 'McpSecurityGroup', {
+			vpc,
+			description: 'Security group for MCP service',
+			allowAllOutbound: true,
+		});
+
 		// Allow ALB to reach services
 		apiSecurityGroup.addIngressRule(
 			ec2.Peer.securityGroupId(alb.connections.securityGroups[0]!.securityGroupId),
@@ -166,6 +178,13 @@ export class DocPlatformStack extends cdk.Stack {
 			ec2.Peer.securityGroupId(alb.connections.securityGroups[0]!.securityGroupId),
 			ec2.Port.tcp(3000),
 			'Allow ALB to Frontend'
+		);
+
+		// Allow MCP to reach API (internal service-to-service)
+		apiSecurityGroup.addIngressRule(
+			mcpSecurityGroup,
+			ec2.Port.tcp(3001),
+			'Allow MCP to API'
 		);
 
 		// Allow services to reach database
@@ -263,6 +282,44 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 
 		// ===========================================
+		// MCP Service (Fargate)
+		// ===========================================
+		const mcpLogGroup = new logs.LogGroup(this, 'McpLogGroup', {
+			logGroupName: '/ecs/mcp',
+			retention: logs.RetentionDays.TWO_WEEKS,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+		});
+
+		const mcpTaskDefinition = new ecs.FargateTaskDefinition(this, 'McpTaskDef', {
+			memoryLimitMiB: 512,
+			cpu: 256,
+		});
+
+		mcpTaskDefinition.addContainer('mcp', {
+			image: ecs.ContainerImage.fromEcrRepository(mcpRepository, 'latest'),
+			logging: ecs.LogDrivers.awsLogs({
+				logGroup: mcpLogGroup,
+				streamPrefix: 'mcp',
+			}),
+			environment: {
+				PORT: '3002',
+				NODE_ENV: 'production',
+				// MCP calls API via internal URL
+				API_URL: 'http://api:3001',
+			},
+			portMappings: [{ containerPort: 3002 }],
+		});
+
+		new ecs.FargateService(this, 'McpService', {
+			cluster,
+			taskDefinition: mcpTaskDefinition,
+			desiredCount: 1,
+			securityGroups: [mcpSecurityGroup],
+			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+			serviceName: 'mcp',
+		});
+
+		// ===========================================
 		// ALB Target Groups & Routing
 		// ===========================================
 		const apiTargetGroup = new elbv2.ApplicationTargetGroup(this, 'ApiTargetGroup', {
@@ -352,6 +409,7 @@ export class DocPlatformStack extends cdk.Stack {
 			resources: [
 				apiRepository.repositoryArn,
 				frontendRepository.repositoryArn,
+				mcpRepository.repositoryArn,
 			],
 		}));
 
@@ -438,6 +496,11 @@ export class DocPlatformStack extends cdk.Stack {
 		new cdk.CfnOutput(this, 'FrontendRepositoryUri', {
 			value: frontendRepository.repositoryUri,
 			description: 'ECR Repository URI for Frontend',
+		});
+
+		new cdk.CfnOutput(this, 'McpRepositoryUri', {
+			value: mcpRepository.repositoryUri,
+			description: 'ECR Repository URI for MCP',
 		});
 
 		new cdk.CfnOutput(this, 'ClusterName', {

@@ -20,13 +20,26 @@ import {
 	handleCreateEpic,
 	handleUpdateEpic,
 	handleDeleteEpic,
+	handleGetCurrentWork,
+	handleSignalReadyForReview,
 } from './handlers/epics.js';
 import {
 	handleListTasks,
 	handleCreateTask,
 	handleUpdateTask,
 	handleDeleteTask,
+	handleBulkCreateTasks,
+	handleStartTask,
+	handleCompleteTask,
+	handleBlockTask,
+	handleUnblockTask,
 } from './handlers/tasks.js';
+import {
+	handleListEpicProgress,
+	handleCreateEpicProgress,
+	handleListTaskProgress,
+	handleCreateTaskProgress,
+} from './handlers/progress.js';
 
 // Redis connection
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -83,18 +96,31 @@ app.post('/api/auth/signup', (context) => handleSignup(context, redis));
 app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
 
-// Epic routes
-app.get('/api/epics', handleListEpics);
-app.get('/api/epics/:id', handleGetEpic);
-app.post('/api/epics', handleCreateEpic);
-app.put('/api/epics/:id', handleUpdateEpic);
-app.delete('/api/epics/:id', handleDeleteEpic);
+// Project-scoped epic routes
+app.get('/api/projects/:projectId/epics', handleListEpics);
+app.get('/api/projects/:projectId/epics/current', handleGetCurrentWork);
+app.get('/api/projects/:projectId/epics/:id', handleGetEpic);
+app.post('/api/projects/:projectId/epics', handleCreateEpic);
+app.put('/api/projects/:projectId/epics/:id', handleUpdateEpic);
+app.delete('/api/projects/:projectId/epics/:id', handleDeleteEpic);
+app.post('/api/projects/:projectId/epics/:id/ready-for-review', handleSignalReadyForReview);
 
-// Task routes
-app.get('/api/epics/:epicId/tasks', handleListTasks);
-app.post('/api/epics/:epicId/tasks', handleCreateTask);
-app.put('/api/tasks/:id', handleUpdateTask);
-app.delete('/api/tasks/:id', handleDeleteTask);
+// Project-scoped task routes
+app.get('/api/projects/:projectId/epics/:epicId/tasks', handleListTasks);
+app.post('/api/projects/:projectId/epics/:epicId/tasks', handleCreateTask);
+app.post('/api/projects/:projectId/epics/:epicId/tasks/bulk', handleBulkCreateTasks);
+app.put('/api/projects/:projectId/tasks/:id', handleUpdateTask);
+app.delete('/api/projects/:projectId/tasks/:id', handleDeleteTask);
+app.post('/api/projects/:projectId/tasks/:id/start', handleStartTask);
+app.post('/api/projects/:projectId/tasks/:id/complete', handleCompleteTask);
+app.post('/api/projects/:projectId/tasks/:id/block', handleBlockTask);
+app.post('/api/projects/:projectId/tasks/:id/unblock', handleUnblockTask);
+
+// Project-scoped progress notes routes
+app.get('/api/projects/:projectId/epics/:epicId/progress', handleListEpicProgress);
+app.post('/api/projects/:projectId/epics/:epicId/progress', handleCreateEpicProgress);
+app.get('/api/projects/:projectId/tasks/:taskId/progress', handleListTaskProgress);
+app.post('/api/projects/:projectId/tasks/:taskId/progress', handleCreateTaskProgress);
 
 // Start server
 const PORT = Number(process.env.PORT) || 3001;

@@ -127,6 +127,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and push MCP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./mcp/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/doc-platform/mcp:latest
+            ${{ steps.login-ecr.outputs.registry }}/doc-platform/mcp:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Get stack outputs
         id: stack
         run: |
@@ -242,6 +254,14 @@ jobs:
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
 
+      - name: Deploy MCP service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ steps.stack.outputs.cluster }} \
+            --service mcp \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
       - name: Wait for API deployment
         run: |
           aws ecs wait services-stable \
@@ -254,6 +274,13 @@ jobs:
           aws ecs wait services-stable \
             --cluster ${{ steps.stack.outputs.cluster }} \
             --services frontend \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for MCP deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ steps.stack.outputs.cluster }} \
+            --services mcp \
             --region ${{ env.AWS_REGION }}
 
       - name: Deployment complete

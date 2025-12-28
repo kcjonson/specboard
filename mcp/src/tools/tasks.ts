@@ -8,7 +8,15 @@
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { query, type Task } from '@doc-platform/db';
+import {
+	createTask as createTaskService,
+	createTasks as createTasksService,
+	updateTask as updateTaskService,
+	startTask as startTaskService,
+	completeTask as completeTaskService,
+	blockTask as blockTaskService,
+	unblockTask as unblockTaskService,
+} from '@doc-platform/db';
 
 export const taskTools: Tool[] = [
 	{
@@ -18,6 +26,10 @@ export const taskTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				epic_id: {
 					type: 'string',
 					description: 'The UUID of the parent epic',
@@ -31,7 +43,7 @@ export const taskTools: Tool[] = [
 					description: 'Optional markdown details/notes for this task',
 				},
 			},
-			required: ['epic_id', 'title'],
+			required: ['project_id', 'epic_id', 'title'],
 		},
 	},
 	{
@@ -41,6 +53,10 @@ export const taskTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				epic_id: {
 					type: 'string',
 					description: 'The UUID of the parent epic',
@@ -64,7 +80,7 @@ export const taskTools: Tool[] = [
 					description: 'Array of tasks to create',
 				},
 			},
-			required: ['epic_id', 'tasks'],
+			required: ['project_id', 'epic_id', 'tasks'],
 		},
 	},
 	{
@@ -73,6 +89,10 @@ export const taskTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				task_id: {
 					type: 'string',
 					description: 'The UUID of the task to update',
@@ -86,7 +106,7 @@ export const taskTools: Tool[] = [
 					description: 'New markdown details/notes',
 				},
 			},
-			required: ['task_id'],
+			required: ['project_id', 'task_id'],
 		},
 	},
 	{
@@ -96,12 +116,16 @@ export const taskTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				task_id: {
 					type: 'string',
 					description: 'The UUID of the task to start',
 				},
 			},
-			required: ['task_id'],
+			required: ['project_id', 'task_id'],
 		},
 	},
 	{
@@ -110,12 +134,16 @@ export const taskTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				task_id: {
 					type: 'string',
 					description: 'The UUID of the task to complete',
 				},
 			},
-			required: ['task_id'],
+			required: ['project_id', 'task_id'],
 		},
 	},
 	{
@@ -125,6 +153,10 @@ export const taskTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				task_id: {
 					type: 'string',
 					description: 'The UUID of the task to block',
@@ -134,7 +166,7 @@ export const taskTools: Tool[] = [
 					description: 'Why the task is blocked',
 				},
 			},
-			required: ['task_id', 'reason'],
+			required: ['project_id', 'task_id', 'reason'],
 		},
 	},
 	{
@@ -143,12 +175,16 @@ export const taskTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				task_id: {
 					type: 'string',
 					description: 'The UUID of the task to unblock',
 				},
 			},
-			required: ['task_id'],
+			required: ['project_id', 'task_id'],
 		},
 	},
 ];
@@ -159,41 +195,59 @@ export async function handleTaskTool(
 	name: string,
 	args: Record<string, unknown> | undefined
 ): Promise<ToolResult> {
-	switch (name) {
-		case 'create_task':
-			return await createTask(
-				args?.epic_id as string,
-				args?.title as string,
-				args?.details as string | undefined
-			);
-		case 'create_tasks':
-			return await createTasks(
-				args?.epic_id as string,
-				args?.tasks as Array<{ title: string; details?: string }>
-			);
-		case 'update_task':
-			return await updateTask(
-				args?.task_id as string,
-				args?.title as string | undefined,
-				args?.details as string | undefined
-			);
-		case 'start_task':
-			return await startTask(args?.task_id as string);
-		case 'complete_task':
-			return await completeTask(args?.task_id as string);
-		case 'block_task':
-			return await blockTask(args?.task_id as string, args?.reason as string);
-		case 'unblock_task':
-			return await unblockTask(args?.task_id as string);
-		default:
-			return {
-				content: [{ type: 'text', text: `Unknown task tool: ${name}` }],
-				isError: true,
-			};
+	const projectId = args?.project_id as string;
+	if (!projectId) {
+		return {
+			content: [{ type: 'text', text: 'project_id is required' }],
+			isError: true,
+		};
+	}
+
+	try {
+		switch (name) {
+			case 'create_task':
+				return await createTask(
+					projectId,
+					args?.epic_id as string,
+					args?.title as string,
+					args?.details as string | undefined
+				);
+			case 'create_tasks':
+				return await createTasks(
+					projectId,
+					args?.epic_id as string,
+					args?.tasks as Array<{ title: string; details?: string }>
+				);
+			case 'update_task':
+				return await updateTask(
+					args?.task_id as string,
+					args?.title as string | undefined,
+					args?.details as string | undefined
+				);
+			case 'start_task':
+				return await startTask(args?.task_id as string);
+			case 'complete_task':
+				return await completeTask(args?.task_id as string);
+			case 'block_task':
+				return await blockTask(args?.task_id as string, args?.reason as string);
+			case 'unblock_task':
+				return await unblockTask(args?.task_id as string);
+			default:
+				return {
+					content: [{ type: 'text', text: `Unknown task tool: ${name}` }],
+					isError: true,
+				};
+		}
+	} catch (error) {
+		return {
+			content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
+			isError: true,
+		};
 	}
 }
 
 async function createTask(
+	projectId: string,
 	epicId: string,
 	title: string,
 	details?: string
@@ -205,37 +259,7 @@ async function createTask(
 		};
 	}
 
-	// Check epic exists
-	const epicCheck = await query(`SELECT id FROM epics WHERE id = $1`, [epicId]);
-	if (epicCheck.rows.length === 0) {
-		return {
-			content: [{ type: 'text', text: `Epic not found: ${epicId}` }],
-			isError: true,
-		};
-	}
-
-	// Get max rank
-	const rankResult = await query<{ max_rank: number | null }>(
-		`SELECT MAX(rank) as max_rank FROM tasks WHERE epic_id = $1`,
-		[epicId]
-	);
-	const maxRank = rankResult.rows[0]?.max_rank ?? 0;
-
-	// Create task
-	const result = await query<Task>(
-		`INSERT INTO tasks (epic_id, title, details, status, rank)
-		 VALUES ($1, $2, $3, 'ready', $4)
-		 RETURNING *`,
-		[epicId, title, details ?? null, maxRank + 1]
-	);
-
-	const task = result.rows[0];
-	if (!task) {
-		return {
-			content: [{ type: 'text', text: 'Failed to create task' }],
-			isError: true,
-		};
-	}
+	const task = await createTaskService(projectId, epicId, { title, details });
 
 	return {
 		content: [
@@ -243,11 +267,7 @@ async function createTask(
 				type: 'text',
 				text: JSON.stringify(
 					{
-						created: {
-							id: task.id,
-							title: task.title,
-							status: task.status,
-						},
+						created: { id: task.id, title: task.title, status: task.status },
 					},
 					null,
 					2
@@ -258,6 +278,7 @@ async function createTask(
 }
 
 async function createTasks(
+	projectId: string,
 	epicId: string,
 	tasks: Array<{ title: string; details?: string }>
 ): Promise<ToolResult> {
@@ -268,55 +289,20 @@ async function createTasks(
 		};
 	}
 
-	// Check epic exists
-	const epicCheck = await query(`SELECT id FROM epics WHERE id = $1`, [epicId]);
-	if (epicCheck.rows.length === 0) {
-		return {
-			content: [{ type: 'text', text: `Epic not found: ${epicId}` }],
-			isError: true,
-		};
-	}
-
-	// Get max rank
-	const rankResult = await query<{ max_rank: number | null }>(
-		`SELECT MAX(rank) as max_rank FROM tasks WHERE epic_id = $1`,
-		[epicId]
-	);
-	let currentRank = (rankResult.rows[0]?.max_rank ?? 0) + 1;
-
-	// Build batched INSERT with multiple VALUES tuples
-	const values: unknown[] = [];
-	const valueTuples: string[] = [];
-
-	for (const task of tasks) {
-		const paramOffset = values.length;
-		valueTuples.push(
-			`($${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, 'ready', $${paramOffset + 4})`
-		);
-		values.push(epicId, task.title, task.details ?? null, currentRank++);
-	}
-
-	const result = await query<Task>(
-		`INSERT INTO tasks (epic_id, title, details, status, rank)
-		 VALUES ${valueTuples.join(', ')}
-		 RETURNING id, title, status`,
-		values
-	);
-
-	if (result.rows.length !== tasks.length) {
-		return {
-			content: [{ type: 'text', text: 'Failed to create all tasks' }],
-			isError: true,
-		};
-	}
-
-	const created = result.rows.map((t) => ({ id: t.id, title: t.title, status: t.status }));
+	const created = await createTasksService(projectId, epicId, tasks);
 
 	return {
 		content: [
 			{
 				type: 'text',
-				text: JSON.stringify({ created, count: created.length }, null, 2),
+				text: JSON.stringify(
+					{
+						created: created.map((t) => ({ id: t.id, title: t.title, status: t.status })),
+						count: created.length,
+					},
+					null,
+					2
+				),
 			},
 		],
 	};
@@ -341,30 +327,11 @@ async function updateTask(
 		};
 	}
 
-	const updates: string[] = [];
-	const values: unknown[] = [];
-	let paramIndex = 1;
+	const task = await updateTaskService(taskId, { title, details });
 
-	if (title) {
-		updates.push(`title = $${paramIndex++}`);
-		values.push(title);
-	}
-	if (details !== undefined) {
-		updates.push(`details = $${paramIndex++}`);
-		values.push(details);
-	}
-
-	values.push(taskId);
-
-	const result = await query<Task>(
-		`UPDATE tasks SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-		values
-	);
-
-	const task = result.rows[0];
 	if (!task) {
 		return {
-			content: [{ type: 'text', text: `Task not found: ${taskId}` }],
+			content: [{ type: 'text', text: 'Task not found' }],
 			isError: true,
 		};
 	}
@@ -375,12 +342,7 @@ async function updateTask(
 				type: 'text',
 				text: JSON.stringify(
 					{
-						updated: {
-							id: task.id,
-							title: task.title,
-							status: task.status,
-							details: task.details,
-						},
+						updated: { id: task.id, title: task.title, status: task.status, details: task.details },
 					},
 					null,
 					2
@@ -398,24 +360,14 @@ async function startTask(taskId: string): Promise<ToolResult> {
 		};
 	}
 
-	// Get task and epic
-	const taskResult = await query<Task>(`SELECT * FROM tasks WHERE id = $1`, [taskId]);
-	const task = taskResult.rows[0];
+	const task = await startTaskService(taskId);
+
 	if (!task) {
 		return {
-			content: [{ type: 'text', text: `Task not found: ${taskId}` }],
+			content: [{ type: 'text', text: 'Task not found' }],
 			isError: true,
 		};
 	}
-
-	// Update task to in_progress
-	await query(`UPDATE tasks SET status = 'in_progress' WHERE id = $1`, [taskId]);
-
-	// If epic is 'ready', set it to 'in_progress'
-	await query(
-		`UPDATE epics SET status = 'in_progress' WHERE id = $1 AND status = 'ready'`,
-		[task.epic_id]
-	);
 
 	return {
 		content: [
@@ -423,7 +375,7 @@ async function startTask(taskId: string): Promise<ToolResult> {
 				type: 'text',
 				text: JSON.stringify(
 					{
-						task: { id: taskId, status: 'in_progress' },
+						task: { id: task.id, status: task.status },
 						message: 'Task started',
 					},
 					null,
@@ -442,14 +394,11 @@ async function completeTask(taskId: string): Promise<ToolResult> {
 		};
 	}
 
-	const result = await query<Task>(
-		`UPDATE tasks SET status = 'done' WHERE id = $1 RETURNING *`,
-		[taskId]
-	);
+	const task = await completeTaskService(taskId);
 
-	if (result.rows.length === 0) {
+	if (!task) {
 		return {
-			content: [{ type: 'text', text: `Task not found: ${taskId}` }],
+			content: [{ type: 'text', text: 'Task not found' }],
 			isError: true,
 		};
 	}
@@ -460,7 +409,7 @@ async function completeTask(taskId: string): Promise<ToolResult> {
 				type: 'text',
 				text: JSON.stringify(
 					{
-						task: { id: taskId, status: 'done' },
+						task: { id: task.id, status: task.status },
 						message: 'Task completed',
 					},
 					null,
@@ -479,14 +428,11 @@ async function blockTask(taskId: string, reason: string): Promise<ToolResult> {
 		};
 	}
 
-	const result = await query<Task>(
-		`UPDATE tasks SET status = 'blocked', block_reason = $2 WHERE id = $1 RETURNING *`,
-		[taskId, reason]
-	);
+	const task = await blockTaskService(taskId, reason);
 
-	if (result.rows.length === 0) {
+	if (!task) {
 		return {
-			content: [{ type: 'text', text: `Task not found: ${taskId}` }],
+			content: [{ type: 'text', text: 'Task not found' }],
 			isError: true,
 		};
 	}
@@ -497,7 +443,7 @@ async function blockTask(taskId: string, reason: string): Promise<ToolResult> {
 				type: 'text',
 				text: JSON.stringify(
 					{
-						task: { id: taskId, status: 'blocked', blockReason: reason },
+						task: { id: task.id, status: task.status, blockReason: task.blockReason },
 						message: 'Task blocked',
 					},
 					null,
@@ -516,14 +462,11 @@ async function unblockTask(taskId: string): Promise<ToolResult> {
 		};
 	}
 
-	const result = await query<Task>(
-		`UPDATE tasks SET status = 'ready', block_reason = NULL WHERE id = $1 RETURNING *`,
-		[taskId]
-	);
+	const task = await unblockTaskService(taskId);
 
-	if (result.rows.length === 0) {
+	if (!task) {
 		return {
-			content: [{ type: 'text', text: `Task not found: ${taskId}` }],
+			content: [{ type: 'text', text: 'Task not found' }],
 			isError: true,
 		};
 	}
@@ -534,7 +477,7 @@ async function unblockTask(taskId: string): Promise<ToolResult> {
 				type: 'text',
 				text: JSON.stringify(
 					{
-						task: { id: taskId, status: 'ready' },
+						task: { id: task.id, status: task.status },
 						message: 'Task unblocked',
 					},
 					null,

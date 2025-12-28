@@ -7,7 +7,11 @@
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { query, type ProgressNote, type Epic } from '@doc-platform/db';
+import {
+	addEpicProgressNote,
+	addTaskProgressNote,
+	signalReadyForReview as signalReadyForReviewService,
+} from '@doc-platform/db';
 
 export const progressTools: Tool[] = [
 	{
@@ -17,6 +21,10 @@ export const progressTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				epic_id: {
 					type: 'string',
 					description: 'The UUID of the epic (use this OR task_id)',
@@ -30,7 +38,7 @@ export const progressTools: Tool[] = [
 					description: 'The progress note text',
 				},
 			},
-			required: ['note'],
+			required: ['project_id', 'note'],
 		},
 	},
 	{
@@ -40,6 +48,10 @@ export const progressTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				project_id: {
+					type: 'string',
+					description: 'The UUID of the project',
+				},
 				epic_id: {
 					type: 'string',
 					description: 'The UUID of the epic',
@@ -49,7 +61,7 @@ export const progressTools: Tool[] = [
 					description: 'The URL of the pull request',
 				},
 			},
-			required: ['epic_id', 'pr_url'],
+			required: ['project_id', 'epic_id', 'pr_url'],
 		},
 	},
 ];
@@ -60,20 +72,35 @@ export async function handleProgressTool(
 	name: string,
 	args: Record<string, unknown> | undefined
 ): Promise<ToolResult> {
-	switch (name) {
-		case 'add_progress_note':
-			return await addProgressNote(
-				args?.epic_id as string | undefined,
-				args?.task_id as string | undefined,
-				args?.note as string
-			);
-		case 'signal_ready_for_review':
-			return await signalReadyForReview(args?.epic_id as string, args?.pr_url as string);
-		default:
-			return {
-				content: [{ type: 'text', text: `Unknown progress tool: ${name}` }],
-				isError: true,
-			};
+	const projectId = args?.project_id as string;
+	if (!projectId) {
+		return {
+			content: [{ type: 'text', text: 'project_id is required' }],
+			isError: true,
+		};
+	}
+
+	try {
+		switch (name) {
+			case 'add_progress_note':
+				return await addProgressNote(
+					args?.epic_id as string | undefined,
+					args?.task_id as string | undefined,
+					args?.note as string
+				);
+			case 'signal_ready_for_review':
+				return await signalReadyForReview(projectId, args?.epic_id as string, args?.pr_url as string);
+			default:
+				return {
+					content: [{ type: 'text', text: `Unknown progress tool: ${name}` }],
+					isError: true,
+				};
+		}
+	} catch (error) {
+		return {
+			content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
+			isError: true,
+		};
 	}
 }
 
@@ -103,34 +130,13 @@ async function addProgressNote(
 		};
 	}
 
-	// Verify the parent exists
+	let progressNote;
 	if (epicId) {
-		const epicCheck = await query(`SELECT id FROM epics WHERE id = $1`, [epicId]);
-		if (epicCheck.rows.length === 0) {
-			return {
-				content: [{ type: 'text', text: `Epic not found: ${epicId}` }],
-				isError: true,
-			};
-		}
+		progressNote = await addEpicProgressNote(epicId, note, 'claude');
 	} else if (taskId) {
-		const taskCheck = await query(`SELECT id FROM tasks WHERE id = $1`, [taskId]);
-		if (taskCheck.rows.length === 0) {
-			return {
-				content: [{ type: 'text', text: `Task not found: ${taskId}` }],
-				isError: true,
-			};
-		}
+		progressNote = await addTaskProgressNote(taskId, note, 'claude');
 	}
 
-	// Create progress note
-	const result = await query<ProgressNote>(
-		`INSERT INTO progress_notes (epic_id, task_id, note, created_by)
-		 VALUES ($1, $2, $3, 'claude')
-		 RETURNING *`,
-		[epicId ?? null, taskId ?? null, note]
-	);
-
-	const progressNote = result.rows[0];
 	if (!progressNote) {
 		return {
 			content: [{ type: 'text', text: 'Failed to create progress note' }],
@@ -147,7 +153,7 @@ async function addProgressNote(
 						created: {
 							id: progressNote.id,
 							note: progressNote.note,
-							createdAt: progressNote.created_at,
+							createdAt: progressNote.createdAt,
 						},
 						message: 'Progress note added',
 					},
@@ -159,7 +165,11 @@ async function addProgressNote(
 	};
 }
 
-async function signalReadyForReview(epicId: string, prUrl: string): Promise<ToolResult> {
+async function signalReadyForReview(
+	projectId: string,
+	epicId: string,
+	prUrl: string
+): Promise<ToolResult> {
 	if (!epicId || !prUrl) {
 		return {
 			content: [{ type: 'text', text: 'epic_id and pr_url are required' }],
@@ -167,25 +177,17 @@ async function signalReadyForReview(epicId: string, prUrl: string): Promise<Tool
 		};
 	}
 
-	// Update epic to in_review with PR URL
-	const result = await query<Epic>(
-		`UPDATE epics SET status = 'in_review', pr_url = $2 WHERE id = $1 RETURNING *`,
-		[epicId, prUrl]
-	);
+	const epic = await signalReadyForReviewService(projectId, epicId, prUrl);
 
-	if (result.rows.length === 0) {
+	if (!epic) {
 		return {
-			content: [{ type: 'text', text: `Epic not found: ${epicId}` }],
+			content: [{ type: 'text', text: 'Epic not found' }],
 			isError: true,
 		};
 	}
 
-	// Add a progress note
-	await query(
-		`INSERT INTO progress_notes (epic_id, note, created_by)
-		 VALUES ($1, $2, 'claude')`,
-		[epicId, `Ready for review: ${prUrl}`]
-	);
+	// Also add a progress note
+	await addEpicProgressNote(epicId, `Ready for review: ${prUrl}`, 'claude');
 
 	return {
 		content: [
@@ -193,7 +195,7 @@ async function signalReadyForReview(epicId: string, prUrl: string): Promise<Tool
 				type: 'text',
 				text: JSON.stringify(
 					{
-						epic: { id: epicId, status: 'in_review', prUrl },
+						epic: { id: epic.id, status: epic.status, prUrl: epic.prUrl },
 						message: 'Epic marked as ready for review',
 					},
 					null,

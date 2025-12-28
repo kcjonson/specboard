@@ -36,12 +36,13 @@ export interface TaskStats {
 }
 
 /**
- * Epic model - syncs with /api/epics/:id
+ * Epic model - syncs with /api/projects/:projectId/epics/:id
  */
 export class EpicModel extends SyncModel {
-	static override url = '/api/epics/:id';
+	static override url = '/api/projects/:projectId/epics/:id';
 
 	@prop accessor id!: string;
+	@prop accessor projectId!: string;
 	@prop accessor title!: string;
 	@prop accessor description!: string | undefined;
 	@prop accessor status!: Status;
@@ -64,12 +65,13 @@ export class EpicModel extends SyncModel {
 }
 
 /**
- * Collection of epics - syncs with /api/epics
- * Auto-fetches on construction.
+ * Collection of epics - syncs with /api/projects/:projectId/epics
  *
  * @example
  * ```tsx
  * const epics = new EpicsCollection();
+ * epics.projectId = projectId;
+ * epics.fetch();
  * useModel(epics);
  *
  * if (epics.$meta.working) return <Loading />;
@@ -79,8 +81,10 @@ export class EpicModel extends SyncModel {
  * ```
  */
 export class EpicsCollection extends SyncCollection<EpicModel> {
-	static url = '/api/epics';
+	static url = '/api/projects/:projectId/epics';
 	static Model = EpicModel;
+
+	projectId!: string;
 
 	/**
 	 * Get epics filtered by status, sorted by rank.

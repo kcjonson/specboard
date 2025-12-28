@@ -15,7 +15,7 @@ import './styles/tokens.css';
 import './styles/global.css';
 
 // Stub project ID until we have real project management
-const DEFAULT_PROJECT_ID = 'demo';
+const DEFAULT_PROJECT_ID = 'c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a33';
 
 // Redirect component for root path
 function RootRedirect(_props: RouteProps): null {

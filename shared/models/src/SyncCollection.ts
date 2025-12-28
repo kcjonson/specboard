@@ -30,7 +30,7 @@ import type { ChangeCallback, Observable, ModelData } from './types';
 export interface SyncModelConstructor<T extends SyncModel> {
 	url: string;
 	idField?: string;
-	new (params?: Record<string, string | number>, initialData?: Record<string, unknown>): T;
+	new (initialData?: Record<string, unknown>): T;
 }
 
 /** Collection metadata */
@@ -66,8 +66,13 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 		lastFetched: null,
 	};
 
-	constructor() {
-		// Auto-fetch on construction
+	constructor(initialProps?: Record<string, unknown>) {
+		// Set initial properties (e.g., projectId) before auto-fetch
+		if (initialProps) {
+			Object.assign(this, initialProps);
+		}
+
+		// Auto-fetch after properties are set
 		this.fetch();
 
 		// Return a Proxy that enables array index access (e.g., collection[0])
@@ -94,9 +99,33 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 		return (this.constructor as typeof SyncCollection).Model as SyncModelConstructor<T>;
 	}
 
-	/** Get the URL from static property */
+	/** Get the URL, substituting params from instance properties */
 	private getUrl(): string {
-		return (this.constructor as typeof SyncCollection).url;
+		const template = (this.constructor as typeof SyncCollection).url;
+		return template.replace(/:(\w+)/g, (_, key) => {
+			const value = (this as Record<string, unknown>)[key];
+			if (value === undefined) {
+				throw new Error(`Missing URL param "${key}" on ${this.constructor.name}`);
+			}
+			return String(value);
+		});
+	}
+
+	/** Get URL param values from this collection as an object */
+	private __getUrlParams(): Record<string, unknown> {
+		const template = (this.constructor as typeof SyncCollection).url;
+		const matches = template.matchAll(/:(\w+)/g);
+		const params: Record<string, unknown> = {};
+		for (const match of matches) {
+			const key = match[1];
+			if (key) {
+				const value = (this as Record<string, unknown>)[key];
+				if (value !== undefined) {
+					params[key] = value;
+				}
+			}
+		}
+		return params;
 	}
 
 	/** Update $meta and emit change */
@@ -210,9 +239,11 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 				this.__unsubscribeFromChild(item);
 			}
 
-			// Create new model instances from data
+			// Create new model instances from data, merging collection's URL params
 			this.__items = data.map((itemData) => {
-				const item = new ModelClass(undefined, itemData);
+				// Merge URL params (e.g., projectId) into item data before construction
+				const mergedData = { ...this.__getUrlParams(), ...itemData };
+				const item = new ModelClass(mergedData);
 				this.__subscribeToChild(item);
 				return item;
 			});
@@ -232,8 +263,9 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	async add(data: Partial<ModelData<T>>): Promise<T> {
 		const ModelClass = this.getModelClass();
 
-		// Create model with data but no params (new record)
-		const item = new ModelClass(undefined, data as Record<string, unknown>);
+		// Merge URL params (e.g., projectId) into data before construction
+		const mergedData = { ...this.__getUrlParams(), ...data } as Record<string, unknown>;
+		const item = new ModelClass(mergedData);
 
 		// Save to API (will POST since no ID)
 		await item.save();

@@ -79,11 +79,21 @@ export interface OAuthCode {
  * Planning entity types
  */
 
+export interface Project {
+	id: string;
+	name: string;
+	description: string | null;
+	owner_id: string;
+	created_at: Date;
+	updated_at: Date;
+}
+
 export type EpicStatus = 'ready' | 'in_progress' | 'in_review' | 'done';
 export type TaskStatus = 'ready' | 'in_progress' | 'blocked' | 'done';
 
 export interface Epic {
 	id: string;
+	project_id: string | null;
 	title: string;
 	description: string | null;
 	status: EpicStatus;
