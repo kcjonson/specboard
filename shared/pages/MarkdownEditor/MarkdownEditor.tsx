@@ -82,7 +82,16 @@ function toggleBlock(editor: Editor, format: CustomElement['type']): void {
 		// Toggling heading off - remove level property
 		newProperties = { type: 'paragraph' };
 	} else {
-		newProperties = { type: isActive ? 'paragraph' : isList ? 'list-item' : format };
+		// Determine target block type
+		let targetType: CustomElement['type'];
+		if (isActive) {
+			targetType = 'paragraph';
+		} else if (isList) {
+			targetType = 'list-item';
+		} else {
+			targetType = format;
+		}
+		newProperties = { type: targetType };
 	}
 
 	Transforms.setNodes<CustomElement>(editor, newProperties);

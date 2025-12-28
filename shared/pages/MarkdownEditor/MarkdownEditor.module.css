@@ -8,6 +8,12 @@
 	overflow: hidden;
 }
 
+.container:focus-within {
+	border-color: var(--color-primary);
+	outline: 2px solid var(--color-primary);
+	outline-offset: -1px;
+}
+
 .editorWrapper {
 	flex: 1;
 	overflow: auto;
@@ -16,11 +22,18 @@
 
 .editable {
 	min-height: 100%;
-	outline: none;
 	font-family: var(--font-sans);
 	font-size: var(--text-base);
 	line-height: 1.7;
 	color: var(--color-text);
+}
+
+.editable:focus {
+	outline: none;
+}
+
+.editorWrapper:focus-within {
+	outline: none;
 }
 
 /* Placeholder styling */
