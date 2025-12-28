@@ -8,3 +8,4 @@
 export * from './epics.js';
 export * from './tasks.js';
 export * from './progress.js';
+export * from './projects.js';

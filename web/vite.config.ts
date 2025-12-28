@@ -22,6 +22,7 @@ export default defineConfig({
 			// Shared feature source (no build step)
 			'@shared/planning': resolve(__dirname, '../shared/planning'),
 			'@shared/pages': resolve(__dirname, '../shared/pages'),
+			'@shared/projects': resolve(__dirname, '../shared/projects'),
 			// Workspace packages (resolve to dist)
 			'@doc-platform/ui': resolve(__dirname, '../shared/ui/src'),
 			'@doc-platform/ui/tokens.css': resolve(__dirname, '../shared/ui/src/tokens.css'),

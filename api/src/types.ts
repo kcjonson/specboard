@@ -43,3 +43,16 @@ export interface ApiProgressNote {
 	createdBy?: string;
 	createdAt: string;
 }
+
+export interface ApiProject {
+	id: string;
+	name: string;
+	description?: string;
+	ownerId: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface ApiProjectWithStats extends ApiProject {
+	epicCount: number;
+}
