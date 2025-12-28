@@ -71,6 +71,20 @@ services:
       redis:
         condition: service_healthy
 
+  mcp:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
+      NODE_ENV: development
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:

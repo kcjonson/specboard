@@ -43,3 +43,6 @@ cdk.context.json
 .cache/
 tmp/
 .vite/
+
+# Local dev scripts
+scripts/seed-dev.sql

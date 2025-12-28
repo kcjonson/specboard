@@ -28,8 +28,8 @@ export function Board(props: RouteProps): JSX.Element {
 	// Auth state
 	const { user, loading: authLoading, logout } = useAuth();
 
-	// Collection auto-fetches on construction, useModel subscribes to changes
-	const epics = useMemo(() => new EpicsCollection(), []);
+	// Collection auto-fetches after projectId is set
+	const epics = useMemo(() => new EpicsCollection({ projectId }), [projectId]);
 	useModel(epics);
 
 	const [selectedEpicId, setSelectedEpicId] = useState<string | undefined>();

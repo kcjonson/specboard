@@ -79,16 +79,29 @@ export interface OAuthCode {
  * Planning entity types
  */
 
-export type EpicStatus = 'ready' | 'in_progress' | 'done';
+export interface Project {
+	id: string;
+	name: string;
+	description: string | null;
+	owner_id: string;
+	created_at: Date;
+	updated_at: Date;
+}
+
+export type EpicStatus = 'ready' | 'in_progress' | 'in_review' | 'done';
+export type TaskStatus = 'ready' | 'in_progress' | 'blocked' | 'done';
 
 export interface Epic {
 	id: string;
+	project_id: string | null;
 	title: string;
 	description: string | null;
 	status: EpicStatus;
 	creator: string | null;
 	assignee: string | null;
 	rank: number;
+	spec_doc_path: string | null;
+	pr_url: string | null;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -97,10 +110,21 @@ export interface Task {
 	id: string;
 	epic_id: string;
 	title: string;
-	status: EpicStatus;
+	status: TaskStatus;
 	assignee: string | null;
 	due_date: Date | null;
 	rank: number;
+	details: string | null;
+	block_reason: string | null;
 	created_at: Date;
 	updated_at: Date;
+}
+
+export interface ProgressNote {
+	id: string;
+	epic_id: string | null;
+	task_id: string | null;
+	note: string;
+	created_by: string;
+	created_at: Date;
 }

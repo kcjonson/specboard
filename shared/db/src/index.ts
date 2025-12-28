@@ -1,6 +1,7 @@
 import pg from 'pg';
 
 export * from './types.js';
+export * from './services/index.js';
 
 const { Pool } = pg;
 

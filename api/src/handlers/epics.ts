@@ -3,9 +3,9 @@
  */
 
 import type { Context } from 'hono';
-import { query, type Epic as DbEpic, type Task as DbTask } from '@doc-platform/db';
+import { query, type Epic as DbEpic, type Task as DbTask, type ProgressNote as DbProgressNote } from '@doc-platform/db';
 import type { ApiEpic, TaskStats } from '../types.js';
-import { dbEpicToApi, dbTaskToApi } from '../transform.js';
+import { dbEpicToApi, dbTaskToApi, dbProgressNoteToApi } from '../transform.js';
 import {
 	isValidUUID,
 	isValidOptionalUUID,
@@ -16,26 +16,50 @@ import {
 } from '../validation.js';
 
 export async function handleListEpics(context: Context): Promise<Response> {
+	const projectId = context.req.param('projectId');
+
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
+
 	try {
-		const result = await query<DbEpic>(`
-			SELECT * FROM epics ORDER BY rank ASC
-		`);
+		const statusParam = context.req.query('status');
+		const validStatuses = ['ready', 'in_progress', 'in_review', 'done'];
 
-		const statsResult = await query<{ epic_id: string; total: string; done: string }>(`
-			SELECT
-				epic_id,
-				COUNT(*)::text as total,
-				COUNT(*) FILTER (WHERE status = 'done')::text as done
-			FROM tasks
-			GROUP BY epic_id
-		`);
+		let result;
+		if (statusParam && validStatuses.includes(statusParam)) {
+			result = await query<DbEpic>(
+				`SELECT * FROM epics WHERE project_id = $1 AND status = $2 ORDER BY rank ASC`,
+				[projectId, statusParam]
+			);
+		} else {
+			result = await query<DbEpic>(
+				`SELECT * FROM epics WHERE project_id = $1 ORDER BY rank ASC`,
+				[projectId]
+			);
+		}
 
-		const statsMap = new Map(
-			statsResult.rows.map((row) => [
-				row.epic_id,
-				{ total: parseInt(row.total, 10), done: parseInt(row.done, 10) },
-			])
-		);
+		const epicIds = result.rows.map((e) => e.id);
+		let statsMap = new Map<string, { total: number; done: number }>();
+
+		if (epicIds.length > 0) {
+			const statsResult = await query<{ epic_id: string; total: string; done: string }>(`
+				SELECT
+					epic_id,
+					COUNT(*)::text as total,
+					COUNT(*) FILTER (WHERE status = 'done')::text as done
+				FROM tasks
+				WHERE epic_id = ANY($1)
+				GROUP BY epic_id
+			`, [epicIds]);
+
+			statsMap = new Map(
+				statsResult.rows.map((row) => [
+					row.epic_id,
+					{ total: parseInt(row.total, 10), done: parseInt(row.done, 10) },
+				])
+			);
+		}
 
 		const epicList = result.rows.map((epic) => ({
 			...dbEpicToApi(epic),
@@ -50,14 +74,22 @@ export async function handleListEpics(context: Context): Promise<Response> {
 }
 
 export async function handleGetEpic(context: Context): Promise<Response> {
+	const projectId = context.req.param('projectId');
 	const id = context.req.param('id');
+
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
 
 	if (!isValidUUID(id)) {
 		return context.json({ error: 'Invalid epic ID format' }, 400);
 	}
 
 	try {
-		const epicResult = await query<DbEpic>(`SELECT * FROM epics WHERE id = $1`, [id]);
+		const epicResult = await query<DbEpic>(
+			`SELECT * FROM epics WHERE id = $1 AND project_id = $2`,
+			[id, projectId]
+		);
 		if (epicResult.rows.length === 0) {
 			return context.json({ error: 'Epic not found' }, 404);
 		}
@@ -90,6 +122,12 @@ export async function handleGetEpic(context: Context): Promise<Response> {
 }
 
 export async function handleCreateEpic(context: Context): Promise<Response> {
+	const projectId = context.req.param('projectId');
+
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
+
 	const body = await context.req.json<Partial<ApiEpic>>();
 	const status = body.status || 'ready';
 	const title = body.title || 'Untitled Epic';
@@ -112,16 +150,17 @@ export async function handleCreateEpic(context: Context): Promise<Response> {
 
 	try {
 		const rankResult = await query<{ max_rank: number | null }>(
-			`SELECT MAX(rank) as max_rank FROM epics WHERE status = $1`,
-			[status]
+			`SELECT MAX(rank) as max_rank FROM epics WHERE project_id = $1 AND status = $2`,
+			[projectId, status]
 		);
 		const maxRank = rankResult.rows[0]?.max_rank ?? 0;
 
 		const result = await query<DbEpic>(
-			`INSERT INTO epics (title, description, status, creator, assignee, rank)
-			 VALUES ($1, $2, $3, $4, $5, $6)
+			`INSERT INTO epics (project_id, title, description, status, creator, assignee, rank)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)
 			 RETURNING *`,
 			[
+				projectId,
 				title,
 				normalizeOptionalString(body.description) ?? null,
 				status,
@@ -144,7 +183,12 @@ export async function handleCreateEpic(context: Context): Promise<Response> {
 }
 
 export async function handleUpdateEpic(context: Context): Promise<Response> {
+	const projectId = context.req.param('projectId');
 	const id = context.req.param('id');
+
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
 
 	if (!isValidUUID(id)) {
 		return context.json({ error: 'Invalid epic ID format' }, 400);
@@ -202,7 +246,10 @@ export async function handleUpdateEpic(context: Context): Promise<Response> {
 		}
 
 		if (updates.length === 0) {
-			const result = await query<DbEpic>(`SELECT * FROM epics WHERE id = $1`, [id]);
+			const result = await query<DbEpic>(
+				`SELECT * FROM epics WHERE id = $1 AND project_id = $2`,
+				[id, projectId]
+			);
 			if (result.rows.length === 0) {
 				return context.json({ error: 'Epic not found' }, 404);
 			}
@@ -214,14 +261,10 @@ export async function handleUpdateEpic(context: Context): Promise<Response> {
 		}
 
 		values.push(id);
-
-		if (paramIndex !== values.length) {
-			console.error(`Parameter index mismatch: expected ${paramIndex} to equal ${values.length}`);
-			return context.json({ error: 'Internal server error' }, 500);
-		}
+		values.push(projectId);
 
 		const result = await query<DbEpic>(
-			`UPDATE epics SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+			`UPDATE epics SET ${updates.join(', ')} WHERE id = $${paramIndex} AND project_id = $${paramIndex + 1} RETURNING *`,
 			values
 		);
 
@@ -242,14 +285,22 @@ export async function handleUpdateEpic(context: Context): Promise<Response> {
 }
 
 export async function handleDeleteEpic(context: Context): Promise<Response> {
+	const projectId = context.req.param('projectId');
 	const id = context.req.param('id');
+
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
 
 	if (!isValidUUID(id)) {
 		return context.json({ error: 'Invalid epic ID format' }, 400);
 	}
 
 	try {
-		const result = await query<{ id: string }>(`DELETE FROM epics WHERE id = $1 RETURNING id`, [id]);
+		const result = await query<{ id: string }>(
+			`DELETE FROM epics WHERE id = $1 AND project_id = $2 RETURNING id`,
+			[id, projectId]
+		);
 
 		if (result.rows.length === 0) {
 			return context.json({ error: 'Epic not found' }, 404);
@@ -258,6 +309,150 @@ export async function handleDeleteEpic(context: Context): Promise<Response> {
 		return context.json({ success: true });
 	} catch (error) {
 		console.error('Failed to delete epic:', error);
+		return context.json({ error: 'Database error' }, 500);
+	}
+}
+
+export async function handleGetCurrentWork(context: Context): Promise<Response> {
+	const projectId = context.req.param('projectId');
+
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
+
+	try {
+		// Get in-progress and in-review epics for this project
+		const activeResult = await query<DbEpic>(
+			`SELECT * FROM epics WHERE project_id = $1 AND status IN ('in_progress', 'in_review') ORDER BY rank ASC`,
+			[projectId]
+		);
+
+		// Get ready epics for reference
+		const readyResult = await query<DbEpic>(
+			`SELECT * FROM epics WHERE project_id = $1 AND status = 'ready' ORDER BY rank ASC`,
+			[projectId]
+		);
+
+		// Early return if no active epics
+		if (activeResult.rows.length === 0) {
+			return context.json({
+				inProgressEpics: [],
+				readyEpics: readyResult.rows.map((epic) => ({
+					id: epic.id,
+					title: epic.title,
+					specDocPath: epic.spec_doc_path ?? undefined,
+					createdAt: epic.created_at.toISOString(),
+				})),
+			});
+		}
+
+		// Batch fetch all tasks and notes for active epics
+		const epicIds = activeResult.rows.map((e) => e.id);
+
+		const [tasksResult, notesResult] = await Promise.all([
+			query<DbTask>(
+				`SELECT * FROM tasks WHERE epic_id = ANY($1) ORDER BY epic_id, rank ASC`,
+				[epicIds]
+			),
+			query<DbProgressNote & { row_num: number }>(
+				`SELECT * FROM (
+					SELECT *, ROW_NUMBER() OVER (PARTITION BY epic_id ORDER BY created_at DESC) as row_num
+					FROM progress_notes
+					WHERE epic_id = ANY($1)
+				) sub WHERE row_num <= 5`,
+				[epicIds]
+			),
+		]);
+
+		// Group tasks and notes by epic_id
+		const tasksByEpic = new Map<string, DbTask[]>();
+		const notesByEpic = new Map<string, DbProgressNote[]>();
+
+		for (const task of tasksResult.rows) {
+			const epicTasks = tasksByEpic.get(task.epic_id) ?? [];
+			epicTasks.push(task);
+			tasksByEpic.set(task.epic_id, epicTasks);
+		}
+
+		for (const note of notesResult.rows) {
+			if (note.epic_id) {
+				const epicNotes = notesByEpic.get(note.epic_id) ?? [];
+				epicNotes.push(note);
+				notesByEpic.set(note.epic_id, epicNotes);
+			}
+		}
+
+		// Build response for each active epic
+		const inProgressEpics = activeResult.rows.map((epic) => {
+			const tasks = tasksByEpic.get(epic.id) ?? [];
+			const notes = notesByEpic.get(epic.id) ?? [];
+
+			const taskStats: TaskStats = {
+				total: tasks.length,
+				done: tasks.filter((t) => t.status === 'done').length,
+			};
+
+			const currentTask = tasks.find((t) => t.status === 'in_progress');
+
+			return {
+				...dbEpicToApi(epic),
+				taskStats,
+				currentTask: currentTask ? dbTaskToApi(currentTask) : null,
+				recentNotes: notes.map(dbProgressNoteToApi),
+			};
+		});
+
+		return context.json({
+			inProgressEpics,
+			readyEpics: readyResult.rows.map((epic) => ({
+				id: epic.id,
+				title: epic.title,
+				specDocPath: epic.spec_doc_path ?? undefined,
+				createdAt: epic.created_at.toISOString(),
+			})),
+		});
+	} catch (error) {
+		console.error('Failed to fetch current work:', error);
+		return context.json({ error: 'Database error' }, 500);
+	}
+}
+
+export async function handleSignalReadyForReview(context: Context): Promise<Response> {
+	const projectId = context.req.param('projectId');
+	const id = context.req.param('id');
+
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
+
+	if (!isValidUUID(id)) {
+		return context.json({ error: 'Invalid epic ID format' }, 400);
+	}
+
+	const body = await context.req.json<{ prUrl?: string }>();
+
+	if (!body.prUrl || typeof body.prUrl !== 'string') {
+		return context.json({ error: 'prUrl is required' }, 400);
+	}
+
+	try {
+		const result = await query<DbEpic>(
+			`UPDATE epics SET status = 'in_review', pr_url = $3 WHERE id = $1 AND project_id = $2 RETURNING *`,
+			[id, projectId, body.prUrl]
+		);
+
+		if (result.rows.length === 0) {
+			return context.json({ error: 'Epic not found' }, 404);
+		}
+
+		const epic = result.rows[0];
+		if (!epic) {
+			return context.json({ error: 'Failed to update epic' }, 500);
+		}
+
+		return context.json(dbEpicToApi(epic));
+	} catch (error) {
+		console.error('Failed to signal ready for review:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
 }

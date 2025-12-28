@@ -20,7 +20,6 @@
 
 import { fetchClient } from '@doc-platform/fetch';
 import { Model } from './Model';
-import { compileUrl } from './url-template';
 import type { ModelMeta, ModelData } from './types';
 
 interface SyncModelConstructor {
@@ -35,18 +34,10 @@ export class SyncModel extends Model {
 	/** Field used as the ID (default: 'id') */
 	static idField: string = 'id';
 
-	/** URL params used for this instance */
-	private __params: Record<string, string | number> = {};
-
 	declare readonly $meta: ModelMeta;
 
-	constructor(params?: Record<string, string | number>, initialData?: Record<string, unknown>) {
+	constructor(initialData?: Record<string, unknown>) {
 		super(initialData);
-
-		// Store params for URL building
-		if (params) {
-			this.__params = { ...params };
-		}
 
 		// Override $meta with SyncModel-specific fields
 		Object.defineProperty(this, '$meta', {
@@ -59,14 +50,21 @@ export class SyncModel extends Model {
 			writable: false,
 		});
 
-		// Auto-fetch if we have params (meaning we're loading an existing record)
-		if (params && Object.keys(params).length > 0) {
+		// Auto-fetch if we have an ID but no other data (loading existing record)
+		// Skip auto-fetch if already hydrated with data (e.g., created by collection)
+		const ctor = this.constructor as unknown as SyncModelConstructor;
+		const idField = ctor.idField || 'id';
+		const internalData = (this as unknown as { __data: Record<string, unknown> }).__data;
+		const id = internalData[idField];
+		const dataKeys = Object.keys(internalData).filter(k => k !== idField && k !== 'projectId');
+		const needsFetch = id && dataKeys.length === 0;
+		if (needsFetch) {
 			this.fetch();
 		}
 	}
 
 	/**
-	 * Builds the URL for this model instance.
+	 * Builds the URL for this model instance by substituting params from instance properties.
 	 */
 	private buildUrl(): string {
 		const ctor = this.constructor as unknown as SyncModelConstructor;
@@ -76,7 +74,13 @@ export class SyncModel extends Model {
 			throw new Error(`SyncModel "${this.constructor.name}" has no URL. Set static url property.`);
 		}
 
-		return compileUrl(template, this.__params);
+		return template.replace(/:(\w+)/g, (_, key) => {
+			const value = (this as Record<string, unknown>)[key];
+			if (value === undefined) {
+				throw new Error(`Missing URL param "${key}" on ${this.constructor.name}`);
+			}
+			return String(value);
+		});
 	}
 
 	/**
@@ -126,16 +130,19 @@ export class SyncModel extends Model {
 				const result = await fetchClient.put<Record<string, unknown>>(this.buildUrl(), data);
 				this.set(result as Partial<ModelData<this>>);
 			} else {
-				// Create new
-				const baseUrl = (ctor.url || '').replace(/\/:[\w]+$/, ''); // Remove trailing :id param
+				// Create new - build URL but skip the :id param
+				const template = ctor.url || '';
+				const baseUrl = template.replace(/:(\w+)/g, (_, key) => {
+					// Skip the id field param for POST (it doesn't exist yet)
+					if (key === idField) return '';
+					const value = (this as Record<string, unknown>)[key];
+					if (value === undefined) {
+						throw new Error(`Missing URL param "${key}" on ${this.constructor.name}`);
+					}
+					return String(value);
+				}).replace(/\/+$/, ''); // Clean trailing slashes
 				const result = await fetchClient.post<Record<string, unknown>>(baseUrl, data);
 				this.set(result as Partial<ModelData<this>>);
-
-				// Update params with new ID if returned
-				const newId = result[idField];
-				if (newId) {
-					this.__params[idField] = newId as string | number;
-				}
 			}
 
 			this.setMeta({ working: false });

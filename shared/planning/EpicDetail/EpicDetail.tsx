@@ -7,15 +7,16 @@ import { EpicView } from '../EpicView/EpicView';
 import styles from './EpicDetail.module.css';
 
 export function EpicDetail({ params }: RouteProps): JSX.Element {
+	const projectId = params.projectId || 'demo';
 	const epicId = params.id || '';
 
-	// Create and auto-fetch the epic
-	const epic = useMemo(() => new EpicModel({ id: epicId }), [epicId]);
+	// Model auto-fetches when given an id
+	const epic = useMemo(() => new EpicModel({ id: epicId, projectId }), [epicId, projectId]);
 	useModel(epic);
 
 	const handleDelete = (): void => {
 		epic.delete().then(() => {
-			navigate('/planning');
+			navigate(`/projects/${projectId}/planning`);
 		});
 	};
 
@@ -34,7 +35,7 @@ export function EpicDetail({ params }: RouteProps): JSX.Element {
 			<div class={styles.container}>
 				<div class={styles.error}>
 					<p>Error: {epic.$meta.error.message}</p>
-					<a href="/planning">Back to Board</a>
+					<a href={`/projects/${projectId}/planning`}>Back to Board</a>
 				</div>
 			</div>
 		);
@@ -44,7 +45,7 @@ export function EpicDetail({ params }: RouteProps): JSX.Element {
 		<div class={styles.container}>
 			<div class={styles.content}>
 				<nav class={styles.nav}>
-					<a href="/planning" class={styles.backLink}>
+					<a href={`/projects/${projectId}/planning`} class={styles.backLink}>
 						← Back to Board
 					</a>
 				</nav>
