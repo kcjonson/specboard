@@ -164,14 +164,18 @@ Claude can freely manage task status. Completing all tasks does NOT auto-complet
 | `add_progress_note` | Log activity | epicId or taskId, note |
 | `signal_ready_for_review` | Indicate PR opened | epicId, prUrl |
 
-> **Note:** `request_clarification` is in the data model for future async workflows, but not exposed in v1 MCP API. In v1, Claude asks questions directly in the chat session.
+> **Note:** In v1, Claude asks questions directly in the chat session. Async clarification workflows are planned for v2.
 
-### Read-Only (Specs & Docs)
+### Read-Only (Specs & Docs) — Planned for v2
+
+The following tools are planned for a future version:
 
 | Tool | Purpose | Input |
 |------|---------|-------|
 | `get_spec` | Read linked spec document | epicId or docId |
 | `search_docs` | Find relevant documentation | query |
+
+In v1, Claude reads spec documents directly from the filesystem using the `spec_doc_path` field returned by epic tools.
 
 ---
 

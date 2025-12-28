@@ -229,7 +229,13 @@ async function createTask(
 		[epicId, title, details ?? null, maxRank + 1]
 	);
 
-	const task = result.rows[0]!;
+	const task = result.rows[0];
+	if (!task) {
+		return {
+			content: [{ type: 'text', text: 'Failed to create task' }],
+			isError: true,
+		};
+	}
 
 	return {
 		content: [
@@ -278,20 +284,33 @@ async function createTasks(
 	);
 	let currentRank = (rankResult.rows[0]?.max_rank ?? 0) + 1;
 
-	// Create all tasks
-	const created: Array<{ id: string; title: string; status: string }> = [];
+	// Build batched INSERT with multiple VALUES tuples
+	const values: unknown[] = [];
+	const valueTuples: string[] = [];
 
 	for (const task of tasks) {
-		const result = await query<Task>(
-			`INSERT INTO tasks (epic_id, title, details, status, rank)
-			 VALUES ($1, $2, $3, 'ready', $4)
-			 RETURNING *`,
-			[epicId, task.title, task.details ?? null, currentRank++]
+		const paramOffset = values.length;
+		valueTuples.push(
+			`($${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, 'ready', $${paramOffset + 4})`
 		);
-
-		const t = result.rows[0]!;
-		created.push({ id: t.id, title: t.title, status: t.status });
+		values.push(epicId, task.title, task.details ?? null, currentRank++);
 	}
+
+	const result = await query<Task>(
+		`INSERT INTO tasks (epic_id, title, details, status, rank)
+		 VALUES ${valueTuples.join(', ')}
+		 RETURNING id, title, status`,
+		values
+	);
+
+	if (result.rows.length !== tasks.length) {
+		return {
+			content: [{ type: 'text', text: 'Failed to create all tasks' }],
+			isError: true,
+		};
+	}
+
+	const created = result.rows.map((t) => ({ id: t.id, title: t.title, status: t.status }));
 
 	return {
 		content: [
@@ -342,14 +361,13 @@ async function updateTask(
 		values
 	);
 
-	if (result.rows.length === 0) {
+	const task = result.rows[0];
+	if (!task) {
 		return {
 			content: [{ type: 'text', text: `Task not found: ${taskId}` }],
 			isError: true,
 		};
 	}
-
-	const task = result.rows[0]!;
 
 	return {
 		content: [
@@ -382,14 +400,13 @@ async function startTask(taskId: string): Promise<ToolResult> {
 
 	// Get task and epic
 	const taskResult = await query<Task>(`SELECT * FROM tasks WHERE id = $1`, [taskId]);
-	if (taskResult.rows.length === 0) {
+	const task = taskResult.rows[0];
+	if (!task) {
 		return {
 			content: [{ type: 'text', text: `Task not found: ${taskId}` }],
 			isError: true,
 		};
 	}
-
-	const task = taskResult.rows[0]!;
 
 	// Update task to in_progress
 	await query(`UPDATE tasks SET status = 'in_progress' WHERE id = $1`, [taskId]);

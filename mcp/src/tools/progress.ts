@@ -130,7 +130,13 @@ async function addProgressNote(
 		[epicId ?? null, taskId ?? null, note]
 	);
 
-	const progressNote = result.rows[0]!;
+	const progressNote = result.rows[0];
+	if (!progressNote) {
+		return {
+			content: [{ type: 'text', text: 'Failed to create progress note' }],
+			isError: true,
+		};
+	}
 
 	return {
 		content: [

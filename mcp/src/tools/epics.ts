@@ -122,14 +122,13 @@ async function getEpic(epicId: string): Promise<{ content: Array<{ type: string;
 	// Get epic
 	const epicResult = await query<Epic>(`SELECT * FROM epics WHERE id = $1`, [epicId]);
 
-	if (epicResult.rows.length === 0) {
+	const epic = epicResult.rows[0];
+	if (!epic) {
 		return {
 			content: [{ type: 'text', text: `Epic not found: ${epicId}` }],
 			isError: true,
 		};
 	}
-
-	const epic = epicResult.rows[0]!;
 
 	// Get tasks
 	const tasksResult = await query<Task>(
@@ -198,51 +197,92 @@ async function getCurrentWork(): Promise<{ content: Array<{ type: string; text: 
 		`SELECT id, title, spec_doc_path, created_at FROM epics WHERE status = 'ready' ORDER BY rank ASC`
 	);
 
-	// For each active epic, get tasks and recent notes
-	const inProgressEpics = await Promise.all(
-		activeResult.rows.map(async (epic) => {
-			const tasksResult = await query<Task>(
-				`SELECT * FROM tasks WHERE epic_id = $1 ORDER BY rank ASC`,
-				[epic.id]
-			);
+	// Early return if no active epics
+	if (activeResult.rows.length === 0) {
+		const response: CurrentWorkResponse = {
+			in_progress_epics: [],
+			ready_epics: readyResult.rows.map((e) => ({
+				id: e.id,
+				title: e.title,
+				spec_doc_path: e.spec_doc_path,
+				created_at: e.created_at,
+			})),
+		};
+		return {
+			content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
+		};
+	}
 
-			const notesResult = await query<ProgressNote>(
-				`SELECT * FROM progress_notes WHERE epic_id = $1 ORDER BY created_at DESC LIMIT 5`,
-				[epic.id]
-			);
+	// Batch fetch all tasks and notes for active epics
+	const epicIds = activeResult.rows.map((e) => e.id);
 
-			const tasks = tasksResult.rows;
-			const taskStats: TaskStats = {
-				total: tasks.length,
-				completed: tasks.filter((t) => t.status === 'done').length,
-				in_progress: tasks.filter((t) => t.status === 'in_progress').length,
-				blocked: tasks.filter((t) => t.status === 'blocked').length,
-			};
+	const [tasksResult, notesResult] = await Promise.all([
+		query<Task>(
+			`SELECT * FROM tasks WHERE epic_id = ANY($1) ORDER BY epic_id, rank ASC`,
+			[epicIds]
+		),
+		query<ProgressNote & { row_num: number }>(
+			`SELECT * FROM (
+				SELECT *, ROW_NUMBER() OVER (PARTITION BY epic_id ORDER BY created_at DESC) as row_num
+				FROM progress_notes
+				WHERE epic_id = ANY($1)
+			) sub WHERE row_num <= 5`,
+			[epicIds]
+		),
+	]);
 
-			// Find current task (in_progress)
-			const currentTask = tasks.find((t) => t.status === 'in_progress');
+	// Group tasks and notes by epic_id
+	const tasksByEpic = new Map<string, Task[]>();
+	const notesByEpic = new Map<string, ProgressNote[]>();
 
-			return {
-				id: epic.id,
-				title: epic.title,
-				status: epic.status,
-				specPath: epic.spec_doc_path,
-				taskStats,
-				currentTask: currentTask
-					? {
-							id: currentTask.id,
-							title: currentTask.title,
-							status: currentTask.status,
-							details: currentTask.details,
-						}
-					: null,
-				recentNotes: notesResult.rows.map((n) => ({
-					note: n.note,
-					createdAt: n.created_at,
-				})),
-			};
-		})
-	);
+	for (const task of tasksResult.rows) {
+		const epicTasks = tasksByEpic.get(task.epic_id) ?? [];
+		epicTasks.push(task);
+		tasksByEpic.set(task.epic_id, epicTasks);
+	}
+
+	for (const note of notesResult.rows) {
+		if (note.epic_id) {
+			const epicNotes = notesByEpic.get(note.epic_id) ?? [];
+			epicNotes.push(note);
+			notesByEpic.set(note.epic_id, epicNotes);
+		}
+	}
+
+	// Build response for each active epic
+	const inProgressEpics = activeResult.rows.map((epic) => {
+		const tasks = tasksByEpic.get(epic.id) ?? [];
+		const notes = notesByEpic.get(epic.id) ?? [];
+
+		const taskStats: TaskStats = {
+			total: tasks.length,
+			completed: tasks.filter((t) => t.status === 'done').length,
+			in_progress: tasks.filter((t) => t.status === 'in_progress').length,
+			blocked: tasks.filter((t) => t.status === 'blocked').length,
+		};
+
+		const currentTask = tasks.find((t) => t.status === 'in_progress');
+
+		return {
+			id: epic.id,
+			title: epic.title,
+			status: epic.status,
+			specPath: epic.spec_doc_path,
+			taskStats,
+			currentTask: currentTask
+				? {
+						id: currentTask.id,
+						title: currentTask.title,
+						status: currentTask.status,
+						details: currentTask.details,
+					}
+				: null,
+			recentNotes: notes.map((n) => ({
+				note: n.note,
+				createdAt: n.created_at,
+			})),
+		};
+	});
 
 	const response: CurrentWorkResponse = {
 		in_progress_epics: inProgressEpics as unknown as EpicWithDetails[],

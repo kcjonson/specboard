@@ -39,28 +39,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 	};
 });
 
+// Tool routing configuration
+const epicToolNames = new Set(['get_ready_epics', 'get_epic', 'get_current_work']);
+const taskToolNames = new Set([
+	'create_task',
+	'create_tasks',
+	'update_task',
+	'start_task',
+	'complete_task',
+	'block_task',
+	'unblock_task',
+]);
+const progressToolNames = new Set(['add_progress_note', 'signal_ready_for_review']);
+
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	const { name, arguments: args } = request.params;
 
 	try {
-		// Route to appropriate handler
-		if (name.startsWith('get_ready_epics') || name.startsWith('get_epic') || name.startsWith('get_current_work')) {
+		// Route to appropriate handler using exact matching
+		if (epicToolNames.has(name)) {
 			return await handleEpicTool(name, args);
 		}
 
-		if (
-			name.startsWith('create_task') ||
-			name.startsWith('update_task') ||
-			name.startsWith('start_task') ||
-			name.startsWith('complete_task') ||
-			name.startsWith('block_task') ||
-			name.startsWith('unblock_task')
-		) {
+		if (taskToolNames.has(name)) {
 			return await handleTaskTool(name, args);
 		}
 
-		if (name.startsWith('add_progress_note') || name.startsWith('signal_ready_for_review')) {
+		if (progressToolNames.has(name)) {
 			return await handleProgressTool(name, args);
 		}
 
