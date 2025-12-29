@@ -46,3 +46,6 @@ tmp/
 
 # Local dev scripts
 scripts/seed-dev.sql
+
+# Local seed configuration (contains admin credentials)
+seed.local.json

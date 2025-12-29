@@ -85,6 +85,24 @@ services:
       db:
         condition: service_healthy
 
+  # One-off service to initialize database (migrations + admin seed)
+  # Run with: docker-compose run --rm db-init
+  db-init:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
+      NODE_ENV: development
+    volumes:
+      - ./seed.local.json:/app/seed.local.json:ro
+    command: sh -c "node shared/db/dist/migrate.js && node shared/db/dist/seed.js"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - setup
+
 volumes:
   postgres_data:
   redis_data:
