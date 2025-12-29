@@ -133,11 +133,13 @@ CREATE TABLE mcp_tokens (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	client_id VARCHAR(255) NOT NULL,
+	device_name VARCHAR(255) NOT NULL,       -- User-provided name (e.g., "Work Laptop")
 	access_token_hash VARCHAR(255) NOT NULL,
 	refresh_token_hash VARCHAR(255),
 	scopes TEXT[] NOT NULL,
 	expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+	last_used_at TIMESTAMP WITH TIME ZONE,   -- Updated on each MCP request
 	UNIQUE(access_token_hash)
 );
 
@@ -146,6 +148,7 @@ CREATE TABLE oauth_codes (
 	code VARCHAR(255) PRIMARY KEY,
 	user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	client_id VARCHAR(255) NOT NULL,
+	device_name VARCHAR(255) NOT NULL,       -- Captured during consent
 	code_challenge VARCHAR(255) NOT NULL,
 	code_challenge_method VARCHAR(10) NOT NULL,
 	scopes TEXT[] NOT NULL,
@@ -396,35 +399,138 @@ All GitHub API calls go through our backend:
 `GET /.well-known/oauth-authorization-server`
 
 Returns:
-- issuer
-- authorization_endpoint
-- token_endpoint
-- revocation_endpoint
-- scopes_supported: docs:read, docs:write, tasks:read, tasks:write
-- response_types_supported: code
-- grant_types_supported: authorization_code, refresh_token
-- code_challenge_methods_supported: S256
+```json
+{
+  "issuer": "https://api.doc-platform.com",
+  "authorization_endpoint": "https://api.doc-platform.com/oauth/authorize",
+  "token_endpoint": "https://api.doc-platform.com/oauth/token",
+  "revocation_endpoint": "https://api.doc-platform.com/oauth/revoke",
+  "scopes_supported": ["docs:read", "docs:write", "tasks:read", "tasks:write"],
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256"]
+}
+```
 
 ### Authorization Flow
 
-1. Claude Code generates PKCE code_verifier and code_challenge
-2. Redirects to /oauth/authorize with:
-   - client_id
-   - redirect_uri
-   - response_type=code
-   - scope
-   - state
-   - code_challenge
-   - code_challenge_method=S256
-3. User logs in (if not already, via session)
-4. Backend generates authorization code
-5. Redirects back with code and state
-6. Claude Code exchanges code for tokens via /oauth/token:
-   - code
-   - code_verifier
-   - grant_type=authorization_code
-7. Backend verifies PKCE challenge
-8. Returns access_token and refresh_token
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              USER'S MACHINE                                   │
+│                                                                               │
+│  ┌──────────────┐                                ┌─────────────────────────┐ │
+│  │ Claude Code  │                                │       Browser           │ │
+│  └──────┬───────┘                                └───────────┬─────────────┘ │
+└─────────┼────────────────────────────────────────────────────┼───────────────┘
+          │                                                    │
+          │ 1. Generate PKCE:                                  │
+          │    code_verifier = random(43-128 chars)            │
+          │    code_challenge = BASE64URL(SHA256(code_verifier))
+          │                                                    │
+          │ 2. Open browser ──────────────────────────────────►│
+          │                                                    │
+          │                    GET /oauth/authorize            │
+          │                    ?client_id=claude-code          │
+          │                    &redirect_uri=http://127.0.0.1:PORT/callback
+          │                    &response_type=code             │
+          │                    &scope=tasks:read+tasks:write   │
+          │                    &state=random                   │
+          │                    &code_challenge=abc123          │
+          │                    &code_challenge_method=S256     │
+          │                                                    ▼
+          │                              ┌─────────────────────────────────────┐
+          │                              │        YOUR API                     │
+          │                              │                                     │
+          │                              │  3. Check session cookie            │
+          │                              │     - If no session → redirect to   │
+          │                              │       /login?next=/oauth/authorize  │
+          │                              │     - If session → show consent     │
+          │                              └──────────────┬──────────────────────┘
+          │                                             │
+          │                                             ▼
+          │                              ┌─────────────────────────────────────┐
+          │                              │      CONSENT SCREEN                 │
+          │                              │                                     │
+          │                              │  ┌─────────────────────────────┐   │
+          │                              │  │ Claude Code wants access to │   │
+          │                              │  │ your doc-platform account   │   │
+          │                              │  └─────────────────────────────┘   │
+          │                              │                                     │
+          │                              │  Device name:                       │
+          │                              │  ┌─────────────────────────────┐   │
+          │                              │  │ Work MacBook Pro            │   │
+          │                              │  └─────────────────────────────┘   │
+          │                              │  (Name this device for easy ID)    │
+          │                              │                                     │
+          │                              │  This will allow Claude Code to:   │
+          │                              │  ☑ Read your tasks and epics       │
+          │                              │  ☑ Create and update tasks         │
+          │                              │                                     │
+          │                              │  ┌─────────┐  ┌─────────┐          │
+          │                              │  │  Deny   │  │ Approve │          │
+          │                              │  └─────────┘  └─────────┘          │
+          │                              └──────────────┬──────────────────────┘
+          │                                             │
+          │                                             │ 4. User enters device name
+          │                                             │    and clicks Approve
+          │                                             │
+          │                                             │ 5. Generate auth code
+          │                                             │    Store in oauth_codes:
+          │                                             │    - code, user_id
+          │                                             │    - device_name
+          │                                             │    - code_challenge
+          │                                             │    - scopes, redirect_uri
+          │                                             │    - expires_at (10 min)
+          │                                             │
+          │   ◄─────────────────────────────────────────┘
+          │   6. Redirect to:
+          │      http://127.0.0.1:PORT/callback?code=AUTH_CODE&state=xyz
+          │
+          │ 7. Claude Code receives callback
+          │
+          │ 8. POST /oauth/token ─────────────────────────────────────────────┐
+          │    Content-Type: application/x-www-form-urlencoded                │
+          │    grant_type=authorization_code                                  │
+          │    &code=AUTH_CODE                                                │
+          │    &code_verifier=original_random_string                          │
+          │    &redirect_uri=http://127.0.0.1:PORT/callback                   │
+          │                                                                   ▼
+          │                              ┌─────────────────────────────────────┐
+          │                              │  YOUR API - /oauth/token            │
+          │                              │                                     │
+          │                              │  9. Validate:                       │
+          │                              │     - code exists & not expired     │
+          │                              │     - SHA256(code_verifier) ==      │
+          │                              │       stored code_challenge         │
+          │                              │     - redirect_uri matches          │
+          │                              │                                     │
+          │                              │  10. Create mcp_tokens row:         │
+          │                              │      - device_name from oauth_codes │
+          │                              │      - hash access & refresh tokens │
+          │                              │      - scopes from oauth_codes      │
+          │                              │                                     │
+          │                              │  11. Delete oauth_codes row         │
+          │                              │                                     │
+          │                              │  12. Return tokens:                 │
+          │                              │      {                              │
+          │                              │        access_token: "...",         │
+          │                              │        refresh_token: "...",        │
+          │                              │        token_type: "Bearer",        │
+          │                              │        expires_in: 3600             │
+          │                              │      }                              │
+          │                              └──────────────┬──────────────────────┘
+          │                                             │
+          │   ◄─────────────────────────────────────────┘
+          │
+          │ 13. Claude Code stores tokens (system keychain)
+          │
+          │ 14. All MCP requests include:
+          │     Authorization: Bearer <access_token>
+          │
+          │ 15. MCP server updates last_used_at on each request
+          │
+└─────────┴────────────────────────────────────────────────────────────────────┘
+```
 
 ### MCP Token Scopes
 
@@ -434,6 +540,111 @@ Returns:
 | `docs:write` | Modify documents | create_document, update_document |
 | `tasks:read` | Read tasks | get_task, get_epic, get_backlog |
 | `tasks:write` | Modify tasks | create_task, update_task |
+
+### Token Refresh Flow
+
+When the access token expires, Claude Code uses the refresh token:
+
+```
+POST /oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token
+&refresh_token=REFRESH_TOKEN
+```
+
+Response:
+```json
+{
+  "access_token": "new_access_token",
+  "refresh_token": "new_refresh_token",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+### MCP Request Validation
+
+On each MCP request:
+
+1. Extract `Authorization: Bearer <token>` header
+2. Hash the token: `SHA256(token)`
+3. Look up `mcp_tokens` by `access_token_hash`
+4. Check `expires_at > NOW()`
+5. Check requested scope is in `scopes` array
+6. Update `last_used_at = NOW()`
+7. Allow request
+
+---
+
+## Authorized Apps Management
+
+Users can view and revoke MCP authorizations in Settings.
+
+### UI
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Settings > Authorized Apps                                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  These applications have access to your account.                             │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  🤖 Claude Code                                                        │ │
+│  │     Work MacBook Pro                                                   │ │
+│  │                                                                        │ │
+│  │  Permissions: tasks:read, tasks:write                                  │ │
+│  │  Authorized: Dec 15, 2025 at 2:30 PM                                   │ │
+│  │  Last used: 2 hours ago                                                │ │
+│  │                                                                        │ │
+│  │                                              [Revoke Access]           │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  🤖 Claude Code                                                        │ │
+│  │     Home Desktop                                                       │ │
+│  │                                                                        │ │
+│  │  Permissions: tasks:read, tasks:write, docs:read                       │ │
+│  │  Authorized: Dec 20, 2025 at 10:15 AM                                  │ │
+│  │  Last used: 5 days ago                                                 │ │
+│  │                                                                        │ │
+│  │                                              [Revoke Access]           │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/oauth/authorizations | Session | List user's authorized apps |
+| DELETE | /api/oauth/authorizations/:id | Session | Revoke authorization |
+
+#### GET /api/oauth/authorizations
+
+Response:
+```json
+{
+  "authorizations": [
+    {
+      "id": "uuid",
+      "client_id": "claude-code",
+      "device_name": "Work MacBook Pro",
+      "scopes": ["tasks:read", "tasks:write"],
+      "created_at": "2025-12-15T14:30:00Z",
+      "last_used_at": "2025-12-29T10:00:00Z"
+    }
+  ]
+}
+```
+
+#### DELETE /api/oauth/authorizations/:id
+
+Deletes the `mcp_tokens` row. Next MCP request with that token returns 401.
+
+Response: `204 No Content`
 
 ---
 
@@ -585,9 +796,13 @@ services:
 | GET | /api/auth/github | Session | Start GitHub OAuth |
 | GET | /api/auth/github/cb | Session | GitHub OAuth callback |
 | DELETE | /api/auth/github | Session | Disconnect GitHub |
-| GET | /oauth/authorize | Session | MCP OAuth authorize |
+| GET | /oauth/authorize | Session | MCP OAuth authorize (shows consent) |
+| POST | /oauth/authorize | Session | MCP OAuth consent form submit |
 | POST | /oauth/token | None | MCP token exchange |
 | POST | /oauth/revoke | None | Revoke MCP token |
+| GET | /api/oauth/authorizations | Session | List user's authorized apps |
+| DELETE | /api/oauth/authorizations/:id | Session | Revoke specific authorization |
+| GET | /.well-known/oauth-authorization-server | None | OAuth metadata |
 | GET | /* | Session | Serve static files |
 
 ---
@@ -605,8 +820,9 @@ shared/auth/
 
 api/src/
 ├── handlers/
-│   ├── auth.ts            # Auth endpoints
-│   └── github.ts          # GitHub OAuth
+│   ├── auth.ts            # Auth endpoints (login, signup, etc.)
+│   ├── github.ts          # GitHub OAuth
+│   └── oauth.ts           # MCP OAuth (authorize, token, revoke)
 ├── middleware/
 │   ├── csrf.ts            # CSRF protection
 │   └── rate-limit.ts      # Rate limiting
@@ -616,5 +832,6 @@ api/src/
 frontend/src/
 ├── index.ts               # Hono server entry
 └── pages/
-    └── login.ts           # Server-rendered login page
+    ├── login.ts           # Server-rendered login page
+    └── oauth-consent.ts   # OAuth consent screen
 ```

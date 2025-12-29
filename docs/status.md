@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-28 (Inline Comments UI)
+Last Updated: 2025-12-29 (MCP OAuth spec)
 
 ## Epic/Story/Task Template
 
@@ -306,10 +306,20 @@ Use this template for all work items:
   - [x] MCP Docker build in CI
   - [x] MCP ECR repo and Fargate service in infra
   - [x] CD workflow for MCP deployment
-- [ ] MCP OAuth (v2)
-  - [ ] Authorization endpoint
-  - [ ] Token endpoint
-  - [ ] PKCE support
+- [ ] MCP OAuth 2.1 + PKCE
+  - [ ] Database migration (add device_name, last_used_at to mcp_tokens)
+  - [ ] OAuth metadata endpoint (/.well-known/oauth-authorization-server)
+  - [ ] Authorization endpoint (GET/POST /oauth/authorize)
+  - [ ] Consent screen UI (device name input, scope display)
+  - [ ] Token endpoint (POST /oauth/token)
+  - [ ] PKCE validation (code_challenge/code_verifier)
+  - [ ] Token refresh flow
+  - [ ] MCP auth middleware (validate Bearer token, update last_used_at)
+- [ ] Authorized Apps UI
+  - [ ] Settings page section
+  - [ ] GET /api/oauth/authorizations endpoint
+  - [ ] DELETE /api/oauth/authorizations/:id endpoint
+  - [ ] Revoke confirmation dialog
 - [ ] Document tools (v2)
   - [ ] get_spec, search_docs
 - [ ] CLI tool (v2)
