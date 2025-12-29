@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { Button } from '@doc-platform/ui';
+import { useAuth, getCsrfToken } from '@shared/planning';
 import styles from './OAuthConsent.module.css';
 
 // Scope descriptions for display
@@ -23,6 +24,9 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	// Use auth hook to fetch CSRF token (required for form submission)
+	const { loading: authLoading } = useAuth();
+
 	// Parse OAuth params from URL
 	const params = new URLSearchParams(window.location.search);
 	const clientId = params.get('client_id') || '';
@@ -34,6 +38,17 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 
 	const clientName = CLIENT_NAMES[clientId] || clientId;
 	const scopes = scope.split(' ').filter(Boolean);
+
+	// Show loading while fetching auth/CSRF token
+	if (authLoading) {
+		return (
+			<div class={styles.container}>
+				<div class={styles.card}>
+					<div class={styles.loading}>Loading...</div>
+				</div>
+			</div>
+		);
+	}
 
 	// Validate required params
 	if (!clientId || !redirectUri || !codeChallenge) {
@@ -69,9 +84,18 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 				action,
 			});
 
+			// Build headers with CSRF token
+			const headers: Record<string, string> = {
+				'Content-Type': 'application/x-www-form-urlencoded',
+			};
+			const csrfToken = getCsrfToken();
+			if (csrfToken) {
+				headers['X-CSRF-Token'] = csrfToken;
+			}
+
 			const response = await fetch('/oauth/authorize', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				headers,
 				body: formData.toString(),
 				credentials: 'same-origin',
 				redirect: 'manual',

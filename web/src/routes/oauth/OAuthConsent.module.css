@@ -36,6 +36,12 @@
 	font-size: 0.875rem;
 }
 
+.loading {
+	text-align: center;
+	color: var(--color-text-muted);
+	padding: 2rem;
+}
+
 .clientInfo {
 	display: flex;
 	align-items: center;
