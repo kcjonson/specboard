@@ -69,7 +69,8 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 	};
 
 	// Loading state - show when either model is working AND we don't have data yet
-	const isLoading = (user.$meta.working && !user.id) || (authorizations.$meta.working && authorizations.length === 0);
+	// For authorizations, check working + no lastFetched (length 0 is valid state for no authorizations)
+	const isLoading = (user.$meta.working && !user.id) || (authorizations.$meta.working && !authorizations.$meta.lastFetched);
 	if (isLoading) {
 		return (
 			<div class={styles.container}>

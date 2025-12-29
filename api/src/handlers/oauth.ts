@@ -355,8 +355,9 @@ async function handleAuthorizationCodeGrant(
 		return context.json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' }, 400);
 	}
 
-	// Validate PKCE
+	// Validate PKCE - delete code on failure to prevent replay attacks
 	if (!validatePkce(code_verifier, authCode.code_challenge, authCode.code_challenge_method)) {
+		await query('DELETE FROM oauth_codes WHERE code = $1', [code]);
 		return context.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
 	}
 
