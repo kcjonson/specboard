@@ -11,7 +11,7 @@ import { Redis } from 'ioredis';
 import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
 import { renderLoginPage } from './pages/login.js';
 import { renderSignupPage } from './pages/signup.js';
-import { notFoundHtml } from './pages/not-found.js';
+import { notFoundHtml } from '@doc-platform/ui';
 
 // Load Vite manifest for asset paths
 interface ManifestEntry {

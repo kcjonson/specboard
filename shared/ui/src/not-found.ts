@@ -1,8 +1,3 @@
-/**
- * 404 content fragment
- * Same HTML structure as the client-side NotFound component
- */
-
 export const notFoundHtml = `<style>
 .not-found-container {
 	text-align: center;

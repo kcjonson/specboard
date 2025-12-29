@@ -57,4 +57,4 @@ export type { AppHeaderProps, NavTab } from './AppHeader/AppHeader';
 
 // NotFound
 export { NotFound } from './NotFound/NotFound';
-export type { NotFoundProps } from './NotFound/NotFound';
+export { notFoundHtml } from './not-found';
