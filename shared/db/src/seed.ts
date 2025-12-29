@@ -1,36 +1,19 @@
 /**
  * Admin account seeding script
  *
- * Creates an admin account if one doesn't exist.
- * Credentials are read from:
- * 1. Environment variables (for deployed environments via GitHub Secrets)
- * 2. Local config file at project root (for local development)
- *
- * Environment variables:
- * - ADMIN_USERNAME (required, 3-30 chars, alphanumeric + underscores, will be lowercased)
- * - ADMIN_PASSWORD (required, min 12 chars, must have uppercase, lowercase, digit, special char)
- * - ADMIN_EMAIL (required, valid email format, will be lowercased)
- * - ADMIN_FIRST_NAME (optional, defaults to "Admin")
- * - ADMIN_LAST_NAME (optional, defaults to "User")
- *
- * Local config file: seed.local.json (gitignored)
- * {
- *   "admin": {
- *     "username": "admin",
- *     "password": "YourSecurePassword123!",
- *     "email": "admin@example.com",
- *     "firstName": "Admin",
- *     "lastName": "User"
- *   }
- * }
+ * Standalone script - no package imports to avoid circular dependencies.
+ * Run with: pnpm --filter @doc-platform/db seed
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
-import { hashPassword, validatePassword } from '@doc-platform/auth';
+import bcrypt from 'bcrypt';
 
 const { Pool } = pg;
+
+const BCRYPT_COST = 12;
+const MIN_PASSWORD_LENGTH = 12;
 
 interface AdminConfig {
 	username: string;
@@ -50,18 +33,27 @@ interface LocalConfig {
 	};
 }
 
-/**
- * Validate email format
- */
 function isValidEmail(email: string): boolean {
 	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-/**
- * Validate username: 3-30 chars, alphanumeric and underscores only
- */
 function isValidUsername(username: string): boolean {
 	return /^[a-zA-Z0-9_]{3,30}$/.test(username);
+}
+
+function isValidPassword(password: string): boolean {
+	return (
+		password.length >= MIN_PASSWORD_LENGTH &&
+		/[A-Z]/.test(password) &&
+		/[a-z]/.test(password) &&
+		/[0-9]/.test(password) &&
+		/[^A-Za-z0-9]/.test(password)
+	);
+}
+
+function isValidName(name: string): boolean {
+	const trimmed = name.trim();
+	return trimmed.length > 0 && trimmed.length <= 255;
 }
 
 function getDatabaseUrl(): string {
@@ -76,26 +68,15 @@ function getDatabaseUrl(): string {
 	const password = process.env.DB_PASSWORD;
 
 	if (host && name && user && password) {
-		const encodedUser = encodeURIComponent(user);
-		const encodedPassword = encodeURIComponent(password);
-		const encodedHost = encodeURIComponent(host);
-		const encodedName = encodeURIComponent(name);
-		return `postgresql://${encodedUser}:${encodedPassword}@${encodedHost}:${port}/${encodedName}?sslmode=no-verify`;
+		return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${encodeURIComponent(host)}:${port}/${encodeURIComponent(name)}?sslmode=no-verify`;
 	}
 
-	console.error(
-		'DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD required'
-	);
+	console.error('DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD required');
 	process.exit(1);
 }
 
 function getAdminConfig(): AdminConfig | null {
-	// First, try environment variables (GitHub Secrets for deployed environments)
-	if (
-		process.env.ADMIN_USERNAME &&
-		process.env.ADMIN_PASSWORD &&
-		process.env.ADMIN_EMAIL
-	) {
+	if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD && process.env.ADMIN_EMAIL) {
 		console.log('Using admin config from environment variables');
 		return {
 			username: process.env.ADMIN_USERNAME,
@@ -106,8 +87,6 @@ function getAdminConfig(): AdminConfig | null {
 		};
 	}
 
-	// Second, try local config file (for local development)
-	// Look in project root (go up from shared/db/src)
 	const configPaths = [
 		path.join(import.meta.dirname, '../../../seed.local.json'),
 		path.join(process.cwd(), 'seed.local.json'),
@@ -116,9 +95,7 @@ function getAdminConfig(): AdminConfig | null {
 	for (const configPath of configPaths) {
 		if (fs.existsSync(configPath)) {
 			try {
-				const content = fs.readFileSync(configPath, 'utf-8');
-				const config = JSON.parse(content) as LocalConfig;
-
+				const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as LocalConfig;
 				if (config.admin?.username && config.admin?.password && config.admin?.email) {
 					console.log(`Using admin config from ${configPath}`);
 					return {
@@ -129,8 +106,8 @@ function getAdminConfig(): AdminConfig | null {
 						lastName: config.admin.lastName || 'User',
 					};
 				}
-			} catch (err) {
-				console.warn(`Failed to parse ${configPath}:`, err);
+			} catch {
+				console.warn(`Failed to parse ${configPath}`);
 			}
 		}
 	}
@@ -143,106 +120,98 @@ async function seed(): Promise<void> {
 
 	if (!adminConfig) {
 		console.log('No admin configuration found. Skipping seed.');
-		console.log('To seed an admin account, either:');
-		console.log(
-			'  1. Set ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL environment variables'
-		);
-		console.log('  2. Create seed.local.json in project root (see seed.local.example.json)');
 		return;
 	}
 
-	// Validate input before proceeding
-	const validationErrors: string[] = [];
-
 	if (!isValidUsername(adminConfig.username)) {
-		validationErrors.push('Username must be 3-30 characters, alphanumeric and underscores only');
-	}
-
-	if (!isValidEmail(adminConfig.email)) {
-		validationErrors.push('Email address is not valid');
-	}
-
-	const passwordValidation = validatePassword(adminConfig.password);
-	if (!passwordValidation.valid) {
-		for (const error of passwordValidation.errors) {
-			validationErrors.push(error.message);
-		}
-	}
-
-	if (validationErrors.length > 0) {
-		console.error('Invalid admin configuration:');
-		for (const error of validationErrors) {
-			console.error(`  - ${error}`);
-		}
+		console.error('Invalid username: must be 3-30 chars, alphanumeric and underscores');
 		process.exit(1);
 	}
 
-	const databaseUrl = getDatabaseUrl();
-	const pool = new Pool({ connectionString: databaseUrl });
+	if (!isValidEmail(adminConfig.email)) {
+		console.error('Invalid email address');
+		process.exit(1);
+	}
+
+	if (!isValidPassword(adminConfig.password)) {
+		console.error('Invalid password: min 12 chars, must have uppercase, lowercase, digit, special char');
+		process.exit(1);
+	}
+
+	if (!isValidName(adminConfig.firstName) || !isValidName(adminConfig.lastName)) {
+		console.error('Invalid name: first and last name must be non-empty and max 255 chars');
+		process.exit(1);
+	}
+
+	const pool = new Pool({ connectionString: getDatabaseUrl() });
 
 	try {
-		// Check if the required tables exist (migrations may not have run yet)
 		const tableCheck = await pool.query(`
-			SELECT
-				(SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')) AS users_exists,
-				(SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'user_passwords')) AS passwords_exists
+			SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users') AS users_exists,
+			       EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'user_passwords') AS passwords_exists
 		`);
 
-		const { users_exists, passwords_exists } = tableCheck.rows[0];
-		if (!users_exists || !passwords_exists) {
+		const tableStatus = tableCheck.rows[0];
+		if (!tableStatus || !tableStatus.users_exists || !tableStatus.passwords_exists) {
 			console.log('Required tables do not exist. Run migrations first.');
 			return;
 		}
 
-		// Check if admin already exists by username or email
-		const existingUser = await pool.query<{ id: string; username: string }>(
-			'SELECT id, username FROM users WHERE username = $1 OR email = $2',
+		const existing = await pool.query<{ id: string; username: string; email: string }>(
+			'SELECT id, username, email FROM users WHERE username = $1 OR email = $2',
 			[adminConfig.username.toLowerCase(), adminConfig.email.toLowerCase()]
 		);
 
-		const existing = existingUser.rows[0];
-		if (existing) {
-			console.log(
-				`Admin user already exists: ${existing.username} (id: ${existing.id})`
-			);
+		if (existing.rows[0]) {
+			const match = existing.rows[0];
+			if (match.username === adminConfig.username.toLowerCase() && match.email === adminConfig.email.toLowerCase()) {
+				console.log(`Admin user already exists: ${match.username}`);
+			} else if (match.username === adminConfig.username.toLowerCase()) {
+				console.log(`Username '${adminConfig.username}' already taken by another user`);
+			} else {
+				console.log(`Email '${adminConfig.email}' already registered to user '${match.username}'`);
+			}
 			return;
 		}
 
-		// Hash the password
 		console.log('Creating admin account...');
-		const passwordHash = await hashPassword(adminConfig.password);
+		const passwordHash = await bcrypt.hash(adminConfig.password, BCRYPT_COST);
 
-		// Create the admin user in a transaction
 		const client = await pool.connect();
 		try {
-			await client.query('BEGIN');
+			// Use SERIALIZABLE isolation to prevent race conditions with concurrent seed runs
+			await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
 
-			// Insert user
+			// Re-check for existing user within transaction to ensure atomicity
+			const txnCheck = await client.query<{ id: string }>(
+				'SELECT id FROM users WHERE username = $1 OR email = $2',
+				[adminConfig.username.toLowerCase(), adminConfig.email.toLowerCase()]
+			);
+
+			if (txnCheck.rows[0]) {
+				await client.query('ROLLBACK');
+				console.log('Admin user was created by another process');
+				return;
+			}
+
 			const userResult = await client.query<{ id: string }>(
 				`INSERT INTO users (username, first_name, last_name, email, email_verified)
-				 VALUES ($1, $2, $3, $4, true)
-				 RETURNING id`,
-				[
-					adminConfig.username.toLowerCase(),
-					adminConfig.firstName,
-					adminConfig.lastName,
-					adminConfig.email.toLowerCase(),
-				]
+				 VALUES ($1, $2, $3, $4, true) RETURNING id`,
+				[adminConfig.username.toLowerCase(), adminConfig.firstName.trim(), adminConfig.lastName.trim(), adminConfig.email.toLowerCase()]
 			);
-			const newUser = userResult.rows[0];
-			if (!newUser) {
-				throw new Error('Failed to create user');
-			}
-			const userId = newUser.id;
 
-			// Insert password
+			const userId = userResult.rows[0]?.id;
+			if (!userId) {
+				throw new Error('Failed to create user record');
+			}
+
 			await client.query(
 				'INSERT INTO user_passwords (user_id, password_hash) VALUES ($1, $2)',
 				[userId, passwordHash]
 			);
 
 			await client.query('COMMIT');
-			console.log(`✓ Created admin user: ${adminConfig.username} (id: ${userId})`);
+			console.log(`Created admin user: ${adminConfig.username}`);
 		} catch (err) {
 			await client.query('ROLLBACK');
 			throw err;
@@ -255,8 +224,6 @@ async function seed(): Promise<void> {
 }
 
 seed().catch((err: unknown) => {
-	// Sanitize error output to avoid leaking sensitive data (passwords, connection strings)
-	const message = err instanceof Error ? err.message : 'Unknown error';
-	console.error('Seed failed:', message);
+	console.error('Seed failed:', err instanceof Error ? err.message : 'Unknown error');
 	process.exit(1);
 });

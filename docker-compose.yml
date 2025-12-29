@@ -64,11 +64,14 @@ services:
       PORT: 3000
       REDIS_URL: redis://redis:6379
       API_URL: http://api:3001
+      DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
       NODE_ENV: development
     depends_on:
       api:
         condition: service_started
       redis:
+        condition: service_healthy
+      db:
         condition: service_healthy
 
   mcp:

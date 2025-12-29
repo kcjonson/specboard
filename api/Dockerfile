@@ -28,10 +28,10 @@ COPY shared/auth ./shared/auth
 COPY api ./api
 
 # Build shared packages first, then API
-# Note: db depends on auth (for hashPassword in seed.ts), so build auth before db
+# Note: auth depends on db, so build db before auth
 RUN pnpm --filter @doc-platform/core build && \
-    pnpm --filter @doc-platform/auth build && \
     pnpm --filter @doc-platform/db build && \
+    pnpm --filter @doc-platform/auth build && \
     pnpm --filter @doc-platform/api build
 
 # Production stage

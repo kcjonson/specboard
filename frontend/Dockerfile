@@ -14,6 +14,7 @@ COPY package.json pnpm-lock.yaml ./
 # Copy only package.json files to install dependencies
 # Frontend server dependencies
 COPY shared/core/package.json ./shared/core/
+COPY shared/db/package.json ./shared/db/
 COPY shared/auth/package.json ./shared/auth/
 COPY frontend/package.json ./frontend/
 # Planning-web SPA dependencies
@@ -29,6 +30,7 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY tsconfig.json ./
 COPY shared/core ./shared/core
+COPY shared/db ./shared/db
 COPY shared/auth ./shared/auth
 COPY shared/ui ./shared/ui
 COPY shared/models ./shared/models
@@ -43,6 +45,7 @@ COPY shared/pages ./shared/pages
 # Build shared packages first, then frontend server, then SPA
 # Order matters: core first, then packages that depend on it
 RUN pnpm --filter @doc-platform/core build && \
+    pnpm --filter @doc-platform/db build && \
     pnpm --filter @doc-platform/auth build && \
     pnpm --filter @doc-platform/fetch build && \
     pnpm --filter @doc-platform/router build && \
@@ -61,6 +64,7 @@ WORKDIR /app
 COPY frontend/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
 COPY package.json pnpm-lock.yaml ./
 COPY shared/core/package.json ./shared/core/
+COPY shared/db/package.json ./shared/db/
 COPY shared/auth/package.json ./shared/auth/
 COPY frontend/package.json ./frontend/
 
@@ -69,6 +73,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 # Copy built output
 COPY --from=builder /app/shared/core/dist ./shared/core/dist
+COPY --from=builder /app/shared/db/dist ./shared/db/dist
 COPY --from=builder /app/shared/auth/dist ./shared/auth/dist
 COPY --from=builder /app/frontend/dist ./frontend/dist
 

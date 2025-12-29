@@ -359,6 +359,24 @@ export class DocPlatformStack extends cdk.Stack {
 			],
 		});
 
+		// OAuth endpoints -> API (not /oauth/consent which is SPA)
+		listener.addTargetGroups('OAuthRoutes', {
+			targetGroups: [apiTargetGroup],
+			priority: 20,
+			conditions: [
+				elbv2.ListenerCondition.pathPatterns(['/oauth/authorize', '/oauth/token', '/oauth/revoke']),
+			],
+		});
+
+		// .well-known endpoints -> API
+		listener.addTargetGroups('WellKnownRoutes', {
+			targetGroups: [apiTargetGroup],
+			priority: 30,
+			conditions: [
+				elbv2.ListenerCondition.pathPatterns(['/.well-known/*']),
+			],
+		});
+
 		listener.addTargetGroups('DefaultRoute', {
 			targetGroups: [frontendTargetGroup],
 		});

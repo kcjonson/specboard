@@ -1,0 +1,182 @@
+.container {
+	margin-top: var(--space-8);
+	padding-top: var(--space-6);
+	border-top: 1px solid var(--color-border);
+}
+
+.title {
+	font-size: var(--text-lg);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+	margin: 0 0 var(--space-2) 0;
+}
+
+.description {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	margin: 0 0 var(--space-5) 0;
+}
+
+.loading {
+	padding: var(--space-6);
+	text-align: center;
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+}
+
+.error {
+	padding: var(--space-4);
+	background: rgba(239, 68, 68, 0.1);
+	border: 1px solid var(--color-error);
+	border-radius: var(--radius-md);
+	color: var(--color-error);
+	font-size: var(--text-sm);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+}
+
+.empty {
+	padding: var(--space-6);
+	text-align: center;
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+	background: var(--color-background);
+	border-radius: var(--radius-md);
+	border: 1px dashed var(--color-border);
+}
+
+.list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.item {
+	background: var(--color-background);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	padding: var(--space-4);
+}
+
+.itemHeader {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
+	margin-bottom: var(--space-3);
+}
+
+.icon {
+	font-size: 1.5rem;
+	line-height: 1;
+}
+
+.itemInfo {
+	flex: 1;
+	min-width: 0;
+}
+
+.clientName {
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+	font-size: var(--text-base);
+}
+
+.deviceName {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	margin-top: var(--space-1);
+}
+
+.itemDetails {
+	margin-bottom: var(--space-3);
+}
+
+.scopes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	margin-bottom: var(--space-2);
+}
+
+.scope {
+	display: inline-block;
+	padding: var(--space-1) var(--space-2);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	font-size: var(--text-xs);
+	color: var(--color-text-muted);
+}
+
+.dates {
+	font-size: var(--text-xs);
+	color: var(--color-text-muted);
+}
+
+.separator {
+	margin: 0 var(--space-2);
+}
+
+.itemActions {
+	display: flex;
+	justify-content: flex-end;
+	padding-top: var(--space-3);
+	border-top: 1px solid var(--color-border);
+}
+
+.confirmRevoke {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+}
+
+.confirmText {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+/* Button variants */
+.retryButton,
+.ghostButton,
+.dangerButton {
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-md);
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	cursor: pointer;
+	transition: background-color 0.15s, border-color 0.15s;
+}
+
+.retryButton,
+.ghostButton {
+	background: transparent;
+	border: 1px solid var(--color-border);
+	color: var(--color-text);
+}
+
+.retryButton:hover,
+.ghostButton:hover {
+	background: var(--color-background);
+	border-color: var(--color-text-muted);
+}
+
+.dangerButton {
+	background: var(--color-error);
+	border: 1px solid var(--color-error);
+	color: white;
+}
+
+.dangerButton:hover {
+	background: var(--color-error-hover, var(--color-error));
+	border-color: var(--color-error-hover, var(--color-error));
+	filter: brightness(0.9);
+}
+
+.retryButton:disabled,
+.ghostButton:disabled,
+.dangerButton:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}

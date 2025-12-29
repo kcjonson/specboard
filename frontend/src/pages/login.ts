@@ -81,6 +81,26 @@ export function renderLoginPage(options: LoginPageOptions = {}): string {
 				errorEl.classList.add('hidden');
 			}
 
+			// Get return URL from query params (with robust open redirect protection)
+			function getReturnUrl() {
+				const params = new URLSearchParams(window.location.search);
+				const next = params.get('next');
+				if (!next) return '/';
+
+				try {
+					// Parse relative URL with current origin as base
+					const url = new URL(next, window.location.origin);
+					// Only allow same-origin paths
+					if (url.origin !== window.location.origin) {
+						return '/';
+					}
+					// Return path + query + hash (prevents protocol/host manipulation)
+					return url.pathname + url.search + url.hash;
+				} catch {
+					return '/';
+				}
+			}
+
 			form.addEventListener('submit', function(e) {
 				e.preventDefault();
 				hideError();
@@ -104,7 +124,7 @@ export function renderLoginPage(options: LoginPageOptions = {}): string {
 				})
 				.then(function(result) {
 					if (result.ok) {
-						window.location.href = '/';
+						window.location.href = getReturnUrl();
 					} else {
 						showError(result.data.error || 'Login failed');
 						submitBtn.disabled = false;

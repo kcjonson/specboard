@@ -93,6 +93,9 @@ importers:
       '@doc-platform/auth':
         specifier: workspace:*
         version: link:../shared/auth
+      '@doc-platform/db':
+        specifier: workspace:*
+        version: link:../shared/db
       '@hono/node-server':
         specifier: ^1.19.7
         version: 1.19.7(hono@4.11.1)
@@ -178,6 +181,9 @@ importers:
 
   shared/auth:
     dependencies:
+      '@doc-platform/db':
+        specifier: workspace:*
+        version: link:../db
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
@@ -206,13 +212,16 @@ importers:
 
   shared/db:
     dependencies:
-      '@doc-platform/auth':
-        specifier: workspace:*
-        version: link:../auth
+      bcrypt:
+        specifier: ^6.0.0
+        version: 6.0.0
       pg:
         specifier: ^8.16.3
         version: 8.16.3
     devDependencies:
+      '@types/bcrypt':
+        specifier: ^6.0.0
+        version: 6.0.0
       '@types/node':
         specifier: ^22.10.2
         version: 22.19.3

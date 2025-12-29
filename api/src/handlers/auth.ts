@@ -100,7 +100,7 @@ export async function handleLogin(
 			csrfToken,
 		});
 	} catch (error) {
-		console.error('Login failed:', error);
+		console.error('Login failed:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Authentication service unavailable' }, 503);
 	}
 }
@@ -232,7 +232,7 @@ export async function handleSignup(
 			message: 'Account created successfully',
 		}, 201);
 	} catch (error) {
-		console.error('Signup failed:', error);
+		console.error('Signup failed:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Failed to create account' }, 500);
 	}
 }
@@ -311,7 +311,123 @@ export async function handleGetMe(
 			csrfToken: session.csrfToken,
 		});
 	} catch (error) {
-		console.error('Failed to get user:', error);
+		console.error('Failed to get user:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Authentication service unavailable' }, 503);
+	}
+}
+
+interface UpdateMeRequest {
+	first_name?: string;
+	last_name?: string;
+}
+
+/**
+ * Allowlist of fields that can be updated via the profile API.
+ * SECURITY: Only these exact column names can appear in the UPDATE query.
+ * This prevents SQL injection if the pattern is modified or extended.
+ */
+const ALLOWED_PROFILE_FIELDS = new Set(['first_name', 'last_name']);
+
+/**
+ * Update current user profile
+ */
+export async function handleUpdateMe(
+	context: Context,
+	redis: Redis
+): Promise<Response> {
+	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
+
+	if (!sessionId) {
+		return context.json({ error: 'Not authenticated' }, 401);
+	}
+
+	let body: UpdateMeRequest;
+	try {
+		body = await context.req.json<UpdateMeRequest>();
+	} catch {
+		return context.json({ error: 'Invalid JSON' }, 400);
+	}
+
+	const { first_name, last_name } = body;
+
+	// Validate names if provided
+	if (first_name !== undefined) {
+		const trimmed = first_name.trim();
+		if (!trimmed) {
+			return context.json({ error: 'First name cannot be empty' }, 400);
+		}
+		if (trimmed.length > 255) {
+			return context.json({ error: 'First name is too long' }, 400);
+		}
+	}
+
+	if (last_name !== undefined) {
+		const trimmed = last_name.trim();
+		if (!trimmed) {
+			return context.json({ error: 'Last name cannot be empty' }, 400);
+		}
+		if (trimmed.length > 255) {
+			return context.json({ error: 'Last name is too long' }, 400);
+		}
+	}
+
+	try {
+		const session = await getSession(redis, sessionId);
+		if (!session) {
+			return context.json({ error: 'Session expired' }, 401);
+		}
+
+		// Build update query from allowlisted fields only
+		// SECURITY: Field names are validated against ALLOWED_PROFILE_FIELDS
+		// before being interpolated into SQL. Values are always parameterized.
+		const fieldsToUpdate: Array<{ field: string; value: string }> = [];
+
+		if (first_name !== undefined && ALLOWED_PROFILE_FIELDS.has('first_name')) {
+			fieldsToUpdate.push({ field: 'first_name', value: first_name.trim() });
+		}
+		if (last_name !== undefined && ALLOWED_PROFILE_FIELDS.has('last_name')) {
+			fieldsToUpdate.push({ field: 'last_name', value: last_name.trim() });
+		}
+
+		if (fieldsToUpdate.length === 0) {
+			return context.json({ error: 'No fields to update' }, 400);
+		}
+
+		// Build parameterized query with allowlisted field names
+		const setClauses = fieldsToUpdate.map((f, i) => `${f.field} = $${i + 1}`);
+		const values = [...fieldsToUpdate.map(f => f.value), session.userId];
+		const userIdParam = fieldsToUpdate.length + 1;
+
+		const userResult = await query<User>(
+			`UPDATE users SET ${setClauses.join(', ')} WHERE id = $${userIdParam} RETURNING *`,
+			values
+		);
+
+		const user = userResult.rows[0];
+		if (!user) {
+			return context.json({ error: 'User not found' }, 404);
+		}
+
+		// Build display name from updated fields
+		const displayName = user.first_name && user.last_name
+			? `${user.first_name} ${user.last_name}`
+			: user.first_name || user.last_name || user.username || user.email;
+
+		return context.json({
+			user: {
+				id: user.id,
+				username: user.username,
+				email: user.email,
+				displayName,
+				first_name: user.first_name,
+				last_name: user.last_name,
+				email_verified: user.email_verified,
+				phone_number: user.phone_number,
+				avatar_url: user.avatar_url,
+			},
+		});
+	} catch (error) {
+		console.error('Failed to update user:', error instanceof Error ? error.message : 'Unknown error');
+		return context.json({ error: 'Failed to update profile' }, 500);
 	}
 }

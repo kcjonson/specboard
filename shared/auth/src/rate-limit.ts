@@ -255,4 +255,18 @@ export const RATE_LIMIT_CONFIGS = {
 		windowSeconds: 60,
 		message: 'Rate limit exceeded, please slow down',
 	} satisfies RateLimitConfig,
+
+	/** OAuth token endpoint: 10 per minute per IP (prevents auth code brute force) */
+	oauthToken: {
+		maxRequests: 10,
+		windowSeconds: 60,
+		message: 'Too many token requests, please try again later',
+	} satisfies RateLimitConfig,
+
+	/** OAuth authorize: 5 per 15 minutes per IP (same as login) */
+	oauthAuthorize: {
+		maxRequests: 5,
+		windowSeconds: 15 * 60,
+		message: 'Too many authorization attempts, please try again in 15 minutes',
+	} satisfies RateLimitConfig,
 } as const;

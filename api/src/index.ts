@@ -13,7 +13,16 @@ import {
 	RATE_LIMIT_CONFIGS,
 } from '@doc-platform/auth';
 
-import { handleLogin, handleLogout, handleGetMe, handleSignup } from './handlers/auth.js';
+import { handleLogin, handleLogout, handleGetMe, handleUpdateMe, handleSignup } from './handlers/auth.js';
+import {
+	handleOAuthMetadata,
+	handleAuthorizeGet,
+	handleAuthorizePost,
+	handleToken,
+	handleRevoke,
+	handleListAuthorizations,
+	handleDeleteAuthorization,
+} from './handlers/oauth.js';
 import {
 	handleListEpics,
 	handleGetEpic,
@@ -73,6 +82,8 @@ app.use(
 		rules: [
 			{ path: '/api/auth/login', config: RATE_LIMIT_CONFIGS.login },
 			{ path: '/api/auth/signup', config: RATE_LIMIT_CONFIGS.signup },
+			{ path: '/oauth/token', config: RATE_LIMIT_CONFIGS.oauthToken },
+			{ path: '/oauth/authorize', config: RATE_LIMIT_CONFIGS.oauthAuthorize },
 		],
 		defaultLimit: RATE_LIMIT_CONFIGS.api,
 		excludePaths: ['/health', '/api/health'],
@@ -81,12 +92,16 @@ app.use(
 
 // CSRF protection for state-changing requests
 // Excludes login/signup (no session yet) - logout requires CSRF protection
+// Excludes OAuth token/revoke endpoints (use PKCE instead)
 app.use(
 	'*',
 	csrfMiddleware(redis, {
 		excludePaths: [
 			'/api/auth/login',
 			'/api/auth/signup',
+			'/oauth/token',
+			'/oauth/revoke',
+			'/.well-known/oauth-authorization-server',
 			'/health',
 			'/api/health',
 		],
@@ -102,6 +117,25 @@ app.post('/api/auth/login', (context) => handleLogin(context, redis));
 app.post('/api/auth/signup', (context) => handleSignup(context, redis));
 app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
+app.put('/api/auth/me', (context) => handleUpdateMe(context, redis));
+
+// OAuth 2.1 routes (MCP authentication)
+app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);
+app.get('/oauth/authorize', (context) => handleAuthorizeGet(context, redis));
+app.post('/oauth/authorize', (context) => handleAuthorizePost(context, redis));
+app.post('/oauth/token', handleToken);
+app.post('/oauth/revoke', handleRevoke);
+
+// OAuth authorization management (user settings)
+app.get('/api/oauth/authorizations', (context) => handleListAuthorizations(context, redis));
+app.delete('/api/oauth/authorizations/:id', (context) => handleDeleteAuthorization(context, redis));
+
+// Project routes (user-scoped, not project-scoped)
+app.get('/api/projects', (context) => handleListProjects(context, redis));
+app.get('/api/projects/:id', (context) => handleGetProject(context, redis));
+app.post('/api/projects', (context) => handleCreateProject(context, redis));
+app.put('/api/projects/:id', (context) => handleUpdateProject(context, redis));
+app.delete('/api/projects/:id', (context) => handleDeleteProject(context, redis));
 
 // Project routes (user-scoped, not project-scoped)
 app.get('/api/projects', (context) => handleListProjects(context, redis));

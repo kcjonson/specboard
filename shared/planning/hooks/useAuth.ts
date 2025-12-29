@@ -14,6 +14,13 @@ const CSRF_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 let csrfInterceptorRegistered = false;
 let currentCsrfToken: string | null = null;
 
+/**
+ * Get the current CSRF token for manual use (e.g., form submissions)
+ */
+export function getCsrfToken(): string | null {
+	return currentCsrfToken;
+}
+
 function setupCsrfInterceptor(): void {
 	if (csrfInterceptorRegistered) return;
 
