@@ -15,6 +15,15 @@ import {
 
 import { handleLogin, handleLogout, handleGetMe, handleSignup } from './handlers/auth.js';
 import {
+	handleOAuthMetadata,
+	handleAuthorizeGet,
+	handleAuthorizePost,
+	handleToken,
+	handleRevoke,
+	handleListAuthorizations,
+	handleDeleteAuthorization,
+} from './handlers/oauth.js';
+import {
 	handleListEpics,
 	handleGetEpic,
 	handleCreateEpic,
@@ -74,12 +83,16 @@ app.use(
 
 // CSRF protection for state-changing requests
 // Excludes login/signup (no session yet) - logout requires CSRF protection
+// Excludes OAuth token/revoke endpoints (use PKCE instead)
 app.use(
 	'*',
 	csrfMiddleware(redis, {
 		excludePaths: [
 			'/api/auth/login',
 			'/api/auth/signup',
+			'/oauth/token',
+			'/oauth/revoke',
+			'/.well-known/oauth-authorization-server',
 			'/health',
 			'/api/health',
 		],
@@ -95,6 +108,17 @@ app.post('/api/auth/login', (context) => handleLogin(context, redis));
 app.post('/api/auth/signup', (context) => handleSignup(context, redis));
 app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
+
+// OAuth 2.1 routes (MCP authentication)
+app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);
+app.get('/oauth/authorize', (context) => handleAuthorizeGet(context, redis));
+app.post('/oauth/authorize', (context) => handleAuthorizePost(context, redis));
+app.post('/oauth/token', handleToken);
+app.post('/oauth/revoke', handleRevoke);
+
+// OAuth authorization management (user settings)
+app.get('/api/oauth/authorizations', (context) => handleListAuthorizations(context, redis));
+app.delete('/api/oauth/authorizations/:id', (context) => handleDeleteAuthorization(context, redis));
 
 // Project-scoped epic routes
 app.get('/api/projects/:projectId/epics', handleListEpics);

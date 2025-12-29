@@ -42,6 +42,15 @@ export {
 	type PasswordValidationResult,
 } from './password.js';
 
+// MCP OAuth middleware
+export {
+	mcpAuthMiddleware,
+	requireScope,
+	getMcpToken,
+	type McpTokenPayload,
+	type McpAuthVariables,
+} from './mcp.js';
+
 // Types
 export {
 	type Session,

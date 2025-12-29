@@ -8,10 +8,13 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { Redis } from 'ioredis';
-import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
+import { authMiddleware, getSession, type AuthVariables, SESSION_COOKIE_NAME } from '@doc-platform/auth';
+import { getCookie } from 'hono/cookie';
+import { query, type User } from '@doc-platform/db';
 import { renderLoginPage } from './pages/login.js';
 import { renderSignupPage } from './pages/signup.js';
 import { renderNotFoundPage } from './pages/not-found.js';
+import { renderOAuthConsentPage } from './pages/oauth-consent.js';
 
 // Load Vite manifest for asset paths
 interface ManifestEntry {
@@ -76,9 +79,166 @@ app.get('/signup', (c) => {
 	}));
 });
 
-// Proxy auth requests to API
+// API URL for proxying
 const apiUrl = process.env.API_URL || 'http://localhost:3001';
 
+// OAuth consent page (requires auth - handled inline)
+app.get('/oauth/consent', async (c) => {
+	// Check session
+	const sessionId = getCookie(c, SESSION_COOKIE_NAME);
+	if (!sessionId) {
+		const returnUrl = encodeURIComponent(c.req.url);
+		return c.redirect(`/login?next=${returnUrl}`);
+	}
+
+	const session = await getSession(redis, sessionId);
+	if (!session) {
+		const returnUrl = encodeURIComponent(c.req.url);
+		return c.redirect(`/login?next=${returnUrl}`);
+	}
+
+	// Get user info
+	const userResult = await query<User>(
+		'SELECT * FROM users WHERE id = $1',
+		[session.userId]
+	);
+	const user = userResult.rows[0];
+	if (!user) {
+		return c.redirect('/login');
+	}
+
+	const displayName = user.first_name && user.last_name
+		? `${user.first_name} ${user.last_name}`
+		: user.username || user.email;
+
+	// Get OAuth params from query string
+	const url = new URL(c.req.url);
+	const clientId = url.searchParams.get('client_id') || '';
+	const redirectUri = url.searchParams.get('redirect_uri') || '';
+	const scope = url.searchParams.get('scope') || '';
+	const state = url.searchParams.get('state') || '';
+	const codeChallenge = url.searchParams.get('code_challenge') || '';
+	const codeChallengeMethod = url.searchParams.get('code_challenge_method') || '';
+
+	return c.html(renderOAuthConsentPage({
+		clientId,
+		redirectUri,
+		scope,
+		state,
+		codeChallenge,
+		codeChallengeMethod,
+		userDisplayName: displayName,
+		sharedCssPath,
+	}));
+});
+
+// Proxy OAuth authorize POST to API (form submission)
+app.post('/oauth/authorize', async (c) => {
+	const cookie = c.req.header('Cookie') || '';
+	const contentType = c.req.header('Content-Type') || '';
+
+	let body: string;
+	if (contentType.includes('application/x-www-form-urlencoded')) {
+		const formData = await c.req.parseBody();
+		body = new URLSearchParams(formData as Record<string, string>).toString();
+	} else {
+		body = await c.req.text();
+	}
+
+	const response = await fetch(`${apiUrl}/oauth/authorize`, {
+		method: 'POST',
+		headers: {
+			Cookie: cookie,
+			'Content-Type': contentType,
+		},
+		body,
+		redirect: 'manual', // Don't follow redirects
+	});
+
+	// Forward redirect response
+	if (response.status >= 300 && response.status < 400) {
+		const location = response.headers.get('Location');
+		if (location) {
+			return c.redirect(location);
+		}
+	}
+
+	// Forward other responses
+	const data = await response.text();
+	return new Response(data, {
+		status: response.status,
+		headers: { 'Content-Type': response.headers.get('Content-Type') || 'application/json' },
+	});
+});
+
+// Proxy OAuth token endpoint to API
+app.post('/oauth/token', async (c) => {
+	const contentType = c.req.header('Content-Type') || '';
+	const body = await c.req.text();
+
+	const response = await fetch(`${apiUrl}/oauth/token`, {
+		method: 'POST',
+		headers: { 'Content-Type': contentType },
+		body,
+	});
+
+	const data = await response.json();
+	return c.json(data, response.status as 200 | 400);
+});
+
+// Proxy OAuth revoke endpoint to API
+app.post('/oauth/revoke', async (c) => {
+	const contentType = c.req.header('Content-Type') || '';
+	const body = await c.req.text();
+
+	const response = await fetch(`${apiUrl}/oauth/revoke`, {
+		method: 'POST',
+		headers: { 'Content-Type': contentType },
+		body,
+	});
+
+	const data = await response.json();
+	return c.json(data, response.status as 200 | 400);
+});
+
+// Proxy OAuth metadata endpoint to API
+app.get('/.well-known/oauth-authorization-server', async (c) => {
+	const response = await fetch(`${apiUrl}/.well-known/oauth-authorization-server`);
+	const data = await response.json();
+	return c.json(data);
+});
+
+// Proxy OAuth authorizations API to backend
+app.get('/api/oauth/authorizations', async (c) => {
+	const cookie = c.req.header('Cookie') || '';
+	const response = await fetch(`${apiUrl}/api/oauth/authorizations`, {
+		headers: { Cookie: cookie },
+	});
+	const data = await response.json();
+	return c.json(data, response.status as 200 | 401);
+});
+
+app.delete('/api/oauth/authorizations/:id', async (c) => {
+	const id = c.req.param('id');
+	const cookie = c.req.header('Cookie') || '';
+	const csrfToken = c.req.header('X-CSRF-Token') || '';
+
+	const response = await fetch(`${apiUrl}/api/oauth/authorizations/${id}`, {
+		method: 'DELETE',
+		headers: {
+			Cookie: cookie,
+			'X-CSRF-Token': csrfToken,
+		},
+	});
+
+	if (response.status === 204) {
+		return new Response(null, { status: 204 });
+	}
+	const data = await response.json();
+	return c.json(data, response.status as 401 | 404);
+});
+
+// Proxy auth requests to API
 app.post('/api/auth/login', async (c) => {
 	const body = await c.req.json();
 	const response = await fetch(`${apiUrl}/api/auth/login`, {
