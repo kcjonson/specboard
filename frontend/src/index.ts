@@ -11,7 +11,7 @@ import { Redis } from 'ioredis';
 import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
 import { renderLoginPage } from './pages/login.js';
 import { renderSignupPage } from './pages/signup.js';
-import { renderNotFoundPage } from './pages/not-found.js'; // .tsx extension, compiled to .js
+import { notFoundHtml } from './pages/not-found.js';
 
 // Load Vite manifest for asset paths
 interface ManifestEntry {
@@ -197,11 +197,9 @@ app.get('*', async (c) => {
 	}
 });
 
-// Custom 404 handler - friendly page for all not found requests
+// Custom 404 handler
 app.notFound((c) => {
-	return c.html(renderNotFoundPage({
-		sharedCssPath,
-	}), 404);
+	return c.html(notFoundHtml, 404);
 });
 
 // Start server

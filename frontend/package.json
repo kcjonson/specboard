@@ -14,12 +14,9 @@
 	},
 	"dependencies": {
 		"@doc-platform/auth": "workspace:*",
-		"@doc-platform/ui": "workspace:*",
 		"@hono/node-server": "^1.19.7",
 		"hono": "^4.11.1",
-		"ioredis": "^5.6.1",
-		"preact": "^10.25.4",
-		"preact-render-to-string": "^6.5.11"
+		"ioredis": "^5.6.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.2",
