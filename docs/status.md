@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-28 (Projects Page merged - PR #34)
+Last Updated: 2025-12-29 (Test Data Seeding)
 
 ## Epic/Story/Task Template
 
@@ -141,6 +141,11 @@ Use this template for all work items:
   - [x] Build and push Docker images to ECR
   - [x] Run database migrations before deploy
   - [x] Deploy to ECS on push to main
+- [x] Test data seeding
+  - [x] Seed script for admin account (idempotent)
+  - [x] GitHub Secrets for staging credentials (ADMIN_USERNAME/PASSWORD/EMAIL)
+  - [x] Local seed config (seed.local.json, gitignored)
+  - [x] CD workflow runs seed after migrations
 - [ ] Configure GitHub secret (AWS_DEPLOY_ROLE_ARN)
 - [ ] Mock auth middleware (bypass for staging)
 

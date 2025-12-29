@@ -238,6 +238,88 @@ jobs:
 
           echo "Migration completed successfully!"
 
+      - name: Seed admin account
+        id: seed
+        run: |
+          # Parse subnets into JSON array format
+          SUBNETS_JSON=$(echo '${{ steps.stack.outputs.subnets }}' | tr ',' '\n' | jq -R . | jq -s .)
+
+          # Run seed task using the API task definition with overridden command and env vars
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ steps.stack.outputs.cluster }} \
+            --task-definition ${{ steps.stack.outputs.task_def }} \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[\"${{ steps.stack.outputs.security_group }}\"],assignPublicIp=DISABLED}" \
+            --overrides '{
+              "containerOverrides": [{
+                "name": "api",
+                "command": ["node", "shared/db/dist/seed.js"],
+                "environment": [
+                  {"name": "ADMIN_USERNAME", "value": "${{ secrets.ADMIN_USERNAME }}"},
+                  {"name": "ADMIN_PASSWORD", "value": "${{ secrets.ADMIN_PASSWORD }}"},
+                  {"name": "ADMIN_EMAIL", "value": "${{ secrets.ADMIN_EMAIL }}"},
+                  {"name": "ADMIN_FIRST_NAME", "value": "${{ secrets.ADMIN_FIRST_NAME }}"},
+                  {"name": "ADMIN_LAST_NAME", "value": "${{ secrets.ADMIN_LAST_NAME }}"}
+                ]
+              }]
+            }' \
+            --query 'tasks[0].taskArn' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+
+          echo "task_arn=$TASK_ARN" >> $GITHUB_OUTPUT
+          echo "Started seed task: $TASK_ARN"
+
+      - name: Wait for seed to complete
+        run: |
+          echo "Waiting for seed task to complete..."
+          aws ecs wait tasks-stopped \
+            --cluster ${{ steps.stack.outputs.cluster }} \
+            --tasks ${{ steps.seed.outputs.task_arn }} \
+            --region ${{ env.AWS_REGION }}
+
+          # Check exit code
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster ${{ steps.stack.outputs.cluster }} \
+            --tasks ${{ steps.seed.outputs.task_arn }} \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+
+          echo "Seed task exit code: $EXIT_CODE"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Seed failed! Fetching logs..."
+
+            # Get task ID from ARN
+            TASK_ID=$(echo "${{ steps.seed.outputs.task_arn }}" | rev | cut -d'/' -f1 | rev)
+
+            # Dynamically discover the log stream
+            LOG_STREAM=$(aws logs describe-log-streams \
+              --log-group-name "${{ steps.stack.outputs.log_group }}" \
+              --log-stream-name-prefix "api/api/${TASK_ID}" \
+              --query 'logStreams[0].logStreamName' \
+              --output text \
+              --region ${{ env.AWS_REGION }}) || true
+
+            if [ -n "$LOG_STREAM" ] && [ "$LOG_STREAM" != "None" ]; then
+              echo "Log stream: $LOG_STREAM"
+              aws logs get-log-events \
+                --log-group-name "${{ steps.stack.outputs.log_group }}" \
+                --log-stream-name "$LOG_STREAM" \
+                --limit 100 \
+                --region ${{ env.AWS_REGION }} \
+                --query 'events[*].message' \
+                --output text || echo "Could not fetch log events"
+            else
+              echo "Could not find log stream for task ${TASK_ID}"
+            fi
+
+            exit 1
+          fi
+
+          echo "Seed completed successfully!"
+
       - name: Deploy API service
         run: |
           aws ecs update-service \
