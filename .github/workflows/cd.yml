@@ -71,6 +71,7 @@ jobs:
           check-name: 'Build Images'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 10
+          allowed-conclusions: success,skipped
 
   build-push:
     name: Build and Push

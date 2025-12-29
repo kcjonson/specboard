@@ -39,11 +39,11 @@ jobs:
 
       - name: Run ${{ inputs.task_name }}
         env:
-          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
-          ADMIN_FIRST_NAME: ${{ secrets.ADMIN_FIRST_NAME }}
-          ADMIN_LAST_NAME: ${{ secrets.ADMIN_LAST_NAME }}
+          ADMIN_USERNAME: ${{ inputs.include_admin_env && secrets.ADMIN_USERNAME || '' }}
+          ADMIN_PASSWORD: ${{ inputs.include_admin_env && secrets.ADMIN_PASSWORD || '' }}
+          ADMIN_EMAIL: ${{ inputs.include_admin_env && secrets.ADMIN_EMAIL || '' }}
+          ADMIN_FIRST_NAME: ${{ inputs.include_admin_env && secrets.ADMIN_FIRST_NAME || '' }}
+          ADMIN_LAST_NAME: ${{ inputs.include_admin_env && secrets.ADMIN_LAST_NAME || '' }}
         run: |
           source .github/scripts/get-stack-outputs.sh
           .github/scripts/run-ecs-task.sh "${{ inputs.task_name }}" '${{ inputs.command }}' "${{ inputs.include_admin_env }}"

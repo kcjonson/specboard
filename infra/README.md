@@ -31,7 +31,7 @@ ECR repos use `RETAIN` policy so they survive failed deployments. For a new serv
 1. First CD run: Creates ECR repo, service fails (no image), rollback - but repo survives
 2. Second CD run: Pushes image to existing repo, deployment succeeds
 
-No manual steps required, just push twice (or wait for retry).
+Re-run via: `gh workflow run cd.yml` or push another commit.
 
 ### Image Lifecycle
 
@@ -92,7 +92,7 @@ aws ecs run-task \
   --cluster $CLUSTER \
   --task-definition $TASK_DEF \
   --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=$SUBNETS_JSON,securityGroups=[\"$SG\"],assignPublicIp=DISABLED}" \
+  --network-configuration "{\"awsvpcConfiguration\":{\"subnets\":$SUBNETS_JSON,\"securityGroups\":[\"$SG\"],\"assignPublicIp\":\"DISABLED\"}}" \
   --overrides '{"containerOverrides":[{"name":"api","command":["node","shared/db/dist/migrate.js"]}]}' \
   --region us-west-2
 ```

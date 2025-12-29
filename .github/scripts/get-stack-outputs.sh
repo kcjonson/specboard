@@ -23,6 +23,21 @@ export SECURITY_GROUP=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiSe
 export LOG_GROUP=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiLogGroupName") | .OutputValue')
 export ALB_DNS=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="AlbDnsName") | .OutputValue')
 
+# Validate required outputs
+MISSING=""
+[ -z "$CLUSTER" ] && MISSING="$MISSING CLUSTER"
+[ -z "$TASK_DEF" ] && MISSING="$MISSING TASK_DEF"
+[ -z "$SUBNETS" ] && MISSING="$MISSING SUBNETS"
+[ -z "$SECURITY_GROUP" ] && MISSING="$MISSING SECURITY_GROUP"
+[ -z "$LOG_GROUP" ] && MISSING="$MISSING LOG_GROUP"
+[ -z "$ALB_DNS" ] && MISSING="$MISSING ALB_DNS"
+
+if [ -n "$MISSING" ]; then
+  echo "ERROR: Missing required stack outputs:$MISSING"
+  echo "Ensure DocPlatformStack is deployed and outputs are configured correctly."
+  exit 1
+fi
+
 echo "Stack outputs loaded:"
 echo "  CLUSTER=$CLUSTER"
 echo "  TASK_DEF=$TASK_DEF"
