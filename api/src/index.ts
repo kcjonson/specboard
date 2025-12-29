@@ -104,11 +104,11 @@ app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
 
 // Project routes (user-scoped, not project-scoped)
-app.get('/api/projects', handleListProjects);
-app.get('/api/projects/:id', handleGetProject);
-app.post('/api/projects', handleCreateProject);
-app.put('/api/projects/:id', handleUpdateProject);
-app.delete('/api/projects/:id', handleDeleteProject);
+app.get('/api/projects', (context) => handleListProjects(context, redis));
+app.get('/api/projects/:id', (context) => handleGetProject(context, redis));
+app.post('/api/projects', (context) => handleCreateProject(context, redis));
+app.put('/api/projects/:id', (context) => handleUpdateProject(context, redis));
+app.delete('/api/projects/:id', (context) => handleDeleteProject(context, redis));
 
 // Project-scoped epic routes
 app.get('/api/projects/:projectId/epics', handleListEpics);

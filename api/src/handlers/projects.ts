@@ -3,6 +3,9 @@
  */
 
 import type { Context } from 'hono';
+import { getCookie } from 'hono/cookie';
+import type { Redis } from 'ioredis';
+import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
 import {
 	getProjects,
 	getProject,
@@ -14,16 +17,19 @@ import type { Project as DbProject } from '@doc-platform/db';
 import { dbProjectToApi } from '../transform.js';
 import { isValidUUID, isValidTitle, MAX_TITLE_LENGTH } from '../validation.js';
 
-// Stub user ID until auth is wired up
-const STUB_USER_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+async function getUserId(context: Context, redis: Redis): Promise<string | null> {
+	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
+	if (!sessionId) return null;
 
-function getUserId(_context: Context): string {
-	// TODO: Get from session once auth is wired up
-	return STUB_USER_ID;
+	const session = await getSession(redis, sessionId);
+	return session?.userId ?? null;
 }
 
-export async function handleListProjects(context: Context): Promise<Response> {
-	const userId = getUserId(context);
+export async function handleListProjects(context: Context, redis: Redis): Promise<Response> {
+	const userId = await getUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
 
 	try {
 		const projects = await getProjects(userId);
@@ -40,8 +46,12 @@ export async function handleListProjects(context: Context): Promise<Response> {
 	}
 }
 
-export async function handleGetProject(context: Context): Promise<Response> {
-	const userId = getUserId(context);
+export async function handleGetProject(context: Context, redis: Redis): Promise<Response> {
+	const userId = await getUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+
 	const id = context.req.param('id');
 
 	if (!isValidUUID(id)) {
@@ -62,8 +72,11 @@ export async function handleGetProject(context: Context): Promise<Response> {
 	}
 }
 
-export async function handleCreateProject(context: Context): Promise<Response> {
-	const userId = getUserId(context);
+export async function handleCreateProject(context: Context, redis: Redis): Promise<Response> {
+	const userId = await getUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
 
 	try {
 		const body = await context.req.json();
@@ -92,8 +105,12 @@ export async function handleCreateProject(context: Context): Promise<Response> {
 	}
 }
 
-export async function handleUpdateProject(context: Context): Promise<Response> {
-	const userId = getUserId(context);
+export async function handleUpdateProject(context: Context, redis: Redis): Promise<Response> {
+	const userId = await getUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+
 	const id = context.req.param('id');
 
 	if (!isValidUUID(id)) {
@@ -127,8 +144,12 @@ export async function handleUpdateProject(context: Context): Promise<Response> {
 	}
 }
 
-export async function handleDeleteProject(context: Context): Promise<Response> {
-	const userId = getUserId(context);
+export async function handleDeleteProject(context: Context, redis: Redis): Promise<Response> {
+	const userId = await getUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+
 	const id = context.req.param('id');
 
 	if (!isValidUUID(id)) {
