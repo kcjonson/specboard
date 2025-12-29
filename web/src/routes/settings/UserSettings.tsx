@@ -2,14 +2,16 @@ import { useState, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { Button, Text } from '@doc-platform/ui';
-import { useModel, UserModel } from '@doc-platform/models';
+import { useModel, UserModel, AuthorizationsCollection } from '@doc-platform/models';
 import { AuthorizedApps } from './AuthorizedApps';
 import styles from './UserSettings.module.css';
 
 export function UserSettings(_props: RouteProps): JSX.Element {
-	// Create user model once, auto-fetches on construction
+	// Create models once, auto-fetch on construction
 	const user = useMemo(() => new UserModel(), []);
+	const authorizations = useMemo(() => new AuthorizationsCollection(), []);
 	useModel(user);
+	useModel(authorizations);
 
 	// Form state for editable fields
 	const [firstName, setFirstName] = useState('');
@@ -62,8 +64,9 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 		}
 	};
 
-	// Loading state - show when working AND no user data yet
-	if (user.$meta.working && !user.id) {
+	// Loading state - show when either model is working AND we don't have data yet
+	const isLoading = (user.$meta.working && !user.id) || (authorizations.$meta.working && authorizations.length === 0);
+	if (isLoading) {
 		return (
 			<div class={styles.container}>
 				<div class={styles.content}>
@@ -73,8 +76,9 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 		);
 	}
 
-	// Error state - only show if error AND no user data
-	if (user.$meta.error && !user.id) {
+	// Error state - if any model fails to load, fail the whole page
+	const error = user.$meta.error || authorizations.$meta.error;
+	if (error) {
 		return (
 			<div class={styles.container}>
 				<div class={styles.content}>
@@ -84,7 +88,10 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 						</a>
 					</nav>
 					<div class={styles.card}>
-						<p>Please log in to view settings.</p>
+						<p class={styles.error}>Failed to load settings: {error.message}</p>
+						<Button onClick={() => { user.fetch(); authorizations.fetch(); }}>
+							Retry
+						</Button>
 					</div>
 				</div>
 			</div>
@@ -164,7 +171,7 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 						</div>
 					</div>
 
-					<AuthorizedApps />
+					<AuthorizedApps authorizations={authorizations} />
 				</div>
 			</div>
 		</div>

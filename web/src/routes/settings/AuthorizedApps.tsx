@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { useModel, AuthorizationsCollection, type AuthorizationModel } from '@doc-platform/models';
+import { type AuthorizationsCollection, type AuthorizationModel } from '@doc-platform/models';
 import { Button } from '@doc-platform/ui';
 import styles from './AuthorizedApps.module.css';
 
@@ -45,11 +45,11 @@ function formatDate(dateString: string): string {
 	});
 }
 
-export function AuthorizedApps(): JSX.Element {
-	// Create collection once, auto-fetches on construction
-	const authorizations = useMemo(() => new AuthorizationsCollection(), []);
-	useModel(authorizations);
+interface AuthorizedAppsProps {
+	authorizations: AuthorizationsCollection;
+}
 
+export function AuthorizedApps({ authorizations }: AuthorizedAppsProps): JSX.Element {
 	// Local state for revoke confirmation
 	const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
 	const [revoking, setRevoking] = useState<string | null>(null);
@@ -60,32 +60,11 @@ export function AuthorizedApps(): JSX.Element {
 			await authorizations.remove(auth);
 			setConfirmRevoke(null);
 		} catch {
-			// Error is handled by collection's $meta.error
+			// Error is handled by parent
 		} finally {
 			setRevoking(null);
 		}
 	};
-
-	if (authorizations.$meta.working && authorizations.length === 0) {
-		return (
-			<div class={styles.container}>
-				<div class={styles.loading}>Loading authorized apps...</div>
-			</div>
-		);
-	}
-
-	if (authorizations.$meta.error) {
-		return (
-			<div class={styles.container}>
-				<div class={styles.error}>
-					{authorizations.$meta.error.message}
-					<Button onClick={() => authorizations.fetch()} class={styles.retryButton}>
-						Retry
-					</Button>
-				</div>
-			</div>
-		);
-	}
 
 	return (
 		<div class={styles.container}>
