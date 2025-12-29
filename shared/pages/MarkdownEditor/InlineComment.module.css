@@ -1,7 +1,7 @@
 .container {
 	position: absolute;
 	left: 0;
-	right: 0;
+	right: var(--space-6);
 	display: flex;
 	align-items: flex-start;
 	pointer-events: none;
