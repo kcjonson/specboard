@@ -31,7 +31,7 @@ export function renderNotFoundPage(options: NotFoundPageOptions = {}): string {
 			The page you're looking for doesn't exist or may have been moved.
 			Don't worry, it happens to the best of us.
 		</p>
-		<a href="/">Take me home</a>
+		<a href="/projects">Take me home</a>
 	</div>
 </body>
 </html>`;

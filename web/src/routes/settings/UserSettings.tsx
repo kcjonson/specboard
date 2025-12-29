@@ -62,8 +62,8 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 			<div class={styles.container}>
 				<div class={styles.content}>
 					<nav class={styles.nav}>
-						<a href="/" class={styles.backLink}>
-							← Back to Board
+						<a href="/projects" class={styles.backLink}>
+							← Back to Projects
 						</a>
 					</nav>
 					<div class={styles.card}>
@@ -78,8 +78,8 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 		<div class={styles.container}>
 			<div class={styles.content}>
 				<nav class={styles.nav}>
-					<a href="/planning" class={styles.backLink}>
-						← Back to Board
+					<a href="/projects" class={styles.backLink}>
+						← Back to Projects
 					</a>
 				</nav>
 
