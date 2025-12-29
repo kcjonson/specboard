@@ -13,7 +13,7 @@ import {
 	RATE_LIMIT_CONFIGS,
 } from '@doc-platform/auth';
 
-import { handleLogin, handleLogout, handleGetMe, handleSignup } from './handlers/auth.js';
+import { handleLogin, handleLogout, handleGetMe, handleUpdateMe, handleSignup } from './handlers/auth.js';
 import {
 	handleOAuthMetadata,
 	handleAuthorizeGet,
@@ -108,6 +108,7 @@ app.post('/api/auth/login', (context) => handleLogin(context, redis));
 app.post('/api/auth/signup', (context) => handleSignup(context, redis));
 app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
+app.put('/api/auth/me', (context) => handleUpdateMe(context, redis));
 
 // OAuth 2.1 routes (MCP authentication)
 app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);

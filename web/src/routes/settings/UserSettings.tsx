@@ -1,54 +1,69 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { Button, Text } from '@doc-platform/ui';
-import { useAuth } from '@shared/planning';
+import { useModel, UserModel } from '@doc-platform/models';
 import { AuthorizedApps } from './AuthorizedApps';
 import styles from './UserSettings.module.css';
 
 export function UserSettings(_props: RouteProps): JSX.Element {
-	const { user, loading } = useAuth();
+	// Create user model once, auto-fetches on construction
+	const user = useMemo(() => new UserModel(), []);
+	useModel(user);
 
-	const [displayName, setDisplayName] = useState('');
-	const [isSaving, setIsSaving] = useState(false);
+	// Form state for editable fields
+	const [firstName, setFirstName] = useState('');
+	const [lastName, setLastName] = useState('');
 	const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+	const [initialized, setInitialized] = useState(false);
 
 	// Initialize form when user data loads
 	useEffect(() => {
-		if (user) {
-			setDisplayName(user.displayName);
+		if (user.first_name && !initialized) {
+			setFirstName(user.first_name);
+			setLastName(user.last_name || '');
+			setInitialized(true);
 		}
-	}, [user]);
+	}, [user.first_name, user.last_name, initialized]);
 
 	// Validation and change detection
-	const trimmedDisplayName = displayName.trim();
-	const isValid = trimmedDisplayName.length > 0;
-	const hasChanges = user ? trimmedDisplayName !== user.displayName : false;
-	const canSave = isValid && hasChanges && !isSaving;
+	const trimmedFirstName = firstName.trim();
+	const trimmedLastName = lastName.trim();
+	const isValid = trimmedFirstName.length > 0 && trimmedLastName.length > 0;
+	const hasChanges = initialized && (
+		trimmedFirstName !== user.first_name ||
+		trimmedLastName !== user.last_name
+	);
+	const canSave = isValid && hasChanges && !user.$meta.working;
 
-	const handleDisplayNameChange = (e: Event): void => {
+	const handleFirstNameChange = (e: Event): void => {
 		const value = (e.target as HTMLInputElement).value;
-		setDisplayName(value);
-		// Clear message when user makes changes
-		if (message) {
-			setMessage(null);
-		}
+		setFirstName(value);
+		if (message) setMessage(null);
+	};
+
+	const handleLastNameChange = (e: Event): void => {
+		const value = (e.target as HTMLInputElement).value;
+		setLastName(value);
+		if (message) setMessage(null);
 	};
 
 	const handleSave = async (): Promise<void> => {
 		if (!canSave) return;
 
-		setIsSaving(true);
 		setMessage(null);
 
-		// TODO: Implement actual API call to update user profile
-		await new Promise((resolve) => setTimeout(resolve, 500));
-
-		setIsSaving(false);
-		setMessage({ type: 'success', text: 'Settings saved successfully' });
+		try {
+			user.set({ first_name: trimmedFirstName, last_name: trimmedLastName });
+			await user.save();
+			setMessage({ type: 'success', text: 'Settings saved successfully' });
+		} catch {
+			setMessage({ type: 'error', text: user.$meta.error?.message || 'Failed to save settings' });
+		}
 	};
 
-	if (loading) {
+	// Loading state - show when working AND no user data yet
+	if (user.$meta.working && !user.id) {
 		return (
 			<div class={styles.container}>
 				<div class={styles.content}>
@@ -58,7 +73,8 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 		);
 	}
 
-	if (!user) {
+	// Error state - only show if error AND no user data
+	if (user.$meta.error && !user.id) {
 		return (
 			<div class={styles.container}>
 				<div class={styles.content}>
@@ -95,18 +111,35 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 
 					<div class={styles.form}>
 						<div class={styles.field}>
-							<label class={styles.label} htmlFor="displayName">
-								Display Name
+							<label class={styles.label} htmlFor="firstName">
+								First Name
 							</label>
 							<Text
-								id="displayName"
-								value={displayName}
-								onInput={handleDisplayNameChange}
-								placeholder="Enter your display name"
+								id="firstName"
+								value={firstName}
+								onInput={handleFirstNameChange}
+								placeholder="Enter your first name"
 							/>
-							{!isValid && displayName.length > 0 && (
+							{!trimmedFirstName && firstName.length > 0 && (
 								<span class={styles.hint} style="color: var(--color-error)">
-									Display name cannot be empty
+									First name cannot be empty
+								</span>
+							)}
+						</div>
+
+						<div class={styles.field}>
+							<label class={styles.label} htmlFor="lastName">
+								Last Name
+							</label>
+							<Text
+								id="lastName"
+								value={lastName}
+								onInput={handleLastNameChange}
+								placeholder="Enter your last name"
+							/>
+							{!trimmedLastName && lastName.length > 0 && (
+								<span class={styles.hint} style="color: var(--color-error)">
+									Last name cannot be empty
 								</span>
 							)}
 						</div>
@@ -117,7 +150,7 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 							</label>
 							<Text
 								id="email"
-								value={user.email}
+								value={user.email || ''}
 								disabled
 								placeholder="Your email address"
 							/>
@@ -126,7 +159,7 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 
 						<div class={styles.actions}>
 							<Button onClick={handleSave} disabled={!canSave}>
-								{isSaving ? 'Saving...' : 'Save Changes'}
+								{user.$meta.working ? 'Saving...' : 'Save Changes'}
 							</Button>
 						</div>
 					</div>

@@ -315,3 +315,112 @@ export async function handleGetMe(
 		return context.json({ error: 'Authentication service unavailable' }, 503);
 	}
 }
+
+interface UpdateMeRequest {
+	first_name?: string;
+	last_name?: string;
+}
+
+/**
+ * Update current user profile
+ */
+export async function handleUpdateMe(
+	context: Context,
+	redis: Redis
+): Promise<Response> {
+	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
+
+	if (!sessionId) {
+		return context.json({ error: 'Not authenticated' }, 401);
+	}
+
+	let body: UpdateMeRequest;
+	try {
+		body = await context.req.json<UpdateMeRequest>();
+	} catch {
+		return context.json({ error: 'Invalid JSON' }, 400);
+	}
+
+	const { first_name, last_name } = body;
+
+	// Validate names if provided
+	if (first_name !== undefined) {
+		const trimmed = first_name.trim();
+		if (!trimmed) {
+			return context.json({ error: 'First name cannot be empty' }, 400);
+		}
+		if (trimmed.length > 255) {
+			return context.json({ error: 'First name is too long' }, 400);
+		}
+	}
+
+	if (last_name !== undefined) {
+		const trimmed = last_name.trim();
+		if (!trimmed) {
+			return context.json({ error: 'Last name cannot be empty' }, 400);
+		}
+		if (trimmed.length > 255) {
+			return context.json({ error: 'Last name is too long' }, 400);
+		}
+	}
+
+	try {
+		const session = await getSession(redis, sessionId);
+		if (!session) {
+			return context.json({ error: 'Session expired' }, 401);
+		}
+
+		// Build update query dynamically
+		const updates: string[] = [];
+		const values: (string | undefined)[] = [];
+		let paramIndex = 1;
+
+		if (first_name !== undefined) {
+			updates.push(`first_name = $${paramIndex++}`);
+			values.push(first_name.trim());
+		}
+		if (last_name !== undefined) {
+			updates.push(`last_name = $${paramIndex++}`);
+			values.push(last_name.trim());
+		}
+
+		if (updates.length === 0) {
+			return context.json({ error: 'No fields to update' }, 400);
+		}
+
+		// Add user ID as last parameter
+		values.push(session.userId);
+
+		const userResult = await query<User>(
+			`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+			values
+		);
+
+		const user = userResult.rows[0];
+		if (!user) {
+			return context.json({ error: 'User not found' }, 404);
+		}
+
+		// Build display name from updated fields
+		const displayName = user.first_name && user.last_name
+			? `${user.first_name} ${user.last_name}`
+			: user.first_name || user.last_name || user.username || user.email;
+
+		return context.json({
+			user: {
+				id: user.id,
+				username: user.username,
+				email: user.email,
+				displayName,
+				first_name: user.first_name,
+				last_name: user.last_name,
+				email_verified: user.email_verified,
+				phone_number: user.phone_number,
+				avatar_url: user.avatar_url,
+			},
+		});
+	} catch (error) {
+		console.error('Failed to update user:', error);
+		return context.json({ error: 'Failed to update profile' }, 500);
+	}
+}

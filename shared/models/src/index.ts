@@ -37,3 +37,6 @@ export type { SlateContent } from './DocumentModel';
 
 // Authorization models
 export { AuthorizationModel, AuthorizationsCollection } from './authorization';
+
+// User model
+export { UserModel } from './user';
