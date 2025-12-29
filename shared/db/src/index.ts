@@ -21,7 +21,9 @@ function getDatabaseUrl(): string {
 		return `postgresql://${user}:${encodeURIComponent(password)}@${host}:${port}/${name}`;
 	}
 
-	throw new Error('DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD required');
+	throw new Error(
+		'DATABASE_URL or all of DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD are required (DB_PORT optional, defaults to 5432)'
+	);
 }
 
 const connectionString = getDatabaseUrl();

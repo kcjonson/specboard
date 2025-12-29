@@ -262,7 +262,7 @@ export class DocPlatformStack extends cdk.Stack {
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			serviceName: 'api',
 			circuitBreaker: { enable: true, rollback: true },
-			minHealthyPercent: 0,
+			minHealthyPercent: 50,
 			maxHealthyPercent: 200,
 			healthCheckGracePeriod: cdk.Duration.seconds(60),
 		});
@@ -303,7 +303,7 @@ export class DocPlatformStack extends cdk.Stack {
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			serviceName: 'frontend',
 			circuitBreaker: { enable: true, rollback: true },
-			minHealthyPercent: 0,
+			minHealthyPercent: 50,
 			maxHealthyPercent: 200,
 			healthCheckGracePeriod: cdk.Duration.seconds(60),
 		});
@@ -360,8 +360,9 @@ export class DocPlatformStack extends cdk.Stack {
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			serviceName: 'mcp',
 			circuitBreaker: { enable: true, rollback: true },
-			minHealthyPercent: 0,
+			minHealthyPercent: 50,
 			maxHealthyPercent: 200,
+			healthCheckGracePeriod: cdk.Duration.seconds(60),
 		});
 
 		// ===========================================
