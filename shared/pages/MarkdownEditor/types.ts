@@ -63,16 +63,28 @@ export type CustomElement =
 	| LinkElement
 	| ThematicBreakElement;
 
-// Text marks
+// Text marks - using `true` (not `boolean`) per Slate best practices for better type narrowing
 export type FormattedText = {
 	text: string;
-	bold?: boolean;
-	italic?: boolean;
-	code?: boolean;
-	strikethrough?: boolean;
+	bold?: true;
+	italic?: true;
+	code?: true;
+	strikethrough?: true;
+	commentId?: string; // Links text to a comment
 };
 
 export type CustomText = FormattedText;
+
+// Comment data structure
+export interface Comment {
+	id: string;
+	text: string;
+	author: string;
+	authorEmail: string;
+	timestamp: string; // ISO 8601
+	resolved: boolean;
+	replies: Comment[];
+}
 
 // Editor type combining all plugins
 export type CustomEditor = BaseEditor & ReactEditor & HistoryEditor;
