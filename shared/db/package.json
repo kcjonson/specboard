@@ -11,11 +11,9 @@
 		"lint": "eslint src",
 		"lint:fix": "eslint src --fix",
 		"clean": "rm -rf dist",
-		"migrate": "tsx src/migrate.ts",
-		"seed": "tsx src/seed.ts"
+		"migrate": "tsx src/migrate.ts"
 	},
 	"dependencies": {
-		"@doc-platform/auth": "workspace:*",
 		"pg": "^8.16.3"
 	},
 	"devDependencies": {

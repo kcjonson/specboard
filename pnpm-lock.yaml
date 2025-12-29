@@ -212,9 +212,6 @@ importers:
 
   shared/db:
     dependencies:
-      '@doc-platform/auth':
-        specifier: workspace:*
-        version: link:../auth
       pg:
         specifier: ^8.16.3
         version: 8.16.3
