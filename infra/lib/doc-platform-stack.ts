@@ -42,22 +42,34 @@ export class DocPlatformStack extends cdk.Stack {
 		// ===========================================
 		// ECR Repositories
 		// ===========================================
+		// ECR repos use RETAIN so they survive failed deployments
+		// (services fail on first deploy if images don't exist yet)
+		// Lifecycle policy keeps last 3 images for rollback, deletes older ones
+		const ecrLifecycleRules: ecr.LifecycleRule[] = [
+			{
+				description: 'Keep last 3 images for rollback',
+				maxImageCount: 3,
+				rulePriority: 1,
+				tagStatus: ecr.TagStatus.ANY,
+			},
+		];
+
 		const apiRepository = new ecr.Repository(this, 'ApiRepository', {
 			repositoryName: 'doc-platform/api',
-			removalPolicy: cdk.RemovalPolicy.DESTROY,
-			emptyOnDelete: true,
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
+			lifecycleRules: ecrLifecycleRules,
 		});
 
 		const frontendRepository = new ecr.Repository(this, 'FrontendRepository', {
 			repositoryName: 'doc-platform/frontend',
-			removalPolicy: cdk.RemovalPolicy.DESTROY,
-			emptyOnDelete: true,
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
+			lifecycleRules: ecrLifecycleRules,
 		});
 
 		const mcpRepository = new ecr.Repository(this, 'McpRepository', {
 			repositoryName: 'doc-platform/mcp',
-			removalPolicy: cdk.RemovalPolicy.DESTROY,
-			emptyOnDelete: true,
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
+			lifecycleRules: ecrLifecycleRules,
 		});
 
 		// ===========================================

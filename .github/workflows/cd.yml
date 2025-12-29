@@ -90,6 +90,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -320,55 +335,36 @@ jobs:
 
           echo "Seed completed successfully!"
 
-      - name: Deploy API service
+      - name: Deploy infrastructure
         run: |
+          cd infra
+          npx cdk deploy --require-approval never
+
+      - name: Force new deployment
+        run: |
+          # Force ECS to pull latest images (in case CDK didn't trigger updates)
           aws ecs update-service \
             --cluster ${{ steps.stack.outputs.cluster }} \
             --service api \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
-
-      - name: Deploy Frontend service
-        run: |
           aws ecs update-service \
             --cluster ${{ steps.stack.outputs.cluster }} \
             --service frontend \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
-
-      - name: Deploy MCP service
-        run: |
           aws ecs update-service \
             --cluster ${{ steps.stack.outputs.cluster }} \
             --service mcp \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
 
-      - name: Wait for API deployment
+      - name: Wait for services to stabilize
         run: |
-          echo "Waiting for API service to stabilize (up to 20 minutes)..."
+          echo "Waiting for all services to stabilize (up to 20 minutes)..."
           aws ecs wait services-stable \
             --cluster ${{ steps.stack.outputs.cluster }} \
-            --services api \
-            --region ${{ env.AWS_REGION }} \
-            --waiter-delay 15 \
-            --waiter-max-attempts 80
-
-      - name: Wait for Frontend deployment
-        run: |
-          echo "Waiting for Frontend service to stabilize (up to 20 minutes)..."
-          aws ecs wait services-stable \
-            --cluster ${{ steps.stack.outputs.cluster }} \
-            --services frontend \
-            --region ${{ env.AWS_REGION }} \
-            --waiter-delay 15 \
-            --waiter-max-attempts 80
-
-      - name: Wait for MCP deployment
-        run: |
-          aws ecs wait services-stable \
-            --cluster ${{ steps.stack.outputs.cluster }} \
-            --services mcp \
+            --services api frontend mcp \
             --region ${{ env.AWS_REGION }}
 
       - name: Deployment complete
