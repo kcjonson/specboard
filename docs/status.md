@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-28 (Projects Page)
+Last Updated: 2025-12-29 (Projects Page)
 
 ## Epic/Story/Task Template
 
@@ -218,9 +218,9 @@ Use this template for all work items:
 - [ ] Serialization
   - [ ] Markdown → Slate (remark-slate)
   - [ ] Slate → Markdown
-- [ ] Comment system
-  - [ ] Comment marks on text
-  - [ ] Comment panel UI
+- [x] Comment system (inline comments)
+  - [x] Comment marks on text with highlighting
+  - [x] Inline comments UI (Google Docs-style margin comments)
   - [ ] Comment storage in markdown
 
 ---

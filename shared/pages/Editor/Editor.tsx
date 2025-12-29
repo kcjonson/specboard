@@ -6,9 +6,7 @@ import { AppHeader, type NavTab } from '@doc-platform/ui';
 import { DocumentModel } from '@doc-platform/models';
 import { useAuth } from '@shared/planning';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
-import { CommentsPanel } from '../CommentsPanel/CommentsPanel';
-import { MarkdownEditor } from '../MarkdownEditor';
-import { mockDocument } from '../MarkdownEditor/mock-document';
+import { MarkdownEditor, mockDocument, mockComments } from '../MarkdownEditor';
 import styles from './Editor.module.css';
 
 // Format project ID as display name (capitalize first letter)
@@ -70,11 +68,11 @@ export function Editor(props: RouteProps): JSX.Element {
 					<div class={styles.editorArea}>
 						<MarkdownEditor
 							model={documentModel}
+							comments={mockComments}
 							placeholder="Start writing..."
 						/>
 					</div>
 				</main>
-				<CommentsPanel class={styles.commentsPanel} />
 			</div>
 		</div>
 	);

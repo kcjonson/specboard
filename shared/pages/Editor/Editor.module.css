@@ -30,8 +30,3 @@
 	padding: var(--space-4);
 	overflow: hidden;
 }
-
-.commentsPanel {
-	width: 280px;
-	flex-shrink: 0;
-}

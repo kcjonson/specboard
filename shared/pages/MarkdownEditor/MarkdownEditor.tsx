@@ -1,12 +1,13 @@
-import { useMemo, useCallback } from 'preact/hooks';
+import { useMemo, useCallback, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { createEditor, Descendant, Editor, Element as SlateElement, Transforms } from 'slate';
 import { Slate, Editable, withReact, RenderElementProps, RenderLeafProps } from 'slate-react';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
 import { useModel, DocumentModel } from '@doc-platform/models';
-import type { MarkType, CustomElement, CustomText } from './types';
+import type { MarkType, CustomElement, CustomText, Comment } from './types';
 import { Toolbar } from './Toolbar';
+import { CommentsMargin } from './CommentsMargin';
 import styles from './MarkdownEditor.module.css';
 
 // Import types to augment Slate
@@ -15,6 +16,8 @@ import './types';
 export interface MarkdownEditorProps {
 	/** Document model - source of truth for editor content */
 	model: DocumentModel;
+	/** Comments to display alongside the document */
+	comments?: Comment[];
 	/** Placeholder text when empty */
 	placeholder?: string;
 	/** Read-only mode */
@@ -187,17 +190,36 @@ function renderLeaf(props: RenderLeafProps): JSX.Element {
 	if (text.strikethrough) {
 		content = <s>{content}</s>;
 	}
+	if (text.commentId) {
+		content = (
+			<span
+				class={styles.commentHighlight}
+				data-comment-id={text.commentId}
+				role="mark"
+				aria-label="Text with comment"
+			>
+				{content}
+			</span>
+		);
+	}
 
 	return <span {...attributes}>{content}</span>;
 }
 
 export function MarkdownEditor({
 	model,
+	comments = [],
 	placeholder = 'Start typing...',
 	readOnly = false,
 }: MarkdownEditorProps): JSX.Element {
 	// Subscribe to model changes - this triggers re-renders when model updates
 	useModel(model);
+
+	// Ref to the editable container for comment positioning
+	const editableRef = useRef<HTMLDivElement>(null);
+
+	// Currently active/selected comment
+	const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
 
 	// Create editor instance with plugins
 	const editor = useMemo(
@@ -234,6 +256,25 @@ export function MarkdownEditor({
 		[editor, model]
 	);
 
+	// Handle clicking on comment highlights in the editor
+	const handleEditableClick = useCallback(
+		(event: MouseEvent) => {
+			const target = event.target as HTMLElement;
+			const commentHighlight = target.closest('[data-comment-id]');
+			if (commentHighlight) {
+				const commentId = commentHighlight.getAttribute('data-comment-id');
+				if (commentId) {
+					setActiveCommentId(commentId);
+				}
+			} else {
+				setActiveCommentId(undefined);
+			}
+		},
+		[]
+	);
+
+	const hasComments = comments.length > 0;
+
 	return (
 		<div class={styles.container}>
 			{/* Key on documentId forces Slate to re-mount when loading different documents.
@@ -247,17 +288,27 @@ export function MarkdownEditor({
 						toggleBlock={(block) => toggleBlock(editor, block as CustomElement['type'])}
 					/>
 				)}
-				<div class={styles.editorWrapper}>
-					<Editable
-						class={styles.editable}
-						renderElement={renderElement}
-						renderLeaf={renderLeaf}
-						placeholder={placeholder}
-						readOnly={readOnly}
-						onKeyDown={handleKeyDown}
-						spellCheck
-						autoFocus
-					/>
+				<div class={styles.editorWithComments}>
+					<div ref={editableRef} class={styles.editorWrapper} data-editor-wrapper onClick={handleEditableClick}>
+						<Editable
+							class={styles.editable}
+							renderElement={renderElement}
+							renderLeaf={renderLeaf}
+							placeholder={placeholder}
+							readOnly={readOnly}
+							onKeyDown={handleKeyDown}
+							spellCheck
+							autoFocus
+						/>
+					</div>
+					{hasComments && (
+						<CommentsMargin
+							comments={comments}
+							editorRef={editableRef}
+							activeCommentId={activeCommentId}
+							onCommentClick={setActiveCommentId}
+						/>
+					)}
 				</div>
 			</Slate>
 		</div>
