@@ -12,7 +12,7 @@ import styles from './ProjectsList.module.css';
 function setCookie(name: string, value: string, days: number): void {
 	const expires = new Date();
 	expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-	document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+	document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
 }
 
 export function ProjectsList(_props: RouteProps): JSX.Element {

@@ -34,6 +34,7 @@ COPY shared/ui ./shared/ui
 COPY shared/models ./shared/models
 COPY shared/router ./shared/router
 COPY shared/fetch ./shared/fetch
+COPY shared/projects ./shared/projects
 COPY frontend ./frontend
 COPY web ./web
 COPY shared/planning ./shared/planning

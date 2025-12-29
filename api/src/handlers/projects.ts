@@ -13,8 +13,7 @@ import {
 	updateProject,
 	deleteProject,
 } from '@doc-platform/db';
-import type { Project as DbProject } from '@doc-platform/db';
-import { dbProjectToApi } from '../transform.js';
+import { projectResponseToApi } from '../transform.js';
 import { isValidUUID, isValidTitle, MAX_TITLE_LENGTH } from '../validation.js';
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
@@ -35,7 +34,7 @@ export async function handleListProjects(context: Context, redis: Redis): Promis
 		const projects = await getProjects(userId);
 
 		const apiProjects = projects.map((project) => ({
-			...dbProjectToApi(project as unknown as DbProject),
+			...projectResponseToApi(project),
 			epicCount: project.epicCount,
 		}));
 
@@ -65,7 +64,7 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
-		return context.json(dbProjectToApi(project as unknown as DbProject));
+		return context.json(projectResponseToApi(project));
 	} catch (error) {
 		console.error('Failed to fetch project:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -98,7 +97,7 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 			description: description || undefined,
 		});
 
-		return context.json(dbProjectToApi(project as unknown as DbProject), 201);
+		return context.json(projectResponseToApi(project), 201);
 	} catch (error) {
 		console.error('Failed to create project:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -121,9 +120,16 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 		const body = await context.req.json();
 		const { name, description } = body;
 
-		if (name !== undefined && !isValidTitle(name)) {
+		if (name !== undefined && (typeof name !== 'string' || !isValidTitle(name))) {
 			return context.json(
-				{ error: `Name must be between 1 and ${MAX_TITLE_LENGTH} characters` },
+				{ error: `Name must be a string between 1 and ${MAX_TITLE_LENGTH} characters` },
+				400
+			);
+		}
+
+		if (description !== undefined && typeof description !== 'string') {
+			return context.json(
+				{ error: 'Description must be a string' },
 				400
 			);
 		}
@@ -137,7 +143,7 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
-		return context.json(dbProjectToApi(project as unknown as DbProject));
+		return context.json(projectResponseToApi(project));
 	} catch (error) {
 		console.error('Failed to update project:', error);
 		return context.json({ error: 'Database error' }, 500);

@@ -17,8 +17,19 @@ import './styles/global.css';
 
 // Cookie helper
 function getCookie(name: string): string | null {
-	const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-	return match ? match[2] ?? null : null;
+	const cookies = document.cookie ? document.cookie.split('; ') : [];
+	for (const cookie of cookies) {
+		const [cookieName, ...valueParts] = cookie.split('=');
+		if (cookieName === name) {
+			const value = valueParts.join('=');
+			try {
+				return decodeURIComponent(value);
+			} catch {
+				return value;
+			}
+		}
+	}
+	return null;
 }
 
 // Smart redirect component for root path

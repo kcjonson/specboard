@@ -2,7 +2,7 @@
  * Transform functions: snake_case DB → camelCase API
  */
 
-import type { Epic as DbEpic, Task as DbTask, ProgressNote as DbProgressNote, Project as DbProject } from '@doc-platform/db';
+import type { Epic as DbEpic, Task as DbTask, ProgressNote as DbProgressNote, Project as DbProject, ProjectResponse } from '@doc-platform/db';
 import type { ApiEpic, ApiTask, ApiProgressNote, ApiProject } from './types.js';
 
 export function dbEpicToApi(epic: DbEpic): ApiEpic {
@@ -54,5 +54,19 @@ export function dbProjectToApi(project: DbProject): ApiProject {
 		ownerId: project.owner_id,
 		createdAt: project.created_at.toISOString(),
 		updatedAt: project.updated_at.toISOString(),
+	};
+}
+
+/**
+ * Transform ProjectResponse (already camelCase from service) to ApiProject (with ISO strings)
+ */
+export function projectResponseToApi(project: ProjectResponse): ApiProject {
+	return {
+		id: project.id,
+		name: project.name,
+		description: project.description ?? undefined,
+		ownerId: project.ownerId,
+		createdAt: project.createdAt.toISOString(),
+		updatedAt: project.updatedAt.toISOString(),
 	};
 }
