@@ -19,14 +19,14 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 	const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 	const [initialized, setInitialized] = useState(false);
 
-	// Initialize form when user data loads
+	// Initialize form when user data loads (check id to know data is loaded)
 	useEffect(() => {
-		if (user.first_name && !initialized) {
-			setFirstName(user.first_name);
+		if (user.id && !initialized) {
+			setFirstName(user.first_name || '');
 			setLastName(user.last_name || '');
 			setInitialized(true);
 		}
-	}, [user.first_name, user.last_name, initialized]);
+	}, [user.id, user.first_name, user.last_name, initialized]);
 
 	// Validation and change detection
 	const trimmedFirstName = firstName.trim();
@@ -59,8 +59,12 @@ export function UserSettings(_props: RouteProps): JSX.Element {
 			user.set({ first_name: trimmedFirstName, last_name: trimmedLastName });
 			await user.save();
 			setMessage({ type: 'success', text: 'Settings saved successfully' });
-		} catch {
-			setMessage({ type: 'error', text: user.$meta.error?.message || 'Failed to save settings' });
+		} catch (err: unknown) {
+			// Get error message from model metadata, caught error, or fallback
+			const errorMessage = user.$meta.error?.message
+				|| (err instanceof Error ? err.message : null)
+				|| 'Failed to save settings';
+			setMessage({ type: 'error', text: errorMessage });
 		}
 	};
 

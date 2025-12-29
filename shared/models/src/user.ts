@@ -95,13 +95,10 @@ export class UserModel extends Model {
 		this.setMeta({ working: true, error: null });
 
 		try {
-			// Access internal data
-			const internalData = (this as unknown as { __data: Record<string, unknown> }).__data;
-
-			// Only send editable fields
+			// Only send editable fields (accessing protected __data from parent Model class)
 			const updateData = {
-				first_name: internalData.first_name,
-				last_name: internalData.last_name,
+				first_name: this.__data.first_name as string,
+				last_name: this.__data.last_name as string,
 			};
 
 			const response = await fetchClient.put<{ user: Record<string, unknown> }>(

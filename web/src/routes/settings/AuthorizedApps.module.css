@@ -169,8 +169,9 @@
 }
 
 .dangerButton:hover {
-	background: #dc2626;
-	border-color: #dc2626;
+	background: var(--color-error-hover, var(--color-error));
+	border-color: var(--color-error-hover, var(--color-error));
+	filter: brightness(0.9);
 }
 
 .retryButton:disabled,

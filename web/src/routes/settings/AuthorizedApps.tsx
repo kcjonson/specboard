@@ -50,17 +50,20 @@ interface AuthorizedAppsProps {
 }
 
 export function AuthorizedApps({ authorizations }: AuthorizedAppsProps): JSX.Element {
-	// Local state for revoke confirmation
+	// Local state for revoke confirmation and errors
 	const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
 	const [revoking, setRevoking] = useState<string | null>(null);
+	const [revokeError, setRevokeError] = useState<string | null>(null);
 
 	const handleRevoke = async (auth: AuthorizationModel): Promise<void> => {
 		setRevoking(auth.id);
+		setRevokeError(null);
 		try {
 			await authorizations.remove(auth);
 			setConfirmRevoke(null);
-		} catch {
-			// Error is handled by parent
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : 'Failed to revoke access';
+			setRevokeError(message);
 		} finally {
 			setRevoking(null);
 		}
@@ -72,6 +75,10 @@ export function AuthorizedApps({ authorizations }: AuthorizedAppsProps): JSX.Ele
 			<p class={styles.description}>
 				These applications have access to your account. You can revoke access at any time.
 			</p>
+
+			{revokeError && (
+				<div class={styles.error}>{revokeError}</div>
+			)}
 
 			{authorizations.length === 0 ? (
 				<div class={styles.empty}>

@@ -100,7 +100,7 @@ export async function handleLogin(
 			csrfToken,
 		});
 	} catch (error) {
-		console.error('Login failed:', error);
+		console.error('Login failed:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Authentication service unavailable' }, 503);
 	}
 }
@@ -232,7 +232,7 @@ export async function handleSignup(
 			message: 'Account created successfully',
 		}, 201);
 	} catch (error) {
-		console.error('Signup failed:', error);
+		console.error('Signup failed:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Failed to create account' }, 500);
 	}
 }
@@ -311,7 +311,7 @@ export async function handleGetMe(
 			csrfToken: session.csrfToken,
 		});
 	} catch (error) {
-		console.error('Failed to get user:', error);
+		console.error('Failed to get user:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Authentication service unavailable' }, 503);
 	}
 }
@@ -420,7 +420,7 @@ export async function handleUpdateMe(
 			},
 		});
 	} catch (error) {
-		console.error('Failed to update user:', error);
+		console.error('Failed to update user:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Failed to update profile' }, 500);
 	}
 }

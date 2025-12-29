@@ -41,6 +41,10 @@ CREATE INDEX idx_mcp_tokens_refresh_token_hash ON mcp_tokens(refresh_token_hash)
 CREATE INDEX idx_oauth_codes_expires_at ON oauth_codes(expires_at);
 CREATE INDEX idx_oauth_codes_user_id ON oauth_codes(user_id);
 
--- Cleanup job can use these to delete expired tokens/codes
--- DELETE FROM mcp_tokens WHERE expires_at < NOW();
--- DELETE FROM oauth_codes WHERE expires_at < NOW();
+-- Expired token/code cleanup:
+-- Expired tokens and codes should be periodically cleaned up.
+-- Implement a scheduled job (e.g., pg_cron, application-level scheduler, or AWS EventBridge)
+-- to run these statements:
+--   DELETE FROM mcp_tokens WHERE expires_at < NOW();
+--   DELETE FROM oauth_codes WHERE expires_at < NOW();
+-- Recommended frequency: daily or more often depending on usage volume.

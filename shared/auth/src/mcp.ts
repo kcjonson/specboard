@@ -73,17 +73,20 @@ export function mcpAuthMiddleware() {
 			}, 401);
 		}
 
-		// Check expiration (using refresh token expiry as the overall token lifetime)
-		if (new Date(tokenRecord.expires_at) < new Date()) {
+		// Check expiration (tokens expire based on refresh token lifetime stored in expires_at)
+		if (new Date(tokenRecord.expires_at).getTime() < Date.now()) {
 			return c.json({
 				error: 'auth_required',
 				message: 'Access token expired',
 			}, 401);
 		}
 
-		// Update last_used_at (fire and forget)
+		// Update last_used_at (fire and forget - non-critical for request flow)
+		// Errors are logged but don't affect the request since this is tracking data
 		query('UPDATE mcp_tokens SET last_used_at = NOW() WHERE id = $1', [tokenRecord.id]).catch((err: unknown) => {
-			console.error('Failed to update last_used_at:', err);
+			// Log error for monitoring - in production, this should integrate with
+			// the application's logging infrastructure (e.g., structured JSON logs)
+			console.error('[mcp-auth] Failed to update last_used_at for token', tokenRecord.id, err);
 		});
 
 		// Attach token info to context

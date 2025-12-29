@@ -51,6 +51,11 @@ function isValidPassword(password: string): boolean {
 	);
 }
 
+function isValidName(name: string): boolean {
+	const trimmed = name.trim();
+	return trimmed.length > 0 && trimmed.length <= 255;
+}
+
 function getDatabaseUrl(): string {
 	if (process.env.DATABASE_URL) {
 		return process.env.DATABASE_URL;
@@ -133,6 +138,11 @@ async function seed(): Promise<void> {
 		process.exit(1);
 	}
 
+	if (!isValidName(adminConfig.firstName) || !isValidName(adminConfig.lastName)) {
+		console.error('Invalid name: first and last name must be non-empty and max 255 chars');
+		process.exit(1);
+	}
+
 	const pool = new Pool({ connectionString: getDatabaseUrl() });
 
 	try {
@@ -141,18 +151,26 @@ async function seed(): Promise<void> {
 			       EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'user_passwords') AS passwords_exists
 		`);
 
-		if (!tableCheck.rows[0].users_exists || !tableCheck.rows[0].passwords_exists) {
+		const tableStatus = tableCheck.rows[0];
+		if (!tableStatus || !tableStatus.users_exists || !tableStatus.passwords_exists) {
 			console.log('Required tables do not exist. Run migrations first.');
 			return;
 		}
 
-		const existing = await pool.query(
-			'SELECT id, username FROM users WHERE username = $1 OR email = $2',
+		const existing = await pool.query<{ id: string; username: string; email: string }>(
+			'SELECT id, username, email FROM users WHERE username = $1 OR email = $2',
 			[adminConfig.username.toLowerCase(), adminConfig.email.toLowerCase()]
 		);
 
 		if (existing.rows[0]) {
-			console.log(`Admin user already exists: ${existing.rows[0].username}`);
+			const match = existing.rows[0];
+			if (match.username === adminConfig.username.toLowerCase() && match.email === adminConfig.email.toLowerCase()) {
+				console.log(`Admin user already exists: ${match.username}`);
+			} else if (match.username === adminConfig.username.toLowerCase()) {
+				console.log(`Username '${adminConfig.username}' already taken by another user`);
+			} else {
+				console.log(`Email '${adminConfig.email}' already registered to user '${match.username}'`);
+			}
 			return;
 		}
 
@@ -161,17 +179,35 @@ async function seed(): Promise<void> {
 
 		const client = await pool.connect();
 		try {
-			await client.query('BEGIN');
+			// Use SERIALIZABLE isolation to prevent race conditions with concurrent seed runs
+			await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
+
+			// Re-check for existing user within transaction to ensure atomicity
+			const txnCheck = await client.query<{ id: string }>(
+				'SELECT id FROM users WHERE username = $1 OR email = $2',
+				[adminConfig.username.toLowerCase(), adminConfig.email.toLowerCase()]
+			);
+
+			if (txnCheck.rows[0]) {
+				await client.query('ROLLBACK');
+				console.log('Admin user was created by another process');
+				return;
+			}
 
 			const userResult = await client.query<{ id: string }>(
 				`INSERT INTO users (username, first_name, last_name, email, email_verified)
 				 VALUES ($1, $2, $3, $4, true) RETURNING id`,
-				[adminConfig.username.toLowerCase(), adminConfig.firstName, adminConfig.lastName, adminConfig.email.toLowerCase()]
+				[adminConfig.username.toLowerCase(), adminConfig.firstName.trim(), adminConfig.lastName.trim(), adminConfig.email.toLowerCase()]
 			);
+
+			const userId = userResult.rows[0]?.id;
+			if (!userId) {
+				throw new Error('Failed to create user record');
+			}
 
 			await client.query(
 				'INSERT INTO user_passwords (user_id, password_hash) VALUES ($1, $2)',
-				[userResult.rows[0]!.id, passwordHash]
+				[userId, passwordHash]
 			);
 
 			await client.query('COMMIT');
