@@ -322,6 +322,13 @@ interface UpdateMeRequest {
 }
 
 /**
+ * Allowlist of fields that can be updated via the profile API.
+ * SECURITY: Only these exact column names can appear in the UPDATE query.
+ * This prevents SQL injection if the pattern is modified or extended.
+ */
+const ALLOWED_PROFILE_FIELDS = new Set(['first_name', 'last_name']);
+
+/**
  * Update current user profile
  */
 export async function handleUpdateMe(
@@ -370,29 +377,29 @@ export async function handleUpdateMe(
 			return context.json({ error: 'Session expired' }, 401);
 		}
 
-		// Build update query dynamically
-		const updates: string[] = [];
-		const values: (string | undefined)[] = [];
-		let paramIndex = 1;
+		// Build update query from allowlisted fields only
+		// SECURITY: Field names are validated against ALLOWED_PROFILE_FIELDS
+		// before being interpolated into SQL. Values are always parameterized.
+		const fieldsToUpdate: Array<{ field: string; value: string }> = [];
 
-		if (first_name !== undefined) {
-			updates.push(`first_name = $${paramIndex++}`);
-			values.push(first_name.trim());
+		if (first_name !== undefined && ALLOWED_PROFILE_FIELDS.has('first_name')) {
+			fieldsToUpdate.push({ field: 'first_name', value: first_name.trim() });
 		}
-		if (last_name !== undefined) {
-			updates.push(`last_name = $${paramIndex++}`);
-			values.push(last_name.trim());
+		if (last_name !== undefined && ALLOWED_PROFILE_FIELDS.has('last_name')) {
+			fieldsToUpdate.push({ field: 'last_name', value: last_name.trim() });
 		}
 
-		if (updates.length === 0) {
+		if (fieldsToUpdate.length === 0) {
 			return context.json({ error: 'No fields to update' }, 400);
 		}
 
-		// Add user ID as last parameter
-		values.push(session.userId);
+		// Build parameterized query with allowlisted field names
+		const setClauses = fieldsToUpdate.map((f, i) => `${f.field} = $${i + 1}`);
+		const values = [...fieldsToUpdate.map(f => f.value), session.userId];
+		const userIdParam = fieldsToUpdate.length + 1;
 
 		const userResult = await query<User>(
-			`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+			`UPDATE users SET ${setClauses.join(', ')} WHERE id = $${userIdParam} RETURNING *`,
 			values
 		);
 
