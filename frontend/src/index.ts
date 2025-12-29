@@ -11,7 +11,7 @@ import { Redis } from 'ioredis';
 import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
 import { renderLoginPage } from './pages/login.js';
 import { renderSignupPage } from './pages/signup.js';
-import { renderNotFoundPage } from './pages/not-found.js';
+import { renderNotFoundPage } from './pages/not-found.js'; // .tsx extension, compiled to .js
 
 // Load Vite manifest for asset paths
 interface ManifestEntry {
@@ -41,7 +41,6 @@ function getCssPath(entry: string): string | undefined {
 const sharedCssPath = getCssPath('../shared/ui/src/shared.css');
 const loginCssPath = getCssPath('../frontend/src/styles/login.css');
 const signupCssPath = getCssPath('../frontend/src/styles/signup.css');
-const notFoundCssPath = getCssPath('../frontend/src/styles/not-found.css');
 
 const app = new Hono<{ Variables: AuthVariables }>();
 
@@ -156,7 +155,7 @@ app.get('/api/auth/me', async (c) => {
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/signup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me', sharedCssPath, loginCssPath, signupCssPath, notFoundCssPath].filter(Boolean) as string[],
+		excludePaths: ['/health', '/login', '/signup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me', sharedCssPath, loginCssPath, signupCssPath].filter(Boolean) as string[],
 		onUnauthenticated: (requestUrl) => {
 			// Redirect to login using the request's origin
 			return Response.redirect(new URL('/login', requestUrl.origin).toString(), 302);
@@ -202,7 +201,6 @@ app.get('*', async (c) => {
 app.notFound((c) => {
 	return c.html(renderNotFoundPage({
 		sharedCssPath,
-		notFoundCssPath,
 	}), 404);
 });
 

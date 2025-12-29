@@ -1,20 +1,24 @@
 /**
  * Server-rendered 404 page
- * Friendly message without technical details
+ * Uses the shared NotFound component for consistency with client-side
  */
+
+import { render } from 'preact-render-to-string';
+import { NotFound } from '@doc-platform/ui';
 
 export interface NotFoundPageOptions {
 	sharedCssPath?: string;
-	notFoundCssPath?: string;
 }
 
 export function renderNotFoundPage(options: NotFoundPageOptions = {}): string {
-	const { sharedCssPath, notFoundCssPath } = options;
+	const { sharedCssPath } = options;
 
-	const cssLinks = [sharedCssPath, notFoundCssPath]
+	const cssLinks = [sharedCssPath]
 		.filter(Boolean)
 		.map(path => `<link rel="stylesheet" href="${path}">`)
 		.join('\n\t');
+
+	const content = render(<NotFound />);
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -25,14 +29,7 @@ export function renderNotFoundPage(options: NotFoundPageOptions = {}): string {
 	${cssLinks}
 </head>
 <body>
-	<div class="not-found-container">
-		<h1>You appear to be lost...</h1>
-		<p>
-			The page you're looking for doesn't exist or may have been moved.
-			Don't worry, it happens to the best of us.
-		</p>
-		<a href="/projects">Take me home</a>
-	</div>
+	${content}
 </body>
 </html>`;
 }

@@ -1,28 +1,30 @@
 /**
- * 404 Not Found page styles
+ * NotFound component styles
+ * Uses plain class names for SSR compatibility
  */
 
 .not-found-container {
 	text-align: center;
 	padding: 4rem 2rem;
 	max-width: 500px;
+	margin: 0 auto;
 }
 
-.not-found-container h1 {
+.not-found-title {
 	font-size: 2rem;
 	font-weight: 600;
 	margin-bottom: 1rem;
 	color: var(--color-text);
 }
 
-.not-found-container p {
+.not-found-message {
 	font-size: 1.125rem;
 	color: var(--color-text-muted);
 	margin-bottom: 2rem;
 	line-height: 1.6;
 }
 
-.not-found-container a {
+.not-found-link {
 	display: inline-block;
 	padding: 0.75rem 1.5rem;
 	background: var(--color-primary);
@@ -33,6 +35,6 @@
 	transition: background 0.15s;
 }
 
-.not-found-container a:hover {
+.not-found-link:hover {
 	background: var(--color-primary-hover);
 }

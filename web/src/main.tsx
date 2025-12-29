@@ -1,5 +1,6 @@
 import { startRouter, navigate } from '@doc-platform/router';
 import type { RouteProps } from '@doc-platform/router';
+import { NotFound } from '@doc-platform/ui';
 
 // Shared feature components
 import { Board, EpicDetail } from '@shared/planning';
@@ -71,4 +72,4 @@ const routes = [
 	{ route: '/', entry: RootRedirect },
 ];
 
-startRouter(routes, document.getElementById('app')!);
+startRouter(routes, document.getElementById('app')!, { notFound: NotFound });
