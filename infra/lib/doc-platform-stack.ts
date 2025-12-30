@@ -95,6 +95,13 @@ export class DocPlatformStack extends cdk.Stack {
 			},
 		});
 
+		// Invite keys for signup gating (comma-separated list)
+		// Set this secret value in AWS Secrets Manager or via GitHub Actions
+		const inviteKeysSecret = new secretsmanager.Secret(this, 'InviteKeys', {
+			secretName: 'doc-platform/invite-keys',
+			description: 'Comma-separated list of valid invite keys for signup',
+		});
+
 		const database = new rds.DatabaseInstance(this, 'Database', {
 			engine: rds.DatabaseInstanceEngine.postgres({
 				version: rds.PostgresEngineVersion.VER_16,
@@ -259,6 +266,7 @@ export class DocPlatformStack extends cdk.Stack {
 			},
 			secrets: {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
+				INVITE_KEYS: ecs.Secret.fromSecretsManager(inviteKeysSecret),
 			},
 			portMappings: [{ containerPort: 3001 }],
 			healthCheck: {
@@ -568,6 +576,13 @@ export class DocPlatformStack extends cdk.Stack {
 				'logs:DescribeLogStreams',
 			],
 			resources: [apiLogGroup.logGroupArn, `${apiLogGroup.logGroupArn}:*`],
+		}));
+
+		// Secrets Manager - update invite keys during deployment
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['secretsmanager:PutSecretValue'],
+			resources: [inviteKeysSecret.secretArn],
 		}));
 
 		// ===========================================

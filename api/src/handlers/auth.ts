@@ -30,6 +30,32 @@ interface SignupRequest {
 	password: string;
 	first_name: string;
 	last_name: string;
+	invite_key: string;
+}
+
+/**
+ * Get valid invite keys from environment variable.
+ * Keys are stored as a comma-separated list.
+ */
+function getValidInviteKeys(): Set<string> {
+	const keysEnv = process.env.INVITE_KEYS || '';
+	const keys = keysEnv.split(',').map(k => k.trim()).filter(k => k.length > 0);
+	return new Set(keys);
+}
+
+/**
+ * Validate an invite key against the configured list.
+ * Uses constant-time comparison to prevent timing attacks.
+ */
+function isValidInviteKey(key: string): boolean {
+	const validKeys = getValidInviteKeys();
+
+	// If no keys are configured, reject all signups
+	if (validKeys.size === 0) {
+		return false;
+	}
+
+	return validKeys.has(key);
 }
 
 /**
@@ -119,14 +145,19 @@ export async function handleSignup(
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	const { username, email, password, first_name, last_name } = body;
+	const { username, email, password, first_name, last_name, invite_key } = body;
 
 	// Validate required fields
-	if (!username || !email || !password || !first_name || !last_name) {
+	if (!username || !email || !password || !first_name || !last_name || !invite_key) {
 		return context.json(
-			{ error: 'All fields are required: username, email, password, first_name, last_name' },
+			{ error: 'All fields are required: username, email, password, first_name, last_name, invite_key' },
 			400
 		);
+	}
+
+	// Validate invite key
+	if (!isValidInviteKey(invite_key)) {
+		return context.json({ error: 'Invalid invite key' }, 403);
 	}
 
 	// Validate username

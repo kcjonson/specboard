@@ -38,7 +38,8 @@ body {
 	flex: 1;
 }
 
-.signup-container .password-hint {
+.signup-container .password-hint,
+.signup-container .invite-hint {
 	font-size: 0.75rem;
 	color: var(--color-text-muted);
 	margin-top: 0.25rem;

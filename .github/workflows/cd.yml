@@ -99,9 +99,29 @@ jobs:
       action: deploy
     secrets: inherit
 
+  sync-secrets:
+    name: Sync Secrets
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update invite keys secret
+        run: |
+          aws secretsmanager put-secret-value \
+            --secret-id doc-platform/invite-keys \
+            --secret-string "${{ secrets.INVITE_KEYS }}"
+
   deploy-services:
     name: Deploy Services
-    needs: deploy-infra
+    needs: sync-secrets
     runs-on: ubuntu-latest
     permissions:
       id-token: write
