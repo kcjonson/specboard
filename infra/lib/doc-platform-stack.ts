@@ -14,6 +14,10 @@ export class DocPlatformStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
 		super(scope, id, props);
 
+		// Bootstrap mode: deploy with desiredCount=0 so services don't fail when images don't exist
+		// Usage: npx cdk deploy --context bootstrap=true
+		const isBootstrap = this.node.tryGetContext('bootstrap') === 'true';
+
 		// ===========================================
 		// VPC
 		// ===========================================
@@ -269,7 +273,7 @@ export class DocPlatformStack extends cdk.Stack {
 		const apiService = new ecs.FargateService(this, 'ApiService', {
 			cluster,
 			taskDefinition: apiTaskDefinition,
-			desiredCount: 1,
+			desiredCount: isBootstrap ? 0 : 1,
 			securityGroups: [apiSecurityGroup],
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			serviceName: 'api',
@@ -296,6 +300,14 @@ export class DocPlatformStack extends cdk.Stack {
 				// Frontend calls API through the ALB (same origin)
 				API_URL: `http://${alb.loadBalancerDnsName}`,
 				REDIS_URL: `redis://${redis.attrRedisEndpointAddress}:${redis.attrRedisEndpointPort}`,
+				// Database connection (required by @doc-platform/db imported via @doc-platform/auth)
+				DB_HOST: database.instanceEndpoint.hostname,
+				DB_PORT: database.instanceEndpoint.port.toString(),
+				DB_NAME: 'doc_platform',
+				DB_USER: 'postgres',
+			},
+			secrets: {
+				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
 			},
 			portMappings: [{ containerPort: 3000 }],
 			healthCheck: {
@@ -310,7 +322,7 @@ export class DocPlatformStack extends cdk.Stack {
 		const frontendService = new ecs.FargateService(this, 'FrontendService', {
 			cluster,
 			taskDefinition: frontendTaskDefinition,
-			desiredCount: 1,
+			desiredCount: isBootstrap ? 0 : 1,
 			securityGroups: [frontendSecurityGroup],
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			serviceName: 'frontend',
@@ -367,7 +379,7 @@ export class DocPlatformStack extends cdk.Stack {
 		new ecs.FargateService(this, 'McpService', {
 			cluster,
 			taskDefinition: mcpTaskDefinition,
-			desiredCount: 1,
+			desiredCount: isBootstrap ? 0 : 1,
 			securityGroups: [mcpSecurityGroup],
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			serviceName: 'mcp',
