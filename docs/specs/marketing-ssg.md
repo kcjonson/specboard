@@ -235,35 +235,100 @@ build: {
 
 ## Frontend Server Changes
 
-### Route Updates
+### Performance Requirements
+
+**No disk reads per request.** All static content loaded into memory at startup.
+
+### Static Page Cache
+
+Load all SSG pages and compute preload headers at server startup:
 
 ```ts
-// Serve SSG pages from static/ssg/
-app.get('/login', (c) => {
-  return c.html(readFileSync('./static/ssg/login.html', 'utf-8'));
-});
+// frontend/src/static-pages.ts
+import { readFileSync } from 'node:fs';
 
-app.get('/signup', (c) => {
-  return c.html(readFileSync('./static/ssg/signup.html', 'utf-8'));
-});
+interface CachedPage {
+  html: string;
+  preloadHeader: string;  // Link header for CSS preload
+}
 
-app.get('/', async (c) => {
-  // For authenticated users, serve SPA
-  // For unauthenticated, serve marketing home
-  const session = c.get('session');
-  if (session) {
-    return serveIndex(c);
+// Extract CSS paths from HTML and build preload header
+function buildPreloadHeader(html: string): string {
+  const cssRegex = /<link rel="stylesheet" href="([^"]+)">/g;
+  const cssFiles: string[] = [];
+  let match;
+  while ((match = cssRegex.exec(html)) !== null) {
+    cssFiles.push(match[1]);
   }
-  return c.html(readFileSync('./static/ssg/home.html', 'utf-8'));
+  return cssFiles
+    .map(href => `<${href}>; rel=preload; as=style`)
+    .join(', ');
+}
+
+function loadPage(path: string): CachedPage {
+  const html = readFileSync(path, 'utf-8');
+  return {
+    html,
+    preloadHeader: buildPreloadHeader(html),
+  };
+}
+
+// Load all pages at startup (runs once)
+export const pages = {
+  login: loadPage('./static/ssg/login.html'),
+  signup: loadPage('./static/ssg/signup.html'),
+  home: loadPage('./static/ssg/home.html'),
+  notFound: loadPage('./static/ssg/not-found.html'),
+};
+```
+
+### Route Handlers with Preload Headers
+
+```ts
+// frontend/src/index.ts
+import { pages } from './static-pages.js';
+
+// Serve cached page with preload header
+function servePage(c: Context, page: CachedPage): Response {
+  return c.html(page.html, 200, {
+    'Link': page.preloadHeader,
+    'Cache-Control': 'public, max-age=3600',  // 1 hour cache
+  });
+}
+
+app.get('/login', (c) => servePage(c, pages.login));
+app.get('/signup', (c) => servePage(c, pages.signup));
+
+app.get('/', (c) => {
+  // Unauthenticated users get marketing home
+  // Auth middleware redirects to /login if needed for protected routes
+  return servePage(c, pages.home);
+});
+
+app.notFound((c) => {
+  return c.html(pages.notFound.html, 404, {
+    'Link': pages.notFound.preloadHeader,
+  });
 });
 ```
+
+### HTTP/2 Preload Headers
+
+The `Link` header triggers browser preload (and HTTP/2 Server Push if ALB supports it):
+
+```
+Link: </assets/common.ABC123.css>; rel=preload; as=style,
+      </assets/login.DEF456.css>; rel=preload; as=style
+```
+
+This sends CSS hints immediately with the HTML response, before the browser parses `<link>` tags.
 
 ### Remove Inline Page Renderers
 
 Delete the old template-string based page renderers:
 - `frontend/src/pages/login.ts`
 - `frontend/src/pages/signup.ts`
-- `frontend/src/pages/not-found.ts` (migrate to SSG or keep simple)
+- `frontend/src/pages/not-found.ts`
 
 ## Build Pipeline
 
