@@ -25,8 +25,6 @@ export interface AppHeaderProps {
 		displayName: string;
 		email?: string;
 	};
-	/** Called when Settings is clicked */
-	onSettingsClick?: () => void;
 	/** Called when Logout is clicked */
 	onLogoutClick?: () => void;
 	/** Additional CSS class */
@@ -39,7 +37,6 @@ export function AppHeader({
 	activeTab,
 	actions,
 	user,
-	onSettingsClick,
 	onLogoutClick,
 	class: className,
 }: AppHeaderProps): JSX.Element {
@@ -69,7 +66,6 @@ export function AppHeader({
 					<UserMenu
 						displayName={user.displayName}
 						email={user.email}
-						onSettingsClick={onSettingsClick}
 						onLogoutClick={onLogoutClick}
 					/>
 				)}

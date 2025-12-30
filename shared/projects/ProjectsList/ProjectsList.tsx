@@ -86,9 +86,6 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		window.location.href = '/login';
 	}
 
-	function handleSettingsClick(): void {
-		navigate('/settings');
-	}
 
 	if (authLoading || loading) {
 		return (
@@ -115,7 +112,6 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			<AppHeader
 				projectName="Projects"
 				user={user ? { displayName: user.displayName, email: user.email } : undefined}
-				onSettingsClick={handleSettingsClick}
 				onLogoutClick={handleLogoutClick}
 			/>
 

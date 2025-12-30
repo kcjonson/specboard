@@ -110,10 +110,6 @@ export function Board(props: RouteProps): JSX.Element {
 		setDialogEpic(null);
 	}
 
-	function handleSettingsClick(): void {
-		navigate('/settings');
-	}
-
 	async function handleLogoutClick(): Promise<void> {
 		await logout();
 		window.location.href = '/login';
@@ -223,7 +219,6 @@ export function Board(props: RouteProps): JSX.Element {
 				navTabs={navTabs}
 				activeTab="planning"
 				user={user ? { displayName: user.displayName, email: user.email } : undefined}
-				onSettingsClick={handleSettingsClick}
 				onLogoutClick={handleLogoutClick}
 			/>
 

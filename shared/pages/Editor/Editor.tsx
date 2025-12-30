@@ -33,10 +33,6 @@ export function Editor(props: RouteProps): JSX.Element {
 		{ id: 'pages', label: 'Pages', href: `/projects/${projectId}/pages` },
 	], [projectId]);
 
-	function handleSettingsClick(): void {
-		navigate('/settings');
-	}
-
 	async function handleLogoutClick(): Promise<void> {
 		await logout();
 		window.location.href = '/login';
@@ -59,7 +55,6 @@ export function Editor(props: RouteProps): JSX.Element {
 				navTabs={navTabs}
 				activeTab="pages"
 				user={user ? { displayName: user.displayName, email: user.email } : undefined}
-				onSettingsClick={handleSettingsClick}
 				onLogoutClick={handleLogoutClick}
 			/>
 			<div class={styles.body}>
