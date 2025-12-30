@@ -14,12 +14,18 @@ import { pages, spaIndex, type CachedPage } from './static-pages.js';
 const app = new Hono<{ Variables: AuthVariables }>();
 
 /**
- * Serve a cached SSG page with preload headers
+ * Serve a cached SSG page with preload headers.
+ * SPA index uses private caching to avoid cache poisoning between auth states.
  */
 function servePage(c: Context, page: CachedPage, status: ContentfulStatusCode = 200): Response {
+	const isSpaIndex = page === spaIndex;
+	const cacheControl = isSpaIndex
+		? 'private, no-cache, no-store, must-revalidate'
+		: 'public, max-age=3600';
+
 	return c.html(page.html, status, {
 		'Link': page.preloadHeader,
-		'Cache-Control': 'public, max-age=3600',
+		'Cache-Control': cacheControl,
 	});
 }
 
@@ -54,17 +60,22 @@ app.get('/', async (c) => {
 	const sessionMatch = cookieHeader.match(/session=([^;]+)/);
 	const sessionId = sessionMatch?.[1];
 
+	let page: CachedPage = pages.home;
+
 	if (sessionId) {
 		// Verify session exists in Redis
 		const sessionData = await redis.get(`session:${sessionId}`);
 		if (sessionData) {
 			// Authenticated - serve cached SPA
-			return servePage(c, spaIndex);
+			page = spaIndex;
 		}
 	}
 
-	// Not authenticated - serve marketing home
-	return servePage(c, pages.home);
+	// Serve selected page with private caching to avoid cache poisoning between auth states
+	return c.html(page.html, 200, {
+		'Link': page.preloadHeader,
+		'Cache-Control': 'private, max-age=0',
+	});
 });
 
 // API URL for proxying

@@ -18,10 +18,10 @@ export interface CachedPage {
 function buildPreloadHeader(html: string): string {
 	const cssRegex = /<link rel="stylesheet" href="([^"]+)">/g;
 	const cssFiles: string[] = [];
-	let match;
-	while ((match = cssRegex.exec(html)) !== null) {
-		if (match[1]) {
-			cssFiles.push(match[1]);
+	for (const match of html.matchAll(cssRegex)) {
+		const href = match[1];
+		if (href) {
+			cssFiles.push(href);
 		}
 	}
 	return cssFiles
@@ -43,7 +43,7 @@ function loadPage(path: string): CachedPage {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(
 			`Failed to load static page "${path}". ` +
-			`Ensure the frontend build has been run. ` +
+			`Ensure the SSG build has been run (pnpm --filter @doc-platform/ssg build). ` +
 			`Error: ${message}`,
 		);
 		throw error;

@@ -67,10 +67,10 @@ export function SignupContent(): JSX.Element {
 						name="password"
 						required
 						autocomplete="new-password"
-						minLength={12}
+						minlength={12}
 					/>
 					<div class="password-hint">
-						At least 12 characters with uppercase, lowercase, number, and special character
+						At least 12 characters
 					</div>
 				</div>
 
