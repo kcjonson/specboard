@@ -55,9 +55,9 @@ app.get('/home', (c) => servePage(c, pages.home));
 
 // Root - marketing for unauthenticated, SPA for authenticated
 app.get('/', async (c) => {
-	// Check for session cookie
+	// Check for session cookie (cookie name is 'session_id')
 	const cookieHeader = c.req.header('Cookie') || '';
-	const sessionMatch = cookieHeader.match(/session=([^;]+)/);
+	const sessionMatch = cookieHeader.match(/session_id=([^;]+)/);
 	const sessionId = sessionMatch?.[1];
 
 	let page: CachedPage = pages.home;
