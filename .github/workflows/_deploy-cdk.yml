@@ -1,0 +1,73 @@
+name: Deploy CDK
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        description: 'CDK action (diff, deploy, destroy)'
+        required: false
+        type: string
+        default: 'deploy'
+
+env:
+  AWS_REGION: us-west-2
+
+jobs:
+  cdk:
+    name: CDK ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build infrastructure
+        run: pnpm --filter @doc-platform/infra build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: CDK ${{ inputs.action }}
+        run: |
+          cd infra
+          case "${{ inputs.action }}" in
+            diff)
+              npx cdk diff
+              ;;
+            deploy)
+              npx cdk deploy --require-approval never
+              ;;
+            destroy)
+              npx cdk destroy --force
+              ;;
+            *)
+              echo "Unknown action: ${{ inputs.action }}"
+              exit 1
+              ;;
+          esac
+
+      - name: Output Stack Info
+        if: inputs.action == 'deploy'
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name DocPlatformStack \
+            --query "Stacks[0].Outputs" \
+            --output table \
+            --region ${{ env.AWS_REGION }}

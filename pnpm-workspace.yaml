@@ -1,10 +1,10 @@
 packages:
   - 'shared/*'
-  - 'editor-web'
-  - 'editor-desktop'
-  - 'planning-web'
+  - 'web'
+  - 'docs-desktop'
   - 'planning-desktop'
   - 'api'
   - 'frontend'
   - 'mcp'
   - 'infra'
+  - 'ssg'

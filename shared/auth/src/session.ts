@@ -11,6 +11,13 @@ export function generateSessionId(): string {
 }
 
 /**
+ * Generate a cryptographically random CSRF token
+ */
+export function generateCsrfToken(): string {
+	return crypto.randomBytes(32).toString('hex');
+}
+
+/**
  * Get the Redis key for a session
  */
 function sessionKey(sessionId: string): string {
@@ -19,15 +26,18 @@ function sessionKey(sessionId: string): string {
 
 /**
  * Create a new session in Redis
+ * Automatically generates a CSRF token if not provided
  */
 export async function createSession(
 	redis: Redis,
 	sessionId: string,
-	data: Omit<Session, 'createdAt' | 'lastAccessedAt'>
-): Promise<void> {
+	data: Omit<Session, 'createdAt' | 'lastAccessedAt' | 'csrfToken'> & { csrfToken?: string }
+): Promise<string> {
 	const now = Date.now();
+	const csrfToken = data.csrfToken || generateCsrfToken();
 	const session: Session = {
-		...data,
+		userId: data.userId,
+		csrfToken,
 		createdAt: now,
 		lastAccessedAt: now,
 	};
@@ -37,6 +47,8 @@ export async function createSession(
 		SESSION_TTL_SECONDS,
 		JSON.stringify(session)
 	);
+
+	return csrfToken;
 }
 
 /**

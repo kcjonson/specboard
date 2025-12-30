@@ -1,25 +1,28 @@
 {
-	"name": "@doc-platform/db",
-	"version": "0.0.1",
-	"private": true,
-	"type": "module",
-	"main": "dist/index.js",
-	"types": "dist/index.d.ts",
-	"scripts": {
-		"build": "tsc",
-		"dev": "tsc --watch",
-		"lint": "eslint src",
-		"lint:fix": "eslint src --fix",
-		"clean": "rm -rf dist",
-		"migrate": "tsx src/migrate.ts"
-	},
-	"dependencies": {
-		"pg": "^8.16.3"
-	},
-	"devDependencies": {
-		"@types/node": "^22.10.2",
-		"@types/pg": "^8.16.0",
-		"tsx": "^4.19.2",
-		"typescript": "^5.7.2"
-	}
+  "name": "@doc-platform/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "clean": "rm -rf dist",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "node seed.mjs"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.16.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
 }

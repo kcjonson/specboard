@@ -1,0 +1,12 @@
+/**
+ * Shared styles for SSR pages and SPA
+ *
+ * This file combines design tokens and element styles into a single
+ * CSS bundle that can be:
+ * - Linked from SSR pages (login, etc.) for caching
+ * - Imported by the SPA (already cached from SSR pages)
+ */
+
+@import './reset.css';
+@import './tokens.css';
+@import './elements.css';

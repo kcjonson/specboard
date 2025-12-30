@@ -1,0 +1,91 @@
+name: Build Docker Images
+
+on:
+  workflow_call:
+    inputs:
+      push:
+        description: 'Push images to ECR'
+        required: true
+        type: boolean
+    outputs:
+      registry:
+        description: 'ECR registry URL'
+        value: ${{ jobs.build.outputs.registry }}
+
+env:
+  AWS_REGION: us-west-2
+
+jobs:
+  build:
+    name: Build Images
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      registry: ${{ inputs.push && steps.login-ecr.outputs.registry || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: inputs.push
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: inputs.push
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image prefix
+        id: prefix
+        run: |
+          if [ "${{ inputs.push }}" = "true" ]; then
+            echo "value=${{ steps.login-ecr.outputs.registry }}/doc-platform" >> $GITHUB_OUTPUT
+          else
+            echo "value=doc-platform" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./api/Dockerfile
+          push: ${{ inputs.push }}
+          tags: |
+            ${{ steps.prefix.outputs.value }}/api:latest
+            ${{ steps.prefix.outputs.value }}/api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./frontend/Dockerfile
+          push: ${{ inputs.push }}
+          tags: |
+            ${{ steps.prefix.outputs.value }}/frontend:latest
+            ${{ steps.prefix.outputs.value }}/frontend:${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build MCP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./mcp/Dockerfile
+          push: ${{ inputs.push }}
+          tags: |
+            ${{ steps.prefix.outputs.value }}/mcp:latest
+            ${{ steps.prefix.outputs.value }}/mcp:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

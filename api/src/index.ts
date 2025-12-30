@@ -6,10 +6,8 @@
 import * as Sentry from '@sentry/node';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
 import { serve } from '@hono/node-server';
 import { Redis } from 'ioredis';
-import crypto from 'node:crypto';
 
 // Initialize Sentry error tracking
 if (process.env.SENTRY_DSN) {
@@ -18,192 +16,68 @@ if (process.env.SENTRY_DSN) {
 		environment: process.env.NODE_ENV || 'development',
 	});
 }
+
 import {
-	generateSessionId,
-	createSession,
-	deleteSession,
-	getSession,
-	SESSION_COOKIE_NAME,
-	SESSION_TTL_SECONDS,
+	rateLimitMiddleware,
+	csrfMiddleware,
+	RATE_LIMIT_CONFIGS,
 } from '@doc-platform/auth';
+
+import { handleLogin, handleLogout, handleGetMe, handleUpdateMe, handleSignup } from './handlers/auth.js';
+import {
+	handleOAuthMetadata,
+	handleAuthorizeGet,
+	handleAuthorizePost,
+	handleToken,
+	handleRevoke,
+	handleListAuthorizations,
+	handleDeleteAuthorization,
+} from './handlers/oauth.js';
+import {
+	handleListEpics,
+	handleGetEpic,
+	handleCreateEpic,
+	handleUpdateEpic,
+	handleDeleteEpic,
+	handleGetCurrentWork,
+	handleSignalReadyForReview,
+} from './handlers/epics.js';
+import {
+	handleListTasks,
+	handleCreateTask,
+	handleUpdateTask,
+	handleDeleteTask,
+	handleBulkCreateTasks,
+	handleStartTask,
+	handleCompleteTask,
+	handleBlockTask,
+	handleUnblockTask,
+} from './handlers/tasks.js';
+import {
+	handleListEpicProgress,
+	handleCreateEpicProgress,
+	handleListTaskProgress,
+	handleCreateTaskProgress,
+} from './handlers/progress.js';
+import {
+	handleListProjects,
+	handleGetProject,
+	handleCreateProject,
+	handleUpdateProject,
+	handleDeleteProject,
+} from './handlers/projects.js';
 
 // Redis connection
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const redis = new Redis(redisUrl);
 
-redis.on('error', (err) => {
-	console.error('Redis connection error:', err);
+redis.on('error', (error) => {
+	console.error('Redis connection error:', error);
 });
 
 redis.on('connect', () => {
 	console.log('Connected to Redis');
 });
-
-// Mock users for local development
-// In production, this will be replaced by Cognito
-// Passwords can be overridden via environment variables
-const MOCK_USERS = new Map([
-	[
-		'test@example.com',
-		{
-			id: 'user-1',
-			email: 'test@example.com',
-			password: process.env.MOCK_USER_PASSWORD || 'password123',
-			displayName: 'Test User',
-		},
-	],
-	[
-		'admin@example.com',
-		{
-			id: 'user-2',
-			email: 'admin@example.com',
-			password: process.env.MOCK_ADMIN_PASSWORD || 'admin123',
-			displayName: 'Admin User',
-		},
-	],
-]);
-
-/**
- * Constant-time string comparison to prevent timing attacks
- */
-function safeCompare(a: string, b: string): boolean {
-	if (a.length !== b.length) {
-		// Still do a comparison to avoid early return timing leak
-		crypto.timingSafeEqual(Buffer.from(a), Buffer.from(a));
-		return false;
-	}
-	return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
-}
-
-/**
- * Basic email format validation
- */
-function isValidEmail(email: string): boolean {
-	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-/**
- * Structured auth event logging for CloudWatch Logs Insights
- */
-function logAuthEvent(
-	event: 'login_success' | 'login_failure' | 'logout' | 'session_expired',
-	data: Record<string, unknown>
-): void {
-	console.log(
-		JSON.stringify({
-			type: 'auth',
-			event,
-			timestamp: new Date().toISOString(),
-			...data,
-		})
-	);
-}
-
-// Types
-interface Task {
-	id: string;
-	epicId: string;
-	title: string;
-	status: 'ready' | 'in_progress' | 'done';
-	assignee?: string;
-	dueDate?: string;
-	rank: number;
-}
-
-interface Epic {
-	id: string;
-	title: string;
-	description?: string;
-	status: 'ready' | 'in_progress' | 'done';
-	assignee?: string;
-	rank: number;
-	createdAt: string;
-	updatedAt: string;
-}
-
-// In-memory storage
-const epics: Map<string, Epic> = new Map();
-const tasks: Map<string, Task> = new Map();
-
-// Seed sample data
-function seedData(): void {
-	const sampleEpics: Epic[] = [
-		{
-			id: '1',
-			title: 'User Authentication',
-			description: 'Implement login, signup, and password reset flows.',
-			status: 'in_progress',
-			assignee: 'alice',
-			rank: 1,
-			createdAt: '2025-12-20T10:00:00Z',
-			updatedAt: '2025-12-23T14:30:00Z',
-		},
-		{
-			id: '2',
-			title: 'Dashboard Analytics',
-			description: 'Build analytics dashboard with charts and metrics.',
-			status: 'ready',
-			rank: 2,
-			createdAt: '2025-12-21T09:00:00Z',
-			updatedAt: '2025-12-21T09:00:00Z',
-		},
-		{
-			id: '3',
-			title: 'API Documentation',
-			description: 'Write comprehensive API docs with examples.',
-			status: 'done',
-			assignee: 'bob',
-			rank: 1,
-			createdAt: '2025-12-18T11:00:00Z',
-			updatedAt: '2025-12-22T16:00:00Z',
-		},
-		{
-			id: '4',
-			title: 'Performance Optimization',
-			description: 'Improve load times and reduce bundle size.',
-			status: 'ready',
-			rank: 3,
-			createdAt: '2025-12-22T08:00:00Z',
-			updatedAt: '2025-12-22T08:00:00Z',
-		},
-	];
-
-	const sampleTasks: Task[] = [
-		{ id: '101', epicId: '1', title: 'Design login UI', status: 'done', rank: 1 },
-		{ id: '102', epicId: '1', title: 'Implement login API', status: 'done', rank: 2 },
-		{ id: '103', epicId: '1', title: 'Implement login form', status: 'in_progress', assignee: 'alice', rank: 3 },
-		{ id: '104', epicId: '1', title: 'Add form validation', status: 'ready', rank: 4 },
-		{ id: '105', epicId: '1', title: 'Implement password reset', status: 'ready', rank: 5 },
-		{ id: '201', epicId: '2', title: 'Design dashboard layout', status: 'ready', rank: 1 },
-		{ id: '202', epicId: '2', title: 'Implement chart components', status: 'ready', rank: 2 },
-		{ id: '301', epicId: '3', title: 'Write endpoint docs', status: 'done', rank: 1 },
-		{ id: '302', epicId: '3', title: 'Add code examples', status: 'done', rank: 2 },
-	];
-
-	sampleEpics.forEach((epic) => epics.set(epic.id, epic));
-	sampleTasks.forEach((task) => tasks.set(task.id, task));
-}
-
-seedData();
-
-// Utility
-function generateId(): string {
-	return Date.now().toString(36) + Math.random().toString(36).slice(2);
-}
-
-function getTasksForEpic(epicId: string): Task[] {
-	return Array.from(tasks.values())
-		.filter((t) => t.epicId === epicId)
-		.sort((a, b) => a.rank - b.rank);
-}
-
-function getTaskStats(epicId: string): { total: number; done: number } {
-	const epicTasks = getTasksForEpic(epicId);
-	return {
-		total: epicTasks.length,
-		done: epicTasks.filter((t) => t.status === 'done').length,
-	};
-}
 
 // App
 const app = new Hono();
@@ -211,24 +85,57 @@ const app = new Hono();
 // Middleware
 app.use('*', cors());
 
-// Health check (both paths for direct and ALB-routed access)
-app.get('/health', (c) => c.json({ status: 'ok' }));
-app.get('/api/health', (c) => c.json({ status: 'ok' }));
+// Rate limiting middleware (per spec requirements)
+app.use(
+	'*',
+	rateLimitMiddleware(redis, {
+		rules: [
+			{ path: '/api/auth/login', config: RATE_LIMIT_CONFIGS.login },
+			{ path: '/api/auth/signup', config: RATE_LIMIT_CONFIGS.signup },
+			{ path: '/oauth/token', config: RATE_LIMIT_CONFIGS.oauthToken },
+			{ path: '/oauth/authorize', config: RATE_LIMIT_CONFIGS.oauthAuthorize },
+		],
+		defaultLimit: RATE_LIMIT_CONFIGS.api,
+		excludePaths: ['/health', '/api/health'],
+	})
+);
+
+// CSRF protection for state-changing requests
+// Excludes login/signup (no session yet) - logout requires CSRF protection
+// Excludes OAuth token/revoke endpoints (use PKCE instead)
+app.use(
+	'*',
+	csrfMiddleware(redis, {
+		excludePaths: [
+			'/api/auth/login',
+			'/api/auth/signup',
+			'/oauth/token',
+			'/oauth/revoke',
+			'/.well-known/oauth-authorization-server',
+			'/health',
+			'/api/health',
+		],
+	})
+);
+
+// Health check
+app.get('/health', (context) => context.json({ status: 'ok' }));
+app.get('/api/health', (context) => context.json({ status: 'ok' }));
 
 // Sentry tunnel endpoint - forwards error reports to Sentry without exposing DSN to clients
-app.post('/api/metrics', async (c) => {
+app.post('/api/metrics', async (context) => {
 	try {
-		const envelope = await c.req.text();
+		const envelope = await context.req.text();
 		const lines = envelope.split('\n');
 		const firstLine = lines[0];
 		if (!firstLine) {
-			return c.text('invalid envelope', 400);
+			return context.text('invalid envelope', 400);
 		}
 
 		// Parse the envelope header to extract DSN
 		const header = JSON.parse(firstLine);
 		if (!header.dsn) {
-			return c.text('missing dsn', 400);
+			return context.text('missing dsn', 400);
 		}
 
 		// Extract project ID from DSN
@@ -248,274 +155,70 @@ app.post('/api/metrics', async (c) => {
 			console.error('Sentry forwarding failed:', response.status);
 		}
 
-		return c.text('ok');
-	} catch (err) {
-		console.error('Metrics endpoint error:', err);
-		return c.text('ok'); // Don't expose errors to client
+		return context.text('ok');
+	} catch (error) {
+		console.error('Metrics endpoint error:', error);
+		return context.text('ok'); // Don't expose errors to client
 	}
 });
 
-// Auth endpoints
+// Auth routes
+app.post('/api/auth/login', (context) => handleLogin(context, redis));
+app.post('/api/auth/signup', (context) => handleSignup(context, redis));
+app.post('/api/auth/logout', (context) => handleLogout(context, redis));
+app.get('/api/auth/me', (context) => handleGetMe(context, redis));
+app.put('/api/auth/me', (context) => handleUpdateMe(context, redis));
 
-interface LoginRequest {
-	email: string;
-	password: string;
-}
+// OAuth 2.1 routes (MCP authentication)
+app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);
+app.get('/oauth/authorize', (context) => handleAuthorizeGet(context, redis));
+app.post('/oauth/authorize', (context) => handleAuthorizePost(context, redis));
+app.post('/oauth/token', handleToken);
+app.post('/oauth/revoke', handleRevoke);
 
-app.post('/auth/login', async (c) => {
-	const body = await c.req.json<LoginRequest>();
-	const { email, password } = body;
+// OAuth authorization management (user settings)
+app.get('/api/oauth/authorizations', (context) => handleListAuthorizations(context, redis));
+app.delete('/api/oauth/authorizations/:id', (context) => handleDeleteAuthorization(context, redis));
 
-	// Input validation
-	if (!email || !password) {
-		return c.json({ error: 'Email and password are required' }, 400);
-	}
+// Project routes (user-scoped, not project-scoped)
+app.get('/api/projects', (context) => handleListProjects(context, redis));
+app.get('/api/projects/:id', (context) => handleGetProject(context, redis));
+app.post('/api/projects', (context) => handleCreateProject(context, redis));
+app.put('/api/projects/:id', (context) => handleUpdateProject(context, redis));
+app.delete('/api/projects/:id', (context) => handleDeleteProject(context, redis));
 
-	if (!isValidEmail(email)) {
-		return c.json({ error: 'Invalid email format' }, 400);
-	}
+// Project routes (user-scoped, not project-scoped)
+app.get('/api/projects', (context) => handleListProjects(context, redis));
+app.get('/api/projects/:id', (context) => handleGetProject(context, redis));
+app.post('/api/projects', (context) => handleCreateProject(context, redis));
+app.put('/api/projects/:id', (context) => handleUpdateProject(context, redis));
+app.delete('/api/projects/:id', (context) => handleDeleteProject(context, redis));
 
-	if (password.length < 6) {
-		return c.json({ error: 'Password must be at least 6 characters' }, 400);
-	}
+// Project-scoped epic routes
+app.get('/api/projects/:projectId/epics', handleListEpics);
+app.get('/api/projects/:projectId/epics/current', handleGetCurrentWork);
+app.get('/api/projects/:projectId/epics/:id', handleGetEpic);
+app.post('/api/projects/:projectId/epics', handleCreateEpic);
+app.put('/api/projects/:projectId/epics/:id', handleUpdateEpic);
+app.delete('/api/projects/:projectId/epics/:id', handleDeleteEpic);
+app.post('/api/projects/:projectId/epics/:id/ready-for-review', handleSignalReadyForReview);
 
-	// Mock authentication - replace with Cognito in production
-	const user = MOCK_USERS.get(email.toLowerCase());
-	if (!user || !safeCompare(password, user.password)) {
-		logAuthEvent('login_failure', { email: email.toLowerCase(), reason: 'invalid_credentials' });
-		return c.json({ error: 'Invalid email or password' }, 401);
-	}
+// Project-scoped task routes
+app.get('/api/projects/:projectId/epics/:epicId/tasks', handleListTasks);
+app.post('/api/projects/:projectId/epics/:epicId/tasks', handleCreateTask);
+app.post('/api/projects/:projectId/epics/:epicId/tasks/bulk', handleBulkCreateTasks);
+app.put('/api/projects/:projectId/tasks/:id', handleUpdateTask);
+app.delete('/api/projects/:projectId/tasks/:id', handleDeleteTask);
+app.post('/api/projects/:projectId/tasks/:id/start', handleStartTask);
+app.post('/api/projects/:projectId/tasks/:id/complete', handleCompleteTask);
+app.post('/api/projects/:projectId/tasks/:id/block', handleBlockTask);
+app.post('/api/projects/:projectId/tasks/:id/unblock', handleUnblockTask);
 
-	// Create session with error handling
-	const sessionId = generateSessionId();
-	try {
-		await createSession(redis, sessionId, {
-			userId: user.id,
-			email: user.email,
-			displayName: user.displayName,
-			// Mock tokens for development
-			cognitoAccessToken: 'mock-access-token',
-			cognitoRefreshToken: 'mock-refresh-token',
-			cognitoExpiresAt: Date.now() + 3600000, // 1 hour
-		});
-	} catch (err) {
-		console.error('Failed to create session:', err);
-		return c.json({ error: 'Authentication service unavailable' }, 503);
-	}
-
-	// Set session cookie
-	setCookie(c, SESSION_COOKIE_NAME, sessionId, {
-		httpOnly: true,
-		secure: process.env.NODE_ENV === 'production',
-		sameSite: 'Lax',
-		path: '/',
-		maxAge: SESSION_TTL_SECONDS,
-	});
-
-	logAuthEvent('login_success', { userId: user.id, email: user.email });
-
-	return c.json({
-		user: {
-			id: user.id,
-			email: user.email,
-			displayName: user.displayName,
-		},
-	});
-});
-
-app.post('/auth/logout', async (c) => {
-	const sessionId = getCookie(c, SESSION_COOKIE_NAME);
-	let userId: string | undefined;
-
-	if (sessionId) {
-		try {
-			const session = await getSession(redis, sessionId);
-			userId = session?.userId;
-			await deleteSession(redis, sessionId);
-		} catch (err) {
-			console.error('Failed to delete session:', err);
-			// Continue with logout even if Redis fails
-		}
-	}
-
-	if (userId) {
-		logAuthEvent('logout', { userId });
-	}
-
-	deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
-	return c.json({ success: true });
-});
-
-app.get('/auth/me', async (c) => {
-	const sessionId = getCookie(c, SESSION_COOKIE_NAME);
-
-	if (!sessionId) {
-		return c.json({ error: 'Not authenticated' }, 401);
-	}
-
-	try {
-		const session = await getSession(redis, sessionId);
-		if (!session) {
-			return c.json({ error: 'Session expired' }, 401);
-		}
-
-		return c.json({
-			user: {
-				id: session.userId,
-				email: session.email,
-				displayName: session.displayName,
-			},
-		});
-	} catch (err) {
-		console.error('Failed to get session:', err);
-		return c.json({ error: 'Authentication service unavailable' }, 503);
-	}
-});
-
-// Epic endpoints
-app.get('/api/epics', (c) => {
-	const epicList = Array.from(epics.values())
-		.sort((a, b) => a.rank - b.rank)
-		.map((epic) => ({
-			...epic,
-			taskStats: getTaskStats(epic.id),
-		}));
-	return c.json(epicList);
-});
-
-app.get('/api/epics/:id', (c) => {
-	const epic = epics.get(c.req.param('id'));
-	if (!epic) {
-		return c.json({ error: 'Epic not found' }, 404);
-	}
-	return c.json({
-		...epic,
-		tasks: getTasksForEpic(epic.id),
-		taskStats: getTaskStats(epic.id),
-	});
-});
-
-app.post('/api/epics', async (c) => {
-	const body = await c.req.json<Partial<Epic>>();
-	const now = new Date().toISOString();
-
-	// Calculate next rank for the status column
-	const sameStatusEpics = Array.from(epics.values()).filter(
-		(e) => e.status === (body.status || 'ready')
-	);
-	const maxRank = Math.max(0, ...sameStatusEpics.map((e) => e.rank));
-
-	const epic: Epic = {
-		id: generateId(),
-		title: body.title || 'Untitled Epic',
-		description: body.description,
-		status: body.status || 'ready',
-		assignee: body.assignee,
-		rank: maxRank + 1,
-		createdAt: now,
-		updatedAt: now,
-	};
-
-	epics.set(epic.id, epic);
-	return c.json(epic, 201);
-});
-
-app.put('/api/epics/:id', async (c) => {
-	const id = c.req.param('id');
-	const existing = epics.get(id);
-	if (!existing) {
-		return c.json({ error: 'Epic not found' }, 404);
-	}
-
-	const body = await c.req.json<Partial<Epic>>();
-	const updated: Epic = {
-		...existing,
-		...body,
-		id, // Prevent ID change
-		updatedAt: new Date().toISOString(),
-	};
-
-	epics.set(id, updated);
-	return c.json(updated);
-});
-
-app.delete('/api/epics/:id', (c) => {
-	const id = c.req.param('id');
-	if (!epics.has(id)) {
-		return c.json({ error: 'Epic not found' }, 404);
-	}
-
-	// Delete associated tasks
-	Array.from(tasks.values())
-		.filter((t) => t.epicId === id)
-		.forEach((t) => tasks.delete(t.id));
-
-	epics.delete(id);
-	return c.json({ success: true });
-});
-
-// Task endpoints
-app.get('/api/epics/:epicId/tasks', (c) => {
-	const epicId = c.req.param('epicId');
-	if (!epics.has(epicId)) {
-		return c.json({ error: 'Epic not found' }, 404);
-	}
-	return c.json(getTasksForEpic(epicId));
-});
-
-app.post('/api/epics/:epicId/tasks', async (c) => {
-	const epicId = c.req.param('epicId');
-	if (!epics.has(epicId)) {
-		return c.json({ error: 'Epic not found' }, 404);
-	}
-
-	const body = await c.req.json<Partial<Task>>();
-
-	// Calculate next rank
-	const epicTasks = getTasksForEpic(epicId);
-	const maxRank = Math.max(0, ...epicTasks.map((t) => t.rank));
-
-	const task: Task = {
-		id: generateId(),
-		epicId,
-		title: body.title || 'Untitled Task',
-		status: body.status || 'ready',
-		assignee: body.assignee,
-		dueDate: body.dueDate,
-		rank: maxRank + 1,
-	};
-
-	tasks.set(task.id, task);
-	return c.json(task, 201);
-});
-
-app.put('/api/tasks/:id', async (c) => {
-	const id = c.req.param('id');
-	const existing = tasks.get(id);
-	if (!existing) {
-		return c.json({ error: 'Task not found' }, 404);
-	}
-
-	const body = await c.req.json<Partial<Task>>();
-	const updated: Task = {
-		...existing,
-		...body,
-		id, // Prevent ID change
-		epicId: existing.epicId, // Prevent epic change
-	};
-
-	tasks.set(id, updated);
-	return c.json(updated);
-});
-
-app.delete('/api/tasks/:id', (c) => {
-	const id = c.req.param('id');
-	if (!tasks.has(id)) {
-		return c.json({ error: 'Task not found' }, 404);
-	}
-	tasks.delete(id);
-	return c.json({ success: true });
-});
+// Project-scoped progress notes routes
+app.get('/api/projects/:projectId/epics/:epicId/progress', handleListEpicProgress);
+app.post('/api/projects/:projectId/epics/:epicId/progress', handleCreateEpicProgress);
+app.get('/api/projects/:projectId/tasks/:taskId/progress', handleListTaskProgress);
+app.post('/api/projects/:projectId/tasks/:taskId/progress', handleCreateTaskProgress);
 
 // Start server
 const PORT = Number(process.env.PORT) || 3001;

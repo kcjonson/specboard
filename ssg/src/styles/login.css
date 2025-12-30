@@ -1,0 +1,60 @@
+/**
+ * Login page styles
+ */
+
+body {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+}
+
+.login-container {
+	background: var(--color-surface);
+	border-radius: var(--radius-lg);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	padding: 2rem;
+	width: 100%;
+	max-width: 400px;
+}
+
+.login-container h1 {
+	font-size: 1.5rem;
+	font-weight: 600;
+	margin-bottom: 1.5rem;
+	text-align: center;
+}
+
+.login-container button {
+	width: 100%;
+}
+
+.login-container .error-message {
+	background: var(--color-error-bg);
+	border: 1px solid var(--color-error);
+	color: var(--color-error);
+	padding: 0.75rem;
+	border-radius: var(--radius-md);
+	margin-bottom: 1rem;
+	font-size: 0.875rem;
+}
+
+.login-container .error-message.hidden {
+	display: none;
+}
+
+.login-container .signup-link {
+	text-align: center;
+	margin-top: 1.5rem;
+	font-size: 0.875rem;
+	color: var(--color-text-muted);
+}
+
+.login-container .signup-link a {
+	color: var(--color-primary);
+	text-decoration: none;
+}
+
+.login-container .signup-link a:hover {
+	text-decoration: underline;
+}

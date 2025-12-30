@@ -32,7 +32,7 @@ Create a foundational tech stack document for doc-platform (Documentation Editor
 | Compute | **ECS Fargate** | Containers, same locally and in AWS |
 | Database | **Aurora Serverless v2** | Postgres, auto-scaling |
 | AI | **Amazon Bedrock** | Claude via AWS platform |
-| Auth | **Cognito + GitHub OAuth** | AWS-native identity |
+| Auth | **PostgreSQL + bcrypt + Redis sessions** | Self-managed identity |
 | Storage | **S3** | Document/asset storage |
 | CDN | **CloudFront** | Edge delivery |
 | IaC | **AWS CDK (TypeScript)** | Infrastructure as code |
@@ -88,7 +88,7 @@ doc-platform/
 | Spec | File | Status |
 |------|------|--------|
 | Markdown Editor | `docs/specs/markdown-editor.md` | Needs discussion: TipTap vs ProseMirror vs custom |
-| Authentication | `docs/specs/authentication.md` | Needs discussion: Cognito + GitHub OAuth flow |
+| Authentication | `docs/specs/authentication.md` | PostgreSQL + bcrypt, GitHub OAuth |
 | MCP Integration | `docs/specs/mcp-integration.md` | Needs discussion: MCP server design |
 
 ---

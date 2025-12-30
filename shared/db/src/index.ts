@@ -1,20 +1,42 @@
 import pg from 'pg';
 
 export * from './types.js';
+export * from './services/index.js';
 
 const { Pool } = pg;
 
-// Validate DATABASE_URL is set
-if (!process.env.DATABASE_URL) {
-	throw new Error('DATABASE_URL environment variable is required');
+// Build DATABASE_URL from individual vars if not provided
+function getDatabaseUrl(): string {
+	if (process.env.DATABASE_URL) {
+		return process.env.DATABASE_URL;
+	}
+
+	const host = process.env.DB_HOST;
+	const port = process.env.DB_PORT || '5432';
+	const name = process.env.DB_NAME;
+	const user = process.env.DB_USER;
+	const password = process.env.DB_PASSWORD;
+
+	if (host && name && user && password) {
+		return `postgresql://${user}:${encodeURIComponent(password)}@${host}:${port}/${name}`;
+	}
+
+	throw new Error(
+		'DATABASE_URL or all of DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD are required (DB_PORT optional, defaults to 5432)'
+	);
 }
 
+const connectionString = getDatabaseUrl();
+
 // Connection pool - reused across requests
+// SSL is required for AWS RDS PostgreSQL (pg_hba.conf rejects unencrypted connections)
+// AWS RDS certs are signed by Amazon Trust Services CA, trusted by Node.js
 const pool = new Pool({
-	connectionString: process.env.DATABASE_URL,
+	connectionString,
 	max: 20,
 	idleTimeoutMillis: 30000,
 	connectionTimeoutMillis: 2000,
+	ssl: process.env.NODE_ENV === 'production' ? true : undefined,
 });
 
 // Log connection errors (don't crash the server)

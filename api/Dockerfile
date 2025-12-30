@@ -28,6 +28,7 @@ COPY shared/auth ./shared/auth
 COPY api ./api
 
 # Build shared packages first, then API
+# Note: auth depends on db, so build db before auth
 RUN pnpm --filter @doc-platform/core build && \
     pnpm --filter @doc-platform/db build && \
     pnpm --filter @doc-platform/auth build && \
@@ -57,8 +58,9 @@ COPY --from=builder /app/shared/db/dist ./shared/db/dist
 COPY --from=builder /app/shared/auth/dist ./shared/auth/dist
 COPY --from=builder /app/api/dist ./api/dist
 
-# Copy migrations
+# Copy migrations and seed script
 COPY --from=builder /app/shared/db/migrations ./shared/db/migrations
+COPY --from=builder /app/shared/db/seed.mjs ./shared/db/seed.mjs
 
 EXPOSE 3001
 

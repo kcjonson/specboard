@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Allow: /home
+Allow: /login
+Allow: /signup
+
+# Block authenticated app routes from indexing
+Disallow: /api/
+Disallow: /oauth/

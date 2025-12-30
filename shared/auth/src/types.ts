@@ -1,13 +1,9 @@
 /**
- * Session data stored in Redis
+ * Session data stored in Redis (auth-only, minimal)
  */
 export interface Session {
 	userId: string;
-	email: string;
-	displayName: string;
-	cognitoAccessToken: string;
-	cognitoRefreshToken: string;
-	cognitoExpiresAt: number; // Unix timestamp
+	csrfToken: string;
 	createdAt: number;
 	lastAccessedAt: number;
 }
@@ -17,8 +13,6 @@ export interface Session {
  */
 export interface AuthUser {
 	id: string;
-	email: string;
-	displayName: string;
 }
 
 /**
@@ -27,8 +21,8 @@ export interface AuthUser {
 export interface AuthMiddlewareOptions {
 	/** Paths that don't require authentication */
 	excludePaths?: string[];
-	/** Custom handler for unauthenticated requests */
-	onUnauthenticated?: (path: string) => Response | Promise<Response>;
+	/** Custom handler for unauthenticated requests. Receives the full request URL. */
+	onUnauthenticated?: (requestUrl: URL) => Response | Promise<Response>;
 }
 
 /**

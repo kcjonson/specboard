@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-27 (Logging & Monitoring)
+Last Updated: 2025-12-30 (Marketing SSG)
 
 ## Epic/Story/Task Template
 
@@ -27,56 +27,93 @@ Use this template for all work items:
 
 ## Recently Completed Epics (Last 4)
 
-### ✅ GitHub Actions CI
-**Spec/Documentation:** `.github/workflows/ci.yml`
-**Dependencies:** None
+### ✅ Marketing SSG
+**Spec/Documentation:** `/docs/specs/marketing-ssg.md`
+**Dependencies:** UI Component Library
 **Status:** complete
 
 **Tasks:**
-- [x] Create CI workflow for build, test, lint
-- [x] Add missing DOM globals to ESLint config
-- [x] Fix existing lint errors in models package
+- [x] Create SSG specification document
+- [x] Create ssg package with Preact SSR build system
+- [x] Create common.css bundle (reset, tokens, elements)
+- [x] Create Preact page components (login, signup, home, not-found)
+- [x] Update Vite config for SSG CSS entry points
+- [x] Update frontend server with static page cache
+- [x] Add Link preload headers for CSS
+- [x] Update Dockerfile build pipeline
 
 ---
 
-### ✅ Collection & Nested Models
-**Spec/Documentation:** `shared/models/src/`
-**Dependencies:** Custom State Management
-**Status:** complete
-
-**Tasks:**
-- [x] Create Observable interface for Model and Collection
-- [x] Implement Collection<T> class with event bubbling
-- [x] Create @collection decorator for child model arrays
-- [x] Create @model decorator for single nested models
-- [x] Update useModel hook to accept Observable
-- [x] Write comprehensive tests (26 new tests)
-
----
-
-### ✅ Custom Router
-**Spec/Documentation:** `/docs/tech-stack.md`
+### ✅ UI Component Library
+**Spec/Documentation:** `shared/ui/src/`
 **Dependencies:** Monorepo Scaffolding
 **Status:** complete
 
 **Tasks:**
-- [x] Minimal router implementation
-  - [x] Route matching with :param support
-  - [x] History API integration (popstate)
-  - [x] Automatic <a> click interception
-  - [x] Programmatic navigation (navigate function)
-- [x] Tests for route matching
+- [x] Create tokens.css with design system values
+- [x] Add dark mode support (prefers-color-scheme)
+- [x] Button, Dialog, Text, Textarea, Select components
+- [x] Card, Badge, StatusDot components
+- [x] UserMenu, AppHeader components
+- [x] Demo page at /ui route
+- [x] Migrate to shared/planning using @doc-platform/ui
 
 ---
 
-### ✅ Custom State Management
-**Spec/Documentation:** `/docs/tech-stack.md`, `.claude/plans/custom-state-management.md`
-**Dependencies:** Monorepo Scaffolding
+### ✅ Planning UI
+**Spec/Documentation:** `/docs/specs/kanban-ui.md`
+**Dependencies:** Custom State Management, Custom Router
 **Status:** complete
 
 **Tasks:**
-- [x] Implement @doc-platform/fetch (FetchClient with interceptors)
-- [x] Implement @doc-platform/models (Model, SyncModel, Preact hooks)
+- [x] Board layout (three-column, drag-drop)
+- [x] Epic/Task CRUD endpoints (PostgreSQL-backed)
+- [x] Epic detail dialog with task list
+- [x] Keyboard navigation (arrows, N, 1/2/3, Enter, Escape)
+- [x] User menu and settings page
+
+---
+
+### ✅ Pages Layout Setup
+**Spec/Documentation:** `docs/specs/kanban-ui.md` (header layout)
+**Dependencies:** Pages Scaffolding, UI Component Library
+**Status:** complete
+
+**Tasks:**
+- [x] Create shared AppHeader component
+  - [x] Project name display
+  - [x] Navigation tabs (Planning | Pages)
+  - [x] User menu integration
+- [x] Create Pages three-panel layout
+  - [x] FileBrowser placeholder (left sidebar)
+  - [x] Editor content area (center)
+  - [x] CommentsPanel placeholder (right sidebar)
+- [x] Add project-scoped routes
+  - [x] /projects/:projectId/planning
+  - [x] /projects/:projectId/pages
+  - [x] Root redirect to default project
+- [x] Update Planning Board to use shared AppHeader
+- [x] Move "+ New Epic" button to board-specific toolbar
+
+---
+
+### ✅ Pages Scaffolding
+**Spec/Documentation:** `docs/tech-stack.md`
+**Dependencies:** Planning UI
+**Status:** complete
+
+**Tasks:**
+- [x] Restructure packages for unified web app
+  - [x] Rename planning-web → web
+  - [x] Delete empty editor-web
+  - [x] Rename editor-desktop → docs-desktop
+- [x] Create shared feature source directories
+  - [x] Create shared/planning/ (moved components from planning-web)
+  - [x] Create shared/pages/ (new Pages feature components)
+- [x] Update routes to use /planning and /pages prefixes
+- [x] Add basic Pages placeholder page
+- [x] Configure Vite aliases for @shared/planning and @shared/pages
+- [x] Update pnpm-workspace.yaml and tsconfig.json
 
 ---
 
@@ -92,7 +129,7 @@ Use this template for all work items:
 **Tasks:**
 - [x] Sentry integration (tunneled through our API)
   - [x] Add `/api/metrics` tunnel endpoint to API
-  - [x] Add Sentry SDK to planning-web (frontend)
+  - [x] Add Sentry SDK to web (frontend)
   - [x] Add Sentry SDK to API (backend)
 - [x] CloudWatch alarms
   - [x] CPU utilization alarm (>80%)
@@ -102,8 +139,28 @@ Use this template for all work items:
   - [x] Log successful logins
   - [x] Log failed login attempts
   - [x] Log logout events
+  - [x] Log signup events
 - [ ] Configure Sentry DSN in environment variables
 - [ ] Add uptime monitoring (external service)
+
+---
+
+### Projects Page
+**Spec/Documentation:** `shared/projects/`
+**Dependencies:** Authentication System
+**Status:** in progress
+
+**Goal:** Multi-project support with projects listing page and smart routing.
+
+**Tasks:**
+- [x] Database schema (projects table, epics.project_id)
+- [x] Project service in @doc-platform/db
+- [x] Project API endpoints (CRUD)
+- [x] ProjectsList UI component
+- [x] ProjectCard component
+- [x] Smart routing (cookie-based last project)
+- [ ] Delete project confirmation dialog
+- [ ] Project settings/rename UI
 
 ---
 
@@ -115,75 +172,25 @@ Use this template for all work items:
 **Goal:** Deploy to AWS staging environment with CD from main branch.
 
 **Tasks:**
-- [ ] CDK Infrastructure
-  - [ ] VPC and networking
-  - [ ] ECR repositories for container images
-  - [ ] ECS Cluster with Fargate services
-  - [ ] RDS Postgres (single-AZ)
-  - [ ] ElastiCache Redis
-  - [ ] ALB with path-based routing
-- [ ] GitHub Actions CD
-  - [ ] Build and push Docker images to ECR
-  - [ ] Deploy to ECS on push to main
+- [x] CDK Infrastructure
+  - [x] VPC and networking
+  - [x] ECR repositories for container images
+  - [x] ECS Cluster with Fargate services
+  - [x] RDS Postgres (single-AZ)
+  - [x] ElastiCache Redis
+  - [x] ALB with path-based routing
+  - [x] GitHub OIDC provider + IAM deploy role
+- [x] GitHub Actions CD
+  - [x] Build and push Docker images to ECR
+  - [x] Run database migrations before deploy
+  - [x] Deploy to ECS on push to main
+- [x] Test data seeding
+  - [x] Seed script for admin account (idempotent)
+  - [x] GitHub Secrets for staging credentials (ADMIN_USERNAME/PASSWORD/EMAIL)
+  - [x] Local seed config (seed.local.json, gitignored)
+  - [x] CD workflow runs seed after migrations
+- [ ] Configure GitHub secret (AWS_DEPLOY_ROLE_ARN)
 - [ ] Mock auth middleware (bypass for staging)
-
----
-
-### UI Component Library
-**Spec/Documentation:** `shared/ui/src/`
-**Dependencies:** Monorepo Scaffolding
-**Status:** in progress
-
-**Goal:** Build reusable UI component library for consistent design across apps.
-
-**Tasks:**
-- [x] Create tokens.css with design system values
-- [x] Add dark mode support (respects system preference via prefers-color-scheme)
-- [x] Button component (primary, secondary, text, danger, icon variants)
-- [x] Dialog component (modal with backdrop)
-- [x] Text component (text input field)
-- [x] Textarea component
-- [x] Select component
-- [x] Card component (default, interactive, selected variants)
-- [x] Badge component (default, primary, success, warning, error)
-- [x] StatusDot component (ready, in_progress, done)
-- [x] UserMenu component (avatar with initials + dropdown menu)
-- [x] Demo page at /ui route
-- [ ] Migrate existing planning-web components to use @doc-platform/ui
-
----
-
-### Planning UI
-**Spec/Documentation:** `/docs/specs/kanban-ui.md`
-**Dependencies:** Custom State Management, Custom Router
-**Status:** in progress
-
-**Goal:** Build lightweight planning board with drag-drop and keyboard navigation.
-
-**Tasks:**
-- [x] API stub (Hono with in-memory data)
-  - [x] Epic CRUD endpoints
-  - [x] Task CRUD endpoints
-- [x] Board layout
-  - [x] Three-column layout (Ready, In Progress, Done)
-  - [x] Column component
-  - [x] Epic card component
-- [x] Drag and drop
-  - [x] Native drag events
-  - [x] Drop zone highlighting
-  - [x] Optimistic reordering within columns
-- [x] Epic detail dialog
-  - [x] Task list
-  - [x] Status/assignee controls
-  - [x] Open in new tab link
-  - [ ] Linked documents (stubbed)
-- [x] New epic dialog (reuses EpicView component)
-- [x] User menu in header (avatar with settings/logout dropdown)
-- [x] User settings page (/settings route)
-- [x] Keyboard navigation
-  - [x] Arrow key navigation
-  - [x] Keyboard shortcuts (N, 1/2/3, Enter, Escape)
-  - [x] Quick create (N for epic) - now opens dialog
 
 ---
 
@@ -192,41 +199,77 @@ Use this template for all work items:
 **Dependencies:** Monorepo Scaffolding
 **Status:** in progress
 
-**Goal:** Session-based auth with Cognito identity, Redis sessions shared between containers.
+**Goal:** Session-based auth with PostgreSQL users + bcrypt, Redis sessions shared between containers.
 
 **Tasks:**
 - [x] Container infrastructure
-  - [x] Docker Compose for local dev
+  - [x] Docker Compose for local dev (includes Redis)
   - [x] API Dockerfile
+  - [x] Frontend Dockerfile
   - [x] CI Docker build verification
 - [x] Database foundation
   - [x] @doc-platform/db package
   - [x] PostgreSQL connection pool
   - [x] Migration runner (raw SQL)
   - [x] Initial schema migration (users, emails, connections)
-- [ ] Session infrastructure
-  - [ ] Add Redis to Docker Compose
-  - [ ] @doc-platform/auth package
-  - [ ] Session middleware for Hono
-- [ ] Frontend container
-  - [ ] Hono server for static files
-  - [ ] Frontend Dockerfile
-  - [ ] Auth middleware integration
-- [ ] AWS Cognito setup
-  - [ ] CDK stack for User Pool
-  - [ ] App client configuration
-  - [ ] Post-confirmation Lambda trigger
-- [ ] Auth API endpoints
-  - [ ] Signup/login/logout
-  - [ ] Session creation in Redis
-  - [ ] Password reset
+- [x] Session infrastructure
+  - [x] Redis in Docker Compose
+  - [x] @doc-platform/auth package
+  - [x] Session middleware for Hono
+- [x] Frontend container
+  - [x] Hono server for static files
+  - [x] Auth middleware integration
+  - [x] Login page (server-rendered)
+  - [x] Auth proxy endpoints (/api/auth/*)
+- [x] Auth API endpoints (mock users)
+  - [x] Login/logout handlers
+  - [x] Session creation in Redis
+  - [x] /api/auth/me endpoint
+- [x] Real user auth (PostgreSQL + bcrypt)
+  - [x] Add bcrypt to @doc-platform/auth
+  - [x] Database migration for user_passwords table
+  - [x] Signup endpoint (email verification TODO)
+  - [x] Login against database users
+  - [ ] Password reset flow
+- [ ] Email sending (SES)
+  - [ ] Verification emails
+  - [ ] Password reset emails
 - [ ] GitHub OAuth
-  - [ ] Connect flow
+  - [ ] Connect flow (link to existing account)
   - [ ] Token encryption (KMS)
   - [ ] GitHub API proxy
-- [ ] Frontend auth UI
-  - [ ] Login/signup forms
-  - [ ] Protected routes redirect
+  - [ ] Login with GitHub (future)
+
+---
+
+### Markdown Editor
+**Spec/Documentation:** `/docs/specs/markdown-editor.md`
+**Dependencies:** Platform Abstraction Layer
+**Status:** in progress
+
+**Goal:** Build dual-mode Slate.js editor with WYSIWYG and raw markdown modes.
+
+**Tasks:**
+- [x] Slate.js setup
+  - [x] Configure with Preact (via preact/compat)
+  - [x] Define node types (paragraph, heading, blockquote, code-block, lists, link, thematic-break)
+  - [x] Define text marks (bold, italic, code, strikethrough)
+- [x] WYSIWYG rendering
+  - [x] Element renderers
+  - [x] Leaf renderers
+  - [ ] Prism syntax highlighting for code
+- [x] Toolbar with formatting controls
+- [x] In-memory mock document for testing
+- [ ] Raw mode rendering
+  - [ ] Markdown syntax highlighting
+  - [ ] Cursor position preservation
+- [ ] Serialization
+  - [ ] Markdown → Slate (remark-slate)
+  - [ ] Slate → Markdown
+- [x] Comment system (inline comments)
+  - [x] Comment marks on text with highlighting
+  - [x] Inline comments UI (Google Docs-style margin comments)
+  - [ ] Comment storage in markdown
 
 ---
 
@@ -253,35 +296,6 @@ Use this template for all work items:
   - [ ] REST API client for Git
   - [ ] Browser APIs for System
 - [ ] Preact provider
-
----
-
-### Markdown Editor
-**Spec/Documentation:** `/docs/specs/markdown-editor.md`
-**Dependencies:** Platform Abstraction Layer
-**Status:** ready
-
-**Goal:** Build dual-mode Slate.js editor with WYSIWYG and raw markdown modes.
-
-**Tasks:**
-- [ ] Slate.js setup
-  - [ ] Configure with Preact
-  - [ ] Define node types
-  - [ ] Define text marks
-- [ ] WYSIWYG rendering
-  - [ ] Element renderers
-  - [ ] Leaf renderers
-  - [ ] Prism syntax highlighting for code
-- [ ] Raw mode rendering
-  - [ ] Markdown syntax highlighting
-  - [ ] Cursor position preservation
-- [ ] Serialization
-  - [ ] Markdown → Slate (remark-slate)
-  - [ ] Slate → Markdown
-- [ ] Comment system
-  - [ ] Comment marks on text
-  - [ ] Comment panel UI
-  - [ ] Comment storage in markdown
 
 ---
 
@@ -312,17 +326,17 @@ Use this template for all work items:
 ### REST API & Database
 **Spec/Documentation:** `/docs/specs/api-database.md`
 **Dependencies:** Authentication System
-**Status:** ready
+**Status:** in progress
 
 **Goal:** Build backend API with Aurora Postgres database.
 
 **Tasks:**
 - [ ] Database setup
   - [ ] CDK stack for Aurora Serverless v2
-  - [ ] Schema migrations
-  - [ ] Connection pooling
-- [ ] API framework
-  - [ ] Hono server setup
+  - [x] Schema migrations (epics, tasks tables)
+  - [x] Connection pooling (@doc-platform/db)
+- [x] API framework
+  - [x] Hono server setup
   - [ ] Auth middleware
   - [ ] Error handling
 - [ ] Core endpoints
@@ -330,35 +344,54 @@ Use this template for all work items:
   - [ ] Repository management
   - [ ] Document CRUD
   - [ ] Git operations
-- [ ] Planning endpoints
-  - [ ] Epic CRUD
-  - [ ] Task CRUD
+- [x] Planning endpoints
+  - [x] Epic CRUD (PostgreSQL-backed)
+  - [x] Task CRUD (PostgreSQL-backed)
   - [ ] Document-task links
 
 ---
 
 ### MCP Server
-**Spec/Documentation:** `/docs/specs/mcp-integration.md`
-**Dependencies:** REST API & Database, Authentication System
-**Status:** ready
+**Spec/Documentation:** `/docs/specs/mcp-integration.md`, `/docs/specs/mcp-claude-workflow.md`
+**Dependencies:** REST API & Database
+**Status:** in progress
 
-**Goal:** Build MCP server for Claude Code integration.
+**Goal:** Build MCP server for Claude Code integration with planning system.
 
 **Tasks:**
-- [ ] MCP OAuth
-  - [ ] Authorization endpoint
-  - [ ] Token endpoint
-  - [ ] PKCE support
-- [ ] MCP tools
-  - [ ] Document tools (get, search, list, create, update)
-  - [ ] Task tools (get, search, create, update)
-- [ ] MCP resources
-  - [ ] docs:// URI scheme
-  - [ ] planning:// URI scheme
-- [ ] CLI tool
+- [x] MCP server v1 (direct DB access)
+  - [x] Epic tools (get_ready_epics, get_epic, get_current_work)
+  - [x] Task tools (create, update, start/complete/block/unblock)
+  - [x] Progress tools (add_progress_note, signal_ready_for_review)
+  - [x] Shared service layer in @doc-platform/db
+  - [x] Streamable HTTP transport on port 3002
+  - [x] Docker container with DATABASE_URL
+- [x] Project-scoped APIs
+  - [x] All routes use /api/projects/:projectId/...
+  - [x] Project ID required for all MCP tools
+- [x] CI/CD
+  - [x] MCP Docker build in CI
+  - [x] MCP ECR repo and Fargate service in infra
+  - [x] CD workflow for MCP deployment
+- [x] MCP OAuth 2.1 + PKCE
+  - [x] Database migration (add device_name, last_used_at to mcp_tokens)
+  - [x] OAuth metadata endpoint (/.well-known/oauth-authorization-server)
+  - [x] Authorization endpoint (GET/POST /oauth/authorize)
+  - [x] Consent screen UI (device name input, scope display)
+  - [x] Token endpoint (POST /oauth/token)
+  - [x] PKCE validation (code_challenge/code_verifier)
+  - [x] Token refresh flow
+  - [x] MCP auth middleware (validate Bearer token, update last_used_at)
+- [x] Authorized Apps UI
+  - [x] GET /api/oauth/authorizations endpoint
+  - [x] DELETE /api/oauth/authorizations/:id endpoint
+  - [x] Settings page section (frontend component)
+  - [x] Revoke confirmation dialog
+- [ ] Document tools (v2)
+  - [ ] get_spec, search_docs
+- [ ] CLI tool (v2)
   - [ ] Connect command (OAuth flow)
   - [ ] Status command
-  - [ ] .mcp.json generation
 
 ---
 

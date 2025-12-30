@@ -713,3 +713,60 @@ For each tool:
 2. Connect with valid OAuth token
 3. Call each tool and verify response structure
 4. Test rate limiting behavior
+
+---
+
+## Implementation Status
+
+### Current State (December 2024)
+
+The MCP server is implemented for **planning/task management** with the following features:
+
+#### Completed
+
+- **HTTP Transport**: Uses `StreamableHTTPServerTransport` (not stdio)
+- **Project Scoping**: All API endpoints are project-scoped via URL path
+- **API Routes**: `GET/POST /api/projects/:projectId/epics`, tasks, progress notes
+- **MCP Tools**: `get_ready_epics`, `get_epic`, `get_current_work`, task lifecycle tools
+- **Docker Deployment**: MCP runs as separate ECS Fargate service
+- **CI/CD**: Automated build and deployment
+
+#### API Route Structure (Project-Scoped)
+
+All planning endpoints use project ID in the URL:
+
+```
+/api/projects/:projectId/epics
+/api/projects/:projectId/epics/:epicId
+/api/projects/:projectId/epics/:epicId/tasks
+/api/projects/:projectId/tasks/:taskId/start
+/api/projects/:projectId/tasks/:taskId/complete
+...
+```
+
+#### Local Development Configuration
+
+```json
+{
+	"mcpServers": {
+		"doc-platform": {
+			"url": "http://localhost:3002/mcp",
+			"transport": "http"
+		}
+	}
+}
+```
+
+Environment variables for MCP server:
+- `PORT` - HTTP server port (default: 3002)
+- `API_URL` - Backend API URL (default: http://localhost:3001)
+- `PROJECT_ID` - Required. Project ID to scope all operations
+- `API_TOKEN` - Optional. Bearer token for API authentication
+
+#### Not Yet Implemented
+
+- OAuth 2.1 + PKCE authentication (using simple token for now)
+- CLI tool (`doc-platform connect`)
+- Documentation tools (docs:read, docs:write)
+- OpenSearch integration for full-text search
+- Rate limiting in MCP server

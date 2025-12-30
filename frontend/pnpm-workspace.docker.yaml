@@ -1,9 +1,12 @@
 packages:
   - 'shared/core'
+  - 'shared/db'
   - 'shared/auth'
   - 'shared/ui'
   - 'shared/models'
   - 'shared/router'
   - 'shared/fetch'
+  - 'shared/projects'
   - 'frontend'
-  - 'planning-web'
+  - 'web'
+  - 'ssg'

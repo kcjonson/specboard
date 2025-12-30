@@ -1,0 +1,6 @@
+.container {
+	position: relative;
+	width: 280px;
+	flex-shrink: 0;
+	padding-left: var(--space-2);
+}

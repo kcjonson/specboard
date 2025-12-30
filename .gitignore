@@ -37,8 +37,15 @@ out/
 
 # AWS CDK
 cdk.out/
+cdk.context.json
 
 # Misc
 .cache/
 tmp/
 .vite/
+
+# Local dev scripts
+scripts/seed-dev.sql
+
+# Local seed configuration (contains admin credentials)
+seed.local.json

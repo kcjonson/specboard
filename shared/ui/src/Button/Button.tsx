@@ -1,5 +1,4 @@
 import type { JSX, ComponentChildren } from 'preact';
-import styles from './Button.module.css';
 
 export interface ButtonProps {
 	/** Button content */
@@ -10,7 +9,7 @@ export interface ButtonProps {
 	disabled?: boolean;
 	/** Button type */
 	type?: 'button' | 'submit' | 'reset';
-	/** Additional CSS class (use variant-*, size-sm, size-lg for modifiers) */
+	/** CSS classes (e.g., "secondary size-sm") */
 	class?: string;
 	/** Aria label for icon buttons */
 	'aria-label'?: string;
@@ -27,7 +26,7 @@ export function Button({
 	return (
 		<button
 			type={type}
-			class={`${styles.button} ${className || ''}`}
+			class={className || undefined}
 			onClick={onClick}
 			disabled={disabled}
 			aria-label={ariaLabel}

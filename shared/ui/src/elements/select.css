@@ -1,0 +1,47 @@
+/**
+ * Select element styles
+ */
+
+select {
+	font-family: inherit;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-surface);
+	color: var(--color-text);
+	cursor: pointer;
+	transition: border-color var(--transition-fast);
+	/* Default size (md) */
+	padding: var(--space-2) var(--space-3);
+	font-size: var(--text-sm);
+}
+
+select:focus {
+	outline: none;
+	border-color: var(--color-primary);
+}
+
+select:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	background: var(--color-surface-hover);
+}
+
+/* Select sizes */
+select.size-sm {
+	padding: var(--space-1) var(--space-2);
+	font-size: var(--text-xs);
+}
+
+select.size-lg {
+	padding: var(--space-3) var(--space-4);
+	font-size: var(--text-base);
+}
+
+/* Select error state */
+select.error {
+	border-color: var(--color-error);
+}
+
+select.error:focus {
+	border-color: var(--color-error);
+}

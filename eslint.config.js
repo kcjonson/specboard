@@ -18,6 +18,7 @@ export default [
 			},
 			globals: {
 				console: 'readonly',
+				crypto: 'readonly',
 				document: 'readonly',
 				window: 'readonly',
 				setTimeout: 'readonly',

@@ -5,6 +5,8 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elasticache from 'aws-cdk-lib/aws-elasticache';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -12,6 +14,10 @@ import { Construct } from 'constructs';
 export class DocPlatformStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
 		super(scope, id, props);
+
+		// Bootstrap mode: deploy with desiredCount=0 so services don't fail when images don't exist
+		// Usage: npx cdk deploy --context bootstrap=true
+		const isBootstrap = this.node.tryGetContext('bootstrap') === 'true';
 
 		// ===========================================
 		// VPC
@@ -41,16 +47,34 @@ export class DocPlatformStack extends cdk.Stack {
 		// ===========================================
 		// ECR Repositories
 		// ===========================================
+		// ECR repos use RETAIN so they survive failed deployments
+		// (services fail on first deploy if images don't exist yet)
+		// Lifecycle policy keeps last 3 images for rollback, deletes older ones
+		const ecrLifecycleRules: ecr.LifecycleRule[] = [
+			{
+				description: 'Keep last 3 images for rollback',
+				maxImageCount: 3,
+				rulePriority: 1,
+				tagStatus: ecr.TagStatus.ANY,
+			},
+		];
+
 		const apiRepository = new ecr.Repository(this, 'ApiRepository', {
 			repositoryName: 'doc-platform/api',
-			removalPolicy: cdk.RemovalPolicy.DESTROY,
-			emptyOnDelete: true,
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
+			lifecycleRules: ecrLifecycleRules,
 		});
 
 		const frontendRepository = new ecr.Repository(this, 'FrontendRepository', {
 			repositoryName: 'doc-platform/frontend',
-			removalPolicy: cdk.RemovalPolicy.DESTROY,
-			emptyOnDelete: true,
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
+			lifecycleRules: ecrLifecycleRules,
+		});
+
+		const mcpRepository = new ecr.Repository(this, 'McpRepository', {
+			repositoryName: 'doc-platform/mcp',
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
+			lifecycleRules: ecrLifecycleRules,
 		});
 
 		// ===========================================
@@ -155,6 +179,12 @@ export class DocPlatformStack extends cdk.Stack {
 			allowAllOutbound: true,
 		});
 
+		const mcpSecurityGroup = new ec2.SecurityGroup(this, 'McpSecurityGroup', {
+			vpc,
+			description: 'Security group for MCP service',
+			allowAllOutbound: true,
+		});
+
 		// Allow ALB to reach services
 		apiSecurityGroup.addIngressRule(
 			ec2.Peer.securityGroupId(alb.connections.securityGroups[0]!.securityGroupId),
@@ -167,11 +197,23 @@ export class DocPlatformStack extends cdk.Stack {
 			'Allow ALB to Frontend'
 		);
 
+		// Allow MCP to reach API (internal service-to-service)
+		apiSecurityGroup.addIngressRule(
+			mcpSecurityGroup,
+			ec2.Port.tcp(3001),
+			'Allow MCP to API'
+		);
+
 		// Allow services to reach database
 		dbSecurityGroup.addIngressRule(
 			apiSecurityGroup,
 			ec2.Port.tcp(5432),
 			'Allow API to PostgreSQL'
+		);
+		dbSecurityGroup.addIngressRule(
+			mcpSecurityGroup,
+			ec2.Port.tcp(5432),
+			'Allow MCP to PostgreSQL'
 		);
 
 		// Allow services to reach Redis
@@ -189,6 +231,12 @@ export class DocPlatformStack extends cdk.Stack {
 		// ===========================================
 		// API Service (Fargate)
 		// ===========================================
+		const apiLogGroup = new logs.LogGroup(this, 'ApiLogGroup', {
+			logGroupName: '/ecs/api',
+			retention: logs.RetentionDays.TWO_WEEKS,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+		});
+
 		const apiTaskDefinition = new ecs.FargateTaskDefinition(this, 'ApiTaskDef', {
 			memoryLimitMiB: 512,
 			cpu: 256,
@@ -196,10 +244,13 @@ export class DocPlatformStack extends cdk.Stack {
 
 		apiTaskDefinition.addContainer('api', {
 			image: ecs.ContainerImage.fromEcrRepository(apiRepository, 'latest'),
-			logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
+			logging: ecs.LogDrivers.awsLogs({
+				logGroup: apiLogGroup,
+				streamPrefix: 'api',
+			}),
 			environment: {
 				PORT: '3001',
-				NODE_ENV: 'staging',
+				NODE_ENV: 'production',
 				REDIS_URL: `redis://${redis.attrRedisEndpointAddress}:${redis.attrRedisEndpointPort}`,
 				// Database connection built from components
 				DB_HOST: database.instanceEndpoint.hostname,
@@ -211,15 +262,26 @@ export class DocPlatformStack extends cdk.Stack {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
 			},
 			portMappings: [{ containerPort: 3001 }],
+			healthCheck: {
+				command: ['CMD-SHELL', 'node -e "fetch(\'http://localhost:3001/api/health\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'],
+				interval: cdk.Duration.seconds(30),
+				timeout: cdk.Duration.seconds(5),
+				retries: 3,
+				startPeriod: cdk.Duration.seconds(60),
+			},
 		});
 
 		const apiService = new ecs.FargateService(this, 'ApiService', {
 			cluster,
 			taskDefinition: apiTaskDefinition,
-			desiredCount: 1,
+			desiredCount: isBootstrap ? 0 : 1,
 			securityGroups: [apiSecurityGroup],
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			serviceName: 'api',
+			circuitBreaker: { enable: true, rollback: true },
+			minHealthyPercent: 50,
+			maxHealthyPercent: 200,
+			healthCheckGracePeriod: cdk.Duration.seconds(60),
 		});
 
 		// ===========================================
@@ -235,21 +297,97 @@ export class DocPlatformStack extends cdk.Stack {
 			logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'frontend' }),
 			environment: {
 				PORT: '3000',
-				NODE_ENV: 'staging',
+				NODE_ENV: 'production',
 				// Frontend calls API through the ALB (same origin)
 				API_URL: `http://${alb.loadBalancerDnsName}`,
 				REDIS_URL: `redis://${redis.attrRedisEndpointAddress}:${redis.attrRedisEndpointPort}`,
+				// Database connection (required by @doc-platform/db imported via @doc-platform/auth)
+				DB_HOST: database.instanceEndpoint.hostname,
+				DB_PORT: database.instanceEndpoint.port.toString(),
+				DB_NAME: 'doc_platform',
+				DB_USER: 'postgres',
+			},
+			secrets: {
+				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
 			},
 			portMappings: [{ containerPort: 3000 }],
+			healthCheck: {
+				command: ['CMD-SHELL', 'node -e "fetch(\'http://localhost:3000/health\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'],
+				interval: cdk.Duration.seconds(30),
+				timeout: cdk.Duration.seconds(5),
+				retries: 3,
+				startPeriod: cdk.Duration.seconds(60),
+			},
 		});
 
 		const frontendService = new ecs.FargateService(this, 'FrontendService', {
 			cluster,
 			taskDefinition: frontendTaskDefinition,
-			desiredCount: 1,
+			desiredCount: isBootstrap ? 0 : 1,
 			securityGroups: [frontendSecurityGroup],
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			serviceName: 'frontend',
+			circuitBreaker: { enable: true, rollback: true },
+			minHealthyPercent: 50,
+			maxHealthyPercent: 200,
+			healthCheckGracePeriod: cdk.Duration.seconds(60),
+		});
+
+		// ===========================================
+		// MCP Service (Fargate)
+		// ===========================================
+		const mcpLogGroup = new logs.LogGroup(this, 'McpLogGroup', {
+			logGroupName: '/ecs/mcp',
+			retention: logs.RetentionDays.TWO_WEEKS,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+		});
+
+		const mcpTaskDefinition = new ecs.FargateTaskDefinition(this, 'McpTaskDef', {
+			memoryLimitMiB: 512,
+			cpu: 256,
+		});
+
+		mcpTaskDefinition.addContainer('mcp', {
+			image: ecs.ContainerImage.fromEcrRepository(mcpRepository, 'latest'),
+			logging: ecs.LogDrivers.awsLogs({
+				logGroup: mcpLogGroup,
+				streamPrefix: 'mcp',
+			}),
+			environment: {
+				PORT: '3002',
+				NODE_ENV: 'production',
+				// MCP calls API via ALB
+				API_URL: `http://${alb.loadBalancerDnsName}`,
+				// Database connection for direct DB access
+				DB_HOST: database.instanceEndpoint.hostname,
+				DB_PORT: database.instanceEndpoint.port.toString(),
+				DB_NAME: 'doc_platform',
+				DB_USER: 'postgres',
+			},
+			secrets: {
+				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
+			},
+			portMappings: [{ containerPort: 3002 }],
+			healthCheck: {
+				command: ['CMD-SHELL', 'node -e "fetch(\'http://localhost:3002/health\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'],
+				interval: cdk.Duration.seconds(30),
+				timeout: cdk.Duration.seconds(5),
+				retries: 3,
+				startPeriod: cdk.Duration.seconds(60),
+			},
+		});
+
+		new ecs.FargateService(this, 'McpService', {
+			cluster,
+			taskDefinition: mcpTaskDefinition,
+			desiredCount: isBootstrap ? 0 : 1,
+			securityGroups: [mcpSecurityGroup],
+			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+			serviceName: 'mcp',
+			circuitBreaker: { enable: true, rollback: true },
+			minHealthyPercent: 50,
+			maxHealthyPercent: 200,
+			healthCheckGracePeriod: cdk.Duration.seconds(60),
 		});
 
 		// ===========================================
@@ -283,19 +421,35 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 		frontendService.attachToApplicationTargetGroup(frontendTargetGroup);
 
-		// Path-based routing: /api/* and /auth/* -> API, everything else -> Frontend
+		// Path-based routing: /api/* -> API, everything else -> Frontend
 		listener.addTargetGroups('ApiRoutes', {
 			targetGroups: [apiTargetGroup],
 			priority: 10,
 			conditions: [
-				elbv2.ListenerCondition.pathPatterns(['/api/*', '/auth/*']),
+				elbv2.ListenerCondition.pathPatterns(['/api/*']),
+			],
+		});
+
+		// OAuth endpoints -> API (not /oauth/consent which is SPA)
+		listener.addTargetGroups('OAuthRoutes', {
+			targetGroups: [apiTargetGroup],
+			priority: 20,
+			conditions: [
+				elbv2.ListenerCondition.pathPatterns(['/oauth/authorize', '/oauth/token', '/oauth/revoke']),
+			],
+		});
+
+		// .well-known endpoints -> API
+		listener.addTargetGroups('WellKnownRoutes', {
+			targetGroups: [apiTargetGroup],
+			priority: 30,
+			conditions: [
+				elbv2.ListenerCondition.pathPatterns(['/.well-known/*']),
 			],
 		});
 
 		listener.addTargetGroups('DefaultRoute', {
 			targetGroups: [frontendTargetGroup],
-			priority: 100,
-			conditions: [elbv2.ListenerCondition.pathPatterns(['/*'])],
 		});
 
 		// ===========================================
@@ -381,8 +535,132 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 
 		// ===========================================
+		// GitHub Actions OIDC & IAM Role
+		// ===========================================
+		const githubOidcProvider = new iam.OpenIdConnectProvider(this, 'GitHubOidcProvider', {
+			url: 'https://token.actions.githubusercontent.com',
+			clientIds: ['sts.amazonaws.com'],
+			thumbprints: ['6938fd4d98bab03faadb97b34396831e3780aea1'],
+		});
+
+		const deployRole = new iam.Role(this, 'GitHubActionsDeployRole', {
+			roleName: 'doc-platform-github-actions-deploy',
+			assumedBy: new iam.FederatedPrincipal(
+				githubOidcProvider.openIdConnectProviderArn,
+				{
+					StringEquals: {
+						'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+						'token.actions.githubusercontent.com:sub': 'repo:kcjonson/doc-platform:ref:refs/heads/main',
+					},
+				},
+				'sts:AssumeRoleWithWebIdentity'
+			),
+			description: 'Role for GitHub Actions to deploy to ECS',
+		});
+
+		// ECR permissions - GetAuthorizationToken requires * resource
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['ecr:GetAuthorizationToken'],
+			resources: ['*'],
+		}));
+
+		// ECR permissions - push images to specific repositories
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'ecr:BatchCheckLayerAvailability',
+				'ecr:GetDownloadUrlForLayer',
+				'ecr:BatchGetImage',
+				'ecr:PutImage',
+				'ecr:InitiateLayerUpload',
+				'ecr:UploadLayerPart',
+				'ecr:CompleteLayerUpload',
+			],
+			resources: [
+				apiRepository.repositoryArn,
+				frontendRepository.repositoryArn,
+				mcpRepository.repositoryArn,
+			],
+		}));
+
+		// ECS permissions - consolidated (DescribeServices/Tasks need * for waiters)
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'ecs:DescribeServices',
+				'ecs:DescribeTasks',
+				'ecs:DescribeTaskDefinition',
+			],
+			resources: ['*'],
+		}));
+
+		// ECS permissions - scoped to cluster for mutations
+		const serviceArnPattern = `arn:aws:ecs:${this.region}:${this.account}:service/${cluster.clusterName}/*`;
+		const taskArnPattern = `arn:aws:ecs:${this.region}:${this.account}:task/${cluster.clusterName}/*`;
+		// Use wildcard for task definition revisions - specific ARN breaks when CDK updates the revision
+		const taskDefArnPattern = `arn:aws:ecs:${this.region}:${this.account}:task-definition/${apiTaskDefinition.family}:*`;
+
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['ecs:UpdateService'],
+			resources: [serviceArnPattern],
+		}));
+
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['ecs:RunTask'],
+			resources: [taskDefArnPattern],
+		}));
+
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['ecs:StopTask'],
+			resources: [taskArnPattern],
+		}));
+
+		// Pass role to ECS tasks
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['iam:PassRole'],
+			resources: [
+				apiTaskDefinition.taskRole.roleArn,
+				apiTaskDefinition.executionRole!.roleArn,
+			],
+		}));
+
+		// CloudFormation - read stack outputs
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['cloudformation:DescribeStacks'],
+			resources: [this.stackId],
+		}));
+
+		// CDK deployment - assume CDK bootstrap roles (created by `cdk bootstrap`)
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: ['sts:AssumeRole'],
+			resources: [`arn:aws:iam::${this.account}:role/cdk-hnb659fds-*-${this.account}-${this.region}`],
+		}));
+
+		// CloudWatch Logs - scoped to API log group for viewing migration logs
+		deployRole.addToPolicy(new iam.PolicyStatement({
+			effect: iam.Effect.ALLOW,
+			actions: [
+				'logs:GetLogEvents',
+				'logs:DescribeLogStreams',
+			],
+			resources: [apiLogGroup.logGroupArn, `${apiLogGroup.logGroupArn}:*`],
+		}));
+
+		// ===========================================
 		// Outputs
 		// ===========================================
+		new cdk.CfnOutput(this, 'GitHubActionsRoleArn', {
+			value: deployRole.roleArn,
+			description: 'ARN of IAM role for GitHub Actions deployment',
+		});
+
 		new cdk.CfnOutput(this, 'AlbDnsName', {
 			value: alb.loadBalancerDnsName,
 			description: 'Application Load Balancer DNS Name',
@@ -398,6 +676,11 @@ export class DocPlatformStack extends cdk.Stack {
 			description: 'ECR Repository URI for Frontend',
 		});
 
+		new cdk.CfnOutput(this, 'McpRepositoryUri', {
+			value: mcpRepository.repositoryUri,
+			description: 'ECR Repository URI for MCP',
+		});
+
 		new cdk.CfnOutput(this, 'ClusterName', {
 			value: cluster.clusterName,
 			description: 'ECS Cluster Name',
@@ -411,6 +694,26 @@ export class DocPlatformStack extends cdk.Stack {
 		new cdk.CfnOutput(this, 'RedisEndpoint', {
 			value: redis.attrRedisEndpointAddress,
 			description: 'ElastiCache Redis Endpoint',
+		});
+
+		new cdk.CfnOutput(this, 'ApiTaskDefinitionArn', {
+			value: apiTaskDefinition.taskDefinitionArn,
+			description: 'API Task Definition ARN (for running migrations)',
+		});
+
+		new cdk.CfnOutput(this, 'PrivateSubnetIds', {
+			value: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }).subnetIds.join(','),
+			description: 'Private subnet IDs for ECS tasks',
+		});
+
+		new cdk.CfnOutput(this, 'ApiSecurityGroupId', {
+			value: apiSecurityGroup.securityGroupId,
+			description: 'API security group ID',
+		});
+
+		new cdk.CfnOutput(this, 'ApiLogGroupName', {
+			value: apiLogGroup.logGroupName,
+			description: 'API CloudWatch Log Group name',
 		});
 	}
 }

@@ -42,7 +42,7 @@ Both share a common infrastructure and are developed in a single monorepo.
 | Aurora Serverless v2 | PostgreSQL database |
 | ElastiCache Redis | Session storage |
 | Amazon Bedrock | AI features (Claude) |
-| Cognito | User identity management |
+| SES | Email sending (verification, password reset) |
 | S3 | File and asset storage |
 | CloudFront | CDN for static assets |
 | ALB | Load balancer with path routing |
@@ -63,21 +63,22 @@ Both share a common infrastructure and are developed in a single monorepo.
 
 ```
 doc-platform/
-├── shared/                    # Shared libraries
-│   ├── core/                  # Shared types, utilities
-│   ├── ui/                    # Shared Preact components
-│   ├── db/                    # Database connection, migrations
-│   ├── auth/                  # Session management, auth middleware
-│   ├── platform/              # Platform abstraction interfaces
-│   ├── platform-electron/     # Electron implementations
-│   ├── platform-web/          # Web implementations
-│   ├── models/                # State management (Model/SyncModel)
-│   ├── router/                # Custom client-side router
-│   └── fetch/                 # Custom HTTP client wrapper
-├── editor-web/                # Documentation editor (Preact)
-├── editor-desktop/            # Documentation editor (Electron)
-├── planning-web/              # Planning/task management (Preact)
-├── planning-desktop/          # Planning/task management (Electron)
+├── shared/
+│   ├── pages/                 # Pages feature source (no build step)
+│   ├── planning/              # Planning feature source (no build step)
+│   ├── core/                  # Shared types, utilities (package)
+│   ├── ui/                    # Shared Preact components (package, open-sourceable)
+│   ├── db/                    # Database connection, migrations (package)
+│   ├── auth/                  # Session management, auth middleware (package)
+│   ├── platform/              # Platform abstraction interfaces (package)
+│   ├── platform-electron/     # Electron implementations (package)
+│   ├── platform-web/          # Web implementations (package)
+│   ├── models/                # State management (package, open-sourceable)
+│   ├── router/                # Custom client-side router (package)
+│   └── fetch/                 # Custom HTTP client wrapper (package)
+├── web/                       # Unified web app (/pages + /planning routes)
+├── docs-desktop/              # Pages Electron app
+├── planning-desktop/          # Planning Electron app
 ├── api/                       # Backend API (Hono)
 ├── frontend/                  # Frontend server (Hono, serves SPA)
 ├── mcp/                       # MCP server
@@ -92,6 +93,24 @@ doc-platform/
 ├── pnpm-workspace.yaml
 └── package.json
 ```
+
+### Package Types
+
+**Feature source (no build step):**
+- `shared/pages/` - Pages editor components, compiled by apps
+- `shared/planning/` - Planning board components, compiled by apps
+- Files colocated: `Component.tsx`, `Component.module.css`, `Component.test.ts`
+- Imported via `@shared/pages` and `@shared/planning` aliases
+
+**Packages (built, publishable):**
+- `shared/ui/` - UI component library (will be open-sourced)
+- `shared/models/` - State management core (will be open-sourced)
+- Other shared/* packages are internal
+
+**Apps:**
+- `web/` - Single web app serving both `/pages` and `/planning` routes
+- `docs-desktop/` - Standalone Electron app for Pages
+- `planning-desktop/` - Standalone Electron app for Planning
 
 ---
 
@@ -270,12 +289,12 @@ The application runs as two separate containers that share authentication via Re
 ### Frontend Container
 - Hono server serving built SPA static files
 - Auth middleware validates session via Redis before serving
-- No Cognito/database access needed
+- No database access needed
 
 ### API Container
 - Hono server handling API routes and authentication
 - Creates/validates sessions in Redis
-- Communicates with Cognito for user identity
+- Handles user authentication (PostgreSQL + bcrypt)
 - Connects to PostgreSQL for data
 
 ### Local Development
@@ -325,11 +344,11 @@ Amazon Bedrock with Claude:
 - Sidebar chat assistance
 
 ### Authentication
-Session-based auth with Cognito:
-- Cognito manages user identity (email/password)
-- API creates Redis session on login (stores Cognito tokens)
+Session-based auth with PostgreSQL + bcrypt:
+- Users stored in PostgreSQL with bcrypt-hashed passwords
+- API creates Redis session on login
 - Both containers validate via Redis session lookup
-- GitHub OAuth for repository access (separate from identity)
+- GitHub OAuth for repository access (and optional login)
 
 ### Infrastructure as Code
 AWS CDK (TypeScript):
@@ -356,7 +375,7 @@ The following topics require deeper design documents:
 | Spec | File | Description |
 |------|------|-------------|
 | Markdown Editor | `docs/specs/markdown-editor.md` | Editor architecture, dual-mode implementation |
-| Authentication | `docs/specs/authentication.md` | Cognito + GitHub OAuth flow, MCP PKCE |
+| Authentication | `docs/specs/authentication.md` | PostgreSQL + bcrypt, GitHub OAuth, MCP PKCE |
 | MCP Integration | `docs/specs/mcp-integration.md` | MCP server design for Claude Code |
 
 ---

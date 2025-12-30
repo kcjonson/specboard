@@ -10,13 +10,15 @@ This specification defines the REST API endpoints and database schema for doc-pl
 
 ```
 ┌─────────────┐       ┌─────────────────┐       ┌─────────────┐
-│   users     │       │  user_emails    │       │  github_    │
+│   users     │       │ user_passwords  │       │  github_    │
 │             │       │                 │       │  connections│
 │  id (PK)    │◄──────│  user_id (FK)   │       │             │
-│  cognito_sub│       │  email          │       │  user_id(FK)│──►│
-│  display_   │       │  is_primary     │       │  github_    │
-│   name      │       │  is_verified    │       │   user_id   │
-└─────────────┘       └─────────────────┘       └─────────────┘
+│  username   │       │  password_hash  │       │  user_id(FK)│──►│
+│  first_name │       └─────────────────┘       │  github_    │
+│  last_name  │                                 │   user_id   │
+│  email      │                                 └─────────────┘
+│  phone      │
+└─────────────┘
        │
        │
        ▼
@@ -47,27 +49,29 @@ This specification defines the REST API endpoints and database schema for doc-pl
 
 ```sql
 -- Users (core identity)
+-- username is immutable after creation
+-- email can be changed but must be unique across all users
 CREATE TABLE users (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	cognito_sub VARCHAR(255) UNIQUE NOT NULL,
-	display_name VARCHAR(255) NOT NULL,
+	username VARCHAR(255) NOT NULL UNIQUE,
+	first_name VARCHAR(255) NOT NULL,
+	last_name VARCHAR(255) NOT NULL,
+	email VARCHAR(255) NOT NULL UNIQUE,
+	email_verified BOOLEAN DEFAULT FALSE,
+	email_verified_at TIMESTAMPTZ,
+	phone_number VARCHAR(50),
 	avatar_url TEXT,
 	created_at TIMESTAMPTZ DEFAULT NOW(),
 	updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- User emails (multiple per user)
-CREATE TABLE user_emails (
-	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-	email VARCHAR(255) NOT NULL UNIQUE,
-	is_primary BOOLEAN DEFAULT FALSE,
-	is_verified BOOLEAN DEFAULT FALSE,
-	verified_at TIMESTAMPTZ,
-	created_at TIMESTAMPTZ DEFAULT NOW()
+-- User passwords (for username/password auth)
+CREATE TABLE user_passwords (
+	user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	password_hash VARCHAR(255) NOT NULL,
+	created_at TIMESTAMPTZ DEFAULT NOW(),
+	updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-
-CREATE UNIQUE INDEX idx_user_primary_email ON user_emails(user_id) WHERE is_primary = TRUE;
 
 -- GitHub connections
 CREATE TABLE github_connections (

@@ -1,12 +1,18 @@
 /**
  * @doc-platform/ui
- * Shared Preact UI components.
+ * Shared Preact UI components with element-based styling.
  *
- * Styling is done via CSS class modifiers:
- * - Size: class="size-sm" or class="size-lg"
- * - Variants: class="variant-secondary", class="variant-danger", etc.
- * - States: class="error"
- * - Padding: class="padding-sm", class="padding-lg", class="padding-none"
+ * Import CSS files:
+ * - `@doc-platform/ui/tokens.css` - Design tokens (colors, spacing, etc.)
+ * - `@doc-platform/ui/elements.css` - Base element styles (button, input, textarea)
+ *
+ * Components pass through CSS classes for styling:
+ * - <Button class="secondary size-sm">
+ * - <Text class="size-lg error">
+ * - <Textarea class="error">
+ *
+ * Native HTML elements are styled automatically by elements.css,
+ * enabling SSR pages to use the same styles without JavaScript.
  */
 
 // Button
@@ -44,3 +50,11 @@ export type { StatusDotProps, StatusType } from './StatusDot/StatusDot';
 // UserMenu
 export { UserMenu } from './UserMenu/UserMenu';
 export type { UserMenuProps } from './UserMenu/UserMenu';
+
+// AppHeader
+export { AppHeader } from './AppHeader/AppHeader';
+export type { AppHeaderProps, NavTab } from './AppHeader/AppHeader';
+
+// NotFound
+export { NotFound } from './NotFound/NotFound';
+export { notFoundHtml } from './not-found';

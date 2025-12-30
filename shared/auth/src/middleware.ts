@@ -16,7 +16,7 @@ export interface AuthVariables {
 /**
  * Default handler for unauthenticated requests
  */
-function defaultOnUnauthenticated(): Response {
+function defaultOnUnauthenticated(_requestUrl: URL): Response {
 	return new Response(JSON.stringify({ error: 'Unauthorized' }), {
 		status: 401,
 		headers: { 'Content-Type': 'application/json' },
@@ -67,7 +67,8 @@ export function authMiddleware(
 	} = options;
 
 	return async (c: Context<{ Variables: AuthVariables }>, next) => {
-		const path = new URL(c.req.url).pathname;
+		const requestUrl = new URL(c.req.url);
+		const path = requestUrl.pathname;
 
 		// Skip auth for excluded paths
 		if (isExcludedPath(path, excludePaths)) {
@@ -78,21 +79,19 @@ export function authMiddleware(
 		const sessionId = getCookie(c, SESSION_COOKIE_NAME);
 
 		if (!sessionId) {
-			return onUnauthenticated(path);
+			return onUnauthenticated(requestUrl);
 		}
 
 		// Validate session in Redis
 		const session = await getSession(redis, sessionId);
 
 		if (!session) {
-			return onUnauthenticated(path);
+			return onUnauthenticated(requestUrl);
 		}
 
-		// Attach user to context
+		// Attach user to context (id only, fetch details from DB if needed)
 		c.set('user', {
 			id: session.userId,
-			email: session.email,
-			displayName: session.displayName,
 		});
 		c.set('sessionId', sessionId);
 

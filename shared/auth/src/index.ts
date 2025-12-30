@@ -1,6 +1,7 @@
 // Session management
 export {
 	generateSessionId,
+	generateCsrfToken,
 	createSession,
 	getSession,
 	updateSession,
@@ -8,13 +9,47 @@ export {
 	sessionExists,
 } from './session.js';
 
-// Middleware
+// Auth middleware
 export {
 	authMiddleware,
 	getUser,
 	getSessionId,
 	type AuthVariables,
 } from './middleware.js';
+
+// CSRF middleware
+export {
+	csrfMiddleware,
+	CSRF_HEADER_NAME,
+	type CsrfMiddlewareOptions,
+} from './csrf.js';
+
+// Rate limiting middleware
+export {
+	rateLimitMiddleware,
+	RATE_LIMIT_CONFIGS,
+	type RateLimitConfig,
+	type RateLimitRule,
+	type RateLimitMiddlewareOptions,
+} from './rate-limit.js';
+
+// Password utilities
+export {
+	validatePassword,
+	hashPassword,
+	verifyPassword,
+	type PasswordValidationError,
+	type PasswordValidationResult,
+} from './password.js';
+
+// MCP OAuth middleware
+export {
+	mcpAuthMiddleware,
+	requireScope,
+	getMcpToken,
+	type McpTokenPayload,
+	type McpAuthVariables,
+} from './mcp.js';
 
 // Types
 export {

@@ -1,0 +1,49 @@
+name: Run ECS Task
+
+on:
+  workflow_call:
+    inputs:
+      task_name:
+        description: 'Name for logging'
+        required: true
+        type: string
+      command:
+        description: 'Command to run (JSON array)'
+        required: true
+        type: string
+      include_admin_env:
+        description: 'Include admin environment variables from secrets'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  AWS_REGION: us-west-2
+
+jobs:
+  run:
+    name: ${{ inputs.task_name }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run ${{ inputs.task_name }}
+        env:
+          ADMIN_USERNAME: ${{ inputs.include_admin_env && secrets.ADMIN_USERNAME || '' }}
+          ADMIN_PASSWORD: ${{ inputs.include_admin_env && secrets.ADMIN_PASSWORD || '' }}
+          ADMIN_EMAIL: ${{ inputs.include_admin_env && secrets.ADMIN_EMAIL || '' }}
+          ADMIN_FIRST_NAME: ${{ inputs.include_admin_env && secrets.ADMIN_FIRST_NAME || '' }}
+          ADMIN_LAST_NAME: ${{ inputs.include_admin_env && secrets.ADMIN_LAST_NAME || '' }}
+        run: |
+          source .github/scripts/get-stack-outputs.sh
+          .github/scripts/run-ecs-task.sh "${{ inputs.task_name }}" '${{ inputs.command }}' "${{ inputs.include_admin_env }}"
