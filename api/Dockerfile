@@ -58,8 +58,9 @@ COPY --from=builder /app/shared/db/dist ./shared/db/dist
 COPY --from=builder /app/shared/auth/dist ./shared/auth/dist
 COPY --from=builder /app/api/dist ./api/dist
 
-# Copy migrations
+# Copy migrations and seed script
 COPY --from=builder /app/shared/db/migrations ./shared/db/migrations
+COPY --from=builder /app/shared/db/seed.mjs ./shared/db/seed.mjs
 
 EXPOSE 3001
 

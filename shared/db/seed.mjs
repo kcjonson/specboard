@@ -1,8 +1,6 @@
+#!/usr/bin/env node
 /**
- * Admin account seeding script
- *
- * Standalone script - no package imports to avoid circular dependencies.
- * Run with: pnpm --filter @doc-platform/db seed
+ * Admin account seeding script (plain JS - no compilation needed)
  */
 
 import fs from 'node:fs';
@@ -15,33 +13,15 @@ const { Pool } = pg;
 const BCRYPT_COST = 12;
 const MIN_PASSWORD_LENGTH = 12;
 
-interface AdminConfig {
-	username: string;
-	password: string;
-	email: string;
-	firstName: string;
-	lastName: string;
-}
-
-interface LocalConfig {
-	admin: {
-		username: string;
-		password: string;
-		email: string;
-		firstName?: string;
-		lastName?: string;
-	};
-}
-
-function isValidEmail(email: string): boolean {
+function isValidEmail(email) {
 	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function isValidUsername(username: string): boolean {
+function isValidUsername(username) {
 	return /^[a-zA-Z0-9_]{3,30}$/.test(username);
 }
 
-function isValidPassword(password: string): boolean {
+function isValidPassword(password) {
 	return (
 		password.length >= MIN_PASSWORD_LENGTH &&
 		/[A-Z]/.test(password) &&
@@ -51,12 +31,12 @@ function isValidPassword(password: string): boolean {
 	);
 }
 
-function isValidName(name: string): boolean {
+function isValidName(name) {
 	const trimmed = name.trim();
 	return trimmed.length > 0 && trimmed.length <= 255;
 }
 
-function getDatabaseUrl(): string {
+function getDatabaseUrl() {
 	if (process.env.DATABASE_URL) {
 		return process.env.DATABASE_URL;
 	}
@@ -75,7 +55,7 @@ function getDatabaseUrl(): string {
 	process.exit(1);
 }
 
-function getAdminConfig(): AdminConfig | null {
+function getAdminConfig() {
 	if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD && process.env.ADMIN_EMAIL) {
 		console.log('Using admin config from environment variables');
 		return {
@@ -88,14 +68,14 @@ function getAdminConfig(): AdminConfig | null {
 	}
 
 	const configPaths = [
-		path.join(import.meta.dirname, '../../../seed.local.json'),
+		path.join(import.meta.dirname, '../../seed.local.json'),
 		path.join(process.cwd(), 'seed.local.json'),
 	];
 
 	for (const configPath of configPaths) {
 		if (fs.existsSync(configPath)) {
 			try {
-				const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as LocalConfig;
+				const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 				if (config.admin?.username && config.admin?.password && config.admin?.email) {
 					console.log(`Using admin config from ${configPath}`);
 					return {
@@ -115,7 +95,7 @@ function getAdminConfig(): AdminConfig | null {
 	return null;
 }
 
-async function seed(): Promise<void> {
+async function seed() {
 	const adminConfig = getAdminConfig();
 
 	if (!adminConfig) {
@@ -157,7 +137,7 @@ async function seed(): Promise<void> {
 			return;
 		}
 
-		const existing = await pool.query<{ id: string; username: string; email: string }>(
+		const existing = await pool.query(
 			'SELECT id, username, email FROM users WHERE username = $1 OR email = $2',
 			[adminConfig.username.toLowerCase(), adminConfig.email.toLowerCase()]
 		);
@@ -179,11 +159,9 @@ async function seed(): Promise<void> {
 
 		const client = await pool.connect();
 		try {
-			// Use SERIALIZABLE isolation to prevent race conditions with concurrent seed runs
 			await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
 
-			// Re-check for existing user within transaction to ensure atomicity
-			const txnCheck = await client.query<{ id: string }>(
+			const txnCheck = await client.query(
 				'SELECT id FROM users WHERE username = $1 OR email = $2',
 				[adminConfig.username.toLowerCase(), adminConfig.email.toLowerCase()]
 			);
@@ -194,7 +172,7 @@ async function seed(): Promise<void> {
 				return;
 			}
 
-			const userResult = await client.query<{ id: string }>(
+			const userResult = await client.query(
 				`INSERT INTO users (username, first_name, last_name, email, email_verified)
 				 VALUES ($1, $2, $3, $4, true) RETURNING id`,
 				[adminConfig.username.toLowerCase(), adminConfig.firstName.trim(), adminConfig.lastName.trim(), adminConfig.email.toLowerCase()]
@@ -223,7 +201,7 @@ async function seed(): Promise<void> {
 	}
 }
 
-seed().catch((err: unknown) => {
+seed().catch((err) => {
 	console.error('Seed failed:', err instanceof Error ? err.message : 'Unknown error');
 	process.exit(1);
 });
