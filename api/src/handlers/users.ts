@@ -80,6 +80,33 @@ function isValidRole(role: string): boolean {
 	return VALID_ROLES.has(role);
 }
 
+// Fields that regular users can update on themselves (all others require admin)
+const USER_EDITABLE_FIELDS = new Set(['first_name', 'last_name']);
+
+/**
+ * Filter an update object to only include fields the user can modify
+ */
+function filterUpdates(
+	updates: UpdateUserRequest,
+	canEditAll: boolean
+): UpdateUserRequest {
+	if (canEditAll) return updates;
+
+	const filtered: UpdateUserRequest = {};
+	if (updates.first_name !== undefined) filtered.first_name = updates.first_name;
+	if (updates.last_name !== undefined) filtered.last_name = updates.last_name;
+	return filtered;
+}
+
+/**
+ * Check if request includes fields that require admin access
+ */
+function hasAdminOnlyFields(updates: UpdateUserRequest): boolean {
+	return Object.keys(updates).some(
+		key => updates[key as keyof UpdateUserRequest] !== undefined && !USER_EDITABLE_FIELDS.has(key)
+	);
+}
+
 /**
  * List all users (admin only)
  * GET /api/users
@@ -250,7 +277,15 @@ export async function handleUpdateUser(
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	const { username, email, first_name, last_name, roles, is_active } = body;
+	// Filter to only fields user can update
+	const permitted = filterUpdates(body, userIsAdmin);
+
+	// Reject if non-admin tried to update admin-only fields
+	if (!userIsAdmin && hasAdminOnlyFields(body)) {
+		return context.json({ error: 'You can only update your first name and last name' }, 403);
+	}
+
+	const { username, email, first_name, last_name, roles, is_active } = permitted;
 
 	// Validate fields
 	if (username !== undefined && !isValidUsername(username)) {
@@ -275,87 +310,61 @@ export async function handleUpdateUser(
 		}
 	}
 
-	// Build update query - admins can update all fields, users only limited fields
+	// Build update query
 	const updates: string[] = [];
 	const params: unknown[] = [];
 	let paramIndex = 1;
 
-	// Fields any user can update on themselves
 	if (first_name !== undefined) {
-		updates.push(`first_name = $${paramIndex}`);
+		updates.push(`first_name = $${paramIndex++}`);
 		params.push(first_name.trim());
-		paramIndex++;
 	}
 
 	if (last_name !== undefined) {
-		updates.push(`last_name = $${paramIndex}`);
+		updates.push(`last_name = $${paramIndex++}`);
 		params.push(last_name.trim());
-		paramIndex++;
 	}
 
-	// Admin-only fields
-	if (userIsAdmin) {
-		if (username !== undefined) {
-			updates.push(`username = LOWER($${paramIndex})`);
-			params.push(username);
-			paramIndex++;
-		}
+	if (username !== undefined) {
+		updates.push(`username = LOWER($${paramIndex++})`);
+		params.push(username);
+	}
 
-		if (email !== undefined) {
-			updates.push(`email = LOWER($${paramIndex})`);
-			params.push(email);
-			paramIndex++;
-		}
+	if (email !== undefined) {
+		updates.push(`email = LOWER($${paramIndex++})`);
+		params.push(email);
+	}
 
-		if (roles !== undefined) {
-			updates.push(`roles = $${paramIndex}`);
-			params.push(roles);
-			paramIndex++;
-		}
+	if (roles !== undefined) {
+		updates.push(`roles = $${paramIndex++}`);
+		params.push(roles);
+	}
 
-		if (is_active !== undefined) {
-			updates.push(`is_active = $${paramIndex}`);
-			params.push(is_active);
-			paramIndex++;
-
-			// Track deactivation timestamp
-			if (is_active) {
-				updates.push(`deactivated_at = NULL`);
-			} else {
-				updates.push(`deactivated_at = NOW()`);
-			}
-		}
-	} else {
-		// Non-admin trying to update admin-only fields
-		if (username !== undefined || email !== undefined || roles !== undefined || is_active !== undefined) {
-			return context.json({ error: 'You can only update your first name and last name' }, 403);
-		}
+	if (is_active !== undefined) {
+		updates.push(`is_active = $${paramIndex++}`);
+		params.push(is_active);
+		updates.push(is_active ? `deactivated_at = NULL` : `deactivated_at = NOW()`);
 	}
 
 	if (updates.length === 0) {
 		return context.json({ error: 'No fields to update' }, 400);
 	}
 
-	params.push(id);
-
 	try {
-		// Check for username/email conflicts (admin updates only)
-		if (userIsAdmin && (username || email)) {
+		// Check for username/email conflicts
+		if (username || email) {
 			const conflictConditions: string[] = [];
 			const conflictParams: unknown[] = [];
 			let conflictIndex = 1;
 
 			if (username) {
-				conflictConditions.push(`LOWER(username) = LOWER($${conflictIndex})`);
+				conflictConditions.push(`LOWER(username) = LOWER($${conflictIndex++})`);
 				conflictParams.push(username);
-				conflictIndex++;
 			}
 			if (email) {
-				conflictConditions.push(`LOWER(email) = LOWER($${conflictIndex})`);
+				conflictConditions.push(`LOWER(email) = LOWER($${conflictIndex++})`);
 				conflictParams.push(email);
-				conflictIndex++;
 			}
-
 			conflictParams.push(id);
 
 			const conflictCheck = await query<{ id: string }>(
@@ -368,6 +377,7 @@ export async function handleUpdateUser(
 			}
 		}
 
+		params.push(id);
 		const result = await query<User>(
 			`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
 			params
