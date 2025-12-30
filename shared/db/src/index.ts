@@ -29,11 +29,13 @@ function getDatabaseUrl(): string {
 const connectionString = getDatabaseUrl();
 
 // Connection pool - reused across requests
+// SSL is required for AWS Aurora PostgreSQL (pg_hba.conf rejects unencrypted connections)
 const pool = new Pool({
 	connectionString,
 	max: 20,
 	idleTimeoutMillis: 30000,
 	connectionTimeoutMillis: 2000,
+	ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
 });
 
 // Log connection errors (don't crash the server)
