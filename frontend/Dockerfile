@@ -68,6 +68,9 @@ FROM node:20-alpine AS runner
 
 RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
 
+# Download AWS RDS CA bundle for SSL certificate verification
+RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+
 WORKDIR /app
 
 # Copy workspace config
