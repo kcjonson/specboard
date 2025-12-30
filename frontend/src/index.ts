@@ -9,7 +9,7 @@ import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Redis } from 'ioredis';
 import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
-import { pages, type CachedPage } from './static-pages.js';
+import { pages, spaIndex, type CachedPage } from './static-pages.js';
 
 const app = new Hono<{ Variables: AuthVariables }>();
 
@@ -43,6 +43,29 @@ app.get('/login', (c) => servePage(c, pages.login));
 
 // Signup page (no auth required)
 app.get('/signup', (c) => servePage(c, pages.signup));
+
+// Marketing home page - always accessible (even when authenticated)
+app.get('/home', (c) => servePage(c, pages.home));
+
+// Root - marketing for unauthenticated, SPA for authenticated
+app.get('/', async (c) => {
+	// Check for session cookie
+	const cookieHeader = c.req.header('Cookie') || '';
+	const sessionMatch = cookieHeader.match(/session=([^;]+)/);
+	const sessionId = sessionMatch?.[1];
+
+	if (sessionId) {
+		// Verify session exists in Redis
+		const sessionData = await redis.get(`session:${sessionId}`);
+		if (sessionData) {
+			// Authenticated - serve cached SPA
+			return servePage(c, spaIndex);
+		}
+	}
+
+	// Not authenticated - serve marketing home
+	return servePage(c, pages.home);
+});
 
 // API URL for proxying
 const apiUrl = process.env.API_URL || 'http://localhost:3001';
@@ -300,7 +323,7 @@ app.get('/api/auth/me', async (c) => {
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/signup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
+		excludePaths: ['/health', '/login', '/signup', '/home', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
 		onUnauthenticated: (requestUrl) => {
 			// Redirect to login with return URL preserved
 			const loginUrl = new URL('/login', requestUrl.origin);
@@ -329,7 +352,7 @@ app.use(
 );
 
 // SPA fallback - serve index.html for all non-file routes
-app.get('*', async (c) => {
+app.get('*', (c) => {
 	const path = new URL(c.req.url).pathname;
 
 	// If it looks like a file request, return 404
@@ -337,14 +360,8 @@ app.get('*', async (c) => {
 		return c.notFound();
 	}
 
-	// Serve index.html for SPA routing
-	const fs = await import('node:fs/promises');
-	try {
-		const html = await fs.readFile('./static/index.html', 'utf-8');
-		return c.html(html);
-	} catch {
-		return c.notFound();
-	}
+	// Serve cached SPA for all other routes
+	return servePage(c, spaIndex);
 });
 
 // Custom 404 handler - friendly page for all not found requests

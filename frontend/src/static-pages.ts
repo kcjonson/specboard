@@ -49,3 +49,8 @@ export const pages = {
 	home: loadPage('./static/ssg/home.html'),
 	notFound: loadPage('./static/ssg/not-found.html'),
 };
+
+/**
+ * SPA index.html cached at startup
+ */
+export const spaIndex = loadPage('./static/index.html');

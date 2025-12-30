@@ -11,8 +11,8 @@ import { UserSettings } from './routes/settings/UserSettings';
 import { UIDemo } from './routes/ui-demo/UIDemo';
 import { OAuthConsent } from './routes/oauth/OAuthConsent';
 
-// Global styles - shared UI styles first, then app-specific
-import '@doc-platform/ui/shared.css';
+// Global styles - common CSS shared with SSG pages, then app-specific
+import '../../ssg/src/styles/common.css';
 import './styles/tokens.css';
 import './styles/global.css';
 
