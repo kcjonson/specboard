@@ -24,6 +24,7 @@ export interface AppHeaderProps {
 	user?: {
 		displayName: string;
 		email?: string;
+		isAdmin?: boolean;
 	};
 	/** Additional CSS class */
 	class?: string;
@@ -63,6 +64,7 @@ export function AppHeader({
 					<UserMenu
 						displayName={user.displayName}
 						email={user.email}
+						isAdmin={user.isAdmin}
 					/>
 				)}
 			</div>

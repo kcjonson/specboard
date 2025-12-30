@@ -49,7 +49,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				projectName={projectName}
 				navTabs={navTabs}
 				activeTab="pages"
-				user={user ? { displayName: user.displayName, email: user.email } : undefined}
+				user={user ? { displayName: user.displayName, email: user.email, isAdmin: user.roles?.includes('admin') } : undefined}
 			/>
 			<div class={styles.body}>
 				<FileBrowser class={styles.sidebar} />

@@ -7,6 +7,8 @@ export interface UserMenuProps {
 	displayName: string;
 	/** User's email (optional, shown in menu header) */
 	email?: string;
+	/** Whether the user is an admin (shows Admin link if true) */
+	isAdmin?: boolean;
 	/** Additional CSS class */
 	class?: string;
 }
@@ -25,14 +27,17 @@ function getInitials(name: string): string {
 	return trimmed[0]?.toUpperCase() || '?';
 }
 
-const MENU_ITEMS = ['projects', 'settings', 'logout'] as const;
-type MenuItemId = typeof MENU_ITEMS[number];
+const BASE_MENU_ITEMS = ['projects', 'settings', 'logout'] as const;
+const ADMIN_MENU_ITEMS = ['projects', 'admin', 'settings', 'logout'] as const;
+type MenuItemId = 'projects' | 'admin' | 'settings' | 'logout';
 
 export function UserMenu({
 	displayName,
 	email,
+	isAdmin,
 	class: className,
 }: UserMenuProps): JSX.Element {
+	const menuItems = isAdmin ? ADMIN_MENU_ITEMS : BASE_MENU_ITEMS;
 	const [isOpen, setIsOpen] = useState(false);
 	const [focusedIndex, setFocusedIndex] = useState(-1);
 	const menuRef = useRef<HTMLDivElement>(null);
@@ -54,7 +59,7 @@ export function UserMenu({
 	}, []);
 
 	const activateItem = useCallback((index: number): void => {
-		const item = MENU_ITEMS[index];
+		const item = menuItems[index];
 		if (!item) return;
 		if (item === 'logout') {
 			handleLogoutClick();
@@ -62,7 +67,7 @@ export function UserMenu({
 			// For links, trigger a click to navigate
 			menuItemRefs.current.get(item)?.click();
 		}
-	}, [handleLogoutClick]);
+	}, [handleLogoutClick, menuItems]);
 
 	// Focus first item when menu opens
 	useEffect(() => {
@@ -93,8 +98,8 @@ export function UserMenu({
 				case 'ArrowDown':
 					e.preventDefault();
 					setFocusedIndex((prev) => {
-						const next = prev < MENU_ITEMS.length - 1 ? prev + 1 : 0;
-						const item = MENU_ITEMS[next];
+						const next = prev < menuItems.length - 1 ? prev + 1 : 0;
+						const item = menuItems[next];
 						if (item) menuItemRefs.current.get(item)?.focus();
 						return next;
 					});
@@ -102,8 +107,8 @@ export function UserMenu({
 				case 'ArrowUp':
 					e.preventDefault();
 					setFocusedIndex((prev) => {
-						const next = prev > 0 ? prev - 1 : MENU_ITEMS.length - 1;
-						const item = MENU_ITEMS[next];
+						const next = prev > 0 ? prev - 1 : menuItems.length - 1;
+						const item = menuItems[next];
 						if (item) menuItemRefs.current.get(item)?.focus();
 						return next;
 					});
@@ -125,7 +130,7 @@ export function UserMenu({
 			document.removeEventListener('mousedown', handleClickOutside);
 			document.removeEventListener('keydown', handleKeyDown);
 		};
-	}, [isOpen, focusedIndex, activateItem]);
+	}, [isOpen, focusedIndex, activateItem, menuItems]);
 
 	return (
 		<div class={`${styles.container} ${className || ''}`} ref={menuRef}>
@@ -158,6 +163,19 @@ export function UserMenu({
 					>
 						Projects
 					</a>
+					{isAdmin && (
+						<a
+							href="/admin"
+							class={styles.menuItem}
+							role="menuitem"
+							tabIndex={isOpen ? 0 : -1}
+							ref={(el) => {
+								if (el) menuItemRefs.current.set('admin', el);
+							}}
+						>
+							Admin
+						</a>
+					)}
 					<a
 						href="/settings"
 						class={styles.menuItem}

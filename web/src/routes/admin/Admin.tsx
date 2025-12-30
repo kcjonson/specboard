@@ -1,19 +1,20 @@
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
+import { AppHeader } from '@doc-platform/ui';
+import { useAuth } from '@shared/planning';
 import styles from './Admin.module.css';
 
 export function Admin(_props: RouteProps): JSX.Element {
+	const { user } = useAuth();
+
 	return (
 		<div class={styles.container}>
+			<AppHeader
+				projectName="Admin"
+				user={user ? { displayName: user.displayName, email: user.email, isAdmin: user.roles?.includes('admin') } : undefined}
+			/>
+
 			<div class={styles.content}>
-				<nav class={styles.nav}>
-					<a href="/projects" class={styles.backLink}>
-						← Back to Projects
-					</a>
-				</nav>
-
-				<h1 class={styles.title}>Admin</h1>
-
 				<div class={styles.cards}>
 					<a href="/admin/users" class={styles.card}>
 						<h2 class={styles.cardTitle}>User Management</h2>

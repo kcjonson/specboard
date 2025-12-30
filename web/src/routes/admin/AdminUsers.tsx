@@ -3,7 +3,8 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { fetchClient } from '@doc-platform/fetch';
-import { Button } from '@doc-platform/ui';
+import { Button, AppHeader } from '@doc-platform/ui';
+import { useAuth } from '@shared/planning';
 import styles from './AdminUsers.module.css';
 
 interface User {
@@ -28,6 +29,7 @@ interface UsersResponse {
 const USERS_PER_PAGE = 20;
 
 export function AdminUsers(_props: RouteProps): JSX.Element {
+	const { user: authUser } = useAuth();
 	const [users, setUsers] = useState<User[]>([]);
 	const [total, setTotal] = useState(0);
 	const [offset, setOffset] = useState(0);
@@ -90,15 +92,12 @@ export function AdminUsers(_props: RouteProps): JSX.Element {
 
 	return (
 		<div class={styles.container}>
+			<AppHeader
+				projectName="Admin / Users"
+				user={authUser ? { displayName: authUser.displayName, email: authUser.email, isAdmin: authUser.roles?.includes('admin') } : undefined}
+			/>
+
 			<div class={styles.content}>
-				<nav class={styles.nav}>
-					<a href="/admin" class={styles.backLink}>
-						← Back to Admin
-					</a>
-				</nav>
-
-				<h1 class={styles.title}>Users</h1>
-
 				<div class={styles.controls}>
 					<input
 						type="text"

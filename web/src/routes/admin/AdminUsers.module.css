@@ -9,27 +9,6 @@
 	padding: var(--space-6);
 }
 
-.nav {
-	margin-bottom: var(--space-6);
-}
-
-.backLink {
-	color: var(--color-primary);
-	text-decoration: none;
-	font-size: var(--text-sm);
-}
-
-.backLink:hover {
-	text-decoration: underline;
-}
-
-.title {
-	font-size: var(--text-2xl);
-	font-weight: var(--font-semibold);
-	color: var(--color-text);
-	margin: 0 0 var(--space-6) 0;
-}
-
 .controls {
 	display: flex;
 	gap: var(--space-3);

@@ -213,7 +213,7 @@ export function Board(props: RouteProps): JSX.Element {
 				projectName={projectName}
 				navTabs={navTabs}
 				activeTab="planning"
-				user={user ? { displayName: user.displayName, email: user.email } : undefined}
+				user={user ? { displayName: user.displayName, email: user.email, isAdmin: user.roles?.includes('admin') } : undefined}
 			/>
 
 			<div class={styles.toolbar}>

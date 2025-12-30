@@ -105,7 +105,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		<div class={styles.container}>
 			<AppHeader
 				projectName="Projects"
-				user={user ? { displayName: user.displayName, email: user.email } : undefined}
+				user={user ? { displayName: user.displayName, email: user.email, isAdmin: user.roles?.includes('admin') } : undefined}
 			/>
 
 			<main class={styles.main}>
