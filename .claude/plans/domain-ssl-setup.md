@@ -1,3 +1,5 @@
+# COMPLETE - 2025-12-30
+
 # Domain & SSL Setup for staging.specboard.io
 
 ## Overview
