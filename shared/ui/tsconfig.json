@@ -3,6 +3,11 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"rootDir": "./src",
+		"baseUrl": ".",
+		"paths": {
+			"@doc-platform/fetch": ["../fetch/dist"],
+			"@doc-platform/models": ["../models/dist"]
+		},
 		"jsx": "react-jsx",
 		"jsxImportSource": "preact"
 	},

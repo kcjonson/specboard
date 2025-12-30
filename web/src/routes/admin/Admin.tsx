@@ -1,19 +1,11 @@
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
-import { AppHeader } from '@doc-platform/ui';
-import { useAuth } from '@shared/planning';
+import { Page } from '@doc-platform/ui';
 import styles from './Admin.module.css';
 
 export function Admin(_props: RouteProps): JSX.Element {
-	const { user } = useAuth();
-
 	return (
-		<div class={styles.container}>
-			<AppHeader
-				projectName="Admin"
-				user={user ? { displayName: user.displayName, email: user.email, isAdmin: user.roles?.includes('admin') } : undefined}
-			/>
-
+		<Page>
 			<div class={styles.content}>
 				<div class={styles.cards}>
 					<a href="/admin/users" class={styles.card}>
@@ -31,6 +23,6 @@ export function Admin(_props: RouteProps): JSX.Element {
 					</a>
 				</div>
 			</div>
-		</div>
+		</Page>
 	);
 }

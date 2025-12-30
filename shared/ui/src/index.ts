@@ -51,9 +51,13 @@ export type { StatusDotProps, StatusType } from './StatusDot/StatusDot';
 export { UserMenu } from './UserMenu/UserMenu';
 export type { UserMenuProps } from './UserMenu/UserMenu';
 
-// AppHeader
-export { AppHeader } from './AppHeader/AppHeader';
-export type { AppHeaderProps, NavTab } from './AppHeader/AppHeader';
+// WebHeader - auth-aware header for web apps (fetches user internally)
+export { WebHeader } from './WebHeader/WebHeader';
+export type { WebHeaderProps, NavTabLabel } from './WebHeader/WebHeader';
+
+// Page - standard page layout with header
+export { Page } from './Page/Page';
+export type { PageProps } from './Page/Page';
 
 // NotFound
 export { NotFound } from './NotFound/NotFound';

@@ -3,11 +3,10 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
-import { Button, AppHeader, type NavTab } from '@doc-platform/ui';
+import { Button, Page } from '@doc-platform/ui';
 import { Column } from '../Column/Column';
 import { EpicDialog } from '../EpicDialog/EpicDialog';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
-import { useAuth } from '../hooks/useAuth';
 import styles from './Board.module.css';
 
 const COLUMNS: { status: Status; title: string }[] = [
@@ -16,17 +15,8 @@ const COLUMNS: { status: Status; title: string }[] = [
 	{ status: 'done', title: 'Done' },
 ];
 
-// Format project ID as display name (capitalize first letter)
-function formatProjectName(id: string): string {
-	return id.charAt(0).toUpperCase() + id.slice(1);
-}
-
 export function Board(props: RouteProps): JSX.Element {
 	const projectId = props.params.projectId || 'demo';
-	const projectName = formatProjectName(projectId);
-
-	// Auth state
-	const { user, loading: authLoading } = useAuth();
 
 	// Collection auto-fetches after projectId is set
 	const epics = useMemo(() => new EpicsCollection({ projectId }), [projectId]);
@@ -35,12 +25,6 @@ export function Board(props: RouteProps): JSX.Element {
 	const [selectedEpicId, setSelectedEpicId] = useState<string | undefined>();
 	const [dialogEpic, setDialogEpic] = useState<EpicModel | null>(null);
 	const [isNewEpicDialogOpen, setIsNewEpicDialogOpen] = useState(false);
-
-	// Navigation tabs
-	const navTabs: NavTab[] = useMemo(() => [
-		{ id: 'planning', label: 'Planning', href: `/projects/${projectId}/planning` },
-		{ id: 'pages', label: 'Pages', href: `/projects/${projectId}/pages` },
-	], [projectId]);
 
 	// Memoize epics by status for keyboard navigation
 	const epicsByStatus = useMemo(
@@ -190,32 +174,25 @@ export function Board(props: RouteProps): JSX.Element {
 	}
 
 	// Loading state
-	if (authLoading || (epics.$meta.working && epics.length === 0)) {
+	if (epics.$meta.working && epics.length === 0) {
 		return (
-			<div class={styles.container}>
+			<Page projectId={projectId} activeTab="Planning">
 				<div class={styles.loading}>Loading...</div>
-			</div>
+			</Page>
 		);
 	}
 
 	// Error state from collection's $meta
 	if (epics.$meta.error) {
 		return (
-			<div class={styles.container}>
+			<Page projectId={projectId} activeTab="Planning">
 				<div class={styles.error}>Error: {epics.$meta.error.message}</div>
-			</div>
+			</Page>
 		);
 	}
 
 	return (
-		<div class={styles.container}>
-			<AppHeader
-				projectName={projectName}
-				navTabs={navTabs}
-				activeTab="planning"
-				user={user ? { displayName: user.displayName, email: user.email, isAdmin: user.roles?.includes('admin') } : undefined}
-			/>
-
+		<Page projectId={projectId} activeTab="Planning">
 			<div class={styles.toolbar}>
 				<Button onClick={handleOpenNewEpicDialog}>+ New Epic</Button>
 			</div>
@@ -252,6 +229,6 @@ export function Board(props: RouteProps): JSX.Element {
 					onCreate={handleCreateEpic}
 				/>
 			)}
-		</div>
+		</Page>
 	);
 }

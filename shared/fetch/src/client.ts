@@ -22,6 +22,8 @@ export class FetchClient {
 	private requestInterceptors: RequestInterceptor[] = [];
 	private responseInterceptors: ResponseInterceptor[] = [];
 	private errorInterceptors: ErrorInterceptor[] = [];
+	/** In-flight GET requests for deduplication */
+	private inFlightRequests: Map<string, Promise<unknown>> = new Map();
 
 	constructor(config?: FetchConfig) {
 		if (config?.baseURL) {
@@ -75,7 +77,34 @@ export class FetchClient {
 	}
 
 	async get<T>(url: string, config?: Partial<RequestConfig>): Promise<T> {
-		return this.request<T>({ ...config, url, method: 'GET' });
+		// Build cache key from URL and params for deduplication
+		const cacheKey = this.buildCacheKey(url, config?.params);
+
+		// Check for in-flight request
+		const inFlight = this.inFlightRequests.get(cacheKey);
+		if (inFlight) {
+			return inFlight as Promise<T>;
+		}
+
+		// Create and track the request
+		const request = this.request<T>({ ...config, url, method: 'GET' }).finally(() => {
+			this.inFlightRequests.delete(cacheKey);
+		});
+
+		this.inFlightRequests.set(cacheKey, request);
+		return request;
+	}
+
+	private buildCacheKey(url: string, params?: Record<string, string | number | boolean>): string {
+		let key = url;
+		if (params) {
+			const sortedParams = Object.entries(params)
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([k, v]) => `${k}=${v}`)
+				.join('&');
+			key += '?' + sortedParams;
+		}
+		return key;
 	}
 
 	async post<T>(url: string, body?: unknown, config?: Partial<RequestConfig>): Promise<T> {
