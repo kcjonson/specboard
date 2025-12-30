@@ -14,12 +14,18 @@ import { pages, spaIndex, type CachedPage } from './static-pages.js';
 const app = new Hono<{ Variables: AuthVariables }>();
 
 /**
- * Serve a cached SSG page with preload headers
+ * Serve a cached SSG page with preload headers.
+ * SPA index uses private caching to avoid cache poisoning between auth states.
  */
 function servePage(c: Context, page: CachedPage, status: ContentfulStatusCode = 200): Response {
+	const isSpaIndex = page === spaIndex;
+	const cacheControl = isSpaIndex
+		? 'private, no-cache, no-store, must-revalidate'
+		: 'public, max-age=3600';
+
 	return c.html(page.html, status, {
 		'Link': page.preloadHeader,
-		'Cache-Control': 'public, max-age=3600',
+		'Cache-Control': cacheControl,
 	});
 }
 
@@ -49,22 +55,27 @@ app.get('/home', (c) => servePage(c, pages.home));
 
 // Root - marketing for unauthenticated, SPA for authenticated
 app.get('/', async (c) => {
-	// Check for session cookie
+	// Check for session cookie (cookie name is 'session_id')
 	const cookieHeader = c.req.header('Cookie') || '';
-	const sessionMatch = cookieHeader.match(/session=([^;]+)/);
+	const sessionMatch = cookieHeader.match(/session_id=([^;]+)/);
 	const sessionId = sessionMatch?.[1];
+
+	let page: CachedPage = pages.home;
 
 	if (sessionId) {
 		// Verify session exists in Redis
 		const sessionData = await redis.get(`session:${sessionId}`);
 		if (sessionData) {
 			// Authenticated - serve cached SPA
-			return servePage(c, spaIndex);
+			page = spaIndex;
 		}
 	}
 
-	// Not authenticated - serve marketing home
-	return servePage(c, pages.home);
+	// Serve selected page with private caching to avoid cache poisoning between auth states
+	return c.html(page.html, 200, {
+		'Link': page.preloadHeader,
+		'Cache-Control': 'private, max-age=0',
+	});
 });
 
 // API URL for proxying
@@ -319,25 +330,38 @@ app.get('/api/auth/me', async (c) => {
 	}
 });
 
+// Serve SSG assets (CSS for login, signup, home, 404) without auth
+// These must be accessible for unauthenticated pages to render correctly
+app.use(
+	'/assets/ssg/*',
+	serveStatic({
+		root: './static',
+	})
+);
+
 // Auth middleware for all other routes
+// Unauthenticated users see 404 for any non-public path
+// They can find login from the 404 page or by going to /
 app.use(
 	'*',
 	authMiddleware(redis, {
 		excludePaths: ['/health', '/login', '/signup', '/home', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
-		onUnauthenticated: (requestUrl) => {
-			// Redirect to login with return URL preserved
-			const loginUrl = new URL('/login', requestUrl.origin);
-			// Only add next param for non-root paths
-			if (requestUrl.pathname !== '/') {
-				loginUrl.searchParams.set('next', requestUrl.pathname + requestUrl.search);
-			}
-			return Response.redirect(loginUrl.toString(), 302);
+		onUnauthenticated: () => {
+			// Show 404 for unauthenticated requests
+			// This avoids revealing which routes exist and eliminates route duplication
+			return new Response(pages.notFound.html, {
+				status: 404,
+				headers: {
+					'Content-Type': 'text/html; charset=UTF-8',
+					'Link': pages.notFound.preloadHeader,
+					'Cache-Control': 'public, max-age=3600',
+				},
+			});
 		},
 	})
 );
 
-// Serve static files from /static directory
-// In production, this will be the built SPA
+// Serve remaining static files (SPA bundle, etc.) - requires auth
 app.use(
 	'/*',
 	serveStatic({

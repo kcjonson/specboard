@@ -93,9 +93,6 @@ importers:
       '@doc-platform/auth':
         specifier: workspace:*
         version: link:../shared/auth
-      '@doc-platform/db':
-        specifier: workspace:*
-        version: link:../shared/db
       '@hono/node-server':
         specifier: ^1.19.7
         version: 1.19.7(hono@4.11.1)

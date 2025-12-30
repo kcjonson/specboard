@@ -1,10 +1,14 @@
 import { startRouter, navigate } from '@doc-platform/router';
 import type { RouteProps } from '@doc-platform/router';
+import { useEffect, useState } from 'preact/hooks';
+import type { JSX } from 'preact';
+import { fetchClient } from '@doc-platform/fetch';
+import { NotFound } from '@doc-platform/ui';
 
 // Shared feature components
 import { Board, EpicDetail } from '@shared/planning';
 import { Editor } from '@shared/pages';
-import { ProjectsList } from '@shared/projects';
+import { ProjectsList, type Project } from '@shared/projects';
 
 // App-specific routes
 import { UserSettings } from './routes/settings/UserSettings';
@@ -40,16 +44,52 @@ function isValidUUID(id: string): boolean {
 }
 
 // Smart redirect component for root path
-function RootRedirect(_props: RouteProps): null {
-	// Check for last project cookie
-	const lastProjectId = getCookie('lastProjectId');
+// Fetches projects and redirects based on:
+// - 0 projects → /projects
+// - 1 project → /projects/:id/planning
+// - Multiple projects + valid cookie → /projects/:id/planning
+// - Multiple projects + no cookie → /projects
+function RootRedirect(_props: RouteProps): JSX.Element | null {
+	const [loading, setLoading] = useState(true);
 
-	if (lastProjectId && isValidUUID(lastProjectId)) {
-		// User has a valid recent project - go there
-		navigate(`/projects/${lastProjectId}/planning`);
-	} else {
-		// No recent project or invalid cookie - show projects list
-		navigate('/projects');
+	useEffect(() => {
+		async function determineRedirect(): Promise<void> {
+			try {
+				const projects = await fetchClient.get<Project[]>('/api/projects');
+				const lastProjectId = getCookie('lastProjectId');
+
+				if (projects.length === 0) {
+					// No projects - go to projects list
+					navigate('/projects');
+				} else if (projects.length === 1) {
+					// Single project - go directly there
+					navigate(`/projects/${projects[0].id}/planning`);
+				} else if (lastProjectId && isValidUUID(lastProjectId)) {
+					// Multiple projects with valid cookie - check if project exists
+					const projectExists = projects.some((p) => p.id === lastProjectId);
+					if (projectExists) {
+						navigate(`/projects/${lastProjectId}/planning`);
+					} else {
+						// Cookie references deleted project - go to list
+						navigate('/projects');
+					}
+				} else {
+					// Multiple projects, no cookie - go to list
+					navigate('/projects');
+				}
+			} catch {
+				// API error - fall back to projects list
+				navigate('/projects');
+			} finally {
+				setLoading(false);
+			}
+		}
+
+		determineRedirect();
+	}, []);
+
+	if (loading) {
+		return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>Loading...</div>;
 	}
 
 	return null;
@@ -73,4 +113,4 @@ const routes = [
 	{ route: '/', entry: RootRedirect },
 ];
 
-startRouter(routes, document.getElementById('app')!);
+startRouter(routes, document.getElementById('app')!, NotFound);

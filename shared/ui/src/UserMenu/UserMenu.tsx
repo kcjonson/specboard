@@ -7,10 +7,6 @@ export interface UserMenuProps {
 	displayName: string;
 	/** User's email (optional, shown in menu header) */
 	email?: string;
-	/** Called when Settings is clicked */
-	onSettingsClick?: () => void;
-	/** Called when Logout is clicked */
-	onLogoutClick?: () => void;
 	/** Additional CSS class */
 	class?: string;
 }
@@ -29,20 +25,18 @@ function getInitials(name: string): string {
 	return trimmed[0]?.toUpperCase() || '?';
 }
 
-const MENU_ITEMS = ['settings', 'logout'] as const;
+const MENU_ITEMS = ['projects', 'settings', 'logout'] as const;
 type MenuItemId = typeof MENU_ITEMS[number];
 
 export function UserMenu({
 	displayName,
 	email,
-	onSettingsClick,
-	onLogoutClick,
 	class: className,
 }: UserMenuProps): JSX.Element {
 	const [isOpen, setIsOpen] = useState(false);
 	const [focusedIndex, setFocusedIndex] = useState(-1);
 	const menuRef = useRef<HTMLDivElement>(null);
-	const menuItemRefs = useRef<Map<MenuItemId, HTMLButtonElement>>(new Map());
+	const menuItemRefs = useRef<Map<MenuItemId, HTMLElement>>(new Map());
 
 	const initials = getInitials(displayName);
 
@@ -50,29 +44,31 @@ export function UserMenu({
 		setIsOpen((prev) => !prev);
 	}, []);
 
-	const handleSettingsClick = useCallback((): void => {
+	const handleLogoutClick = useCallback(async (): Promise<void> => {
 		setIsOpen(false);
-		onSettingsClick?.();
-	}, [onSettingsClick]);
-
-	const handleLogoutClick = useCallback((): void => {
-		setIsOpen(false);
-		onLogoutClick?.();
-	}, [onLogoutClick]);
+		try {
+			await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+		} finally {
+			window.location.href = '/login';
+		}
+	}, []);
 
 	const activateItem = useCallback((index: number): void => {
-		if (index === 0) {
-			handleSettingsClick();
-		} else if (index === 1) {
+		const item = MENU_ITEMS[index];
+		if (!item) return;
+		if (item === 'logout') {
 			handleLogoutClick();
+		} else {
+			// For links, trigger a click to navigate
+			menuItemRefs.current.get(item)?.click();
 		}
-	}, [handleSettingsClick, handleLogoutClick]);
+	}, [handleLogoutClick]);
 
 	// Focus first item when menu opens
 	useEffect(() => {
 		if (isOpen) {
 			setFocusedIndex(0);
-			const firstItem = menuItemRefs.current.get('settings');
+			const firstItem = menuItemRefs.current.get('projects');
 			firstItem?.focus();
 		} else {
 			setFocusedIndex(-1);
@@ -151,10 +147,20 @@ export function UserMenu({
 						{email && <span class={styles.email}>{email}</span>}
 					</div>
 					<div class={styles.divider} />
-					<button
-						type="button"
+					<a
+						href="/projects"
 						class={styles.menuItem}
-						onClick={handleSettingsClick}
+						role="menuitem"
+						tabIndex={isOpen ? 0 : -1}
+						ref={(el) => {
+							if (el) menuItemRefs.current.set('projects', el);
+						}}
+					>
+						Projects
+					</a>
+					<a
+						href="/settings"
+						class={styles.menuItem}
 						role="menuitem"
 						tabIndex={isOpen ? 0 : -1}
 						ref={(el) => {
@@ -162,7 +168,7 @@ export function UserMenu({
 						}}
 					>
 						Settings
-					</button>
+					</a>
 					<button
 						type="button"
 						class={styles.menuItem}

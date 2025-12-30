@@ -3,7 +3,7 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { fetchClient } from '@doc-platform/fetch';
-import { Button, Dialog, Text } from '@doc-platform/ui';
+import { Button, Dialog, Text, AppHeader } from '@doc-platform/ui';
 import { useAuth } from '@shared/planning';
 import { ProjectCard, type Project } from '../ProjectCard/ProjectCard';
 import styles from './ProjectsList.module.css';
@@ -16,7 +16,7 @@ function setCookie(name: string, value: string, days: number): void {
 }
 
 export function ProjectsList(_props: RouteProps): JSX.Element {
-	const { user, loading: authLoading, logout } = useAuth();
+	const { user, loading: authLoading } = useAuth();
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -81,15 +81,6 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		}
 	}
 
-	async function handleLogoutClick(): Promise<void> {
-		await logout();
-		window.location.href = '/login';
-	}
-
-	function handleSettingsClick(): void {
-		navigate('/settings');
-	}
-
 	if (authLoading || loading) {
 		return (
 			<div class={styles.container}>
@@ -112,24 +103,10 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 	return (
 		<div class={styles.container}>
-			<header class={styles.header}>
-				<div class={styles.headerLeft}>
-					<Text variant="heading" size="large">Projects</Text>
-				</div>
-				<div class={styles.headerRight}>
-					{user && (
-						<div class={styles.userMenu}>
-							<Text variant="secondary">{user.displayName}</Text>
-							<Button variant="ghost" size="small" onClick={handleSettingsClick}>
-								Settings
-							</Button>
-							<Button variant="ghost" size="small" onClick={handleLogoutClick}>
-								Log out
-							</Button>
-						</div>
-					)}
-				</div>
-			</header>
+			<AppHeader
+				projectName="Projects"
+				user={user ? { displayName: user.displayName, email: user.email } : undefined}
+			/>
 
 			<main class={styles.main}>
 				<div class={styles.toolbar}>

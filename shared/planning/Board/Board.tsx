@@ -26,7 +26,7 @@ export function Board(props: RouteProps): JSX.Element {
 	const projectName = formatProjectName(projectId);
 
 	// Auth state
-	const { user, loading: authLoading, logout } = useAuth();
+	const { user, loading: authLoading } = useAuth();
 
 	// Collection auto-fetches after projectId is set
 	const epics = useMemo(() => new EpicsCollection({ projectId }), [projectId]);
@@ -108,15 +108,6 @@ export function Board(props: RouteProps): JSX.Element {
 	function handleDeleteEpic(epic: EpicModel): void {
 		epics.remove(epic);
 		setDialogEpic(null);
-	}
-
-	function handleSettingsClick(): void {
-		navigate('/settings');
-	}
-
-	async function handleLogoutClick(): Promise<void> {
-		await logout();
-		window.location.href = '/login';
 	}
 
 	function handleDragStart(e: DragEvent, epic: EpicModel): void {
@@ -223,8 +214,6 @@ export function Board(props: RouteProps): JSX.Element {
 				navTabs={navTabs}
 				activeTab="planning"
 				user={user ? { displayName: user.displayName, email: user.email } : undefined}
-				onSettingsClick={handleSettingsClick}
-				onLogoutClick={handleLogoutClick}
 			/>
 
 			<div class={styles.toolbar}>

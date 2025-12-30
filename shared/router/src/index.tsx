@@ -42,6 +42,9 @@ let currentRoutes: Route[] = [];
 /** Current container */
 let currentContainer: Element | null = null;
 
+/** Current not found component */
+let currentNotFound: ComponentType = () => <div>Not Found</div>;
+
 /**
  * Match a pathname against routes.
  * Returns matched route and extracted params.
@@ -97,7 +100,8 @@ function renderCurrentRoute(): void {
 		const Component = match.route.entry;
 		render(<Component params={match.params} />, currentContainer);
 	} else {
-		render(<div>Not Found</div>, currentContainer);
+		const NotFound = currentNotFound;
+		render(<NotFound />, currentContainer);
 	}
 }
 
@@ -133,13 +137,14 @@ export function navigate(path: string): void {
  *
  * @example
  * ```tsx
- * const stop = startRouter(routes, document.getElementById('app')!);
+ * const stop = startRouter(routes, document.getElementById('app')!, NotFoundComponent);
  * // Call stop() to cleanup (useful for HMR or tests)
  * ```
  */
-export function startRouter(routes: Route[], container: Element): () => void {
+export function startRouter(routes: Route[], container: Element, notFound?: ComponentType): () => void {
 	currentRoutes = routes;
 	currentContainer = container;
+	if (notFound) currentNotFound = notFound;
 
 	// Handle browser back/forward
 	const handlePopState = (): void => {
