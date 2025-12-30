@@ -91,7 +91,7 @@ app.use(
 );
 
 // CSRF protection for state-changing requests
-// Excludes login/signup (no session yet) - logout requires CSRF protection
+// Excludes login/signup (no session yet), logout (low-impact if CSRF'd)
 // Excludes OAuth token/revoke endpoints (use PKCE instead)
 app.use(
 	'*',
@@ -99,6 +99,7 @@ app.use(
 		excludePaths: [
 			'/api/auth/login',
 			'/api/auth/signup',
+			'/api/auth/logout',
 			'/oauth/token',
 			'/oauth/revoke',
 			'/.well-known/oauth-authorization-server',
