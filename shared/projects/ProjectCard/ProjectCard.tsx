@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Card, Text, Badge, StatusDot } from '@doc-platform/ui';
+import { Card, Text, StatusDot } from '@doc-platform/ui';
 import styles from './ProjectCard.module.css';
 
 export interface EpicCounts {
@@ -42,6 +42,12 @@ export function ProjectCard({ project, onClick, onEdit }: ProjectCardProps): JSX
 		onEdit?.(project);
 	}
 
+	function handleEditKeyDown(event: KeyboardEvent): void {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.stopPropagation();
+		}
+	}
+
 	const { epicCounts } = project;
 	const hasEpics = project.epicCount > 0;
 
@@ -60,6 +66,7 @@ export function ProjectCard({ project, onClick, onEdit }: ProjectCardProps): JSX
 						type="button"
 						class={styles.editButton}
 						onClick={handleEditClick}
+						onKeyDown={handleEditKeyDown}
 						aria-label="Edit project"
 					>
 						✎

@@ -27,12 +27,14 @@ export function ProjectDialog({
 	const [saving, setSaving] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 
 	// Reset form when project changes
 	useEffect(() => {
 		setName(project?.name ?? '');
 		setDescription(project?.description ?? '');
 		setShowDeleteConfirm(false);
+		setError(null);
 	}, [project]);
 
 	async function handleSubmit(e: Event): Promise<void> {
@@ -41,10 +43,13 @@ export function ProjectDialog({
 
 		try {
 			setSaving(true);
+			setError(null);
 			await onSave({
 				name: name.trim(),
 				description: description.trim() || undefined,
 			});
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to save project');
 		} finally {
 			setSaving(false);
 		}
@@ -55,7 +60,10 @@ export function ProjectDialog({
 
 		try {
 			setDeleting(true);
+			setError(null);
 			await onDelete();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to delete project');
 		} finally {
 			setDeleting(false);
 		}
@@ -69,6 +77,9 @@ export function ProjectDialog({
 				maxWidth="sm"
 			>
 				<div class={styles.deleteConfirm}>
+					{error && (
+						<Text variant="error">{error}</Text>
+					)}
 					<Text>
 						Are you sure you want to delete "{project?.name}"? This will also delete all epics and tasks in this project.
 					</Text>
@@ -100,6 +111,9 @@ export function ProjectDialog({
 			onClose={onClose}
 		>
 			<form class={styles.form} onSubmit={handleSubmit}>
+				{error && (
+					<Text variant="error">{error}</Text>
+				)}
 				<div class={styles.field}>
 					<label class={styles.label}>
 						<Text>Name</Text>

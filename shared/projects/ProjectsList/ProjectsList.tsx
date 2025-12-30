@@ -62,30 +62,38 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	}
 
 	async function handleSaveProject(data: { name: string; description?: string }): Promise<void> {
-		if (dialogProject === undefined) {
-			// Create mode
-			const project = await fetchClient.post<Project>('/api/projects', data);
-			setProjects((prev) => [project, ...prev]);
-			setDialogProject(null);
-			// Navigate to the new project
-			setCookie('lastProjectId', project.id, 30);
-			navigate(`/projects/${project.id}/planning`);
-		} else if (dialogProject) {
-			// Edit mode
-			const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.id}`, data);
-			setProjects((prev) =>
-				prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
-			);
-			setDialogProject(null);
+		try {
+			if (dialogProject === undefined) {
+				// Create mode
+				const project = await fetchClient.post<Project>('/api/projects', data);
+				setProjects((prev) => [project, ...prev]);
+				setDialogProject(null);
+				// Navigate to the new project
+				setCookie('lastProjectId', project.id, 30);
+				navigate(`/projects/${project.id}/planning`);
+			} else if (dialogProject) {
+				// Edit mode
+				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.id}`, data);
+				setProjects((prev) =>
+					prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+				);
+				setDialogProject(null);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to save project');
 		}
 	}
 
 	async function handleDeleteProject(): Promise<void> {
 		if (!dialogProject) return;
 
-		await fetchClient.delete(`/api/projects/${dialogProject.id}`);
-		setProjects((prev) => prev.filter((p) => p.id !== dialogProject.id));
-		setDialogProject(null);
+		try {
+			await fetchClient.delete(`/api/projects/${dialogProject.id}`);
+			setProjects((prev) => prev.filter((p) => p.id !== dialogProject.id));
+			setDialogProject(null);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to delete project');
+		}
 	}
 
 	if (authLoading || loading) {
@@ -142,9 +150,10 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				)}
 			</main>
 
+			{/* dialogProject: null=closed, undefined=create mode, Project=edit mode */}
 			{dialogProject !== null && (
 				<ProjectDialog
-					project={dialogProject ?? null}
+					project={dialogProject === undefined ? null : dialogProject}
 					onClose={handleCloseDialog}
 					onSave={handleSaveProject}
 					onDelete={dialogProject ? handleDeleteProject : undefined}
