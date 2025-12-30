@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-29 (MCP OAuth + SPA consent page)
+Last Updated: 2025-12-30 (Marketing SSG)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,23 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ Marketing SSG
+**Spec/Documentation:** `/docs/specs/marketing-ssg.md`
+**Dependencies:** UI Component Library
+**Status:** complete
+
+**Tasks:**
+- [x] Create SSG specification document
+- [x] Create ssg package with Preact SSR build system
+- [x] Create common.css bundle (reset, tokens, elements)
+- [x] Create Preact page components (login, signup, home, not-found)
+- [x] Update Vite config for SSG CSS entry points
+- [x] Update frontend server with static page cache
+- [x] Add Link preload headers for CSS
+- [x] Update Dockerfile build pipeline
+
+---
 
 ### ✅ UI Component Library
 **Spec/Documentation:** `shared/ui/src/`
