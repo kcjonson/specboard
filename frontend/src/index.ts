@@ -340,18 +340,23 @@ app.use(
 );
 
 // Auth middleware for all other routes
+// Unauthenticated users see 404 for any non-public path
+// They can find login from the 404 page or by going to /
 app.use(
 	'*',
 	authMiddleware(redis, {
 		excludePaths: ['/health', '/login', '/signup', '/home', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
-		onUnauthenticated: (requestUrl) => {
-			// Redirect to login with return URL preserved
-			const loginUrl = new URL('/login', requestUrl.origin);
-			// Only add next param for non-root paths
-			if (requestUrl.pathname !== '/') {
-				loginUrl.searchParams.set('next', requestUrl.pathname + requestUrl.search);
-			}
-			return Response.redirect(loginUrl.toString(), 302);
+		onUnauthenticated: () => {
+			// Show 404 for unauthenticated requests
+			// This avoids revealing which routes exist and eliminates route duplication
+			return new Response(pages.notFound.html, {
+				status: 404,
+				headers: {
+					'Content-Type': 'text/html; charset=UTF-8',
+					'Link': pages.notFound.preloadHeader,
+					'Cache-Control': 'public, max-age=3600',
+				},
+			});
 		},
 	})
 );
