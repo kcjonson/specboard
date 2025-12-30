@@ -144,7 +144,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				<div class={styles.headerActions}>
 					{!isNew && epic && onClose && (
 						<a
-							href={`/planning/epics/${epic.id}`}
+							href={`/projects/${epic.projectId}/planning/epics/${epic.id}`}
 							target="_blank"
 							rel="noopener noreferrer"
 							class={styles.openInNewTab}

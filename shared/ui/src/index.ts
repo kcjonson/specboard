@@ -54,3 +54,7 @@ export type { UserMenuProps } from './UserMenu/UserMenu';
 // AppHeader
 export { AppHeader } from './AppHeader/AppHeader';
 export type { AppHeaderProps, NavTab } from './AppHeader/AppHeader';
+
+// NotFound
+export { NotFound } from './NotFound/NotFound';
+export { notFoundHtml } from './not-found';
