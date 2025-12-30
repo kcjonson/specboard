@@ -1,33 +1,33 @@
-.section {
-	margin-top: var(--space-8);
-	padding-top: var(--space-6);
-	border-top: 1px solid var(--color-border);
+.container {
+	min-height: 100vh;
+	background: var(--color-background);
 }
 
-.sectionTitle {
-	font-size: var(--text-lg);
-	font-weight: var(--font-semibold);
-	color: var(--color-text);
-	margin: 0 0 var(--space-5) 0;
+.content {
+	max-width: 1000px;
+	margin: 0 auto;
+	padding: var(--space-6);
 }
 
-.message {
-	padding: var(--space-3) var(--space-4);
-	border-radius: var(--radius-md);
-	margin-bottom: var(--space-4);
+.nav {
+	margin-bottom: var(--space-6);
+}
+
+.backLink {
+	color: var(--color-primary);
+	text-decoration: none;
 	font-size: var(--text-sm);
 }
 
-.success {
-	background: rgba(16, 185, 129, 0.1);
-	color: var(--color-success);
-	border: 1px solid var(--color-success);
+.backLink:hover {
+	text-decoration: underline;
 }
 
-.error {
-	background: rgba(239, 68, 68, 0.1);
-	color: var(--color-error);
-	border: 1px solid var(--color-error);
+.title {
+	font-size: var(--text-2xl);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+	margin: 0 0 var(--space-6) 0;
 }
 
 .controls {
@@ -42,7 +42,7 @@
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);
 	font-size: var(--text-sm);
-	background: var(--color-background);
+	background: var(--color-surface);
 	color: var(--color-text);
 }
 
@@ -56,7 +56,7 @@
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);
 	font-size: var(--text-sm);
-	background: var(--color-background);
+	background: var(--color-surface);
 	color: var(--color-text);
 	cursor: pointer;
 }
@@ -73,12 +73,22 @@
 	font-size: var(--text-sm);
 }
 
+.error {
+	padding: var(--space-4);
+	background: rgba(239, 68, 68, 0.1);
+	color: var(--color-error);
+	border: 1px solid var(--color-error);
+	border-radius: var(--radius-md);
+	font-size: var(--text-sm);
+	margin-bottom: var(--space-4);
+}
+
 .emptyState {
 	padding: var(--space-6);
 	text-align: center;
 	color: var(--color-text-muted);
 	font-size: var(--text-sm);
-	background: var(--color-background);
+	background: var(--color-surface);
 	border-radius: var(--radius-md);
 	border: 1px dashed var(--color-border);
 }
@@ -87,21 +97,26 @@
 	width: 100%;
 	border-collapse: collapse;
 	font-size: var(--text-sm);
+	background: var(--color-surface);
+	border-radius: var(--radius-lg);
+	overflow: hidden;
+	border: 1px solid var(--color-border);
 }
 
 .table th {
 	text-align: left;
-	padding: var(--space-3);
+	padding: var(--space-3) var(--space-4);
 	border-bottom: 1px solid var(--color-border);
 	font-weight: var(--font-medium);
 	color: var(--color-text-muted);
 	font-size: var(--text-xs);
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
+	background: var(--color-background);
 }
 
 .table td {
-	padding: var(--space-3);
+	padding: var(--space-3) var(--space-4);
 	border-bottom: 1px solid var(--color-border);
 	color: var(--color-text);
 }
@@ -113,6 +128,10 @@
 
 .table tbody tr:hover {
 	background: var(--color-background);
+}
+
+.table tbody tr:last-child td {
+	border-bottom: none;
 }
 
 .userInfo {
@@ -174,68 +193,4 @@
 .paginationButtons {
 	display: flex;
 	gap: var(--space-2);
-}
-
-/* Form styles for edit dialog */
-.form {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-4);
-}
-
-.formError {
-	padding: var(--space-3) var(--space-4);
-	background: rgba(239, 68, 68, 0.1);
-	color: var(--color-error);
-	border: 1px solid var(--color-error);
-	border-radius: var(--radius-md);
-	font-size: var(--text-sm);
-}
-
-.formRow {
-	display: grid;
-	grid-template-columns: 1fr 1fr;
-	gap: var(--space-4);
-}
-
-.formField {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-2);
-}
-
-.formLabel {
-	font-size: var(--text-sm);
-	font-weight: var(--font-medium);
-	color: var(--color-text);
-}
-
-.checkboxRow {
-	display: flex;
-	gap: var(--space-6);
-	padding: var(--space-3) 0;
-}
-
-.checkbox {
-	display: flex;
-	align-items: center;
-	gap: var(--space-2);
-	font-size: var(--text-sm);
-	color: var(--color-text);
-	cursor: pointer;
-}
-
-.checkbox input[type="checkbox"] {
-	width: 16px;
-	height: 16px;
-	cursor: pointer;
-}
-
-.formActions {
-	display: flex;
-	justify-content: flex-end;
-	gap: var(--space-3);
-	margin-top: var(--space-4);
-	padding-top: var(--space-4);
-	border-top: 1px solid var(--color-border);
 }

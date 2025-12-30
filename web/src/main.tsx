@@ -14,6 +14,8 @@ import { ProjectsList, type Project } from '@shared/projects';
 import { UserSettings } from './routes/settings/UserSettings';
 import { UIDemo } from './routes/ui-demo/UIDemo';
 import { OAuthConsent } from './routes/oauth/OAuthConsent';
+import { Admin } from './routes/admin/Admin';
+import { AdminUsers } from './routes/admin/AdminUsers';
 
 // Global styles - common CSS shared with SSG pages, then app-specific
 import '../../ssg/src/styles/common.css';
@@ -106,8 +108,13 @@ const routes = [
 
 	// App routes (not project-scoped)
 	{ route: '/settings', entry: UserSettings },
-	{ route: '/ui', entry: UIDemo },
 	{ route: '/oauth/consent', entry: OAuthConsent },
+
+	// Admin routes
+	{ route: '/admin', entry: Admin },
+	{ route: '/admin/users', entry: AdminUsers },
+	{ route: '/admin/users/:userId', entry: UserSettings },
+	{ route: '/admin/ui', entry: UIDemo },
 
 	// Smart redirect based on cookie
 	{ route: '/', entry: RootRedirect },

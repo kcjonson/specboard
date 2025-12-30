@@ -33,7 +33,7 @@ export function UIDemo(): JSX.Element {
 		<div class={styles.container}>
 			<header class={styles.header}>
 				<h1 class={styles.title}>UI Component Library</h1>
-				<a href="/projects" class={styles.backLink}>← Back to Projects</a>
+				<a href="/admin" class={styles.backLink}>← Back to Admin</a>
 			</header>
 
 			<main class={styles.content}>

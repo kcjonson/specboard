@@ -62,6 +62,12 @@
 	gap: var(--space-5);
 }
 
+.row {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--space-4);
+}
+
 .field {
 	display: flex;
 	flex-direction: column;
@@ -89,4 +95,25 @@
 	justify-content: center;
 	padding: var(--space-8);
 	color: var(--color-text-muted);
+}
+
+.checkboxRow {
+	display: flex;
+	gap: var(--space-6);
+	padding: var(--space-3) 0;
+}
+
+.checkbox {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-size: var(--text-sm);
+	color: var(--color-text);
+	cursor: pointer;
+}
+
+.checkbox input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	cursor: pointer;
 }
