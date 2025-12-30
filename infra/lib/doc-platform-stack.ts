@@ -578,13 +578,6 @@ export class DocPlatformStack extends cdk.Stack {
 			resources: [apiLogGroup.logGroupArn, `${apiLogGroup.logGroupArn}:*`],
 		}));
 
-		// Secrets Manager - update invite keys during deployment
-		deployRole.addToPolicy(new iam.PolicyStatement({
-			effect: iam.Effect.ALLOW,
-			actions: ['secretsmanager:PutSecretValue'],
-			resources: [inviteKeysSecret.secretArn],
-		}));
-
 		// ===========================================
 		// Outputs
 		// ===========================================

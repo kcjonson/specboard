@@ -176,12 +176,15 @@ Sessions are auth-only. User details (username, first_name, last_name, avatar, e
 
 ### 1. User Registration
 
+**Invite Key Requirement**: Signup currently requires a valid invite key for early access control. See [Invite Keys Setup](#invite-keys-setup) for configuration.
+
 ```
 Browser                        API                      PostgreSQL
    │                            │                            │
    │ POST /api/auth/signup      │                            │
    │ {username, email, password,│                            │
-   │  first_name, last_name}    │                            │
+   │  first_name, last_name,    │                            │
+   │  invite_key}               │                            │
    │───────────────────────────►│                            │
    │                            │                            │
    │                            │ Check username not taken   │
@@ -804,6 +807,45 @@ services:
 | DELETE | /api/oauth/authorizations/:id | Session | Revoke specific authorization |
 | GET | /.well-known/oauth-authorization-server | None | OAuth metadata |
 | GET | /* | Session | Serve static files |
+
+---
+
+## Invite Keys Setup
+
+Signup is gated behind invite keys for early access control. Valid keys are stored in AWS Secrets Manager.
+
+### Configuring Invite Keys
+
+1. **Via AWS Console:**
+   - Go to AWS Secrets Manager
+   - Find `doc-platform/invite-keys`
+   - Click "Retrieve secret value" → "Edit"
+   - Enter comma-separated keys: `key-one,key-two,another-key`
+   - Save
+
+2. **Via AWS CLI:**
+   ```bash
+   aws secretsmanager put-secret-value \
+     --secret-id doc-platform/invite-keys \
+     --secret-string "key-one,key-two,another-key"
+   ```
+
+### How It Works
+
+- Keys are loaded from `INVITE_KEYS` environment variable (injected from Secrets Manager)
+- API validates the `invite_key` field on signup requests
+- Invalid or missing keys return `403 Forbidden`
+- If no keys are configured, all signups are rejected
+- Keys are reusable (not consumed on use)
+
+### Adding/Removing Keys
+
+Update the secret value in Secrets Manager. Changes take effect on the next ECS service deployment (services read secrets at container startup).
+
+To force an immediate update, redeploy the API service:
+```bash
+aws ecs update-service --cluster doc-platform --service api --force-new-deployment
+```
 
 ---
 
