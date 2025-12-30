@@ -1,8 +1,9 @@
 /**
  * Signup page content component
  */
+import type { JSX } from 'preact';
 
-export function SignupContent(): preact.JSX.Element {
+export function SignupContent(): JSX.Element {
 	return (
 		<div class="signup-container">
 			<h1>Create Account</h1>

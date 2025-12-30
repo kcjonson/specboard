@@ -1,8 +1,9 @@
 /**
  * Login page content component
  */
+import type { JSX } from 'preact';
 
-export function LoginContent(): preact.JSX.Element {
+export function LoginContent(): JSX.Element {
 	return (
 		<div class="login-container">
 			<h1>Sign In</h1>

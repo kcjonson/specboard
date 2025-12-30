@@ -1,8 +1,9 @@
 /**
  * Marketing home page content component
  */
+import type { JSX } from 'preact';
 
-export function HomeContent(): preact.JSX.Element {
+export function HomeContent(): JSX.Element {
 	return (
 		<div class="home-container">
 			<header class="home-header">

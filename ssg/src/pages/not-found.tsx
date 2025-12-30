@@ -1,8 +1,9 @@
 /**
  * 404 Not Found page content component
  */
+import type { JSX } from 'preact';
 
-export function NotFoundContent(): preact.JSX.Element {
+export function NotFoundContent(): JSX.Element {
 	return (
 		<div class="not-found-container">
 			<h1>You appear to be lost...</h1>

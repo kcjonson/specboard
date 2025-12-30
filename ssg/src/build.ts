@@ -34,10 +34,10 @@ function loadManifest(): Manifest {
 	const manifestPath = resolve(__dirname, '../../web/dist/.vite/manifest.json');
 	try {
 		return JSON.parse(readFileSync(manifestPath, 'utf-8'));
-	} catch (error) {
+	} catch {
 		console.error('Failed to read Vite manifest:', manifestPath);
 		console.error('Make sure to run `pnpm --filter web build` first');
-		process.exit(1);
+		throw new Error('Manifest not found');
 	}
 }
 
@@ -47,8 +47,7 @@ function loadManifest(): Manifest {
 function getCssPath(manifest: Manifest, entry: string): string {
 	const manifestEntry = manifest[entry];
 	if (!manifestEntry?.file) {
-		console.error(`Missing manifest entry for: ${entry}`);
-		process.exit(1);
+		throw new Error(`Missing manifest entry for: ${entry}`);
 	}
 	return '/' + manifestEntry.file;
 }
