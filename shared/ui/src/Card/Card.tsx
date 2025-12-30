@@ -6,6 +6,8 @@ export interface CardProps {
 	children: ComponentChildren;
 	/** Click handler (adds clickable styling) */
 	onClick?: (e: MouseEvent) => void;
+	/** Keydown handler for keyboard navigation */
+	onKeyDown?: (e: KeyboardEvent) => void;
 	/** Additional CSS class (use variant-*, padding-* for modifiers) */
 	class?: string;
 	/** Tab index for keyboard navigation */
@@ -17,6 +19,7 @@ export interface CardProps {
 export function Card({
 	children,
 	onClick,
+	onKeyDown,
 	class: className,
 	tabIndex,
 	role,
@@ -31,6 +34,7 @@ export function Card({
 		<div
 			class={classes}
 			onClick={onClick}
+			onKeyDown={onKeyDown}
 			tabIndex={tabIndex}
 			role={role}
 		>

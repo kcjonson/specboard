@@ -1,7 +1,7 @@
 import type { JSX } from 'preact';
 import styles from './StatusDot.module.css';
 
-export type StatusType = 'ready' | 'in_progress' | 'done' | 'default';
+export type StatusType = 'ready' | 'in_progress' | 'in_review' | 'done' | 'default';
 
 export interface StatusDotProps {
 	/** Status type determines color */

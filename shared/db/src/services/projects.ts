@@ -18,8 +18,16 @@ export interface ProjectResponse {
 	updatedAt: Date;
 }
 
+export interface EpicCounts {
+	ready: number;
+	in_progress: number;
+	in_review: number;
+	done: number;
+}
+
 export interface ProjectWithStats extends ProjectResponse {
 	epicCount: number;
+	epicCounts: EpicCounts;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,10 +52,22 @@ function transformProject(project: Project): ProjectResponse {
 /**
  * Get all projects for a user
  */
+interface ProjectQueryRow extends Project {
+	epic_count: string;
+	ready_count: string;
+	in_progress_count: string;
+	in_review_count: string;
+	done_count: string;
+}
+
 export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
-	const result = await query<Project & { epic_count: string }>(
+	const result = await query<ProjectQueryRow>(
 		`SELECT p.*,
-			COUNT(e.id)::text as epic_count
+			COUNT(e.id)::text as epic_count,
+			COUNT(CASE WHEN e.status = 'ready' THEN 1 END)::text as ready_count,
+			COUNT(CASE WHEN e.status = 'in_progress' THEN 1 END)::text as in_progress_count,
+			COUNT(CASE WHEN e.status = 'in_review' THEN 1 END)::text as in_review_count,
+			COUNT(CASE WHEN e.status = 'done' THEN 1 END)::text as done_count
 		FROM projects p
 		LEFT JOIN epics e ON e.project_id = p.id
 		WHERE p.owner_id = $1
@@ -59,6 +79,12 @@ export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
 	return result.rows.map((row) => ({
 		...transformProject(row),
 		epicCount: parseInt(row.epic_count, 10),
+		epicCounts: {
+			ready: parseInt(row.ready_count, 10),
+			in_progress: parseInt(row.in_progress_count, 10),
+			in_review: parseInt(row.in_review_count, 10),
+			done: parseInt(row.done_count, 10),
+		},
 	}));
 }
 

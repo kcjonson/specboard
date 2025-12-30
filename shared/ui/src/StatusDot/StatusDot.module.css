@@ -31,6 +31,10 @@
 	background: var(--color-in-progress);
 }
 
+.in_review {
+	background: var(--color-in-review);
+}
+
 .done {
 	background: var(--color-done);
 }
