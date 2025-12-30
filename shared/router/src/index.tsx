@@ -19,7 +19,7 @@
  * ```
  */
 
-import { render, type ComponentType, type JSX } from 'preact';
+import { render, type ComponentType } from 'preact';
 
 /**
  * Props passed to route components.
@@ -36,14 +36,6 @@ export interface Route {
 	entry: ComponentType<RouteProps>;
 }
 
-/**
- * Router options.
- */
-export interface RouterOptions {
-	/** Component to render when no route matches */
-	notFound?: ComponentType<Record<string, never>>;
-}
-
 /** Current routes */
 let currentRoutes: Route[] = [];
 
@@ -51,12 +43,7 @@ let currentRoutes: Route[] = [];
 let currentContainer: Element | null = null;
 
 /** Current not found component */
-let currentNotFound: ComponentType<Record<string, never>> | null = null;
-
-/** Default not found component */
-function DefaultNotFound(): JSX.Element {
-	return <div>Not Found</div>;
-}
+let currentNotFound: ComponentType = () => <div>Not Found</div>;
 
 /**
  * Match a pathname against routes.
@@ -113,8 +100,8 @@ function renderCurrentRoute(): void {
 		const Component = match.route.entry;
 		render(<Component params={match.params} />, currentContainer);
 	} else {
-		const NotFoundComponent = currentNotFound || DefaultNotFound;
-		render(<NotFoundComponent />, currentContainer);
+		const NotFound = currentNotFound;
+		render(<NotFound />, currentContainer);
 	}
 }
 
@@ -150,16 +137,14 @@ export function navigate(path: string): void {
  *
  * @example
  * ```tsx
- * const stop = startRouter(routes, document.getElementById('app')!, {
- *   notFound: NotFoundComponent,
- * });
+ * const stop = startRouter(routes, document.getElementById('app')!, NotFoundComponent);
  * // Call stop() to cleanup (useful for HMR or tests)
  * ```
  */
-export function startRouter(routes: Route[], container: Element, options?: RouterOptions): () => void {
+export function startRouter(routes: Route[], container: Element, notFound?: ComponentType): () => void {
 	currentRoutes = routes;
 	currentContainer = container;
-	currentNotFound = options?.notFound || null;
+	if (notFound) currentNotFound = notFound;
 
 	// Handle browser back/forward
 	const handlePopState = (): void => {

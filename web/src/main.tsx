@@ -113,4 +113,4 @@ const routes = [
 	{ route: '/', entry: RootRedirect },
 ];
 
-startRouter(routes, document.getElementById('app')!, { notFound: NotFound });
+startRouter(routes, document.getElementById('app')!, NotFound);
