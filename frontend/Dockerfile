@@ -25,6 +25,7 @@ COPY shared/ui/package.json ./shared/ui/
 COPY shared/models/package.json ./shared/models/
 COPY shared/router/package.json ./shared/router/
 COPY shared/fetch/package.json ./shared/fetch/
+COPY shared/telemetry/package.json ./shared/telemetry/
 COPY web/package.json ./web/
 COPY ssg/package.json ./ssg/
 
@@ -40,6 +41,7 @@ COPY shared/ui ./shared/ui
 COPY shared/models ./shared/models
 COPY shared/router ./shared/router
 COPY shared/fetch ./shared/fetch
+COPY shared/telemetry ./shared/telemetry
 COPY shared/projects ./shared/projects
 COPY frontend ./frontend
 COPY web ./web
@@ -56,6 +58,7 @@ RUN pnpm --filter @doc-platform/core build && \
     pnpm --filter @doc-platform/fetch build && \
     pnpm --filter @doc-platform/router build && \
     pnpm --filter @doc-platform/models build && \
+    pnpm --filter @doc-platform/telemetry build && \
     pnpm --filter @doc-platform/frontend build && \
     pnpm --filter @doc-platform/web build && \
     pnpm --filter @doc-platform/ssg build

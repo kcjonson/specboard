@@ -6,6 +6,7 @@ packages:
   - 'shared/models'
   - 'shared/router'
   - 'shared/fetch'
+  - 'shared/telemetry'
   - 'shared/projects'
   - 'frontend'
   - 'web'
