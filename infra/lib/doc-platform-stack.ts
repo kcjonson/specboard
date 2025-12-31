@@ -229,11 +229,22 @@ export class DocPlatformStack extends cdk.Stack {
 		);
 
 		// ===========================================
+		// Log Groups
+		// ===========================================
+		// Error logs - 1 year retention for debugging and compliance
+		const errorLogGroup = new logs.LogGroup(this, 'ErrorLogGroup', {
+			logGroupName: '/doc-platform/errors',
+			retention: logs.RetentionDays.ONE_YEAR,
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
+		});
+
+		// ===========================================
 		// API Service (Fargate)
 		// ===========================================
+		// Access logs - 30 days retention
 		const apiLogGroup = new logs.LogGroup(this, 'ApiLogGroup', {
 			logGroupName: '/ecs/api',
-			retention: logs.RetentionDays.TWO_WEEKS,
+			retention: logs.RetentionDays.ONE_MONTH,
 			removalPolicy: cdk.RemovalPolicy.DESTROY,
 		});
 
@@ -257,6 +268,8 @@ export class DocPlatformStack extends cdk.Stack {
 				DB_PORT: database.instanceEndpoint.port.toString(),
 				DB_NAME: 'doc_platform',
 				DB_USER: 'postgres',
+				// Error logging
+				ERROR_LOG_GROUP: errorLogGroup.logGroupName,
 			},
 			secrets: {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
@@ -283,6 +296,9 @@ export class DocPlatformStack extends cdk.Stack {
 			maxHealthyPercent: 200,
 			healthCheckGracePeriod: cdk.Duration.seconds(60),
 		});
+
+		// Grant API task permission to write to error log group
+		errorLogGroup.grantWrite(apiTaskDefinition.taskRole);
 
 		// ===========================================
 		// Frontend Service (Fargate)
@@ -336,9 +352,10 @@ export class DocPlatformStack extends cdk.Stack {
 		// ===========================================
 		// MCP Service (Fargate)
 		// ===========================================
+		// Access logs - 30 days retention
 		const mcpLogGroup = new logs.LogGroup(this, 'McpLogGroup', {
 			logGroupName: '/ecs/mcp',
-			retention: logs.RetentionDays.TWO_WEEKS,
+			retention: logs.RetentionDays.ONE_MONTH,
 			removalPolicy: cdk.RemovalPolicy.DESTROY,
 		});
 
@@ -363,6 +380,8 @@ export class DocPlatformStack extends cdk.Stack {
 				DB_PORT: database.instanceEndpoint.port.toString(),
 				DB_NAME: 'doc_platform',
 				DB_USER: 'postgres',
+				// Error logging
+				ERROR_LOG_GROUP: errorLogGroup.logGroupName,
 			},
 			secrets: {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
@@ -389,6 +408,9 @@ export class DocPlatformStack extends cdk.Stack {
 			maxHealthyPercent: 200,
 			healthCheckGracePeriod: cdk.Duration.seconds(60),
 		});
+
+		// Grant MCP task permission to write to error log group
+		errorLogGroup.grantWrite(mcpTaskDefinition.taskRole);
 
 		// ===========================================
 		// ALB Target Groups & Routing

@@ -20,6 +20,9 @@
 		"lint:fix": "eslint src --fix",
 		"clean": "rm -rf dist"
 	},
+	"dependencies": {
+		"@aws-sdk/client-cloudwatch-logs": "^3.600.0"
+	},
 	"devDependencies": {
 		"typescript": "^5.7.2"
 	}

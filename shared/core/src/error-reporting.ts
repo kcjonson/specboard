@@ -6,6 +6,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import {
+	CloudWatchLogsClient,
+	PutLogEventsCommand,
+	CreateLogStreamCommand,
+	ResourceNotFoundException,
+} from '@aws-sdk/client-cloudwatch-logs';
 
 export interface ErrorReport {
 	name: string;
@@ -20,12 +26,39 @@ export interface ErrorReport {
 	extra?: Record<string, unknown>;
 }
 
+// Lazy-initialized CloudWatch client
+let cloudWatchClient: CloudWatchLogsClient | null = null;
+let logStreamName: string | null = null;
+
+function getCloudWatchClient(): CloudWatchLogsClient {
+	if (!cloudWatchClient) {
+		cloudWatchClient = new CloudWatchLogsClient({});
+	}
+	return cloudWatchClient;
+}
+
+function getLogStreamName(): string {
+	if (!logStreamName) {
+		// Use date + random suffix for stream name
+		const date = new Date().toISOString().split('T')[0];
+		logStreamName = `${date}-${randomUUID().slice(0, 8)}`;
+	}
+	return logStreamName;
+}
+
 /**
- * Report an error to the error tracking service
+ * Write error to dedicated CloudWatch log group (1 year retention)
  */
-export async function reportError(report: ErrorReport): Promise<void> {
-	// Log to stdout for CloudWatch (structured JSON)
-	console.log(JSON.stringify({
+async function writeToErrorLogGroup(report: ErrorReport): Promise<void> {
+	const logGroupName = process.env.ERROR_LOG_GROUP;
+	if (!logGroupName) {
+		return;
+	}
+
+	const client = getCloudWatchClient();
+	const streamName = getLogStreamName();
+
+	const logEvent = {
 		type: 'error_report',
 		level: 'error',
 		timestamp: new Date(report.timestamp).toISOString(),
@@ -40,7 +73,50 @@ export async function reportError(report: ErrorReport): Promise<void> {
 		userAgent: report.userAgent,
 		environment: report.environment,
 		extra: report.extra,
-	}));
+	};
+
+	try {
+		await client.send(new PutLogEventsCommand({
+			logGroupName,
+			logStreamName: streamName,
+			logEvents: [{
+				timestamp: report.timestamp,
+				message: JSON.stringify(logEvent),
+			}],
+		}));
+	} catch (error) {
+		// If stream doesn't exist, create it and retry
+		if (error instanceof ResourceNotFoundException) {
+			try {
+				await client.send(new CreateLogStreamCommand({
+					logGroupName,
+					logStreamName: streamName,
+				}));
+				await client.send(new PutLogEventsCommand({
+					logGroupName,
+					logStreamName: streamName,
+					logEvents: [{
+						timestamp: report.timestamp,
+						message: JSON.stringify(logEvent),
+					}],
+				}));
+			} catch (retryError) {
+				console.error('Failed to write to error log group:', retryError);
+			}
+		} else {
+			console.error('Failed to write to error log group:', error);
+		}
+	}
+}
+
+/**
+ * Report an error to the error tracking service
+ */
+export async function reportError(report: ErrorReport): Promise<void> {
+	// Write to dedicated error log group (1 year retention)
+	writeToErrorLogGroup(report).catch(() => {
+		// Silently fail - don't let logging failures affect the app
+	});
 
 	const dsn = process.env.ERROR_REPORTING_DSN;
 	if (!dsn) {
