@@ -29,6 +29,7 @@ export interface ErrorReport {
 // Lazy-initialized CloudWatch client
 let cloudWatchClient: CloudWatchLogsClient | null = null;
 let logStreamName: string | null = null;
+let logStreamDate: string | null = null;
 
 function getCloudWatchClient(): CloudWatchLogsClient {
 	if (!cloudWatchClient) {
@@ -38,10 +39,12 @@ function getCloudWatchClient(): CloudWatchLogsClient {
 }
 
 function getLogStreamName(): string {
-	if (!logStreamName) {
-		// Use date + random suffix for stream name
-		const date = new Date().toISOString().split('T')[0];
-		logStreamName = `${date}-${randomUUID().slice(0, 8)}`;
+	const currentDate = new Date().toISOString().split('T')[0] ?? '';
+
+	// Rotate log stream if date has changed (handles long-running processes)
+	if (!logStreamName || logStreamDate !== currentDate) {
+		logStreamDate = currentDate;
+		logStreamName = `${currentDate}-${randomUUID().slice(0, 8)}`;
 	}
 	return logStreamName;
 }
@@ -114,8 +117,9 @@ async function writeToErrorLogGroup(report: ErrorReport): Promise<void> {
  */
 export async function reportError(report: ErrorReport): Promise<void> {
 	// Write to dedicated error log group (1 year retention)
-	writeToErrorLogGroup(report).catch(() => {
-		// Silently fail - don't let logging failures affect the app
+	writeToErrorLogGroup(report).catch((error) => {
+		// Log but don't throw - don't let logging failures affect the app
+		console.error('Error writing to CloudWatch log group:', error);
 	});
 
 	const dsn = process.env.ERROR_REPORTING_DSN;
@@ -274,25 +278,26 @@ function parseStackTrace(stack?: string): Array<{
 
 	for (const line of lines) {
 		// Match Chrome/Node format: "    at functionName (filename:line:col)"
-		const chromeMatch = line.match(/^\s*at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?$/);
+		// Also handles optional line/col: "    at functionName (filename)" or "    at functionName (filename:line)"
+		const chromeMatch = line.match(/^\s*at\s+(?:(.+?)\s+\()?(.+?)(?::(\d+))?(?::(\d+))?\)?$/);
 		if (chromeMatch) {
 			frames.push({
 				function: chromeMatch[1] || '<anonymous>',
 				filename: chromeMatch[2] || '',
-				lineno: parseInt(chromeMatch[3] || '0', 10),
-				colno: parseInt(chromeMatch[4] || '0', 10),
+				lineno: chromeMatch[3] ? parseInt(chromeMatch[3], 10) : undefined,
+				colno: chromeMatch[4] ? parseInt(chromeMatch[4], 10) : undefined,
 			});
 			continue;
 		}
 
 		// Match Firefox format: "functionName@filename:line:col"
-		const firefoxMatch = line.match(/^(.+?)@(.+?):(\d+):(\d+)$/);
+		const firefoxMatch = line.match(/^(.+?)@(.+?)(?::(\d+))?(?::(\d+))?$/);
 		if (firefoxMatch) {
 			frames.push({
 				function: firefoxMatch[1] || '<anonymous>',
 				filename: firefoxMatch[2] || '',
-				lineno: parseInt(firefoxMatch[3] || '0', 10),
-				colno: parseInt(firefoxMatch[4] || '0', 10),
+				lineno: firefoxMatch[3] ? parseInt(firefoxMatch[3], 10) : undefined,
+				colno: firefoxMatch[4] ? parseInt(firefoxMatch[4], 10) : undefined,
 			});
 		}
 	}

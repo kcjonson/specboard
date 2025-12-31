@@ -91,11 +91,9 @@ const app = new Hono();
 // Middleware
 app.use('*', cors());
 
-// Request logging middleware
+// Request logging middleware with error capture
 app.use('*', async (context, next) => {
 	const start = Date.now();
-	await next();
-	const duration = Date.now() - start;
 
 	// Get user ID from session if available
 	let userId: string | undefined;
@@ -104,6 +102,33 @@ app.use('*', async (context, next) => {
 		const session = await getSession(redis, sessionId);
 		userId = session?.userId;
 	}
+
+	try {
+		await next();
+	} catch (error) {
+		// Report errors that occur during request handling
+		const err = error instanceof Error ? error : new Error(String(error));
+		reportError({
+			name: err.name,
+			message: err.message,
+			stack: err.stack,
+			timestamp: Date.now(),
+			url: context.req.url,
+			userAgent: context.req.header('user-agent'),
+			userId,
+			source: 'api',
+			environment: process.env.NODE_ENV,
+			extra: {
+				method: context.req.method,
+				path: context.req.path,
+			},
+		}).catch(() => {
+			// Don't let error reporting failure affect the response
+		});
+		throw error; // Re-throw to let Hono's error handler respond
+	}
+
+	const duration = Date.now() - start;
 
 	logRequest({
 		method: context.req.method,
@@ -119,6 +144,7 @@ app.use('*', async (context, next) => {
 });
 
 // Rate limiting middleware (per spec requirements)
+// Excludes /api/metrics to ensure error reports are captured even during high error rates
 app.use(
 	'*',
 	rateLimitMiddleware(redis, {
@@ -129,7 +155,7 @@ app.use(
 			{ path: '/oauth/authorize', config: RATE_LIMIT_CONFIGS.oauthAuthorize },
 		],
 		defaultLimit: RATE_LIMIT_CONFIGS.api,
-		excludePaths: ['/health', '/api/health'],
+		excludePaths: ['/health', '/api/health', '/api/metrics'],
 	})
 );
 
