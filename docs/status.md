@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-30 (Admin User Management)
+Last Updated: 2025-12-30 (Admin User Management, Projects Page UI)
 
 ## Epic/Story/Task Template
 
@@ -145,7 +145,7 @@ Use this template for all work items:
 ### Projects Page
 **Spec/Documentation:** `shared/projects/`
 **Dependencies:** Authentication System
-**Status:** in progress
+**Status:** complete
 
 **Goal:** Multi-project support with projects listing page and smart routing.
 
@@ -156,8 +156,9 @@ Use this template for all work items:
 - [x] ProjectsList UI component
 - [x] ProjectCard component
 - [x] Smart routing (cookie-based last project)
-- [ ] Delete project confirmation dialog
-- [ ] Project settings/rename UI
+- [x] Delete project confirmation dialog
+- [x] Project settings/rename UI
+- [x] Epic status breakdown display (ready/in_progress/in_review/done)
 
 ---
 

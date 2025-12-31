@@ -3,8 +3,9 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { fetchClient } from '@doc-platform/fetch';
-import { Button, Dialog, Text, Page } from '@doc-platform/ui';
+import { Button, Text, Page } from '@doc-platform/ui';
 import { ProjectCard, type Project } from '../ProjectCard/ProjectCard';
+import { ProjectDialog } from '../ProjectDialog/ProjectDialog';
 import styles from './ProjectsList.module.css';
 
 // Cookie helpers
@@ -18,10 +19,8 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
-	const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-	const [newProjectName, setNewProjectName] = useState('');
-	const [newProjectDescription, setNewProjectDescription] = useState('');
-	const [creating, setCreating] = useState(false);
+	// Dialog state: null = closed, undefined = create mode, Project = edit mode
+	const [dialogProject, setDialogProject] = useState<Project | null | undefined>(null);
 
 	const fetchProjects = useCallback(async (): Promise<void> => {
 		try {
@@ -47,33 +46,49 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	}
 
 	function handleOpenCreateDialog(): void {
-		setNewProjectName('');
-		setNewProjectDescription('');
-		setIsCreateDialogOpen(true);
+		setDialogProject(undefined); // undefined = create mode
 	}
 
-	function handleCloseCreateDialog(): void {
-		setIsCreateDialogOpen(false);
+	function handleEditProject(project: Project): void {
+		setDialogProject(project);
 	}
 
-	async function handleCreateProject(): Promise<void> {
-		if (!newProjectName.trim()) return;
+	function handleCloseDialog(): void {
+		setDialogProject(null);
+	}
+
+	async function handleSaveProject(data: { name: string; description?: string }): Promise<void> {
+		try {
+			if (dialogProject === undefined) {
+				// Create mode
+				const project = await fetchClient.post<Project>('/api/projects', data);
+				setProjects((prev) => [project, ...prev]);
+				setDialogProject(null);
+				// Navigate to the new project
+				setCookie('lastProjectId', project.id, 30);
+				navigate(`/projects/${project.id}/planning`);
+			} else if (dialogProject) {
+				// Edit mode
+				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.id}`, data);
+				setProjects((prev) =>
+					prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+				);
+				setDialogProject(null);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to save project');
+		}
+	}
+
+	async function handleDeleteProject(): Promise<void> {
+		if (!dialogProject) return;
 
 		try {
-			setCreating(true);
-			const project = await fetchClient.post<Project>('/api/projects', {
-				name: newProjectName.trim(),
-				description: newProjectDescription.trim() || undefined,
-			});
-			setProjects((prev) => [project, ...prev]);
-			setIsCreateDialogOpen(false);
-			// Navigate to the new project
-			setCookie('lastProjectId', project.id, 30);
-			navigate(`/projects/${project.id}/planning`);
+			await fetchClient.delete(`/api/projects/${dialogProject.id}`);
+			setProjects((prev) => prev.filter((p) => p.id !== dialogProject.id));
+			setDialogProject(null);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to create project');
-		} finally {
-			setCreating(false);
+			setError(err instanceof Error ? err.message : 'Failed to delete project');
 		}
 	}
 
@@ -119,56 +134,21 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 								key={project.id}
 								project={project}
 								onClick={handleProjectClick}
+								onEdit={handleEditProject}
 							/>
 						))}
 					</div>
 				)}
 			</main>
 
-			{isCreateDialogOpen && (
-				<Dialog
-					title="Create Project"
-					onClose={handleCloseCreateDialog}
-				>
-					<div class={styles.form}>
-						<div class={styles.field}>
-							<label class={styles.label}>
-								<Text>Name</Text>
-								<input
-									type="text"
-									class={styles.input}
-									value={newProjectName}
-									onInput={(e) => setNewProjectName((e.target as HTMLInputElement).value)}
-									placeholder="My Project"
-									autoFocus
-								/>
-							</label>
-						</div>
-						<div class={styles.field}>
-							<label class={styles.label}>
-								<Text>Description (optional)</Text>
-								<textarea
-									class={styles.textarea}
-									value={newProjectDescription}
-									onInput={(e) => setNewProjectDescription((e.target as HTMLTextAreaElement).value)}
-									placeholder="A brief description of your project"
-									rows={3}
-								/>
-							</label>
-						</div>
-						<div class={styles.actions}>
-							<Button variant="ghost" onClick={handleCloseCreateDialog}>
-								Cancel
-							</Button>
-							<Button
-								onClick={handleCreateProject}
-								disabled={!newProjectName.trim() || creating}
-							>
-								{creating ? 'Creating...' : 'Create'}
-							</Button>
-						</div>
-					</div>
-				</Dialog>
+			{/* dialogProject: null=closed, undefined=create mode, Project=edit mode */}
+			{dialogProject !== null && (
+				<ProjectDialog
+					project={dialogProject === undefined ? null : dialogProject}
+					onClose={handleCloseDialog}
+					onSave={handleSaveProject}
+					onDelete={dialogProject ? handleDeleteProject : undefined}
+				/>
 			)}
 		</Page>
 	);

@@ -21,6 +21,7 @@
 	/* Colors - Status */
 	--color-ready: #3b82f6;
 	--color-in-progress: #f59e0b;
+	--color-in-review: #8b5cf6;
 	--color-done: #10b981;
 
 	/* Colors - Interactive */
@@ -106,6 +107,7 @@
 		/* Colors - Status (slightly muted for dark mode) */
 		--color-ready: #60a5fa;
 		--color-in-progress: #fbbf24;
+		--color-in-review: #a78bfa;
 		--color-done: #34d399;
 
 		/* Colors - Interactive */

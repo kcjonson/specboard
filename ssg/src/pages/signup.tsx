@@ -60,6 +60,20 @@ export function SignupContent(): JSX.Element {
 				</div>
 
 				<div class="form-group">
+					<label for="invite_key">Invite Key</label>
+					<input
+						type="text"
+						id="invite_key"
+						name="invite_key"
+						required
+						autocomplete="off"
+					/>
+					<div class="invite-hint">
+						Required for early access
+					</div>
+				</div>
+
+				<div class="form-group">
 					<label for="password">Password</label>
 					<input
 						type="password"
@@ -106,6 +120,7 @@ export const signupScript = `(function() {
 		var last_name = document.getElementById('last_name').value;
 		var username = document.getElementById('username').value;
 		var email = document.getElementById('email').value;
+		var invite_key = document.getElementById('invite_key').value;
 		var password = document.getElementById('password').value;
 
 		submitBtn.disabled = true;
@@ -119,7 +134,8 @@ export const signupScript = `(function() {
 				email: email,
 				password: password,
 				first_name: first_name,
-				last_name: last_name
+				last_name: last_name,
+				invite_key: invite_key
 			}),
 			credentials: 'same-origin'
 		})

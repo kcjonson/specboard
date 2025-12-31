@@ -2,38 +2,30 @@
 set -euo pipefail
 
 # Run an ECS task and wait for completion
-# Usage: run-ecs-task.sh <task_name> <command_json> [include_admin_env]
+# Usage: run-ecs-task.sh <task_name> <command_json> [include_superadmin_env]
 #
 # Required environment variables:
 #   AWS_REGION, CLUSTER, TASK_DEF, SUBNETS, SECURITY_GROUP, LOG_GROUP
-# Optional (when include_admin_env=true):
-#   ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL, ADMIN_FIRST_NAME, ADMIN_LAST_NAME
+# Optional (when include_superadmin_env=true):
+#   SUPERADMIN_PASSWORD
 
 TASK_NAME="${1:?Task name required}"
 COMMAND="${2:?Command JSON required}"
-INCLUDE_ADMIN_ENV="${3:-false}"
+INCLUDE_SUPERADMIN_ENV="${3:-false}"
 
 # Parse subnets into JSON array
 SUBNETS_JSON=$(echo "$SUBNETS" | tr ',' '\n' | jq -R . | jq -s .)
 
 # Build overrides JSON
-if [ "$INCLUDE_ADMIN_ENV" = "true" ]; then
+if [ "$INCLUDE_SUPERADMIN_ENV" = "true" ]; then
   OVERRIDES=$(jq -n \
     --argjson cmd "$COMMAND" \
-    --arg username "$ADMIN_USERNAME" \
-    --arg password "$ADMIN_PASSWORD" \
-    --arg email "$ADMIN_EMAIL" \
-    --arg firstname "$ADMIN_FIRST_NAME" \
-    --arg lastname "$ADMIN_LAST_NAME" \
+    --arg password "$SUPERADMIN_PASSWORD" \
     '{containerOverrides: [{
       name: "api",
       command: $cmd,
       environment: [
-        {name: "ADMIN_USERNAME", value: $username},
-        {name: "ADMIN_PASSWORD", value: $password},
-        {name: "ADMIN_EMAIL", value: $email},
-        {name: "ADMIN_FIRST_NAME", value: $firstname},
-        {name: "ADMIN_LAST_NAME", value: $lastname}
+        {name: "SUPERADMIN_PASSWORD", value: $password}
       ]
     }]}')
 else

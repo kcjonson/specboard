@@ -3,8 +3,8 @@ import type { JSX, ComponentChildren } from 'preact';
 import styles from './Dialog.module.css';
 
 export interface DialogProps {
-	/** Whether the dialog is open */
-	open: boolean;
+	/** Whether the dialog is open (default: true for conditional rendering) */
+	open?: boolean;
 	/** Called when dialog should close */
 	onClose: () => void;
 	/** Dialog title */
@@ -18,7 +18,7 @@ export interface DialogProps {
 }
 
 export function Dialog({
-	open,
+	open = true,
 	onClose,
 	title,
 	children,

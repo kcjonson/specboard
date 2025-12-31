@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -7,6 +8,8 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
@@ -41,6 +44,26 @@ export class DocPlatformStack extends cdk.Stack {
 					subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
 				},
 			],
+		});
+
+		// ===========================================
+		// DNS & SSL
+		// ===========================================
+		const domainName = 'specboard.io';
+		const stagingSubdomain = 'staging';
+		const stagingDomain = `${stagingSubdomain}.${domainName}`;
+
+		// Route53 Hosted Zone for specboard.io
+		const hostedZone = new route53.HostedZone(this, 'HostedZone', {
+			zoneName: domainName,
+			comment: 'Managed by CDK - doc-platform',
+		});
+
+		// ACM Certificate - wildcard for all subdomains + apex domain
+		const certificate = new acm.Certificate(this, 'Certificate', {
+			domainName: domainName,
+			subjectAlternativeNames: [`*.${domainName}`],
+			validation: acm.CertificateValidation.fromDns(hostedZone),
 		});
 
 		// ===========================================
@@ -93,6 +116,13 @@ export class DocPlatformStack extends cdk.Stack {
 				excludePunctuation: true,
 				passwordLength: 32,
 			},
+		});
+
+		// Invite keys for signup gating (comma-separated list)
+		// Set this secret value in AWS Secrets Manager or via GitHub Actions
+		const inviteKeysSecret = new secretsmanager.Secret(this, 'InviteKeys', {
+			secretName: 'doc-platform/invite-keys',
+			description: 'Comma-separated list of valid invite keys for signup',
 		});
 
 		const database = new rds.DatabaseInstance(this, 'Database', {
@@ -158,9 +188,34 @@ export class DocPlatformStack extends cdk.Stack {
 			loadBalancerName: 'doc-platform-alb',
 		});
 
-		const listener = alb.addListener('HttpListener', {
+		// HTTPS Listener (primary)
+		const httpsListener = alb.addListener('HttpsListener', {
+			port: 443,
+			protocol: elbv2.ApplicationProtocol.HTTPS,
+			certificates: [certificate],
+			sslPolicy: elbv2.SslPolicy.TLS12,
+			open: true,
+		});
+
+		// HTTP Listener - redirect to HTTPS
+		alb.addListener('HttpListener', {
 			port: 80,
 			open: true,
+			defaultAction: elbv2.ListenerAction.redirect({
+				protocol: 'HTTPS',
+				port: '443',
+				permanent: true,
+			}),
+		});
+
+		// DNS A Record for staging.specboard.io -> ALB
+		new route53.ARecord(this, 'StagingARecord', {
+			zone: hostedZone,
+			recordName: stagingSubdomain,
+			target: route53.RecordTarget.fromAlias(
+				new route53Targets.LoadBalancerTarget(alb)
+			),
+			comment: 'Staging environment ALB',
 		});
 
 		// ===========================================
@@ -259,6 +314,7 @@ export class DocPlatformStack extends cdk.Stack {
 			},
 			secrets: {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
+				INVITE_KEYS: ecs.Secret.fromSecretsManager(inviteKeysSecret),
 			},
 			portMappings: [{ containerPort: 3001 }],
 			healthCheck: {
@@ -297,8 +353,8 @@ export class DocPlatformStack extends cdk.Stack {
 			environment: {
 				PORT: '3000',
 				NODE_ENV: 'production',
-				// Frontend calls API through the ALB (same origin)
-				API_URL: `http://${alb.loadBalancerDnsName}`,
+				// Frontend calls API through the staging domain
+				API_URL: `https://${stagingDomain}`,
 				REDIS_URL: `redis://${redis.attrRedisEndpointAddress}:${redis.attrRedisEndpointPort}`,
 				// Database connection (required by @doc-platform/db imported via @doc-platform/auth)
 				DB_HOST: database.instanceEndpoint.hostname,
@@ -355,8 +411,8 @@ export class DocPlatformStack extends cdk.Stack {
 			environment: {
 				PORT: '3002',
 				NODE_ENV: 'production',
-				// MCP calls API via ALB
-				API_URL: `http://${alb.loadBalancerDnsName}`,
+				// MCP calls API via staging domain
+				API_URL: `https://${stagingDomain}`,
 				// Database connection for direct DB access
 				DB_HOST: database.instanceEndpoint.hostname,
 				DB_PORT: database.instanceEndpoint.port.toString(),
@@ -421,7 +477,7 @@ export class DocPlatformStack extends cdk.Stack {
 		frontendService.attachToApplicationTargetGroup(frontendTargetGroup);
 
 		// Path-based routing: /api/* -> API, everything else -> Frontend
-		listener.addTargetGroups('ApiRoutes', {
+		httpsListener.addTargetGroups('ApiRoutes', {
 			targetGroups: [apiTargetGroup],
 			priority: 10,
 			conditions: [
@@ -430,7 +486,7 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 
 		// OAuth endpoints -> API (not /oauth/consent which is SPA)
-		listener.addTargetGroups('OAuthRoutes', {
+		httpsListener.addTargetGroups('OAuthRoutes', {
 			targetGroups: [apiTargetGroup],
 			priority: 20,
 			conditions: [
@@ -439,7 +495,7 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 
 		// .well-known endpoints -> API
-		listener.addTargetGroups('WellKnownRoutes', {
+		httpsListener.addTargetGroups('WellKnownRoutes', {
 			targetGroups: [apiTargetGroup],
 			priority: 30,
 			conditions: [
@@ -447,7 +503,7 @@ export class DocPlatformStack extends cdk.Stack {
 			],
 		});
 
-		listener.addTargetGroups('DefaultRoute', {
+		httpsListener.addTargetGroups('DefaultRoute', {
 			targetGroups: [frontendTargetGroup],
 		});
 
@@ -631,6 +687,26 @@ export class DocPlatformStack extends cdk.Stack {
 		new cdk.CfnOutput(this, 'ApiLogGroupName', {
 			value: apiLogGroup.logGroupName,
 			description: 'API CloudWatch Log Group name',
+		});
+
+		new cdk.CfnOutput(this, 'HostedZoneId', {
+			value: hostedZone.hostedZoneId,
+			description: 'Route53 Hosted Zone ID',
+		});
+
+		new cdk.CfnOutput(this, 'HostedZoneNameServers', {
+			value: cdk.Fn.join(', ', hostedZone.hostedZoneNameServers || []),
+			description: 'Route53 Nameservers - update these in GoDaddy',
+		});
+
+		new cdk.CfnOutput(this, 'CertificateArn', {
+			value: certificate.certificateArn,
+			description: 'ACM Certificate ARN',
+		});
+
+		new cdk.CfnOutput(this, 'StagingUrl', {
+			value: `https://${stagingDomain}`,
+			description: 'Staging environment URL',
 		});
 	}
 }

@@ -37,6 +37,9 @@ RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
 
 WORKDIR /app
 
+# Download AWS RDS CA bundle for SSL certificate verification
+RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+
 # Copy workspace config
 COPY mcp/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
 COPY package.json pnpm-lock.yaml ./

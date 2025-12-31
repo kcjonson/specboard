@@ -1,9 +1,13 @@
+import fs from 'fs';
 import pg from 'pg';
 
 export * from './types.js';
 export * from './services/index.js';
 
 const { Pool } = pg;
+
+// AWS RDS CA bundle path (downloaded in Dockerfile)
+const RDS_CA_BUNDLE_PATH = '/app/rds-ca-bundle.pem';
 
 // Build DATABASE_URL from individual vars if not provided
 function getDatabaseUrl(): string {
@@ -28,15 +32,34 @@ function getDatabaseUrl(): string {
 
 const connectionString = getDatabaseUrl();
 
+// Build SSL config for production
+// Uses AWS RDS CA bundle for proper certificate verification
+function getSslConfig(): pg.PoolConfig['ssl'] {
+	if (process.env.NODE_ENV !== 'production') {
+		return undefined;
+	}
+
+	// Use CA bundle if available, otherwise fall back to no cert verification
+	if (fs.existsSync(RDS_CA_BUNDLE_PATH)) {
+		return {
+			ca: fs.readFileSync(RDS_CA_BUNDLE_PATH, 'utf8'),
+			rejectUnauthorized: true,
+		};
+	}
+
+	// Fallback: encrypted but no cert verification
+	console.warn('RDS CA bundle not found, using SSL without certificate verification');
+	return { rejectUnauthorized: false };
+}
+
 // Connection pool - reused across requests
 // SSL is required for AWS RDS PostgreSQL (pg_hba.conf rejects unencrypted connections)
-// AWS RDS certs are signed by Amazon Trust Services CA, trusted by Node.js
 const pool = new Pool({
 	connectionString,
 	max: 20,
 	idleTimeoutMillis: 30000,
 	connectionTimeoutMillis: 2000,
-	ssl: process.env.NODE_ENV === 'production' ? true : undefined,
+	ssl: getSslConfig(),
 });
 
 // Log connection errors (don't crash the server)

@@ -11,8 +11,8 @@ on:
         description: 'Command to run (JSON array)'
         required: true
         type: string
-      include_admin_env:
-        description: 'Include admin environment variables from secrets'
+      include_superadmin_env:
+        description: 'Include SUPERADMIN_PASSWORD from secrets'
         required: false
         type: boolean
         default: false
@@ -39,11 +39,7 @@ jobs:
 
       - name: Run ${{ inputs.task_name }}
         env:
-          ADMIN_USERNAME: ${{ inputs.include_admin_env && secrets.ADMIN_USERNAME || '' }}
-          ADMIN_PASSWORD: ${{ inputs.include_admin_env && secrets.ADMIN_PASSWORD || '' }}
-          ADMIN_EMAIL: ${{ inputs.include_admin_env && secrets.ADMIN_EMAIL || '' }}
-          ADMIN_FIRST_NAME: ${{ inputs.include_admin_env && secrets.ADMIN_FIRST_NAME || '' }}
-          ADMIN_LAST_NAME: ${{ inputs.include_admin_env && secrets.ADMIN_LAST_NAME || '' }}
+          SUPERADMIN_PASSWORD: ${{ inputs.include_superadmin_env && secrets.SUPERADMIN_PASSWORD || '' }}
         run: |
           source .github/scripts/get-stack-outputs.sh
-          .github/scripts/run-ecs-task.sh "${{ inputs.task_name }}" '${{ inputs.command }}' "${{ inputs.include_admin_env }}"
+          .github/scripts/run-ecs-task.sh "${{ inputs.task_name }}" '${{ inputs.command }}' "${{ inputs.include_superadmin_env }}"

@@ -19,6 +19,19 @@ import {
 import { query, type User } from '@doc-platform/db';
 import { isValidEmail, isValidUsername } from '../validation.js';
 
+/**
+ * Check if request is over HTTPS (directly or via ALB/proxy)
+ */
+function isSecureRequest(context: Context): boolean {
+	// Check X-Forwarded-Proto header (set by ALB/proxies)
+	const forwardedProto = context.req.header('X-Forwarded-Proto');
+	if (forwardedProto === 'https') {
+		return true;
+	}
+	// Fallback to checking the URL scheme
+	return new URL(context.req.url).protocol === 'https:';
+}
+
 interface LoginRequest {
 	identifier: string; // username or email
 	password: string;
@@ -30,6 +43,31 @@ interface SignupRequest {
 	password: string;
 	first_name: string;
 	last_name: string;
+	invite_key: string;
+}
+
+/**
+ * Get valid invite keys from environment variable.
+ * Keys are stored as a comma-separated list.
+ */
+function getValidInviteKeys(): Set<string> {
+	const keysEnv = process.env.INVITE_KEYS || '';
+	const keys = keysEnv.split(',').map(k => k.trim()).filter(k => k.length > 0);
+	return new Set(keys);
+}
+
+/**
+ * Validate an invite key against the configured list.
+ */
+function isValidInviteKey(key: string): boolean {
+	const validKeys = getValidInviteKeys();
+
+	// If no keys are configured, reject all signups
+	if (validKeys.size === 0) {
+		return false;
+	}
+
+	return validKeys.has(key.trim());
 }
 
 /**
@@ -82,7 +120,7 @@ export async function handleLogin(
 
 		setCookie(context, SESSION_COOKIE_NAME, sessionId, {
 			httpOnly: true,
-			secure: process.env.NODE_ENV === 'production',
+			secure: isSecureRequest(context),
 			sameSite: 'Lax',
 			path: '/',
 			maxAge: SESSION_TTL_SECONDS,
@@ -119,14 +157,19 @@ export async function handleSignup(
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	const { username, email, password, first_name, last_name } = body;
+	const { username, email, password, first_name, last_name, invite_key } = body;
 
 	// Validate required fields
-	if (!username || !email || !password || !first_name || !last_name) {
+	if (!username || !email || !password || !first_name || !last_name || !invite_key) {
 		return context.json(
-			{ error: 'All fields are required: username, email, password, first_name, last_name' },
+			{ error: 'All fields are required: username, email, password, first_name, last_name, invite_key' },
 			400
 		);
+	}
+
+	// Validate invite key
+	if (!isValidInviteKey(invite_key)) {
+		return context.json({ error: 'Invalid invite key' }, 403);
 	}
 
 	// Validate username
@@ -211,7 +254,7 @@ export async function handleSignup(
 
 		setCookie(context, SESSION_COOKIE_NAME, sessionId, {
 			httpOnly: true,
-			secure: process.env.NODE_ENV === 'production',
+			secure: isSecureRequest(context),
 			sameSite: 'Lax',
 			path: '/',
 			maxAge: SESSION_TTL_SECONDS,
