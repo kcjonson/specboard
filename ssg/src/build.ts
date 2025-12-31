@@ -14,7 +14,7 @@ import { renderDocument } from './shell.js';
 import { LoginContent, loginScript } from './pages/login.js';
 import { SignupContent, signupScript } from './pages/signup.js';
 import { NotFoundContent } from './pages/not-found.js';
-import { HomeContent } from './pages/home.js';
+import { HomeContent, homeScript } from './pages/home.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +111,7 @@ function build(): void {
 		description: 'A Git-backed markdown editor with real-time collaboration, inline comments, and AI-powered assistance.',
 		cssFiles: [commonCss, homeCss],
 		body: render(HomeContent()),
+		scripts: homeScript,
 	}));
 
 	console.log('\nSSG build complete!');
