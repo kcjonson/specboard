@@ -52,6 +52,10 @@
 	margin: 0;
 }
 
+.headerSpacer {
+	flex: 1;
+}
+
 .closeButton {
 	background: none;
 	border: none;
