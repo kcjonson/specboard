@@ -5,10 +5,12 @@ import styles from './Dialog.module.css';
 export interface DialogProps {
 	/** Whether the dialog is open (default: true for conditional rendering) */
 	open?: boolean;
-	/** Called when dialog should close */
+	/** Called when dialog should close (required for controlled behavior) */
 	onClose: () => void;
-	/** Dialog title */
+	/** Dialog title/label in header */
 	title?: string;
+	/** Whether to show close button in header (default: true when header is visible) */
+	showCloseButton?: boolean;
 	/** Dialog content */
 	children: ComponentChildren;
 	/** Maximum width of the dialog */
@@ -21,10 +23,15 @@ export function Dialog({
 	open = true,
 	onClose,
 	title,
+	showCloseButton,
 	children,
 	maxWidth = 'md',
 	class: className,
 }: DialogProps): JSX.Element | null {
+	// Show header if title is provided OR showCloseButton is explicitly true
+	const showHeader = Boolean(title) || showCloseButton === true;
+	// Show close button by default when header is visible, unless explicitly disabled
+	const shouldShowCloseButton = showHeader && showCloseButton !== false;
 	// Handle escape key
 	const handleKeyDown = useCallback(
 		(e: KeyboardEvent) => {
@@ -70,17 +77,22 @@ export function Dialog({
 			aria-labelledby={title ? 'dialog-title' : undefined}
 		>
 			<div class={dialogClasses}>
-				{title && (
+				{showHeader && (
 					<div class={styles.header}>
-						<h2 id="dialog-title" class={styles.title}>{title}</h2>
-						<button
-							type="button"
-							class={styles.closeButton}
-							onClick={onClose}
-							aria-label="Close"
-						>
-							×
-						</button>
+						{title && (
+							<h2 id="dialog-title" class={styles.title}>{title}</h2>
+						)}
+						{!title && <div class={styles.headerSpacer} />}
+						{shouldShowCloseButton && (
+							<button
+								type="button"
+								class={styles.closeButton}
+								onClick={onClose}
+								aria-label="Close"
+							>
+								×
+							</button>
+						)}
 					</div>
 				)}
 				<div class={styles.content}>
