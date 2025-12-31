@@ -3,13 +3,32 @@
  */
 import type { JSX } from 'preact';
 
+/**
+ * Script to update Sign In link when user is already logged in.
+ * Checks for session_id cookie and changes link to "Open App" pointing to root.
+ * Link starts hidden to prevent flash of wrong text.
+ */
+export const homeScript = `
+(function() {
+	var link = document.getElementById('auth-link');
+	if (!link) return;
+	var cookies = document.cookie ? document.cookie.split('; ') : [];
+	var hasSession = cookies.some(function(c) { return c.indexOf('session_id=') === 0; });
+	if (hasSession) {
+		link.href = '/';
+		link.textContent = 'Open App';
+	}
+	link.style.visibility = 'visible';
+})();
+`;
+
 export function HomeContent(): JSX.Element {
 	return (
 		<div class="home-container">
 			<header class="home-header">
 				<a href="/" class="logo" aria-label="Doc Platform home">Doc Platform</a>
 				<nav class="home-nav" aria-label="Main navigation">
-					<a href="/login">Sign In</a>
+					<a id="auth-link" href="/login" style="visibility: hidden">Sign In</a>
 					<a href="/signup" class="btn-primary">Get Started</a>
 				</nav>
 			</header>
