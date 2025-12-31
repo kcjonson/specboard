@@ -186,8 +186,20 @@ app.get('/health', (context) => context.json({ status: 'ok' }));
 app.get('/api/health', (context) => context.json({ status: 'ok' }));
 
 // Error reporting endpoint - receives frontend errors and forwards to error tracking service
+// Excluded from CSRF (sendBeacon can't send headers) but protected by Origin check
 app.post('/api/metrics', async (context) => {
 	try {
+		// Security: Validate Origin header to prevent cross-site abuse
+		// Since CSRF is disabled for sendBeacon compatibility, we check Origin instead
+		const origin = context.req.header('origin');
+		const host = context.req.header('host');
+		if (origin) {
+			const originHost = new URL(origin).host;
+			if (originHost !== host) {
+				return context.text('forbidden', 403);
+			}
+		}
+
 		const body = await context.req.json<{
 			name: string;
 			message: string;
@@ -204,7 +216,7 @@ app.post('/api/metrics', async (context) => {
 			typeof body.message !== 'string' || !body.message ||
 			typeof body.timestamp !== 'number' ||
 			typeof body.url !== 'string' || !body.url ||
-			typeof body.userAgent !== 'string'
+			typeof body.userAgent !== 'string' || !body.userAgent
 		) {
 			return context.text('invalid', 400);
 		}
