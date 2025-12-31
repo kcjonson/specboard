@@ -67,5 +67,6 @@ export {
 	type AuthUser,
 	type AuthMiddlewareOptions,
 	SESSION_COOKIE_NAME,
+	CSRF_COOKIE_NAME,
 	SESSION_TTL_SECONDS,
 } from './types.js';

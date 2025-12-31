@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
-import { Button, Text } from '@doc-platform/ui';
+import { Button, Text, Page } from '@doc-platform/ui';
 import { fetchClient } from '@doc-platform/fetch';
 import { useModel, UserModel, AuthorizationsCollection } from '@doc-platform/models';
 import { AuthorizedApps } from './AuthorizedApps';
@@ -24,7 +24,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	const userId = props.params?.userId;
 
 	// Current user model (always needed for permission checks)
-	const currentUser = useMemo(() => new UserModel(), []);
+	const currentUser = useMemo(() => new UserModel({ id: 'me' }), []);
 	useModel(currentUser);
 
 	// Check if admin is viewing their own profile via admin route
@@ -175,11 +175,13 @@ export function UserSettings(props: RouteProps): JSX.Element {
 
 	if (isLoading) {
 		return (
-			<div class={styles.container}>
-				<div class={styles.content}>
-					<div class={styles.loading}>Loading...</div>
+			<Page>
+				<div class={styles.container}>
+					<div class={styles.content}>
+						<div class={styles.loading}>Loading...</div>
+					</div>
 				</div>
-			</div>
+			</Page>
 		);
 	}
 
@@ -188,61 +190,57 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	if (error) {
 		const errorMessage = typeof error === 'string' ? error : error.message;
 		return (
-			<div class={styles.container}>
-				<div class={styles.content}>
-					<nav class={styles.nav}>
-						<a href={isViewingOther ? '/admin/users' : '/projects'} class={styles.backLink}>
-							← {isViewingOther ? 'Back to Users' : 'Back to Projects'}
-						</a>
-					</nav>
-					<div class={styles.card}>
-						<p class={styles.error}>Failed to load: {errorMessage}</p>
-						<Button onClick={() => {
-							if (isViewingOther) {
-								setTargetError(null);
-								setTargetLoading(true);
-								fetchClient.get<User>(`/api/users/${userId}`)
-									.then(setTargetUser)
-									.catch(() => setTargetError('Failed to load user'))
-									.finally(() => setTargetLoading(false));
-							} else {
-								currentUser.fetch();
-								authorizations.fetch();
-							}
-						}}>
-							Retry
-						</Button>
+			<Page>
+				<div class={styles.container}>
+					<div class={styles.content}>
+						<div class={styles.card}>
+							<p class={styles.error}>Failed to load: {errorMessage}</p>
+							<Button onClick={() => {
+								if (isViewingOther) {
+									setTargetError(null);
+									setTargetLoading(true);
+									fetchClient.get<User>(`/api/users/${userId}`)
+										.then(setTargetUser)
+										.catch(() => setTargetError('Failed to load user'))
+										.finally(() => setTargetLoading(false));
+								} else {
+									currentUser.fetch();
+									authorizations.fetch();
+								}
+							}}>
+								Retry
+							</Button>
+						</div>
 					</div>
 				</div>
-			</div>
+			</Page>
 		);
 	}
 
 	// Permission check for viewing other users
 	if (isViewingOther && !isCurrentUserAdmin) {
 		return (
-			<div class={styles.container}>
-				<div class={styles.content}>
-					<nav class={styles.nav}>
-						<a href="/projects" class={styles.backLink}>
-							← Back to Projects
-						</a>
-					</nav>
-					<div class={styles.card}>
-						<p class={styles.error}>You don't have permission to view this user.</p>
+			<Page>
+				<div class={styles.container}>
+					<div class={styles.content}>
+						<div class={styles.card}>
+							<p class={styles.error}>You don't have permission to view this user.</p>
+						</div>
 					</div>
 				</div>
-			</div>
+			</Page>
 		);
 	}
 
 	if (!user) {
 		return (
-			<div class={styles.container}>
-				<div class={styles.content}>
-					<div class={styles.loading}>Loading...</div>
+			<Page>
+				<div class={styles.container}>
+					<div class={styles.content}>
+						<div class={styles.loading}>Loading...</div>
+					</div>
 				</div>
-			</div>
+			</Page>
 		);
 	}
 
@@ -251,15 +249,10 @@ export function UserSettings(props: RouteProps): JSX.Element {
 		: 'User Settings';
 
 	return (
-		<div class={styles.container}>
-			<div class={styles.content}>
-				<nav class={styles.nav}>
-					<a href={isViewingOther ? '/admin/users' : '/projects'} class={styles.backLink}>
-						← {isViewingOther ? 'Back to Users' : 'Back to Projects'}
-					</a>
-				</nav>
-
-				<div class={styles.card}>
+		<Page>
+			<div class={styles.container}>
+				<div class={styles.content}>
+					<div class={styles.card}>
 					<h1 class={styles.title}>{pageTitle}</h1>
 
 					{message && (
@@ -369,5 +362,6 @@ export function UserSettings(props: RouteProps): JSX.Element {
 				</div>
 			</div>
 		</div>
+		</Page>
 	);
 }

@@ -2,7 +2,10 @@
  * CSRF protection middleware
  *
  * Validates X-CSRF-Token header on state-changing requests (POST, PUT, DELETE, PATCH)
- * Token must match the csrfToken stored in the session
+ * Token must match the csrfToken stored in the session (Redis).
+ *
+ * The CSRF token is also set as a cookie (non-HttpOnly) so the client can read it
+ * and include it in the header - but validation is always against Redis.
  */
 
 import type { Context, MiddlewareHandler } from 'hono';
@@ -95,7 +98,7 @@ export function csrfMiddleware(
 			return c.json({ error: 'Forbidden' }, 403);
 		}
 
-		// Get session from Redis
+		// Get session from Redis (source of truth)
 		const session = await getSession(redis, sessionId);
 		if (!session) {
 			return c.json({ error: 'Forbidden' }, 403);
@@ -107,7 +110,7 @@ export function csrfMiddleware(
 			return c.json({ error: 'Missing CSRF token' }, 403);
 		}
 
-		// Validate CSRF token using constant-time comparison
+		// Validate CSRF token against session (Redis)
 		if (!secureCompare(csrfToken, session.csrfToken)) {
 			return c.json({ error: 'Invalid CSRF token' }, 403);
 		}

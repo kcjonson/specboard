@@ -1,41 +1,30 @@
 /**
- * User model for current authenticated user
+ * User model
  *
- * Used by Settings page to display and update user profile.
- * Syncs with /api/auth/me - a singleton endpoint for the current user.
- */
-
-import { fetchClient } from '@doc-platform/fetch';
-import { Model } from './Model';
-import { prop } from './prop';
-import type { ModelMeta, ModelData } from './types';
-
-/**
- * UserModel - represents the current authenticated user
- *
- * Unlike other SyncModels, this is a singleton that syncs with /api/auth/me.
- * Auto-fetches on construction (no id needed).
+ * Extends SyncModel with CRUD pattern: /api/users/:id
+ * Pass id='me' to fetch the current authenticated user.
  *
  * @example
  * ```tsx
- * const user = useMemo(() => new UserModel(), []);
+ * // Current user (id='me' resolves to real ID after fetch)
+ * const user = useMemo(() => new UserModel({ id: 'me' }), []);
  * useModel(user);
  *
- * if (user.$meta.working) return <Loading />;
- * if (user.$meta.error) return <Error />;
- *
- * return <div>{user.displayName}</div>;
+ * // Specific user by ID
+ * const user = useMemo(() => new UserModel({ id: userId }), [userId]);
+ * useModel(user);
  * ```
  */
-export class UserModel extends Model {
-	static url = '/api/auth/me';
 
-	declare readonly $meta: ModelMeta;
+import { SyncModel } from './SyncModel';
+import { prop } from './prop';
+
+export class UserModel extends SyncModel {
+	static override url = '/api/users/:id';
 
 	@prop accessor id!: string;
 	@prop accessor email!: string;
 	@prop accessor username!: string;
-	@prop accessor displayName!: string;
 	@prop accessor first_name!: string;
 	@prop accessor last_name!: string;
 	@prop accessor email_verified!: boolean;
@@ -43,78 +32,7 @@ export class UserModel extends Model {
 	@prop accessor avatar_url!: string | null;
 	@prop accessor roles!: string[];
 	@prop accessor is_active!: boolean;
-
-	constructor() {
-		super();
-
-		// Override $meta with sync-specific fields
-		Object.defineProperty(this, '$meta', {
-			value: {
-				working: false,
-				error: null,
-				lastFetched: null,
-			},
-			enumerable: false,
-			writable: false,
-		});
-
-		// Auto-fetch on construction
-		this.fetch();
-	}
-
-	/**
-	 * Updates $meta state.
-	 */
-	private setMeta(updates: Partial<ModelMeta>): void {
-		Object.assign(this.$meta, updates);
-	}
-
-	/**
-	 * Fetches user data from the API.
-	 */
-	async fetch(): Promise<void> {
-		this.setMeta({ working: true, error: null });
-
-		try {
-			const response = await fetchClient.get<{ user: Record<string, unknown> }>(
-				(this.constructor as typeof UserModel).url
-			);
-			this.set(response.user as Partial<ModelData<this>>);
-			this.setMeta({ working: false, lastFetched: Date.now() });
-		} catch (error) {
-			this.setMeta({
-				working: false,
-				error: error instanceof Error ? error : new Error(String(error)),
-			});
-			throw error;
-		}
-	}
-
-	/**
-	 * Saves user profile changes to the API.
-	 */
-	async save(): Promise<void> {
-		this.setMeta({ working: true, error: null });
-
-		try {
-			// Only send editable fields (accessing protected __data from parent Model class)
-			const updateData = {
-				first_name: this.__data.first_name as string,
-				last_name: this.__data.last_name as string,
-			};
-
-			const response = await fetchClient.put<{ user: Record<string, unknown> }>(
-				(this.constructor as typeof UserModel).url,
-				updateData
-			);
-			this.set(response.user as Partial<ModelData<this>>);
-			this.setMeta({ working: false });
-		} catch (error) {
-			this.setMeta({
-				working: false,
-				error: error instanceof Error ? error : new Error(String(error)),
-			});
-			throw error;
-		}
-	}
+	@prop accessor created_at!: string;
+	@prop accessor updated_at!: string;
+	@prop accessor deactivated_at!: string | null;
 }

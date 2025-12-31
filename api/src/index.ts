@@ -99,6 +99,7 @@ app.use(
 );
 
 // CSRF protection for state-changing requests
+// Token validated against Redis session, cookie is just for client convenience
 // Excludes login/signup (no session yet), logout (low-impact if CSRF'd)
 // Excludes OAuth token/revoke endpoints (use PKCE instead)
 app.use(

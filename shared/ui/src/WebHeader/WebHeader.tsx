@@ -39,7 +39,7 @@ export function WebHeader({
 	class: className,
 }: WebHeaderProps): JSX.Element {
 	// Create and bind UserModel - request deduplication prevents duplicate API calls
-	const user = useMemo(() => new UserModel(), []);
+	const user = useMemo(() => new UserModel({ id: 'me' }), []);
 	useModel(user);
 
 	const isAdmin = user.roles?.includes('admin');
@@ -66,9 +66,9 @@ export function WebHeader({
 			</div>
 			<div class={styles.actions}>
 				{actions}
-				{user.displayName && (
+				{user.first_name && (
 					<UserMenu
-						displayName={user.displayName}
+						displayName={`${user.first_name} ${user.last_name}`.trim()}
 						email={user.email}
 						isAdmin={isAdmin}
 					/>

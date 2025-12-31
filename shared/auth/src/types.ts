@@ -31,6 +31,11 @@ export interface AuthMiddlewareOptions {
 export const SESSION_COOKIE_NAME = 'session_id';
 
 /**
+ * CSRF token cookie name (non-HttpOnly so JS can read it for double-submit)
+ */
+export const CSRF_COOKIE_NAME = 'csrf_token';
+
+/**
  * Session TTL in seconds (30 days)
  */
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;

@@ -14,6 +14,7 @@ import {
 	hashPassword,
 	verifyPassword,
 	SESSION_COOKIE_NAME,
+	CSRF_COOKIE_NAME,
 	SESSION_TTL_SECONDS,
 } from '@doc-platform/auth';
 import { query, type User } from '@doc-platform/db';
@@ -123,8 +124,18 @@ export async function handleLogin(
 			userId: user.id,
 		});
 
+		// Set session cookie (HttpOnly - not accessible to JS)
 		setCookie(context, SESSION_COOKIE_NAME, sessionId, {
 			httpOnly: true,
+			secure: isSecureRequest(context),
+			sameSite: 'Lax',
+			path: '/',
+			maxAge: SESSION_TTL_SECONDS,
+		});
+
+		// Set CSRF cookie (NOT HttpOnly - JS reads it for double-submit pattern)
+		setCookie(context, CSRF_COOKIE_NAME, csrfToken, {
+			httpOnly: false,
 			secure: isSecureRequest(context),
 			sameSite: 'Lax',
 			path: '/',
@@ -140,7 +151,6 @@ export async function handleLogin(
 				last_name: user.last_name,
 				avatar_url: user.avatar_url,
 			},
-			csrfToken,
 		});
 	} catch (error) {
 		console.error('Login failed:', error instanceof Error ? error.message : 'Unknown error');
@@ -257,8 +267,18 @@ export async function handleSignup(
 			userId: user.id,
 		});
 
+		// Set session cookie (HttpOnly - not accessible to JS)
 		setCookie(context, SESSION_COOKIE_NAME, sessionId, {
 			httpOnly: true,
+			secure: isSecureRequest(context),
+			sameSite: 'Lax',
+			path: '/',
+			maxAge: SESSION_TTL_SECONDS,
+		});
+
+		// Set CSRF cookie (NOT HttpOnly - JS reads it for double-submit pattern)
+		setCookie(context, CSRF_COOKIE_NAME, csrfToken, {
+			httpOnly: false,
 			secure: isSecureRequest(context),
 			sameSite: 'Lax',
 			path: '/',
@@ -276,7 +296,6 @@ export async function handleSignup(
 				last_name: user.last_name,
 				avatar_url: user.avatar_url,
 			},
-			csrfToken,
 			message: 'Account created successfully',
 		}, 201);
 	} catch (error) {
@@ -303,6 +322,7 @@ export async function handleLogout(
 	}
 
 	deleteCookie(context, SESSION_COOKIE_NAME, { path: '/' });
+	deleteCookie(context, CSRF_COOKIE_NAME, { path: '/' });
 	return context.json({ success: true });
 }
 
@@ -346,17 +366,11 @@ export async function handleGetMe(
 			return context.json({ error: 'Account is deactivated' }, 403);
 		}
 
-		// Build display name from available fields
-		const displayName = user.first_name && user.last_name
-			? `${user.first_name} ${user.last_name}`
-			: user.first_name || user.last_name || user.username || user.email;
-
 		return context.json({
 			user: {
 				id: user.id,
 				username: user.username,
 				email: user.email,
-				displayName,
 				first_name: user.first_name,
 				last_name: user.last_name,
 				email_verified: user.email_verified,
@@ -365,7 +379,6 @@ export async function handleGetMe(
 				roles: user.roles,
 				is_active: user.is_active,
 			},
-			csrfToken: session.csrfToken,
 		});
 	} catch (error) {
 		console.error('Failed to get user:', error instanceof Error ? error.message : 'Unknown error');
@@ -477,17 +490,11 @@ export async function handleUpdateMe(
 			return context.json({ error: 'User not found' }, 404);
 		}
 
-		// Build display name from updated fields
-		const displayName = user.first_name && user.last_name
-			? `${user.first_name} ${user.last_name}`
-			: user.first_name || user.last_name || user.username || user.email;
-
 		return context.json({
 			user: {
 				id: user.id,
 				username: user.username,
 				email: user.email,
-				displayName,
 				first_name: user.first_name,
 				last_name: user.last_name,
 				email_verified: user.email_verified,

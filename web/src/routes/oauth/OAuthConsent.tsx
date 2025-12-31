@@ -1,9 +1,31 @@
-import { useState } from 'preact/hooks';
+import { useState, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { Button } from '@doc-platform/ui';
-import { useAuth, getCsrfToken } from '@shared/planning';
+import { useModel, UserModel } from '@doc-platform/models';
 import styles from './OAuthConsent.module.css';
+
+/** CSRF cookie name (must match server) */
+const CSRF_COOKIE_NAME = 'csrf_token';
+
+/**
+ * Read a cookie value by name
+ */
+function getCookie(name: string): string | null {
+	const cookies = document.cookie ? document.cookie.split('; ') : [];
+	for (const cookie of cookies) {
+		const [cookieName, ...valueParts] = cookie.split('=');
+		if (cookieName === name) {
+			const value = valueParts.join('=');
+			try {
+				return decodeURIComponent(value);
+			} catch {
+				return value;
+			}
+		}
+	}
+	return null;
+}
 
 // Scope descriptions for display
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
@@ -24,8 +46,9 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	// Use auth hook to fetch CSRF token (required for form submission)
-	const { loading: authLoading } = useAuth();
+	// UserModel fetches current user and captures CSRF token
+	const user = useMemo(() => new UserModel({ id: 'me' }), []);
+	useModel(user);
 
 	// Parse OAuth params from URL
 	const params = new URLSearchParams(window.location.search);
@@ -39,8 +62,8 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 	const clientName = CLIENT_NAMES[clientId] || clientId;
 	const scopes = scope.split(' ').filter(Boolean);
 
-	// Show loading while fetching auth/CSRF token
-	if (authLoading) {
+	// Show loading while fetching user/CSRF token
+	if (user.$meta.working && !user.id) {
 		return (
 			<div class={styles.container}>
 				<div class={styles.card}>
@@ -84,11 +107,11 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 				action,
 			});
 
-			// Build headers with CSRF token
+			// Build headers with CSRF token (read from cookie)
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/x-www-form-urlencoded',
 			};
-			const csrfToken = getCsrfToken();
+			const csrfToken = getCookie(CSRF_COOKIE_NAME);
 			if (csrfToken) {
 				headers['X-CSRF-Token'] = csrfToken;
 			}

@@ -9,5 +9,3 @@ export { TaskCard } from './TaskCard/TaskCard';
 
 // Hooks
 export { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
-export { useAuth, getCsrfToken } from './hooks/useAuth';
-export type { AuthUser } from './hooks/useAuth';

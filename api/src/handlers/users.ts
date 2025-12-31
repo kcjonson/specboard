@@ -85,6 +85,9 @@ function userToApiResponse(user: User): UserApiResponse {
 // Valid roles that can be assigned
 const VALID_ROLES = new Set(['admin']);
 
+// Superadmin username - this account is immutable
+const SUPERADMIN_USERNAME = 'superadmin';
+
 function isValidRole(role: string): boolean {
 	return VALID_ROLES.has(role);
 }
@@ -199,6 +202,7 @@ export async function handleListUsers(
  * Get a user by ID
  * GET /api/users/:id
  *
+ * Special case: "me" as ID returns the current user with CSRF token
  * Admin: Can view any user
  * User: Can only view themselves
  */
@@ -211,21 +215,26 @@ export async function handleGetUser(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const id = context.req.param('id');
+	const idParam = context.req.param('id');
 
-	if (!isValidUUID(id)) {
+	// Handle "me" as a special case - return current user
+	if (idParam === 'me') {
+		return context.json(userToApiResponse(currentUser));
+	}
+
+	if (!isValidUUID(idParam)) {
 		return context.json({ error: 'Invalid user ID format' }, 400);
 	}
 
 	// Non-admins can only view themselves
-	if (!isAdmin(currentUser) && currentUser.id !== id) {
+	if (!isAdmin(currentUser) && currentUser.id !== idParam) {
 		return context.json({ error: 'Access denied' }, 403);
 	}
 
 	try {
 		const result = await query<User>(
 			'SELECT * FROM users WHERE id = $1',
-			[id]
+			[idParam]
 		);
 
 		const user = result.rows[0];
@@ -253,6 +262,7 @@ interface UpdateUserRequest {
  * Update a user
  * PUT /api/users/:id
  *
+ * Special case: "me" as ID updates the current user
  * Admin: Can update any user, all fields (username, email, first_name, last_name, roles, is_active)
  * User: Can only update themselves, limited fields (first_name, last_name)
  */
@@ -265,7 +275,10 @@ export async function handleUpdateUser(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const id = context.req.param('id');
+	const idParam = context.req.param('id');
+
+	// Resolve "me" to the current user's ID
+	const id = idParam === 'me' ? currentUser.id : idParam;
 
 	if (!isValidUUID(id)) {
 		return context.json({ error: 'Invalid user ID format' }, 400);
@@ -277,6 +290,15 @@ export async function handleUpdateUser(
 	// Non-admins can only update themselves
 	if (!userIsAdmin && !isSelf) {
 		return context.json({ error: 'Access denied' }, 403);
+	}
+
+	// Superadmin account is immutable - no updates allowed
+	const targetCheck = await query<{ username: string }>(
+		'SELECT username FROM users WHERE id = $1',
+		[id]
+	);
+	if (targetCheck.rows[0]?.username === SUPERADMIN_USERNAME) {
+		return context.json({ error: 'Superadmin account cannot be modified' }, 403);
 	}
 
 	let body: UpdateUserRequest;

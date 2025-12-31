@@ -48,6 +48,7 @@ services:
       DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
       REDIS_URL: redis://redis:6379
       NODE_ENV: development
+      INVITE_KEYS: localdev
     depends_on:
       db:
         condition: service_healthy
