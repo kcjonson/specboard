@@ -84,7 +84,7 @@ function build(): void {
 
 	// Render login page
 	writePage('login.html', renderDocument({
-		title: 'Sign In - Doc Platform',
+		title: 'Sign In - Specboard',
 		cssFiles: [commonCss, loginCss],
 		body: render(LoginContent()),
 		scripts: loginScript,
@@ -92,7 +92,7 @@ function build(): void {
 
 	// Render signup page
 	writePage('signup.html', renderDocument({
-		title: 'Create Account - Doc Platform',
+		title: 'Create Account - Specboard',
 		cssFiles: [commonCss, signupCss],
 		body: render(SignupContent()),
 		scripts: signupScript,
@@ -100,15 +100,15 @@ function build(): void {
 
 	// Render not found page
 	writePage('not-found.html', renderDocument({
-		title: 'Page Not Found - Doc Platform',
+		title: 'Page Not Found - Specboard',
 		cssFiles: [commonCss, notFoundCss],
 		body: render(NotFoundContent()),
 	}));
 
 	// Render home page
 	writePage('home.html', renderDocument({
-		title: 'Doc Platform - Documentation that works for your team',
-		description: 'A Git-backed markdown editor with real-time collaboration, inline comments, and AI-powered assistance.',
+		title: 'Specboard - Workflow tools for AI assisted product development',
+		description: 'Specs, planning, and context management for developers working with AI coding agents. Give your AI the structure it needs to ship quality code.',
 		cssFiles: [commonCss, homeCss],
 		body: render(HomeContent()),
 		scripts: homeScript,
