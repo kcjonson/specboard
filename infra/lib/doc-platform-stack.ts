@@ -1,8 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as cloudfrontOrigins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cr from 'aws-cdk-lib/custom-resources';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -13,10 +12,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import * as path from 'path';
 import { Construct } from 'constructs';
 
 export class DocPlatformStack extends cdk.Stack {
@@ -65,57 +61,13 @@ export class DocPlatformStack extends cdk.Stack {
 			comment: 'Managed by CDK - doc-platform',
 		});
 
-		// ACM Certificate - wildcard for all subdomains + apex domain
+		// ACM Certificate - wildcard for all subdomains + apex domain (us-west-2 for ALB)
 		const certificate = new acm.Certificate(this, 'Certificate', {
 			domainName: domainName,
 			subjectAlternativeNames: [`*.${domainName}`],
 			validation: acm.CertificateValidation.fromDns(hostedZone),
 		});
 
-		// ===========================================
-		// Placeholder Page (S3 + CloudFront)
-		// ===========================================
-		// S3 bucket for placeholder static content
-		const placeholderBucket = new s3.Bucket(this, 'PlaceholderBucket', {
-			bucketName: `${domainName.replace(/\./g, '-')}-placeholder`,
-			blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-			removalPolicy: cdk.RemovalPolicy.DESTROY,
-			autoDeleteObjects: true,
-		});
-
-		// CloudFront distribution for apex domain using S3BucketOrigin with OAC (recommended over deprecated OAI)
-		const placeholderDistribution = new cloudfront.Distribution(this, 'PlaceholderDistribution', {
-			defaultBehavior: {
-				origin: cloudfrontOrigins.S3BucketOrigin.withOriginAccessControl(placeholderBucket),
-				viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-				cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-			},
-			domainNames: [domainName],
-			certificate,
-			defaultRootObject: 'index.html',
-		});
-
-		// Deploy placeholder HTML to S3
-		new s3deploy.BucketDeployment(this, 'PlaceholderDeployment', {
-			sources: [s3deploy.Source.asset(path.join(__dirname, '../placeholder'))],
-			destinationBucket: placeholderBucket,
-			distribution: placeholderDistribution,
-			distributionPaths: ['/*'],
-			cacheControl: [
-				s3deploy.CacheControl.maxAge(cdk.Duration.days(365)),
-				s3deploy.CacheControl.setPublic(),
-			],
-		});
-
-		// Route53 A record for apex domain -> CloudFront
-		new route53.ARecord(this, 'ApexARecord', {
-			zone: hostedZone,
-			recordName: '', // apex domain
-			target: route53.RecordTarget.fromAlias(
-				new route53Targets.CloudFrontTarget(placeholderDistribution)
-			),
-			comment: 'Apex domain placeholder page',
-		});
 
 		// ===========================================
 		// ECR Repositories
@@ -337,11 +289,54 @@ export class DocPlatformStack extends cdk.Stack {
 		// Log Groups
 		// ===========================================
 		// Error logs - 1 year retention for debugging and compliance
-		const errorLogGroup = new logs.LogGroup(this, 'ErrorLogGroup', {
-			logGroupName: '/doc-platform/errors',
-			retention: logs.RetentionDays.ONE_YEAR,
-			removalPolicy: cdk.RemovalPolicy.RETAIN,
+		// Uses custom resource to handle "already exists" case (e.g., after failed deployments)
+		const errorLogGroupName = '/doc-platform/errors';
+
+		new cr.AwsCustomResource(this, 'EnsureErrorLogGroup', {
+			onCreate: {
+				service: 'CloudWatchLogs',
+				action: 'createLogGroup',
+				parameters: { logGroupName: errorLogGroupName },
+				physicalResourceId: cr.PhysicalResourceId.of(errorLogGroupName),
+				ignoreErrorCodesMatching: 'ResourceAlreadyExistsException',
+			},
+			onUpdate: {
+				service: 'CloudWatchLogs',
+				action: 'createLogGroup',
+				parameters: { logGroupName: errorLogGroupName },
+				physicalResourceId: cr.PhysicalResourceId.of(errorLogGroupName),
+				ignoreErrorCodesMatching: 'ResourceAlreadyExistsException',
+			},
+			policy: cr.AwsCustomResourcePolicy.fromStatements([
+				new iam.PolicyStatement({
+					actions: ['logs:CreateLogGroup'],
+					resources: ['*'],
+				}),
+			]),
 		});
+
+		new cr.AwsCustomResource(this, 'SetErrorLogRetention', {
+			onCreate: {
+				service: 'CloudWatchLogs',
+				action: 'putRetentionPolicy',
+				parameters: { logGroupName: errorLogGroupName, retentionInDays: 365 },
+				physicalResourceId: cr.PhysicalResourceId.of(`${errorLogGroupName}-retention`),
+			},
+			onUpdate: {
+				service: 'CloudWatchLogs',
+				action: 'putRetentionPolicy',
+				parameters: { logGroupName: errorLogGroupName, retentionInDays: 365 },
+				physicalResourceId: cr.PhysicalResourceId.of(`${errorLogGroupName}-retention`),
+			},
+			policy: cr.AwsCustomResourcePolicy.fromStatements([
+				new iam.PolicyStatement({
+					actions: ['logs:PutRetentionPolicy'],
+					resources: ['*'],
+				}),
+			]),
+		});
+
+		const errorLogGroup = logs.LogGroup.fromLogGroupName(this, 'ErrorLogGroup', errorLogGroupName);
 
 		// ===========================================
 		// API Service (Fargate)
@@ -864,14 +859,5 @@ export class DocPlatformStack extends cdk.Stack {
 			description: 'Staging environment URL',
 		});
 
-		new cdk.CfnOutput(this, 'PlaceholderUrl', {
-			value: `https://${domainName}`,
-			description: 'Placeholder page URL (apex domain)',
-		});
-
-		new cdk.CfnOutput(this, 'PlaceholderDistributionId', {
-			value: placeholderDistribution.distributionId,
-			description: 'CloudFront Distribution ID for placeholder page',
-		});
 	}
 }
