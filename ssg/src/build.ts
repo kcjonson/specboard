@@ -15,6 +15,10 @@ import { LoginContent, loginScript } from './pages/login.js';
 import { SignupContent, signupScript } from './pages/signup.js';
 import { NotFoundContent } from './pages/not-found.js';
 import { HomeContent, homeScript } from './pages/home.js';
+import { VerifyEmailContent, verifyEmailScript } from './pages/verify-email.js';
+import { VerifyEmailConfirmContent, verifyEmailConfirmScript } from './pages/verify-email-confirm.js';
+import { ForgotPasswordContent, forgotPasswordScript } from './pages/forgot-password.js';
+import { ResetPasswordContent, resetPasswordScript } from './pages/reset-password.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -81,6 +85,7 @@ function build(): void {
 	const signupCss = getCssPath(manifest, '../ssg/src/styles/signup.css');
 	const notFoundCss = getCssPath(manifest, '../ssg/src/styles/not-found.css');
 	const homeCss = getCssPath(manifest, '../ssg/src/styles/home.css');
+	const authCss = getCssPath(manifest, '../ssg/src/styles/auth.css');
 
 	// Render login page
 	writePage('login.html', renderDocument({
@@ -112,6 +117,38 @@ function build(): void {
 		cssFiles: [commonCss, homeCss],
 		body: render(HomeContent()),
 		scripts: homeScript,
+	}));
+
+	// Render verify email page (shown after signup)
+	writePage('verify-email.html', renderDocument({
+		title: 'Verify Your Email - Specboard',
+		cssFiles: [commonCss, authCss],
+		body: render(VerifyEmailContent()),
+		scripts: verifyEmailScript,
+	}));
+
+	// Render verify email confirmation page (processes token from email link)
+	writePage('verify-email/confirm.html', renderDocument({
+		title: 'Verifying Email - Specboard',
+		cssFiles: [commonCss, authCss],
+		body: render(VerifyEmailConfirmContent()),
+		scripts: verifyEmailConfirmScript,
+	}));
+
+	// Render forgot password page
+	writePage('forgot-password.html', renderDocument({
+		title: 'Reset Password - Specboard',
+		cssFiles: [commonCss, authCss],
+		body: render(ForgotPasswordContent()),
+		scripts: forgotPasswordScript,
+	}));
+
+	// Render reset password page (processes token from email link)
+	writePage('reset-password.html', renderDocument({
+		title: 'Set New Password - Specboard',
+		cssFiles: [commonCss, authCss],
+		body: render(ResetPasswordContent()),
+		scripts: resetPasswordScript,
 	}));
 
 	console.log('\nSSG build complete!');

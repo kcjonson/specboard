@@ -58,3 +58,18 @@ body {
 .login-container .signup-link a:hover {
 	text-decoration: underline;
 }
+
+.login-container .forgot-password {
+	text-align: right;
+	margin-bottom: 1rem;
+	font-size: 0.875rem;
+}
+
+.login-container .forgot-password a {
+	color: var(--color-primary);
+	text-decoration: none;
+}
+
+.login-container .forgot-password a:hover {
+	text-decoration: underline;
+}

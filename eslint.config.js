@@ -85,6 +85,7 @@ export default [
 			'shared/db/**/*.ts',
 			'shared/auth/**/*.ts',
 			'shared/core/**/*.ts',
+			'shared/email/**/*.ts',
 		],
 		languageOptions: {
 			globals: {

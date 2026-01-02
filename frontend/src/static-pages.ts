@@ -58,6 +58,10 @@ export const pages = {
 	signup: loadPage('./static/ssg/signup.html'),
 	home: loadPage('./static/ssg/home.html'),
 	notFound: loadPage('./static/ssg/not-found.html'),
+	verifyEmail: loadPage('./static/ssg/verify-email.html'),
+	verifyEmailConfirm: loadPage('./static/ssg/verify-email/confirm.html'),
+	forgotPassword: loadPage('./static/ssg/forgot-password.html'),
+	resetPassword: loadPage('./static/ssg/reset-password.html'),
 };
 
 /**

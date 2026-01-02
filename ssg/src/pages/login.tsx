@@ -33,6 +33,10 @@ export function LoginContent(): JSX.Element {
 					/>
 				</div>
 
+				<div class="forgot-password">
+					<a href="/forgot-password">Forgot your password?</a>
+				</div>
+
 				<button type="submit" id="submit-btn">Sign In</button>
 			</form>
 
@@ -98,6 +102,11 @@ export const loginScript = `(function() {
 			if (result.ok) {
 				window.location.href = getReturnUrl();
 			} else {
+				// If email not verified, redirect to verify-email page
+				if (result.data.email_not_verified && result.data.email) {
+					window.location.href = '/verify-email?email=' + encodeURIComponent(result.data.email);
+					return;
+				}
 				showError(result.data.error || 'Login failed');
 				submitBtn.disabled = false;
 				submitBtn.textContent = 'Sign In';

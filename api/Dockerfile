@@ -15,6 +15,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY shared/core/package.json ./shared/core/
 COPY shared/db/package.json ./shared/db/
 COPY shared/auth/package.json ./shared/auth/
+COPY shared/email/package.json ./shared/email/
 COPY api/package.json ./api/
 
 # Install dependencies
@@ -25,13 +26,16 @@ COPY tsconfig.json ./
 COPY shared/core ./shared/core
 COPY shared/db ./shared/db
 COPY shared/auth ./shared/auth
+COPY shared/email ./shared/email
 COPY api ./api
 
 # Build shared packages first, then API
 # Note: auth depends on db, so build db before auth
+# Note: email has no internal deps, can build anytime before api
 RUN pnpm --filter @doc-platform/core build && \
     pnpm --filter @doc-platform/db build && \
     pnpm --filter @doc-platform/auth build && \
+    pnpm --filter @doc-platform/email build && \
     pnpm --filter @doc-platform/api build
 
 # Production stage
@@ -50,6 +54,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY shared/core/package.json ./shared/core/
 COPY shared/db/package.json ./shared/db/
 COPY shared/auth/package.json ./shared/auth/
+COPY shared/email/package.json ./shared/email/
 COPY api/package.json ./api/
 
 # Install production dependencies only
@@ -59,6 +64,7 @@ RUN pnpm install --frozen-lockfile --prod
 COPY --from=builder /app/shared/core/dist ./shared/core/dist
 COPY --from=builder /app/shared/db/dist ./shared/db/dist
 COPY --from=builder /app/shared/auth/dist ./shared/auth/dist
+COPY --from=builder /app/shared/email/dist ./shared/email/dist
 COPY --from=builder /app/api/dist ./api/dist
 
 # Copy migrations and seed script

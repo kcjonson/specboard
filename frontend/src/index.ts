@@ -50,6 +50,14 @@ app.get('/login', (c) => servePage(c, pages.login));
 // Signup page (no auth required)
 app.get('/signup', (c) => servePage(c, pages.signup));
 
+// Email verification pages (no auth required)
+app.get('/verify-email', (c) => servePage(c, pages.verifyEmail));
+app.get('/verify-email/confirm', (c) => servePage(c, pages.verifyEmailConfirm));
+
+// Password reset pages (no auth required)
+app.get('/forgot-password', (c) => servePage(c, pages.forgotPassword));
+app.get('/reset-password', (c) => servePage(c, pages.resetPassword));
+
 // Marketing home page - always accessible (even when authenticated)
 app.get('/home', (c) => servePage(c, pages.home));
 

@@ -146,7 +146,8 @@ export const signupScript = `(function() {
 		})
 		.then(function(result) {
 			if (result.ok) {
-				window.location.href = '/';
+				// Redirect to verify email page with email pre-filled
+				window.location.href = '/verify-email?email=' + encodeURIComponent(email);
 			} else {
 				showError(result.data.error || 'Signup failed');
 				submitBtn.disabled = false;

@@ -1,0 +1,22 @@
+{
+	"name": "@doc-platform/email",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch",
+		"lint": "eslint src",
+		"lint:fix": "eslint src --fix",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"@aws-sdk/client-ses": "^3.600.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"typescript": "^5.7.2"
+	}
+}

@@ -18,7 +18,18 @@ import {
 import { reportError, installErrorHandlers, logRequest } from '@doc-platform/core';
 import { getCookie } from 'hono/cookie';
 
-import { handleLogin, handleLogout, handleGetMe, handleUpdateMe, handleSignup } from './handlers/auth.js';
+import {
+	handleLogin,
+	handleLogout,
+	handleGetMe,
+	handleUpdateMe,
+	handleSignup,
+	handleVerifyEmail,
+	handleResendVerification,
+	handleForgotPassword,
+	handleResetPassword,
+	handleChangePassword,
+} from './handlers/auth/index.js';
 import {
 	handleListUsers,
 	handleGetUser,
@@ -151,6 +162,8 @@ app.use(
 		rules: [
 			{ path: '/api/auth/login', config: RATE_LIMIT_CONFIGS.login },
 			{ path: '/api/auth/signup', config: RATE_LIMIT_CONFIGS.signup },
+			{ path: '/api/auth/forgot-password', config: RATE_LIMIT_CONFIGS.forgot },
+			{ path: '/api/auth/resend-verification', config: RATE_LIMIT_CONFIGS.resendVerification },
 			{ path: '/oauth/token', config: RATE_LIMIT_CONFIGS.oauthToken },
 			{ path: '/oauth/authorize', config: RATE_LIMIT_CONFIGS.oauthAuthorize },
 		],
@@ -171,6 +184,10 @@ app.use(
 			'/api/auth/login',
 			'/api/auth/signup',
 			'/api/auth/logout',
+			'/api/auth/verify-email',
+			'/api/auth/resend-verification',
+			'/api/auth/forgot-password',
+			'/api/auth/reset-password',
 			'/api/metrics',
 			'/oauth/token',
 			'/oauth/revoke',
@@ -251,10 +268,17 @@ app.post('/api/metrics', async (context) => {
 
 // Auth routes
 app.post('/api/auth/login', (context) => handleLogin(context, redis));
-app.post('/api/auth/signup', (context) => handleSignup(context, redis));
+app.post('/api/auth/signup', handleSignup);
 app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
 app.put('/api/auth/me', (context) => handleUpdateMe(context, redis));
+
+// Email verification and password reset routes (unauthenticated)
+app.post('/api/auth/verify-email', handleVerifyEmail);
+app.post('/api/auth/resend-verification', handleResendVerification);
+app.post('/api/auth/forgot-password', handleForgotPassword);
+app.post('/api/auth/reset-password', (context) => handleResetPassword(context, redis));
+app.put('/api/auth/change-password', (context) => handleChangePassword(context, redis));
 
 // OAuth 2.1 routes (MCP authentication)
 app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);

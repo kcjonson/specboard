@@ -371,6 +371,7 @@ export class DocPlatformStack extends cdk.Stack {
 			environment: {
 				PORT: '3001',
 				NODE_ENV: 'production',
+				APP_ENV: 'staging',
 				REDIS_URL: `redis://${redis.attrRedisEndpointAddress}:${redis.attrRedisEndpointPort}`,
 				// Database connection built from components
 				DB_HOST: database.instanceEndpoint.hostname,
@@ -379,6 +380,12 @@ export class DocPlatformStack extends cdk.Stack {
 				DB_USER: 'postgres',
 				// Error logging
 				ERROR_LOG_GROUP: errorLogGroup.logGroupName,
+				// Email service (SES)
+				SES_REGION: 'us-west-2',
+				EMAIL_FROM: `noreply@${domainName}`,
+				APP_URL: `https://${stagingDomain}`,
+				// Email safety: only send to team domains in staging
+				EMAIL_ALLOWLIST: 'specboard.io',
 			},
 			secrets: {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
@@ -409,6 +416,20 @@ export class DocPlatformStack extends cdk.Stack {
 
 		// Grant API task permission to write to error log group
 		errorLogGroup.grantWrite(apiTaskDefinition.taskRole);
+
+		// Grant API task permission to send emails via SES
+		// Scoped to domain identity to follow least privilege principle
+		const sesIdentityArn = cdk.Arn.format({
+			service: 'ses',
+			resource: 'identity',
+			resourceName: domainName,
+			region: this.region,
+			account: this.account,
+		}, this);
+		apiTaskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+			actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+			resources: [sesIdentityArn],
+		}));
 
 		// ===========================================
 		// Frontend Service (Fargate)

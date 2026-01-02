@@ -1,0 +1,156 @@
+/**
+ * Auth pages styles (verify-email, forgot-password, reset-password)
+ */
+
+body {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+}
+
+.auth-container {
+	background: var(--color-surface);
+	border-radius: var(--radius-lg);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	padding: 2rem;
+	width: 100%;
+	max-width: 400px;
+	text-align: center;
+}
+
+.auth-container h1 {
+	font-size: 1.5rem;
+	font-weight: 600;
+	margin-bottom: 1.5rem;
+}
+
+.auth-container .description {
+	color: var(--color-text-muted);
+	margin-bottom: 1.5rem;
+	font-size: 0.9375rem;
+	text-align: left;
+}
+
+.auth-container .note {
+	color: var(--color-text-muted);
+	font-size: 0.875rem;
+	margin-bottom: 1.5rem;
+	text-align: left;
+}
+
+.auth-container form {
+	text-align: left;
+}
+
+.auth-container button {
+	width: 100%;
+}
+
+.auth-container .btn {
+	display: inline-block;
+	background: var(--color-primary);
+	color: white;
+	padding: 0.75rem 1.5rem;
+	border-radius: var(--radius-md);
+	text-decoration: none;
+	font-weight: 500;
+	margin-top: 1rem;
+}
+
+.auth-container .btn:hover {
+	opacity: 0.9;
+}
+
+/* Message box */
+.auth-container .message-box {
+	padding: 0.75rem;
+	border-radius: var(--radius-md);
+	margin-bottom: 1rem;
+	font-size: 0.875rem;
+}
+
+.auth-container .message-box.hidden {
+	display: none;
+}
+
+.auth-container .message-box.success {
+	background: var(--color-success-bg);
+	border: 1px solid var(--color-success);
+	color: var(--color-success);
+}
+
+.auth-container .message-box.error {
+	background: var(--color-error-bg);
+	border: 1px solid var(--color-error);
+	color: var(--color-error);
+}
+
+/* Resend section */
+.auth-container .resend-section {
+	margin-top: 2rem;
+	padding-top: 1.5rem;
+	border-top: 1px solid var(--color-border);
+}
+
+.auth-container .resend-section p {
+	font-size: 0.875rem;
+	color: var(--color-text-muted);
+	margin-bottom: 1rem;
+}
+
+/* Back link */
+.auth-container .back-link {
+	margin-top: 1.5rem;
+	font-size: 0.875rem;
+}
+
+.auth-container .back-link a {
+	color: var(--color-primary);
+	text-decoration: none;
+}
+
+.auth-container .back-link a:hover {
+	text-decoration: underline;
+}
+
+/* Loading and result states */
+.auth-container .loading-state,
+.auth-container .result-state {
+	padding: 1rem 0;
+}
+
+.auth-container .loading-state p,
+.auth-container .result-state p {
+	margin: 0.5rem 0;
+}
+
+.auth-container .result-state.hidden,
+.auth-container .loading-state.hidden {
+	display: none;
+}
+
+.auth-container .success-icon {
+	font-size: 3rem;
+	color: var(--color-success);
+	margin-bottom: 1rem;
+}
+
+.auth-container .error-icon {
+	font-size: 3rem;
+	color: var(--color-error);
+	margin-bottom: 1rem;
+}
+
+.auth-container .redirect-note {
+	font-size: 0.875rem;
+	color: var(--color-text-muted);
+}
+
+/* Password hint */
+.auth-container .hint {
+	display: block;
+	font-size: 0.75rem;
+	color: var(--color-text-muted);
+	margin-top: 0.25rem;
+}

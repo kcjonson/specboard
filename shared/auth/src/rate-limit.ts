@@ -249,6 +249,13 @@ export const RATE_LIMIT_CONFIGS = {
 		message: 'Too many password reset requests, please try again in an hour',
 	} satisfies RateLimitConfig,
 
+	/** /api/auth/resend-verification: 3 per hour per IP */
+	resendVerification: {
+		maxRequests: 3,
+		windowSeconds: 60 * 60,
+		message: 'Too many verification email requests, please try again in an hour',
+	} satisfies RateLimitConfig,
+
 	/** General API: 100 requests per minute */
 	api: {
 		maxRequests: 100,

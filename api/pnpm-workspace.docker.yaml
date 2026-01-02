@@ -2,4 +2,5 @@ packages:
   - 'shared/core'
   - 'shared/db'
   - 'shared/auth'
+  - 'shared/email'
   - 'api'

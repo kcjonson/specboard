@@ -61,6 +61,16 @@ export {
 	type AdminAuthVariables,
 } from './admin.js';
 
+// Token utilities
+export {
+	generateToken,
+	hashToken,
+	verifyToken,
+	getTokenExpiry,
+	isTokenExpired,
+	TOKEN_EXPIRY_MS,
+} from './tokens.js';
+
 // Types
 export {
 	type Session,

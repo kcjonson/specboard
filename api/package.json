@@ -16,6 +16,7 @@
 		"@doc-platform/auth": "workspace:*",
 		"@doc-platform/core": "workspace:*",
 		"@doc-platform/db": "workspace:*",
+		"@doc-platform/email": "workspace:*",
 		"@hono/node-server": "^1.19.7",
 		"hono": "^4.11.1",
 		"ioredis": "^5.4.2"

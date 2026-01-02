@@ -5,6 +5,7 @@ import { Button, Text, Page } from '@doc-platform/ui';
 import { fetchClient } from '@doc-platform/fetch';
 import { useModel, UserModel, AuthorizationsCollection } from '@doc-platform/models';
 import { AuthorizedApps } from './AuthorizedApps';
+import { ChangePasswordDialog } from './ChangePasswordDialog';
 import styles from './UserSettings.module.css';
 
 interface User {
@@ -50,6 +51,9 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 	const [initialized, setInitialized] = useState(false);
 	const [saving, setSaving] = useState(false);
+
+	// Password dialog state
+	const [showPasswordDialog, setShowPasswordDialog] = useState(false);
 
 	// Fetch target user if viewing another user
 	useEffect(() => {
@@ -354,11 +358,25 @@ export function UserSettings(props: RouteProps): JSX.Element {
 								{saving ? 'Saving...' : 'Save Changes'}
 							</Button>
 						</div>
+
+						{!isViewingOther && (
+							<div class={styles.securitySection}>
+								<h3 class={styles.sectionTitle}>Security</h3>
+								<Button variant="secondary" onClick={() => setShowPasswordDialog(true)}>
+									Change Password
+								</Button>
+							</div>
+						)}
 					</div>
 
 					{!isViewingOther && (
 						<AuthorizedApps authorizations={authorizations} />
 					)}
+
+					<ChangePasswordDialog
+						open={showPasswordDialog}
+						onClose={() => setShowPasswordDialog(false)}
+					/>
 				</div>
 			</div>
 		</div>

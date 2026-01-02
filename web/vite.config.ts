@@ -17,6 +17,7 @@ export default defineConfig({
 				'ssg/src/styles/signup.css': resolve(__dirname, '../ssg/src/styles/signup.css'),
 				'ssg/src/styles/not-found.css': resolve(__dirname, '../ssg/src/styles/not-found.css'),
 				'ssg/src/styles/home.css': resolve(__dirname, '../ssg/src/styles/home.css'),
+				'ssg/src/styles/auth.css': resolve(__dirname, '../ssg/src/styles/auth.css'),
 			},
 		},
 	},
