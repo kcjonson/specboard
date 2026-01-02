@@ -32,9 +32,10 @@ export function hashToken(token: string): string {
 export function verifyToken(token: string, storedHash: string): boolean {
 	const tokenHash = hashToken(token);
 
-	// Ensure both strings are the same length for timingSafeEqual
-	const tokenBuffer = Buffer.from(tokenHash, 'utf-8');
-	const storedBuffer = Buffer.from(storedHash, 'utf-8');
+	// Use 'hex' encoding since both hashes are hex strings (64 chars -> 32 bytes)
+	// This is more efficient and semantically correct than UTF-8 encoding
+	const tokenBuffer = Buffer.from(tokenHash, 'hex');
+	const storedBuffer = Buffer.from(storedHash, 'hex');
 
 	if (tokenBuffer.length !== storedBuffer.length) {
 		return false;

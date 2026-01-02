@@ -418,9 +418,17 @@ export class DocPlatformStack extends cdk.Stack {
 		errorLogGroup.grantWrite(apiTaskDefinition.taskRole);
 
 		// Grant API task permission to send emails via SES
+		// Scoped to domain identity to follow least privilege principle
+		const sesIdentityArn = cdk.Arn.format({
+			service: 'ses',
+			resource: 'identity',
+			resourceName: domainName,
+			region: this.region,
+			account: this.account,
+		}, this);
 		apiTaskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
 			actions: ['ses:SendEmail', 'ses:SendRawEmail'],
-			resources: ['*'],
+			resources: [sesIdentityArn],
 		}));
 
 		// ===========================================

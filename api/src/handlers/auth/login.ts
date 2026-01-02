@@ -65,14 +65,10 @@ export async function handleLogin(
 			return context.json({ error: 'Invalid credentials' }, 401);
 		}
 
-		// Check if user account is active
-		if (!user.is_active) {
-			return context.json({ error: 'Account is deactivated' }, 403);
-		}
-
-		// Check if email is verified
-		if (!user.email_verified) {
-			logAuthEvent('login_failure', { identifier, reason: 'email_not_verified' });
+		// Check email verification and account status
+		// Return same response for both to prevent account state enumeration
+		if (!user.email_verified || !user.is_active) {
+			logAuthEvent('login_failure', { identifier, reason: !user.email_verified ? 'email_not_verified' : 'account_inactive' });
 			return context.json({
 				error: 'Please verify your email address before logging in.',
 				email_not_verified: true,

@@ -23,7 +23,8 @@ const EMAIL_MODE = process.env.EMAIL_MODE;
 const EMAIL_ALLOWLIST = process.env.EMAIL_ALLOWLIST;
 
 // Only create SES client if we might actually use it
-const sesClient = NODE_ENV === 'production' || EMAIL_MODE === 'ses'
+// sendEmail bypasses SES when NODE_ENV is 'development' or EMAIL_MODE is 'console'
+const sesClient = NODE_ENV !== 'development' && EMAIL_MODE !== 'console'
 	? new SESClient({ region: SES_REGION })
 	: null;
 
@@ -42,10 +43,16 @@ function isEmailAllowed(email: string): boolean {
 		return false;
 	}
 
-	const allowedDomains = EMAIL_ALLOWLIST.split(',').map(d => d.trim().toLowerCase());
-	const emailDomain = email.split('@')[1]?.toLowerCase();
+	// Validate email format: must have exactly one '@', not at start/end
+	const atIndex = email.indexOf('@');
+	if (atIndex <= 0 || atIndex !== email.lastIndexOf('@') || atIndex === email.length - 1) {
+		return false;
+	}
 
-	return emailDomain ? allowedDomains.includes(emailDomain) : false;
+	const allowedDomains = EMAIL_ALLOWLIST.split(',').map(d => d.trim().toLowerCase());
+	const emailDomain = email.slice(atIndex + 1).toLowerCase();
+
+	return allowedDomains.includes(emailDomain);
 }
 
 /**

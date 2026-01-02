@@ -6,7 +6,6 @@ import type { Context } from 'hono';
 import {
 	generateToken,
 	hashToken,
-	verifyToken,
 	getTokenExpiry,
 	isTokenExpired,
 } from '@doc-platform/auth';
@@ -65,10 +64,9 @@ export async function handleVerifyEmail(context: Context): Promise<Response> {
 			return context.json({ error: 'Verification link has expired. Please request a new one.' }, 400);
 		}
 
-		// Verify the token using constant-time comparison
-		if (!verifyToken(token, tokenRecord.token_hash)) {
-			return context.json({ error: 'Invalid verification link' }, 400);
-		}
+		// Note: No need for additional token verification here since we looked up
+		// the record by tokenHash (line 42). SHA-256 is deterministic, so if the
+		// hash matches, the token is correct.
 
 		// Mark email as verified
 		await query(
@@ -150,14 +148,24 @@ export async function handleResendVerification(context: Context): Promise<Respon
 		// Build verification URL
 		const verifyUrl = `${APP_URL}/verify-email/confirm?token=${token}`;
 
-		// Send email
-		const emailContent = getVerificationEmailContent(verifyUrl);
-		await sendEmail({
-			to: user.email,
-			subject: emailContent.subject,
-			textBody: emailContent.textBody,
-			htmlBody: emailContent.htmlBody,
-		});
+		// Send email - catch failures to log with user context for admin investigation
+		try {
+			const emailContent = getVerificationEmailContent(verifyUrl);
+			await sendEmail({
+				to: user.email,
+				subject: emailContent.subject,
+				textBody: emailContent.textBody,
+				htmlBody: emailContent.htmlBody,
+			});
+		} catch (emailError) {
+			// Log with user ID for admin investigation of delivery issues
+			console.error('Failed to send verification email:', {
+				userId: user.id,
+				email: user.email,
+				error: emailError instanceof Error ? emailError.message : 'Unknown error',
+			});
+			// Still return success to prevent enumeration - user can retry
+		}
 
 		return context.json(successResponse);
 	} catch (error) {

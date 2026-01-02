@@ -165,6 +165,19 @@ export async function handleSignup(context: Context): Promise<Response> {
 			email: user.email,
 		}, 201);
 	} catch (error) {
+		// Handle unique constraint violations (race condition between check and insert)
+		if (error instanceof Error && 'code' in error && error.code === '23505') {
+			// PostgreSQL unique_violation error
+			const detail = 'detail' in error ? String(error.detail) : '';
+			if (detail.includes('username')) {
+				return context.json({ error: 'Username already taken' }, 409);
+			}
+			if (detail.includes('email')) {
+				return context.json({ error: 'Email already registered' }, 409);
+			}
+			// Generic fallback for other unique constraint violations
+			return context.json({ error: 'Account already exists' }, 409);
+		}
 		console.error('Signup failed:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Failed to create account' }, 500);
 	}

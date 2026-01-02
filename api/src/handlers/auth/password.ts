@@ -12,7 +12,6 @@ import {
 	verifyPassword,
 	generateToken,
 	hashToken,
-	verifyToken,
 	getTokenExpiry,
 	isTokenExpired,
 	SESSION_COOKIE_NAME,
@@ -158,10 +157,9 @@ export async function handleResetPassword(
 			return context.json({ error: 'Reset link has expired. Please request a new one.' }, 400);
 		}
 
-		// Verify the token using constant-time comparison
-		if (!verifyToken(token, tokenRecord.token_hash)) {
-			return context.json({ error: 'Invalid reset link' }, 400);
-		}
+		// Note: No need for additional token verification here since we looked up
+		// the record by tokenHash (line 136). SHA-256 is deterministic, so if the
+		// hash matches, the token is correct.
 
 		// Hash new password
 		const passwordHash = await hashPassword(password);
