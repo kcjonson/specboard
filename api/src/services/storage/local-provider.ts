@@ -24,7 +24,7 @@ export class LocalStorageProvider implements StorageProvider {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	async listDirectory(relativePath: string): Promise<FileEntry[]> {
-		const absolutePath = validatePath(this.repoPath, relativePath);
+		const absolutePath = await validatePath(this.repoPath, relativePath);
 
 		const entries = await fs.readdir(absolutePath, { withFileTypes: true });
 
@@ -76,16 +76,26 @@ export class LocalStorageProvider implements StorageProvider {
 	}
 
 	async readFile(relativePath: string): Promise<string> {
-		const absolutePath = validatePath(this.repoPath, relativePath);
+		const absolutePath = await validatePath(this.repoPath, relativePath);
 
 		// Check for common binary extensions
 		const binaryExtensions = new Set([
-			'.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.svg',
-			'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-			'.zip', '.tar', '.gz', '.rar', '.7z',
-			'.exe', '.dll', '.so', '.dylib',
+			// Images
+			'.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.svg', '.tiff', '.tif', '.psd', '.raw', '.heic', '.heif',
+			// Documents
+			'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
+			// Archives
+			'.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.zst', '.lz4',
+			// Executables/Libraries
+			'.exe', '.dll', '.so', '.dylib', '.bin', '.o', '.a', '.lib',
+			// Fonts
 			'.woff', '.woff2', '.ttf', '.eot', '.otf',
-			'.mp3', '.mp4', '.wav', '.avi', '.mov', '.webm',
+			// Media
+			'.mp3', '.mp4', '.wav', '.avi', '.mov', '.webm', '.flac', '.aac', '.ogg', '.mkv', '.flv',
+			// Data/Database
+			'.db', '.sqlite', '.sqlite3', '.dat', '.mdb', '.accdb',
+			// Other binary
+			'.class', '.pyc', '.pyo', '.wasm', '.deb', '.rpm', '.dmg', '.iso', '.img',
 		]);
 		const ext = path.extname(relativePath).toLowerCase();
 		if (binaryExtensions.has(ext)) {
@@ -102,29 +112,29 @@ export class LocalStorageProvider implements StorageProvider {
 	}
 
 	async writeFile(relativePath: string, content: string): Promise<void> {
-		const absolutePath = validatePath(this.repoPath, relativePath);
+		const absolutePath = await validatePath(this.repoPath, relativePath);
 		await fs.writeFile(absolutePath, content, 'utf-8');
 	}
 
 	async deleteFile(relativePath: string): Promise<void> {
-		const absolutePath = validatePath(this.repoPath, relativePath);
+		const absolutePath = await validatePath(this.repoPath, relativePath);
 		await fs.rm(absolutePath, { recursive: true });
 	}
 
 	async createDirectory(relativePath: string): Promise<void> {
-		const absolutePath = validatePath(this.repoPath, relativePath);
+		const absolutePath = await validatePath(this.repoPath, relativePath);
 		await fs.mkdir(absolutePath, { recursive: true });
 	}
 
 	async rename(oldPath: string, newPath: string): Promise<void> {
-		const oldAbsolute = validatePath(this.repoPath, oldPath);
-		const newAbsolute = validatePath(this.repoPath, newPath);
+		const oldAbsolute = await validatePath(this.repoPath, oldPath);
+		const newAbsolute = await validatePath(this.repoPath, newPath);
 		await fs.rename(oldAbsolute, newAbsolute);
 	}
 
 	async exists(relativePath: string): Promise<boolean> {
 		try {
-			const absolutePath = validatePath(this.repoPath, relativePath);
+			const absolutePath = await validatePath(this.repoPath, relativePath);
 			await fs.access(absolutePath);
 			return true;
 		} catch {
@@ -260,6 +270,10 @@ export class LocalStorageProvider implements StorageProvider {
 
 	async pull(): Promise<PullResult> {
 		try {
+			// Get current HEAD before pulling to count commits
+			const { stdout: oldHead } = await execGit(this.repoPath, ['rev-parse', 'HEAD']);
+			const oldSha = oldHead.trim();
+
 			const { stdout } = await execGit(this.repoPath, ['pull']);
 
 			// Check for conflicts
@@ -273,12 +287,21 @@ export class LocalStorageProvider implements StorageProvider {
 				}
 			}
 
-			// Count commits pulled
+			// Count commits pulled using rev-list
 			let commits = 0;
-			const match = stdout.match(/(\d+) files? changed/);
-			if (match) commits = 1; // At least one commit if files changed
-			const commitMatch = stdout.match(/(\d+) commits?/);
-			if (commitMatch) commits = parseInt(commitMatch[1]!, 10);
+			try {
+				const { stdout: newHead } = await execGit(this.repoPath, ['rev-parse', 'HEAD']);
+				const newSha = newHead.trim();
+				if (oldSha !== newSha) {
+					const { stdout: countOut } = await execGit(this.repoPath, [
+						'rev-list', '--count', `${oldSha}..${newSha}`,
+					]);
+					commits = parseInt(countOut.trim(), 10) || 0;
+				}
+			} catch {
+				// Fall back to 0 if rev-list fails
+				commits = 0;
+			}
 
 			return { pulled: true, commits, conflicts };
 		} catch (error) {

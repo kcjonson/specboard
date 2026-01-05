@@ -89,14 +89,16 @@ export interface OAuthCode {
  * Planning entity types
  */
 
-export type StorageMode = 'local' | 'cloud';
+export type StorageMode = 'none' | 'local' | 'cloud';
 
 export interface RepositoryConfigLocal {
+	type: 'local';
 	localPath: string;
 	branch: string;
 }
 
 export interface RepositoryConfigCloud {
+	type: 'cloud';
 	remote: {
 		provider: 'github';
 		owner: string;
@@ -107,6 +109,20 @@ export interface RepositoryConfigCloud {
 }
 
 export type RepositoryConfig = RepositoryConfigLocal | RepositoryConfigCloud;
+
+/**
+ * Type guard for local repository config
+ */
+export function isLocalRepository(repo: RepositoryConfig | Record<string, never>): repo is RepositoryConfigLocal {
+	return 'type' in repo && repo.type === 'local';
+}
+
+/**
+ * Type guard for cloud repository config
+ */
+export function isCloudRepository(repo: RepositoryConfig | Record<string, never>): repo is RepositoryConfigCloud {
+	return 'type' in repo && repo.type === 'cloud';
+}
 
 export interface Project {
 	id: string;

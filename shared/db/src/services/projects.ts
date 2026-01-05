@@ -3,7 +3,7 @@
  */
 
 import { query } from '../index.js';
-import type { Project, StorageMode, RepositoryConfig } from '../types.js';
+import { type Project, type StorageMode, type RepositoryConfig, isLocalRepository } from '../types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)
@@ -226,7 +226,7 @@ export async function addFolder(
 
 	// If project already has a local path, verify it matches
 	const currentRepo = project.repository as RepositoryConfig | Record<string, never>;
-	if ('localPath' in currentRepo && currentRepo.localPath !== data.repoPath) {
+	if (isLocalRepository(currentRepo) && currentRepo.localPath !== data.repoPath) {
 		throw new Error('DIFFERENT_REPO');
 	}
 
@@ -237,6 +237,7 @@ export async function addFolder(
 
 	// Update project with new storage config
 	const newRepository = {
+		type: 'local' as const,
 		localPath: data.repoPath,
 		branch: data.branch,
 	};
@@ -284,6 +285,7 @@ export async function removeFolder(
 		`UPDATE projects
 		 SET root_paths = $1,
 		     repository = CASE WHEN $2::int = 0 THEN '{}'::jsonb ELSE repository END,
+		     storage_mode = CASE WHEN $2::int = 0 THEN 'none' ELSE storage_mode END,
 		     updated_at = NOW()
 		 WHERE id = $3 AND owner_id = $4
 		 RETURNING *`,

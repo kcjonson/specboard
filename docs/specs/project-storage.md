@@ -690,6 +690,17 @@ To prevent performance issues and abuse, the following limits are enforced:
 | `MAX_TOTAL_SIZE_BYTES` | 50MB | Maximum total size of all files in a project (not yet enforced) |
 
 **Error Codes:**
+
+*Folder Management:*
+- `NOT_DIRECTORY` (400): Path exists but is not a directory
+- `FOLDER_NOT_FOUND` (400): Folder does not exist
+- `NOT_GIT_REPO` (400): Folder is not inside a git repository
+- `DIFFERENT_REPO` (400): Folder must be in the same git repository as existing folders
+- `DUPLICATE_PATH` (400): This folder is already added
+
+*File Operations:*
+- `REPO_NOT_CONFIGURED` (400): No repository configured for project
+- `PATH_OUTSIDE_ROOTS` (403): Path is outside project boundaries
 - `TOO_MANY_FILES` (400): Directory contains more than 1000 files
 - `FILE_TOO_LARGE` (400): File exceeds 5MB size limit
 - `BINARY_FILE` (400): Cannot read binary files (images, videos, etc.)

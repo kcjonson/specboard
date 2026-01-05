@@ -8,7 +8,7 @@ import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import fs from 'fs/promises';
 import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
-import { getProject, addFolder, removeFolder, type RepositoryConfig } from '@doc-platform/db';
+import { getProject, addFolder, removeFolder, type RepositoryConfig, isLocalRepository } from '@doc-platform/db';
 import { isValidUUID } from '../validation.js';
 import { findRepoRoot, getCurrentBranch, getRelativePath } from '../services/storage/git-utils.js';
 import { LocalStorageProvider } from '../services/storage/local-provider.js';
@@ -32,8 +32,8 @@ async function getStorageProvider(
 	if (!project) return null;
 
 	const repo = project.repository as RepositoryConfig | Record<string, never>;
-	if (!('localPath' in repo)) {
-		return null; // No repository configured
+	if (!isLocalRepository(repo)) {
+		return null; // No repository configured or cloud mode
 	}
 
 	return new LocalStorageProvider(repo.localPath);
@@ -210,7 +210,7 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 		}
 
 		const repo = project.repository as RepositoryConfig | Record<string, never>;
-		if (!('localPath' in repo)) {
+		if (!isLocalRepository(repo)) {
 			return context.json({ error: 'No repository configured', code: 'REPO_NOT_CONFIGURED' }, 400);
 		}
 

@@ -5,6 +5,7 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
+import fs from 'fs/promises';
 
 export interface GitInfo {
 	repoRoot: string;
@@ -12,19 +13,32 @@ export interface GitInfo {
 	remoteUrl: string | null;
 }
 
+// Default timeout for git operations (30 seconds)
+const DEFAULT_GIT_TIMEOUT_MS = 30000;
+
 /**
  * Execute a git command in a directory
  * Uses spawn with args array to prevent command injection
  */
 export async function execGit(
 	cwd: string,
-	args: string[]
+	args: string[],
+	options?: { timeout?: number }
 ): Promise<{ stdout: string; stderr: string }> {
+	const timeout = options?.timeout ?? DEFAULT_GIT_TIMEOUT_MS;
+
 	return new Promise((resolve, reject) => {
 		const proc: ChildProcess = spawn('git', args, { cwd });
 
 		let stdout = '';
 		let stderr = '';
+		let killed = false;
+
+		const timer = setTimeout(() => {
+			killed = true;
+			proc.kill('SIGTERM');
+			reject(new Error(`Git command timed out after ${timeout}ms`));
+		}, timeout);
 
 		proc.stdout?.on('data', (data: Buffer) => {
 			stdout += data.toString();
@@ -35,10 +49,13 @@ export async function execGit(
 		});
 
 		proc.on('error', (error: Error) => {
+			clearTimeout(timer);
 			reject(new Error(`Git command failed: ${error.message}`));
 		});
 
 		proc.on('close', (code: number | null) => {
+			clearTimeout(timer);
+			if (killed) return; // Already rejected by timeout
 			if (code === 0) {
 				resolve({ stdout, stderr });
 			} else {
@@ -108,12 +125,43 @@ export function getRelativePath(repoRoot: string, absolutePath: string): string 
 
 /**
  * Validate that a path is within the repository (prevent path traversal)
+ * Uses realpath to resolve symlinks and prevent symlink-based attacks
  */
-export function validatePath(repoRoot: string, relativePath: string): string {
+export async function validatePath(repoRoot: string, relativePath: string): Promise<string> {
 	const absolutePath = path.resolve(repoRoot, relativePath.replace(/^\//, ''));
-	const normalizedRepo = path.normalize(repoRoot);
 
-	if (!absolutePath.startsWith(normalizedRepo)) {
+	// Resolve symlinks in both paths for secure comparison
+	let realRepoRoot: string;
+	let realAbsolutePath: string;
+
+	try {
+		realRepoRoot = await fs.realpath(repoRoot);
+	} catch {
+		throw new Error('Repository root not accessible');
+	}
+
+	try {
+		realAbsolutePath = await fs.realpath(absolutePath);
+	} catch {
+		// Path doesn't exist yet (e.g., for write operations)
+		// Fall back to checking the parent directory
+		const parentPath = path.dirname(absolutePath);
+		try {
+			const realParent = await fs.realpath(parentPath);
+			if (!realParent.startsWith(realRepoRoot)) {
+				throw new Error('Path traversal detected');
+			}
+		} catch {
+			// Parent doesn't exist either - just do the basic check
+			const normalizedRepo = path.normalize(repoRoot);
+			if (!absolutePath.startsWith(normalizedRepo)) {
+				throw new Error('Path traversal detected');
+			}
+		}
+		return absolutePath;
+	}
+
+	if (!realAbsolutePath.startsWith(realRepoRoot)) {
 		throw new Error('Path traversal detected');
 	}
 
