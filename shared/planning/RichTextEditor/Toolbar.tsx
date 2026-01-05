@@ -26,10 +26,10 @@ function ToolbarButton({ active, onAction, children, title, ariaLabel }: Toolbar
 				event.preventDefault();
 				onAction();
 			}}
-			onClick={(event) => {
+			onKeyDown={(event) => {
 				// Handle keyboard activation (Enter/Space)
-				// Only fire if not from mouse (mousedown already handled it)
-				if (event.detail === 0) {
+				if (event.key === 'Enter' || event.key === ' ') {
+					event.preventDefault();
 					onAction();
 				}
 			}}

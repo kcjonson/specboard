@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useEffect } from 'preact/hooks';
+import { useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { createEditor, Descendant, Editor, Node } from 'slate';
 import { Slate, Editable, withReact, RenderElementProps, RenderLeafProps } from 'slate-react';
@@ -98,8 +98,6 @@ export function RichTextEditor({
 	placeholder = 'Add a description...',
 	readOnly = false,
 }: RichTextEditorProps): JSX.Element {
-	const editorWrapperRef = useRef<HTMLDivElement>(null);
-
 	// Create editor instance with plugins
 	const editor = useMemo(
 		() => withHistory(withReact(createEditor())),
@@ -137,19 +135,6 @@ export function RichTextEditor({
 		[editor, onChange]
 	);
 
-	// Auto-resize the editor wrapper when content changes
-	useEffect(() => {
-		if (editorWrapperRef.current) {
-			const wrapper = editorWrapperRef.current;
-			// Reset height to auto to measure natural content height
-			wrapper.style.height = 'auto';
-			// Get the scroll height which is the actual content height
-			const contentHeight = wrapper.scrollHeight;
-			// Set the height, but CSS max-height (50vh) will cap it
-			wrapper.style.height = `${contentHeight}px`;
-		}
-	}, [value]);
-
 	return (
 		<div class={styles.container}>
 			<Slate editor={editor} initialValue={initialValue} onChange={handleChange}>
@@ -159,7 +144,7 @@ export function RichTextEditor({
 						toggleMark={(mark) => toggleMark(editor, mark)}
 					/>
 				)}
-				<div ref={editorWrapperRef} class={styles.editorWrapper}>
+				<div class={styles.editorWrapper}>
 					<Editable
 						class={styles.editable}
 						renderElement={renderElement}

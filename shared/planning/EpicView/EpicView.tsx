@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'preact/hooks';
+import { useState, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { useModel, EpicModel, type TaskModel, type Status } from '@doc-platform/models';
@@ -40,10 +40,10 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 	// Always call hook unconditionally (hook now handles undefined)
 	useModel(epic);
 
-	// Initialize description AST from plain text (computed once on mount)
+	// Initialize description AST from plain text (recomputed when epic description changes)
 	const initialDescriptionAst = useMemo(
 		() => deserializeFromText(epic?.description || ''),
-		[]
+		[epic?.description]
 	);
 
 	// State for create mode
@@ -54,6 +54,11 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 	const [newTaskTitle, setNewTaskTitle] = useState('');
 
 	const taskStats = epic?.taskStats || { total: 0, done: 0 };
+
+	// Sync description AST state when epic changes (for navigation between epics)
+	useEffect(() => {
+		setDescriptionAst(initialDescriptionAst);
+	}, [initialDescriptionAst]);
 
 	// Task status toggle
 	const handleToggleTaskStatus = (task: TaskModel): void => {
@@ -159,6 +164,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				{isEditingDescription || isNew ? (
 					<div class={styles.descriptionEdit}>
 						<RichTextEditor
+							key={epic?.id || 'new'}
 							value={descriptionAst}
 							onChange={handleDescriptionChange}
 							placeholder="Add a description..."
