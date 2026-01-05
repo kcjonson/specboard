@@ -1,8 +1,10 @@
-import { useState } from 'preact/hooks';
+import { useState, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
+import type { Descendant } from 'slate';
 import { useModel, EpicModel, type TaskModel, type Status } from '@doc-platform/models';
-import { Button, Textarea, Select, Text } from '@doc-platform/ui';
+import { Button, Select, Text } from '@doc-platform/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
+import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import styles from './EpicView.module.css';
 
 /** Props for viewing/editing an existing epic */
@@ -38,14 +40,25 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 	// Always call hook unconditionally (hook now handles undefined)
 	useModel(epic);
 
+	// Initialize description AST from plain text (recomputed when epic description changes)
+	const initialDescriptionAst = useMemo(
+		() => deserializeFromText(epic?.description || ''),
+		[epic?.description]
+	);
+
 	// State for create mode
 	const [titleDraft, setTitleDraft] = useState(epic?.title || '');
 	const [isEditingDescription, setIsEditingDescription] = useState(isNew);
-	const [descriptionDraft, setDescriptionDraft] = useState(epic?.description || '');
+	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
 	const [statusDraft, setStatusDraft] = useState<Status>(epic?.status || 'ready');
 	const [newTaskTitle, setNewTaskTitle] = useState('');
 
 	const taskStats = epic?.taskStats || { total: 0, done: 0 };
+
+	// Sync description AST state when epic changes (for navigation between epics)
+	useEffect(() => {
+		setDescriptionAst(initialDescriptionAst);
+	}, [initialDescriptionAst]);
 
 	// Task status toggle
 	const handleToggleTaskStatus = (task: TaskModel): void => {
@@ -55,13 +68,17 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 
 	// Description editing
 	const handleEditDescription = (): void => {
-		setDescriptionDraft(epic?.description || '');
+		setDescriptionAst(deserializeFromText(epic?.description || ''));
 		setIsEditingDescription(true);
+	};
+
+	const handleDescriptionChange = (value: Descendant[]): void => {
+		setDescriptionAst(value);
 	};
 
 	const handleSaveDescription = (): void => {
 		if (epic) {
-			epic.description = descriptionDraft;
+			epic.description = serializeToText(descriptionAst);
 			epic.save();
 		}
 		setIsEditingDescription(false);
@@ -70,7 +87,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 	const handleCancelDescription = (): void => {
 		setIsEditingDescription(false);
 		if (isNew) {
-			setDescriptionDraft('');
+			setDescriptionAst(deserializeFromText(''));
 		}
 	};
 
@@ -105,9 +122,10 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 	// Create epic
 	const handleCreate = (): void => {
 		if (!titleDraft.trim()) return;
+		const descriptionText = serializeToText(descriptionAst);
 		onCreate?.({
 			title: titleDraft.trim(),
-			description: descriptionDraft || undefined,
+			description: descriptionText || undefined,
 			status: statusDraft,
 		});
 	};
@@ -145,10 +163,10 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				</div>
 				{isEditingDescription || isNew ? (
 					<div class={styles.descriptionEdit}>
-						<Textarea
-							value={descriptionDraft}
-							onInput={(e) => setDescriptionDraft((e.target as HTMLTextAreaElement).value)}
-							rows={3}
+						<RichTextEditor
+							key={epic?.id || 'new'}
+							value={descriptionAst}
+							onChange={handleDescriptionChange}
 							placeholder="Add a description..."
 						/>
 						{!isNew && (

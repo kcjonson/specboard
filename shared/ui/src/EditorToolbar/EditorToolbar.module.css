@@ -8,6 +8,10 @@
 	flex-shrink: 0;
 }
 
+.toolbar.compact {
+	padding: var(--space-1) var(--space-2);
+}
+
 .group {
 	display: flex;
 	align-items: center;
@@ -19,6 +23,11 @@
 	height: 20px;
 	background: var(--color-border);
 	margin: 0 var(--space-2);
+}
+
+.separator.compact {
+	height: 16px;
+	margin: 0 var(--space-1);
 }
 
 .button {
@@ -37,6 +46,12 @@
 	font-weight: var(--font-semibold);
 	cursor: pointer;
 	transition: background-color 0.15s, color 0.15s;
+}
+
+.button.compact {
+	width: 28px;
+	height: 28px;
+	font-size: var(--text-xs);
 }
 
 .button:hover {

@@ -60,3 +60,17 @@ export type { PageProps } from './Page/Page';
 // NotFound
 export { NotFound } from './NotFound/NotFound';
 export { notFoundHtml } from './not-found';
+
+// EditorToolbar - shared toolbar components for Slate editors
+export {
+	ToolbarContainer,
+	ToolbarGroup,
+	ToolbarSeparator,
+	ToolbarButton,
+} from './EditorToolbar/EditorToolbar';
+export type {
+	ToolbarContainerProps,
+	ToolbarGroupProps,
+	ToolbarSeparatorProps,
+	ToolbarButtonProps,
+} from './EditorToolbar/EditorToolbar';
