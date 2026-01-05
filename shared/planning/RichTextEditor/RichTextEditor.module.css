@@ -1,0 +1,60 @@
+.container {
+	display: flex;
+	flex-direction: column;
+	background: var(--color-surface);
+	border-radius: var(--radius-md);
+	border: 1px solid var(--color-border);
+	overflow: hidden;
+	/* Max height is 50% of viewport */
+	max-height: 50vh;
+}
+
+.container:focus-within {
+	border-color: var(--color-primary);
+	outline: 2px solid var(--color-primary);
+	outline-offset: -1px;
+}
+
+.editorWrapper {
+	flex: 1;
+	overflow-y: auto;
+	min-height: 80px;
+}
+
+.editable {
+	padding: var(--space-3);
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+	line-height: 1.6;
+	color: var(--color-text);
+	min-height: 100%;
+}
+
+.editable:focus {
+	outline: none;
+}
+
+/* Placeholder styling */
+.editable [data-slate-placeholder="true"] {
+	color: var(--color-text-muted);
+	opacity: 1 !important;
+}
+
+/* Element styles */
+.paragraph {
+	margin: 0 0 var(--space-2) 0;
+}
+
+.paragraph:last-child {
+	margin-bottom: 0;
+}
+
+/* Inline code styling */
+.inlineCode {
+	padding: 0.125em 0.375em;
+	background: var(--color-background);
+	border-radius: var(--radius-sm);
+	font-family: var(--font-mono);
+	font-size: 0.875em;
+	color: var(--color-primary);
+}
