@@ -1,0 +1,139 @@
+/**
+ * Folder management handlers
+ */
+
+import type { Context } from 'hono';
+import type { Redis } from 'ioredis';
+import fs from 'fs/promises';
+import { addFolder, removeFolder } from '@doc-platform/db';
+import { isValidUUID } from '../../validation.js';
+import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/storage/git-utils.js';
+import { getUserId } from './utils.js';
+
+/**
+ * POST /api/projects/:id/folders
+ * Add a folder to the project (validates git repository)
+ */
+export async function handleAddFolder(context: Context, redis: Redis): Promise<Response> {
+	const userId = await getUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+
+	const projectId = context.req.param('id');
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
+
+	try {
+		const body = await context.req.json();
+		const { path } = body;
+
+		if (!path || typeof path !== 'string') {
+			return context.json({ error: 'Path is required' }, 400);
+		}
+
+		// Validate folder exists
+		try {
+			const stats = await fs.stat(path);
+			if (!stats.isDirectory()) {
+				return context.json({ error: 'Path is not a directory', code: 'NOT_DIRECTORY' }, 400);
+			}
+		} catch {
+			return context.json({ error: 'Folder does not exist', code: 'FOLDER_NOT_FOUND' }, 400);
+		}
+
+		// Find git repository root
+		const repoRoot = await findRepoRoot(path);
+		if (!repoRoot) {
+			return context.json(
+				{ error: 'Folder is not inside a git repository', code: 'NOT_GIT_REPO' },
+				400
+			);
+		}
+
+		// Get current branch
+		const branch = await getCurrentBranch(repoRoot);
+
+		// Calculate relative path within repo
+		const rootPath = getRelativePath(repoRoot, path);
+
+		// Add folder to project
+		const project = await addFolder(projectId, userId, {
+			repoPath: repoRoot,
+			rootPath,
+			branch,
+		});
+
+		if (!project) {
+			return context.json({ error: 'Project not found' }, 404);
+		}
+
+		return context.json({
+			projectId: project.id,
+			storageMode: project.storageMode,
+			repository: project.repository,
+			rootPaths: project.rootPaths,
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+
+		if (message === 'DIFFERENT_REPO') {
+			return context.json(
+				{ error: 'Folder must be in the same git repository as existing folders', code: 'DIFFERENT_REPO' },
+				400
+			);
+		}
+
+		if (message === 'DUPLICATE_PATH') {
+			return context.json(
+				{ error: 'This folder is already added', code: 'DUPLICATE_PATH' },
+				400
+			);
+		}
+
+		console.error('Failed to add folder:', error);
+		return context.json({ error: 'Server error' }, 500);
+	}
+}
+
+/**
+ * DELETE /api/projects/:id/folders
+ * Remove a folder from the project (doesn't delete files)
+ */
+export async function handleRemoveFolder(context: Context, redis: Redis): Promise<Response> {
+	const userId = await getUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+
+	const projectId = context.req.param('id');
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
+
+	try {
+		const body = await context.req.json();
+		const { path } = body;
+
+		if (!path || typeof path !== 'string') {
+			return context.json({ error: 'Path is required' }, 400);
+		}
+
+		const project = await removeFolder(projectId, userId, path);
+
+		if (!project) {
+			return context.json({ error: 'Project not found' }, 404);
+		}
+
+		return context.json({
+			projectId: project.id,
+			storageMode: project.storageMode,
+			repository: project.repository,
+			rootPaths: project.rootPaths,
+		});
+	} catch (error) {
+		console.error('Failed to remove folder:', error);
+		return context.json({ error: 'Server error' }, 500);
+	}
+}

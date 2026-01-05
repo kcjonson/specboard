@@ -313,18 +313,12 @@ Use this template for all work items:
   - [ ] Define StorageProvider interface
   - [ ] LocalStorageProvider implementation
   - [ ] GitStorageProvider implementation (cloud mode)
-- [ ] API endpoints (local mode first)
-  - [ ] POST /api/projects/:id/folders (add folder with git validation)
-  - [ ] DELETE /api/projects/:id/folders (remove from view)
-  - [ ] GET /api/projects/:id/tree (file listing)
-  - [ ] GET /api/projects/:id/files/* (read file)
-  - [ ] PUT /api/projects/:id/files/* (write file)
-- [ ] Git operation endpoints
-  - [ ] GET /api/projects/:id/git/status
-  - [ ] GET /api/projects/:id/git/log
-  - [ ] POST /api/projects/:id/git/commit
-  - [ ] POST /api/projects/:id/git/push
-  - [ ] POST /api/projects/:id/git/pull
+- [x] API endpoints (local mode first)
+  - [x] POST /api/projects/:id/folders (add folder with git validation)
+  - [x] DELETE /api/projects/:id/folders (remove from view)
+  - [x] GET/POST /api/projects/:id/tree (file listing with expanded state)
+  - [x] GET /api/projects/:id/files?path=... (read file)
+  - [x] PUT /api/projects/:id/files?path=... (write file)
 - [ ] FileBrowser UI
   - [ ] Empty state with "Add Folder" button
   - [ ] Folder picker dialog (local mode)

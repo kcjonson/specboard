@@ -369,22 +369,9 @@ Response includes pagination info:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/projects/:id/tree | List files/folders |
-| GET | /api/projects/:id/files/* | Get file content |
-| PUT | /api/projects/:id/files/* | Save file |
-| POST | /api/projects/:id/files/* | Create file |
-| DELETE | /api/projects/:id/files/* | Delete file |
-
-### Project Git Operations
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/projects/:id/git/status | Get status |
-| GET | /api/projects/:id/git/log | Get commit history |
-| GET | /api/projects/:id/git/diff | Get diff |
-| POST | /api/projects/:id/git/commit | Commit changes |
-| POST | /api/projects/:id/git/push | Push to remote |
-| POST | /api/projects/:id/git/pull | Pull from remote |
+| GET/POST | /api/projects/:id/tree | List files/folders |
+| GET | /api/projects/:id/files?path=... | Get file content |
+| PUT | /api/projects/:id/files?path=... | Save file |
 
 ### Repositories (Legacy)
 
@@ -409,19 +396,6 @@ Response includes pagination info:
 | GET | /api/repos/:repoId/documents | List documents (metadata) |
 | GET | /api/repos/:repoId/documents/:id | Get document with sections |
 | GET | /api/repos/:repoId/documents/:id/sections | Get sections |
-
-### Git Operations (Web Platform)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/repos/:repoId/git/status | Get status |
-| POST | /api/repos/:repoId/git/add | Stage files |
-| POST | /api/repos/:repoId/git/reset | Unstage files |
-| POST | /api/repos/:repoId/git/commit | Commit |
-| GET | /api/repos/:repoId/git/diff | Get diff |
-| GET | /api/repos/:repoId/git/log | Get commit log |
-| POST | /api/repos/:repoId/git/push | Push to remote |
-| POST | /api/repos/:repoId/git/pull | Pull from remote |
 
 ### Comments
 

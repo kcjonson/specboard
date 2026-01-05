@@ -57,9 +57,8 @@ Frontend (browser)
     ├── POST /api/projects/:id/folders     ← Add folder (local mode)
     ├── POST /api/projects/:id/repository  ← Connect GitHub (cloud mode)
     ├── GET  /api/projects/:id/tree        ← List files
-    ├── GET  /api/projects/:id/files/*     ← Read file
-    ├── PUT  /api/projects/:id/files/*     ← Write file
-    └── POST /api/projects/:id/git/*       ← Git operations
+    ├── GET  /api/projects/:id/files?path= ← Read file
+    └── PUT  /api/projects/:id/files?path= ← Write file
     │
     ▼
 Backend (Hono)
@@ -230,33 +229,6 @@ async function addFolder(projectId: string, folderPath: string): Promise<void> {
 }
 ```
 
-### Git Operations (Local Mode)
-
-All git commands run directly in the local repository:
-
-```typescript
-class LocalStorageProvider implements StorageProvider {
-  constructor(private repoPath: string) {}
-
-  async gitStatus(): Promise<GitStatus> {
-    return execGit(this.repoPath, ['status', '--porcelain', '-b'])
-  }
-
-  async gitCommit(message: string, paths: string[]): Promise<void> {
-    await execGit(this.repoPath, ['add', ...paths])
-    await execGit(this.repoPath, ['commit', '-m', message])
-  }
-
-  async gitPush(): Promise<void> {
-    await execGit(this.repoPath, ['push'])
-  }
-
-  async gitPull(): Promise<void> {
-    await execGit(this.repoPath, ['pull'])
-  }
-}
-```
-
 ---
 
 ## Cloud Mode
@@ -297,40 +269,6 @@ class LocalStorageProvider implements StorageProvider {
 - Each project gets isolated checkout directory
 - Backend manages clone, pull, push operations
 - Storage: EFS (persistent) or container ephemeral (simple, but lost on restart)
-
-### Git Operations (Cloud Mode)
-
-```typescript
-class GitStorageProvider implements StorageProvider {
-  private checkoutPath: string
-
-  constructor(private projectId: string, private config: RemoteConfig) {
-    this.checkoutPath = `/mnt/repos/${projectId}/checkout`
-  }
-
-  async ensureCheckout(): Promise<void> {
-    if (!await fs.exists(this.checkoutPath)) {
-      await this.cloneRepository()
-    }
-  }
-
-  private async cloneRepository(): Promise<void> {
-    const token = await this.getGitHubToken()
-    const url = this.config.url.replace('https://', `https://${token}@`)
-    await execGit(null, ['clone', '--branch', this.config.branch, url, this.checkoutPath])
-  }
-
-  async gitPush(): Promise<void> {
-    await this.ensureCheckout()
-    await execGit(this.checkoutPath, ['push'])
-  }
-
-  async gitPull(): Promise<void> {
-    await this.ensureCheckout()
-    await execGit(this.checkoutPath, ['pull'])
-  }
-}
-```
 
 ---
 
@@ -458,136 +396,13 @@ Get file tree for all root paths.
 }
 ```
 
-#### GET /api/projects/:id/files/*path
+#### GET /api/projects/:id/files?path=...
 
-Read file content.
+Read file content. Path is passed as query parameter to handle special characters.
 
-**Response:**
-```json
-{
-  "data": {
-    "path": "/docs/getting-started.md",
-    "content": "# Getting Started\n\n...",
-    "encoding": "utf-8"
-  }
-}
-```
+#### PUT /api/projects/:id/files?path=...
 
-#### PUT /api/projects/:id/files/*path
-
-Write file content.
-
-**Request:**
-```json
-{
-  "content": "# Getting Started\n\nUpdated content..."
-}
-```
-
-### Git Operations
-
-#### GET /api/projects/:id/git/status
-
-Get repository status.
-
-**Response:**
-```json
-{
-  "data": {
-    "branch": "main",
-    "ahead": 2,
-    "behind": 0,
-    "staged": [
-      { "path": "/docs/guide.md", "status": "modified" }
-    ],
-    "unstaged": [
-      { "path": "/docs/api.md", "status": "modified" }
-    ],
-    "untracked": [
-      "/docs/new-file.md"
-    ]
-  }
-}
-```
-
-#### GET /api/projects/:id/git/log
-
-Get commit history.
-
-**Query Parameters:**
-- `limit` (optional, default 20)
-- `path` (optional) - Filter to specific file/folder
-
-**Response:**
-```json
-{
-  "data": {
-    "commits": [
-      {
-        "sha": "abc123",
-        "shortSha": "abc123",
-        "message": "Update getting started guide",
-        "author": {
-          "name": "Jane Doe",
-          "email": "jane@example.com"
-        },
-        "date": "2025-12-30T10:00:00Z"
-      }
-    ]
-  }
-}
-```
-
-#### POST /api/projects/:id/git/commit
-
-Create a commit.
-
-**Request:**
-```json
-{
-  "message": "Update documentation",
-  "paths": ["/docs/guide.md", "/docs/api.md"]
-}
-```
-
-**Response:**
-```json
-{
-  "data": {
-    "sha": "def456",
-    "message": "Update documentation"
-  }
-}
-```
-
-#### POST /api/projects/:id/git/push
-
-Push to remote.
-
-**Response:**
-```json
-{
-  "data": {
-    "pushed": true,
-    "commits": 2
-  }
-}
-```
-
-#### POST /api/projects/:id/git/pull
-
-Pull from remote.
-
-**Response:**
-```json
-{
-  "data": {
-    "pulled": true,
-    "commits": 3,
-    "conflicts": []
-  }
-}
-```
+Write file content. Path is passed as query parameter.
 
 ---
 
@@ -619,31 +434,13 @@ Users may start with local mode during initial setup, then transition to cloud m
 
 ## Storage Provider Interface
 
-```typescript
-interface StorageProvider {
-  // File operations
-  listDirectory(relativePath: string): Promise<FileEntry[]>
-  readFile(relativePath: string): Promise<string>
-  writeFile(relativePath: string, content: string): Promise<void>
-  deleteFile(relativePath: string): Promise<void>
-  createDirectory(relativePath: string): Promise<void>
-  rename(oldPath: string, newPath: string): Promise<void>
-  exists(relativePath: string): Promise<boolean>
+The StorageProvider interface abstracts file operations. Git operations are internal implementation details, not exposed to the frontend.
 
-  // Git operations
-  status(): Promise<GitStatus>
-  log(options?: { limit?: number; path?: string }): Promise<Commit[]>
-  diff(options?: { staged?: boolean }): Promise<FileDiff[]>
-  add(paths: string[]): Promise<void>
-  commit(message: string): Promise<string>  // Returns commit SHA
-  push(): Promise<void>
-  pull(): Promise<PullResult>
-
-  // Repository info
-  getCurrentBranch(): Promise<string>
-  getRemoteUrl(): Promise<string | null>
-}
-```
+File operations:
+- listDirectory(path) - List files in directory
+- readFile(path) - Read file content
+- writeFile(path, content) - Write file content
+- exists(path) - Check if path exists
 
 ---
 
@@ -656,10 +453,8 @@ interface StorageProvider {
 | `DIFFERENT_REPO` | 400 | Folder is in a different repository than existing folders |
 | `DUPLICATE_PATH` | 400 | Path is already added to project |
 | `REPO_NOT_CONFIGURED` | 400 | Project has no repository configured |
-| `CLONE_FAILED` | 500 | Failed to clone repository |
-| `GIT_CONFLICT` | 409 | Merge conflict during pull |
-| `PUSH_REJECTED` | 409 | Push rejected (needs pull first) |
-| `GITHUB_AUTH_REQUIRED` | 401 | GitHub authentication needed |
+| `PATH_OUTSIDE_ROOTS` | 403 | Requested path is outside project boundaries |
+| `INVALID_PATH` | 400 | Path contains invalid characters or traversal |
 
 ---
 
