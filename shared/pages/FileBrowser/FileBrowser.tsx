@@ -99,7 +99,7 @@ export function FileBrowser({
 			setError('Failed to load files');
 		}
 		setLoading(false);
-	}, [project, fetchFiles]);
+	}, [project]);
 
 	// Toggle folder expand/collapse
 	const toggleFolder = useCallback(async (path: string) => {
@@ -145,15 +145,21 @@ export function FileBrowser({
 			);
 			setProject(result);
 		} catch (err) {
-			const error = err as { code?: string; error?: string };
-			if (error.code === 'NOT_GIT_REPO') {
-				setError('Folder is not inside a git repository');
-			} else if (error.code === 'DIFFERENT_REPO') {
-				setError('Folder must be in the same git repository');
-			} else if (error.code === 'FOLDER_NOT_FOUND') {
-				setError('Folder does not exist');
+			if (err && typeof err === 'object') {
+				const error = err as { code?: string; error?: string };
+				if (error.code === 'NOT_GIT_REPO') {
+					setError('Folder is not inside a git repository');
+				} else if (error.code === 'DIFFERENT_REPO') {
+					setError('Folder must be in the same git repository');
+				} else if (error.code === 'FOLDER_NOT_FOUND') {
+					setError('Folder does not exist');
+				} else if (error.code === 'NOT_DIRECTORY') {
+					setError('Path is not a directory');
+				} else {
+					setError(error.error || 'Failed to add folder');
+				}
 			} else {
-				setError(error.error || 'Failed to add folder');
+				setError('Failed to add folder');
 			}
 		}
 	}, [projectId]);
@@ -240,8 +246,8 @@ export function FileBrowser({
 											{isExpanded ? '▼' : '▶'} {isRoot ? '📁' : '📂'}
 										</span>
 									) : (
-										<span class={styles.fileIcon}>
-											{'  '}📄
+										<span class={styles.fileIcon} style={{ marginLeft: '1rem' }}>
+											📄
 										</span>
 									)}
 									<span class={styles.fileName}>{file.name}</span>

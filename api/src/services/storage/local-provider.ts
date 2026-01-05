@@ -161,6 +161,11 @@ export class LocalStorageProvider implements StorageProvider {
 				continue;
 			}
 
+			// Ensure line has minimum length for status parsing (XY path format)
+			if (line.length < 4) {
+				continue;
+			}
+
 			const indexStatus = line[0];
 			const workTreeStatus = line[1];
 			const filePath = line.slice(3);
@@ -215,13 +220,25 @@ export class LocalStorageProvider implements StorageProvider {
 		const lines = stdout.trim().split('\n').filter(Boolean);
 
 		return lines.map((line) => {
-			const [sha, shortSha, message, authorName, authorEmail, dateStr] = line.split('|');
+			// Split from the end to handle pipe characters in commit messages
+			// Format: sha|shortSha|message|authorName|authorEmail|dateStr
+			const parts = line.split('|');
+			// Last 3 fields are always: authorName, authorEmail, dateStr
+			const dateStr = parts.pop()!;
+			const authorEmail = parts.pop()!;
+			const authorName = parts.pop()!;
+			// First 2 fields are: sha, shortSha
+			const sha = parts.shift()!;
+			const shortSha = parts.shift()!;
+			// Everything remaining is the message (may contain pipes)
+			const message = parts.join('|');
+
 			return {
-				sha: sha!,
-				shortSha: shortSha!,
-				message: message!,
-				author: { name: authorName!, email: authorEmail! },
-				date: new Date(dateStr!),
+				sha,
+				shortSha,
+				message,
+				author: { name: authorName, email: authorEmail },
+				date: new Date(dateStr),
 			};
 		});
 	}
