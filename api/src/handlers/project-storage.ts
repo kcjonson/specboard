@@ -231,6 +231,13 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 			entries,
 		});
 	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message === 'TOO_MANY_FILES') {
+			return context.json({
+				error: 'Directory contains too many files (limit: 1000)',
+				code: 'TOO_MANY_FILES',
+			}, 400);
+		}
 		console.error('Failed to list files:', error);
 		return context.json({ error: 'Server error' }, 500);
 	}
@@ -288,6 +295,9 @@ export async function handleReadFile(context: Context, redis: Redis): Promise<Re
 		const message = error instanceof Error ? error.message : String(error);
 		if (message === 'BINARY_FILE') {
 			return context.json({ error: 'Cannot read binary file', code: 'BINARY_FILE' }, 400);
+		}
+		if (message === 'FILE_TOO_LARGE') {
+			return context.json({ error: 'File too large (limit: 5MB)', code: 'FILE_TOO_LARGE' }, 400);
 		}
 		console.error('Failed to read file:', error);
 		return context.json({ error: 'Server error' }, 500);

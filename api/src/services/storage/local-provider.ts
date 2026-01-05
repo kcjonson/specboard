@@ -5,13 +5,14 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type {
-	StorageProvider,
-	FileEntry,
-	GitStatus,
-	FileChange,
-	Commit,
-	PullResult,
+import {
+	STORAGE_LIMITS,
+	type StorageProvider,
+	type FileEntry,
+	type GitStatus,
+	type FileChange,
+	type Commit,
+	type PullResult,
 } from './types.js';
 import { execGit, validatePath } from './git-utils.js';
 
@@ -57,7 +58,7 @@ export class LocalStorageProvider implements StorageProvider {
 		);
 
 		// Filter nulls and sort: directories first, then alphabetically
-		return results
+		const sorted = results
 			.filter((r): r is FileEntry => r !== null)
 			.sort((a, b) => {
 				if (a.type !== b.type) {
@@ -65,6 +66,13 @@ export class LocalStorageProvider implements StorageProvider {
 				}
 				return a.name.localeCompare(b.name);
 			});
+
+		// Enforce file limit
+		if (sorted.length > STORAGE_LIMITS.MAX_FILES_PER_LISTING) {
+			throw new Error('TOO_MANY_FILES');
+		}
+
+		return sorted;
 	}
 
 	async readFile(relativePath: string): Promise<string> {
@@ -82,6 +90,12 @@ export class LocalStorageProvider implements StorageProvider {
 		const ext = path.extname(relativePath).toLowerCase();
 		if (binaryExtensions.has(ext)) {
 			throw new Error('BINARY_FILE');
+		}
+
+		// Check file size before reading
+		const stats = await fs.stat(absolutePath);
+		if (stats.size > STORAGE_LIMITS.MAX_FILE_SIZE_BYTES) {
+			throw new Error('FILE_TOO_LARGE');
 		}
 
 		return fs.readFile(absolutePath, 'utf-8');

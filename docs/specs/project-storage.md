@@ -663,6 +663,53 @@ interface StorageProvider {
 
 ---
 
+## Limits
+
+To prevent performance issues and abuse, the following limits are enforced:
+
+| Limit | Value | Description |
+|-------|-------|-------------|
+| `MAX_FILES_PER_LISTING` | 1000 | Maximum files returned in a single directory listing |
+| `MAX_FILE_SIZE_BYTES` | 5MB | Maximum file size that can be read/written |
+| `MAX_TOTAL_SIZE_BYTES` | 50MB | Maximum total size of all files in a project (not yet enforced) |
+
+**Error Codes:**
+- `TOO_MANY_FILES` (400): Directory contains more than 1000 files
+- `FILE_TOO_LARGE` (400): File exceeds 5MB size limit
+- `BINARY_FILE` (400): Cannot read binary files (images, videos, etc.)
+
+---
+
+## Cloud Mode: Sparse Checkout
+
+For cloud mode, when a user connects a repository with specific root paths (e.g., `/docs`), the backend should use **git sparse-checkout** to avoid cloning the entire repository. This is especially important for large monorepos.
+
+### Implementation Notes
+
+```bash
+# Clone with sparse checkout enabled
+git clone --filter=blob:none --sparse https://github.com/org/repo.git
+
+# Configure sparse checkout to only include specific paths
+git sparse-checkout set docs specs
+
+# Subsequent pulls only fetch the sparse paths
+git pull
+```
+
+### Benefits
+
+- **Reduced storage**: Only checkout the folders the user cares about
+- **Faster clones**: Don't download blobs for ignored paths
+- **Lower bandwidth**: Subsequent fetches are smaller
+
+### When to Use
+
+- Always use sparse checkout for cloud mode when `rootPaths` is not `["/"]`
+- For local mode, sparse checkout is not needed (user has full repo locally)
+
+---
+
 ## Future Enhancements
 
 1. **Multiple Branches**: Switch between branches in the UI

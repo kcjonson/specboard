@@ -3,6 +3,13 @@
  * See /docs/specs/project-storage.md for full specification
  */
 
+// Limits to prevent performance issues
+export const STORAGE_LIMITS = {
+	MAX_FILES_PER_LISTING: 1000,
+	MAX_FILE_SIZE_BYTES: 5 * 1024 * 1024, // 5MB
+	MAX_TOTAL_SIZE_BYTES: 50 * 1024 * 1024, // 50MB total for a project
+} as const;
+
 export interface FileEntry {
 	name: string;
 	path: string; // Relative to repo root
