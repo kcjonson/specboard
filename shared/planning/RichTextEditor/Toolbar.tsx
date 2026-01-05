@@ -1,45 +1,11 @@
 import type { JSX } from 'preact';
 import { useSlate } from 'slate-react';
+import { ToolbarContainer, ToolbarGroup, ToolbarButton } from '@doc-platform/ui';
 import type { MarkType } from './types';
-import styles from './Toolbar.module.css';
 
 export interface ToolbarProps {
 	isMarkActive: (mark: MarkType) => boolean;
 	toggleMark: (mark: MarkType) => void;
-}
-
-interface ToolbarButtonProps {
-	active: boolean;
-	onAction: () => void;
-	children: JSX.Element | string;
-	title: string;
-	ariaLabel: string;
-}
-
-function ToolbarButton({ active, onAction, children, title, ariaLabel }: ToolbarButtonProps): JSX.Element {
-	return (
-		<button
-			type="button"
-			class={`${styles.button} ${active ? styles.active : ''}`}
-			onMouseDown={(event) => {
-				// Prevent editor from losing focus on mouse click
-				event.preventDefault();
-				onAction();
-			}}
-			onKeyDown={(event) => {
-				// Handle keyboard activation (Enter/Space)
-				if (event.key === 'Enter' || event.key === ' ') {
-					event.preventDefault();
-					onAction();
-				}
-			}}
-			title={title}
-			aria-label={ariaLabel}
-			aria-pressed={active}
-		>
-			{children}
-		</button>
-	);
 }
 
 interface MarkButtonProps {
@@ -61,6 +27,7 @@ function MarkButton({ format, icon, title, ariaLabel, isActive, toggle }: MarkBu
 			onAction={() => toggle(format)}
 			title={title}
 			ariaLabel={ariaLabel}
+			compact
 		>
 			{icon}
 		</ToolbarButton>
@@ -69,12 +36,12 @@ function MarkButton({ format, icon, title, ariaLabel, isActive, toggle }: MarkBu
 
 export function Toolbar({ isMarkActive, toggleMark }: ToolbarProps): JSX.Element {
 	return (
-		<div class={styles.toolbar} role="toolbar" aria-label="Formatting options">
-			<div class={styles.group} role="group" aria-label="Text formatting">
+		<ToolbarContainer compact ariaLabel="Formatting options">
+			<ToolbarGroup ariaLabel="Text formatting">
 				<MarkButton format="bold" icon="B" title="Bold (Ctrl+B)" ariaLabel="Bold" isActive={isMarkActive} toggle={toggleMark} />
 				<MarkButton format="italic" icon="I" title="Italic (Ctrl+I)" ariaLabel="Italic" isActive={isMarkActive} toggle={toggleMark} />
 				<MarkButton format="code" icon="<>" title="Inline code (Ctrl+`)" ariaLabel="Inline code" isActive={isMarkActive} toggle={toggleMark} />
-			</div>
-		</div>
+			</ToolbarGroup>
+		</ToolbarContainer>
 	);
 }
