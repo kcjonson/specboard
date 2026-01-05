@@ -60,6 +60,7 @@ export function FileBrowser({
 			model.reload();
 		} catch (err) {
 			console.error('Failed to add folder:', err);
+			model.error = err instanceof Error ? err.message : 'Failed to add folder';
 		}
 	};
 
@@ -118,7 +119,7 @@ export function FileBrowser({
 											{isExpanded ? '▼' : '▶'} {isRoot ? '📁' : '📂'}
 										</span>
 									) : (
-										<span class={styles.fileIcon} style={{ marginLeft: '1rem' }}>
+										<span class={styles.fileIcon} style={{ marginLeft: 'var(--space-4)' }}>
 											📄
 										</span>
 									)}

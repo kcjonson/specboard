@@ -50,7 +50,7 @@ export class LocalStorageProvider implements StorageProvider {
 				} else if (entry.isFile()) {
 					// Apply extension filter if specified
 					if (extensions && extensions.length > 0) {
-						const ext = entry.name.toLowerCase().split('.').pop();
+						const ext = path.extname(entry.name).toLowerCase().slice(1); // Remove leading dot
 						if (!ext || !extensions.includes(ext)) {
 							return null;
 						}
@@ -214,7 +214,8 @@ export class LocalStorageProvider implements StorageProvider {
 	}
 
 	async log(options?: { limit?: number; path?: string }): Promise<Commit[]> {
-		const args = ['log', '--format=%H|%h|%s|%an|%ae|%aI', `-n${options?.limit ?? 20}`];
+		// Use null byte as delimiter to handle special characters in commit messages
+		const args = ['log', '--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%aI', `-n${options?.limit ?? 20}`];
 		if (options?.path) {
 			args.push('--', options.path.replace(/^\//, ''));
 		}
@@ -223,25 +224,15 @@ export class LocalStorageProvider implements StorageProvider {
 		const lines = stdout.trim().split('\n').filter(Boolean);
 
 		return lines.map((line) => {
-			// Split from the end to handle pipe characters in commit messages
-			// Format: sha|shortSha|message|authorName|authorEmail|dateStr
-			const parts = line.split('|');
-			// Last 3 fields are always: authorName, authorEmail, dateStr
-			const dateStr = parts.pop()!;
-			const authorEmail = parts.pop()!;
-			const authorName = parts.pop()!;
-			// First 2 fields are: sha, shortSha
-			const sha = parts.shift()!;
-			const shortSha = parts.shift()!;
-			// Everything remaining is the message (may contain pipes)
-			const message = parts.join('|');
+			// Format: sha\0shortSha\0message\0authorName\0authorEmail\0dateStr
+			const [sha, shortSha, message, authorName, authorEmail, dateStr] = line.split('\x00');
 
 			return {
-				sha,
-				shortSha,
-				message,
-				author: { name: authorName, email: authorEmail },
-				date: new Date(dateStr),
+				sha: sha!,
+				shortSha: shortSha!,
+				message: message!,
+				author: { name: authorName!, email: authorEmail! },
+				date: new Date(dateStr!),
 			};
 		});
 	}

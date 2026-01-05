@@ -4,9 +4,8 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { getProject, type RepositoryConfig, isLocalRepository } from '@doc-platform/db';
+import { getProject } from '@doc-platform/db';
 import { isValidUUID } from '../../validation.js';
-import { LocalStorageProvider } from '../../services/storage/local-provider.js';
 import type { FileEntry } from '../../services/storage/types.js';
 import {
 	getUserId,
@@ -43,8 +42,8 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
-		const repo = project.repository as RepositoryConfig | Record<string, never>;
-		if (!isLocalRepository(repo)) {
+		const provider = await getStorageProvider(projectId, userId);
+		if (!provider) {
 			return context.json({ error: 'No repository configured', code: 'REPO_NOT_CONFIGURED' }, 400);
 		}
 
@@ -66,30 +65,21 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 			return context.json({ error: `Too many expanded paths (max ${MAX_EXPANDED_PATHS})` }, 400);
 		}
 
-		const provider = new LocalStorageProvider(repo.localPath);
 		const rootPaths = project.rootPaths || [];
 
 		// Combine root paths with requested expanded paths
 		const pathsToExpand = [...new Set([...rootPaths, ...requestedExpandedPaths])];
 		const sortedPaths = sortPathsByDepth(pathsToExpand);
 
-		const files: FileEntry[] = [];
 		const validExpandedPaths: string[] = [];
+		// Map from path to its children for efficient tree building
+		const childrenByPath = new Map<string, FileEntry[]>();
 
-		for (const path of sortedPaths) {
+		for (const pathToExpand of sortedPaths) {
 			// Validate and normalize path
-			const normalized = normalizePath(path);
+			const normalized = normalizePath(pathToExpand);
 			if (!normalized) {
 				continue; // Skip paths with traversal attempts
-			}
-
-			// Add root folder entry if this is a root path
-			if (rootPaths.includes(path)) {
-				files.push({
-					name: getDisplayName(path),
-					path: path,
-					type: 'directory',
-				});
 			}
 
 			// Validate path is within roots
@@ -103,18 +93,41 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 					extensions: ['md', 'mdx'],
 				});
 
-				validExpandedPaths.push(path);
-
-				// Insert children after their parent folder
-				const parentIndex = files.findIndex((f) => f.path === path);
-				if (parentIndex !== -1) {
-					files.splice(parentIndex + 1, 0, ...children);
-				} else {
-					files.push(...children);
-				}
+				validExpandedPaths.push(pathToExpand);
+				childrenByPath.set(pathToExpand, children);
 			} catch {
 				// Path doesn't exist - skip it
 			}
+		}
+
+		// Build flat file list by recursively adding children after parents
+		const files: FileEntry[] = [];
+		const addPathWithChildren = (pathEntry: string): void => {
+			// Add root folder entry if this is a root path
+			if (rootPaths.includes(pathEntry)) {
+				files.push({
+					name: getDisplayName(pathEntry),
+					path: pathEntry,
+					type: 'directory',
+				});
+			}
+
+			// Add children if this path was expanded
+			const children = childrenByPath.get(pathEntry);
+			if (children) {
+				for (const child of children) {
+					files.push(child);
+					// Recursively add children of directories
+					if (child.type === 'directory') {
+						addPathWithChildren(child.path);
+					}
+				}
+			}
+		};
+
+		// Start from root paths
+		for (const root of rootPaths) {
+			addPathWithChildren(root);
 		}
 
 		// Convert valid paths back to tree format

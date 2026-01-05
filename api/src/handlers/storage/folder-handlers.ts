@@ -44,7 +44,16 @@ export async function handleAddFolder(context: Context, redis: Redis): Promise<R
 		}
 
 		// Find git repository root
-		const repoRoot = await findRepoRoot(path);
+		let repoRoot: string | null;
+		try {
+			repoRoot = await findRepoRoot(path);
+		} catch (gitError) {
+			console.error('Git error finding repo root:', gitError);
+			return context.json(
+				{ error: 'Failed to access git repository', code: 'GIT_ERROR' },
+				500
+			);
+		}
 		if (!repoRoot) {
 			return context.json(
 				{ error: 'Folder is not inside a git repository', code: 'NOT_GIT_REPO' },
@@ -53,7 +62,16 @@ export async function handleAddFolder(context: Context, redis: Redis): Promise<R
 		}
 
 		// Get current branch
-		const branch = await getCurrentBranch(repoRoot);
+		let branch: string;
+		try {
+			branch = await getCurrentBranch(repoRoot);
+		} catch (gitError) {
+			console.error('Git error getting branch:', gitError);
+			return context.json(
+				{ error: 'Failed to determine git branch', code: 'GIT_BRANCH_ERROR' },
+				500
+			);
+		}
 
 		// Calculate relative path within repo
 		const rootPath = getRelativePath(repoRoot, path);

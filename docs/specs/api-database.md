@@ -98,8 +98,8 @@ CREATE TABLE projects (
 	name VARCHAR(255) NOT NULL,
 	description TEXT,
 	owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-	storage_mode TEXT NOT NULL DEFAULT 'local'
-		CHECK (storage_mode IN ('local', 'cloud')),
+	storage_mode TEXT NOT NULL DEFAULT 'none'
+		CHECK (storage_mode IN ('none', 'local', 'cloud')),
 	repository JSONB NOT NULL DEFAULT '{}',
 	-- Local: { "localPath": "/path/to/repo", "branch": "main" }
 	-- Cloud: { "remote": { "provider": "github", "owner": "...", "repo": "...", "url": "..." }, "branch": "main" }

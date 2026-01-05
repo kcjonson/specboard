@@ -34,13 +34,18 @@ interface FileTreeResponse {
 // Tree conversion utilities (exported for testing)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MAX_TREE_DEPTH = 50;
+
 /** Convert nested tree to flat array of paths */
-export function expandedTreeToPaths(tree: ExpandedTree, basePath: string = ''): string[] {
+export function expandedTreeToPaths(tree: ExpandedTree, basePath: string = '', depth: number = 0): string[] {
+	if (depth >= MAX_TREE_DEPTH) {
+		return [];
+	}
 	const paths: string[] = [];
 	for (const [name, subtree] of Object.entries(tree)) {
 		const path = basePath ? `${basePath}/${name}` : `/${name}`;
 		paths.push(path);
-		paths.push(...expandedTreeToPaths(subtree, path));
+		paths.push(...expandedTreeToPaths(subtree, path, depth + 1));
 	}
 	return paths;
 }

@@ -50,10 +50,16 @@ export async function getStorageProvider(
  * Returns null if path contains traversal sequences
  */
 export function normalizePath(inputPath: string): string | null {
+	// Check for traversal attempts BEFORE normalization
+	// This catches encoded sequences and edge cases that normalize might resolve
+	if (inputPath.includes('..')) {
+		return null;
+	}
+
 	// Normalize the path
 	const normalized = path.posix.normalize(inputPath);
 
-	// Check for traversal attempts (path going above root)
+	// Double-check after normalization (belt and suspenders)
 	if (normalized.includes('..')) {
 		return null;
 	}
@@ -121,12 +127,13 @@ export function pathsToExpandedTree(paths: string[]): ExpandedTree {
 	return tree;
 }
 
-/** Sort paths by depth (shallowest first) */
+/** Sort paths by depth (shallowest first), then alphabetically for stable ordering */
 export function sortPathsByDepth(paths: string[]): string[] {
 	return [...paths].sort((a, b) => {
 		const depthA = a === '/' ? 0 : a.split('/').filter(Boolean).length;
 		const depthB = b === '/' ? 0 : b.split('/').filter(Boolean).length;
-		return depthA - depthB;
+		if (depthA !== depthB) return depthA - depthB;
+		return a.localeCompare(b);
 	});
 }
 
