@@ -117,9 +117,15 @@ export async function handleResetPassword(
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	const { token, password } = body;
-	if (!token || !password) {
+	const { token: rawToken, password } = body;
+	if (!rawToken || !password) {
 		return context.json({ error: 'Token and password are required' }, 400);
+	}
+
+	// Sanitize token - remove any non-hex characters (email clients sometimes add invisible Unicode)
+	const token = rawToken.replace(/[^a-fA-F0-9]/g, '');
+	if (token.length !== 64) {
+		return context.json({ error: 'Invalid reset link' }, 400);
 	}
 
 	// Validate password

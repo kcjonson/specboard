@@ -118,6 +118,22 @@
 	cursor: pointer;
 }
 
+.checkboxInline {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-size: var(--text-sm);
+	color: var(--color-text);
+	cursor: pointer;
+	margin-top: var(--space-2);
+}
+
+.checkboxInline input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	cursor: pointer;
+}
+
 .securitySection {
 	margin-top: var(--space-8);
 	padding-top: var(--space-6);
@@ -129,4 +145,28 @@
 	font-weight: var(--font-semibold);
 	color: var(--color-text);
 	margin: 0 0 var(--space-4) 0;
+}
+
+.statusRow {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-2) 0;
+}
+
+.statusLabel {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+.statusVerified {
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	color: var(--color-success);
+}
+
+.statusUnverified {
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	color: var(--color-warning, #f59e0b);
 }

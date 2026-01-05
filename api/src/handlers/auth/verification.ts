@@ -32,9 +32,15 @@ export async function handleVerifyEmail(context: Context): Promise<Response> {
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	const { token } = body;
-	if (!token) {
+	const { token: rawToken } = body;
+	if (!rawToken) {
 		return context.json({ error: 'Token is required' }, 400);
+	}
+
+	// Sanitize token - remove any non-hex characters (email clients sometimes add invisible Unicode)
+	const token = rawToken.replace(/[^a-fA-F0-9]/g, '');
+	if (token.length !== 64) {
+		return context.json({ error: 'Invalid verification link' }, 400);
 	}
 
 	try {

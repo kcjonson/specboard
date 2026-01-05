@@ -48,6 +48,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	const [email, setEmail] = useState('');
 	const [isAdmin, setIsAdmin] = useState(false);
 	const [isActive, setIsActive] = useState(true);
+	const [emailVerified, setEmailVerified] = useState(false);
 	const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 	const [initialized, setInitialized] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -100,6 +101,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 			setEmail(user.email || '');
 			setIsAdmin(user.roles?.includes('admin') ?? false);
 			setIsActive(user.is_active ?? true);
+			setEmailVerified(user.email_verified ?? false);
 			setInitialized(true);
 		}
 	}, [user, initialized]);
@@ -126,7 +128,8 @@ export function UserSettings(props: RouteProps): JSX.Element {
 			trimmedUsername !== user.username ||
 			trimmedEmail !== user.email ||
 			isAdmin !== user.roles?.includes('admin') ||
-			isActive !== user.is_active
+			isActive !== user.is_active ||
+			emailVerified !== user.email_verified
 		))
 	);
 
@@ -150,6 +153,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 				data.email = trimmedEmail;
 				data.roles = isAdmin ? ['admin'] : [];
 				data.is_active = isActive;
+				data.email_verified = emailVerified;
 			}
 
 			await fetchClient.put(`/api/users/${user.id}`, data);
@@ -317,6 +321,14 @@ export function UserSettings(props: RouteProps): JSX.Element {
 										placeholder="Email address"
 										type="email"
 									/>
+									<label class={styles.checkboxInline}>
+										<input
+											type="checkbox"
+											checked={emailVerified}
+											onChange={(e) => { setEmailVerified((e.target as HTMLInputElement).checked); if (message) setMessage(null); }}
+										/>
+										<span>Email Verified</span>
+									</label>
 								</div>
 
 								<div class={styles.checkboxRow}>
@@ -339,18 +351,28 @@ export function UserSettings(props: RouteProps): JSX.Element {
 								</div>
 							</>
 						) : (
-							<div class={styles.field}>
-								<label class={styles.label} htmlFor="email">
-									Email
-								</label>
-								<Text
-									id="email"
-									value={user.email || ''}
-									disabled
-									placeholder="Email address"
-								/>
-								<span class={styles.hint}>Email cannot be changed</span>
-							</div>
+							<>
+								<div class={styles.field}>
+									<label class={styles.label} htmlFor="email">
+										Email
+									</label>
+									<Text
+										id="email"
+										value={user.email || ''}
+										disabled
+										placeholder="Email address"
+									/>
+									<span class={styles.hint}>Email cannot be changed</span>
+								</div>
+								<div class={styles.statusRow}>
+									<span class={styles.statusLabel}>Email Status:</span>
+									{user.email_verified ? (
+										<span class={styles.statusVerified}>Verified</span>
+									) : (
+										<span class={styles.statusUnverified}>Not Verified</span>
+									)}
+								</div>
+							</>
 						)}
 
 						<div class={styles.actions}>

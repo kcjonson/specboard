@@ -256,6 +256,7 @@ interface UpdateUserRequest {
 	last_name?: string;
 	roles?: string[];
 	is_active?: boolean;
+	email_verified?: boolean;
 }
 
 /**
@@ -319,13 +320,14 @@ export async function handleUpdateUser(
 		const hasCriticalFields = permitted.username !== undefined ||
 			permitted.email !== undefined ||
 			permitted.roles !== undefined ||
-			permitted.is_active !== undefined;
+			permitted.is_active !== undefined ||
+			permitted.email_verified === false;
 		if (hasCriticalFields) {
-			return context.json({ error: 'Superadmin username, email, roles, and active status cannot be modified' }, 403);
+			return context.json({ error: 'Superadmin username, email, roles, active status, and email verification cannot be modified' }, 403);
 		}
 	}
 
-	const { username, email, first_name, last_name, roles, is_active } = permitted;
+	const { username, email, first_name, last_name, roles, is_active, email_verified } = permitted;
 
 	// Validate fields
 	if (username !== undefined && !isValidUsername(username)) {
@@ -384,6 +386,12 @@ export async function handleUpdateUser(
 		updates.push(`is_active = $${paramIndex++}`);
 		params.push(is_active);
 		updates.push(is_active ? `deactivated_at = NULL` : `deactivated_at = NOW()`);
+	}
+
+	if (email_verified !== undefined) {
+		updates.push(`email_verified = $${paramIndex++}`);
+		params.push(email_verified);
+		updates.push(email_verified ? `email_verified_at = NOW()` : `email_verified_at = NULL`);
 	}
 
 	if (updates.length === 0) {
