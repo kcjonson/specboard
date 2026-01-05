@@ -1,7 +1,6 @@
 import { useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
-import { navigate } from '@doc-platform/router';
 import { Page } from '@doc-platform/ui';
 import { DocumentModel } from '@doc-platform/models';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
@@ -22,7 +21,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	return (
 		<Page projectId={projectId} activeTab="Pages">
 			<div class={styles.body}>
-				<FileBrowser class={styles.sidebar} />
+				<FileBrowser projectId={projectId} class={styles.sidebar} />
 				<main class={styles.main}>
 					<div class={styles.editorArea}>
 						<MarkdownEditor

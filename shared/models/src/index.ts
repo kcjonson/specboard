@@ -40,3 +40,7 @@ export { AuthorizationModel, AuthorizationsCollection } from './authorization';
 
 // User model
 export { UserModel } from './user';
+
+// File browser model
+export { FileTreeModel } from './FileTreeModel';
+export type { FileEntry } from './FileTreeModel';

@@ -41,6 +41,9 @@ RUN pnpm --filter @doc-platform/core build && \
 # Production stage
 FROM node:20-alpine AS runner
 
+# Install git for project storage git operations
+RUN apk add --no-cache git
+
 RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
 
 WORKDIR /app

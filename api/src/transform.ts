@@ -55,6 +55,9 @@ export function projectResponseToApi(project: ProjectResponse): ApiProject {
 		name: project.name,
 		description: project.description ?? undefined,
 		ownerId: project.ownerId,
+		storageMode: project.storageMode,
+		repository: project.repository,
+		rootPaths: project.rootPaths,
 		createdAt: project.createdAt.toISOString(),
 		updatedAt: project.updatedAt.toISOString(),
 	};

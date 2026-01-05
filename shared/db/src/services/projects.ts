@@ -3,7 +3,7 @@
  */
 
 import { query } from '../index.js';
-import type { Project } from '../types.js';
+import { type Project, type StorageMode, type RepositoryConfig, isLocalRepository } from '../types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)
@@ -14,6 +14,9 @@ export interface ProjectResponse {
 	name: string;
 	description: string | null;
 	ownerId: string;
+	storageMode: StorageMode;
+	repository: RepositoryConfig | Record<string, never>;
+	rootPaths: string[];
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -40,6 +43,9 @@ function transformProject(project: Project): ProjectResponse {
 		name: project.name,
 		description: project.description,
 		ownerId: project.owner_id,
+		storageMode: project.storage_mode,
+		repository: project.repository,
+		rootPaths: project.root_paths,
 		createdAt: project.created_at,
 		updatedAt: project.updated_at,
 	};
@@ -185,4 +191,110 @@ export async function deleteProject(projectId: string, userId: string): Promise<
 		[projectId, userId]
 	);
 	return (result.rowCount ?? 0) > 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Storage management
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AddFolderInput {
+	repoPath: string; // Git repository root path
+	rootPath: string; // Path within repo to display (e.g., "/docs")
+	branch: string;
+}
+
+/**
+ * Add a folder to a project (local mode)
+ * This sets the repository config and adds a root path
+ */
+export async function addFolder(
+	projectId: string,
+	userId: string,
+	data: AddFolderInput
+): Promise<ProjectResponse | null> {
+	// First get the project to check current state
+	const existing = await query<Project>(
+		'SELECT * FROM projects WHERE id = $1 AND owner_id = $2',
+		[projectId, userId]
+	);
+
+	if (existing.rows.length === 0) {
+		return null;
+	}
+
+	const project = existing.rows[0]!;
+
+	// If project already has a local path, verify it matches
+	const currentRepo = project.repository as RepositoryConfig | Record<string, never>;
+	if (isLocalRepository(currentRepo) && currentRepo.localPath !== data.repoPath) {
+		throw new Error('DIFFERENT_REPO');
+	}
+
+	// Check if root path already exists
+	if (project.root_paths.includes(data.rootPath)) {
+		throw new Error('DUPLICATE_PATH');
+	}
+
+	// Update project with new storage config
+	const newRepository = {
+		type: 'local' as const,
+		localPath: data.repoPath,
+		branch: data.branch,
+	};
+	const newRootPaths = [...project.root_paths, data.rootPath];
+
+	const result = await query<Project>(
+		`UPDATE projects
+		 SET storage_mode = 'local',
+		     repository = $1,
+		     root_paths = $2,
+		     updated_at = NOW()
+		 WHERE id = $3 AND owner_id = $4
+		 RETURNING *`,
+		[JSON.stringify(newRepository), JSON.stringify(newRootPaths), projectId, userId]
+	);
+
+	if (result.rows.length === 0) {
+		return null;
+	}
+
+	return transformProject(result.rows[0]!);
+}
+
+/**
+ * Remove a folder from a project (doesn't delete files)
+ */
+export async function removeFolder(
+	projectId: string,
+	userId: string,
+	rootPath: string
+): Promise<ProjectResponse | null> {
+	const existing = await query<Project>(
+		'SELECT * FROM projects WHERE id = $1 AND owner_id = $2',
+		[projectId, userId]
+	);
+
+	if (existing.rows.length === 0) {
+		return null;
+	}
+
+	const project = existing.rows[0]!;
+	const newRootPaths = project.root_paths.filter((p) => p !== rootPath);
+
+	const result = await query<Project>(
+		`UPDATE projects
+		 SET root_paths = $1,
+		     repository = CASE WHEN $2::int = 0 THEN '{}'::jsonb ELSE repository END,
+		     storage_mode = CASE WHEN $2::int = 0 THEN 'none' ELSE storage_mode END,
+		     updated_at = NOW()
+		 WHERE id = $3 AND owner_id = $4
+		 RETURNING *`,
+		[JSON.stringify(newRootPaths), newRootPaths.length, projectId, userId]
+	);
+
+	if (result.rows.length === 0) {
+		return null;
+	}
+
+	return transformProject(result.rows[0]!);
 }

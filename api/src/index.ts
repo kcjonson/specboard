@@ -80,6 +80,13 @@ import {
 	handleUpdateProject,
 	handleDeleteProject,
 } from './handlers/projects.js';
+import {
+	handleAddFolder,
+	handleRemoveFolder,
+	handleListFiles,
+	handleReadFile,
+	handleWriteFile,
+} from './handlers/storage/index.js';
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('api');
@@ -315,6 +322,14 @@ app.get('/api/projects/:id', (context) => handleGetProject(context, redis));
 app.post('/api/projects', (context) => handleCreateProject(context, redis));
 app.put('/api/projects/:id', (context) => handleUpdateProject(context, redis));
 app.delete('/api/projects/:id', (context) => handleDeleteProject(context, redis));
+
+// Project storage routes (folders, files, git)
+app.post('/api/projects/:id/folders', (context) => handleAddFolder(context, redis));
+app.delete('/api/projects/:id/folders', (context) => handleRemoveFolder(context, redis));
+app.get('/api/projects/:id/tree', (context) => handleListFiles(context, redis));
+app.post('/api/projects/:id/tree', (context) => handleListFiles(context, redis));
+app.get('/api/projects/:id/files', (context) => handleReadFile(context, redis));
+app.put('/api/projects/:id/files', (context) => handleWriteFile(context, redis));
 
 // Project-scoped epic routes
 app.get('/api/projects/:projectId/epics', handleListEpics);

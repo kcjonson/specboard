@@ -2,7 +2,7 @@
  * API types (camelCase for JSON responses)
  */
 
-import type { EpicStatus, TaskStatus } from '@doc-platform/db';
+import type { EpicStatus, TaskStatus, StorageMode, RepositoryConfig } from '@doc-platform/db';
 
 export interface ApiEpic {
 	id: string;
@@ -49,6 +49,9 @@ export interface ApiProject {
 	name: string;
 	description?: string;
 	ownerId: string;
+	storageMode: StorageMode;
+	repository: RepositoryConfig | Record<string, never>;
+	rootPaths: string[];
 	createdAt: string;
 	updatedAt: string;
 }

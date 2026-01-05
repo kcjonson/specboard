@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2025-12-30 (Admin User Management, Projects Page UI)
+Last Updated: 2026-01-04 (Project Storage Spec)
 
 ## Epic/Story/Task Template
 
@@ -299,6 +299,34 @@ Use this template for all work items:
 
 ## Planned Epics
 
+### Project Storage & Git Integration
+**Spec/Documentation:** `/docs/specs/project-storage.md`
+**Dependencies:** Projects Page
+**Status:** ready
+
+**Goal:** Connect projects to git repositories with local and cloud storage modes.
+
+**Tasks:**
+- [ ] Database migration
+  - [ ] Add storage_mode, repository, root_paths columns to projects
+- [ ] Storage provider interface
+  - [ ] Define StorageProvider interface
+  - [ ] LocalStorageProvider implementation
+  - [ ] GitStorageProvider implementation (cloud mode)
+- [x] API endpoints (local mode first)
+  - [x] POST /api/projects/:id/folders (add folder with git validation)
+  - [x] DELETE /api/projects/:id/folders (remove from view)
+  - [x] GET/POST /api/projects/:id/tree (file listing with expanded state)
+  - [x] GET /api/projects/:id/files?path=... (read file)
+  - [x] PUT /api/projects/:id/files?path=... (write file)
+- [ ] FileBrowser UI
+  - [ ] Empty state with "Add Folder" button
+  - [ ] Folder picker dialog (local mode)
+  - [ ] Display validation errors (not git repo, different repo)
+  - [ ] File tree display
+
+---
+
 ### Platform Abstraction Layer
 **Spec/Documentation:** `/docs/specs/platform-abstraction.md`
 **Dependencies:** Monorepo Scaffolding
@@ -325,7 +353,7 @@ Use this template for all work items:
 
 ### File Tree & Command Palette
 **Spec/Documentation:** `/docs/specs/file-tree-command-palette.md`
-**Dependencies:** Platform Abstraction Layer
+**Dependencies:** Project Storage & Git Integration, Platform Abstraction Layer
 **Status:** ready
 
 **Goal:** Build file navigation sidebar and command palette components.
@@ -336,6 +364,7 @@ Use this template for all work items:
   - [ ] File/folder icons
   - [ ] Context menu (new, rename, delete)
   - [ ] Keyboard navigation
+  - [ ] Root path management (remove folder from view)
 - [ ] Quick open (Cmd+P)
   - [ ] Fuzzy file search
   - [ ] Recent files

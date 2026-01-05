@@ -2,6 +2,8 @@
 
 This specification defines the file tree sidebar and command palette for the documentation editor.
 
+> **Related Spec**: See [Project Storage](./project-storage.md) for how projects connect to git repositories and folder management.
+
 ---
 
 ## File Tree Sidebar
@@ -10,14 +12,49 @@ This specification defines the file tree sidebar and command palette for the doc
 
 Allow users to navigate and manage files in their documentation repository.
 
+### Project Connection
+
+Before the file tree displays content, the project must be connected to a git repository:
+
+**Local Mode:**
+1. User clicks "Add Folder" button
+2. User selects a folder on their local filesystem
+3. Backend validates folder is in a git repository
+4. Files from that folder appear in the tree
+
+**Cloud Mode:**
+1. User connects a GitHub repository in project settings
+2. Backend clones repository to managed storage
+3. Files appear in the tree
+
+See [Project Storage](./project-storage.md) for validation rules and API details.
+
 ### Layout
 
+**Empty State (no folders added):**
+```
+┌──────────────────────┐
+│  FILES               │
+│  ────────────────────│
+│                      │
+│   No folders added   │
+│                      │
+│   [+ Add Folder]     │
+│                      │
+│   Add a folder from  │
+│   a git repository   │
+│   to get started.    │
+│                      │
+└──────────────────────┘
+```
+
+**With Files:**
 ```
 ┌──────────────────────┐
 │  🔍 Search files...  │  ← Filter input
 │  ────────────────────│
 │                      │
-│  ▼ 📁 docs           │
+│  ▼ 📁 docs           │  ← Root path folder
 │    ▼ 📁 requirements │
 │      📄 auth.md     ◀│  ← Selected file indicator
 │      📄 api.md       │
@@ -26,7 +63,7 @@ Allow users to navigate and manage files in their documentation repository.
 │  ▶ 📁 guides         │
 │                      │
 │  ────────────────────│
-│  [+ New File]        │
+│  [+ Add Folder]      │  ← Add another folder (same repo)
 └──────────────────────┘
 ```
 
@@ -45,6 +82,11 @@ Allow users to navigate and manage files in their documentation repository.
 - Delete (with confirmation)
 - Copy Path
 - Reveal in Finder (Desktop only)
+
+**Root Path Operations (Context Menu on root folder):**
+- Remove from Project (removes from view, doesn't delete files)
+- Open in Terminal (Desktop only)
+- Copy Path
 
 **Search:**
 - Filter input at top

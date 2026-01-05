@@ -2,6 +2,8 @@
 
 This specification defines the abstraction layer that allows the editor core to run in both Electron (desktop) and web environments.
 
+> **Related Spec**: See [Project Storage](./project-storage.md) for how projects connect to git repositories and the storage provider architecture.
+
 ---
 
 ## Overview
@@ -14,6 +16,15 @@ The platform abstraction provides interfaces for:
 Each interface has two implementations:
 - **Electron** - Uses Node.js APIs and local git CLI
 - **Web** - Calls backend REST API
+
+### Relationship to Project Storage
+
+This spec defines the **platform-level** abstraction (Electron vs Web). The [Project Storage](./project-storage.md) spec defines the **storage-level** abstraction (local filesystem vs cloud checkout).
+
+For web deployments:
+- Frontend uses the platform-web implementation (REST API calls)
+- Backend uses a StorageProvider to access files (local or cloud mode)
+- The frontend is agnostic to where files are actually stored
 
 ---
 
