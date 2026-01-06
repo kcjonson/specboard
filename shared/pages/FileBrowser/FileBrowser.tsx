@@ -73,6 +73,21 @@ export function FileBrowser({
 		}
 	};
 
+	// Handle remove folder
+	const handleRemoveFolder = async (folderPath: string, event: Event) => {
+		event.stopPropagation();
+
+		try {
+			await fetchClient.delete<ProjectStorage>(
+				`/api/projects/${projectId}/folders?path=${encodeURIComponent(folderPath)}`
+			);
+			model.reload();
+		} catch (err) {
+			console.error('Failed to remove folder:', err);
+			model.error = err instanceof Error ? err.message : 'Failed to remove folder';
+		}
+	};
+
 	// Empty state
 	if (!model.loading && model.rootPaths.length === 0) {
 		return (
@@ -97,39 +112,51 @@ export function FileBrowser({
 		<div class={`${styles.container} ${className || ''}`}>
 			<div class={styles.header}>Files</div>
 			<div class={styles.content}>
-				{model.loading ? (
-					<div class={styles.loading}>Loading...</div>
-				) : (
-					<div class={styles.tree}>
-						{model.files.map((file) => {
-							const depth = model.getDepth(file.path);
-							const isExpanded = model.isExpanded(file.path);
-							const isSelected = file.path === selectedPath;
-							const isRoot = model.isRootPath(file.path);
+				<div class={styles.tree}>
+					{model.files.map((file) => {
+						const depth = model.getDepth(file.path);
+						const isExpanded = model.isExpanded(file.path);
+						const isSelected = file.path === selectedPath;
+						const isRoot = model.isRootPath(file.path);
 
-							return (
-								<div
-									key={file.path}
-									class={`${styles.treeItem} ${isSelected ? styles.selected : ''}`}
-									style={{ paddingLeft: `${depth * 16 + 8}px` }}
-									onClick={() => handleItemClick(file.path, file.type)}
-								>
-									{file.type === 'directory' ? (
-										<span class={styles.folderIcon}>
-											{isExpanded ? '▼' : '▶'} {isRoot ? '📁' : '📂'}
-										</span>
-									) : (
-										<span class={styles.fileIcon} style={{ marginLeft: 'var(--space-4)' }}>
-											📄
-										</span>
-									)}
-									<span class={styles.fileName}>{file.name}</span>
-								</div>
-							);
-						})}
-					</div>
-				)}
+						return (
+							<div
+								key={file.path}
+								class={`${styles.treeItem} ${isSelected ? styles.selected : ''} ${isRoot ? styles.rootItem : ''}`}
+								style={{ '--depth': depth } as Record<string, unknown>}
+								onClick={() => handleItemClick(file.path, file.type)}
+							>
+								{file.type === 'directory' ? (
+									<span class={styles.folderIcon}>
+										{isExpanded ? '▼' : '▶'} {isRoot ? '📁' : '📂'}
+									</span>
+								) : (
+									<span class={styles.fileIcon}>
+										📄
+									</span>
+								)}
+								<span class={styles.fileName}>{file.name}</span>
+								{isRoot && (
+									<button
+										class={styles.removeButton}
+										onClick={(e) => handleRemoveFolder(file.path, e)}
+										title="Remove folder"
+										aria-label="Remove folder"
+									>
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<polyline points="3 6 5 6 21 6" />
+											<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+										</svg>
+									</button>
+								)}
+							</div>
+						);
+					})}
+				</div>
 				{model.error && <div class={styles.error}>{model.error}</div>}
+			</div>
+			<div class={`${styles.statusBar} ${model.loading ? styles.statusBarVisible : ''}`}>
+				Loading...
 			</div>
 		</div>
 	);

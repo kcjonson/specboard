@@ -69,6 +69,7 @@
 	align-items: center;
 	gap: var(--space-1);
 	padding: var(--space-1) var(--space-2);
+	padding-left: calc(var(--depth, 0) * 16px + 8px);
 	cursor: pointer;
 	user-select: none;
 	border-radius: var(--radius-sm);
@@ -90,10 +91,45 @@
 	font-size: 12px;
 }
 
+.fileIcon {
+	margin-left: var(--space-4);
+}
+
 .fileName {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	flex: 1;
+}
+
+/* Root item with remove button */
+.rootItem {
+	position: relative;
+}
+
+.removeButton {
+	opacity: 0;
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: var(--space-1);
+	line-height: 1;
+	border-radius: var(--radius-sm);
+	transition: opacity 0.15s ease;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--color-text-muted);
+}
+
+.removeButton:hover {
+	background: var(--color-error-subtle);
+	color: var(--color-error);
+}
+
+.rootItem:hover .removeButton {
+	opacity: 1;
 }
 
 /* Add button */
@@ -103,14 +139,20 @@
 	font-size: var(--text-sm);
 }
 
-/* Loading and error states */
-.loading {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: var(--space-6);
+/* Status bar at bottom */
+.statusBar {
+	padding: var(--space-2) var(--space-3);
+	border-top: 1px solid var(--color-border);
+	font-size: var(--text-xs);
 	color: var(--color-text-muted);
-	font-size: var(--text-sm);
+	opacity: 0;
+	visibility: hidden;
+	transition: opacity 0.15s ease;
+}
+
+.statusBarVisible {
+	opacity: 1;
+	visibility: visible;
 }
 
 .error {

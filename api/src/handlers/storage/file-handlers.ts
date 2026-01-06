@@ -44,7 +44,12 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 
 		const provider = await getStorageProvider(projectId, userId);
 		if (!provider) {
-			return context.json({ error: 'No repository configured', code: 'REPO_NOT_CONFIGURED' }, 400);
+			// No repository configured - return empty tree
+			return context.json({
+				files: [],
+				expanded: {},
+				rootPaths: [],
+			});
 		}
 
 		// Parse body for expanded tree (POST) or use empty object (GET)

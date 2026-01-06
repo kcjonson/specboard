@@ -116,7 +116,7 @@ export async function handleAddFolder(context: Context, redis: Redis): Promise<R
 }
 
 /**
- * DELETE /api/projects/:id/folders
+ * DELETE /api/projects/:id/folders?path=...
  * Remove a folder from the project (doesn't delete files)
  */
 export async function handleRemoveFolder(context: Context, redis: Redis): Promise<Response> {
@@ -130,14 +130,12 @@ export async function handleRemoveFolder(context: Context, redis: Redis): Promis
 		return context.json({ error: 'Invalid project ID format' }, 400);
 	}
 
+	const path = context.req.query('path');
+	if (!path) {
+		return context.json({ error: 'Path query parameter is required', code: 'PATH_REQUIRED' }, 400);
+	}
+
 	try {
-		const body = await context.req.json();
-		const { path } = body;
-
-		if (!path || typeof path !== 'string') {
-			return context.json({ error: 'Path is required' }, 400);
-		}
-
 		const project = await removeFolder(projectId, userId, path);
 
 		if (!project) {
