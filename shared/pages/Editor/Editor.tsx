@@ -30,7 +30,7 @@ const SELECTED_FILE_KEY = 'editor.selectedFile';
 
 function loadSelectedFile(projectId: string): string | null {
 	try {
-		const stored = localStorage.getItem(SELECTED_FILE_KEY);
+		const stored = globalThis.localStorage?.getItem(SELECTED_FILE_KEY);
 		if (stored) {
 			const all = JSON.parse(stored) as Record<string, string>;
 			return all[projectId] || null;
@@ -43,14 +43,16 @@ function loadSelectedFile(projectId: string): string | null {
 
 function saveSelectedFile(projectId: string, filePath: string | null): void {
 	try {
-		const stored = localStorage.getItem(SELECTED_FILE_KEY);
+		const storage = globalThis.localStorage;
+		if (!storage) return;
+		const stored = storage.getItem(SELECTED_FILE_KEY);
 		const all = stored ? (JSON.parse(stored) as Record<string, string>) : {};
 		if (filePath) {
 			all[projectId] = filePath;
 		} else {
 			delete all[projectId];
 		}
-		localStorage.setItem(SELECTED_FILE_KEY, JSON.stringify(all));
+		storage.setItem(SELECTED_FILE_KEY, JSON.stringify(all));
 	} catch {
 		// Ignore storage errors
 	}
