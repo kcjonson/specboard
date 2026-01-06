@@ -49,3 +49,4 @@ scripts/seed-dev.sql
 
 # Local seed configuration (contains admin credentials)
 seed.local.json
+docker-compose.override.yml
