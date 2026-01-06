@@ -7,6 +7,7 @@ export default defineConfig({
 	build: {
 		outDir: 'dist',
 		manifest: '.vite/manifest.json',
+		sourcemap: true,
 		rollupOptions: {
 			input: {
 				// SPA entry
