@@ -83,6 +83,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Epic linking state
 	const [linkedEpicId, setLinkedEpicId] = useState<string | undefined>();
 	const [creatingEpic, setCreatingEpic] = useState(false);
+	const creatingEpicRef = useRef(false);
 
 	// Check if file has a linked epic
 	const checkLinkedEpic = useCallback(async (path: string) => {
@@ -173,7 +174,8 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Create epic from current document
 	const handleCreateEpic = useCallback(async () => {
 		const filePath = documentModel.filePath;
-		if (!filePath || creatingEpic) return;
+		// Use ref to prevent race condition from rapid clicks
+		if (!filePath || creatingEpicRef.current) return;
 
 		// Extract title from filename (without extension)
 		const fileName = filePath.split('/').pop() || 'Untitled';
@@ -182,6 +184,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			title = 'Untitled';
 		}
 
+		creatingEpicRef.current = true;
 		setCreatingEpic(true);
 		try {
 			const response = await fetchClient.post<{ id: string }>(
@@ -205,9 +208,10 @@ export function Editor(props: RouteProps): JSX.Element {
 			// Show user feedback
 			globalThis.alert?.('Failed to create epic. Please try again.');
 		} finally {
+			creatingEpicRef.current = false;
 			setCreatingEpic(false);
 		}
-	}, [projectId, documentModel.filePath, creatingEpic]);
+	}, [projectId, documentModel.filePath]);
 
 	// Navigate to view the linked epic
 	const handleViewEpic = useCallback(() => {

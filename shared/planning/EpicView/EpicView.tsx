@@ -78,7 +78,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 		const checkExists = async (): Promise<void> => {
 			try {
 				await fetchClient.get(
-					`/api/projects/${epic.projectId}/files?path=${encodeURIComponent(epic.specDocPath || '')}`
+					`/api/projects/${epic.projectId}/files?path=${encodeURIComponent(epic.specDocPath)}`
 				);
 				if (!cancelled) {
 					setSpecDocExists(true);
@@ -97,11 +97,20 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 	}, [epic?.specDocPath, epic?.projectId]);
 
 	// Unlink spec document from epic
-	const handleUnlinkSpec = useCallback((): void => {
+	const handleUnlinkSpec = useCallback(async (): Promise<void> => {
 		if (!epic) return;
+
+		const previousSpecDocPath = epic.specDocPath;
 		epic.specDocPath = undefined;
-		epic.save();
-		setSpecDocExists(null);
+
+		try {
+			await epic.save();
+			setSpecDocExists(null);
+		} catch (err) {
+			// Revert on failure
+			epic.specDocPath = previousSpecDocPath;
+			console.error('Failed to unlink spec document:', err);
+		}
 	}, [epic]);
 
 	// Task status toggle
@@ -279,7 +288,9 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 								<button
 									type="button"
 									class={specDocExists === false ? styles.specLinkMissing : styles.specLink}
-									onClick={() => navigate(`/projects/${epic.projectId}/pages?file=${encodeURIComponent(epic.specDocPath || '')}`)}
+									disabled={specDocExists === false}
+									aria-label={specDocExists === false ? 'Specification document not found' : 'Open specification document'}
+									onClick={() => navigate(`/projects/${epic.projectId}/pages?file=${encodeURIComponent(epic.specDocPath)}`)}
 								>
 									{epic.specDocPath}
 								</button>
