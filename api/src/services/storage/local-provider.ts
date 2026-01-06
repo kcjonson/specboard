@@ -164,14 +164,18 @@ export class LocalStorageProvider implements StorageProvider {
 				continue;
 			}
 
-			// Ensure line has minimum length for status parsing (XY path format)
-			if (line.length < 4) {
+			// Ensure line has minimum length and expected format for status parsing (XY path format)
+			// Format: XY<space>path - need at least 4 chars and space at position 2
+			if (line.length < 4 || line[2] !== ' ') {
 				continue;
 			}
 
 			const indexStatus = line[0];
 			const workTreeStatus = line[1];
 			const filePath = line.slice(3);
+			if (!filePath) {
+				continue;
+			}
 
 			// Staged changes (index)
 			if (indexStatus && indexStatus !== ' ' && indexStatus !== '?') {

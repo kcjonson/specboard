@@ -5,6 +5,9 @@
 import { query } from '../index.js';
 import { type Project, type StorageMode, type RepositoryConfig, isLocalRepository } from '../types.js';
 
+// Maximum number of root paths per project to prevent abuse
+const MAX_ROOT_PATHS = 20;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,6 +238,11 @@ export async function addFolder(
 		throw new Error('DUPLICATE_PATH');
 	}
 
+	// Enforce maximum root paths limit
+	if (project.root_paths.length >= MAX_ROOT_PATHS) {
+		throw new Error('MAX_ROOT_PATHS_EXCEEDED');
+	}
+
 	// Update project with new storage config
 	const newRepository = {
 		type: 'local' as const,
@@ -283,13 +291,13 @@ export async function removeFolder(
 
 	const result = await query<Project>(
 		`UPDATE projects
-		 SET root_paths = $1,
-		     repository = CASE WHEN $2::int = 0 THEN '{}'::jsonb ELSE repository END,
-		     storage_mode = CASE WHEN $2::int = 0 THEN 'none' ELSE storage_mode END,
+		 SET root_paths = $1::jsonb,
+		     repository = CASE WHEN jsonb_array_length($1::jsonb) = 0 THEN '{}'::jsonb ELSE repository END,
+		     storage_mode = CASE WHEN jsonb_array_length($1::jsonb) = 0 THEN 'none' ELSE storage_mode END,
 		     updated_at = NOW()
-		 WHERE id = $3 AND owner_id = $4
+		 WHERE id = $2 AND owner_id = $3
 		 RETURNING *`,
-		[JSON.stringify(newRootPaths), newRootPaths.length, projectId, userId]
+		[JSON.stringify(newRootPaths), projectId, userId]
 	);
 
 	if (result.rows.length === 0) {

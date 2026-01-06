@@ -93,6 +93,8 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 			}
 
 			// Fetch children
+			// Only show markdown files - this is a documentation editor, not a general file browser.
+			// Binary files, configs, etc. are intentionally excluded to keep the UI focused.
 			try {
 				const children = await provider.listDirectory(normalized, {
 					extensions: ['md', 'mdx'],

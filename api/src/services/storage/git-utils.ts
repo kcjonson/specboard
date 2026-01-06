@@ -148,20 +148,25 @@ export async function validatePath(repoRoot: string, relativePath: string): Prom
 		const parentPath = path.dirname(absolutePath);
 		try {
 			const realParent = await fs.realpath(parentPath);
-			if (!realParent.startsWith(realRepoRoot)) {
+			// Ensure path separator boundary to prevent /repo matching /repo-other
+			const repoRootWithSep = realRepoRoot.endsWith(path.sep) ? realRepoRoot : realRepoRoot + path.sep;
+			if (realParent !== realRepoRoot && !realParent.startsWith(repoRootWithSep)) {
 				throw new Error('Path traversal detected');
 			}
 		} catch {
 			// Parent doesn't exist either - just do the basic check
 			const normalizedRepo = path.normalize(repoRoot);
-			if (!absolutePath.startsWith(normalizedRepo)) {
+			const normalizedRepoWithSep = normalizedRepo.endsWith(path.sep) ? normalizedRepo : normalizedRepo + path.sep;
+			if (absolutePath !== normalizedRepo && !absolutePath.startsWith(normalizedRepoWithSep)) {
 				throw new Error('Path traversal detected');
 			}
 		}
 		return absolutePath;
 	}
 
-	if (!realAbsolutePath.startsWith(realRepoRoot)) {
+	// Ensure path separator boundary to prevent /repo matching /repo-other
+	const repoRootWithSep = realRepoRoot.endsWith(path.sep) ? realRepoRoot : realRepoRoot + path.sep;
+	if (realAbsolutePath !== realRepoRoot && !realAbsolutePath.startsWith(repoRootWithSep)) {
 		throw new Error('Path traversal detected');
 	}
 

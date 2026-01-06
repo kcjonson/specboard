@@ -98,7 +98,7 @@ const MAX_TREE_DEPTH = 20;
 
 /** Convert nested tree to flat array of paths (with depth limit for security) */
 export function expandedTreeToPaths(tree: ExpandedTree, basePath: string = '', depth: number = 0): string[] {
-	if (depth > MAX_TREE_DEPTH) {
+	if (depth >= MAX_TREE_DEPTH) {
 		return []; // Prevent stack overflow from malicious input
 	}
 

@@ -118,8 +118,8 @@ interface RepositoryConfig {
 ```sql
 -- Add storage columns to projects table
 ALTER TABLE projects
-  ADD COLUMN storage_mode TEXT NOT NULL DEFAULT 'local'
-    CHECK (storage_mode IN ('local', 'cloud')),
+  ADD COLUMN storage_mode TEXT NOT NULL DEFAULT 'none'
+    CHECK (storage_mode IN ('none', 'local', 'cloud')),
   ADD COLUMN repository JSONB NOT NULL DEFAULT '{}',
   ADD COLUMN root_paths JSONB NOT NULL DEFAULT '[]';
 

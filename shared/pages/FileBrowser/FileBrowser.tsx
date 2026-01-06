@@ -123,7 +123,7 @@ export function FileBrowser({
 							<div
 								key={file.path}
 								class={`${styles.treeItem} ${isSelected ? styles.selected : ''} ${isRoot ? styles.rootItem : ''}`}
-								style={{ '--depth': depth } as Record<string, unknown>}
+								style={{ '--depth': String(depth) } as JSX.CSSProperties}
 								onClick={() => handleItemClick(file.path, file.type)}
 							>
 								{file.type === 'directory' ? (
