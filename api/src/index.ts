@@ -50,7 +50,6 @@ import {
 import {
 	handleListEpics,
 	handleGetEpic,
-	handleGetEpicBySpec,
 	handleCreateEpic,
 	handleUpdateEpic,
 	handleDeleteEpic,
@@ -334,7 +333,6 @@ app.put('/api/projects/:id/files', (context) => handleWriteFile(context, redis))
 
 // Project-scoped epic routes
 app.get('/api/projects/:projectId/epics', handleListEpics);
-app.get('/api/projects/:projectId/epics/by-spec', handleGetEpicBySpec);
 app.get('/api/projects/:projectId/epics/current', handleGetCurrentWork);
 app.get('/api/projects/:projectId/epics/:id', handleGetEpic);
 app.post('/api/projects/:projectId/epics', handleCreateEpic);

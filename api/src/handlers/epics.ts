@@ -15,46 +15,6 @@ import {
 	MAX_TITLE_LENGTH,
 } from '../validation.js';
 
-export async function handleGetEpicBySpec(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	const specPath = context.req.query('path');
-
-	if (!isValidUUID(projectId)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
-	}
-
-	if (!specPath || typeof specPath !== 'string') {
-		return context.json({ error: 'path query parameter is required' }, 400);
-	}
-
-	try {
-		const result = await query<DbEpic>(
-			'SELECT * FROM epics WHERE project_id = $1 AND spec_doc_path = $2',
-			[projectId, specPath]
-		);
-
-		if (result.rows.length === 0) {
-			return context.json({ exists: false });
-		}
-
-		const epic = result.rows[0];
-		if (!epic) {
-			return context.json({ exists: false });
-		}
-
-		return context.json({
-			exists: true,
-			epic: {
-				id: epic.id,
-				title: epic.title,
-			},
-		});
-	} catch (error) {
-		console.error('Failed to fetch epic by spec:', error);
-		return context.json({ error: 'Database error' }, 500);
-	}
-}
-
 export async function handleListEpics(context: Context): Promise<Response> {
 	const projectId = context.req.param('projectId');
 
@@ -64,10 +24,17 @@ export async function handleListEpics(context: Context): Promise<Response> {
 
 	try {
 		const statusParam = context.req.query('status');
+		const specDocPath = context.req.query('specDocPath');
 		const validStatuses = ['ready', 'in_progress', 'in_review', 'done'];
 
 		let result;
-		if (statusParam && validStatuses.includes(statusParam)) {
+		if (specDocPath) {
+			// Filter by spec document path
+			result = await query<DbEpic>(
+				`SELECT * FROM epics WHERE project_id = $1 AND spec_doc_path = $2 ORDER BY rank ASC`,
+				[projectId, specDocPath]
+			);
+		} else if (statusParam && validStatuses.includes(statusParam)) {
 			result = await query<DbEpic>(
 				`SELECT * FROM epics WHERE project_id = $1 AND status = $2 ORDER BY rank ASC`,
 				[projectId, statusParam]

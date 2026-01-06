@@ -93,10 +93,10 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 
 		try {
-			const response = await fetchClient.get<{ exists: boolean; epic?: { id: string; title: string } }>(
-				`/api/projects/${projectId}/epics/by-spec?path=${encodeURIComponent(path)}`
+			const epics = await fetchClient.get<Array<{ id: string }>>(
+				`/api/projects/${projectId}/epics?specDocPath=${encodeURIComponent(path)}`
 			);
-			setLinkedEpicId(response.exists ? response.epic?.id : undefined);
+			setLinkedEpicId(epics.length > 0 ? epics[0]?.id : undefined);
 		} catch {
 			// Silently fail - epic linking is optional
 			setLinkedEpicId(undefined);
