@@ -58,6 +58,10 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 		return context.json({ error: 'Invalid project ID format' }, 400);
 	}
 
+	// Support fields filter for lightweight queries (e.g., ?fields=name)
+	const fieldsParam = context.req.query('fields');
+	const requestedFields = fieldsParam ? fieldsParam.split(',').map((f) => f.trim()) : null;
+
 	try {
 		const project = await getProject(id, userId);
 
@@ -65,7 +69,20 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
-		return context.json(projectResponseToApi(project));
+		const fullResponse = projectResponseToApi(project);
+
+		// If specific fields requested, return only those
+		if (requestedFields) {
+			const filtered: Record<string, unknown> = { id: fullResponse.id };
+			for (const field of requestedFields) {
+				if (field in fullResponse) {
+					filtered[field] = fullResponse[field as keyof typeof fullResponse];
+				}
+			}
+			return context.json(filtered);
+		}
+
+		return context.json(fullResponse);
 	} catch (error) {
 		console.error('Failed to fetch project:', error);
 		return context.json({ error: 'Database error' }, 500);

@@ -1,5 +1,7 @@
-import { useMemo } from 'preact/hooks';
+import { useMemo, useState, useEffect } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
+import { getCookie, setCookie } from '@doc-platform/core/cookies';
+import { fetchClient } from '@doc-platform/fetch';
 import { useModel, UserModel } from '@doc-platform/models';
 import { UserMenu } from '../UserMenu/UserMenu';
 import styles from './WebHeader.module.css';
@@ -16,10 +18,6 @@ const NAV_TABS: NavTab[] = [
 	{ label: 'Planning', path: 'planning' },
 	{ label: 'Pages', path: 'pages' },
 ];
-
-function formatProjectName(id: string): string {
-	return id.charAt(0).toUpperCase() + id.slice(1);
-}
 
 export interface WebHeaderProps {
 	/** Project ID - if provided, shows project name and nav tabs */
@@ -47,12 +45,38 @@ export function WebHeader({
 
 	const isAdmin = user.roles?.includes('admin') ?? false;
 
+	// Get project name from cookie or fetch if needed
+	const lastProjectId = getCookie('lastProjectId');
+	const cachedName = projectId && lastProjectId === projectId ? getCookie('lastProjectName') : null;
+	const [fetchedName, setFetchedName] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (!projectId || cachedName) {
+			setFetchedName(null);
+			return;
+		}
+
+		// Fetch project name and update cookie
+		fetchClient
+			.get<{ id: string; name: string }>(`/api/projects/${projectId}?fields=name`)
+			.then((project) => {
+				setFetchedName(project.name);
+				setCookie('lastProjectId', projectId, 30);
+				setCookie('lastProjectName', project.name, 30);
+			})
+			.catch(() => {
+				// Silently fail - header will just be empty
+			});
+	}, [projectId, cachedName]);
+
+	const projectName = cachedName ?? fetchedName;
+
 	return (
 		<header class={`${styles.header} ${className || ''}`}>
 			<div class={styles.left}>
 				{projectId ? (
 					<>
-						<span class={styles.projectName}>{formatProjectName(projectId)}</span>
+						<span class={styles.projectName}>{projectName ?? ''}</span>
 						<nav class={styles.nav}>
 							{NAV_TABS.map((tab) => (
 								<a

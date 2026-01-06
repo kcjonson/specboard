@@ -3,6 +3,7 @@ import { startRouter, navigate } from '@doc-platform/router';
 import type { RouteProps } from '@doc-platform/router';
 import { useEffect, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
+import { getCookie, setCookie } from '@doc-platform/core/cookies';
 import { fetchClient } from '@doc-platform/fetch';
 import { NotFound } from '@doc-platform/ui';
 
@@ -28,23 +29,6 @@ import { AdminUsers } from './routes/admin/AdminUsers';
 import '../../ssg/src/styles/common.css';
 import './styles/tokens.css';
 import './styles/global.css';
-
-// Cookie helper
-function getCookie(name: string): string | null {
-	const cookies = document.cookie ? document.cookie.split('; ') : [];
-	for (const cookie of cookies) {
-		const [cookieName, ...valueParts] = cookie.split('=');
-		if (cookieName === name) {
-			const value = valueParts.join('=');
-			try {
-				return decodeURIComponent(value);
-			} catch {
-				return value;
-			}
-		}
-	}
-	return null;
-}
 
 // UUID validation for cookie values
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -72,11 +56,15 @@ function RootRedirect(_props: RouteProps): JSX.Element | null {
 					navigate('/projects');
 				} else if (projects.length === 1) {
 					// Single project - go directly there
-					navigate(`/projects/${projects[0].id}/planning`);
+					const project = projects[0];
+					setCookie('lastProjectId', project.id, 30);
+					setCookie('lastProjectName', project.name, 30);
+					navigate(`/projects/${project.id}/planning`);
 				} else if (lastProjectId && isValidUUID(lastProjectId)) {
 					// Multiple projects with valid cookie - check if project exists
-					const projectExists = projects.some((p) => p.id === lastProjectId);
-					if (projectExists) {
+					const project = projects.find((p) => p.id === lastProjectId);
+					if (project) {
+						setCookie('lastProjectName', project.name, 30);
 						navigate(`/projects/${lastProjectId}/planning`);
 					} else {
 						// Cookie references deleted project - go to list

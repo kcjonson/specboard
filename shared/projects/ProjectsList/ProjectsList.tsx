@@ -2,18 +2,12 @@ import { useState, useEffect, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
+import { getCookie, setCookie } from '@doc-platform/core/cookies';
 import { fetchClient } from '@doc-platform/fetch';
 import { Button, Page } from '@doc-platform/ui';
 import { ProjectCard, type Project } from '../ProjectCard/ProjectCard';
 import { ProjectDialog } from '../ProjectDialog/ProjectDialog';
 import styles from './ProjectsList.module.css';
-
-// Cookie helpers
-function setCookie(name: string, value: string, days: number): void {
-	const expires = new Date();
-	expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-	document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax;Secure`;
-}
 
 export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [projects, setProjects] = useState<Project[]>([]);
@@ -42,6 +36,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	function handleProjectClick(project: Project): void {
 		// Store last project in cookie
 		setCookie('lastProjectId', project.id, 30);
+		setCookie('lastProjectName', project.name, 30);
 		navigate(`/projects/${project.id}/planning`);
 	}
 
@@ -66,6 +61,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				setDialogProject(null);
 				// Navigate to the new project
 				setCookie('lastProjectId', project.id, 30);
+				setCookie('lastProjectName', project.name, 30);
 				navigate(`/projects/${project.id}/planning`);
 			} else if (dialogProject) {
 				// Edit mode
@@ -73,6 +69,10 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				setProjects((prev) =>
 					prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
 				);
+				// Update cookie if this is the current project
+				if (getCookie('lastProjectId') === updated.id) {
+					setCookie('lastProjectName', updated.name, 30);
+				}
 				setDialogProject(null);
 			}
 		} catch (err) {

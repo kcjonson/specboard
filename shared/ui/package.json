@@ -24,6 +24,7 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
+		"@doc-platform/core": "workspace:*",
 		"@doc-platform/fetch": "workspace:*",
 		"@doc-platform/models": "workspace:*",
 		"preact": "^10.25.4"

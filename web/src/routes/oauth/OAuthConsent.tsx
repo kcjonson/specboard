@@ -1,31 +1,13 @@
 import { useState, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
+import { getCookie } from '@doc-platform/core/cookies';
 import { Button } from '@doc-platform/ui';
 import { useModel, UserModel } from '@doc-platform/models';
 import styles from './OAuthConsent.module.css';
 
 /** CSRF cookie name (must match server) */
 const CSRF_COOKIE_NAME = 'csrf_token';
-
-/**
- * Read a cookie value by name
- */
-function getCookie(name: string): string | null {
-	const cookies = document.cookie ? document.cookie.split('; ') : [];
-	for (const cookie of cookies) {
-		const [cookieName, ...valueParts] = cookie.split('=');
-		if (cookieName === name) {
-			const value = valueParts.join('=');
-			try {
-				return decodeURIComponent(value);
-			} catch {
-				return value;
-			}
-		}
-	}
-	return null;
-}
 
 // Scope descriptions for display
 const SCOPE_DESCRIPTIONS: Record<string, string> = {

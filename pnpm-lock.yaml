@@ -373,6 +373,9 @@ importers:
 
   shared/ui:
     dependencies:
+      '@doc-platform/core':
+        specifier: workspace:*
+        version: link:../core
       '@doc-platform/fetch':
         specifier: workspace:*
         version: link:../fetch

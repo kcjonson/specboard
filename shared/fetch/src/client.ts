@@ -23,7 +23,7 @@ const CSRF_HEADER_NAME = 'X-CSRF-Token';
 const CSRF_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
 /**
- * Read a cookie value by name
+ * Read a cookie value by name (internal helper for CSRF handling)
  */
 function getCookie(name: string): string | null {
 	if (typeof document === 'undefined') return null;
