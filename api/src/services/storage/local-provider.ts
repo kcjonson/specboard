@@ -212,6 +212,9 @@ export class LocalStorageProvider implements StorageProvider {
 				return 'deleted';
 			case 'R':
 				return 'renamed';
+			case 'C': // Copied - treat as modified for our model
+			case 'T': // Type change (file <-> symlink) - treat as modified
+			case 'U': // Unmerged - treat as modified
 			default:
 				return 'modified';
 		}
@@ -229,7 +232,11 @@ export class LocalStorageProvider implements StorageProvider {
 
 		return lines.map((line) => {
 			// Format: sha\0shortSha\0message\0authorName\0authorEmail\0dateStr
-			const [sha, shortSha, message, authorName, authorEmail, dateStr] = line.split('\x00');
+			const parts = line.split('\x00');
+			if (parts.length !== 6) {
+				throw new Error(`Unexpected git log format: expected 6 fields, got ${parts.length}`);
+			}
+			const [sha, shortSha, message, authorName, authorEmail, dateStr] = parts;
 
 			return {
 				sha: sha!,

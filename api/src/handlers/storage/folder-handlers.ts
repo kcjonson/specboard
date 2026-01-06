@@ -41,8 +41,14 @@ export async function handleAddFolder(context: Context, redis: Redis): Promise<R
 			}
 		} catch (statError: unknown) {
 			const err = statError as { code?: string };
-			if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
+			if (err?.code === 'ENOENT') {
 				return context.json({ error: 'Folder does not exist', code: 'FOLDER_NOT_FOUND' }, 400);
+			}
+			if (err?.code === 'EACCES') {
+				return context.json({ error: 'Permission denied', code: 'FOLDER_PERMISSION_DENIED' }, 403);
+			}
+			if (err?.code === 'ENOTDIR') {
+				return context.json({ error: 'Path is not a directory', code: 'NOT_DIRECTORY' }, 400);
 			}
 			console.error('Failed to access folder:', statError);
 			return context.json({ error: 'Failed to access folder', code: 'FOLDER_ACCESS_ERROR' }, 400);

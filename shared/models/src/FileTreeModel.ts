@@ -130,8 +130,9 @@ function saveExpandedTreeToStorage(projectId: string, tree: ExpandedTree): void 
 		const all = stored ? (JSON.parse(stored) as Record<string, ExpandedTree>) : {};
 		all[projectId] = tree;
 		storage.setItem(STORAGE_KEY, JSON.stringify(all));
-	} catch {
-		// Ignore storage errors
+	} catch (err) {
+		// Log storage errors (quota exceeded, etc.) for debugging
+		console.warn('Failed to save expanded tree to localStorage:', err);
 	}
 }
 

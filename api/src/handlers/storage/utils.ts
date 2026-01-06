@@ -94,7 +94,8 @@ export function isPathWithinRoots(targetPath: string, rootPaths: string[]): bool
 /** Nested tree structure for expanded paths */
 export type ExpandedTree = { [name: string]: ExpandedTree };
 
-const MAX_TREE_DEPTH = 20;
+// Keep in sync with FileTreeModel.MAX_TREE_DEPTH on the frontend
+const MAX_TREE_DEPTH = 50;
 
 /** Convert nested tree to flat array of paths (with depth limit for security) */
 export function expandedTreeToPaths(tree: ExpandedTree, basePath: string = '', depth: number = 0): string[] {
