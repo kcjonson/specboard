@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-04 (Project Storage Spec)
+Last Updated: 2026-01-05 (Project Storage Implementation)
 
 ## Epic/Story/Task Template
 
@@ -297,21 +297,19 @@ Use this template for all work items:
 
 ---
 
-## Planned Epics
-
 ### Project Storage & Git Integration
 **Spec/Documentation:** `/docs/specs/project-storage.md`
 **Dependencies:** Projects Page
-**Status:** ready
+**Status:** in progress
 
 **Goal:** Connect projects to git repositories with local and cloud storage modes.
 
 **Tasks:**
-- [ ] Database migration
-  - [ ] Add storage_mode, repository, root_paths columns to projects
-- [ ] Storage provider interface
-  - [ ] Define StorageProvider interface
-  - [ ] LocalStorageProvider implementation
+- [x] Database migration
+  - [x] Add storage_mode, repository, root_paths columns to projects
+- [x] Storage provider interface
+  - [x] Define StorageProvider interface
+  - [x] LocalStorageProvider implementation
   - [ ] GitStorageProvider implementation (cloud mode)
 - [x] API endpoints (local mode first)
   - [x] POST /api/projects/:id/folders (add folder with git validation)
@@ -319,13 +317,16 @@ Use this template for all work items:
   - [x] GET/POST /api/projects/:id/tree (file listing with expanded state)
   - [x] GET /api/projects/:id/files?path=... (read file)
   - [x] PUT /api/projects/:id/files?path=... (write file)
-- [ ] FileBrowser UI
-  - [ ] Empty state with "Add Folder" button
-  - [ ] Folder picker dialog (local mode)
-  - [ ] Display validation errors (not git repo, different repo)
-  - [ ] File tree display
+- [x] FileBrowser UI
+  - [x] Empty state with "Add Folder" button
+  - [x] Folder picker dialog (local mode - window.prompt for now)
+  - [x] Display validation errors (not git repo, different repo)
+  - [x] File tree display with expand/collapse
+  - [x] Remove folder button on root items
 
 ---
+
+## Planned Epics
 
 ### Platform Abstraction Layer
 **Spec/Documentation:** `/docs/specs/platform-abstraction.md`
