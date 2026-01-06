@@ -184,8 +184,8 @@ export function Editor(props: RouteProps): JSX.Element {
 				}
 			);
 			setLinkedEpicId(response.id);
-			// Navigate to Planning page
-			navigate(`/projects/${projectId}/planning`);
+			// Navigate to Planning page with highlight param
+			navigate(`/projects/${projectId}/planning?highlight=${response.id}`);
 		} catch (err) {
 			console.error('Failed to create epic:', err);
 			// Could show error UI here

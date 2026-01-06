@@ -156,11 +156,13 @@ export async function handleCreateEpic(context: Context): Promise<Response> {
 	}
 
 	try {
-		const rankResult = await query<{ max_rank: number | null }>(
-			`SELECT MAX(rank) as max_rank FROM epics WHERE project_id = $1 AND status = $2`,
+		// New epics go to the top of the column (lowest rank)
+		const rankResult = await query<{ min_rank: number | null }>(
+			`SELECT MIN(rank) as min_rank FROM epics WHERE project_id = $1 AND status = $2`,
 			[projectId, status]
 		);
-		const maxRank = rankResult.rows[0]?.max_rank ?? 0;
+		const minRank = rankResult.rows[0]?.min_rank ?? 1;
+		const newRank = minRank - 1;
 
 		const result = await query<DbEpic>(
 			`INSERT INTO epics (project_id, title, description, status, creator, assignee, rank, spec_doc_path)
@@ -173,7 +175,7 @@ export async function handleCreateEpic(context: Context): Promise<Response> {
 				status,
 				normalizeOptionalString(body.creator) ?? null,
 				normalizeOptionalString(body.assignee) ?? null,
-				maxRank + 1,
+				newRank,
 				normalizeOptionalString(body.specDocPath) ?? null,
 			]
 		);

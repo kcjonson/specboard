@@ -23,6 +23,21 @@
 	opacity: 0.9;
 }
 
+.card.highlighted {
+	animation: highlight-pulse 2s ease-out;
+}
+
+@keyframes highlight-pulse {
+	0% {
+		background: var(--color-primary-light, rgba(59, 130, 246, 0.2));
+		box-shadow: 0 0 0 4px var(--color-primary-light, rgba(59, 130, 246, 0.3));
+	}
+	100% {
+		background: var(--color-card);
+		box-shadow: var(--shadow-card);
+	}
+}
+
 .header {
 	display: flex;
 	align-items: flex-start;

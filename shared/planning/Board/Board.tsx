@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'preact/hooks';
+import { useState, useMemo, useCallback, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
@@ -8,6 +8,9 @@ import { Column } from '../Column/Column';
 import { EpicDialog } from '../EpicDialog/EpicDialog';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
 import styles from './Board.module.css';
+
+/** Duration to highlight a newly created epic (ms) */
+const HIGHLIGHT_DURATION = 2000;
 
 const COLUMNS: { status: Status; title: string }[] = [
 	{ status: 'ready', title: 'Ready' },
@@ -25,6 +28,24 @@ export function Board(props: RouteProps): JSX.Element {
 	const [selectedEpicId, setSelectedEpicId] = useState<string | undefined>();
 	const [dialogEpic, setDialogEpic] = useState<EpicModel | null>(null);
 	const [isNewEpicDialogOpen, setIsNewEpicDialogOpen] = useState(false);
+	const [highlightedEpicId, setHighlightedEpicId] = useState<string | undefined>();
+
+	// Read highlight param from URL and clear after timeout
+	useEffect(() => {
+		const params = new URLSearchParams(window.location.search);
+		const highlightId = params.get('highlight');
+		if (highlightId) {
+			setHighlightedEpicId(highlightId);
+			// Clear the URL param without triggering navigation
+			const newUrl = window.location.pathname;
+			window.history.replaceState({}, '', newUrl);
+			// Clear highlight after duration
+			const timer = setTimeout(() => {
+				setHighlightedEpicId(undefined);
+			}, HIGHLIGHT_DURATION);
+			return () => clearTimeout(timer);
+		}
+	}, []);
 
 	// Memoize epics by status for keyboard navigation
 	const epicsByStatus = useMemo(
@@ -205,6 +226,7 @@ export function Board(props: RouteProps): JSX.Element {
 						title={title}
 						epics={epics.byStatus(status)}
 						selectedEpicId={selectedEpicId}
+						highlightedEpicId={highlightedEpicId}
 						onSelectEpic={handleColumnSelectEpic}
 						onOpenEpic={handleOpenEpic}
 						onDropEpic={handleDropEpic}

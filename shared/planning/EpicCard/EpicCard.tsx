@@ -5,6 +5,7 @@ import styles from './EpicCard.module.css';
 interface EpicCardProps {
 	epic: EpicModel;
 	isSelected?: boolean;
+	isHighlighted?: boolean;
 	onSelect?: (epic: EpicModel) => void;
 	onOpen?: (epic: EpicModel) => void;
 	onDragStart?: (e: DragEvent, epic: EpicModel) => void;
@@ -39,6 +40,7 @@ function formatTimeAgo(dateString: string): string {
 export function EpicCard({
 	epic,
 	isSelected = false,
+	isHighlighted = false,
 	onSelect,
 	onOpen,
 	onDragStart,
@@ -68,6 +70,7 @@ export function EpicCard({
 	const cardClass = [
 		styles.card,
 		isSelected && styles.selected,
+		isHighlighted && styles.highlighted,
 	].filter(Boolean).join(' ');
 
 	return (

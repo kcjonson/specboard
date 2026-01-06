@@ -10,6 +10,7 @@ interface ColumnProps {
 	title: string;
 	epics: EpicModel[];
 	selectedEpicId?: string;
+	highlightedEpicId?: string;
 	onSelectEpic?: (epic: EpicModel) => void;
 	onOpenEpic?: (epic: EpicModel) => void;
 	onDropEpic?: (epicId: string, status: Status, index: number) => void;
@@ -28,6 +29,7 @@ export function Column({
 	title,
 	epics,
 	selectedEpicId,
+	highlightedEpicId,
 	onSelectEpic,
 	onOpenEpic,
 	onDropEpic,
@@ -122,6 +124,7 @@ export function Column({
 								<EpicCard
 									epic={epic}
 									isSelected={epic.id === selectedEpicId}
+									isHighlighted={epic.id === highlightedEpicId}
 									onSelect={onSelectEpic}
 									onOpen={onOpenEpic}
 									onDragStart={onDragStart}
