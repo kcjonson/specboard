@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { FileTreeModel, useModel } from '@doc-platform/models';
-import { Button } from '@doc-platform/ui';
+import { Button, Icon } from '@doc-platform/ui';
 import { fetchClient } from '@doc-platform/fetch';
 import styles from './FileBrowser.module.css';
 
@@ -331,7 +331,7 @@ export function FileBrowser({
 				class={styles.newFileItem}
 				style={{ '--depth': String(depth) } as JSX.CSSProperties}
 			>
-				<span class={styles.newFileIcon}>📄</span>
+				<span class={styles.newFileIcon}><Icon name="file" size={14} /></span>
 				<input
 					ref={newFileInputRef}
 					type="text"
@@ -353,7 +353,7 @@ export function FileBrowser({
 			<div class={`${styles.container} ${className || ''}`}>
 				<div class={styles.header}>Files</div>
 				<div class={styles.emptyState}>
-					<div class={styles.emptyIcon}>📁</div>
+					<div class={styles.emptyIcon}><Icon name="folder" size={32} /></div>
 					<div class={styles.emptyTitle}>No folders added</div>
 					<Button onClick={handleAddFolder} class={styles.addButton}>
 						+ Add Folder
@@ -397,11 +397,12 @@ export function FileBrowser({
 								>
 									{isFolder ? (
 										<span class={styles.folderIcon}>
-											{isExpanded ? '▼' : '▶'} {isRoot ? '📁' : '📂'}
+											<Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={12} />
+											<Icon name={isExpanded ? 'folder-open' : 'folder'} size={14} />
 										</span>
 									) : (
 										<span class={styles.fileIcon}>
-											📄
+											<Icon name="file" size={14} />
 										</span>
 									)}
 									{isRenaming ? (

@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { type AuthorizationsCollection, type AuthorizationModel } from '@doc-platform/models';
-import { Button } from '@doc-platform/ui';
+import { Button, Icon } from '@doc-platform/ui';
 import styles from './AuthorizedApps.module.css';
 
 // Friendly names for clients
@@ -89,7 +89,7 @@ export function AuthorizedApps({ authorizations }: AuthorizedAppsProps): JSX.Ele
 					{authorizations.map((auth) => (
 						<div key={auth.id} class={styles.item}>
 							<div class={styles.itemHeader}>
-								<span class={styles.icon}>🤖</span>
+								<span class={styles.icon}><Icon name="robot" size={20} /></span>
 								<div class={styles.itemInfo}>
 									<div class={styles.clientName}>
 										{CLIENT_NAMES[auth.client_id] || auth.client_id}

@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { navigate, type RouteProps } from '@doc-platform/router';
-import { Page } from '@doc-platform/ui';
+import { Page, Icon } from '@doc-platform/ui';
 import {
 	DocumentModel,
 	useModel,
@@ -437,7 +437,7 @@ export function Editor(props: RouteProps): JSX.Element {
 					) : isCreatingFile ? (
 						<div class={styles.creatingState}>
 							<div class={styles.creatingStateContent}>
-								<div class={styles.creatingStateIcon}>📝</div>
+								<div class={styles.creatingStateIcon}><Icon name="pencil" size={32} /></div>
 								<div class={styles.creatingStateTitle}>Creating new file</div>
 								<div class={styles.creatingStateHint}>
 									Enter a filename in the sidebar to continue
@@ -470,7 +470,7 @@ export function Editor(props: RouteProps): JSX.Element {
 					) : (
 						<div class={styles.emptyState}>
 							<div class={styles.emptyStateContent}>
-								<div class={styles.emptyStateIcon}>📄</div>
+								<div class={styles.emptyStateIcon}><Icon name="file" size={32} /></div>
 								<div class={styles.emptyStateTitle}>No file selected</div>
 								<div class={styles.emptyStateHint}>
 									Select a markdown file from the sidebar to start editing

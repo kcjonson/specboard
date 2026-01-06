@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Card, StatusDot } from '@doc-platform/ui';
+import { Card, StatusDot, Icon } from '@doc-platform/ui';
 import styles from './ProjectCard.module.css';
 
 export interface EpicCounts {
@@ -69,7 +69,7 @@ export function ProjectCard({ project, onClick, onEdit }: ProjectCardProps): JSX
 						onKeyDown={handleEditKeyDown}
 						aria-label="Edit project"
 					>
-						✎
+						<Icon name="pencil" size={14} />
 					</button>
 				)}
 			</div>

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
-import { Button } from '@doc-platform/ui';
+import { Button, Icon } from '@doc-platform/ui';
 import { useModel, UserModel } from '@doc-platform/models';
 import styles from './OAuthConsent.module.css';
 
@@ -168,7 +168,7 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 				{error && <div class={styles.error}>{error}</div>}
 
 				<div class={styles.clientInfo}>
-					<span class={styles.clientIcon}>🤖</span>
+					<span class={styles.clientIcon}><Icon name="robot" size={24} /></span>
 					<div>
 						<div class={styles.clientName}>{clientName}</div>
 						<div class={styles.clientDesc}>wants access to your account</div>
