@@ -59,6 +59,20 @@ function saveSelectedFile(projectId: string, filePath: string | null): void {
 	}
 }
 
+/**
+ * Migrate cached localStorage content from one file path to another.
+ * Used when renaming files to preserve unsaved edits.
+ */
+function migrateLocalStorageContent(projectId: string, oldPath: string, newPath: string): void {
+	if (hasPersistedContent(projectId, oldPath)) {
+		const cached = loadFromLocalStorage(projectId, oldPath);
+		if (cached) {
+			saveToLocalStorage(projectId, newPath, cached);
+		}
+		clearLocalStorage(projectId, oldPath);
+	}
+}
+
 export function Editor(props: RouteProps): JSX.Element {
 	const projectId = props.params.projectId || 'demo';
 
@@ -79,6 +93,15 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Pending recovery dialog state (file path with cached changes)
 	const [pendingRecovery, setPendingRecovery] = useState<string | null>(null);
+
+	// Reference to the startNewFile function from FileBrowser
+	const startNewFileRef = useRef<((parentPath?: string) => void) | null>(null);
+
+	// Track pending new file state to show creating notice
+	const [isCreatingFile, setIsCreatingFile] = useState(false);
+
+	// Reference to the renameFile function from FileBrowser
+	const renameFileRef = useRef<((path: string, newFilename: string) => Promise<string>) | null>(null);
 
 	// Epic linking state
 	const [linkedEpicId, setLinkedEpicId] = useState<string | undefined>();
@@ -147,6 +170,16 @@ export function Editor(props: RouteProps): JSX.Element {
 
 		await loadFileFromServer(path);
 	}, [projectId, loadFileFromServer]);
+
+	// Handle file renamed via sidebar double-click
+	const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
+		// If the renamed file is the currently open file, update the model
+		if (documentModel.filePath === oldPath) {
+			migrateLocalStorageContent(projectId, oldPath, newPath);
+			saveSelectedFile(projectId, newPath);
+			documentModel.updateFilePath(newPath);
+		}
+	}, [projectId, documentModel]);
 
 	// Handle restore from recovery dialog
 	const handleRestore = useCallback(() => {
@@ -295,6 +328,74 @@ export function Editor(props: RouteProps): JSX.Element {
 		return () => window.removeEventListener('keydown', handleKeyDown);
 	}, [handleSave]);
 
+	// Handle receiving the startNewFile function from FileBrowser
+	const handleStartNewFileRef = useCallback((startNewFile: (parentPath: string) => void) => {
+		startNewFileRef.current = startNewFile;
+	}, []);
+
+	// Handle "New Page" button click from EditorHeader
+	const handleNewPage = useCallback(() => {
+		if (!startNewFileRef.current) return;
+
+		// Determine target directory:
+		// - If a file is open, use its directory
+		// - Otherwise, FileBrowser will use first rootPath
+		let targetDir: string | undefined;
+
+		if (documentModel.filePath) {
+			// Extract directory from current file path
+			const lastSlash = documentModel.filePath.lastIndexOf('/');
+			if (lastSlash > 0) {
+				targetDir = documentModel.filePath.substring(0, lastSlash);
+			}
+		}
+
+		startNewFileRef.current(targetDir);
+		setIsCreatingFile(true);
+	}, [documentModel.filePath]);
+
+	// Handle file created callback from FileBrowser
+	const handleFileCreated = useCallback(async (path: string) => {
+		setIsCreatingFile(false);
+		// Select the newly created file
+		await handleFileSelect(path);
+	}, [handleFileSelect]);
+
+	// Handle file creation cancelled
+	const handleCancelNewFile = useCallback(() => {
+		setIsCreatingFile(false);
+	}, []);
+
+	// Handle receiving the renameFile function from FileBrowser
+	const handleRenameFileRef = useCallback((renameFile: (path: string, newFilename: string) => Promise<string>) => {
+		renameFileRef.current = renameFile;
+	}, []);
+
+	// Handle rename from EditorHeader
+	const handleRename = useCallback(async (newFilename: string) => {
+		if (!documentModel.filePath || !renameFileRef.current) return;
+
+		const oldPath = documentModel.filePath;
+		try {
+			const newPath = await renameFileRef.current(oldPath, newFilename);
+
+			migrateLocalStorageContent(projectId, oldPath, newPath);
+			saveSelectedFile(projectId, newPath);
+			documentModel.updateFilePath(newPath);
+		} catch (err) {
+			const error = err instanceof Error ? err : new Error(String(err));
+			captureError(error, {
+				type: 'file_rename_error',
+				filePath: oldPath,
+				newFilename,
+				projectId,
+			});
+			// Show user-friendly error - using alert for simplicity
+			// (File operations typically succeed, so a dedicated UI component isn't warranted)
+			alert(`Failed to rename file: ${error.message}`);
+		}
+	}, [projectId, documentModel]);
+
 	return (
 		<Page projectId={projectId} activeTab="Pages">
 			<div class={styles.body}>
@@ -302,6 +403,11 @@ export function Editor(props: RouteProps): JSX.Element {
 					projectId={projectId}
 					selectedPath={documentModel.filePath || undefined}
 					onFileSelect={handleFileSelect}
+					onFileCreated={handleFileCreated}
+					onCancelNewFile={handleCancelNewFile}
+					onFileRenamed={handleFileRenamed}
+					onStartNewFileRef={handleStartNewFileRef}
+					onRenameFileRef={handleRenameFileRef}
 					class={styles.sidebar}
 				/>
 				<main class={styles.main}>
@@ -328,6 +434,16 @@ export function Editor(props: RouteProps): JSX.Element {
 								</div>
 							</div>
 						</div>
+					) : isCreatingFile ? (
+						<div class={styles.creatingState}>
+							<div class={styles.creatingStateContent}>
+								<div class={styles.creatingStateIcon}>📝</div>
+								<div class={styles.creatingStateTitle}>Creating new file</div>
+								<div class={styles.creatingStateHint}>
+									Enter a filename in the sidebar to continue
+								</div>
+							</div>
+						</div>
 					) : documentModel.filePath ? (
 						<>
 							<EditorHeader
@@ -336,6 +452,8 @@ export function Editor(props: RouteProps): JSX.Element {
 								isDirty={documentModel.isDirty}
 								saving={documentModel.saving}
 								onSave={handleSave}
+								onNewPage={handleNewPage}
+								onRename={handleRename}
 								linkedEpicId={linkedEpicId}
 								creatingEpic={creatingEpic}
 								onCreateEpic={handleCreateEpic}

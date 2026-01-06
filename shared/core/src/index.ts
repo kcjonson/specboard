@@ -69,3 +69,25 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
 		timeoutId = setTimeout(() => fn(...args), ms);
 	};
 }
+
+/**
+ * Joins path segments into a single path.
+ * Handles leading/trailing slashes and normalizes the result.
+ *
+ * @param segments - Path segments to join
+ * @returns Normalized path string
+ */
+export function joinPath(...segments: string[]): string {
+	return segments
+		.map((segment, index) => {
+			// Remove trailing slash from all but last segment
+			let s = segment.replace(/\/+$/, '');
+			// Remove leading slash from all but first segment
+			if (index > 0) {
+				s = s.replace(/^\/+/, '');
+			}
+			return s;
+		})
+		.filter(Boolean)
+		.join('/');
+}

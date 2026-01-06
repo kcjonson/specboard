@@ -98,6 +98,18 @@ export class DocumentModel extends Model {
 	}
 
 	/**
+	 * Update the file path after a rename operation.
+	 * Updates both filePath and title (derived from filename).
+	 * Does not affect document content or dirty state.
+	 *
+	 * @param newPath - The new file path
+	 */
+	updateFilePath(newPath: string): void {
+		this.filePath = newPath;
+		this.title = newPath.split('/').pop() || 'Untitled';
+	}
+
+	/**
 	 * Clear the document (reset to empty state).
 	 */
 	clear(): void {

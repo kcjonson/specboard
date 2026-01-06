@@ -52,4 +52,4 @@ export { UserModel } from './user';
 
 // File browser model
 export { FileTreeModel } from './FileTreeModel';
-export type { FileEntry } from './FileTreeModel';
+export type { FileEntry, PendingNewFile } from './FileTreeModel';

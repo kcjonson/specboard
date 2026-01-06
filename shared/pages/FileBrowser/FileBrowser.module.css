@@ -103,20 +103,30 @@
 	flex: 1;
 }
 
-/* Root item with remove button */
-.rootItem {
+/* Folder item with action buttons */
+.folderItem {
 	position: relative;
 }
 
-.removeButton {
+.folderActions {
+	display: flex;
+	gap: var(--space-1);
 	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+
+.folderItem:hover .folderActions {
+	opacity: 1;
+}
+
+.addFileButton,
+.removeButton {
 	background: none;
 	border: none;
 	cursor: pointer;
 	padding: var(--space-1);
 	line-height: 1;
 	border-radius: var(--radius-sm);
-	transition: opacity 0.15s ease;
 	flex-shrink: 0;
 	display: flex;
 	align-items: center;
@@ -124,13 +134,14 @@
 	color: var(--color-text-muted);
 }
 
+.addFileButton:hover {
+	background: var(--color-primary-subtle);
+	color: var(--color-primary);
+}
+
 .removeButton:hover {
 	background: var(--color-error-subtle);
 	color: var(--color-error);
-}
-
-.rootItem:hover .removeButton {
-	opacity: 1;
 }
 
 /* Add button */
@@ -164,4 +175,36 @@
 	font-size: var(--text-sm);
 	border-radius: var(--radius-sm);
 	text-align: center;
+}
+
+/* New file inline input */
+.newFileItem {
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	padding: var(--space-1) var(--space-2);
+	padding-left: calc(var(--depth, 0) * 16px + 8px);
+	margin: 0 var(--space-1);
+}
+
+.newFileIcon {
+	flex-shrink: 0;
+	font-size: 12px;
+	margin-left: var(--space-4);
+}
+
+.newFileInput {
+	flex: 1;
+	min-width: 0;
+	padding: var(--space-1) var(--space-2);
+	font-size: var(--text-sm);
+	background: var(--color-surface);
+	border: 1px solid var(--color-primary);
+	border-radius: var(--radius-sm);
+	outline: none;
+	box-shadow: 0 0 0 2px var(--color-primary-subtle);
+}
+
+.newFileInput:focus {
+	border-color: var(--color-primary);
 }

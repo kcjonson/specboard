@@ -10,6 +10,22 @@ import { prop } from './prop';
 import { fetchClient } from '@doc-platform/fetch';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ensure filename has a markdown extension (.md or .mdx).
+ * Adds .md if no extension is present.
+ */
+function ensureMarkdownExtension(filename: string): string {
+	const trimmed = filename.trim();
+	if (trimmed.endsWith('.md') || trimmed.endsWith('.mdx')) {
+		return trimmed;
+	}
+	return `${trimmed}.md`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -157,6 +173,18 @@ export function getDepthForPath(path: string, rootPaths: string[]): number {
 // FileTreeModel
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Pending new file state */
+export interface PendingNewFile {
+	parentPath: string;
+	defaultName: string;
+}
+
+/** Pending rename state */
+export interface PendingRename {
+	path: string;
+	currentName: string;
+}
+
 export class FileTreeModel extends Model {
 	@prop accessor projectId!: string;
 	@prop accessor rootPaths!: string[];
@@ -164,6 +192,8 @@ export class FileTreeModel extends Model {
 	@prop accessor expanded!: ExpandedTree;
 	@prop accessor loading!: boolean;
 	@prop accessor error!: string | null;
+	@prop accessor pendingNewFile!: PendingNewFile | null;
+	@prop accessor pendingRename!: PendingRename | null;
 
 	constructor() {
 		super({
@@ -173,6 +203,8 @@ export class FileTreeModel extends Model {
 			expanded: {},
 			loading: false,
 			error: null,
+			pendingNewFile: null,
+			pendingRename: null,
 		});
 	}
 
@@ -266,6 +298,151 @@ export class FileTreeModel extends Model {
 	 */
 	async reload(): Promise<void> {
 		await this.loadTree();
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// New file creation
+	// ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * Start creating a new file in the given parent directory.
+	 * Shows a placeholder entry for inline rename.
+	 */
+	startNewFile(parentPath: string): void {
+		// Generate unique default name
+		const baseName = 'untitled';
+		const existingNames = new Set(
+			this.files
+				.filter((f) => f.type === 'file' && f.path.startsWith(parentPath + '/'))
+				.map((f) => f.name.toLowerCase())
+		);
+
+		let defaultName = `${baseName}.md`;
+		let counter = 1;
+		while (existingNames.has(defaultName.toLowerCase())) {
+			defaultName = `${baseName}-${counter}.md`;
+			counter++;
+		}
+
+		this.pendingNewFile = { parentPath, defaultName };
+
+		// Ensure parent folder is expanded
+		if (!this.isExpanded(parentPath)) {
+			// Add to expanded tree
+			const newExpanded = addPathToTree(this.expanded, parentPath);
+			this.expanded = newExpanded;
+			saveExpandedTreeToStorage(this.projectId, newExpanded);
+		}
+	}
+
+	/**
+	 * Commit the new file with the given filename.
+	 * Creates the file on the server and reloads the tree.
+	 * Returns the full path of the created file.
+	 */
+	async commitNewFile(filename: string): Promise<string> {
+		if (!this.pendingNewFile) {
+			throw new Error('No pending new file');
+		}
+
+		const { parentPath } = this.pendingNewFile;
+		const finalName = ensureMarkdownExtension(filename);
+		const fullPath = `${parentPath}/${finalName}`;
+
+		try {
+			await fetchClient.post(
+				`/api/projects/${this.projectId}/files?path=${encodeURIComponent(fullPath)}`
+			);
+
+			this.pendingNewFile = null;
+			await this.reload();
+
+			return fullPath;
+		} catch (err) {
+			// Extract error message from response
+			const error = err as { message?: string };
+			this.error = error.message || 'Failed to create file';
+			throw err;
+		}
+	}
+
+	/**
+	 * Cancel the pending new file creation.
+	 */
+	cancelNewFile(): void {
+		this.pendingNewFile = null;
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// File rename
+	// ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * Start renaming a file. Shows inline input in file tree.
+	 */
+	startRename(path: string): void {
+		const file = this.files.find((f) => f.path === path);
+		if (!file) {
+			this.error = 'File not found';
+			return;
+		}
+		if (file.type === 'directory') {
+			this.error = 'Renaming directories is not supported';
+			return;
+		}
+
+		this.pendingRename = {
+			path,
+			currentName: file.name,
+		};
+	}
+
+	/**
+	 * Commit the rename with the new filename.
+	 * Renames the file on the server and reloads the tree.
+	 * Returns the new full path.
+	 */
+	async commitRename(newFilename: string): Promise<string> {
+		if (!this.pendingRename) {
+			throw new Error('No pending rename');
+		}
+
+		const { path: oldPath } = this.pendingRename;
+		const finalName = ensureMarkdownExtension(newFilename);
+
+		// Get parent directory
+		const lastSlash = oldPath.lastIndexOf('/');
+		const parentPath = lastSlash > 0 ? oldPath.slice(0, lastSlash) : '/';
+		const newPath = `${parentPath}/${finalName}`;
+
+		// If name unchanged, just cancel
+		if (newPath === oldPath) {
+			this.pendingRename = null;
+			return oldPath;
+		}
+
+		try {
+			await fetchClient.put<{ success: boolean }>(
+				`/api/projects/${this.projectId}/files/rename`,
+				{ oldPath, newPath }
+			);
+
+			this.pendingRename = null;
+			await this.reload();
+
+			return newPath;
+		} catch (err) {
+			const error = err as { message?: string };
+			this.error = error.message || 'Failed to rename file';
+			throw err;
+		}
+	}
+
+	/**
+	 * Cancel the pending rename.
+	 */
+	cancelRename(): void {
+		this.pendingRename = null;
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────
