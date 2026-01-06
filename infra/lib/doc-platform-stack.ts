@@ -13,6 +13,7 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import { EnvironmentConfig, getFullDomain } from './environment-config';
 
@@ -194,6 +195,7 @@ export class DocPlatformStack extends cdk.Stack {
 			deletionProtection: config.database.deletionProtection,
 			removalPolicy: config.database.deletionProtection ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
 			backupRetention: cdk.Duration.days(config.database.backupRetentionDays),
+			storageEncrypted: true,
 		});
 
 		// ===========================================
@@ -277,6 +279,93 @@ export class DocPlatformStack extends cdk.Stack {
 					new route53Targets.LoadBalancerTarget(alb)
 				),
 				comment: `${envName} environment ALB (apex)`,
+			});
+		}
+
+		// ===========================================
+		// WAF (Production only)
+		// ===========================================
+		if (!isStaging) {
+			const webAcl = new wafv2.CfnWebACL(this, 'WebAcl', {
+				name: `doc-platform-${envName}-waf`,
+				scope: 'REGIONAL',
+				defaultAction: { allow: {} },
+				visibilityConfig: {
+					cloudWatchMetricsEnabled: true,
+					metricName: `doc-platform-${envName}-waf`,
+					sampledRequestsEnabled: true,
+				},
+				rules: [
+					{
+						name: 'AWSManagedRulesCommonRuleSet',
+						priority: 1,
+						overrideAction: { none: {} },
+						statement: {
+							managedRuleGroupStatement: {
+								vendorName: 'AWS',
+								name: 'AWSManagedRulesCommonRuleSet',
+							},
+						},
+						visibilityConfig: {
+							cloudWatchMetricsEnabled: true,
+							metricName: 'AWSManagedRulesCommonRuleSet',
+							sampledRequestsEnabled: true,
+						},
+					},
+					{
+						name: 'AWSManagedRulesKnownBadInputsRuleSet',
+						priority: 2,
+						overrideAction: { none: {} },
+						statement: {
+							managedRuleGroupStatement: {
+								vendorName: 'AWS',
+								name: 'AWSManagedRulesKnownBadInputsRuleSet',
+							},
+						},
+						visibilityConfig: {
+							cloudWatchMetricsEnabled: true,
+							metricName: 'AWSManagedRulesKnownBadInputsRuleSet',
+							sampledRequestsEnabled: true,
+						},
+					},
+					{
+						name: 'AWSManagedRulesSQLiRuleSet',
+						priority: 3,
+						overrideAction: { none: {} },
+						statement: {
+							managedRuleGroupStatement: {
+								vendorName: 'AWS',
+								name: 'AWSManagedRulesSQLiRuleSet',
+							},
+						},
+						visibilityConfig: {
+							cloudWatchMetricsEnabled: true,
+							metricName: 'AWSManagedRulesSQLiRuleSet',
+							sampledRequestsEnabled: true,
+						},
+					},
+					{
+						name: 'RateLimitRule',
+						priority: 4,
+						action: { block: {} },
+						statement: {
+							rateBasedStatement: {
+								limit: 2000,
+								aggregateKeyType: 'IP',
+							},
+						},
+						visibilityConfig: {
+							cloudWatchMetricsEnabled: true,
+							metricName: 'RateLimitRule',
+							sampledRequestsEnabled: true,
+						},
+					},
+				],
+			});
+
+			new wafv2.CfnWebACLAssociation(this, 'WebAclAssociation', {
+				resourceArn: alb.loadBalancerArn,
+				webAclArn: webAcl.attrArn,
 			});
 		}
 
@@ -768,7 +857,7 @@ export class DocPlatformStack extends cdk.Stack {
 					{
 						StringLike: {
 							'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
-							'token.actions.githubusercontent.com:sub': 'repo:kcjonson/doc-platform:ref:refs/tags/*',
+							'token.actions.githubusercontent.com:sub': 'repo:kcjonson/doc-platform:ref:refs/tags/v*',
 						},
 					},
 					'sts:AssumeRoleWithWebIdentity'
