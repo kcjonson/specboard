@@ -28,6 +28,13 @@ export function SetPasswordDialog({ open, onClose, userId, userName }: SetPasswo
 		onClose();
 	};
 
+	// Validate password complexity to match backend requirements
+	const hasUppercase = /[A-Z]/.test(newPassword);
+	const hasLowercase = /[a-z]/.test(newPassword);
+	const hasDigit = /\d/.test(newPassword);
+	const hasSpecialChar = /[^A-Za-z0-9]/.test(newPassword);
+	const meetsComplexity = newPassword.length >= 12 && hasUppercase && hasLowercase && hasDigit && hasSpecialChar;
+
 	const handleSubmit = async (e: Event): Promise<void> => {
 		e.preventDefault();
 		setMessage(null);
@@ -38,9 +45,9 @@ export function SetPasswordDialog({ open, onClose, userId, userName }: SetPasswo
 			return;
 		}
 
-		// Validate password length
-		if (newPassword.length < 12) {
-			setMessage({ type: 'error', text: 'Password must be at least 12 characters' });
+		// Validate password complexity
+		if (!meetsComplexity) {
+			setMessage({ type: 'error', text: 'Password must be at least 12 characters with uppercase, lowercase, digit, and special character' });
 			return;
 		}
 
@@ -65,7 +72,7 @@ export function SetPasswordDialog({ open, onClose, userId, userName }: SetPasswo
 		}
 	};
 
-	const isValid = newPassword.length >= 12 &&
+	const isValid = meetsComplexity &&
 		confirmPassword.length > 0 &&
 		newPassword === confirmPassword;
 

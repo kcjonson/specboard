@@ -309,16 +309,25 @@ export async function handleUpdateUser(
 	}
 
 	const currentUserIsSuperadmin = currentUser.username === SUPERADMIN_USERNAME && isAdmin(currentUser);
+	const passwordProvided = body.password !== undefined;
 
 	// Password can only be set by superadmin (must have admin role AND superadmin username), and not on self
-	// If not superadmin, silently ignore password field (same as any unsupported field)
-	const canSetPassword = currentUserIsSuperadmin && !isSelf && body.password !== undefined;
+	const canSetPassword = currentUserIsSuperadmin && !isSelf && passwordProvided;
+
+	// If password was provided but user can't set it, log and silently remove before field checks
+	if (passwordProvided && !canSetPassword) {
+		console.warn(
+			`users.update: Ignoring password field for user ${currentUser.id} (${currentUser.username}) updating target ${id} (isSelf=${isSelf}, isAdmin=${userIsAdmin}, isSuperadmin=${currentUserIsSuperadmin})`
+		);
+		delete (body as Record<string, unknown>).password;
+	}
+
 	if (canSetPassword) {
 		// Validate password strength
 		const passwordValidation = validatePassword(body.password!);
 		if (!passwordValidation.valid) {
 			return context.json(
-				{ error: 'Password does not meet requirements. Must be 12+ characters with uppercase, lowercase, digit, and special character.' },
+				{ error: 'Password does not meet the required complexity. Must be 12+ characters with uppercase, lowercase, digit, and special character.' },
 				400
 			);
 		}
@@ -466,10 +475,14 @@ export async function handleUpdateUser(
 		}
 
 		// Update password if superadmin is setting it (validated above)
+		// Use UPSERT to handle case where user_passwords record doesn't exist
 		if (canSetPassword) {
 			const passwordHash = await hashPassword(body.password!);
 			await query(
-				'UPDATE user_passwords SET password_hash = $1 WHERE user_id = $2',
+				`INSERT INTO user_passwords (user_id, password_hash)
+				 VALUES ($2, $1)
+				 ON CONFLICT (user_id) DO UPDATE
+				 SET password_hash = EXCLUDED.password_hash`,
 				[passwordHash, id]
 			);
 

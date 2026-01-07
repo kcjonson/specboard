@@ -94,8 +94,8 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	// Check if current user is admin
 	const isCurrentUserAdmin = currentUser.roles?.includes('admin') ?? false;
 
-	// Check if current user is superadmin
-	const isCurrentUserSuperadmin = currentUser.username === 'superadmin';
+	// Check if current user is superadmin (must be 'superadmin' and have admin role)
+	const isCurrentUserSuperadmin = currentUser.username === 'superadmin' && isCurrentUserAdmin;
 
 	// Initialize form when user data loads
 	useEffect(() => {
@@ -419,7 +419,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 							open={showSetPasswordDialog}
 							onClose={() => setShowSetPasswordDialog(false)}
 							userId={user.id}
-							userName={`${user.first_name} ${user.last_name}`}
+							userName={`${user.first_name} ${user.last_name}`.trim() || user.username}
 						/>
 					)}
 				</div>
