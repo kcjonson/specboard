@@ -257,10 +257,10 @@ function applyCommentMarks(
 			if ('text' in node) {
 				const textNode = node as CustomText;
 				// Check if this text node's content matches any anchor
-				for (const [anchorText, commentId] of anchorMap) {
+				for (const [anchorText, cId] of anchorMap) {
 					if (textNode.text === anchorText) {
 						// Exact match - apply the comment mark
-						textNode.commentId = commentId;
+						textNode.commentId = cId;
 						anchorMap.delete(anchorText); // Each comment only matches once
 						break;
 					} else if (textNode.text.includes(anchorText)) {
@@ -275,7 +275,7 @@ function applyCommentMarks(
 						if (before) {
 							newNodes.push({ ...textNode, text: before, commentId: undefined });
 						}
-						newNodes.push({ ...textNode, text: match, commentId: commentId });
+						newNodes.push({ ...textNode, text: match, commentId: cId });
 						if (after) {
 							newNodes.push({ ...textNode, text: after, commentId: undefined });
 						}
@@ -292,7 +292,7 @@ function applyCommentMarks(
 				const element = node as CustomElement;
 				const fullText = extractText(element.children);
 
-				for (const [anchorText, commentId] of anchorMap) {
+				for (const [anchorText] of anchorMap) {
 					if (fullText.includes(anchorText)) {
 						// The anchor text spans across this element's children
 						// Recurse into children to apply marks

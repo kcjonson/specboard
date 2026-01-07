@@ -263,12 +263,6 @@ function extractTextWithComments(content: Descendant[]): {
 				}
 
 				text += textNode.text;
-
-				// Check if this ends a comment (next node doesn't have same commentId)
-				if (textNode.commentId) {
-					const endOffset = text.length;
-					// We'll finalize anchors after walking
-				}
 			} else if ('children' in node) {
 				const element = node as CustomElement;
 

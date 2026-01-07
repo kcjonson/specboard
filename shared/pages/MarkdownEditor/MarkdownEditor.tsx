@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { createEditor, Descendant, Editor, Element as SlateElement, Transforms, Range, Text } from 'slate';
+import { createEditor, Descendant, Editor, Element as SlateElement, Transforms, Range } from 'slate';
 import { Slate, Editable, withReact, RenderElementProps, RenderLeafProps, ReactEditor } from 'slate-react';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';

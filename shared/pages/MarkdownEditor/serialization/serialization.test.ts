@@ -7,29 +7,31 @@ describe('Markdown Serialization', () => {
 	describe('fromMarkdown', () => {
 		it('should return empty document for empty string', () => {
 			const result = fromMarkdown('');
-			expect(result).toEqual([{ type: 'paragraph', children: [{ text: '' }] }]);
+			expect(result.content).toEqual([{ type: 'paragraph', children: [{ text: '' }] }]);
+			expect(result.comments).toEqual([]);
 		});
 
 		it('should return empty document for whitespace', () => {
 			const result = fromMarkdown('   ');
-			expect(result).toEqual([{ type: 'paragraph', children: [{ text: '' }] }]);
+			expect(result.content).toEqual([{ type: 'paragraph', children: [{ text: '' }] }]);
+			expect(result.comments).toEqual([]);
 		});
 
 		it('should parse a simple paragraph', () => {
 			const result = fromMarkdown('Hello, world!');
-			expect(result).toEqual([
+			expect(result.content).toEqual([
 				{ type: 'paragraph', children: [{ text: 'Hello, world!' }] }
 			]);
 		});
 
 		it('should parse multiple paragraphs', () => {
 			const result = fromMarkdown('First paragraph.\n\nSecond paragraph.');
-			expect(result).toHaveLength(2);
-			expect(result[0]).toEqual({
+			expect(result.content).toHaveLength(2);
+			expect(result.content[0]).toEqual({
 				type: 'paragraph',
 				children: [{ text: 'First paragraph.' }]
 			});
-			expect(result[1]).toEqual({
+			expect(result.content[1]).toEqual({
 				type: 'paragraph',
 				children: [{ text: 'Second paragraph.' }]
 			});
@@ -38,7 +40,7 @@ describe('Markdown Serialization', () => {
 		describe('headings', () => {
 			it('should parse h1', () => {
 				const result = fromMarkdown('# Heading 1');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'heading',
 					level: 1,
 				});
@@ -46,7 +48,7 @@ describe('Markdown Serialization', () => {
 
 			it('should parse h2', () => {
 				const result = fromMarkdown('## Heading 2');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'heading',
 					level: 2,
 				});
@@ -55,7 +57,7 @@ describe('Markdown Serialization', () => {
 			it('should parse h3-h6', () => {
 				for (let level = 3; level <= 6; level++) {
 					const result = fromMarkdown('#'.repeat(level) + ` Heading ${level}`);
-					expect(result[0]).toMatchObject({
+					expect(result.content[0]).toMatchObject({
 						type: 'heading',
 						level,
 					});
@@ -66,7 +68,7 @@ describe('Markdown Serialization', () => {
 		describe('inline formatting', () => {
 			it('should parse bold text', () => {
 				const result = fromMarkdown('This is **bold** text.');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'paragraph',
 					children: expect.arrayContaining([
 						expect.objectContaining({ text: 'bold', bold: true })
@@ -76,7 +78,7 @@ describe('Markdown Serialization', () => {
 
 			it('should parse italic text', () => {
 				const result = fromMarkdown('This is _italic_ text.');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'paragraph',
 					children: expect.arrayContaining([
 						expect.objectContaining({ text: 'italic', italic: true })
@@ -86,7 +88,7 @@ describe('Markdown Serialization', () => {
 
 			it('should parse inline code', () => {
 				const result = fromMarkdown('Use `code` here.');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'paragraph',
 					children: expect.arrayContaining([
 						expect.objectContaining({ text: 'code', code: true })
@@ -96,7 +98,7 @@ describe('Markdown Serialization', () => {
 
 			it('should parse strikethrough', () => {
 				const result = fromMarkdown('This is ~~deleted~~ text.');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'paragraph',
 					children: expect.arrayContaining([
 						expect.objectContaining({ text: 'deleted', strikethrough: true })
@@ -108,14 +110,14 @@ describe('Markdown Serialization', () => {
 		describe('block elements', () => {
 			it('should parse blockquotes', () => {
 				const result = fromMarkdown('> This is a quote.');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'blockquote',
 				});
 			});
 
 			it('should parse code blocks', () => {
 				const result = fromMarkdown('```javascript\nconst x = 1;\n```');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'code-block',
 					language: 'javascript',
 				});
@@ -123,14 +125,14 @@ describe('Markdown Serialization', () => {
 
 			it('should parse code blocks without language', () => {
 				const result = fromMarkdown('```\ncode here\n```');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'code-block',
 				});
 			});
 
 			it('should parse thematic breaks (hr)', () => {
 				const result = fromMarkdown('---');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'thematic-break',
 				});
 			});
@@ -139,23 +141,23 @@ describe('Markdown Serialization', () => {
 		describe('lists', () => {
 			it('should parse bulleted lists', () => {
 				const result = fromMarkdown('- Item 1\n- Item 2\n- Item 3');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'bulleted-list',
 				});
-				const list = result[0] as { children: unknown[] };
+				const list = result.content[0] as { children: unknown[] };
 				expect(list.children).toHaveLength(3);
 			});
 
 			it('should parse numbered lists', () => {
 				const result = fromMarkdown('1. First\n2. Second\n3. Third');
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'numbered-list',
 				});
 			});
 
 			it('should have list-item children', () => {
 				const result = fromMarkdown('- Item 1\n- Item 2');
-				const list = result[0] as { type: string; children: { type: string }[] };
+				const list = result.content[0] as { type: string; children: { type: string }[] };
 				expect(list.children[0].type).toBe('list-item');
 				expect(list.children[1].type).toBe('list-item');
 			});
@@ -164,7 +166,7 @@ describe('Markdown Serialization', () => {
 		describe('links', () => {
 			it('should parse links', () => {
 				const result = fromMarkdown('[Example](https://example.com)');
-				const paragraph = result[0] as { children: unknown[] };
+				const paragraph = result.content[0] as { children: unknown[] };
 				expect(paragraph.children).toContainEqual(
 					expect.objectContaining({
 						type: 'link',
@@ -182,7 +184,7 @@ describe('Markdown Serialization', () => {
 | Cell 1   | Cell 2   |
 `.trim();
 				const result = fromMarkdown(markdown);
-				expect(result[0]).toMatchObject({
+				expect(result.content[0]).toMatchObject({
 					type: 'table',
 				});
 			});
@@ -194,7 +196,7 @@ describe('Markdown Serialization', () => {
 | 1 | 2 |
 `.trim();
 				const result = fromMarkdown(markdown);
-				const table = result[0] as { children: { type: string }[] };
+				const table = result.content[0] as { children: { type: string }[] };
 				expect(table.children[0].type).toBe('table-row');
 			});
 
@@ -205,7 +207,7 @@ describe('Markdown Serialization', () => {
 | 1 | 2 |
 `.trim();
 				const result = fromMarkdown(markdown);
-				const table = result[0] as { children: { children: { type: string }[] }[] };
+				const table = result.content[0] as { children: { children: { type: string }[] }[] };
 				const firstRow = table.children[0];
 				expect(firstRow.children[0].type).toBe('table-cell');
 			});
@@ -435,43 +437,43 @@ describe('Markdown Serialization', () => {
 	describe('round-trip', () => {
 		it('should round-trip a paragraph', () => {
 			const original = 'Hello, world!';
-			const ast = fromMarkdown(original);
-			const output = toMarkdown(ast);
+			const { content } = fromMarkdown(original);
+			const output = toMarkdown(content);
 			expect(output.trim()).toBe(original);
 		});
 
 		it('should round-trip headings', () => {
 			const original = '# Heading 1';
-			const ast = fromMarkdown(original);
-			const output = toMarkdown(ast);
+			const { content } = fromMarkdown(original);
+			const output = toMarkdown(content);
 			expect(output.trim()).toBe(original);
 		});
 
 		it('should round-trip bold text', () => {
 			const original = 'This is **bold** text.';
-			const ast = fromMarkdown(original);
-			const output = toMarkdown(ast);
+			const { content } = fromMarkdown(original);
+			const output = toMarkdown(content);
 			expect(output.trim()).toBe(original);
 		});
 
 		it('should round-trip code blocks', () => {
 			const original = '```javascript\nconst x = 1;\n```';
-			const ast = fromMarkdown(original);
-			const output = toMarkdown(ast);
+			const { content } = fromMarkdown(original);
+			const output = toMarkdown(content);
 			expect(output.trim()).toBe(original);
 		});
 
 		it('should round-trip bulleted lists', () => {
 			const original = '- Item 1\n- Item 2';
-			const ast = fromMarkdown(original);
-			const output = toMarkdown(ast);
+			const { content } = fromMarkdown(original);
+			const output = toMarkdown(content);
 			expect(output.trim()).toBe(original);
 		});
 
 		it('should round-trip links', () => {
 			const original = '[Example](https://example.com)';
-			const ast = fromMarkdown(original);
-			const output = toMarkdown(ast);
+			const { content } = fromMarkdown(original);
+			const output = toMarkdown(content);
 			expect(output.trim()).toBe(original);
 		});
 
@@ -479,8 +481,8 @@ describe('Markdown Serialization', () => {
 			const original = `| A | B |
 | - | - |
 | 1 | 2 |`;
-			const ast = fromMarkdown(original);
-			const output = toMarkdown(ast);
+			const { content } = fromMarkdown(original);
+			const output = toMarkdown(content);
 			// Table formatting may vary slightly, just check content preserved
 			expect(output).toContain('A');
 			expect(output).toContain('B');
@@ -495,12 +497,12 @@ describe('Markdown Serialization', () => {
 | - | - |
 | | |`;
 			const result = fromMarkdown(markdown);
-			expect(result[0]).toMatchObject({ type: 'table' });
+			expect(result.content[0]).toMatchObject({ type: 'table' });
 		});
 
 		it('should handle nested formatting (bold+italic)', () => {
 			const result = fromMarkdown('This is **_bold and italic_** text.');
-			expect(result[0]).toMatchObject({ type: 'paragraph' });
+			expect(result.content[0]).toMatchObject({ type: 'paragraph' });
 			// The text should be parsed without crashing
 			expect(result).toBeDefined();
 		});
@@ -509,13 +511,13 @@ describe('Markdown Serialization', () => {
 			// Unclosed code block
 			const result = fromMarkdown('```javascript\nconst x = 1;');
 			expect(result).toBeDefined();
-			expect(result.length).toBeGreaterThan(0);
+			expect(result.content.length).toBeGreaterThan(0);
 		});
 
 		it('should handle very long lines', () => {
 			const longText = 'a'.repeat(10000);
 			const result = fromMarkdown(longText);
-			expect(result[0]).toMatchObject({ type: 'paragraph' });
+			expect(result.content[0]).toMatchObject({ type: 'paragraph' });
 		});
 
 		it('should handle special characters in text', () => {
@@ -528,7 +530,7 @@ describe('Markdown Serialization', () => {
 | - | - |
 | A | B |`;
 			const result = fromMarkdown(markdown);
-			expect(result[0]).toMatchObject({ type: 'table' });
+			expect(result.content[0]).toMatchObject({ type: 'table' });
 		});
 	});
 });
