@@ -323,7 +323,7 @@ export function MarkdownEditor({
 		const anchorText = Editor.string(editor, selection);
 
 		// Generate a unique comment ID
-		const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+		const commentId = `comment-${Date.now()}-${crypto.randomUUID()}`;
 
 		// Apply the commentId mark to the selected text
 		Transforms.select(editor, selection);

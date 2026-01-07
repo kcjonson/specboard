@@ -147,33 +147,51 @@ export class DocumentModel extends Model {
 
 	/**
 	 * Update an existing comment.
+	 * @returns true if the comment was found and updated, false otherwise
 	 */
-	updateComment(commentId: string, updates: Partial<DocumentComment>): void {
+	updateComment(commentId: string, updates: Partial<DocumentComment>): boolean {
+		const index = this.comments.findIndex(c => c.id === commentId);
+		if (index === -1) {
+			return false;
+		}
 		this.comments = this.comments.map(c =>
 			c.id === commentId ? { ...c, ...updates } : c
 		);
 		this.dirty = true;
+		return true;
 	}
 
 	/**
 	 * Add a reply to a comment.
+	 * @returns true if the comment was found and reply added, false otherwise
 	 */
-	addReply(commentId: string, reply: DocumentComment): void {
+	addReply(commentId: string, reply: DocumentComment): boolean {
+		const index = this.comments.findIndex(c => c.id === commentId);
+		if (index === -1) {
+			return false;
+		}
 		this.comments = this.comments.map(c =>
 			c.id === commentId
 				? { ...c, replies: [...c.replies, reply] }
 				: c
 		);
 		this.dirty = true;
+		return true;
 	}
 
 	/**
 	 * Toggle the resolved status of a comment.
+	 * @returns true if the comment was found and toggled, false otherwise
 	 */
-	toggleResolved(commentId: string): void {
+	toggleResolved(commentId: string): boolean {
+		const index = this.comments.findIndex(c => c.id === commentId);
+		if (index === -1) {
+			return false;
+		}
 		this.comments = this.comments.map(c =>
 			c.id === commentId ? { ...c, resolved: !c.resolved } : c
 		);
 		this.dirty = true;
+		return true;
 	}
 }

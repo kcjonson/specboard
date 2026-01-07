@@ -102,7 +102,7 @@ export function Toolbar({
 							active={false}
 							disabled={!canAddComment}
 							onAction={onAddComment}
-							title="Add Comment (Ctrl+Shift+M)"
+							title="Add Comment (Cmd/Ctrl+Shift+M)"
 							ariaLabel="Add comment"
 						>
 							💬

@@ -272,7 +272,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	const handleReplyToComment = useCallback((commentId: string, replyText: string) => {
 		const author = getCommentAuthor();
 		const reply: DocumentComment = {
-			id: `reply-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+			id: `reply-${Date.now()}-${crypto.randomUUID()}`,
 			text: replyText,
 			author: author.name,
 			authorEmail: author.email,

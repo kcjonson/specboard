@@ -68,10 +68,7 @@ export function appendCommentsToMarkdown(
  * The UI doesn't need the range - it uses Slate marks instead.
  */
 export function stripRanges(comments: CommentWithRange[]): Comment[] {
-	return comments.map(({ range: _range, ...comment }) => ({
-		...comment,
-		replies: comment.replies, // Replies don't have ranges
-	}));
+	return comments.map(({ range: _range, ...comment }) => comment);
 }
 
 /**
@@ -98,14 +95,26 @@ export function lineColumnToOffset(
 	column: number
 ): number {
 	const lines = text.split('\n');
-	let offset = 0;
 
-	for (let i = 0; i < line - 1 && i < lines.length; i++) {
+	// Clamp line to valid range (1..number of lines)
+	const maxLine = Math.max(lines.length, 1);
+	const safeLine = Math.min(Math.max(line, 1), maxLine);
+
+	// Calculate offset to start of target line
+	let offset = 0;
+	for (let i = 0; i < safeLine - 1 && i < lines.length; i++) {
 		offset += (lines[i]?.length ?? 0) + 1; // +1 for newline
 	}
 
-	offset += column - 1;
-	return offset;
+	// Clamp column to valid range for the target line
+	const lineIndex = safeLine - 1;
+	const lineLength = lines[lineIndex]?.length ?? 0;
+	const safeColumn = Math.min(Math.max(column, 1), lineLength + 1);
+
+	offset += safeColumn - 1;
+
+	// Ensure offset doesn't exceed text length
+	return Math.min(offset, text.length);
 }
 
 /**

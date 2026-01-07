@@ -98,11 +98,10 @@ export function InlineComment({
 		}
 	};
 
-	const containerClasses = [
-		styles.container,
-		isActive ? styles.active : '',
-		comment.resolved ? styles.resolved : '',
-	].filter(Boolean).join(' ');
+	const containerClasses =
+		styles.container +
+		(isActive ? ` ${styles.active}` : '') +
+		(comment.resolved ? ` ${styles.resolved}` : '');
 
 	return (
 		<div
