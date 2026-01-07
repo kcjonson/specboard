@@ -48,14 +48,23 @@ export function ResetPasswordContent(): JSX.Element {
 			</div>
 
 			<div id="success" class="result-state hidden">
-				<div class="success-icon">✓</div>
+				<div class="success-icon">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<polyline points="20 6 9 17 4 12" />
+					</svg>
+				</div>
 				<p>Your password has been reset!</p>
 				<p class="redirect-note">Redirecting to sign in...</p>
 				<a href="/login" class="btn">Go to Sign In</a>
 			</div>
 
 			<div id="no-token" class="result-state hidden">
-				<div class="error-icon">✕</div>
+				<div class="error-icon">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<line x1="18" y1="6" x2="6" y2="18" />
+						<line x1="6" y1="6" x2="18" y2="18" />
+					</svg>
+				</div>
 				<p>No reset token provided.</p>
 				<a href="/forgot-password" class="btn">Request Password Reset</a>
 			</div>

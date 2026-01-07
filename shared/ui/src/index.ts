@@ -74,3 +74,7 @@ export type {
 	ToolbarSeparatorProps,
 	ToolbarButtonProps,
 } from './EditorToolbar/EditorToolbar';
+
+// Icon - SVG outline icons
+export { Icon } from './Icon/Icon';
+export type { IconProps, IconName } from './Icon/Icon';

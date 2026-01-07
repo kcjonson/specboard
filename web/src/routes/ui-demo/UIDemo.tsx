@@ -9,6 +9,7 @@ import {
 	Card,
 	Badge,
 	StatusDot,
+	Icon,
 } from '@doc-platform/ui';
 import styles from './UIDemo.module.css';
 
@@ -33,7 +34,7 @@ export function UIDemo(): JSX.Element {
 		<div class={styles.container}>
 			<header class={styles.header}>
 				<h1 class={styles.title}>UI Component Library</h1>
-				<a href="/admin" class={styles.backLink}>← Back to Admin</a>
+				<a href="/admin" class={styles.backLink}><Icon name="arrow-left" class="size-sm" /> Back to Admin</a>
 			</header>
 
 			<main class={styles.content}>
@@ -49,7 +50,7 @@ export function UIDemo(): JSX.Element {
 							<Button class="secondary">Secondary</Button>
 							<Button class="text">Text</Button>
 							<Button class="danger">Danger</Button>
-							<Button class="icon" aria-label="Close">×</Button>
+							<Button class="icon" aria-label="Close"><Icon name="close" /></Button>
 						</div>
 					</div>
 

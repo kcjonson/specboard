@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
 import { navigate } from '@doc-platform/router';
 import { useModel, EpicModel } from '@doc-platform/models';
+import { Icon } from '@doc-platform/ui';
 import { EpicView } from '../EpicView/EpicView';
 import styles from './EpicDetail.module.css';
 
@@ -46,7 +47,7 @@ export function EpicDetail({ params }: RouteProps): JSX.Element {
 			<div class={styles.content}>
 				<nav class={styles.nav}>
 					<a href={`/projects/${projectId}/planning`} class={styles.backLink}>
-						← Back to Board
+						<Icon name="arrow-left" class="size-sm" /> Back to Board
 					</a>
 				</nav>
 				<EpicView epic={epic} onDelete={handleDelete} />

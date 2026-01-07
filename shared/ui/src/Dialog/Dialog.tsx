@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
+import { Icon } from '../Icon/Icon';
 import styles from './Dialog.module.css';
 
 export interface DialogProps {
@@ -90,7 +91,7 @@ export function Dialog({
 								onClick={onClose}
 								aria-label="Close"
 							>
-								×
+								<Icon name="close" class="size-lg" />
 							</button>
 						)}
 					</div>

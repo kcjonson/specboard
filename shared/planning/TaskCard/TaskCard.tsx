@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import type { TaskModel } from '@doc-platform/models';
+import { Icon } from '@doc-platform/ui';
 import styles from './TaskCard.module.css';
 
 interface TaskCardProps {
@@ -48,7 +49,7 @@ export function TaskCard({ task, onToggleStatus }: TaskCardProps): JSX.Element {
 					onClick={handleCheckboxClick}
 					aria-label={isDone ? 'Mark as incomplete' : 'Mark as complete'}
 				>
-					{isDone ? '☑' : '☐'}
+					<Icon name={isDone ? 'checkbox-checked' : 'checkbox-unchecked'} />
 				</button>
 				<div class={styles.details}>
 					<span class={styles.title}>{task.title}</span>

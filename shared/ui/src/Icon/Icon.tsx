@@ -1,0 +1,142 @@
+import type { JSX } from 'preact';
+import styles from './Icon.module.css';
+
+export type IconName =
+	| 'file'
+	| 'folder'
+	| 'folder-open'
+	| 'chevron-right'
+	| 'chevron-down'
+	| 'chevron-left'
+	| 'pencil'
+	| 'close'
+	| 'check'
+	| 'x-mark'
+	| 'checkbox-checked'
+	| 'checkbox-unchecked'
+	| 'robot'
+	| 'bullet'
+	| 'arrow-left';
+
+export interface IconProps {
+	/** The icon to display */
+	name: IconName;
+	/** Additional CSS class for styling (use size-xs, size-sm, size-lg, size-xl for sizes) */
+	class?: string;
+	/** Accessible label for screen readers */
+	'aria-label'?: string;
+	/** Hide from screen readers when used decoratively */
+	'aria-hidden'?: boolean;
+}
+
+/**
+ * Professional outline-style SVG icons.
+ * All icons use a 24x24 viewBox with stroke-based paths.
+ *
+ * Size classes:
+ * - size-xs: 12px
+ * - size-sm: 14px
+ * - (default): 16px
+ * - size-lg: 20px
+ * - size-xl: 24px
+ * - size-2xl: 32px
+ */
+const icons: Record<IconName, JSX.Element> = {
+	file: (
+		<>
+			<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+			<polyline points="14 2 14 8 20 8" />
+		</>
+	),
+	folder: (
+		<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+	),
+	'folder-open': (
+		<>
+			<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v1" />
+			<path d="M2 10h20l-2 9H4z" />
+		</>
+	),
+	'chevron-right': (
+		<polyline points="9 18 15 12 9 6" />
+	),
+	'chevron-down': (
+		<polyline points="6 9 12 15 18 9" />
+	),
+	'chevron-left': (
+		<polyline points="15 18 9 12 15 6" />
+	),
+	pencil: (
+		<>
+			<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+		</>
+	),
+	close: (
+		<>
+			<line x1="18" y1="6" x2="6" y2="18" />
+			<line x1="6" y1="6" x2="18" y2="18" />
+		</>
+	),
+	check: (
+		<polyline points="20 6 9 17 4 12" />
+	),
+	'x-mark': (
+		<>
+			<line x1="18" y1="6" x2="6" y2="18" />
+			<line x1="6" y1="6" x2="18" y2="18" />
+		</>
+	),
+	'checkbox-checked': (
+		<>
+			<rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+			<polyline points="9 11 12 14 16 10" />
+		</>
+	),
+	'checkbox-unchecked': (
+		<rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+	),
+	robot: (
+		<>
+			<rect x="3" y="8" width="18" height="12" rx="2" ry="2" />
+			<circle cx="7.5" cy="14" r="1.5" />
+			<circle cx="16.5" cy="14" r="1.5" />
+			<line x1="12" y1="3" x2="12" y2="8" />
+			<circle cx="12" cy="3" r="1" />
+		</>
+	),
+	bullet: (
+		<circle cx="12" cy="12" r="3" fill="currentColor" />
+	),
+	'arrow-left': (
+		<>
+			<line x1="19" y1="12" x2="5" y2="12" />
+			<polyline points="12 19 5 12 12 5" />
+		</>
+	),
+};
+
+export function Icon({
+	name,
+	class: className,
+	'aria-label': ariaLabel,
+	'aria-hidden': ariaHidden,
+}: IconProps): JSX.Element {
+	const iconClasses = [styles.icon, className].filter(Boolean).join(' ');
+
+	return (
+		<svg
+			class={iconClasses}
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-label={ariaLabel}
+			aria-hidden={ariaHidden ?? !ariaLabel}
+			role={ariaLabel ? 'img' : undefined}
+		>
+			{icons[name]}
+		</svg>
+	);
+}
