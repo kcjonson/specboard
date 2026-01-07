@@ -6,6 +6,7 @@ import { fetchClient } from '@doc-platform/fetch';
 import { useModel, UserModel, AuthorizationsCollection } from '@doc-platform/models';
 import { AuthorizedApps } from './AuthorizedApps';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
+import { SetPasswordDialog } from './SetPasswordDialog';
 import styles from './UserSettings.module.css';
 
 interface User {
@@ -55,6 +56,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 
 	// Password dialog state
 	const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+	const [showSetPasswordDialog, setShowSetPasswordDialog] = useState(false);
 
 	// Fetch target user if viewing another user
 	useEffect(() => {
@@ -91,6 +93,9 @@ export function UserSettings(props: RouteProps): JSX.Element {
 
 	// Check if current user is admin
 	const isCurrentUserAdmin = currentUser.roles?.includes('admin') ?? false;
+
+	// Check if current user is superadmin
+	const isCurrentUserSuperadmin = currentUser.username === 'superadmin';
 
 	// Initialize form when user data loads
 	useEffect(() => {
@@ -389,6 +394,15 @@ export function UserSettings(props: RouteProps): JSX.Element {
 								</Button>
 							</div>
 						)}
+
+						{isViewingOther && isCurrentUserSuperadmin && (
+							<div class={styles.securitySection}>
+								<h3 class={styles.sectionTitle}>Security</h3>
+								<Button variant="secondary" onClick={() => setShowSetPasswordDialog(true)}>
+									Set Password
+								</Button>
+							</div>
+						)}
 					</div>
 
 					{!isViewingOther && (
@@ -399,6 +413,15 @@ export function UserSettings(props: RouteProps): JSX.Element {
 						open={showPasswordDialog}
 						onClose={() => setShowPasswordDialog(false)}
 					/>
+
+					{isViewingOther && user && (
+						<SetPasswordDialog
+							open={showSetPasswordDialog}
+							onClose={() => setShowSetPasswordDialog(false)}
+							userId={user.id}
+							userName={`${user.first_name} ${user.last_name}`}
+						/>
+					)}
 				</div>
 			</div>
 		</div>

@@ -11,7 +11,7 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import { getSession, SESSION_COOKIE_NAME, hashPassword } from '@doc-platform/auth';
+import { getSession, SESSION_COOKIE_NAME, hashPassword, validatePassword } from '@doc-platform/auth';
 import { query, type User } from '@doc-platform/db';
 import { isValidUUID, isValidEmail, isValidUsername } from '../validation.js';
 
@@ -257,6 +257,7 @@ interface UpdateUserRequest {
 	roles?: string[];
 	is_active?: boolean;
 	email_verified?: boolean;
+	password?: string;
 }
 
 /**
@@ -305,6 +306,22 @@ export async function handleUpdateUser(
 		body = await context.req.json<UpdateUserRequest>();
 	} catch {
 		return context.json({ error: 'Invalid JSON' }, 400);
+	}
+
+	const currentUserIsSuperadmin = currentUser.username === SUPERADMIN_USERNAME && isAdmin(currentUser);
+
+	// Password can only be set by superadmin (must have admin role AND superadmin username), and not on self
+	// If not superadmin, silently ignore password field (same as any unsupported field)
+	const canSetPassword = currentUserIsSuperadmin && !isSelf && body.password !== undefined;
+	if (canSetPassword) {
+		// Validate password strength
+		const passwordValidation = validatePassword(body.password!);
+		if (!passwordValidation.valid) {
+			return context.json(
+				{ error: 'Password does not meet requirements. Must be 12+ characters with uppercase, lowercase, digit, and special character.' },
+				400
+			);
+		}
 	}
 
 	// Filter to only fields user can update
@@ -394,7 +411,8 @@ export async function handleUpdateUser(
 		updates.push(email_verified ? `email_verified_at = NOW()` : `email_verified_at = NULL`);
 	}
 
-	if (updates.length === 0) {
+	// Check if there's anything to update (user fields or password)
+	if (updates.length === 0 && !canSetPassword) {
 		return context.json({ error: 'No fields to update' }, 400);
 	}
 
@@ -425,15 +443,57 @@ export async function handleUpdateUser(
 			}
 		}
 
-		params.push(id);
-		const result = await query<User>(
-			`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-			params
-		);
+		let user: User | undefined;
 
-		const user = result.rows[0];
-		if (!user) {
-			return context.json({ error: 'User not found' }, 404);
+		// Update user fields if any
+		if (updates.length > 0) {
+			params.push(id);
+			const result = await query<User>(
+				`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+				params
+			);
+			user = result.rows[0];
+			if (!user) {
+				return context.json({ error: 'User not found' }, 404);
+			}
+		} else {
+			// Password-only update - fetch user to return
+			const result = await query<User>('SELECT * FROM users WHERE id = $1', [id]);
+			user = result.rows[0];
+			if (!user) {
+				return context.json({ error: 'User not found' }, 404);
+			}
+		}
+
+		// Update password if superadmin is setting it (validated above)
+		if (canSetPassword) {
+			const passwordHash = await hashPassword(body.password!);
+			await query(
+				'UPDATE user_passwords SET password_hash = $1 WHERE user_id = $2',
+				[passwordHash, id]
+			);
+
+			// Invalidate all existing sessions for this user (force re-login)
+			let cursor = '0';
+			do {
+				const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'session:*', 'COUNT', 100);
+				cursor = nextCursor;
+				for (const key of keys) {
+					const sessionData = await redis.get(key);
+					if (sessionData) {
+						try {
+							const session = JSON.parse(sessionData);
+							if (session.userId === id) {
+								await redis.del(key);
+							}
+						} catch {
+							// Skip invalid session data
+						}
+					}
+				}
+			} while (cursor !== '0');
+
+			console.log(`Password set for user ${id} by superadmin ${currentUser.id}`);
 		}
 
 		return context.json(userToApiResponse(user));
@@ -653,3 +713,4 @@ export async function handleRevokeUserToken(
 		return context.json({ error: 'Database error' }, 500);
 	}
 }
+
