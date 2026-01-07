@@ -12,6 +12,8 @@ export interface DialogProps {
 	title?: string;
 	/** Whether to show close button in header (default: true when header is visible) */
 	showCloseButton?: boolean;
+	/** Custom actions to render in header (before close button) */
+	headerActions?: ComponentChildren;
 	/** Dialog content */
 	children: ComponentChildren;
 	/** Maximum width of the dialog */
@@ -25,12 +27,13 @@ export function Dialog({
 	onClose,
 	title,
 	showCloseButton,
+	headerActions,
 	children,
 	maxWidth = 'md',
 	class: className,
 }: DialogProps): JSX.Element | null {
-	// Show header if title is provided OR showCloseButton is explicitly true
-	const showHeader = Boolean(title) || showCloseButton === true;
+	// Show header if title is provided OR showCloseButton is explicitly true OR headerActions are provided
+	const showHeader = Boolean(title) || showCloseButton === true || Boolean(headerActions);
 	// Show close button by default when header is visible, unless explicitly disabled
 	const shouldShowCloseButton = showHeader && showCloseButton !== false;
 	// Handle escape key
@@ -84,16 +87,19 @@ export function Dialog({
 							<h2 id="dialog-title" class={styles.title}>{title}</h2>
 						)}
 						{!title && <div class={styles.headerSpacer} />}
-						{shouldShowCloseButton && (
-							<button
-								type="button"
-								class={styles.closeButton}
-								onClick={onClose}
-								aria-label="Close"
-							>
-								<Icon name="close" class="size-lg" />
-							</button>
-						)}
+						<div class={styles.headerActions}>
+							{headerActions}
+							{shouldShowCloseButton && (
+								<button
+									type="button"
+									class={styles.closeButton}
+									onClick={onClose}
+									aria-label="Close"
+								>
+									<Icon name="close" class="size-lg" />
+								</button>
+							)}
+						</div>
 					</div>
 				)}
 				<div class={styles.content}>

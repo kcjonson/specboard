@@ -1,9 +1,11 @@
 import type { JSX } from 'preact';
 import type { EpicModel } from '@doc-platform/models';
+import { Icon } from '@doc-platform/ui';
 import styles from './EpicCard.module.css';
 
 interface EpicCardProps {
 	epic: EpicModel;
+	projectId: string;
 	isSelected?: boolean;
 	isHighlighted?: boolean;
 	onSelect?: (epic: EpicModel) => void;
@@ -39,6 +41,7 @@ function formatTimeAgo(dateString: string): string {
 
 export function EpicCard({
 	epic,
+	projectId,
 	isSelected = false,
 	isHighlighted = false,
 	onSelect,
@@ -67,6 +70,11 @@ export function EpicCard({
 		onDragStart?.(e, epic);
 	};
 
+	const handleOpenInNewWindow = (e: MouseEvent): void => {
+		e.stopPropagation();
+		window.open(`/projects/${projectId}/planning/epics/${epic.id}`, '_blank');
+	};
+
 	const cardClass = [
 		styles.card,
 		isSelected && styles.selected,
@@ -89,11 +97,22 @@ export function EpicCard({
 		>
 			<div class={styles.header}>
 				<h3 class={styles.title}>{epic.title}</h3>
-				{epic.assignee && (
-					<div class={styles.assignee} title={epic.assignee}>
-						{getInitials(epic.assignee)}
-					</div>
-				)}
+				<div class={styles.headerActions}>
+					<button
+						type="button"
+						class={styles.openButton}
+						onClick={handleOpenInNewWindow}
+						aria-label="Open in new window"
+						title="Open in new window"
+					>
+						<Icon name="external-link" />
+					</button>
+					{epic.assignee && (
+						<div class={styles.assignee} title={epic.assignee}>
+							{getInitials(epic.assignee)}
+						</div>
+					)}
+				</div>
 			</div>
 
 			{epic.description && (

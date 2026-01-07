@@ -46,6 +46,32 @@
 	margin-bottom: 8px;
 }
 
+.headerActions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
+
+.openButton {
+	background: none;
+	border: none;
+	color: var(--color-text-muted);
+	cursor: pointer;
+	padding: 2px;
+	line-height: 1;
+	opacity: 0;
+	transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.card:hover .openButton {
+	opacity: 1;
+}
+
+.openButton:hover {
+	color: var(--color-text);
+}
+
 .title {
 	font-size: 14px;
 	font-weight: 500;

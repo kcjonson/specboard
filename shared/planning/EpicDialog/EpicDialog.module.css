@@ -1,0 +1,12 @@
+.openButton {
+	background: none;
+	border: none;
+	color: var(--color-text-muted);
+	cursor: pointer;
+	padding: 0;
+	line-height: 1;
+}
+
+.openButton:hover {
+	color: var(--color-text);
+}

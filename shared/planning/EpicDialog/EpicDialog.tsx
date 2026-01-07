@@ -1,11 +1,13 @@
 import type { JSX } from 'preact';
 import type { EpicModel, Status } from '@doc-platform/models';
-import { Dialog } from '@doc-platform/ui';
+import { Dialog, Icon } from '@doc-platform/ui';
 import { EpicView } from '../EpicView/EpicView';
+import styles from './EpicDialog.module.css';
 
 /** Props for viewing/editing an existing epic */
 interface EpicDialogExistingProps {
 	epic: EpicModel;
+	projectId: string;
 	isNew?: false;
 	onClose: () => void;
 	onDelete?: (epic: EpicModel) => void;
@@ -15,6 +17,7 @@ interface EpicDialogExistingProps {
 /** Props for creating a new epic */
 interface EpicDialogCreateProps {
 	epic?: never;
+	projectId?: never;
 	isNew: true;
 	onClose: () => void;
 	onDelete?: never;
@@ -28,8 +31,26 @@ export function EpicDialog(props: EpicDialogProps): JSX.Element {
 
 	const title = props.isNew ? 'New Epic' : 'Edit Epic';
 
+	const handleOpenInNewWindow = (): void => {
+		if (!props.isNew && props.epic && props.projectId) {
+			window.open(`/projects/${props.projectId}/planning/epics/${props.epic.id}`, '_blank');
+		}
+	};
+
+	const headerActions = !props.isNew ? (
+		<button
+			type="button"
+			class={styles.openButton}
+			onClick={handleOpenInNewWindow}
+			aria-label="Open in new window"
+			title="Open in new window"
+		>
+			<Icon name="external-link" class="size-lg" />
+		</button>
+	) : null;
+
 	return (
-		<Dialog onClose={onClose} title={title}>
+		<Dialog onClose={onClose} title={title} headerActions={headerActions}>
 			{props.isNew ? (
 				<EpicView
 					isNew

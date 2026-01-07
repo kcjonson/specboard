@@ -9,6 +9,7 @@ interface ColumnProps {
 	status: Status;
 	title: string;
 	epics: EpicModel[];
+	projectId: string;
 	selectedEpicId?: string;
 	highlightedEpicId?: string;
 	onSelectEpic?: (epic: EpicModel) => void;
@@ -28,6 +29,7 @@ export function Column({
 	status,
 	title,
 	epics,
+	projectId,
 	selectedEpicId,
 	highlightedEpicId,
 	onSelectEpic,
@@ -123,6 +125,7 @@ export function Column({
 								)}
 								<EpicCard
 									epic={epic}
+									projectId={projectId}
 									isSelected={epic.id === selectedEpicId}
 									isHighlighted={epic.id === highlightedEpicId}
 									onSelect={onSelectEpic}

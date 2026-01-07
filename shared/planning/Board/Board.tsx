@@ -230,6 +230,7 @@ export function Board(props: RouteProps): JSX.Element {
 						status={status}
 						title={title}
 						epics={epics.byStatus(status)}
+						projectId={projectId}
 						selectedEpicId={selectedEpicId}
 						highlightedEpicId={highlightedEpicId}
 						onSelectEpic={handleColumnSelectEpic}
@@ -244,6 +245,7 @@ export function Board(props: RouteProps): JSX.Element {
 			{dialogEpic && (
 				<EpicDialog
 					epic={dialogEpic}
+					projectId={projectId}
 					onClose={handleCloseDialog}
 					onDelete={handleDeleteEpic}
 				/>
