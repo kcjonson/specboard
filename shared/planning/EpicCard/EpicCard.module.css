@@ -72,6 +72,11 @@
 	color: var(--color-text);
 }
 
+.openButton:focus,
+.openButton:focus-visible {
+	opacity: 1;
+}
+
 .title {
 	font-size: 14px;
 	font-weight: 500;

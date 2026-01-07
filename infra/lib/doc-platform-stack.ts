@@ -418,17 +418,25 @@ export class DocPlatformStack extends cdk.Stack {
 		errorLogGroup.grantWrite(apiTaskDefinition.taskRole);
 
 		// Grant API task permission to send emails via SES
-		// Scoped to domain identity to follow least privilege principle
-		const sesIdentityArn = cdk.Arn.format({
+		// Include both domain identity (for sending FROM) and wildcard for email addresses
+		// (needed when SES is in sandbox mode, which checks recipient identities too)
+		const sesDomainArn = cdk.Arn.format({
 			service: 'ses',
 			resource: 'identity',
 			resourceName: domainName,
 			region: this.region,
 			account: this.account,
 		}, this);
+		const sesEmailWildcardArn = cdk.Arn.format({
+			service: 'ses',
+			resource: 'identity',
+			resourceName: `*@${domainName}`,
+			region: this.region,
+			account: this.account,
+		}, this);
 		apiTaskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
 			actions: ['ses:SendEmail', 'ses:SendRawEmail'],
-			resources: [sesIdentityArn],
+			resources: [sesDomainArn, sesEmailWildcardArn],
 		}));
 
 		// ===========================================

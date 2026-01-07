@@ -72,7 +72,7 @@ export function EpicCard({
 
 	const handleOpenInNewWindow = (e: MouseEvent): void => {
 		e.stopPropagation();
-		window.open(`/projects/${projectId}/planning/epics/${epic.id}`, '_blank');
+		window.open(`/projects/${projectId}/planning/epics/${epic.id}`, '_blank', 'noopener,noreferrer');
 	};
 
 	const cardClass = [

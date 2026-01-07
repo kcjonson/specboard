@@ -33,7 +33,7 @@ export function EpicDialog(props: EpicDialogProps): JSX.Element {
 
 	const handleOpenInNewWindow = (): void => {
 		if (!props.isNew && props.epic && props.projectId) {
-			window.open(`/projects/${props.projectId}/planning/epics/${props.epic.id}`, '_blank');
+			window.open(`/projects/${props.projectId}/planning/epics/${props.epic.id}`, '_blank', 'noopener,noreferrer');
 		}
 	};
 
