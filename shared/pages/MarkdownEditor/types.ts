@@ -1,6 +1,7 @@
 import type { BaseEditor, Descendant } from 'slate';
 import type { ReactEditor } from 'slate-react';
 import type { HistoryEditor } from 'slate-history';
+import type { DocumentComment } from '@doc-platform/models';
 
 // Custom element types
 export type ParagraphElement = {
@@ -102,16 +103,9 @@ export interface CommentRange {
 	endColumn: number;
 }
 
-// Comment data structure
-export interface Comment {
-	id: string;
-	text: string;
-	author: string;
-	authorEmail: string;
-	timestamp: string; // ISO 8601
-	resolved: boolean;
-	replies: Comment[];
-}
+// Comment data structure - use the shared type from models
+// Alias for backwards compatibility with existing code
+export type Comment = DocumentComment;
 
 // Comment with range for storage in markdown footer
 export interface CommentWithRange extends Comment {

@@ -43,6 +43,7 @@ export {
 	clearLocalStorage,
 	getPersistedTimestamp,
 } from './documentPersistence';
+export type { LoadedPersistedDocument } from './documentPersistence';
 
 // Authorization models
 export { AuthorizationModel, AuthorizationsCollection } from './authorization';

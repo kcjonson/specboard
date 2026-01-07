@@ -5,7 +5,7 @@
  * are not lost if the browser crashes or window closes.
  */
 
-import type { SlateContent } from './DocumentModel';
+import type { SlateContent, DocumentComment } from './DocumentModel';
 
 const STORAGE_PREFIX = 'doc.';
 
@@ -34,6 +34,7 @@ function getStorageKey(projectId: string, filePath: string): string {
  */
 interface PersistedDocument {
 	content: SlateContent;
+	comments?: DocumentComment[];
 	savedAt: number;
 }
 
@@ -43,11 +44,13 @@ interface PersistedDocument {
  * @param projectId - Project ID
  * @param filePath - File path within the project
  * @param content - Slate AST content to persist
+ * @param comments - Optional comments to persist alongside content
  */
 export function saveToLocalStorage(
 	projectId: string,
 	filePath: string,
-	content: SlateContent
+	content: SlateContent,
+	comments?: DocumentComment[]
 ): void {
 	const storage = getStorage();
 	if (!storage) return;
@@ -56,6 +59,7 @@ export function saveToLocalStorage(
 		const key = getStorageKey(projectId, filePath);
 		const data: PersistedDocument = {
 			content,
+			comments,
 			savedAt: Date.now(),
 		};
 		storage.setItem(key, JSON.stringify(data));
@@ -66,16 +70,24 @@ export function saveToLocalStorage(
 }
 
 /**
+ * Result of loading persisted document data.
+ */
+export interface LoadedPersistedDocument {
+	content: SlateContent;
+	comments?: DocumentComment[];
+}
+
+/**
  * Load persisted document content from localStorage.
  *
  * @param projectId - Project ID
  * @param filePath - File path within the project
- * @returns Persisted content or null if not found
+ * @returns Persisted content and comments, or null if not found
  */
 export function loadFromLocalStorage(
 	projectId: string,
 	filePath: string
-): SlateContent | null {
+): LoadedPersistedDocument | null {
 	const storage = getStorage();
 	if (!storage) return null;
 
@@ -85,7 +97,10 @@ export function loadFromLocalStorage(
 		if (!stored) return null;
 
 		const data = JSON.parse(stored) as PersistedDocument;
-		return data.content;
+		return {
+			content: data.content,
+			comments: data.comments,
+		};
 	} catch (err) {
 		console.warn('Failed to load document from localStorage:', err);
 		return null;

@@ -22,8 +22,8 @@ export interface MarkdownEditorProps {
 	placeholder?: string;
 	/** Read-only mode */
 	readOnly?: boolean;
-	/** Called when a new comment is added */
-	onAddComment?: (commentText: string, anchorText: string) => void;
+	/** Called when a new comment is added. Receives the generated commentId that was applied to text. */
+	onAddComment?: (commentId: string, commentText: string, anchorText: string) => void;
 	/** Called when a reply is added to a comment */
 	onReply?: (commentId: string, replyText: string) => void;
 	/** Called when a comment's resolved status is toggled */
@@ -329,8 +329,8 @@ export function MarkdownEditor({
 		Transforms.select(editor, selection);
 		Editor.addMark(editor, 'commentId', commentId);
 
-		// Call the callback to add the comment to the model
-		onAddComment(commentText, anchorText);
+		// Call the callback to add the comment to the model (pass commentId so it matches the mark)
+		onAddComment(commentId, commentText, anchorText);
 
 		// Clear pending state
 		setPendingComment(undefined);

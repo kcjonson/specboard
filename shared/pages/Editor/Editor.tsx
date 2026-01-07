@@ -160,7 +160,10 @@ export function Editor(props: RouteProps): JSX.Element {
 
 		const cached = loadFromLocalStorage(projectId, pendingRecovery);
 		if (cached) {
-			documentModel.loadDocument(projectId, pendingRecovery, cached, { dirty: true });
+			documentModel.loadDocument(projectId, pendingRecovery, cached.content, {
+				dirty: true,
+				comments: cached.comments,
+			});
 			saveSelectedFile(projectId, pendingRecovery);
 			// Check if this document has a linked epic
 			checkLinkedEpic(pendingRecovery);
@@ -251,10 +254,10 @@ export function Editor(props: RouteProps): JSX.Element {
 	}, [currentUser.first_name, currentUser.last_name, currentUser.username, currentUser.email]);
 
 	// Handle adding a new comment
-	const handleAddComment = useCallback((commentText: string, _anchorText: string) => {
+	const handleAddComment = useCallback((commentId: string, commentText: string, _anchorText: string) => {
 		const author = getCommentAuthor();
 		const newComment: DocumentComment = {
-			id: `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+			id: commentId, // Use the ID from MarkdownEditor that was applied to the text
 			text: commentText,
 			author: author.name,
 			authorEmail: author.email,
@@ -326,7 +329,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Debounced localStorage persistence on content change
 	useEffect(() => {
-		const { filePath, projectId: pid, content } = documentModel;
+		const { filePath, projectId: pid, content, comments } = documentModel;
 		if (!filePath || !pid) return;
 		if (!documentModel.isDirty) return;
 
@@ -338,7 +341,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		// Save to localStorage after 1 second of inactivity
 		// Capture values before setTimeout to avoid stale references
 		saveTimerRef.current = setTimeout(() => {
-			saveToLocalStorage(pid, filePath, content);
+			saveToLocalStorage(pid, filePath, content, comments);
 		}, 1000);
 
 		return () => {
@@ -346,7 +349,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				clearTimeout(saveTimerRef.current);
 			}
 		};
-	}, [documentModel.content, documentModel.filePath, documentModel.projectId, documentModel.isDirty]);
+	}, [documentModel.content, documentModel.comments, documentModel.filePath, documentModel.projectId, documentModel.isDirty]);
 
 	// Keyboard shortcut for save (Ctrl/Cmd+S)
 	useEffect(() => {
