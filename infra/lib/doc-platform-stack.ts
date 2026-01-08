@@ -128,6 +128,15 @@ export class DocPlatformStack extends cdk.Stack {
 			description: 'Comma-separated list of valid invite keys for signup',
 		});
 
+		// API key encryption key (AES-256 - 32 bytes / 64 hex chars)
+		// IMPORTANT: After first deployment, manually set this secret to a valid hex key:
+		// aws secretsmanager put-secret-value --secret-id doc-platform/api-key-encryption \
+		//   --secret-string "$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
+		const apiKeyEncryptionSecret = new secretsmanager.Secret(this, 'ApiKeyEncryption', {
+			secretName: 'doc-platform/api-key-encryption',
+			description: 'AES-256 encryption key for user API keys - must be 64 hex characters. Set manually after deployment.',
+		});
+
 		const database = new rds.DatabaseInstance(this, 'Database', {
 			engine: rds.DatabaseInstanceEngine.postgres({
 				version: rds.PostgresEngineVersion.VER_16,
@@ -390,6 +399,7 @@ export class DocPlatformStack extends cdk.Stack {
 			secrets: {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
 				INVITE_KEYS: ecs.Secret.fromSecretsManager(inviteKeysSecret),
+				API_KEY_ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(apiKeyEncryptionSecret),
 			},
 			portMappings: [{ containerPort: 3001 }],
 			healthCheck: {

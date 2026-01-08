@@ -176,3 +176,25 @@ export interface ProgressNote {
 	created_by: string;
 	created_at: Date;
 }
+
+/**
+ * User API key providers
+ */
+export type ApiKeyProvider = 'anthropic';
+
+/**
+ * User API key for external services
+ */
+export interface UserApiKey {
+	id: string;
+	user_id: string;
+	provider: ApiKeyProvider;
+	key_name: string;
+	encrypted_key: string;
+	iv: string;
+	auth_tag: string;
+	masked_key: string;
+	last_used_at: Date | null;
+	created_at: Date;
+	updated_at: Date;
+}

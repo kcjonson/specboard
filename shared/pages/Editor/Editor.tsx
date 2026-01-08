@@ -16,6 +16,7 @@ import { fetchClient } from '@doc-platform/fetch';
 import { captureError } from '@doc-platform/telemetry';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
 import { MarkdownEditor, fromMarkdown, toMarkdown } from '../MarkdownEditor';
+import { ChatSidebar } from '../ChatSidebar';
 import { EditorHeader } from './EditorHeader';
 import { RecoveryDialog } from './RecoveryDialog';
 import styles from './Editor.module.css';
@@ -115,6 +116,9 @@ export function Editor(props: RouteProps): JSX.Element {
 	const [linkedEpicId, setLinkedEpicId] = useState<string | undefined>();
 	const [creatingEpic, setCreatingEpic] = useState(false);
 	const creatingEpicRef = useRef(false);
+
+	// Chat sidebar state
+	const [showChat, setShowChat] = useState(false);
 
 	// Check if file has a linked epic
 	const checkLinkedEpic = useCallback(async (path: string) => {
@@ -529,16 +533,27 @@ export function Editor(props: RouteProps): JSX.Element {
 								creatingEpic={creatingEpic}
 								onCreateEpic={handleCreateEpic}
 								onViewEpic={handleViewEpic}
+								showChat={showChat}
+								onToggleChat={() => setShowChat(!showChat)}
 							/>
-							<div class={styles.editorArea}>
-								<MarkdownEditor
-									model={documentModel}
-									comments={documentModel.comments}
-									placeholder="Start writing..."
-									onAddComment={handleAddComment}
-									onReply={handleReplyToComment}
-									onToggleResolved={handleToggleResolved}
-								/>
+							<div class={styles.mainContent}>
+								<div class={styles.editorArea}>
+									<MarkdownEditor
+										model={documentModel}
+										comments={documentModel.comments}
+										placeholder="Start writing..."
+										onAddComment={handleAddComment}
+										onReply={handleReplyToComment}
+										onToggleResolved={handleToggleResolved}
+									/>
+								</div>
+								{showChat && (
+									<ChatSidebar
+										documentContent={toMarkdown(documentModel.content, documentModel.comments)}
+										documentPath={documentModel.filePath}
+										onClose={() => setShowChat(false)}
+									/>
+								)}
 							</div>
 						</>
 					) : (

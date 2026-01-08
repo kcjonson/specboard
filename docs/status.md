@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-08 (Planning AI Chat Sidebar feature)
+Last Updated: 2026-01-08 (Completed AI Chat Sidebar feature)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,34 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ AI Chat Sidebar
+**Spec/Documentation:** `.claude/plans/ai-chat-sidebar.md`, `docs/setup.md`
+**Dependencies:** Markdown Editor, Authentication System
+**Status:** complete
+
+**Tasks:**
+- [x] Database & Encryption
+  - [x] Create AES-256-GCM encryption utilities in @doc-platform/auth
+  - [x] Database migration for user_api_keys table
+  - [x] Add UserApiKey type to shared/db
+- [x] Backend API
+  - [x] API key CRUD endpoints (list, create, delete, validate)
+  - [x] Chat streaming endpoint with SSE
+  - [x] Install Anthropic SDK
+- [x] Settings UI
+  - [x] ApiKeys component (list, add dialog, delete)
+  - [x] Integrate into UserSettings page
+- [x] Chat Sidebar
+  - [x] ChatSidebar component with message list and input
+  - [x] ChatMessage component with streaming support
+  - [x] Integrate into Editor with toggle button
+- [x] Environment & Deployment
+  - [x] Add API_KEY_ENCRYPTION_KEY to dev environment (docker-compose.override.yml)
+  - [x] Add encryption key secret to CDK/Secrets Manager
+  - [x] Create local development setup documentation
+
+---
 
 ### ✅ Admin User Management
 **Spec/Documentation:** `api/src/handlers/users.ts`, `web/src/routes/settings/UserManagement.tsx`
@@ -58,19 +86,6 @@ Use this template for all work items:
 - [x] CDK Infrastructure (VPC, ECR, ECS, RDS, Redis, ALB)
 - [x] GitHub Actions CD (build, migrate, deploy)
 - [x] Test data seeding (admin account, GitHub secrets)
-
----
-
-### ✅ Projects Page
-**Spec/Documentation:** `shared/projects/`
-**Status:** complete
-
-**Tasks:**
-- [x] Database schema (projects table, epics.project_id)
-- [x] Project API endpoints (CRUD)
-- [x] ProjectsList and ProjectCard UI
-- [x] Smart routing (cookie-based last project)
-- [x] Delete/rename project functionality
 
 ---
 
@@ -185,35 +200,6 @@ Use this template for all work items:
   - [x] Display validation errors (not git repo, different repo)
   - [x] File tree display with expand/collapse
   - [x] Remove folder button on root items
-
----
-
-### AI Chat Sidebar
-**Spec/Documentation:** `.claude/plans/ai-chat-sidebar.md`
-**Dependencies:** Markdown Editor, Authentication System
-**Status:** in progress
-
-**Goal:** Add AI chat sidebar to document editor using user's own Anthropic API key.
-
-**Tasks:**
-- [ ] Database & Encryption
-  - [ ] Create AES-256-GCM encryption utilities in @doc-platform/auth
-  - [ ] Database migration for user_api_keys table
-  - [ ] Add UserApiKey type to shared/db
-- [ ] Backend API
-  - [ ] API key CRUD endpoints (list, create, delete, validate)
-  - [ ] Chat streaming endpoint with SSE
-  - [ ] Install Anthropic SDK
-- [ ] Settings UI
-  - [ ] ApiKeys component (list, add dialog, delete)
-  - [ ] Integrate into UserSettings page
-- [ ] Chat Sidebar
-  - [ ] ChatSidebar component with message list and input
-  - [ ] ChatMessage component with streaming support
-  - [ ] Integrate into Editor with toggle button
-- [ ] Environment & Deployment
-  - [ ] Add API_KEY_ENCRYPTION_KEY to dev environment
-  - [ ] Add encryption key secret to CDK/Secrets Manager
 
 ---
 

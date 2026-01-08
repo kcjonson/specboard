@@ -89,6 +89,13 @@ import {
 	handleCreateFile,
 	handleRenameFile,
 } from './handlers/storage/index.js';
+import {
+	handleListApiKeys,
+	handleCreateApiKey,
+	handleDeleteApiKey,
+	handleValidateApiKey,
+} from './handlers/api-keys.js';
+import { handleChat } from './handlers/chat.js';
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('api');
@@ -175,6 +182,7 @@ app.use(
 			{ path: '/api/auth/resend-verification', config: RATE_LIMIT_CONFIGS.resendVerification },
 			{ path: '/oauth/token', config: RATE_LIMIT_CONFIGS.oauthToken },
 			{ path: '/oauth/authorize', config: RATE_LIMIT_CONFIGS.oauthAuthorize },
+			{ path: '/api/chat', config: RATE_LIMIT_CONFIGS.chat },
 		],
 		defaultLimit: RATE_LIMIT_CONFIGS.api,
 		excludePaths: ['/health', '/api/health', '/api/metrics'],
@@ -318,6 +326,12 @@ app.put('/api/users/:id', (context) => handleUpdateUser(context, redis));
 app.get('/api/users/:id/tokens', (context) => handleListUserTokens(context, redis));
 app.delete('/api/users/:id/tokens/:tokenId', (context) => handleRevokeUserToken(context, redis));
 
+// User API key management
+app.get('/api/users/me/api-keys', (context) => handleListApiKeys(context, redis));
+app.post('/api/users/me/api-keys', (context) => handleCreateApiKey(context, redis));
+app.delete('/api/users/me/api-keys/:provider', (context) => handleDeleteApiKey(context, redis));
+app.post('/api/users/me/api-keys/:provider/validate', (context) => handleValidateApiKey(context, redis));
+
 // Project routes
 app.get('/api/projects', (context) => handleListProjects(context, redis));
 app.get('/api/projects/:id', (context) => handleGetProject(context, redis));
@@ -360,6 +374,9 @@ app.get('/api/projects/:projectId/epics/:epicId/progress', handleListEpicProgres
 app.post('/api/projects/:projectId/epics/:epicId/progress', handleCreateEpicProgress);
 app.get('/api/projects/:projectId/tasks/:taskId/progress', handleListTaskProgress);
 app.post('/api/projects/:projectId/tasks/:taskId/progress', handleCreateTaskProgress);
+
+// AI Chat
+app.post('/api/chat', (context) => handleChat(context, redis));
 
 // Start server
 const PORT = Number(process.env.PORT) || 3001;

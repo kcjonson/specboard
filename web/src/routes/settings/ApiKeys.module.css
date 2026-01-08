@@ -1,0 +1,317 @@
+.container {
+	margin-top: var(--space-8);
+	padding-top: var(--space-6);
+	border-top: 1px solid var(--color-border);
+}
+
+.title {
+	font-size: var(--text-lg);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+	margin: 0 0 var(--space-2) 0;
+}
+
+.description {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	margin: 0 0 var(--space-5) 0;
+}
+
+.loading {
+	padding: var(--space-6);
+	text-align: center;
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+}
+
+.error {
+	padding: var(--space-4);
+	background: rgba(239, 68, 68, 0.1);
+	border: 1px solid var(--color-error);
+	border-radius: var(--radius-md);
+	color: var(--color-error);
+	font-size: var(--text-sm);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	margin-bottom: var(--space-4);
+}
+
+.empty {
+	padding: var(--space-6);
+	text-align: center;
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+	background: var(--color-background);
+	border-radius: var(--radius-md);
+	border: 1px dashed var(--color-border);
+}
+
+.empty p {
+	margin: 0 0 var(--space-4) 0;
+}
+
+.list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.item {
+	background: var(--color-background);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	padding: var(--space-4);
+}
+
+.itemHeader {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
+	margin-bottom: var(--space-3);
+}
+
+.icon {
+	font-size: 1.5rem;
+	line-height: 1;
+}
+
+.itemInfo {
+	flex: 1;
+	min-width: 0;
+}
+
+.providerName {
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+	font-size: var(--text-base);
+}
+
+.keyName {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	margin-top: var(--space-1);
+}
+
+.itemDetails {
+	margin-bottom: var(--space-3);
+}
+
+.maskedKey {
+	margin-bottom: var(--space-2);
+}
+
+.maskedKey code {
+	display: inline-block;
+	padding: var(--space-1) var(--space-2);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	font-size: var(--text-sm);
+	font-family: var(--font-mono);
+	color: var(--color-text-muted);
+}
+
+.dates {
+	font-size: var(--text-xs);
+	color: var(--color-text-muted);
+}
+
+.itemActions {
+	display: flex;
+	justify-content: flex-end;
+	padding-top: var(--space-3);
+	border-top: 1px solid var(--color-border);
+}
+
+.confirmDelete {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+}
+
+.confirmText {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+.addSection {
+	margin-top: var(--space-4);
+	display: flex;
+	justify-content: flex-start;
+}
+
+/* Dialog overlay */
+.overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.5);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1000;
+}
+
+.dialog {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	padding: var(--space-6);
+	width: 100%;
+	max-width: 480px;
+	box-shadow: var(--shadow-lg);
+}
+
+.dialogTitle {
+	font-size: var(--text-lg);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+	margin: 0 0 var(--space-2) 0;
+}
+
+.dialogDescription {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	margin: 0 0 var(--space-4) 0;
+}
+
+.dialogError {
+	padding: var(--space-3);
+	background: rgba(239, 68, 68, 0.1);
+	border: 1px solid var(--color-error);
+	border-radius: var(--radius-md);
+	color: var(--color-error);
+	font-size: var(--text-sm);
+	margin-bottom: var(--space-4);
+}
+
+.formField {
+	margin-bottom: var(--space-4);
+}
+
+.label {
+	display: block;
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	color: var(--color-text);
+	margin-bottom: var(--space-2);
+}
+
+.input {
+	width: 100%;
+	padding: var(--space-3);
+	font-size: var(--text-sm);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-background);
+	color: var(--color-text);
+}
+
+.input:focus {
+	outline: none;
+	border-color: var(--color-primary);
+	box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.2);
+}
+
+.input::placeholder {
+	color: var(--color-text-muted);
+}
+
+.link {
+	color: var(--color-primary);
+	text-decoration: underline;
+}
+
+.link:hover {
+	text-decoration: none;
+}
+
+.dialogActions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-3);
+	margin-top: var(--space-4);
+	padding-top: var(--space-4);
+	border-top: 1px solid var(--color-border);
+}
+
+/* Button variants */
+.retryButton,
+.ghostButton,
+.dangerButton,
+.primaryButton {
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-md);
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	cursor: pointer;
+	transition: background-color 0.15s, border-color 0.15s;
+}
+
+.retryButton,
+.ghostButton {
+	background: transparent;
+	border: 1px solid var(--color-border);
+	color: var(--color-text);
+}
+
+.retryButton:hover,
+.ghostButton:hover {
+	background: var(--color-background);
+	border-color: var(--color-text-muted);
+}
+
+.dangerButton {
+	background: var(--color-error);
+	border: 1px solid var(--color-error);
+	color: white;
+}
+
+.dangerButton:hover {
+	background: var(--color-error-hover, var(--color-error));
+	border-color: var(--color-error-hover, var(--color-error));
+	filter: brightness(0.9);
+}
+
+.primaryButton {
+	background: var(--color-primary);
+	border: 1px solid var(--color-primary);
+	color: white;
+}
+
+.primaryButton:hover {
+	filter: brightness(0.9);
+}
+
+.retryButton:disabled,
+.ghostButton:disabled,
+.dangerButton:disabled,
+.primaryButton:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Focus visible styles for keyboard navigation */
+.retryButton:focus-visible,
+.ghostButton:focus-visible,
+.primaryButton:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+.dangerButton:focus-visible {
+	outline: 2px solid var(--color-error);
+	outline-offset: 2px;
+}
+
+.link:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+.input:focus-visible {
+	outline: none;
+	border-color: var(--color-primary);
+	box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.2);
+}

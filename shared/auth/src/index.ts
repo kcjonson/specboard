@@ -71,6 +71,14 @@ export {
 	TOKEN_EXPIRY_MS,
 } from './tokens.js';
 
+// Encryption utilities
+export {
+	encrypt,
+	decrypt,
+	maskApiKey,
+	type EncryptedData,
+} from './encryption.js';
+
 // Types
 export {
 	type Session,

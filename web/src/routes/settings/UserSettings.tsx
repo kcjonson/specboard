@@ -5,6 +5,7 @@ import { Button, Text, Page } from '@doc-platform/ui';
 import { fetchClient } from '@doc-platform/fetch';
 import { useModel, UserModel, AuthorizationsCollection } from '@doc-platform/models';
 import { AuthorizedApps } from './AuthorizedApps';
+import { ApiKeys } from './ApiKeys';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 import { SetPasswordDialog } from './SetPasswordDialog';
 import styles from './UserSettings.module.css';
@@ -407,6 +408,10 @@ export function UserSettings(props: RouteProps): JSX.Element {
 
 					{!isViewingOther && (
 						<AuthorizedApps authorizations={authorizations} />
+					)}
+
+					{!isViewingOther && (
+						<ApiKeys />
 					)}
 
 					<ChangePasswordDialog

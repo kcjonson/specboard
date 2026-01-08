@@ -299,13 +299,15 @@ The application runs as two separate containers that share authentication via Re
 
 ### Local Development
 
+See [docs/setup.md](setup.md) for detailed local development setup instructions.
+
 ```bash
 # Start all services (db, redis, api, frontend)
 docker compose up
 
 # Or hybrid mode (faster frontend iteration)
 docker compose up db redis api
-pnpm --filter planning-web dev
+pnpm --filter web dev
 ```
 
 ---
