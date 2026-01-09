@@ -106,7 +106,8 @@ export class GeminiProvider implements ChatProvider {
 		apiKey: string,
 		modelId: string,
 		systemPrompt: string,
-		messages: ChatMessage[]
+		messages: ChatMessage[],
+		signal?: AbortSignal
 	): Promise<void> {
 		try {
 			const response = await fetch(
@@ -124,6 +125,7 @@ export class GeminiProvider implements ChatProvider {
 							maxOutputTokens: 4096,
 						},
 					}),
+					signal,
 				}
 			);
 

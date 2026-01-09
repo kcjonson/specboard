@@ -164,25 +164,26 @@ export async function handleChat(
 		{ role: 'user', content: message },
 	];
 
-	// Return SSE stream using the provider with timeout
+	// Return SSE stream using the provider with timeout and abort support
 	return streamSSE(context, async (stream) => {
-		const timeoutPromise = new Promise<never>((_, reject) => {
-			setTimeout(() => reject(new Error('Stream timeout')), STREAM_TIMEOUT_MS);
-		});
+		const abortController = new AbortController();
+		const timeoutId = setTimeout(() => {
+			abortController.abort();
+		}, STREAM_TIMEOUT_MS);
 
 		try {
-			await Promise.race([
-				provider.streamChat(stream, apiKey, selectedModel, systemPrompt, messages),
-				timeoutPromise,
-			]);
+			await provider.streamChat(stream, apiKey, selectedModel, systemPrompt, messages, abortController.signal);
 		} catch (error) {
-			if (error instanceof Error && error.message === 'Stream timeout') {
+			// Check if this was an abort (timeout)
+			if (error instanceof Error && error.name === 'AbortError') {
 				await stream.writeSSE({
 					event: 'error',
 					data: JSON.stringify({ error: 'Request timed out. Please try again.' }),
 				});
 			}
 			// Other errors are already handled by the provider
+		} finally {
+			clearTimeout(timeoutId);
 		}
 	});
 }

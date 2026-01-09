@@ -77,18 +77,22 @@ export class AnthropicProvider implements ChatProvider {
 		apiKey: string,
 		modelId: string,
 		systemPrompt: string,
-		messages: ChatMessage[]
+		messages: ChatMessage[],
+		signal?: AbortSignal
 	): Promise<void> {
 		try {
 			const client = new Anthropic({ apiKey });
 
-			const response = await client.messages.create({
-				model: modelId,
-				max_tokens: 4096,
-				system: systemPrompt,
-				messages,
-				stream: true,
-			});
+			const response = await client.messages.create(
+				{
+					model: modelId,
+					max_tokens: 4096,
+					system: systemPrompt,
+					messages,
+					stream: true,
+				},
+				{ signal }
+			);
 
 			let inputTokens = 0;
 			let outputTokens = 0;

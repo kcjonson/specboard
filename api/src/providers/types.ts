@@ -66,12 +66,14 @@ export interface ChatProvider {
 
 	/**
 	 * Stream chat response to client
+	 * @param signal - AbortSignal for cancellation (e.g., on timeout)
 	 */
 	streamChat(
 		stream: SSEStreamingApi,
 		apiKey: string,
 		modelId: string,
 		systemPrompt: string,
-		messages: ChatMessage[]
+		messages: ChatMessage[],
+		signal?: AbortSignal
 	): Promise<void>;
 }
