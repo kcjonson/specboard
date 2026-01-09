@@ -3,47 +3,24 @@
  *
  * Endpoint: POST /api/chat
  *
- * Uses the user's own Anthropic API key to stream Claude responses.
+ * Supports multiple AI providers (Anthropic, Google Gemini).
+ * Uses the user's own API key to stream responses.
  */
 
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import Anthropic from '@anthropic-ai/sdk';
 import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
 import { getDecryptedApiKey } from './api-keys.js';
+import { isValidProvider, getProvider, isValidModel, type ChatMessage } from '../providers/index.js';
 
 // Constants
-const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 const MAX_MESSAGE_LENGTH = 10000;
 const MAX_DOCUMENT_LENGTH = 100000;
 const MAX_HISTORY_LENGTH = 50;
 const MAX_HISTORY_MESSAGE_LENGTH = 10000;
-
-interface ChatMessage {
-	role: 'user' | 'assistant';
-	content: string;
-}
-
-/**
- * Sanitize error messages to avoid leaking sensitive information
- */
-function getSafeErrorMessage(error: unknown): string {
-	if (error instanceof Error) {
-		const msg = error.message.toLowerCase();
-		if (msg.includes('401') || msg.includes('invalid') || msg.includes('authentication')) {
-			return 'API key configuration error. Please check your API key in Settings.';
-		}
-		if (msg.includes('rate') || msg.includes('429') || msg.includes('limit')) {
-			return 'Rate limit exceeded. Please try again later.';
-		}
-		if (msg.includes('insufficient') || msg.includes('credit') || msg.includes('balance')) {
-			return 'Insufficient API credits. Please check your Anthropic account.';
-		}
-	}
-	return 'An error occurred while processing your request.';
-}
+const STREAM_TIMEOUT_MS = 60000; // 60 second timeout for streaming
 
 /**
  * Validate a single chat message from conversation history
@@ -106,15 +83,6 @@ export async function handleChat(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	// Get user's Anthropic API key
-	const apiKey = await getDecryptedApiKey(session.userId, 'anthropic');
-	if (!apiKey) {
-		return context.json(
-			{ error: 'No Anthropic API key configured. Please add one in Settings → API Keys.' },
-			400
-		);
-	}
-
 	// Parse request body with runtime validation
 	let body: unknown;
 	try {
@@ -133,6 +101,34 @@ export async function handleChat(
 	const document_content = typeof req.document_content === 'string' ? req.document_content : undefined;
 	const document_path = typeof req.document_path === 'string' ? req.document_path : undefined;
 	const rawHistory = Array.isArray(req.conversation_history) ? req.conversation_history : [];
+
+	// Get provider and model from request (with defaults for backwards compatibility)
+	const providerName = typeof req.provider === 'string' ? req.provider : 'anthropic';
+	const modelId = typeof req.model === 'string' ? req.model : undefined;
+
+	// Validate provider
+	if (!isValidProvider(providerName)) {
+		return context.json({ error: `Invalid provider: ${providerName}` }, 400);
+	}
+
+	const provider = getProvider(providerName);
+
+	// Use default model if not specified
+	const selectedModel = modelId || provider.config.defaultModel;
+
+	// Validate model
+	if (!isValidModel(providerName, selectedModel)) {
+		return context.json({ error: `Invalid model: ${selectedModel} for provider ${providerName}` }, 400);
+	}
+
+	// Get user's API key for the provider
+	const apiKey = await getDecryptedApiKey(session.userId, providerName);
+	if (!apiKey) {
+		return context.json(
+			{ error: `No ${provider.config.displayName} API key configured. Please add one in Settings → API Keys.` },
+			400
+		);
+	}
 
 	// Validate message
 	if (!message || message.trim().length === 0) {
@@ -161,75 +157,33 @@ export async function handleChat(
 		conversation_history.push(msg);
 	}
 
-	// Build messages array for Claude
-	// conversation_history contains previous exchanges; current message is appended
+	// Build messages array
 	const systemPrompt = buildSystemPrompt(document_path, document_content);
-	const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+	const messages: ChatMessage[] = [
 		...conversation_history,
 		{ role: 'user', content: message },
 	];
 
-	// Create Anthropic client with user's API key
-	const client = new Anthropic({ apiKey });
-
-	// Return SSE stream
+	// Return SSE stream using the provider with timeout and abort support
 	return streamSSE(context, async (stream) => {
+		const abortController = new AbortController();
+		const timeoutId = setTimeout(() => {
+			abortController.abort();
+		}, STREAM_TIMEOUT_MS);
+
 		try {
-			// Create streaming message
-			const response = await client.messages.create({
-				model: CLAUDE_MODEL,
-				max_tokens: 4096,
-				system: systemPrompt,
-				messages,
-				stream: true,
-			});
-
-			let inputTokens = 0;
-			let outputTokens = 0;
-
-			// Process stream events
-			for await (const event of response) {
-				if (event.type === 'content_block_delta') {
-					const delta = event.delta;
-					if ('text' in delta) {
-						await stream.writeSSE({
-							event: 'delta',
-							data: JSON.stringify({ text: delta.text }),
-						});
-					}
-				} else if (event.type === 'message_delta') {
-					if ('usage' in event) {
-						outputTokens = event.usage.output_tokens;
-					}
-				} else if (event.type === 'message_start') {
-					if ('usage' in event.message) {
-						inputTokens = event.message.usage.input_tokens;
-					}
-				}
-			}
-
-			// Send completion event with usage stats
-			await stream.writeSSE({
-				event: 'done',
-				data: JSON.stringify({
-					usage: {
-						input_tokens: inputTokens,
-						output_tokens: outputTokens,
-					},
-				}),
-			});
+			await provider.streamChat(stream, apiKey, selectedModel, systemPrompt, messages, abortController.signal);
 		} catch (error) {
-			// Log full error for debugging (server-side only)
-			console.error('Chat error:', {
-				userId: session.userId,
-				error: error instanceof Error ? error.message : 'Unknown error',
-			});
-
-			// Send sanitized error to client
-			await stream.writeSSE({
-				event: 'error',
-				data: JSON.stringify({ error: getSafeErrorMessage(error) }),
-			});
+			// Check if this was an abort (timeout)
+			if (error instanceof Error && error.name === 'AbortError') {
+				await stream.writeSSE({
+					event: 'error',
+					data: JSON.stringify({ error: 'Request timed out. Please try again.' }),
+				});
+			}
+			// Other errors are already handled by the provider
+		} finally {
+			clearTimeout(timeoutId);
 		}
 	});
 }

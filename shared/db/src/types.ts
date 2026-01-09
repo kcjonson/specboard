@@ -180,7 +180,7 @@ export interface ProgressNote {
 /**
  * User API key providers
  */
-export type ApiKeyProvider = 'anthropic';
+export type ApiKeyProvider = 'anthropic' | 'gemini';
 
 /**
  * User API key for external services

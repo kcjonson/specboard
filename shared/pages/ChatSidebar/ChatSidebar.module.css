@@ -53,6 +53,61 @@
 	outline-offset: 2px;
 }
 
+/* Model selector */
+.modelSelector {
+	padding: var(--space-2) var(--space-4);
+	border-bottom: 1px solid var(--color-border);
+	background: var(--color-background);
+	flex-shrink: 0;
+}
+
+.modelSelect {
+	width: 100%;
+	padding: var(--space-2) var(--space-3);
+	font-size: var(--text-sm);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-surface);
+	color: var(--color-text);
+	cursor: pointer;
+}
+
+.modelSelect:focus {
+	outline: none;
+	border-color: var(--color-primary);
+}
+
+.modelSelect:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.modelLoading {
+	display: block;
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	text-align: center;
+	padding: var(--space-1) 0;
+}
+
+.configureLink {
+	display: block;
+	font-size: var(--text-sm);
+	color: var(--color-primary);
+	text-align: center;
+	text-decoration: underline;
+	padding: var(--space-1) 0;
+}
+
+.configureLink:hover {
+	text-decoration: none;
+}
+
+.configureLink:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
 .messages {
 	flex: 1;
 	overflow-y: auto;

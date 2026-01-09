@@ -1,4 +1,4 @@
-/* global TextDecoder, DOMException */
+/* global TextDecoder, DOMException, localStorage */
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Icon } from '@doc-platform/ui';
@@ -11,19 +11,49 @@ interface Message {
 	content: string;
 }
 
+interface ModelInfo {
+	id: string;
+	name: string;
+	description: string;
+	freeTier?: boolean;
+}
+
+interface ProviderModels {
+	provider: string;
+	providerDisplayName: string;
+	models: ModelInfo[];
+}
+
 interface ChatSidebarProps {
 	documentContent?: string;
 	documentPath?: string;
-	onClose: () => void;
 }
 
 // Throttle interval for streaming updates (ms)
 const STREAMING_THROTTLE_MS = 50;
 
+// LocalStorage key for persisting model selection
+const MODEL_STORAGE_KEY = 'chat-selected-model';
+
+/**
+ * Parse a model selection string (format: "provider:modelId")
+ */
+function parseModelSelection(value: string): { provider: string; model: string } | null {
+	const parts = value.split(':');
+	if (parts.length !== 2) return null;
+	return { provider: parts[0], model: parts[1] };
+}
+
+/**
+ * Create a model selection string
+ */
+function createModelSelection(provider: string, model: string): string {
+	return `${provider}:${model}`;
+}
+
 export function ChatSidebar({
 	documentContent,
 	documentPath,
-	onClose,
 }: ChatSidebarProps): JSX.Element {
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState('');
@@ -32,6 +62,12 @@ export function ChatSidebar({
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
+	// Model selection
+	const [availableModels, setAvailableModels] = useState<ProviderModels[]>([]);
+	const [selectedModel, setSelectedModel] = useState<string>('');
+	const [modelsLoading, setModelsLoading] = useState(true);
+	const [modelsError, setModelsError] = useState<string | null>(null);
+
 	// Refs for throttled streaming updates
 	const pendingContentRef = useRef('');
 	const flushTimeoutRef = useRef<number | null>(null);
@@ -39,6 +75,68 @@ export function ChatSidebar({
 
 	// AbortController for cancelling ongoing requests
 	const abortControllerRef = useRef<AbortController | null>(null);
+
+	// Load available models on mount
+	useEffect(() => {
+		async function loadModels(): Promise<void> {
+			setModelsLoading(true);
+			setModelsError(null);
+			try {
+				const response = await fetch('/api/chat/models', {
+					credentials: 'include',
+				});
+				if (!response.ok) {
+					throw new Error('Failed to load models');
+				}
+				const data = await response.json();
+				setAvailableModels(data.models || []);
+
+				// Try to restore saved model selection (localStorage may be unavailable in private browsing)
+				let savedModel: string | null = null;
+				try {
+					savedModel = localStorage.getItem(MODEL_STORAGE_KEY);
+				} catch {
+					// localStorage unavailable (private browsing) - ignore
+				}
+
+				if (savedModel && data.models?.length > 0) {
+					// Verify saved model is still available
+					const parsed = parseModelSelection(savedModel);
+					if (parsed) {
+						const providerModels = data.models.find((p: ProviderModels) => p.provider === parsed.provider);
+						if (providerModels?.models.some((m: ModelInfo) => m.id === parsed.model)) {
+							setSelectedModel(savedModel);
+							return;
+						}
+					}
+				}
+
+				// Fall back to first available model
+				if (data.models?.length > 0 && data.models[0].models?.length > 0) {
+					const firstProvider = data.models[0];
+					const firstModel = firstProvider.models[0];
+					setSelectedModel(createModelSelection(firstProvider.provider, firstModel.id));
+				}
+			} catch (err) {
+				console.error('Failed to load models:', err);
+				setModelsError(err instanceof Error ? err.message : 'Failed to load models');
+			} finally {
+				setModelsLoading(false);
+			}
+		}
+		loadModels();
+	}, []);
+
+	// Save model selection to localStorage when it changes
+	useEffect(() => {
+		if (selectedModel) {
+			try {
+				localStorage.setItem(MODEL_STORAGE_KEY, selectedModel);
+			} catch {
+				// localStorage unavailable (private browsing) - ignore
+			}
+		}
+	}, [selectedModel]);
 
 	// Auto-scroll to bottom only when message count changes (not on every content update)
 	const messageCount = messages.length;
@@ -86,6 +184,13 @@ export function ChatSidebar({
 	const handleSubmit = async (): Promise<void> => {
 		const trimmedInput = input.trim();
 		if (!trimmedInput || isStreaming) return;
+
+		// Parse selected model
+		const modelSelection = parseModelSelection(selectedModel);
+		if (!modelSelection) {
+			setError('Please select an AI model');
+			return;
+		}
 
 		setError(null);
 		setInput('');
@@ -135,6 +240,8 @@ export function ChatSidebar({
 					document_content: documentContent,
 					document_path: documentPath,
 					conversation_history: conversationHistory,
+					provider: modelSelection.provider,
+					model: modelSelection.model,
 				}),
 				signal: abortControllerRef.current.signal,
 			});
@@ -237,6 +344,15 @@ export function ChatSidebar({
 		}
 	};
 
+	const handleModelChange = (e: Event): void => {
+		const value = (e.target as HTMLSelectElement).value;
+		setSelectedModel(value);
+	};
+
+	// Check if no models are available (no API keys configured vs API failure)
+	const hasNoModels = !modelsLoading && !modelsError && availableModels.length === 0;
+	const hasModelsError = !modelsLoading && modelsError !== null;
+
 	return (
 		<div
 			class={styles.sidebar}
@@ -249,13 +365,40 @@ export function ChatSidebar({
 					<Icon name="comment" class="size-md" />
 					AI Chat
 				</h3>
-				<button
-					class={styles.closeButton}
-					onClick={onClose}
-					aria-label="Close chat"
-				>
-					<Icon name="xmark" />
-				</button>
+			</div>
+
+			{/* Model selector */}
+			<div class={styles.modelSelector}>
+				{modelsLoading ? (
+					<span class={styles.modelLoading}>Loading models...</span>
+				) : hasModelsError ? (
+					<span class={styles.modelLoading}>Failed to load models. Please refresh.</span>
+				) : hasNoModels ? (
+					<a href="/settings" class={styles.configureLink}>
+						Configure API keys in Settings
+					</a>
+				) : (
+					<select
+						class={styles.modelSelect}
+						value={selectedModel}
+						onChange={handleModelChange}
+						disabled={isStreaming}
+						aria-label="Select AI model"
+					>
+						{availableModels.map(provider => (
+							<optgroup key={provider.provider} label={provider.providerDisplayName}>
+								{provider.models.map(model => (
+									<option
+										key={model.id}
+										value={createModelSelection(provider.provider, model.id)}
+									>
+										{model.name}{model.freeTier ? ' (Free)' : ''}
+									</option>
+								))}
+							</optgroup>
+						))}
+					</select>
+				)}
 			</div>
 
 			<div
@@ -322,14 +465,14 @@ export function ChatSidebar({
 					value={input}
 					onInput={(e) => setInput((e.target as HTMLTextAreaElement).value)}
 					onKeyDown={handleKeyDown}
-					disabled={isStreaming}
+					disabled={isStreaming || hasNoModels || hasModelsError}
 					rows={2}
 					aria-describedby={error ? 'chat-error' : undefined}
 					aria-invalid={!!error}
 				/>
 				<Button
 					onClick={handleSubmit}
-					disabled={!input.trim() || isStreaming}
+					disabled={!input.trim() || isStreaming || hasNoModels || hasModelsError}
 					class={styles.sendButton}
 					aria-label={isStreaming ? 'Sending message' : 'Send message'}
 				>

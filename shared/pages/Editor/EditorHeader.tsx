@@ -26,10 +26,6 @@ export interface EditorHeaderProps {
 	onCreateEpic?: () => void;
 	/** Callback to view the linked epic */
 	onViewEpic?: () => void;
-	/** Whether the chat sidebar is visible */
-	showChat?: boolean;
-	/** Callback to toggle the chat sidebar */
-	onToggleChat?: () => void;
 }
 
 /** Check if file path is a markdown file */
@@ -50,8 +46,6 @@ export function EditorHeader({
 	creatingEpic,
 	onCreateEpic,
 	onViewEpic,
-	showChat,
-	onToggleChat,
 }: EditorHeaderProps): JSX.Element {
 	const [isEditing, setIsEditing] = useState(false);
 	const [editTitle, setEditTitle] = useState('');
@@ -142,17 +136,6 @@ export function EditorHeader({
 				{isDirty && !isEditing && <span class={styles.dirtyIndicator} title="Unsaved changes">*</span>}
 			</div>
 			<div class={styles.actions}>
-				{onToggleChat && (
-					<Button
-						onClick={onToggleChat}
-						variant={showChat ? 'primary' : 'secondary'}
-						title={showChat ? 'Close AI Chat' : 'Open AI Chat'}
-						aria-expanded={showChat}
-						aria-controls="ai-chat-sidebar"
-					>
-						Ask AI
-					</Button>
-				)}
 				{onNewPage && (
 					<Button
 						onClick={onNewPage}

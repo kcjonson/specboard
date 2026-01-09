@@ -6,9 +6,13 @@
 }
 
 .body {
-	flex: 1;
+	/* Fixed height layout - prevents page scroll, enables column scroll */
+	position: fixed;
+	top: var(--header-height);
+	left: 0;
+	right: 0;
+	bottom: 0;
 	display: flex;
-	min-height: 0;
 	overflow: hidden;
 }
 
@@ -38,9 +42,9 @@
 	display: flex;
 	flex-direction: column;
 	padding: var(--space-4);
-	overflow-y: auto;
-	overflow-x: hidden;
 	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
 }
 
 .emptyState {

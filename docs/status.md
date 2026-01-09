@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-08 (Completed AI Chat Sidebar feature)
+Last Updated: 2026-01-09 (Added multi-provider AI support with Gemini)
 
 ## Epic/Story/Task Template
 
@@ -28,7 +28,7 @@ Use this template for all work items:
 ## Recently Completed Epics (Last 4)
 
 ### ✅ AI Chat Sidebar
-**Spec/Documentation:** `.claude/plans/ai-chat-sidebar.md`, `docs/setup.md`
+**Spec/Documentation:** `.claude/plans/ai-chat-sidebar.md`, `.claude/plans/gemini-integration.md`, `docs/setup.md`
 **Dependencies:** Markdown Editor, Authentication System
 **Status:** complete
 
@@ -52,6 +52,13 @@ Use this template for all work items:
   - [x] Add API_KEY_ENCRYPTION_KEY to dev environment (docker-compose.override.yml)
   - [x] Add encryption key secret to CDK/Secrets Manager
   - [x] Create local development setup documentation
+- [x] Multi-Provider Support (2026-01-09)
+  - [x] Provider abstraction layer (api/src/providers/)
+  - [x] Anthropic provider with model selection
+  - [x] Google Gemini provider (free tier)
+  - [x] Model selector dropdown in chat sidebar
+  - [x] Test button for API keys in settings
+  - [x] GET /api/chat/models and /api/chat/providers endpoints
 
 ---
 

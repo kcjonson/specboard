@@ -85,6 +85,9 @@
 	--z-dropdown: 50;
 	--z-modal: 100;
 	--z-tooltip: 150;
+
+	/* Layout */
+	--header-height: 57px;
 }
 
 /* Dark mode - respects system preference */

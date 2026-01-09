@@ -99,8 +99,13 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	const isCurrentUserSuperadmin = currentUser.username === 'superadmin' && isCurrentUserAdmin;
 
 	// Initialize form when user data loads
+	// Wait for currentUser model to finish loading before initializing
+	const isUserDataReady = isViewingOther
+		? !!targetUser
+		: (!!currentUser.id && !currentUser.$meta.working);
+
 	useEffect(() => {
-		if (user && !initialized) {
+		if (user && isUserDataReady && !initialized) {
 			setFirstName(user.first_name || '');
 			setLastName(user.last_name || '');
 			setUsername(user.username || '');
@@ -110,7 +115,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 			setEmailVerified(user.email_verified ?? false);
 			setInitialized(true);
 		}
-	}, [user, initialized]);
+	}, [user, isUserDataReady, initialized]);
 
 	// Reset form when switching users
 	useEffect(() => {
@@ -266,8 +271,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 		<Page title={pageTitle}>
 			<div class={styles.container}>
 				<div class={styles.content}>
-					<div class={styles.card}>
-					<h1 class={styles.title}>{pageTitle}</h1>
+					<h1 class={styles.pageTitle}>{pageTitle}</h1>
 
 					{message && (
 						<div class={`${styles.message} ${styles[message.type]}`}>
@@ -275,59 +279,132 @@ export function UserSettings(props: RouteProps): JSX.Element {
 						</div>
 					)}
 
-					<div class={styles.form}>
-						<div class={styles.row}>
-							<div class={styles.field}>
-								<label class={styles.label} htmlFor="firstName">
-									First Name
-								</label>
-								<Text
-									id="firstName"
-									value={firstName}
-									onInput={(e) => { setFirstName((e.target as HTMLInputElement).value); if (message) setMessage(null); }}
-									placeholder="First name"
-								/>
-							</div>
-
-							<div class={styles.field}>
-								<label class={styles.label} htmlFor="lastName">
-									Last Name
-								</label>
-								<Text
-									id="lastName"
-									value={lastName}
-									onInput={(e) => { setLastName((e.target as HTMLInputElement).value); if (message) setMessage(null); }}
-									placeholder="Last name"
-								/>
-							</div>
-						</div>
-
-						{isCurrentUserAdmin ? (
-							<>
+					{/* Section 1: Personal Info */}
+					<div class={styles.card}>
+						<h2 class={styles.sectionTitle}>Personal Info</h2>
+						<div class={styles.form}>
+							<div class={styles.row}>
 								<div class={styles.field}>
-									<label class={styles.label} htmlFor="username">
-										Username
+									<label class={styles.label} htmlFor="firstName">
+										First Name
 									</label>
 									<Text
-										id="username"
-										value={username}
-										onInput={(e) => { setUsername((e.target as HTMLInputElement).value); if (message) setMessage(null); }}
-										placeholder="Username"
+										id="firstName"
+										value={firstName}
+										onInput={(e) => { setFirstName((e.target as HTMLInputElement).value); if (message) setMessage(null); }}
+										placeholder="First name"
 									/>
 								</div>
 
 								<div class={styles.field}>
-									<label class={styles.label} htmlFor="email">
-										Email
+									<label class={styles.label} htmlFor="lastName">
+										Last Name
 									</label>
 									<Text
-										id="email"
-										value={email}
-										onInput={(e) => { setEmail((e.target as HTMLInputElement).value); if (message) setMessage(null); }}
-										placeholder="Email address"
-										type="email"
+										id="lastName"
+										value={lastName}
+										onInput={(e) => { setLastName((e.target as HTMLInputElement).value); if (message) setMessage(null); }}
+										placeholder="Last name"
 									/>
-									<label class={styles.checkboxInline}>
+								</div>
+							</div>
+
+							{isCurrentUserAdmin ? (
+								<>
+									<div class={styles.field}>
+										<label class={styles.label} htmlFor="username">
+											Username
+										</label>
+										<Text
+											id="username"
+											value={username}
+											onInput={(e) => { setUsername((e.target as HTMLInputElement).value); if (message) setMessage(null); }}
+											placeholder="Username"
+										/>
+									</div>
+
+									<div class={styles.field}>
+										<label class={styles.label} htmlFor="email">
+											Email
+										</label>
+										<Text
+											id="email"
+											value={email}
+											onInput={(e) => { setEmail((e.target as HTMLInputElement).value); if (message) setMessage(null); }}
+											placeholder="Email address"
+											type="email"
+										/>
+									</div>
+								</>
+							) : (
+								<>
+									<div class={styles.field}>
+										<label class={styles.label} htmlFor="email">
+											Email
+										</label>
+										<Text
+											id="email"
+											value={user.email || ''}
+											disabled
+											placeholder="Email address"
+										/>
+										<span class={styles.hint}>Email cannot be changed</span>
+									</div>
+									<div class={styles.statusRow}>
+										<span class={styles.statusLabel}>Email Status:</span>
+										{user.email_verified ? (
+											<span class={styles.statusVerified}>Verified</span>
+										) : (
+											<span class={styles.statusUnverified}>Not Verified</span>
+										)}
+									</div>
+								</>
+							)}
+
+							<div class={styles.actions}>
+								<Button onClick={handleSave} disabled={!canSave}>
+									{saving ? 'Saving...' : 'Save Changes'}
+								</Button>
+							</div>
+						</div>
+					</div>
+
+					{/* Section 2: Security */}
+					{!isViewingOther && (
+						<div class={styles.card}>
+							<h2 class={styles.sectionTitle}>Security</h2>
+							<Button variant="secondary" onClick={() => setShowPasswordDialog(true)}>
+								Change Password
+							</Button>
+						</div>
+					)}
+
+					{isViewingOther && isCurrentUserSuperadmin && (
+						<div class={styles.card}>
+							<h2 class={styles.sectionTitle}>Security</h2>
+							<Button variant="secondary" onClick={() => setShowSetPasswordDialog(true)}>
+								Set Password
+							</Button>
+						</div>
+					)}
+
+					{/* Section 3: Authorized Apps */}
+					{!isViewingOther && (
+						<AuthorizedApps authorizations={authorizations} />
+					)}
+
+					{/* Section 4: API Keys */}
+					{!isViewingOther && (
+						<ApiKeys />
+					)}
+
+					{/* Section 5: Admin (admin only) */}
+					{isCurrentUserAdmin && (
+						<div class={styles.card}>
+							<h2 class={styles.sectionTitle}>Admin</h2>
+							<div class={styles.form}>
+								<div class={styles.checkboxRow}>
+									<label class={styles.checkbox}>
 										<input
 											type="checkbox"
 											checked={emailVerified}
@@ -335,9 +412,6 @@ export function UserSettings(props: RouteProps): JSX.Element {
 										/>
 										<span>Email Verified</span>
 									</label>
-								</div>
-
-								<div class={styles.checkboxRow}>
 									<label class={styles.checkbox}>
 										<input
 											type="checkbox"
@@ -355,63 +429,13 @@ export function UserSettings(props: RouteProps): JSX.Element {
 										<span>Active</span>
 									</label>
 								</div>
-							</>
-						) : (
-							<>
-								<div class={styles.field}>
-									<label class={styles.label} htmlFor="email">
-										Email
-									</label>
-									<Text
-										id="email"
-										value={user.email || ''}
-										disabled
-										placeholder="Email address"
-									/>
-									<span class={styles.hint}>Email cannot be changed</span>
+								<div class={styles.actions}>
+									<Button onClick={handleSave} disabled={!canSave}>
+										{saving ? 'Saving...' : 'Save Changes'}
+									</Button>
 								</div>
-								<div class={styles.statusRow}>
-									<span class={styles.statusLabel}>Email Status:</span>
-									{user.email_verified ? (
-										<span class={styles.statusVerified}>Verified</span>
-									) : (
-										<span class={styles.statusUnverified}>Not Verified</span>
-									)}
-								</div>
-							</>
-						)}
-
-						<div class={styles.actions}>
-							<Button onClick={handleSave} disabled={!canSave}>
-								{saving ? 'Saving...' : 'Save Changes'}
-							</Button>
+							</div>
 						</div>
-
-						{!isViewingOther && (
-							<div class={styles.securitySection}>
-								<h3 class={styles.sectionTitle}>Security</h3>
-								<Button variant="secondary" onClick={() => setShowPasswordDialog(true)}>
-									Change Password
-								</Button>
-							</div>
-						)}
-
-						{isViewingOther && isCurrentUserSuperadmin && (
-							<div class={styles.securitySection}>
-								<h3 class={styles.sectionTitle}>Security</h3>
-								<Button variant="secondary" onClick={() => setShowSetPasswordDialog(true)}>
-									Set Password
-								</Button>
-							</div>
-						)}
-					</div>
-
-					{!isViewingOther && (
-						<AuthorizedApps authorizations={authorizations} />
-					)}
-
-					{!isViewingOther && (
-						<ApiKeys />
 					)}
 
 					<ChangePasswordDialog
@@ -429,7 +453,6 @@ export function UserSettings(props: RouteProps): JSX.Element {
 					)}
 				</div>
 			</div>
-		</div>
 		</Page>
 	);
 }

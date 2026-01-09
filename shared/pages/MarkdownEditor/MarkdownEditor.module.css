@@ -17,12 +17,12 @@
 .editorWithComments {
 	flex: 1;
 	display: flex;
-	overflow: hidden;
+	overflow-y: auto;
+	overflow-x: hidden;
 }
 
 .editorWrapper {
 	flex: 1;
-	overflow: auto;
 	padding: var(--space-6);
 }
 

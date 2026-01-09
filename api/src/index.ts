@@ -93,9 +93,11 @@ import {
 	handleListApiKeys,
 	handleCreateApiKey,
 	handleDeleteApiKey,
+	handlePreValidateApiKey,
 	handleValidateApiKey,
 } from './handlers/api-keys.js';
 import { handleChat } from './handlers/chat.js';
+import { handleGetChatModels, handleGetChatProviders } from './handlers/chat-models.js';
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('api');
@@ -329,6 +331,7 @@ app.delete('/api/users/:id/tokens/:tokenId', (context) => handleRevokeUserToken(
 // User API key management
 app.get('/api/users/me/api-keys', (context) => handleListApiKeys(context, redis));
 app.post('/api/users/me/api-keys', (context) => handleCreateApiKey(context, redis));
+app.post('/api/users/me/api-keys/validate', (context) => handlePreValidateApiKey(context, redis));
 app.delete('/api/users/me/api-keys/:provider', (context) => handleDeleteApiKey(context, redis));
 app.post('/api/users/me/api-keys/:provider/validate', (context) => handleValidateApiKey(context, redis));
 
@@ -376,6 +379,8 @@ app.get('/api/projects/:projectId/tasks/:taskId/progress', handleListTaskProgres
 app.post('/api/projects/:projectId/tasks/:taskId/progress', handleCreateTaskProgress);
 
 // AI Chat
+app.get('/api/chat/models', (context) => handleGetChatModels(context, redis));
+app.get('/api/chat/providers', (context) => handleGetChatProviders(context, redis));
 app.post('/api/chat', (context) => handleChat(context, redis));
 
 // Start server

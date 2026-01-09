@@ -1,18 +1,9 @@
+/* global URL */
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Icon } from '@doc-platform/ui';
 import { fetchClient } from '@doc-platform/fetch';
 import styles from './ApiKeys.module.css';
-
-// Provider display names
-const PROVIDER_NAMES: Record<string, string> = {
-	anthropic: 'Anthropic',
-};
-
-// Provider descriptions
-const PROVIDER_DESCRIPTIONS: Record<string, string> = {
-	anthropic: 'Powers the AI Chat sidebar in the editor',
-};
 
 interface ApiKey {
 	provider: string;
@@ -20,6 +11,15 @@ interface ApiKey {
 	masked_key: string;
 	last_used_at: string | null;
 	created_at: string;
+}
+
+interface ProviderConfig {
+	name: string;
+	displayName: string;
+	description: string;
+	keyPlaceholder: string;
+	consoleUrl: string;
+	hasKey: boolean;
 }
 
 function formatRelativeTime(dateString: string | null): string {
@@ -43,16 +43,21 @@ function formatRelativeTime(dateString: string | null): string {
 export function ApiKeys(): JSX.Element {
 	// API keys list
 	const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+	const [providers, setProviders] = useState<ProviderConfig[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
 	// Add key dialog
 	const [showAddDialog, setShowAddDialog] = useState(false);
+	const [selectedProvider, setSelectedProvider] = useState<string>('');
 	const [newKeyName, setNewKeyName] = useState('');
 	const [newApiKey, setNewApiKey] = useState('');
 	const [addError, setAddError] = useState<string | null>(null);
-	const [adding, setAdding] = useState(false);
 	const [validating, setValidating] = useState(false);
+
+	// Test key state
+	const [testing, setTesting] = useState<string | null>(null);
+	const [testResult, setTestResult] = useState<{ provider: string; success: boolean; error?: string } | null>(null);
 
 	// Delete confirmation
 	const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -60,16 +65,28 @@ export function ApiKeys(): JSX.Element {
 
 	// Dialog refs for focus management
 	const dialogRef = useRef<HTMLDivElement>(null);
-	const keyNameInputRef = useRef<HTMLInputElement>(null);
+	const providerSelectRef = useRef<HTMLSelectElement>(null);
 	const previousFocusRef = useRef<HTMLElement | null>(null);
+
+	// Track mounted state for async operations
+	const mountedRef = useRef(true);
+	useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+		};
+	}, []);
+
+	// Get current provider config
+	const currentProviderConfig = providers.find(p => p.name === selectedProvider);
 
 	// Close dialog handler
 	const closeDialog = useCallback((): void => {
 		setShowAddDialog(false);
+		setSelectedProvider('');
 		setNewKeyName('');
 		setNewApiKey('');
 		setAddError(null);
-		// Restore focus to previously focused element
 		previousFocusRef.current?.focus();
 	}, []);
 
@@ -77,16 +94,12 @@ export function ApiKeys(): JSX.Element {
 	useEffect(() => {
 		if (!showAddDialog) return;
 
-		// Store previously focused element
 		previousFocusRef.current = document.activeElement as HTMLElement;
 
-		// Auto-focus the key name input
-		// Use timeout to ensure dialog is rendered
 		const timer = setTimeout(() => {
-			keyNameInputRef.current?.focus();
+			providerSelectRef.current?.focus();
 		}, 0);
 
-		// Handle escape key
 		const handleKeyDown = (e: KeyboardEvent): void => {
 			if (e.key === 'Escape') {
 				e.preventDefault();
@@ -94,10 +107,9 @@ export function ApiKeys(): JSX.Element {
 				return;
 			}
 
-			// Focus trap: Tab key cycles within dialog
 			if (e.key === 'Tab' && dialogRef.current) {
 				const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(
-					'button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+					'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
 				);
 				const firstElement = focusableElements[0];
 				const lastElement = focusableElements[focusableElements.length - 1];
@@ -120,14 +132,18 @@ export function ApiKeys(): JSX.Element {
 		};
 	}, [showAddDialog, closeDialog]);
 
-	// Load API keys
+	// Load API keys and providers
 	useEffect(() => {
-		async function loadKeys(): Promise<void> {
+		async function loadData(): Promise<void> {
 			setLoading(true);
 			setError(null);
 			try {
-				const keys = await fetchClient.get<ApiKey[]>('/api/users/me/api-keys');
+				const [keys, providersResponse] = await Promise.all([
+					fetchClient.get<ApiKey[]>('/api/users/me/api-keys'),
+					fetchClient.get<{ providers: ProviderConfig[] }>('/api/chat/providers'),
+				]);
 				setApiKeys(keys);
+				setProviders(providersResponse.providers);
 			} catch (err: unknown) {
 				const message = err instanceof Error ? err.message : 'Failed to load API keys';
 				setError(message);
@@ -135,64 +151,101 @@ export function ApiKeys(): JSX.Element {
 				setLoading(false);
 			}
 		}
-		loadKeys();
+		loadData();
 	}, []);
 
-	// Handle add key
-	const handleAdd = async (): Promise<void> => {
-		if (!newKeyName.trim() || !newApiKey.trim()) return;
-
-		setAddError(null);
-		setAdding(true);
-		try {
-			const key = await fetchClient.post<ApiKey>('/api/users/me/api-keys', {
-				provider: 'anthropic',
-				key_name: newKeyName.trim(),
-				api_key: newApiKey.trim(),
-			});
-			setApiKeys([key, ...apiKeys.filter(k => k.provider !== 'anthropic')]);
-			closeDialog();
-		} catch (err: unknown) {
-			const message = err instanceof Error ? err.message : 'Failed to add API key';
-			setAddError(message);
-		} finally {
-			setAdding(false);
-		}
+	// Open add dialog for a specific provider
+	const openAddDialog = (providerName?: string): void => {
+		setSelectedProvider(providerName || (providers[0]?.name || ''));
+		setShowAddDialog(true);
 	};
 
-	// Handle validate key
+	// Handle add key (validates first, then stores)
 	const handleValidate = async (): Promise<void> => {
-		if (!newKeyName.trim() || !newApiKey.trim()) return;
+		if (!selectedProvider || !newKeyName.trim() || !newApiKey.trim()) return;
 
 		setAddError(null);
 		setValidating(true);
 		try {
-			// First add the key, then validate it
-			await fetchClient.post<ApiKey>('/api/users/me/api-keys', {
-				provider: 'anthropic',
+			// Validate first, before storing the key
+			const result = await fetchClient.post<{ valid: boolean; error?: string }>(
+				`/api/users/me/api-keys/validate`,
+				{
+					provider: selectedProvider,
+					api_key: newApiKey.trim(),
+				}
+			);
+
+			if (!mountedRef.current) return;
+
+			if (!result.valid) {
+				setAddError(result.error || 'API key is invalid');
+				return;
+			}
+
+			// Only store the key after successful validation
+			const key = await fetchClient.post<ApiKey>('/api/users/me/api-keys', {
+				provider: selectedProvider,
 				key_name: newKeyName.trim(),
 				api_key: newApiKey.trim(),
 			});
 
-			const result = await fetchClient.post<{ valid: boolean; error?: string }>(
-				'/api/users/me/api-keys/anthropic/validate'
-			);
+			if (!mountedRef.current) return;
 
-			if (!result.valid) {
-				setAddError(result.error || 'API key is invalid');
-				// Remove the invalid key
-				await fetchClient.delete('/api/users/me/api-keys/anthropic');
-			} else {
-				// Reload to get the new key and close dialog with focus restoration
-				const keys = await fetchClient.get<ApiKey[]>('/api/users/me/api-keys');
-				setApiKeys(keys);
-				closeDialog();
-			}
+			setApiKeys([key, ...apiKeys.filter(k => k.provider !== selectedProvider)]);
+			setProviders(providers.map(p =>
+				p.name === selectedProvider ? { ...p, hasKey: true } : p
+			));
+			closeDialog();
 		} catch (err: unknown) {
+			if (!mountedRef.current) return;
 			const message = err instanceof Error ? err.message : 'Failed to validate API key';
 			setAddError(message);
 		} finally {
-			setValidating(false);
+			if (mountedRef.current) {
+				setValidating(false);
+			}
+		}
+	};
+
+	// Handle test existing key
+	const handleTestKey = async (provider: string): Promise<void> => {
+		setTesting(provider);
+		setTestResult(null);
+		try {
+			const result = await fetchClient.post<{ valid: boolean; error?: string }>(
+				`/api/users/me/api-keys/${provider}/validate`
+			);
+			if (!mountedRef.current) return;
+			setTestResult({
+				provider,
+				success: result.valid,
+				error: result.error,
+			});
+			// Auto-dismiss test result after 5 seconds
+			setTimeout(() => {
+				if (mountedRef.current) {
+					setTestResult(prev => prev?.provider === provider ? null : prev);
+				}
+			}, 5000);
+		} catch (err: unknown) {
+			if (!mountedRef.current) return;
+			const message = err instanceof Error ? err.message : 'Test failed';
+			setTestResult({
+				provider,
+				success: false,
+				error: message,
+			});
+			// Auto-dismiss error after 5 seconds
+			setTimeout(() => {
+				if (mountedRef.current) {
+					setTestResult(prev => prev?.provider === provider ? null : prev);
+				}
+			}, 5000);
+		} finally {
+			if (mountedRef.current) {
+				setTesting(null);
+			}
 		}
 	};
 
@@ -202,7 +255,11 @@ export function ApiKeys(): JSX.Element {
 		try {
 			await fetchClient.delete(`/api/users/me/api-keys/${provider}`);
 			setApiKeys(apiKeys.filter(k => k.provider !== provider));
+			setProviders(providers.map(p =>
+				p.name === provider ? { ...p, hasKey: false } : p
+			));
 			setConfirmDelete(null);
+			setTestResult(null);
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : 'Failed to delete API key';
 			setError(message);
@@ -211,14 +268,14 @@ export function ApiKeys(): JSX.Element {
 		}
 	};
 
-	// Check if Anthropic key exists
-	const hasAnthropicKey = apiKeys.some(k => k.provider === 'anthropic');
+	// Providers without keys
+	const providersWithoutKeys = providers.filter(p => !p.hasKey);
 
 	return (
 		<div class={styles.container}>
 			<h2 class={styles.title}>API Keys</h2>
 			<p class={styles.description}>
-				Manage API keys for external services. Your keys are encrypted and stored securely.
+				Manage API keys for AI providers. Your keys are encrypted and stored securely.
 			</p>
 
 			{error && (
@@ -239,76 +296,96 @@ export function ApiKeys(): JSX.Element {
 				<div class={styles.empty}>
 					<p>No API keys configured.</p>
 					<Button
-						onClick={() => setShowAddDialog(true)}
+						onClick={() => openAddDialog()}
 						class={styles.primaryButton}
 					>
-						Add Anthropic API Key
+						Add API Key
 					</Button>
 				</div>
 			) : (
 				<>
 					<div class={styles.list}>
-						{apiKeys.map((key) => (
-							<div key={key.provider} class={styles.item}>
-								<div class={styles.itemHeader}>
-									<span class={styles.icon}><Icon name="key" class="size-lg" /></span>
-									<div class={styles.itemInfo}>
-										<div class={styles.providerName}>
-											{PROVIDER_NAMES[key.provider] || key.provider}
+						{apiKeys.map((key) => {
+							const providerConfig = providers.find(p => p.name === key.provider);
+							return (
+								<div key={key.provider} class={styles.item}>
+									<div class={styles.itemHeader}>
+										<span class={styles.icon}><Icon name="key" class="size-lg" /></span>
+										<div class={styles.itemInfo}>
+											<div class={styles.providerName}>
+												{providerConfig?.displayName || key.provider}
+											</div>
+											<div class={styles.keyName}>{key.key_name}</div>
 										</div>
-										<div class={styles.keyName}>{key.key_name}</div>
 									</div>
-								</div>
 
-								<div class={styles.itemDetails}>
-									<div class={styles.maskedKey}>
-										<code>{key.masked_key}</code>
-									</div>
-									<div class={styles.dates}>
-										<span>Last used {formatRelativeTime(key.last_used_at)}</span>
-									</div>
-								</div>
-
-								<div class={styles.itemActions}>
-									{confirmDelete === key.provider ? (
-										<div class={styles.confirmDelete}>
-											<span class={styles.confirmText}>Delete this key?</span>
-											<Button
-												onClick={() => handleDelete(key.provider)}
-												class={styles.dangerButton}
-												disabled={deleting === key.provider}
-											>
-												{deleting === key.provider ? 'Deleting...' : 'Yes, Delete'}
-											</Button>
-											<Button
-												onClick={() => setConfirmDelete(null)}
-												class={styles.ghostButton}
-												disabled={deleting === key.provider}
-											>
-												Cancel
-											</Button>
+									<div class={styles.itemDetails}>
+										<div class={styles.maskedKey}>
+											<code>{key.masked_key}</code>
 										</div>
-									) : (
-										<Button
-											onClick={() => setConfirmDelete(key.provider)}
-											class={styles.ghostButton}
-										>
-											Delete
-										</Button>
-									)}
+										<div class={styles.dates}>
+											<span>Last used {formatRelativeTime(key.last_used_at)}</span>
+										</div>
+										{testResult?.provider === key.provider && (
+											<div class={testResult.success ? styles.testSuccess : styles.testError}>
+												{testResult.success ? 'Key is valid' : testResult.error || 'Key is invalid'}
+											</div>
+										)}
+									</div>
+
+									<div class={styles.itemActions}>
+										{confirmDelete === key.provider ? (
+											<div class={styles.confirmDelete}>
+												<span class={styles.confirmText}>Delete this key?</span>
+												<Button
+													onClick={() => handleDelete(key.provider)}
+													class={styles.dangerButton}
+													disabled={deleting === key.provider}
+												>
+													{deleting === key.provider ? 'Deleting...' : 'Yes, Delete'}
+												</Button>
+												<Button
+													onClick={() => setConfirmDelete(null)}
+													class={styles.ghostButton}
+													disabled={deleting === key.provider}
+												>
+													Cancel
+												</Button>
+											</div>
+										) : (
+											<>
+												<Button
+													onClick={() => handleTestKey(key.provider)}
+													class={styles.ghostButton}
+													disabled={testing === key.provider}
+												>
+													{testing === key.provider ? 'Testing...' : 'Test'}
+												</Button>
+												<Button
+													onClick={() => setConfirmDelete(key.provider)}
+													class={styles.ghostButton}
+												>
+													Delete
+												</Button>
+											</>
+										)}
+									</div>
 								</div>
-							</div>
-						))}
+							);
+						})}
 					</div>
 
-					{!hasAnthropicKey && (
+					{providersWithoutKeys.length > 0 && (
 						<div class={styles.addSection}>
-							<Button
-								onClick={() => setShowAddDialog(true)}
-								class={styles.primaryButton}
-							>
-								Add Anthropic API Key
-							</Button>
+							{providersWithoutKeys.map(provider => (
+								<Button
+									key={provider.name}
+									onClick={() => openAddDialog(provider.name)}
+									class={styles.ghostButton}
+								>
+									Add {provider.displayName} Key
+								</Button>
+							))}
 						</div>
 					)}
 				</>
@@ -329,27 +406,45 @@ export function ApiKeys(): JSX.Element {
 						aria-modal="true"
 						aria-labelledby="add-key-dialog-title"
 					>
-						<h3 id="add-key-dialog-title" class={styles.dialogTitle}>Add Anthropic API Key</h3>
-						<p class={styles.dialogDescription}>
-							{PROVIDER_DESCRIPTIONS.anthropic}. Get your API key from{' '}
-							<a
-								href="https://console.anthropic.com/settings/keys"
-								target="_blank"
-								rel="noopener noreferrer"
-								class={styles.link}
-							>
-								console.anthropic.com
-							</a>
-						</p>
+						<h3 id="add-key-dialog-title" class={styles.dialogTitle}>Add API Key</h3>
 
 						{addError && (
 							<div class={styles.dialogError}>{addError}</div>
 						)}
 
 						<div class={styles.formField}>
+							<label class={styles.label} for="provider">Provider</label>
+							<select
+								ref={providerSelectRef}
+								id="provider"
+								class={styles.input}
+								value={selectedProvider}
+								onChange={(e) => setSelectedProvider((e.target as HTMLSelectElement).value)}
+							>
+								{providers.filter(p => !p.hasKey).map(provider => (
+									<option key={provider.name} value={provider.name}>
+										{provider.displayName}
+									</option>
+								))}
+							</select>
+							{currentProviderConfig && (
+								<p class={styles.hint}>
+									{currentProviderConfig.description}. Get your API key from{' '}
+									<a
+										href={currentProviderConfig.consoleUrl}
+										target="_blank"
+										rel="noopener noreferrer"
+										class={styles.link}
+									>
+										{new URL(currentProviderConfig.consoleUrl).hostname}
+									</a>
+								</p>
+							)}
+						</div>
+
+						<div class={styles.formField}>
 							<label class={styles.label} for="key-name">Key Name</label>
 							<input
-								ref={keyNameInputRef}
 								id="key-name"
 								type="text"
 								class={styles.input}
@@ -365,7 +460,7 @@ export function ApiKeys(): JSX.Element {
 								id="api-key"
 								type="password"
 								class={styles.input}
-								placeholder="sk-ant-..."
+								placeholder={currentProviderConfig?.keyPlaceholder || 'Enter API key'}
 								value={newApiKey}
 								onInput={(e) => setNewApiKey((e.target as HTMLInputElement).value)}
 							/>
@@ -375,23 +470,16 @@ export function ApiKeys(): JSX.Element {
 							<Button
 								onClick={closeDialog}
 								class={styles.ghostButton}
-								disabled={adding || validating}
+								disabled={validating}
 							>
 								Cancel
 							</Button>
 							<Button
 								onClick={handleValidate}
-								class={styles.ghostButton}
-								disabled={!newKeyName.trim() || !newApiKey.trim() || adding || validating}
-							>
-								{validating ? 'Validating...' : 'Validate & Add'}
-							</Button>
-							<Button
-								onClick={handleAdd}
 								class={styles.primaryButton}
-								disabled={!newKeyName.trim() || !newApiKey.trim() || adding || validating}
+								disabled={!selectedProvider || !newKeyName.trim() || !newApiKey.trim() || validating}
 							>
-								{adding ? 'Adding...' : 'Add Key'}
+								{validating ? 'Validating...' : 'Add Key'}
 							</Button>
 						</div>
 					</div>
