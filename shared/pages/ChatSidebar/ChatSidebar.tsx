@@ -27,6 +27,7 @@ interface ProviderModels {
 interface ChatSidebarProps {
 	documentContent?: string;
 	documentPath?: string;
+	onApplyEdit?: (newMarkdown: string) => void;
 }
 
 // Throttle interval for streaming updates (ms)
@@ -54,6 +55,7 @@ function createModelSelection(provider: string, model: string): string {
 export function ChatSidebar({
 	documentContent,
 	documentPath,
+	onApplyEdit,
 }: ChatSidebarProps): JSX.Element {
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState('');
@@ -438,6 +440,8 @@ export function ChatSidebar({
 							role={message.role}
 							content={message.content}
 							isStreaming={isStreaming && index === messages.length - 1 && message.role === 'assistant'}
+							currentDocument={documentContent}
+							onApplyEdit={onApplyEdit}
 						/>
 					))
 				)}

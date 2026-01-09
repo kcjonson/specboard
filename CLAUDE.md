@@ -21,6 +21,23 @@ Built with Preact, TypeScript, and AWS services. For full details, see [docs/tec
 
 **You are a professional software developer working on production-quality applications.**
 
+### Local Development: Always Use Docker
+
+**CRITICAL: NEVER run services locally. Always use Docker containers.**
+
+```bash
+# Start all services (the ONLY way to run dev)
+docker compose up
+
+# Rebuild after code changes
+pnpm build && docker compose build && docker compose up
+```
+
+- All services run in containers: api, frontend, db, redis, nginx, mcp
+- Access the app at http://localhost (port 80 via nginx)
+- Never use `pnpm dev` or run services directly on the host
+- See [docs/setup.md](docs/setup.md) for full setup instructions
+
 ### Workflow: Before Writing Code
 
 **ALWAYS follow this process:**

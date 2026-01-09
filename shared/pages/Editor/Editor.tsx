@@ -15,7 +15,7 @@ import {
 import { fetchClient } from '@doc-platform/fetch';
 import { captureError } from '@doc-platform/telemetry';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
-import { MarkdownEditor, fromMarkdown, toMarkdown } from '../MarkdownEditor';
+import { MarkdownEditor, fromMarkdown, toMarkdown, type MarkdownEditorHandle } from '../MarkdownEditor';
 import { ChatSidebar } from '../ChatSidebar';
 import { EditorHeader } from './EditorHeader';
 import { RecoveryDialog } from './RecoveryDialog';
@@ -111,6 +111,9 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Reference to the renameFile function from FileBrowser
 	const renameFileRef = useRef<((path: string, newFilename: string) => Promise<string>) | null>(null);
+
+	// Reference to MarkdownEditor for imperative operations (e.g., applying AI edits)
+	const editorRef = useRef<MarkdownEditorHandle>(null);
 
 	// Epic linking state
 	const [linkedEpicId, setLinkedEpicId] = useState<string | undefined>();
@@ -364,6 +367,18 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [documentModel]);
 
+	// Handle revert - reload file from server, discarding local changes
+	const handleRevert = useCallback(async () => {
+		const { filePath, projectId: pid } = documentModel;
+		if (!filePath || !pid) return;
+
+		// Clear any cached local changes
+		clearLocalStorage(pid, filePath);
+
+		// Reload from server
+		await loadFileFromServer(filePath);
+	}, [documentModel, loadFileFromServer]);
+
 	// Debounced localStorage persistence on content change
 	useEffect(() => {
 		const { filePath, projectId: pid, content, comments } = documentModel;
@@ -469,6 +484,18 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [projectId, documentModel]);
 
+	// Handle applying AI-suggested edits from ChatSidebar
+	const handleApplyEdit = useCallback((newMarkdown: string) => {
+		const { content: slateContent, comments } = fromMarkdown(newMarkdown);
+		// Use Slate Transforms API via ref to properly update editor content
+		// This maintains undo history and updates the DOM correctly
+		if (editorRef.current) {
+			editorRef.current.replaceContent(slateContent);
+		}
+		// Update comments in the model (these aren't in Slate)
+		documentModel.set({ comments, dirty: true });
+	}, [documentModel]);
+
 	return (
 		<Page projectId={projectId} activeTab="Pages">
 			<div class={styles.body}>
@@ -525,7 +552,7 @@ export function Editor(props: RouteProps): JSX.Element {
 								isDirty={documentModel.isDirty}
 								saving={documentModel.saving}
 								onSave={handleSave}
-								onNewPage={handleNewPage}
+								onRevert={handleRevert}
 								onRename={handleRename}
 								linkedEpicId={linkedEpicId}
 								creatingEpic={creatingEpic}
@@ -541,11 +568,13 @@ export function Editor(props: RouteProps): JSX.Element {
 										onAddComment={handleAddComment}
 										onReply={handleReplyToComment}
 										onToggleResolved={handleToggleResolved}
+										editorRef={editorRef}
 									/>
 								</div>
 								<ChatSidebar
 									documentContent={toMarkdown(documentModel.content, documentModel.comments)}
 									documentPath={documentModel.filePath}
+									onApplyEdit={handleApplyEdit}
 								/>
 							</div>
 						</>

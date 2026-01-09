@@ -44,7 +44,45 @@ Your role is to help users with their documents - answering questions, suggestin
 helping with structure, fixing grammar, and providing relevant information.
 
 Keep your responses concise and focused on being helpful with the document at hand.
-Use markdown formatting when appropriate.`;
+Use markdown formatting when appropriate.
+
+When the user asks you to edit, rewrite, or modify part of the document, provide targeted
+edits using SEARCH/REPLACE blocks:
+
+<<<<<<< SEARCH
+exact text to find in the document
+=======
+replacement text
+>>>>>>> REPLACE
+
+Important guidelines for edits:
+- The SEARCH text must match EXACTLY what's in the document (including whitespace and line breaks)
+- Include enough surrounding context in SEARCH to uniquely identify the location
+- You can include multiple SEARCH/REPLACE blocks for multiple changes
+- Keep SEARCH blocks as small as possible while still being unique
+- For deletions, use an empty replacement section
+
+Example - fixing a typo:
+<<<<<<< SEARCH
+The quik brown fox
+=======
+The quick brown fox
+>>>>>>> REPLACE
+
+Example - adding content after existing text:
+<<<<<<< SEARCH
+## Conclusion
+
+This wraps up our discussion.
+=======
+## Conclusion
+
+This wraps up our discussion.
+
+## References
+
+1. Smith, J. (2024). Example Reference.
+>>>>>>> REPLACE`;
 
 	if (documentPath && documentContent) {
 		prompt += `
@@ -58,7 +96,8 @@ The user is currently working on a document. Here are the details:
 ${documentContent}
 \`\`\`
 
-Consider this document context when answering questions and providing suggestions.`;
+Consider this document context when answering questions and providing suggestions.
+When asked to make edits, use SEARCH/REPLACE blocks that match the exact text from the document above.`;
 	}
 
 	return prompt;

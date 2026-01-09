@@ -14,6 +14,8 @@ This guide covers setting up doc-platform for local development.
 
 ## Quick Start
 
+> **Important:** All development runs in Docker containers. Never run services locally with `pnpm dev`.
+
 ```bash
 # Install dependencies
 pnpm install
@@ -23,6 +25,13 @@ docker compose up
 
 # Access the app
 open http://localhost
+```
+
+### After Code Changes
+
+```bash
+# Rebuild and restart
+pnpm build && docker compose build && docker compose up
 ```
 
 ---
@@ -75,20 +84,6 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 In production, this key is stored in AWS Secrets Manager and injected automatically.
-
----
-
-## Hybrid Development Mode
-
-For faster frontend iteration, run only the backend services in Docker:
-
-```bash
-# Start backend services only
-docker compose up db redis api
-
-# Run frontend with hot reload
-pnpm --filter web dev
-```
 
 ---
 
