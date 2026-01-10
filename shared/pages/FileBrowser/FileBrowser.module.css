@@ -208,3 +208,13 @@
 .newFileInput:focus {
 	border-color: var(--color-primary);
 }
+
+/* Deleted files in tree */
+.treeItem.deleted {
+	opacity: 0.5;
+}
+
+.treeItem.deleted .fileName {
+	text-decoration: line-through;
+	color: var(--color-text-muted);
+}

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { FileTreeModel, useModel } from '@doc-platform/models';
+import { FileTreeModel, useModel, type GitStatusModel } from '@doc-platform/models';
 import { Button, Icon } from '@doc-platform/ui';
 import { fetchClient } from '@doc-platform/fetch';
+import { GitStatusBar } from './GitStatusBar';
+import { PullButton } from './PullButton';
+import { FileStatus } from './FileStatus';
 import styles from './FileBrowser.module.css';
 
 // Timing constants for blur handlers and rename interactions
@@ -35,6 +38,8 @@ export interface FileBrowserProps {
 	projectId: string;
 	/** Currently selected file path */
 	selectedPath?: string;
+	/** Git status model for showing uncommitted changes */
+	gitStatus?: GitStatusModel;
 	/** Callback when file is selected */
 	onFileSelect?: (path: string) => void;
 	/** Callback when a new file is created */
@@ -54,6 +59,7 @@ export interface FileBrowserProps {
 export function FileBrowser({
 	projectId,
 	selectedPath,
+	gitStatus,
 	onFileSelect,
 	onFileCreated,
 	onCancelNewFile,
@@ -375,6 +381,7 @@ export function FileBrowser({
 
 	return (
 		<div class={`${styles.container} ${className || ''}`}>
+			{gitStatus && <GitStatusBar gitStatus={gitStatus} />}
 			<div class={styles.header}>Files</div>
 			<div class={styles.content}>
 				<div class={styles.tree}>
@@ -385,12 +392,14 @@ export function FileBrowser({
 						const isRoot = model.isRootPath(file.path);
 						const isFolder = file.type === 'directory';
 						const isRenaming = model.pendingRename?.path === file.path;
+						const changeStatus = gitStatus?.getChangeStatus(file.path);
+						const isDeleted = changeStatus === 'deleted';
 
 						return (
 							<>
 								<div
 									key={file.path}
-									class={`${styles.treeItem} ${isSelected ? styles.selected : ''} ${isFolder ? styles.folderItem : ''}`}
+									class={`${styles.treeItem} ${isSelected ? styles.selected : ''} ${isFolder ? styles.folderItem : ''} ${isDeleted ? styles.deleted : ''}`}
 									style={{ '--depth': String(depth) } as JSX.CSSProperties}
 									onClick={() => handleItemClick(file.path, file.type)}
 									onDblClick={!isFolder ? (e) => handleFileDoubleClick(file.path, e) : undefined}
@@ -419,6 +428,10 @@ export function FileBrowser({
 										/>
 									) : (
 										<span class={styles.fileName}>{file.name}</span>
+									)}
+									{/* Git change indicator */}
+									{!isFolder && changeStatus && (
+										<FileStatus status={changeStatus} />
 									)}
 									{isFolder && (
 										<div class={styles.folderActions}>
@@ -456,6 +469,7 @@ export function FileBrowser({
 				</div>
 				{model.error && <div class={styles.error}>{model.error}</div>}
 			</div>
+			{gitStatus && <PullButton gitStatus={gitStatus} />}
 			<div class={`${styles.statusBar} ${model.loading ? styles.statusBarVisible : ''}`}>
 				Loading...
 			</div>

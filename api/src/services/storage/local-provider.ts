@@ -321,4 +321,10 @@ export class LocalStorageProvider implements StorageProvider {
 			return null;
 		}
 	}
+
+	async restore(relativePath: string): Promise<void> {
+		// Remove leading slash for git command
+		const gitPath = relativePath.replace(/^\//, '');
+		await execGit(this.repoPath, ['checkout', 'HEAD', '--', gitPath]);
+	}
 }

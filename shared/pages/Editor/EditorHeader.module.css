@@ -29,6 +29,22 @@
 	font-weight: var(--font-bold);
 }
 
+/* Subtle spinning save indicator */
+.savingIndicator {
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--color-border);
+	border-top-color: var(--color-primary);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 .actions {
 	display: flex;
 	gap: var(--space-2);

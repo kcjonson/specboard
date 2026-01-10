@@ -27,10 +27,18 @@
 	/* Colors - Interactive */
 	--color-primary: #3b82f6;
 	--color-primary-hover: #2563eb;
+
+	/* Notice colors - bg variants derived from base */
 	--color-success: #10b981;
+	--color-success-bg: color-mix(in srgb, var(--color-success) 10%, white);
 	--color-error: #ef4444;
-	--color-error-bg: #fef2f2;
+	--color-error-bg: color-mix(in srgb, var(--color-error) 10%, white);
 	--color-warning: #f59e0b;
+	--color-warning-bg: color-mix(in srgb, var(--color-warning) 10%, white);
+	--color-info: #3b82f6;
+	--color-info-bg: color-mix(in srgb, var(--color-info) 10%, white);
+	--color-trivial: #6b7280;
+	--color-trivial-bg: color-mix(in srgb, var(--color-trivial) 10%, white);
 
 	/* Spacing */
 	--space-1: 4px;
@@ -116,10 +124,18 @@
 		/* Colors - Interactive */
 		--color-primary: #60a5fa;
 		--color-primary-hover: #3b82f6;
+
+		/* Notice colors - bg variants derived from base */
 		--color-success: #34d399;
+		--color-success-bg: color-mix(in srgb, var(--color-success) 15%, black);
 		--color-error: #f87171;
-		--color-error-bg: #451a1a;
+		--color-error-bg: color-mix(in srgb, var(--color-error) 15%, black);
 		--color-warning: #fbbf24;
+		--color-warning-bg: color-mix(in srgb, var(--color-warning) 15%, black);
+		--color-info: #60a5fa;
+		--color-info-bg: color-mix(in srgb, var(--color-info) 15%, black);
+		--color-trivial: #9ca3af;
+		--color-trivial-bg: color-mix(in srgb, var(--color-trivial) 15%, black);
 
 		/* Shadows - adjusted for dark backgrounds */
 		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);

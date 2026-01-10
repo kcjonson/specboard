@@ -1,0 +1,30 @@
+/**
+ * FileStatus - git change indicator dot
+ *
+ * Uses global color tokens from @doc-platform/ui/tokens.css
+ */
+
+.dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+/* Status colors using global tokens */
+.added {
+	background: var(--color-success);
+}
+
+.modified {
+	background: var(--color-warning);
+}
+
+.deleted {
+	background: var(--color-error);
+}
+
+.renamed {
+	background: var(--color-info);
+}

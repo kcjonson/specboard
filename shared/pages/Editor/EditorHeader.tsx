@@ -10,12 +10,10 @@ export interface EditorHeaderProps {
 	filePath: string | null;
 	/** Whether the document has unsaved changes */
 	isDirty: boolean;
-	/** Whether a save operation is in progress */
-	saving: boolean;
-	/** Callback to save the document */
-	onSave: () => void;
-	/** Callback to revert unsaved changes */
-	onRevert?: () => void;
+	/** Whether auto-save is currently in progress */
+	isSaving?: boolean;
+	/** Callback to create a new page */
+	onNewPage?: () => void;
 	/** Callback to rename the current file */
 	onRename?: (newFilename: string) => void;
 	/** ID of linked epic (if this document has one) */
@@ -38,9 +36,8 @@ export function EditorHeader({
 	title,
 	filePath,
 	isDirty,
-	saving,
-	onSave,
-	onRevert,
+	isSaving,
+	onNewPage,
 	onRename,
 	linkedEpicId,
 	creatingEpic,
@@ -133,7 +130,8 @@ export function EditorHeader({
 						)}
 					</>
 				)}
-				{isDirty && !isEditing && <span class={styles.dirtyIndicator} title="Unsaved changes">*</span>}
+				{isDirty && !isEditing && !isSaving && <span class={styles.dirtyIndicator} title="Unsaved changes">*</span>}
+				{isSaving && <span class={styles.savingIndicator} title="Saving..." />}
 			</div>
 			<div class={styles.actions}>
 				{showEpicButton && linkedEpicId && onViewEpic && (
@@ -148,23 +146,6 @@ export function EditorHeader({
 						disabled={creatingEpic}
 					>
 						{creatingEpic ? 'Creating...' : 'Create Epic'}
-					</Button>
-				)}
-				{filePath && onRevert && (
-					<Button
-						onClick={onRevert}
-						class="secondary"
-						disabled={!isDirty || saving}
-					>
-						Revert
-					</Button>
-				)}
-				{filePath && (
-					<Button
-						onClick={onSave}
-						disabled={!isDirty || saving}
-					>
-						{saving ? 'Saving...' : 'Save'}
 					</Button>
 				)}
 			</div>

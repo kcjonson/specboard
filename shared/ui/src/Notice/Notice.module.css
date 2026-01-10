@@ -1,0 +1,51 @@
+/**
+ * Notice component styles
+ *
+ * Variants use semantic color tokens that automatically adapt to dark mode.
+ * Background colors are derived from base colors via color-mix() in tokens.css.
+ */
+
+.notice {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-md);
+	font-size: var(--text-sm);
+	line-height: var(--leading-normal);
+}
+
+/* Trivial - minimal attention, routine confirmations */
+.trivial {
+	background: var(--color-trivial-bg);
+	border: 1px solid var(--color-trivial);
+	color: var(--color-trivial);
+}
+
+/* Info - neutral information, helpful context */
+.info {
+	background: var(--color-info-bg);
+	border: 1px solid var(--color-info);
+	color: var(--color-info);
+}
+
+/* Success - positive confirmation */
+.success {
+	background: var(--color-success-bg);
+	border: 1px solid var(--color-success);
+	color: var(--color-success);
+}
+
+/* Warning - needs user attention or action */
+.warning {
+	background: var(--color-warning-bg);
+	border: 1px solid var(--color-warning);
+	color: var(--color-warning);
+}
+
+/* Error - something failed */
+.error {
+	background: var(--color-error-bg);
+	border: 1px solid var(--color-error);
+	color: var(--color-error);
+}
