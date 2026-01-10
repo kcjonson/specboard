@@ -37,7 +37,7 @@ export function EditorHeader({
 	filePath,
 	isDirty,
 	isSaving,
-	onNewPage,
+	onNewPage: _onNewPage,
 	onRename,
 	linkedEpicId,
 	creatingEpic,
