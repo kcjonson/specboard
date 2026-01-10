@@ -1,4 +1,5 @@
-import { useMemo, useCallback, useRef, useState } from 'preact/hooks';
+import { useMemo, useCallback, useRef, useState, useEffect } from 'preact/hooks';
+import type { RefObject } from 'preact';
 import type { JSX } from 'preact';
 import { createEditor, Descendant, Editor, Element as SlateElement, Transforms, Range } from 'slate';
 import { Slate, Editable, withReact, RenderElementProps, RenderLeafProps, ReactEditor } from 'slate-react';
@@ -12,6 +13,12 @@ import styles from './MarkdownEditor.module.css';
 
 // Import types to augment Slate
 import './types';
+
+/** Ref handle for imperative editor operations */
+export interface MarkdownEditorHandle {
+	/** Replace entire editor content using Slate Transforms (undoable) */
+	replaceContent: (content: Descendant[]) => void;
+}
 
 export interface MarkdownEditorProps {
 	/** Document model - source of truth for editor content */
@@ -28,6 +35,8 @@ export interface MarkdownEditorProps {
 	onReply?: (commentId: string, replyText: string) => void;
 	/** Called when a comment's resolved status is toggled */
 	onToggleResolved?: (commentId: string) => void;
+	/** Ref to access imperative editor operations */
+	editorRef?: RefObject<MarkdownEditorHandle>;
 }
 
 // Hotkey mappings
@@ -245,6 +254,7 @@ export function MarkdownEditor({
 	onAddComment,
 	onReply,
 	onToggleResolved,
+	editorRef,
 }: MarkdownEditorProps): JSX.Element {
 	// Subscribe to model changes - this triggers re-renders when model updates
 	useModel(model);
@@ -266,6 +276,33 @@ export function MarkdownEditor({
 		() => withHistory(withReact(createEditor())),
 		[]
 	);
+
+	// Expose imperative editor operations via ref
+	useEffect(() => {
+		if (editorRef) {
+			editorRef.current = {
+				replaceContent: (content: Descendant[]) => {
+					Editor.withoutNormalizing(editor, () => {
+						// Select all content
+						Transforms.select(editor, {
+							anchor: Editor.start(editor, []),
+							focus: Editor.end(editor, []),
+						});
+						// Delete selection (all content)
+						Transforms.delete(editor);
+						// Insert new content at the start
+						Transforms.insertNodes(editor, content, { at: [0] });
+						// Remove the empty paragraph that may remain
+						if (editor.children.length > content.length) {
+							Transforms.removeNodes(editor, { at: [editor.children.length - 1] });
+						}
+					});
+					// Deselect to avoid stale selection issues
+					Transforms.deselect(editor);
+				},
+			};
+		}
+	}, [editor, editorRef]);
 
 	// Check if there's a non-collapsed text selection
 	const hasTextSelection = useCallback((): boolean => {
@@ -336,15 +373,24 @@ export function MarkdownEditor({
 		setPendingComment(undefined);
 		pendingSelectionRef.current = null;
 
-		// Focus the editor
-		ReactEditor.focus(editor);
+		// Focus the editor (can throw if editor is unmounted)
+		try {
+			ReactEditor.focus(editor);
+		} catch {
+			// Editor may have been unmounted
+		}
 	}, [editor, onAddComment]);
 
 	// Cancel adding a new comment
 	const handleCancelNewComment = useCallback(() => {
 		setPendingComment(undefined);
 		pendingSelectionRef.current = null;
-		ReactEditor.focus(editor);
+		// Focus the editor (can throw if editor is unmounted)
+		try {
+			ReactEditor.focus(editor);
+		} catch {
+			// Editor may have been unmounted
+		}
 	}, [editor]);
 
 	// Handle keyboard shortcuts

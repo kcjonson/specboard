@@ -78,3 +78,6 @@ export type {
 // Icon - SVG outline icons
 export { Icon } from './Icon/Icon';
 export type { IconProps, IconName } from './Icon/Icon';
+
+// ErrorBoundary - catches JS errors in child components
+export { ErrorBoundary, withErrorBoundary } from './ErrorBoundary/ErrorBoundary';
