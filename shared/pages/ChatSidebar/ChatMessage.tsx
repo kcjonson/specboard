@@ -57,11 +57,20 @@ export const ChatMessage = memo(function ChatMessage({
 			return <>{content}</>;
 		}
 
+		// Find the first edit block index - we only render one EditCard for all edits
+		const firstEditIndex = edits.textSegments.findIndex(
+			(segment) => segment.type !== 'text'
+		);
+
 		return edits.textSegments.map((segment, index) => {
 			if (segment.type === 'text') {
 				return <span key={index}>{segment.content}</span>;
 			}
-			// Edit block - render as card
+			// Only render EditCard for the first edit block
+			// (subsequent edit blocks are skipped - one card applies all edits)
+			if (index !== firstEditIndex) {
+				return null;
+			}
 			return (
 				<EditCard
 					key={index}

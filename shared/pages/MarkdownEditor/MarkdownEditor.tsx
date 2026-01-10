@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useState } from 'preact/hooks';
+import { useMemo, useCallback, useRef, useState, useEffect } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import type { JSX } from 'preact';
 import { createEditor, Descendant, Editor, Element as SlateElement, Transforms, Range } from 'slate';
@@ -278,29 +278,31 @@ export function MarkdownEditor({
 	);
 
 	// Expose imperative editor operations via ref
-	if (editorRef) {
-		editorRef.current = {
-			replaceContent: (content: Descendant[]) => {
-				Editor.withoutNormalizing(editor, () => {
-					// Select all content
-					Transforms.select(editor, {
-						anchor: Editor.start(editor, []),
-						focus: Editor.end(editor, []),
+	useEffect(() => {
+		if (editorRef) {
+			editorRef.current = {
+				replaceContent: (content: Descendant[]) => {
+					Editor.withoutNormalizing(editor, () => {
+						// Select all content
+						Transforms.select(editor, {
+							anchor: Editor.start(editor, []),
+							focus: Editor.end(editor, []),
+						});
+						// Delete selection (all content)
+						Transforms.delete(editor);
+						// Insert new content at the start
+						Transforms.insertNodes(editor, content, { at: [0] });
+						// Remove the empty paragraph that may remain
+						if (editor.children.length > content.length) {
+							Transforms.removeNodes(editor, { at: [editor.children.length - 1] });
+						}
 					});
-					// Delete selection (all content)
-					Transforms.delete(editor);
-					// Insert new content at the start
-					Transforms.insertNodes(editor, content, { at: [0] });
-					// Remove the empty paragraph that may remain
-					if (editor.children.length > content.length) {
-						Transforms.removeNodes(editor, { at: [editor.children.length - 1] });
-					}
-				});
-				// Deselect to avoid stale selection issues
-				Transforms.deselect(editor);
-			},
-		};
-	}
+					// Deselect to avoid stale selection issues
+					Transforms.deselect(editor);
+				},
+			};
+		}
+	}, [editor, editorRef]);
 
 	// Check if there's a non-collapsed text selection
 	const hasTextSelection = useCallback((): boolean => {

@@ -164,7 +164,11 @@ function findNormalizedMatch(document: string, search: string): NormalizedMatchR
 }
 
 /**
- * Compute diff statistics for the edit blocks
+ * Compute diff statistics for the edit blocks.
+ *
+ * Note: Stats represent LINE-LEVEL changes only, not character-level.
+ * For example, modifying text within a single line shows as 0 insertions/deletions.
+ * This provides a quick approximation of the edit scope.
  */
 export function computeEditStats(blocks: EditBlock[]): EditStats {
 	let insertions = 0;
@@ -208,10 +212,16 @@ export function applyEdits(document: string, blocks: EditBlock[]): string {
 		.sort((a, b) => (b.matchIndex ?? 0) - (a.matchIndex ?? 0));
 
 	for (const block of sortedBlocks) {
-		// Use the actual matched text (which accounts for whitespace differences)
+		// Use the stored match index directly (more reliable than indexOf on modified string)
 		const textToReplace = block.matchedText!;
-		const index = result.indexOf(textToReplace);
-		if (index !== -1) {
+		const index = block.matchIndex!;
+
+		// Verify the text at the stored index still matches what we expect
+		if (
+			index >= 0 &&
+			index + textToReplace.length <= result.length &&
+			result.slice(index, index + textToReplace.length) === textToReplace
+		) {
 			result = result.slice(0, index) + block.replace + result.slice(index + textToReplace.length);
 		}
 	}
@@ -223,6 +233,8 @@ export function applyEdits(document: string, blocks: EditBlock[]): string {
  * Check if content contains any SEARCH/REPLACE blocks
  */
 export function hasEditBlocks(content: string): boolean {
+	// Reset lastIndex since EDIT_BLOCK_PATTERN has the 'g' flag
+	EDIT_BLOCK_PATTERN.lastIndex = 0;
 	return EDIT_BLOCK_PATTERN.test(content);
 }
 

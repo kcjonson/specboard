@@ -151,7 +151,7 @@ export function ChatSidebar({
 						onClick={() => setError(null)}
 						aria-label="Dismiss error"
 					>
-						<Icon name="xmark" />
+						<Icon name="x-mark" />
 					</button>
 				</div>
 			)}
