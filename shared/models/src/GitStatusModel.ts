@@ -15,6 +15,7 @@ import { fetchClient } from '@doc-platform/fetch';
 export interface ChangedFile {
 	path: string;
 	status: 'added' | 'modified' | 'deleted' | 'renamed';
+	isUntracked: boolean;
 }
 
 export interface CommitError {
@@ -120,6 +121,12 @@ export class GitStatusModel extends Model {
 	/** Check if a file is deleted */
 	isDeleted(path: string): boolean {
 		return this.getChangeStatus(path) === 'deleted';
+	}
+
+	/** Check if a file is untracked (never been committed) */
+	isUntracked(path: string): boolean {
+		const file = this.changedFiles.find((f) => f.path === path);
+		return file?.isUntracked ?? false;
 	}
 
 	/** Get total count of changed files */

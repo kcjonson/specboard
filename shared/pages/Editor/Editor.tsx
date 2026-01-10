@@ -195,12 +195,81 @@ export function Editor(props: RouteProps): JSX.Element {
 				filePath: path,
 				projectId,
 			});
+			// Clear the saved selection so we don't try to load a deleted/missing file on refresh
+			saveSelectedFile(projectId, null);
 			setLoadError({
-				message: 'Unable to load this file. The file may be corrupted or contain unsupported formatting.',
+				message: 'Unable to load this file. The file may have been deleted or moved.',
 				filePath: path,
 			});
 		}
 	}, [projectId, documentModel, checkLinkedEpic]);
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Auto-save mechanism (defined before handleFileSelect which depends on it)
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	// Perform server save
+	const performServerSave = useCallback(async (): Promise<boolean> => {
+		if (!documentModel.filePath || !documentModel.projectId) return true;
+		if (!documentModel.isDirty) return true;
+
+		const { projectId: pid, filePath: fpath, content, comments } = documentModel;
+
+		setIsSaving(true);
+		try {
+			const markdown = toMarkdown(content, comments);
+			await fetchClient.put(
+				`/api/projects/${pid}/files?path=${encodeURIComponent(fpath)}`,
+				{ content: markdown }
+			);
+			documentModel.markSaved();
+
+			// Clear localStorage on successful server save
+			try {
+				clearLocalStorage(pid, fpath);
+			} catch (storageErr) {
+				console.warn('Failed to clear local draft from localStorage:', storageErr);
+			}
+
+			// Reset retry count and clear error on success
+			saveRetryCount.current = 0;
+			setSaveError(null);
+
+			// Refresh git status after save
+			gitStatusModel.refresh();
+
+			return true;
+		} catch (err) {
+			const errorMessage = err instanceof Error ? err.message : 'Failed to save';
+			console.error('Server save failed:', errorMessage);
+
+			// Ensure localStorage has latest changes as fallback
+			saveToLocalStorage(pid, fpath, content, comments);
+
+			// Update error state
+			saveRetryCount.current++;
+			setSaveError({
+				hasLocalChanges: true,
+				lastAttempt: new Date(),
+				retryCount: saveRetryCount.current,
+				message: errorMessage,
+			});
+
+			// Schedule retry if under max retries
+			if (saveRetryCount.current < MAX_SAVE_RETRIES) {
+				if (saveRetryTimerRef.current) {
+					clearTimeout(saveRetryTimerRef.current);
+				}
+				saveRetryTimerRef.current = setTimeout(() => {
+					performServerSave();
+				}, SAVE_RETRY_DELAY_MS);
+			}
+
+			return false;
+		} finally {
+			setIsSaving(false);
+		}
+	}, [documentModel, gitStatusModel]);
 
 	// Handle file selection from FileBrowser
 	const handleFileSelect = useCallback(async (path: string) => {
@@ -397,73 +466,6 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [projectId, handleFileSelect]);
 
-	// ─────────────────────────────────────────────────────────────────────────────
-	// Auto-save mechanism
-	// ─────────────────────────────────────────────────────────────────────────────
-
-	// Perform server save
-	const performServerSave = useCallback(async (): Promise<boolean> => {
-		if (!documentModel.filePath || !documentModel.projectId) return true;
-		if (!documentModel.isDirty) return true;
-
-		const { projectId: pid, filePath: fpath, content, comments } = documentModel;
-
-		setIsSaving(true);
-		try {
-			const markdown = toMarkdown(content, comments);
-			await fetchClient.put(
-				`/api/projects/${pid}/files?path=${encodeURIComponent(fpath)}`,
-				{ content: markdown }
-			);
-			documentModel.markSaved();
-
-			// Clear localStorage on successful server save
-			try {
-				clearLocalStorage(pid, fpath);
-			} catch (storageErr) {
-				console.warn('Failed to clear local draft from localStorage:', storageErr);
-			}
-
-			// Reset retry count and clear error on success
-			saveRetryCount.current = 0;
-			setSaveError(null);
-
-			// Refresh git status after save
-			gitStatusModel.refresh();
-
-			return true;
-		} catch (err) {
-			const errorMessage = err instanceof Error ? err.message : 'Failed to save';
-			console.error('Server save failed:', errorMessage);
-
-			// Ensure localStorage has latest changes as fallback
-			saveToLocalStorage(pid, fpath, content, comments);
-
-			// Update error state
-			saveRetryCount.current++;
-			setSaveError({
-				hasLocalChanges: true,
-				lastAttempt: new Date(),
-				retryCount: saveRetryCount.current,
-				message: errorMessage,
-			});
-
-			// Schedule retry if under max retries
-			if (saveRetryCount.current < MAX_SAVE_RETRIES) {
-				if (saveRetryTimerRef.current) {
-					clearTimeout(saveRetryTimerRef.current);
-				}
-				saveRetryTimerRef.current = setTimeout(() => {
-					performServerSave();
-				}, SAVE_RETRY_DELAY_MS);
-			}
-
-			return false;
-		} finally {
-			setIsSaving(false);
-		}
-	}, [documentModel, gitStatusModel]);
-
 	// Manual retry from error banner
 	const handleRetryManual = useCallback(() => {
 		saveRetryCount.current = 0;
@@ -521,6 +523,15 @@ export function Editor(props: RouteProps): JSX.Element {
 	const handleCancelNewFile = useCallback(() => {
 		setIsCreatingFile(false);
 	}, []);
+
+	// Handle file deleted - clear selection if deleted file was open
+	const handleFileDeleted = useCallback((deletedPath: string) => {
+		if (documentModel.filePath === deletedPath) {
+			documentModel.clear();
+			saveSelectedFile(projectId, null);
+			setLinkedEpicId(undefined);
+		}
+	}, [documentModel, projectId]);
 
 	// Handle receiving the renameFile function from FileBrowser
 	const handleRenameFileRef = useCallback((renameFile: (path: string, newFilename: string) => Promise<string>) => {
@@ -589,6 +600,7 @@ export function Editor(props: RouteProps): JSX.Element {
 					onFileCreated={handleFileCreated}
 					onCancelNewFile={handleCancelNewFile}
 					onFileRenamed={handleFileRenamed}
+					onFileDeleted={handleFileDeleted}
 					onStartNewFileRef={handleStartNewFileRef}
 					onRenameFileRef={handleRenameFileRef}
 					class={styles.sidebar}

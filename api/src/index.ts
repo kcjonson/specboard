@@ -88,6 +88,7 @@ import {
 	handleWriteFile,
 	handleCreateFile,
 	handleRenameFile,
+	handleDeleteFile,
 	handleGetGitStatus,
 	handleCommit,
 	handleRestore,
@@ -355,6 +356,7 @@ app.get('/api/projects/:id/files', (context) => handleReadFile(context, redis));
 app.post('/api/projects/:id/files', (context) => handleCreateFile(context, redis));
 app.put('/api/projects/:id/files', (context) => handleWriteFile(context, redis));
 app.put('/api/projects/:id/files/rename', (context) => handleRenameFile(context, redis));
+app.delete('/api/projects/:id/files', (context) => handleDeleteFile(context, redis));
 
 // Project git routes
 app.get('/api/projects/:id/git/status', (context) => handleGetGitStatus(context, redis));

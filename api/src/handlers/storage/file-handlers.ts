@@ -387,6 +387,79 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 }
 
 /**
+ * DELETE /api/projects/:id/files?path=/docs/file.md
+ * Delete a file or folder
+ */
+export async function handleDeleteFile(context: Context, redis: Redis): Promise<Response> {
+	const userId = await getUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+
+	const projectId = context.req.param('id');
+	if (!isValidUUID(projectId)) {
+		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
+
+	// Get file path from query parameter
+	const rawPath = context.req.query('path');
+	if (!rawPath) {
+		return context.json({ error: 'Path query parameter is required', code: 'PATH_REQUIRED' }, 400);
+	}
+
+	// Normalize and validate path
+	const filePath = normalizePath(rawPath);
+	if (!filePath) {
+		return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
+	}
+
+	try {
+		const project = await getProject(projectId, userId);
+		if (!project) {
+			return context.json({ error: 'Project not found' }, 404);
+		}
+
+		// Validate path is within configured root paths
+		if (!isPathWithinRoots(filePath, project.rootPaths)) {
+			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
+		}
+
+		// Don't allow deleting root paths
+		if (project.rootPaths.includes(filePath)) {
+			return context.json({ error: 'Cannot delete root folder', code: 'CANNOT_DELETE_ROOT' }, 403);
+		}
+
+		const provider = await getStorageProvider(projectId, userId);
+		if (!provider) {
+			return context.json({ error: 'No repository configured' }, 404);
+		}
+
+		// Check file/folder exists
+		const exists = await provider.exists(filePath);
+		if (!exists) {
+			return context.json({ error: 'File or folder not found' }, 404);
+		}
+
+		// Delete the file/folder
+		await provider.deleteFile(filePath);
+
+		// Clear any epic references to deleted files
+		await query(
+			`UPDATE epics SET spec_doc_path = NULL WHERE project_id = $1 AND spec_doc_path = $2`,
+			[projectId, filePath]
+		);
+
+		return context.json({
+			path: filePath,
+			success: true,
+		});
+	} catch (error) {
+		console.error('Failed to delete file:', error);
+		return context.json({ error: 'Failed to delete file', code: 'FILE_DELETE_FAILED' }, 500);
+	}
+}
+
+/**
  * PUT /api/projects/:id/files?path=/docs/file.md
  * Write a file
  */

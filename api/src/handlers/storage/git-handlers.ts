@@ -32,24 +32,24 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
 
 		// Combine staged, unstaged, and untracked into a single changedFiles array
 		// Use a Map to dedupe by path, preferring staged status
-		const changedMap = new Map<string, { path: string; status: string }>();
+		const changedMap = new Map<string, { path: string; status: string; isUntracked: boolean }>();
 
 		// Add staged files
 		for (const file of status.staged) {
-			changedMap.set(file.path, { path: file.path, status: file.status });
+			changedMap.set(file.path, { path: file.path, status: file.status, isUntracked: false });
 		}
 
 		// Add unstaged files (don't override if already staged)
 		for (const file of status.unstaged) {
 			if (!changedMap.has(file.path)) {
-				changedMap.set(file.path, { path: file.path, status: file.status });
+				changedMap.set(file.path, { path: file.path, status: file.status, isUntracked: false });
 			}
 		}
 
 		// Add untracked files
 		for (const path of status.untracked) {
 			if (!changedMap.has(path)) {
-				changedMap.set(path, { path, status: 'added' });
+				changedMap.set(path, { path, status: 'added', isUntracked: true });
 			}
 		}
 

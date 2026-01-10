@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { FileTreeModel, useModel, type GitStatusModel } from '@doc-platform/models';
-import { Button, Icon } from '@doc-platform/ui';
+import { Badge, Button, Icon } from '@doc-platform/ui';
 import { fetchClient } from '@doc-platform/fetch';
 import { GitStatusBar } from './GitStatusBar';
-import { PullButton } from './PullButton';
-import { FileStatus } from './FileStatus';
+import { ConfirmDialog } from './ConfirmDialog';
+import { FileItem } from './FileItem';
+import { FolderItem } from './FolderItem';
 import styles from './FileBrowser.module.css';
 
-// Timing constants for blur handlers and rename interactions
-const BLUR_SUBMIT_DELAY_MS = 200; // Delay before blur triggers submit (allows clicks to fire first)
-const RENAME_START_GRACE_PERIOD_MS = 200; // Ignore blur events within this time after rename starts
+// Timing constants for blur handlers
+const BLUR_SUBMIT_DELAY_MS = 200;
+const RENAME_START_GRACE_PERIOD_MS = 300;
 
 /**
  * Ensure filename has a markdown extension (.md or .mdx).
@@ -48,6 +49,8 @@ export interface FileBrowserProps {
 	onCancelNewFile?: () => void;
 	/** Callback when a file is renamed via double-click in sidebar */
 	onFileRenamed?: (oldPath: string, newPath: string) => void;
+	/** Callback when a file or folder is deleted */
+	onFileDeleted?: (path: string) => void;
 	/** Callback to receive the startNewFile function. parentPath is optional - uses first rootPath if not provided */
 	onStartNewFileRef?: (startNewFile: (parentPath?: string) => void) => void;
 	/** Callback to receive the renameFile function. Returns new path on success */
@@ -64,6 +67,7 @@ export function FileBrowser({
 	onFileCreated,
 	onCancelNewFile,
 	onFileRenamed,
+	onFileDeleted,
 	onStartNewFileRef,
 	onRenameFileRef,
 	class: className,
@@ -77,6 +81,7 @@ export function FileBrowser({
 
 	// Subscribe to model changes
 	useModel(model);
+	useModel(gitStatus);
 
 	// Local state for the inline new file input
 	const [newFileName, setNewFileName] = useState('');
@@ -85,6 +90,9 @@ export function FileBrowser({
 	// Local state for inline rename input
 	const [renameName, setRenameName] = useState('');
 	const renameInputRef = useRef<HTMLInputElement>(null);
+
+	// Local state for delete confirmation dialog
+	const [deleteTarget, setDeleteTarget] = useState<{ path: string; type: 'file' | 'directory'; isUntracked: boolean } | null>(null);
 
 	// Initialize model when projectId changes
 	useEffect(() => {
@@ -186,6 +194,8 @@ export function FileBrowser({
 		try {
 			const path = await model.commitNewFile(newFileName);
 			onFileCreated?.(path);
+			// Refresh git status to show the new file as untracked
+			gitStatus?.refresh();
 		} catch {
 			// Error is set on model, will show in UI
 		}
@@ -227,6 +237,8 @@ export function FileBrowser({
 			if (oldPath) {
 				onFileRenamed?.(oldPath, newPath);
 			}
+			// Refresh git status to show the renamed file as changed
+			gitStatus?.refresh();
 		} catch {
 			// Error is set on model, will show in UI
 		}
@@ -311,7 +323,7 @@ export function FileBrowser({
 		}
 	};
 
-	// Handle remove folder
+	// Handle remove folder from project (just removes from project, doesn't delete)
 	const handleRemoveFolder = async (folderPath: string, event: Event): Promise<void> => {
 		event.stopPropagation();
 
@@ -324,6 +336,48 @@ export function FileBrowser({
 			console.error('Failed to remove folder:', err);
 			model.error = err instanceof Error ? err.message : 'Failed to remove folder';
 		}
+	};
+
+	// Perform the actual delete operation
+	const performDelete = async (path: string, type: 'file' | 'directory'): Promise<void> => {
+		const itemType = type === 'directory' ? 'folder' : 'file';
+
+		try {
+			await fetchClient.delete(
+				`/api/projects/${projectId}/files?path=${encodeURIComponent(path)}`
+			);
+			model.reload();
+			gitStatus?.refresh();
+			onFileDeleted?.(path);
+		} catch (err) {
+			console.error(`Failed to delete ${itemType}:`, err);
+			model.error = err instanceof Error ? err.message : `Failed to delete ${itemType}`;
+		}
+	};
+
+	// Handle delete click - check if confirmation is needed
+	const handleDeleteClick = (path: string, type: 'file' | 'directory', event: Event): void => {
+		event.stopPropagation();
+
+		// Check git status to determine if confirmation is needed
+		const changeStatus = gitStatus?.getChangeStatus(path);
+		const isUntracked = gitStatus?.isUntracked(path);
+		const hasChanges = changeStatus !== undefined || isUntracked;
+
+		if (hasChanges) {
+			// Untracked or modified files need confirmation (data loss)
+			setDeleteTarget({ path, type, isUntracked: isUntracked ?? false });
+		} else {
+			// Tracked files without changes can be deleted directly (recoverable from git)
+			performDelete(path, type);
+		}
+	};
+
+	// Confirm delete for files that need it
+	const handleDeleteConfirm = async (): Promise<void> => {
+		if (!deleteTarget) return;
+		await performDelete(deleteTarget.path, deleteTarget.type);
+		setDeleteTarget(null);
 	};
 
 	// Helper to render the pending new file input
@@ -382,7 +436,12 @@ export function FileBrowser({
 	return (
 		<div class={`${styles.container} ${className || ''}`}>
 			{gitStatus && <GitStatusBar gitStatus={gitStatus} />}
-			<div class={styles.header}>Files</div>
+			<div class={styles.header}>
+				<span>Files</span>
+				{gitStatus && gitStatus.changedCount > 0 && (
+					<Badge class="variant-warning size-sm">{gitStatus.changedCount}</Badge>
+				)}
+			</div>
 			<div class={styles.content}>
 				<div class={styles.tree}>
 					{model.files.map((file) => {
@@ -397,71 +456,38 @@ export function FileBrowser({
 
 						return (
 							<>
-								<div
-									key={file.path}
-									class={`${styles.treeItem} ${isSelected ? styles.selected : ''} ${isFolder ? styles.folderItem : ''} ${isDeleted ? styles.deleted : ''}`}
-									style={{ '--depth': String(depth) } as JSX.CSSProperties}
-									onClick={() => handleItemClick(file.path, file.type)}
-									onDblClick={!isFolder ? (e) => handleFileDoubleClick(file.path, e) : undefined}
-								>
-									{isFolder ? (
-										<span class={styles.folderIcon}>
-											<Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} class="size-xs" />
-											<Icon name={isExpanded ? 'folder-open' : 'folder'} class="size-sm" />
-										</span>
-									) : (
-										<span class={styles.fileIcon}>
-											<Icon name="file" class="size-sm" />
-										</span>
-									)}
-									{isRenaming ? (
-										<input
-											ref={renameInputRef}
-											type="text"
-											class={styles.newFileInput}
-											value={renameName}
-											onInput={(e) => setRenameName((e.target as HTMLInputElement).value)}
-											onKeyDown={handleRenameKeyDown}
-											onBlur={handleRenameBlur}
-											placeholder="filename.md"
-											aria-label="Rename file"
-										/>
-									) : (
-										<span class={styles.fileName}>{file.name}</span>
-									)}
-									{/* Git change indicator */}
-									{!isFolder && changeStatus && (
-										<FileStatus status={changeStatus} />
-									)}
-									{isFolder && (
-										<div class={styles.folderActions}>
-											<button
-												class={styles.addFileButton}
-												onClick={(e) => handleNewFileInFolder(file.path, e)}
-												title="New file in folder"
-												aria-label="New file in folder"
-											>
-												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-													<line x1="12" y1="5" x2="12" y2="19" />
-													<line x1="5" y1="12" x2="19" y2="12" />
-												</svg>
-											</button>
-											{isRoot && (
-												<button
-													class={styles.removeButton}
-													onClick={(e) => handleRemoveFolder(file.path, e)}
-													title="Remove folder"
-													aria-label="Remove folder"
-												>
-													<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<polyline points="3 6 5 6 21 6" />
-														<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-													</svg>
-												</button>
-											)}
-										</div>
-									)}
-								</div>
+								{isFolder ? (
+									<FolderItem
+										key={file.path}
+										name={file.name}
+										depth={depth}
+										isExpanded={isExpanded}
+										isRoot={isRoot}
+										onClick={() => handleItemClick(file.path, 'directory')}
+										onAddFileClick={(e) => handleNewFileInFolder(file.path, e)}
+										onDeleteClick={(e) => handleDeleteClick(file.path, 'directory', e)}
+										onRemoveClick={(e) => handleRemoveFolder(file.path, e)}
+									/>
+								) : (
+									<FileItem
+										key={file.path}
+										path={file.path}
+										name={file.name}
+										depth={depth}
+										isSelected={isSelected}
+										isRenaming={isRenaming}
+										renameValue={renameName}
+										renameInputRef={renameInputRef}
+										changeStatus={changeStatus}
+										isDeleted={isDeleted}
+										onClick={() => handleItemClick(file.path, 'file')}
+										onDoubleClick={(e) => handleFileDoubleClick(file.path, e)}
+										onRenameInput={(e) => setRenameName((e.target as HTMLInputElement).value)}
+										onRenameKeyDown={handleRenameKeyDown}
+										onRenameBlur={handleRenameBlur}
+										onDeleteClick={(e) => handleDeleteClick(file.path, 'file', e)}
+									/>
+								)}
 								{shouldShowPendingAfter(file.path) && renderPendingNewFile()}
 							</>
 						);
@@ -469,10 +495,23 @@ export function FileBrowser({
 				</div>
 				{model.error && <div class={styles.error}>{model.error}</div>}
 			</div>
-			{gitStatus && <PullButton gitStatus={gitStatus} />}
 			<div class={`${styles.statusBar} ${model.loading ? styles.statusBarVisible : ''}`}>
 				Loading...
 			</div>
+
+			{/* Delete confirmation dialog */}
+			<ConfirmDialog
+				open={deleteTarget !== null}
+				title={`Delete ${deleteTarget?.type === 'directory' ? 'folder' : 'file'}?`}
+				message={deleteTarget?.path}
+				warning={deleteTarget?.isUntracked
+					? "This file has never been committed and cannot be recovered."
+					: "This file has uncommitted changes that will be lost."
+				}
+				confirmText="Delete"
+				onConfirm={handleDeleteConfirm}
+				onCancel={() => setDeleteTarget(null)}
+			/>
 		</div>
 	);
 }

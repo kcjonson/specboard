@@ -12,19 +12,10 @@
 	flex-shrink: 0;
 }
 
-/* Status colors using global tokens */
-.added {
-	background: var(--color-success);
-}
-
-.modified {
-	background: var(--color-warning);
-}
-
-.deleted {
-	background: var(--color-error);
-}
-
+/* All uncommitted changes use warning color */
+.added,
+.modified,
+.deleted,
 .renamed {
-	background: var(--color-info);
+	background: var(--color-warning);
 }
