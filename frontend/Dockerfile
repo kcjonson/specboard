@@ -1,42 +1,18 @@
 # ===== DEV TARGET =====
 # Used by docker-compose for local development with hot reloading
+# Source and deps are mounted/installed at runtime
 FROM node:25-alpine AS dev
 
 RUN npm install -g pnpm@9.15.1
 
 WORKDIR /app
 
-# Copy workspace config and package files
-COPY frontend/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
-COPY package.json pnpm-lock.yaml ./
-COPY shared/core/package.json ./shared/core/
-COPY shared/db/package.json ./shared/db/
-COPY shared/auth/package.json ./shared/auth/
-COPY shared/ui/package.json ./shared/ui/
-COPY shared/models/package.json ./shared/models/
-COPY shared/router/package.json ./shared/router/
-COPY shared/fetch/package.json ./shared/fetch/
-COPY shared/telemetry/package.json ./shared/telemetry/
-COPY shared/pages/package.json ./shared/pages/
-COPY frontend/package.json ./frontend/
-COPY web/package.json ./web/
-COPY ssg/package.json ./ssg/
-COPY tsconfig.json ./
-
-# Install all dependencies (including devDependencies)
-RUN pnpm install --frozen-lockfile
-
 # Download AWS RDS CA bundle for SSL certificate verification
 RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
-# Source code is mounted at runtime via docker-compose volumes
 EXPOSE 3000 5173
 
-# Copy entrypoint script
-COPY frontend/docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
-
-CMD ["/docker-entrypoint.sh"]
+CMD ["node", "--watch", "frontend/src/index.ts"]
 
 # ===== PRODUCTION BUILD STAGE =====
 FROM node:25-alpine AS builder
@@ -51,7 +27,7 @@ WORKDIR /app
 
 # Copy workspace config first (for better layer caching)
 # Use Docker-specific workspace that only includes packages we need
-COPY frontend/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
+COPY pnpm-workspace.yaml ./
 COPY package.json pnpm-lock.yaml ./
 
 # Copy only package.json files to install dependencies
@@ -111,7 +87,7 @@ WORKDIR /app
 RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 # Copy workspace config and package files
-COPY frontend/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
+COPY pnpm-workspace.yaml ./
 COPY package.json pnpm-lock.yaml ./
 COPY shared/core/package.json ./shared/core/
 COPY shared/db/package.json ./shared/db/

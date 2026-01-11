@@ -1,5 +1,6 @@
 # ===== DEV TARGET =====
 # Used by docker-compose for local development with hot reloading
+# Source and deps are mounted/installed at runtime
 FROM node:25-alpine AS dev
 
 RUN npm install -g pnpm@9.15.1
@@ -7,23 +8,9 @@ RUN apk add --no-cache git
 
 WORKDIR /app
 
-# Copy workspace config and package files
-COPY api/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
-COPY package.json pnpm-lock.yaml ./
-COPY shared/core/package.json ./shared/core/
-COPY shared/db/package.json ./shared/db/
-COPY shared/auth/package.json ./shared/auth/
-COPY shared/email/package.json ./shared/email/
-COPY api/package.json ./api/
-COPY tsconfig.json ./
-
-# Install all dependencies (including devDependencies for tsx, etc.)
-RUN pnpm install --frozen-lockfile
-
 # Download AWS RDS CA bundle for SSL certificate verification
 RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
-# Source code is mounted at runtime via docker-compose volumes
 EXPOSE 3001
 
 CMD ["node", "--watch", "api/src/index.ts"]
@@ -43,7 +30,7 @@ WORKDIR /app
 RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 # Copy workspace config and package files
-COPY api/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
+COPY pnpm-workspace.yaml ./
 COPY package.json pnpm-lock.yaml ./
 COPY shared/core/package.json ./shared/core/
 COPY shared/db/package.json ./shared/db/

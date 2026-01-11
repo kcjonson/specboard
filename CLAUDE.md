@@ -23,19 +23,20 @@ Built with Preact, TypeScript, and AWS services. For full details, see [docs/tec
 
 ### Local Development: Always Use Docker
 
-**CRITICAL: NEVER run services locally. Always use Docker containers.**
+**CRITICAL: NEVER run pnpm, npm, or any Node.js commands on the host machine. ALL package management and Node operations happen inside containers.**
 
 ```bash
 # Start all services (the ONLY way to run dev)
 docker compose up
 
-# Rebuild after code changes
-pnpm build && docker compose build && docker compose up
+# Rebuild containers
+docker compose build && docker compose up
 ```
 
 - All services run in containers: api, frontend, db, redis, nginx, mcp
 - Access the app at http://localhost (port 80 via nginx)
-- Never use `pnpm dev` or run services directly on the host
+- Dependencies are installed inside containers on startup via `pnpm install`
+- The host machine should NEVER have node_modules or .pnpm-store directories
 - See [docs/setup.md](docs/setup.md) for full setup instructions
 
 ### Workflow: Before Writing Code
