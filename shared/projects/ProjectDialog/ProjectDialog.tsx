@@ -1,24 +1,14 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Dialog, Button } from '@doc-platform/ui';
-import { fetchClient } from '@doc-platform/fetch';
+import {
+	GitHubConnectionModel,
+	GitHubReposCollection,
+	GitHubBranchesCollection,
+	useModel,
+} from '@doc-platform/models';
 import type { Project } from '../ProjectCard/ProjectCard';
 import styles from './ProjectDialog.module.css';
-
-interface GitHubRepo {
-	id: number;
-	fullName: string;
-	name: string;
-	owner: string;
-	private: boolean;
-	defaultBranch: string;
-	url: string;
-}
-
-interface GitHubBranch {
-	name: string;
-	protected: boolean;
-}
 
 interface RepositoryConfig {
 	provider: 'github';
@@ -62,17 +52,48 @@ export function ProjectDialog({
 		};
 	}, []);
 
-	// GitHub connection state
-	const [githubConnected, setGithubConnected] = useState<boolean | null>(null);
-	const [githubLoading, setGithubLoading] = useState(true);
+	// GitHub models - only create for new projects
+	const githubConnection = useMemo(
+		() => (!isEditMode ? new GitHubConnectionModel() : null),
+		[isEditMode]
+	);
+	const githubRepos = useMemo(
+		() => (!isEditMode ? new GitHubReposCollection() : null),
+		[isEditMode]
+	);
+
+	// Subscribe to models (conditional - only for create mode)
+	useModel(githubConnection);
+	useModel(githubRepos);
 
 	// Repository selection state
-	const [repos, setRepos] = useState<GitHubRepo[]>([]);
-	const [reposLoading, setReposLoading] = useState(false);
 	const [selectedRepo, setSelectedRepo] = useState<string>('');
-	const [branches, setBranches] = useState<GitHubBranch[]>([]);
-	const [branchesLoading, setBranchesLoading] = useState(false);
 	const [selectedBranch, setSelectedBranch] = useState<string>('');
+
+	// Branches collection - created when repo is selected
+	const branchesCollection = useMemo(() => {
+		if (!selectedRepo || !githubRepos) return null;
+
+		const repo = githubRepos.find(r => r.fullName === selectedRepo);
+		if (!repo) return null;
+
+		return new GitHubBranchesCollection({ owner: repo.owner, repo: repo.name });
+	}, [selectedRepo, githubRepos]);
+
+	useModel(branchesCollection);
+
+	// Auto-select default branch when branches load
+	useEffect(() => {
+		if (!branchesCollection || branchesCollection.$meta.working || branchesCollection.length === 0) {
+			return;
+		}
+
+		const repo = githubRepos?.find(r => r.fullName === selectedRepo);
+		if (!repo) return;
+
+		const defaultBranch = branchesCollection.find(b => b.name === repo.defaultBranch);
+		setSelectedBranch(defaultBranch?.name || branchesCollection[0]?.name || '');
+	}, [branchesCollection, branchesCollection?.$meta.working, selectedRepo, githubRepos]);
 
 	// Reset form when project changes
 	useEffect(() => {
@@ -82,75 +103,7 @@ export function ProjectDialog({
 		setError(null);
 		setSelectedRepo('');
 		setSelectedBranch('');
-		setBranches([]);
 	}, [project]);
-
-	// Check GitHub connection on mount
-	useEffect(() => {
-		async function checkGitHubConnection(): Promise<void> {
-			setGithubLoading(true);
-			try {
-				const data = await fetchClient.get<{ connected: boolean }>('/api/github/connection');
-				if (!mountedRef.current) return;
-				setGithubConnected(data.connected);
-
-				// If connected, load repos
-				if (data.connected) {
-					setReposLoading(true);
-					try {
-						const reposData = await fetchClient.get<GitHubRepo[]>('/api/github/repos');
-						if (!mountedRef.current) return;
-						setRepos(reposData);
-					} catch {
-						// Repos fetch failed - not critical
-					} finally {
-						if (mountedRef.current) setReposLoading(false);
-					}
-				}
-			} catch {
-				if (mountedRef.current) setGithubConnected(false);
-			} finally {
-				if (mountedRef.current) setGithubLoading(false);
-			}
-		}
-		checkGitHubConnection();
-	}, []);
-
-	// Load branches when repo is selected
-	useEffect(() => {
-		if (!selectedRepo) {
-			setBranches([]);
-			setSelectedBranch('');
-			return;
-		}
-
-		const repo = repos.find(r => r.fullName === selectedRepo);
-		if (!repo) return;
-
-		const { owner, name: repoName, defaultBranch: defaultBranchName } = repo;
-
-		async function loadBranches(): Promise<void> {
-			setBranchesLoading(true);
-			try {
-				const branchesData = await fetchClient.get<GitHubBranch[]>(
-					`/api/github/repos/${owner}/${repoName}/branches`
-				);
-				if (!mountedRef.current) return;
-				setBranches(branchesData);
-
-				// Auto-select default branch
-				if (branchesData.length > 0) {
-					const defaultBranch = branchesData.find(b => b.name === defaultBranchName);
-					setSelectedBranch(defaultBranch?.name || branchesData[0]!.name);
-				}
-			} catch {
-				if (mountedRef.current) setBranches([]);
-			} finally {
-				if (mountedRef.current) setBranchesLoading(false);
-			}
-		}
-		loadBranches();
-	}, [selectedRepo, repos]);
 
 	async function handleSubmit(e: Event): Promise<void> {
 		e.preventDefault();
@@ -166,8 +119,8 @@ export function ProjectDialog({
 			};
 
 			// Include repository config if selected
-			if (selectedRepo && selectedBranch) {
-				const repo = repos.find(r => r.fullName === selectedRepo);
+			if (selectedRepo && selectedBranch && githubRepos) {
+				const repo = githubRepos.find(r => r.fullName === selectedRepo);
 				if (repo) {
 					data.repository = {
 						provider: 'github',
@@ -241,6 +194,12 @@ export function ProjectDialog({
 		);
 	}
 
+	// Derive loading states from models
+	const githubLoading = githubConnection?.$meta.working ?? false;
+	const githubConnected = githubConnection?.connected ?? false;
+	const reposLoading = githubRepos?.$meta.working ?? false;
+	const branchesLoading = branchesCollection?.$meta.working ?? false;
+
 	return (
 		<Dialog
 			title={isEditMode ? 'Edit Project' : 'Create Project'}
@@ -293,7 +252,7 @@ export function ProjectDialog({
 							</div>
 						) : reposLoading ? (
 							<div class={styles.loadingText}>Loading repositories...</div>
-						) : repos.length === 0 ? (
+						) : !githubRepos || githubRepos.length === 0 ? (
 							<div class={styles.noRepos}>No repositories found. Make sure you have access to at least one repository.</div>
 						) : (
 							<>
@@ -303,10 +262,13 @@ export function ProjectDialog({
 										<select
 											class={styles.select}
 											value={selectedRepo}
-											onChange={(e) => setSelectedRepo((e.target as HTMLSelectElement).value)}
+											onChange={(e) => {
+												setSelectedRepo((e.target as HTMLSelectElement).value);
+												setSelectedBranch('');
+											}}
 										>
 											<option value="">Select a repository...</option>
-											{repos.map(repo => (
+											{githubRepos.map(repo => (
 												<option key={repo.id} value={repo.fullName}>
 													{repo.fullName} {repo.private ? '(private)' : ''}
 												</option>
@@ -321,18 +283,20 @@ export function ProjectDialog({
 											<span class={styles.labelText}>Branch</span>
 											{branchesLoading ? (
 												<div class={styles.loadingText}>Loading branches...</div>
-											) : (
+											) : branchesCollection && branchesCollection.length > 0 ? (
 												<select
 													class={styles.select}
 													value={selectedBranch}
 													onChange={(e) => setSelectedBranch((e.target as HTMLSelectElement).value)}
 												>
-													{branches.map(branch => (
+													{branchesCollection.map(branch => (
 														<option key={branch.name} value={branch.name}>
 															{branch.name} {branch.protected ? '(protected)' : ''}
 														</option>
 													))}
 												</select>
+											) : (
+												<div class={styles.noRepos}>No branches found.</div>
 											)}
 										</label>
 									</div>

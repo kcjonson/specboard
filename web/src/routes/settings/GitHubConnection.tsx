@@ -1,15 +1,8 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Icon } from '@doc-platform/ui';
-import { fetchClient } from '@doc-platform/fetch';
+import { GitHubConnectionModel, useModel } from '@doc-platform/models';
 import styles from './GitHubConnection.module.css';
-
-interface GitHubConnectionData {
-	connected: boolean;
-	username?: string;
-	scopes?: string[];
-	connectedAt?: string;
-}
 
 function formatDate(dateString: string): string {
 	const date = new Date(dateString);
@@ -21,20 +14,13 @@ function formatDate(dateString: string): string {
 }
 
 export function GitHubConnection(): JSX.Element {
-	const [connection, setConnection] = useState<GitHubConnectionData | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-	const [disconnecting, setDisconnecting] = useState(false);
-	const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+	// Model handles fetching and state management
+	const connection = useMemo(() => new GitHubConnectionModel(), []);
+	useModel(connection);
 
-	// Track mounted state
-	const mountedRef = useRef(true);
-	useEffect(() => {
-		mountedRef.current = true;
-		return () => {
-			mountedRef.current = false;
-		};
-	}, []);
+	// Local UI state for confirmation dialog
+	const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+	const [callbackError, setCallbackError] = useState<string | null>(null);
 
 	// Check for URL params (success/error from OAuth callback)
 	useEffect(() => {
@@ -50,59 +36,26 @@ export function GitHubConnection(): JSX.Element {
 			window.history.replaceState({}, '', url.toString());
 
 			if (githubError) {
-				setError(decodeURIComponent(githubError));
+				setCallbackError(decodeURIComponent(githubError));
+			} else if (githubConnected) {
+				// Refresh connection data after successful OAuth
+				connection.fetch();
 			}
 		}
-	}, []);
-
-	// Load connection status
-	useEffect(() => {
-		async function loadConnection(): Promise<void> {
-			setLoading(true);
-			setError(null);
-			try {
-				const data = await fetchClient.get<GitHubConnectionData>('/api/github/connection');
-				if (mountedRef.current) {
-					setConnection(data);
-				}
-			} catch (err: unknown) {
-				if (mountedRef.current) {
-					const message = err instanceof Error ? err.message : 'Failed to load GitHub connection';
-					setError(message);
-				}
-			} finally {
-				if (mountedRef.current) {
-					setLoading(false);
-				}
-			}
-		}
-		loadConnection();
-	}, []);
-
-	const handleConnect = (): void => {
-		// Redirect to GitHub OAuth - this will redirect back after auth
-		window.location.href = '/api/auth/github';
-	};
+	}, [connection]);
 
 	const handleDisconnect = async (): Promise<void> => {
-		setDisconnecting(true);
 		try {
-			await fetchClient.delete('/api/auth/github');
-			if (mountedRef.current) {
-				setConnection({ connected: false });
-				setShowDisconnectConfirm(false);
-			}
-		} catch (err: unknown) {
-			if (mountedRef.current) {
-				const message = err instanceof Error ? err.message : 'Failed to disconnect';
-				setError(message);
-			}
-		} finally {
-			if (mountedRef.current) {
-				setDisconnecting(false);
-			}
+			await connection.disconnect();
+			setShowDisconnectConfirm(false);
+		} catch {
+			// Error is captured in connection.$meta.error
 		}
 	};
+
+	// Combine model error with callback error
+	const error = callbackError || (connection.$meta.error?.message ?? null);
+	const loading = connection.$meta.working && !connection.connected;
 
 	return (
 		<div class={styles.container}>
@@ -115,7 +68,7 @@ export function GitHubConnection(): JSX.Element {
 				<div class={styles.error}>
 					{error}
 					<Button
-						onClick={() => setError(null)}
+						onClick={() => setCallbackError(null)}
 						class={styles.dismissButton}
 					>
 						Dismiss
@@ -125,7 +78,7 @@ export function GitHubConnection(): JSX.Element {
 
 			{loading ? (
 				<div class={styles.loading}>Loading...</div>
-			) : connection?.connected ? (
+			) : connection.connected ? (
 				<div class={styles.connectedCard}>
 					<div class={styles.accountInfo}>
 						<span class={styles.icon}><Icon name="github" class="size-lg" /></span>
@@ -146,14 +99,14 @@ export function GitHubConnection(): JSX.Element {
 							<Button
 								onClick={handleDisconnect}
 								class={styles.dangerButton}
-								disabled={disconnecting}
+								disabled={connection.$meta.working}
 							>
-								{disconnecting ? 'Disconnecting...' : 'Yes, Disconnect'}
+								{connection.$meta.working ? 'Disconnecting...' : 'Yes, Disconnect'}
 							</Button>
 							<Button
 								onClick={() => setShowDisconnectConfirm(false)}
 								class={styles.ghostButton}
-								disabled={disconnecting}
+								disabled={connection.$meta.working}
 							>
 								Cancel
 							</Button>
@@ -177,7 +130,7 @@ export function GitHubConnection(): JSX.Element {
 						</div>
 					</div>
 					<Button
-						onClick={handleConnect}
+						onClick={() => connection.connect()}
 						class={styles.primaryButton}
 					>
 						Connect GitHub
