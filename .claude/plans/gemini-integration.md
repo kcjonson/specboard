@@ -1,3 +1,5 @@
+# COMPLETE - 2026-01-09
+
 # Google Gemini API Integration Plan
 
 Add Google Gemini as a second AI provider alongside Anthropic, with a clean provider abstraction layer and model selection in the chat UI.

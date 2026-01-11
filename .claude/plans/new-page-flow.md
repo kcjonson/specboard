@@ -1,3 +1,5 @@
+# COMPLETE - 2026-01-09
+
 # New Page Flow Implementation
 
 Add ability to create new markdown pages from the editor with inline rename (VS Code-style).
