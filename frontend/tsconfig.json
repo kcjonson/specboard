@@ -1,8 +1,6 @@
 {
 	"extends": "../tsconfig.json",
 	"compilerOptions": {
-		"outDir": "./dist",
-		"rootDir": "./src",
 		"baseUrl": "..",
 		"paths": {
 			"@doc-platform/core": ["./shared/core/src"],

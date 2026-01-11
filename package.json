@@ -7,6 +7,7 @@
 		"dev": "pnpm -r --parallel run dev",
 		"build": "pnpm -r run build",
 		"test": "pnpm -r --parallel run test",
+		"typecheck": "pnpm -r --parallel run typecheck",
 		"lint": "pnpm -r --parallel run lint",
 		"lint:fix": "pnpm -r --parallel run lint:fix",
 		"clean": "pnpm -r run clean && rm -rf node_modules"

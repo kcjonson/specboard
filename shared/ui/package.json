@@ -17,6 +17,7 @@
 	"scripts": {
 		"build": "tsc --noEmit",
 		"dev": "tsc --noEmit --watch",
+		"typecheck": "tsc --noEmit",
 		"lint": "eslint src",
 		"lint:fix": "eslint src --fix",
 		"clean": "rm -rf dist",

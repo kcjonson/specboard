@@ -8,6 +8,7 @@
 		"synth": "cdk synth",
 		"deploy": "cdk deploy",
 		"diff": "cdk diff",
+		"typecheck": "tsc --noEmit",
 		"lint": "eslint bin lib",
 		"lint:fix": "eslint bin lib --fix",
 		"clean": "rm -rf cdk.out"
