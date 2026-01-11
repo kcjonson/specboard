@@ -23,9 +23,9 @@ import {
 
 import { installErrorHandlers, logRequest } from '@doc-platform/core';
 
-import { epicTools, handleEpicTool } from './tools/epics.js';
-import { taskTools, handleTaskTool } from './tools/tasks.js';
-import { progressTools, handleProgressTool } from './tools/progress.js';
+import { epicTools, handleEpicTool } from './tools/epics.ts';
+import { taskTools, handleTaskTool } from './tools/tasks.ts';
+import { progressTools, handleProgressTool } from './tools/progress.ts';
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('mcp');

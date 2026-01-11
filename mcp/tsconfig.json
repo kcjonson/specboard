@@ -5,9 +5,7 @@
 		"moduleResolution": "NodeNext",
 		"target": "ES2022",
 		"types": ["node"],
-		"allowImportingTsExtensions": false,
-		"outDir": "dist",
-		"rootDir": "src"
+		"noEmit": true
 	},
 	"include": ["src"]
 }
