@@ -12,7 +12,7 @@ function forcePreactResolution(): Plugin {
 	return {
 		name: 'force-preact-resolution',
 		// No enforce - runs in normal phase, after pre-phase JSX transform
-		transform(code, id) {
+		transform(code) {
 			// Only process files that might have JSX runtime imports
 			if (!code.includes('preact/jsx-dev-runtime') && !code.includes('preact/jsx-runtime')) {
 				return null;
