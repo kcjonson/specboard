@@ -22,7 +22,8 @@ function forcePreactResolution(): Plugin {
 				.replace(/from ["']preact\/jsx-dev-runtime["']/g, `from "${jsxRuntimePath}"`)
 				.replace(/from ["']preact\/jsx-runtime["']/g, `from "${jsxRuntimePath}"`);
 			if (newCode !== code) {
-				return { code: newCode, map: null };
+				// Return empty mappings to indicate transform doesn't affect source positions
+				return { code: newCode, map: { mappings: '' } };
 			}
 			return null;
 		},
@@ -42,7 +43,8 @@ export default defineConfig({
 		}),
 	],
 	server: {
-		// Allow external access from Docker
+		// Bind to all interfaces for Docker container access.
+		// SECURITY: Only for containerized development, not public networks.
 		host: '0.0.0.0',
 		port: 5173,
 		strictPort: true,
@@ -52,10 +54,11 @@ export default defineConfig({
 			host: 'localhost',
 			path: '/__vite_hmr',
 		},
-		// File watching with polling for Docker on macOS
+		// File watching with polling for Docker on macOS.
+		// Interval of 300ms balances responsiveness with CPU usage.
 		watch: {
 			usePolling: true,
-			interval: 100,
+			interval: 300,
 		},
 		// Allow serving files from workspace root and shared packages
 		fs: {

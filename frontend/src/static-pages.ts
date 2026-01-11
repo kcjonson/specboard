@@ -22,13 +22,14 @@ const isDev = !!process.env.VITE_DEV_SERVER;
 function rewriteCssPathsForDev(html: string): string {
 	return html
 		// Shared: /assets/styles/common-HASH.css → /@fs/app/shared/styles/common.css
+		// Hash length may vary (Vite default is 8, but could change)
 		.replace(
-			/\/assets\/styles\/common-[A-Za-z0-9_-]{8}\.css/g,
+			/\/assets\/styles\/common-[A-Za-z0-9_-]{8,}\.css/g,
 			'/@fs/app/shared/styles/common.css'
 		)
 		// SSG: /assets/styles/ssg/NAME-HASH.css → /@fs/app/ssg/src/styles/NAME.css
 		.replace(
-			/\/assets\/styles\/ssg\/([a-z-]+)-[A-Za-z0-9_-]{8}\.css/g,
+			/\/assets\/styles\/ssg\/([a-z-]+)-[A-Za-z0-9_-]{8,}\.css/g,
 			'/@fs/app/ssg/src/styles/$1.css'
 		);
 }

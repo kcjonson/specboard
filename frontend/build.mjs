@@ -4,12 +4,16 @@
  *
  * Workspace packages (@doc-platform/*) are bundled directly.
  * npm packages (node_modules) are kept external.
+ *
+ * Note: All workspace packages use @doc-platform/ prefix per project convention.
+ * If this changes, update the filter below.
  */
 
 import * as esbuild from 'esbuild';
 import { readFileSync } from 'node:fs';
 
 // Get npm dependencies to mark as external (not workspace packages)
+// Workspace packages use @doc-platform/ prefix and should be bundled, not externalized
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'));
 const external = [
 	...Object.keys(pkg.dependencies || {}),

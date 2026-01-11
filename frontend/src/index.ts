@@ -45,7 +45,12 @@ async function proxyToVite(c: Context, path: string): Promise<Response> {
 		});
 	} catch (error) {
 		console.error('Vite proxy error:', error);
-		throw error;
+		// Return a helpful error page instead of crashing
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return new Response(
+			`<html><body><h1>Vite Dev Server Unavailable</h1><p>${message}</p><p>Ensure Vite is running on ${VITE_DEV_SERVER}</p></body></html>`,
+			{ status: 502, headers: { 'Content-Type': 'text/html' } }
+		);
 	}
 }
 

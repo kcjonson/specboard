@@ -45,9 +45,10 @@ services:
     command: sh -c "pnpm install && node --watch api/src/index.ts"
     ports:
       - "3001:3001"
+    # Anonymous /app/node_modules volume prevents host node_modules from
+    # overriding container's installed dependencies.
     volumes:
       - .:/app:cached
-      - ${HOST_PROJECT_PATH:-.}:/host/doc-platform
       - /app/node_modules
     environment:
       PORT: 3001

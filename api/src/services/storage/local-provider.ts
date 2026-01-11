@@ -18,11 +18,7 @@ import {
 import { execGit, validatePath } from './git-utils.ts';
 
 export class LocalStorageProvider implements StorageProvider {
-	private repoPath: string;
-
-	constructor(repoPath: string) {
-		this.repoPath = repoPath;
-	}
+	constructor(private repoPath: string) {}
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// File operations

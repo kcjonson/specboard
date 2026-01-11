@@ -200,10 +200,10 @@ export function useChatStream({
 
 								// Schedule flush if not already scheduled
 								if (!flushTimeoutRef.current) {
-									flushTimeoutRef.current = window.setTimeout(
+									flushTimeoutRef.current = setTimeout(
 										flushPendingContent,
 										STREAMING_THROTTLE_MS
-									);
+									) as unknown as number;
 								}
 							} else if ('error' in parsed) {
 								// Error event
