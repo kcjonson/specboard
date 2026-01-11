@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Dialog, Button } from '@doc-platform/ui';
 import { fetchClient } from '@doc-platform/fetch';
@@ -53,6 +53,15 @@ export function ProjectDialog({
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	// Track if component is mounted to prevent state updates after unmount
+	const mountedRef = useRef(true);
+	useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+		};
+	}, []);
+
 	// GitHub connection state
 	const [githubConnected, setGithubConnected] = useState<boolean | null>(null);
 	const [githubLoading, setGithubLoading] = useState(true);
@@ -82,6 +91,7 @@ export function ProjectDialog({
 			setGithubLoading(true);
 			try {
 				const data = await fetchClient.get<{ connected: boolean }>('/api/github/connection');
+				if (!mountedRef.current) return;
 				setGithubConnected(data.connected);
 
 				// If connected, load repos
@@ -89,17 +99,18 @@ export function ProjectDialog({
 					setReposLoading(true);
 					try {
 						const reposData = await fetchClient.get<GitHubRepo[]>('/api/github/repos');
+						if (!mountedRef.current) return;
 						setRepos(reposData);
 					} catch {
 						// Repos fetch failed - not critical
 					} finally {
-						setReposLoading(false);
+						if (mountedRef.current) setReposLoading(false);
 					}
 				}
 			} catch {
-				setGithubConnected(false);
+				if (mountedRef.current) setGithubConnected(false);
 			} finally {
-				setGithubLoading(false);
+				if (mountedRef.current) setGithubLoading(false);
 			}
 		}
 		checkGitHubConnection();
@@ -116,23 +127,26 @@ export function ProjectDialog({
 		const repo = repos.find(r => r.fullName === selectedRepo);
 		if (!repo) return;
 
+		const { owner, name: repoName, defaultBranch: defaultBranchName } = repo;
+
 		async function loadBranches(): Promise<void> {
 			setBranchesLoading(true);
 			try {
 				const branchesData = await fetchClient.get<GitHubBranch[]>(
-					`/api/github/repos/${repo!.owner}/${repo!.name}/branches`
+					`/api/github/repos/${owner}/${repoName}/branches`
 				);
+				if (!mountedRef.current) return;
 				setBranches(branchesData);
 
 				// Auto-select default branch
 				if (branchesData.length > 0) {
-					const defaultBranch = branchesData.find(b => b.name === repo!.defaultBranch);
-					setSelectedBranch(defaultBranch?.name || branchesData[0].name);
+					const defaultBranch = branchesData.find(b => b.name === defaultBranchName);
+					setSelectedBranch(defaultBranch?.name || branchesData[0]!.name);
 				}
 			} catch {
-				setBranches([]);
+				if (mountedRef.current) setBranches([]);
 			} finally {
-				setBranchesLoading(false);
+				if (mountedRef.current) setBranchesLoading(false);
 			}
 		}
 		loadBranches();
@@ -167,9 +181,11 @@ export function ProjectDialog({
 
 			await onSave(data);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to save project');
+			if (mountedRef.current) {
+				setError(err instanceof Error ? err.message : 'Failed to save project');
+			}
 		} finally {
-			setSaving(false);
+			if (mountedRef.current) setSaving(false);
 		}
 	}
 
@@ -181,9 +197,11 @@ export function ProjectDialog({
 			setError(null);
 			await onDelete();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to delete project');
+			if (mountedRef.current) {
+				setError(err instanceof Error ? err.message : 'Failed to delete project');
+			}
 		} finally {
-			setDeleting(false);
+			if (mountedRef.current) setDeleting(false);
 		}
 	}
 

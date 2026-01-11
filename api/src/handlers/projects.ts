@@ -123,6 +123,7 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 		// Validate repository config if provided
 		let validatedRepository: { provider: 'github'; owner: string; repo: string; branch: string; url: string } | undefined;
 		if (repository) {
+			// Basic type validation
 			if (
 				typeof repository !== 'object' ||
 				repository.provider !== 'github' ||
@@ -133,6 +134,31 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 			) {
 				return context.json({ error: 'Invalid repository configuration' }, 400);
 			}
+
+			// Validate GitHub naming conventions (alphanumeric, hyphens, underscores, dots)
+			const GITHUB_NAME_REGEX = /^[a-zA-Z0-9._-]{1,100}$/;
+			const BRANCH_REGEX = /^[a-zA-Z0-9_./-]{1,255}$/;
+
+			if (!GITHUB_NAME_REGEX.test(repository.owner)) {
+				return context.json({ error: 'Invalid repository owner format' }, 400);
+			}
+			if (!GITHUB_NAME_REGEX.test(repository.repo)) {
+				return context.json({ error: 'Invalid repository name format' }, 400);
+			}
+			if (!repository.branch || !BRANCH_REGEX.test(repository.branch)) {
+				return context.json({ error: 'Invalid branch name format' }, 400);
+			}
+
+			// Validate URL is a GitHub URL
+			try {
+				const url = new URL(repository.url);
+				if (url.hostname !== 'github.com') {
+					return context.json({ error: 'Repository URL must be a GitHub URL' }, 400);
+				}
+			} catch {
+				return context.json({ error: 'Invalid repository URL' }, 400);
+			}
+
 			validatedRepository = {
 				provider: 'github',
 				owner: repository.owner,

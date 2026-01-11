@@ -20,6 +20,13 @@ const GITHUB_SCOPES = ['repo', 'user:email'];
 // State token TTL in Redis (10 minutes)
 const STATE_TTL_SECONDS = 600;
 
+// Cache TTL constants
+const REPOS_CACHE_TTL_SECONDS = 300;
+const BRANCHES_CACHE_TTL_SECONDS = 300;
+
+// GitHub naming validation (alphanumeric, hyphens, underscores, dots)
+const GITHUB_NAME_REGEX = /^[a-zA-Z0-9._-]{1,100}$/;
+
 /**
  * Generate a secure random state token
  */
@@ -28,12 +35,16 @@ function generateState(): string {
 }
 
 /**
- * Get base URL from request
+ * Get base URL from environment or request
+ * Uses APP_URL env var to prevent host header injection attacks
  */
-function getBaseUrl(context: Context): string {
-	const proto = context.req.header('x-forwarded-proto') || 'http';
-	const host = context.req.header('host') || 'localhost';
-	return `${proto}://${host}`;
+function getBaseUrl(): string {
+	const appUrl = process.env.APP_URL;
+	if (appUrl) {
+		return appUrl.replace(/\/$/, ''); // Remove trailing slash
+	}
+	// Fallback for local dev only
+	return 'http://localhost';
 }
 
 /**
@@ -66,7 +77,7 @@ export async function handleGitHubAuthStart(
 	await redis.setex(`github_oauth_state:${state}`, STATE_TTL_SECONDS, session.userId);
 
 	// Build authorization URL
-	const baseUrl = getBaseUrl(context);
+	const baseUrl = getBaseUrl();
 	const redirectUri = `${baseUrl}/api/auth/github/callback`;
 
 	const params = new URLSearchParams({
@@ -121,7 +132,7 @@ export async function handleGitHubAuthCallback(
 		return context.redirect('/settings?github_error=GitHub+OAuth+not+configured');
 	}
 
-	const baseUrl = getBaseUrl(context);
+	const baseUrl = getBaseUrl();
 	const redirectUri = `${baseUrl}/api/auth/github/callback`;
 
 	let accessToken: string;
@@ -202,7 +213,8 @@ export async function handleGitHubAuthCallback(
 
 	// Encrypt and store token
 	const encryptedToken = encrypt(accessToken);
-	const scopes = scope.split(',').filter(Boolean);
+	// GitHub returns scopes as space-separated, handle both formats for safety
+	const scopes = scope.split(/[\s,]+/).filter(Boolean);
 
 	try {
 		// Upsert connection (user can only have one GitHub connection)
@@ -333,14 +345,25 @@ export async function handleListGitHubRepos(
 	}
 
 	// Decrypt access token
-	const encryptedToken: EncryptedData = JSON.parse(connectionResult.rows[0]!.access_token);
-	const accessToken = decrypt(encryptedToken);
+	let accessToken: string;
+	try {
+		const encryptedToken: EncryptedData = JSON.parse(connectionResult.rows[0]!.access_token);
+		accessToken = decrypt(encryptedToken);
+	} catch {
+		console.error('Failed to decrypt GitHub token for user:', session.userId);
+		return context.json({ error: 'GitHub connection corrupted. Please reconnect.' }, 500);
+	}
 
 	// Check Redis cache first
 	const cacheKey = `github_repos:${session.userId}`;
 	const cached = await redis.get(cacheKey);
 	if (cached) {
-		return context.json(JSON.parse(cached));
+		try {
+			return context.json(JSON.parse(cached));
+		} catch {
+			// Cache corrupted, delete and continue
+			await redis.del(cacheKey);
+		}
 	}
 
 	// Fetch repos from GitHub (with pagination)
@@ -371,6 +394,16 @@ export async function handleListGitHubRepos(
 			);
 
 			if (!response.ok) {
+				if (response.status === 401) {
+					return context.json({ error: 'GitHub authorization expired. Please reconnect.' }, 401);
+				}
+				if (response.status === 403) {
+					const remaining = response.headers.get('X-RateLimit-Remaining');
+					if (remaining === '0') {
+						return context.json({ error: 'GitHub rate limit exceeded. Please try again later.' }, 429);
+					}
+					return context.json({ error: 'Insufficient permissions for GitHub' }, 403);
+				}
 				throw new Error('Failed to fetch repositories');
 			}
 
@@ -406,7 +439,7 @@ export async function handleListGitHubRepos(
 	}));
 
 	// Cache for 5 minutes
-	await redis.setex(cacheKey, 300, JSON.stringify(formattedRepos));
+	await redis.setex(cacheKey, REPOS_CACHE_TTL_SECONDS, JSON.stringify(formattedRepos));
 
 	return context.json(formattedRepos);
 }
@@ -436,6 +469,11 @@ export async function handleListGitHubBranches(
 		return context.json({ error: 'owner and repo required' }, 400);
 	}
 
+	// Validate owner/repo format to prevent malformed API requests
+	if (!GITHUB_NAME_REGEX.test(owner) || !GITHUB_NAME_REGEX.test(repo)) {
+		return context.json({ error: 'Invalid owner or repo format' }, 400);
+	}
+
 	// Get user's GitHub connection
 	const connectionResult = await query<{
 		access_token: string;
@@ -449,20 +487,31 @@ export async function handleListGitHubBranches(
 	}
 
 	// Decrypt access token
-	const encryptedToken: EncryptedData = JSON.parse(connectionResult.rows[0]!.access_token);
-	const accessToken = decrypt(encryptedToken);
+	let accessToken: string;
+	try {
+		const encryptedToken: EncryptedData = JSON.parse(connectionResult.rows[0]!.access_token);
+		accessToken = decrypt(encryptedToken);
+	} catch {
+		console.error('Failed to decrypt GitHub token for user:', session.userId);
+		return context.json({ error: 'GitHub connection corrupted. Please reconnect.' }, 500);
+	}
 
-	// Check Redis cache first
-	const cacheKey = `github_branches:${owner}:${repo}`;
+	// Check Redis cache first (include user ID to prevent cross-user cache sharing)
+	const cacheKey = `github_branches:${session.userId}:${owner}:${repo}`;
 	const cached = await redis.get(cacheKey);
 	if (cached) {
-		return context.json(JSON.parse(cached));
+		try {
+			return context.json(JSON.parse(cached));
+		} catch {
+			// Cache corrupted, delete and continue
+			await redis.del(cacheKey);
+		}
 	}
 
 	// Fetch branches from GitHub
 	try {
 		const response = await fetch(
-			`${GITHUB_API_URL}/repos/${owner}/${repo}/branches?per_page=100`,
+			`${GITHUB_API_URL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches?per_page=100`,
 			{
 				headers: {
 					'Accept': 'application/vnd.github+json',
@@ -475,6 +524,16 @@ export async function handleListGitHubBranches(
 		if (!response.ok) {
 			if (response.status === 404) {
 				return context.json({ error: 'Repository not found' }, 404);
+			}
+			if (response.status === 401) {
+				return context.json({ error: 'GitHub authorization expired. Please reconnect.' }, 401);
+			}
+			if (response.status === 403) {
+				const remaining = response.headers.get('X-RateLimit-Remaining');
+				if (remaining === '0') {
+					return context.json({ error: 'GitHub rate limit exceeded. Please try again later.' }, 429);
+				}
+				return context.json({ error: 'Insufficient permissions for this repository' }, 403);
 			}
 			throw new Error('Failed to fetch branches');
 		}
@@ -490,7 +549,7 @@ export async function handleListGitHubBranches(
 		}));
 
 		// Cache for 5 minutes
-		await redis.setex(cacheKey, 300, JSON.stringify(formattedBranches));
+		await redis.setex(cacheKey, BRANCHES_CACHE_TTL_SECONDS, JSON.stringify(formattedBranches));
 
 		return context.json(formattedBranches);
 	} catch (err) {
