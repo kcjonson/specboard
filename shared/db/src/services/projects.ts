@@ -2,8 +2,8 @@
  * Project service - shared business logic for projects
  */
 
-import { query } from '../index.js';
-import { type Project, type StorageMode, type RepositoryConfig, isLocalRepository } from '../types.js';
+import { query } from '../index.ts';
+import { type Project, type StorageMode, type RepositoryConfig, isLocalRepository } from '../types.ts';
 
 // Maximum number of root paths per project to prevent abuse
 const MAX_ROOT_PATHS = 20;

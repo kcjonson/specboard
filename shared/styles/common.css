@@ -1,0 +1,17 @@
+/**
+ * Common CSS bundle for SSG pages and SPA
+ *
+ * Imports shared styles (reset, tokens, elements) and adds
+ * base body styles used across all pages.
+ */
+
+@import '../ui/src/shared.css';
+
+/* Base body styles */
+body {
+	font-family: var(--font-sans);
+	background: var(--color-background);
+	color: var(--color-text);
+	min-height: 100vh;
+	margin: 0;
+}

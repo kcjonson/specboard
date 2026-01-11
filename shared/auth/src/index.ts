@@ -7,7 +7,7 @@ export {
 	updateSession,
 	deleteSession,
 	sessionExists,
-} from './session.js';
+} from './session.ts';
 
 // Auth middleware
 export {
@@ -15,14 +15,14 @@ export {
 	getUser,
 	getSessionId,
 	type AuthVariables,
-} from './middleware.js';
+} from './middleware.ts';
 
 // CSRF middleware
 export {
 	csrfMiddleware,
 	CSRF_HEADER_NAME,
 	type CsrfMiddlewareOptions,
-} from './csrf.js';
+} from './csrf.ts';
 
 // Rate limiting middleware
 export {
@@ -31,7 +31,7 @@ export {
 	type RateLimitConfig,
 	type RateLimitRule,
 	type RateLimitMiddlewareOptions,
-} from './rate-limit.js';
+} from './rate-limit.ts';
 
 // Password utilities
 export {
@@ -40,7 +40,7 @@ export {
 	verifyPassword,
 	type PasswordValidationError,
 	type PasswordValidationResult,
-} from './password.js';
+} from './password.ts';
 
 // MCP OAuth middleware
 export {
@@ -49,7 +49,7 @@ export {
 	getMcpToken,
 	type McpTokenPayload,
 	type McpAuthVariables,
-} from './mcp.js';
+} from './mcp.ts';
 
 // Admin middleware
 export {
@@ -59,7 +59,7 @@ export {
 	hasRole,
 	hasAnyRole,
 	type AdminAuthVariables,
-} from './admin.js';
+} from './admin.ts';
 
 // Token utilities
 export {
@@ -69,7 +69,7 @@ export {
 	getTokenExpiry,
 	isTokenExpired,
 	TOKEN_EXPIRY_MS,
-} from './tokens.js';
+} from './tokens.ts';
 
 // Encryption utilities
 export {
@@ -77,7 +77,7 @@ export {
 	decrypt,
 	maskApiKey,
 	type EncryptedData,
-} from './encryption.js';
+} from './encryption.ts';
 
 // Types
 export {
@@ -87,4 +87,4 @@ export {
 	SESSION_COOKIE_NAME,
 	CSRF_COOKIE_NAME,
 	SESSION_TTL_SECONDS,
-} from './types.js';
+} from './types.ts';

@@ -9,13 +9,50 @@ import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Redis } from 'ioredis';
 import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
-import { pages, spaIndex, type CachedPage } from './static-pages.js';
+import { pages, spaIndex, type CachedPage } from './static-pages.ts';
+
+// Vite dev server URL for hot reloading (set in docker-compose for dev mode)
+const VITE_DEV_SERVER = process.env.VITE_DEV_SERVER;
 
 const app = new Hono<{ Variables: AuthVariables }>();
 
 /**
+ * Proxy a request to the Vite dev server for HMR support.
+ * Used in development mode to serve the SPA with hot module replacement.
+ */
+async function proxyToVite(c: Context, path: string): Promise<Response> {
+	if (!VITE_DEV_SERVER) {
+		throw new Error('VITE_DEV_SERVER not configured');
+	}
+
+	try {
+		const viteUrl = `${VITE_DEV_SERVER}${path}`;
+		const response = await fetch(viteUrl, {
+			method: c.req.method,
+			headers: {
+				'Accept': c.req.header('Accept') || '*/*',
+				'Accept-Encoding': c.req.header('Accept-Encoding') || '',
+			},
+		});
+
+		// Forward the response with appropriate headers
+		return new Response(response.body, {
+			status: response.status,
+			headers: {
+				'Content-Type': response.headers.get('Content-Type') || 'text/html',
+				'Cache-Control': 'no-cache',
+			},
+		});
+	} catch (error) {
+		console.error('Vite proxy error:', error);
+		throw error;
+	}
+}
+
+/**
  * Serve a cached SSG page with preload headers.
  * SPA index uses private caching to avoid cache poisoning between auth states.
+ * In dev mode, skip preload headers since production CSS paths don't exist.
  */
 function servePage(c: Context, page: CachedPage, status: ContentfulStatusCode = 200): Response {
 	const isSpaIndex = page === spaIndex;
@@ -23,10 +60,16 @@ function servePage(c: Context, page: CachedPage, status: ContentfulStatusCode = 
 		? 'private, no-cache, no-store, must-revalidate'
 		: 'public, max-age=3600';
 
-	return c.html(page.html, status, {
-		'Link': page.preloadHeader,
+	const headers: Record<string, string> = {
 		'Cache-Control': cacheControl,
-	});
+	};
+
+	// Only send preload headers in production - dev mode uses Vite-served source CSS
+	if (!VITE_DEV_SERVER && page.preloadHeader) {
+		headers['Link'] = page.preloadHeader;
+	}
+
+	return c.html(page.html, status, headers);
 }
 
 // Redis connection
@@ -68,22 +111,22 @@ app.get('/', async (c) => {
 	const sessionMatch = cookieHeader.match(/session_id=([^;]+)/);
 	const sessionId = sessionMatch?.[1];
 
-	let page: CachedPage = pages.home;
-
 	if (sessionId) {
 		// Verify session exists in Redis
 		const sessionData = await redis.get(`session:${sessionId}`);
 		if (sessionData) {
-			// Authenticated - serve cached SPA
-			page = spaIndex;
+			// Authenticated - serve SPA
+			if (VITE_DEV_SERVER) {
+				// Dev mode: proxy to Vite for HMR
+				return proxyToVite(c, '/');
+			}
+			// Production: serve cached SPA
+			return servePage(c, spaIndex);
 		}
 	}
 
-	// Serve selected page with private caching to avoid cache poisoning between auth states
-	return c.html(page.html, 200, {
-		'Link': page.preloadHeader,
-		'Cache-Control': 'private, max-age=0',
-	});
+	// Unauthenticated - serve marketing home page
+	return servePage(c, pages.home);
 });
 
 // API URL for proxying
@@ -362,14 +405,15 @@ app.use(
 		onUnauthenticated: () => {
 			// Show 404 for unauthenticated requests
 			// This avoids revealing which routes exist and eliminates route duplication
-			return new Response(pages.notFound.html, {
-				status: 404,
-				headers: {
-					'Content-Type': 'text/html; charset=UTF-8',
-					'Link': pages.notFound.preloadHeader,
-					'Cache-Control': 'public, max-age=3600',
-				},
-			});
+			const headers: Record<string, string> = {
+				'Content-Type': 'text/html; charset=UTF-8',
+				'Cache-Control': 'public, max-age=3600',
+			};
+			// Only send preload headers in production
+			if (!VITE_DEV_SERVER && pages.notFound.preloadHeader) {
+				headers['Link'] = pages.notFound.preloadHeader;
+			}
+			return new Response(pages.notFound.html, { status: 404, headers });
 		},
 	})
 );
@@ -389,7 +433,7 @@ app.use(
 );
 
 // SPA fallback - serve index.html for all non-file routes
-app.get('*', (c) => {
+app.get('*', async (c) => {
 	const path = new URL(c.req.url).pathname;
 
 	// If it looks like a file request, return 404
@@ -397,7 +441,12 @@ app.get('*', (c) => {
 		return c.notFound();
 	}
 
-	// Serve cached SPA for all other routes
+	// Dev mode: proxy to Vite for HMR
+	if (VITE_DEV_SERVER) {
+		return proxyToVite(c, path);
+	}
+
+	// Production: serve cached SPA
 	return servePage(c, spaIndex);
 });
 

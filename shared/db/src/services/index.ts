@@ -5,7 +5,7 @@
  * Used by both API handlers and MCP tools.
  */
 
-export * from './epics.js';
-export * from './tasks.js';
-export * from './progress.js';
-export * from './projects.js';
+export * from './epics.ts';
+export * from './tasks.ts';
+export * from './progress.ts';
+export * from './projects.ts';

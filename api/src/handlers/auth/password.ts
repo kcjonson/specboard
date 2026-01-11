@@ -22,7 +22,7 @@ import {
 	getPasswordResetEmailContent,
 } from '@doc-platform/email';
 
-import { logAuthEvent, APP_URL } from './utils.js';
+import { logAuthEvent, APP_URL } from './utils.ts';
 
 interface ForgotPasswordRequest {
 	email: string;

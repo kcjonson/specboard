@@ -1,9 +1,9 @@
 // Email client
-export { sendEmail, type SendEmailOptions } from './client.js';
+export { sendEmail, type SendEmailOptions } from './client.ts';
 
 // Email templates
 export {
 	getVerificationEmailContent,
 	getPasswordResetEmailContent,
 	type EmailContent,
-} from './templates.js';
+} from './templates.ts';

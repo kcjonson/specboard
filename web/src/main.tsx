@@ -26,7 +26,7 @@ import { Admin } from './routes/admin/Admin';
 import { AdminUsers } from './routes/admin/AdminUsers';
 
 // Global styles - common CSS shared with SSG pages, then app-specific
-import '../../ssg/src/styles/common.css';
+import '../../shared/styles/common.css';
 import './styles/tokens.css';
 import './styles/global.css';
 

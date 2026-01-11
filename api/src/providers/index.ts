@@ -4,12 +4,12 @@
  * Central registry for all AI providers.
  */
 
-import { AnthropicProvider } from './anthropic.js';
-import { GeminiProvider } from './gemini.js';
-import type { ChatProvider, ProviderName, ProviderConfig, ModelInfo } from './types.js';
+import { AnthropicProvider } from './anthropic.ts';
+import { GeminiProvider } from './gemini.ts';
+import type { ChatProvider, ProviderName, ProviderConfig, ModelInfo } from './types.ts';
 
 // Re-export types
-export type { ChatProvider, ProviderName, ProviderConfig, ModelInfo, ChatMessage } from './types.js';
+export type { ChatProvider, ProviderName, ProviderConfig, ModelInfo, ChatMessage } from './types.ts';
 
 /**
  * Provider instances

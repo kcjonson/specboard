@@ -1,9 +1,9 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import { getSession } from './session.js';
-import type { AuthMiddlewareOptions, AuthUser } from './types.js';
-import { SESSION_COOKIE_NAME } from './types.js';
+import { getSession } from './session.ts';
+import type { AuthMiddlewareOptions, AuthUser } from './types.ts';
+import { SESSION_COOKIE_NAME } from './types.ts';
 
 /**
  * Hono variables type for auth context

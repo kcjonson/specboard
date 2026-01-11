@@ -6,10 +6,10 @@
 export const VERSION = '0.0.1';
 
 // Error reporting
-export { reportError, captureException, installErrorHandlers, type ErrorReport } from './error-reporting.js';
+export { reportError, captureException, installErrorHandlers, type ErrorReport } from './error-reporting.ts';
 
 // Logging
-export { log, logRequest, type LogLevel } from './logging.js';
+export { log, logRequest, type LogLevel } from './logging.ts';
 
 // Planning types
 export type Status = 'ready' | 'in_progress' | 'done';

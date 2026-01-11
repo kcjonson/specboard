@@ -6,8 +6,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { SSEStreamingApi } from 'hono/streaming';
-import type { ChatProvider, ProviderConfig, ChatMessage } from './types.js';
-import { getSafeErrorMessage } from './utils.js';
+import type { ChatProvider, ProviderConfig, ChatMessage } from './types.ts';
+import { getSafeErrorMessage } from './utils.ts';
 
 export class AnthropicProvider implements ChatProvider {
 	readonly config: ProviderConfig = {

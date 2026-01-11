@@ -11,7 +11,7 @@ import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
 import { query, type UserApiKey } from '@doc-platform/db';
-import { PROVIDER_NAMES, getProvider, type ProviderName, type ModelInfo } from '../providers/index.js';
+import { PROVIDER_NAMES, getProvider, type ProviderName, type ModelInfo } from '../providers/index.ts';
 
 /**
  * Model response with provider information

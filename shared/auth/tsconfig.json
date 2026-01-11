@@ -1,8 +1,13 @@
 {
 	"extends": "../../tsconfig.json",
 	"compilerOptions": {
-		"outDir": "./dist",
-		"rootDir": "./src"
+		"baseUrl": "../..",
+		"paths": {
+			"@doc-platform/core": ["./shared/core/src"],
+			"@doc-platform/core/*": ["./shared/core/src/*"],
+			"@doc-platform/db": ["./shared/db/src"],
+			"@doc-platform/db/*": ["./shared/db/src/*"]
+		}
 	},
 	"include": ["src"]
 }

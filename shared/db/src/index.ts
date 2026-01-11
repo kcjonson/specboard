@@ -1,8 +1,8 @@
 import fs from 'fs';
 import pg from 'pg';
 
-export * from './types.js';
-export * from './services/index.js';
+export * from './types.ts';
+export * from './services/index.ts';
 
 const { Pool } = pg;
 

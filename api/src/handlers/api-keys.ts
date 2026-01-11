@@ -14,7 +14,7 @@ import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME, encrypt, decrypt, maskApiKey } from '@doc-platform/auth';
 import { query, type UserApiKey, type ApiKeyProvider } from '@doc-platform/db';
-import { isValidProvider, getProvider, PROVIDER_NAMES } from '../providers/index.js';
+import { isValidProvider, getProvider, PROVIDER_NAMES } from '../providers/index.ts';
 
 /**
  * Get current user ID from session

@@ -8,7 +8,7 @@ import type { Redis } from 'ioredis';
 import path from 'path';
 import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
 import { getProject, type RepositoryConfig, isLocalRepository } from '@doc-platform/db';
-import { LocalStorageProvider } from '../../services/storage/local-provider.js';
+import { LocalStorageProvider } from '../../services/storage/local-provider.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth helpers

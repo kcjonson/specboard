@@ -6,9 +6,9 @@ import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import fs from 'fs/promises';
 import { addFolder, removeFolder } from '@doc-platform/db';
-import { isValidUUID } from '../../validation.js';
-import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/storage/git-utils.js';
-import { getUserId } from './utils.js';
+import { isValidUUID } from '../../validation.ts';
+import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/storage/git-utils.ts';
+import { getUserId } from './utils.ts';
 
 /**
  * POST /api/projects/:id/folders

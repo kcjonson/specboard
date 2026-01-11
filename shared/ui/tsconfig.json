@@ -1,12 +1,10 @@
 {
 	"extends": "../../tsconfig.json",
 	"compilerOptions": {
-		"outDir": "./dist",
-		"rootDir": "./src",
-		"baseUrl": ".",
+		"baseUrl": "../..",
 		"paths": {
-			"@doc-platform/fetch": ["../fetch/dist"],
-			"@doc-platform/models": ["../models/dist"]
+			"@doc-platform/fetch": ["./shared/fetch/src"],
+			"@doc-platform/models": ["./shared/models/src"]
 		},
 		"jsx": "react-jsx",
 		"jsxImportSource": "preact"

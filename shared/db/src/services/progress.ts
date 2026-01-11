@@ -2,8 +2,8 @@
  * Progress notes service - shared business logic for progress notes
  */
 
-import { query } from '../index.js';
-import type { ProgressNote } from '../types.js';
+import { query } from '../index.ts';
+import type { ProgressNote } from '../types.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)

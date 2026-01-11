@@ -1,11 +1,51 @@
-# Build stage
-FROM node:20-alpine AS builder
+# ===== DEV TARGET =====
+# Used by docker-compose for local development with hot reloading
+FROM node:25-alpine AS dev
+
+RUN npm install -g pnpm@9.15.1
+
+WORKDIR /app
+
+# Copy workspace config and package files
+COPY frontend/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
+COPY package.json pnpm-lock.yaml ./
+COPY shared/core/package.json ./shared/core/
+COPY shared/db/package.json ./shared/db/
+COPY shared/auth/package.json ./shared/auth/
+COPY shared/ui/package.json ./shared/ui/
+COPY shared/models/package.json ./shared/models/
+COPY shared/router/package.json ./shared/router/
+COPY shared/fetch/package.json ./shared/fetch/
+COPY shared/telemetry/package.json ./shared/telemetry/
+COPY shared/pages/package.json ./shared/pages/
+COPY frontend/package.json ./frontend/
+COPY web/package.json ./web/
+COPY ssg/package.json ./ssg/
+COPY tsconfig.json ./
+
+# Install all dependencies (including devDependencies)
+RUN pnpm install --frozen-lockfile
+
+# Download AWS RDS CA bundle for SSL certificate verification
+RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+
+# Source code is mounted at runtime via docker-compose volumes
+EXPOSE 3000 5173
+
+# Copy entrypoint script
+COPY frontend/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+CMD ["/docker-entrypoint.sh"]
+
+# ===== PRODUCTION BUILD STAGE =====
+FROM node:25-alpine AS builder
 
 # Build arg for git SHA (passed at build time)
 ARG GIT_SHA=unknown
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
+RUN npm install -g pnpm@9.15.1
 
 WORKDIR /app
 
@@ -49,6 +89,7 @@ COPY web ./web
 COPY ssg ./ssg
 COPY shared/planning ./shared/planning
 COPY shared/pages ./shared/pages
+COPY shared/styles ./shared/styles
 
 # Build shared packages first, then frontend server, then SPA, then SSG
 # Order matters: core first, then packages that depend on it
@@ -67,10 +108,10 @@ RUN pnpm --filter @doc-platform/core build && \
 # Create version.txt with git SHA
 RUN echo "${GIT_SHA}" > /app/web/dist/version.txt
 
-# Production stage
-FROM node:20-alpine AS runner
+# ===== PRODUCTION RUN STAGE =====
+FROM node:25-alpine AS runner
 
-RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
+RUN npm install -g pnpm@9.15.1
 
 WORKDIR /app
 
@@ -80,18 +121,12 @@ RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/glob
 # Copy workspace config
 COPY frontend/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
 COPY package.json pnpm-lock.yaml ./
-COPY shared/core/package.json ./shared/core/
-COPY shared/db/package.json ./shared/db/
-COPY shared/auth/package.json ./shared/auth/
 COPY frontend/package.json ./frontend/
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
-# Copy built output
-COPY --from=builder /app/shared/core/dist ./shared/core/dist
-COPY --from=builder /app/shared/db/dist ./shared/db/dist
-COPY --from=builder /app/shared/auth/dist ./shared/auth/dist
+# Copy built frontend (workspace packages are bundled in)
 COPY --from=builder /app/frontend/dist ./frontend/dist
 
 # Copy built SPA to static directory

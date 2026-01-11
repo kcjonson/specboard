@@ -3,7 +3,7 @@
  */
 
 import type { Epic as DbEpic, Task as DbTask, ProgressNote as DbProgressNote, ProjectResponse } from '@doc-platform/db';
-import type { ApiEpic, ApiTask, ApiProgressNote, ApiProject } from './types.js';
+import type { ApiEpic, ApiTask, ApiProgressNote, ApiProject } from './types.ts';
 
 export function dbEpicToApi(epic: DbEpic): ApiEpic {
 	return {

@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { query, type User, type UserRole } from '@doc-platform/db';
-import type { AuthVariables } from './middleware.js';
+import type { AuthVariables } from './middleware.ts';
 
 /**
  * Extended auth variables that include full user data

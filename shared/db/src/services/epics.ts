@@ -2,8 +2,8 @@
  * Epic service - shared business logic for epics
  */
 
-import { query } from '../index.js';
-import type { Epic, Task, ProgressNote, EpicStatus } from '../types.js';
+import { query } from '../index.ts';
+import type { Epic, Task, ProgressNote, EpicStatus } from '../types.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)

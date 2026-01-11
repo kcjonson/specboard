@@ -1,8 +1,8 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:25-alpine AS builder
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
+RUN npm install -g pnpm@9.15.1
 
 WORKDIR /app
 
@@ -31,9 +31,9 @@ RUN pnpm --filter @doc-platform/core build && \
     pnpm --filter @doc-platform/mcp build
 
 # Production stage
-FROM node:20-alpine AS runner
+FROM node:25-alpine AS runner
 
-RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
+RUN npm install -g pnpm@9.15.1
 
 WORKDIR /app
 
