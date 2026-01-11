@@ -78,6 +78,7 @@ export interface StorageProvider {
 	commit(message: string): Promise<string>; // Returns commit SHA
 	push(): Promise<void>;
 	pull(): Promise<PullResult>;
+	restore(relativePath: string): Promise<void>; // Restore deleted file from git
 
 	// Repository info
 	getCurrentBranch(): Promise<string>;

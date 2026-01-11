@@ -110,8 +110,16 @@ export class LocalStorageProvider implements StorageProvider {
 	}
 
 	async deleteFile(relativePath: string): Promise<void> {
+		const gitPath = relativePath.replace(/^\//, '');
 		const absolutePath = await validatePath(this.repoPath, relativePath);
-		await fs.rm(absolutePath, { recursive: true });
+
+		// Try git rm first (for tracked files), fall back to fs.rm (for untracked)
+		try {
+			await execGit(this.repoPath, ['rm', '-rf', gitPath]);
+		} catch {
+			// File is untracked, use filesystem delete
+			await fs.rm(absolutePath, { recursive: true });
+		}
 	}
 
 	async createDirectory(relativePath: string): Promise<void> {
@@ -120,9 +128,18 @@ export class LocalStorageProvider implements StorageProvider {
 	}
 
 	async rename(oldPath: string, newPath: string): Promise<void> {
-		const oldAbsolute = await validatePath(this.repoPath, oldPath);
-		const newAbsolute = await validatePath(this.repoPath, newPath);
-		await fs.rename(oldAbsolute, newAbsolute);
+		const absoluteOldPath = await validatePath(this.repoPath, oldPath);
+		const absoluteNewPath = await validatePath(this.repoPath, newPath);
+		const gitOldPath = oldPath.replace(/^\//, '');
+		const gitNewPath = newPath.replace(/^\//, '');
+
+		// Try git mv first (for tracked files), fall back to fs.rename (for untracked)
+		try {
+			await execGit(this.repoPath, ['mv', gitOldPath, gitNewPath]);
+		} catch {
+			// File is untracked, use filesystem rename
+			await fs.rename(absoluteOldPath, absoluteNewPath);
+		}
 	}
 
 	async exists(relativePath: string): Promise<boolean> {
@@ -172,9 +189,14 @@ export class LocalStorageProvider implements StorageProvider {
 
 			const indexStatus = line[0];
 			const workTreeStatus = line[1];
-			const filePath = line.slice(3);
+			let filePath = line.slice(3);
 			if (!filePath) {
 				continue;
+			}
+
+			// Git quotes paths with special characters (spaces, etc.) - strip the quotes
+			if (filePath.startsWith('"') && filePath.endsWith('"')) {
+				filePath = filePath.slice(1, -1);
 			}
 
 			// Staged changes (index)
@@ -320,5 +342,13 @@ export class LocalStorageProvider implements StorageProvider {
 		} catch {
 			return null;
 		}
+	}
+
+	async restore(relativePath: string): Promise<void> {
+		// Validate path to prevent directory traversal attacks
+		await validatePath(this.repoPath, relativePath);
+		// Remove leading slash for git command
+		const gitPath = relativePath.replace(/^\//, '');
+		await execGit(this.repoPath, ['checkout', 'HEAD', '--', gitPath]);
 	}
 }

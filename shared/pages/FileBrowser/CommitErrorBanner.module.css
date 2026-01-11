@@ -1,0 +1,26 @@
+/**
+ * CommitErrorBanner - extends Notice with layout for title/message/actions
+ */
+
+.banner {
+	justify-content: space-between;
+}
+
+.content {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.message {
+	font-size: var(--text-xs);
+	opacity: 0.9;
+}
+
+.actions {
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	flex-shrink: 0;
+}

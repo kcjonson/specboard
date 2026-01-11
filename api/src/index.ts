@@ -88,6 +88,11 @@ import {
 	handleWriteFile,
 	handleCreateFile,
 	handleRenameFile,
+	handleDeleteFile,
+	handleGetGitStatus,
+	handleCommit,
+	handleRestore,
+	handlePull,
 } from './handlers/storage/index.js';
 import {
 	handleListApiKeys,
@@ -342,7 +347,7 @@ app.post('/api/projects', (context) => handleCreateProject(context, redis));
 app.put('/api/projects/:id', (context) => handleUpdateProject(context, redis));
 app.delete('/api/projects/:id', (context) => handleDeleteProject(context, redis));
 
-// Project storage routes (folders, files, git)
+// Project storage routes (folders, files)
 app.post('/api/projects/:id/folders', (context) => handleAddFolder(context, redis));
 app.delete('/api/projects/:id/folders', (context) => handleRemoveFolder(context, redis));
 app.get('/api/projects/:id/tree', (context) => handleListFiles(context, redis));
@@ -351,6 +356,13 @@ app.get('/api/projects/:id/files', (context) => handleReadFile(context, redis));
 app.post('/api/projects/:id/files', (context) => handleCreateFile(context, redis));
 app.put('/api/projects/:id/files', (context) => handleWriteFile(context, redis));
 app.put('/api/projects/:id/files/rename', (context) => handleRenameFile(context, redis));
+app.delete('/api/projects/:id/files', (context) => handleDeleteFile(context, redis));
+
+// Project git routes
+app.get('/api/projects/:id/git/status', (context) => handleGetGitStatus(context, redis));
+app.post('/api/projects/:id/git/commit', (context) => handleCommit(context, redis));
+app.post('/api/projects/:id/git/restore', (context) => handleRestore(context, redis));
+app.post('/api/projects/:id/git/pull', (context) => handlePull(context, redis));
 
 // Project-scoped epic routes
 app.get('/api/projects/:projectId/epics', handleListEpics);

@@ -5,6 +5,7 @@ import { Page, Icon, ErrorBoundary } from '@doc-platform/ui';
 import {
 	DocumentModel,
 	UserModel,
+	GitStatusModel,
 	useModel,
 	saveToLocalStorage,
 	loadFromLocalStorage,
@@ -19,7 +20,20 @@ import { MarkdownEditor, fromMarkdown, toMarkdown, type MarkdownEditorHandle } f
 import { ChatSidebar } from '../ChatSidebar';
 import { EditorHeader } from './EditorHeader';
 import { RecoveryDialog } from './RecoveryDialog';
+import { SaveErrorBanner } from './SaveErrorBanner';
 import styles from './Editor.module.css';
+
+// Auto-save configuration
+const AUTO_SAVE_DEBOUNCE_MS = 2500; // 2.5 seconds debounce for server save
+const SAVE_RETRY_DELAY_MS = 5000; // 5 seconds between retries
+const MAX_SAVE_RETRIES = 3;
+
+interface SaveError {
+	hasLocalChanges: boolean;
+	lastAttempt: Date;
+	retryCount: number;
+	message: string;
+}
 
 interface LoadError {
 	message: string;
@@ -82,6 +96,9 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Document model - source of truth for editor content
 	const documentModel = useMemo(() => new DocumentModel(), []);
 
+	// Git status model - tracks uncommitted changes
+	const gitStatusModel = useMemo(() => new GitStatusModel(), []);
+
 	// Current user model - for comment author info
 	// SyncModel auto-fetches from /api/users/me when given id='me'.
 	// If not authenticated, fetch fails and we fall back to "Anonymous" in getCommentAuthor.
@@ -89,10 +106,15 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Subscribe to model changes - this re-renders when user data loads
 	useModel(documentModel);
+	useModel(gitStatusModel);
 	useModel(currentUser);
 
-	// Track previous content for debounced localStorage save
-	const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Auto-save state
+	const serverSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const saveRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const saveRetryCount = useRef(0);
+	const [isSaving, setIsSaving] = useState(false);
+	const [saveError, setSaveError] = useState<SaveError | null>(null);
 
 	// Track if we've attempted to restore the selected file
 	const restoredRef = useRef(false);
@@ -120,6 +142,9 @@ export function Editor(props: RouteProps): JSX.Element {
 	const [creatingEpic, setCreatingEpic] = useState(false);
 	const creatingEpicRef = useRef(false);
 
+	// Restore file state
+	const [isRestoring, setIsRestoring] = useState(false);
+
 
 	// Check if file has a linked epic
 	const checkLinkedEpic = useCallback(async (path: string) => {
@@ -146,6 +171,12 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [projectId]);
 
+	// Initialize git status when project changes
+	useEffect(() => {
+		gitStatusModel.projectId = projectId;
+		gitStatusModel.refresh();
+	}, [projectId, gitStatusModel]);
+
 	// Load file from server
 	const loadFileFromServer = useCallback(async (path: string) => {
 		try {
@@ -164,16 +195,90 @@ export function Editor(props: RouteProps): JSX.Element {
 				filePath: path,
 				projectId,
 			});
+			// Clear the saved selection so we don't try to load a deleted/missing file on refresh
+			saveSelectedFile(projectId, null);
 			setLoadError({
-				message: 'Unable to load this file. The file may be corrupted or contain unsupported formatting.',
+				message: 'Unable to load this file. The file may have been deleted or moved.',
 				filePath: path,
 			});
 		}
 	}, [projectId, documentModel, checkLinkedEpic]);
 
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Auto-save mechanism (defined before handleFileSelect which depends on it)
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	// Perform server save
+	const performServerSave = useCallback(async (): Promise<boolean> => {
+		if (!documentModel.filePath || !documentModel.projectId) return true;
+		if (!documentModel.isDirty) return true;
+
+		const { projectId: pid, filePath: fpath, content, comments } = documentModel;
+
+		setIsSaving(true);
+		try {
+			const markdown = toMarkdown(content, comments);
+			await fetchClient.put(
+				`/api/projects/${pid}/files?path=${encodeURIComponent(fpath)}`,
+				{ content: markdown }
+			);
+			documentModel.markSaved();
+
+			// Clear localStorage on successful server save
+			try {
+				clearLocalStorage(pid, fpath);
+			} catch (storageErr) {
+				console.warn('Failed to clear local draft from localStorage:', storageErr);
+			}
+
+			// Reset retry count and clear error on success
+			saveRetryCount.current = 0;
+			setSaveError(null);
+
+			// Refresh git status after save
+			gitStatusModel.refresh();
+
+			return true;
+		} catch (err) {
+			const errorMessage = err instanceof Error ? err.message : 'Failed to save';
+			console.error('Server save failed:', errorMessage);
+
+			// Ensure localStorage has latest changes as fallback
+			saveToLocalStorage(pid, fpath, content, comments);
+
+			// Update error state
+			saveRetryCount.current++;
+			setSaveError({
+				hasLocalChanges: true,
+				lastAttempt: new Date(),
+				retryCount: saveRetryCount.current,
+				message: errorMessage,
+			});
+
+			// Schedule retry if under max retries
+			if (saveRetryCount.current < MAX_SAVE_RETRIES) {
+				if (saveRetryTimerRef.current) {
+					clearTimeout(saveRetryTimerRef.current);
+				}
+				saveRetryTimerRef.current = setTimeout(() => {
+					performServerSave();
+				}, SAVE_RETRY_DELAY_MS);
+			}
+
+			return false;
+		} finally {
+			setIsSaving(false);
+		}
+	}, [documentModel, gitStatusModel]);
+
 	// Handle file selection from FileBrowser
 	const handleFileSelect = useCallback(async (path: string) => {
 		setLoadError(null);
+
+		// Save current file before switching (if dirty)
+		if (documentModel.isDirty && documentModel.filePath) {
+			await performServerSave();
+		}
 
 		// Check for cached changes - show recovery dialog if found
 		if (hasPersistedContent(projectId, path)) {
@@ -182,7 +287,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 
 		await loadFileFromServer(path);
-	}, [projectId, loadFileFromServer]);
+	}, [projectId, loadFileFromServer, documentModel, performServerSave]);
 
 	// Handle file renamed via sidebar double-click
 	const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
@@ -269,6 +374,28 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [projectId, linkedEpicId]);
 
+	// Handle restoring a deleted file
+	const handleRestoreDeletedFile = useCallback(async () => {
+		const filePath = documentModel.filePath;
+		if (!filePath) return;
+
+		setIsRestoring(true);
+		try {
+			const success = await gitStatusModel.restore(filePath);
+			if (success) {
+				// Reload the file after restore
+				await loadFileFromServer(filePath);
+			}
+		} finally {
+			setIsRestoring(false);
+		}
+	}, [documentModel.filePath, gitStatusModel, loadFileFromServer]);
+
+	// Check if current file is deleted
+	const isCurrentFileDeleted = documentModel.filePath
+		? gitStatusModel.isDeleted(documentModel.filePath)
+		: false;
+
 	// ─────────────────────────────────────────────────────────────────────────────
 	// Comment handlers
 	// ─────────────────────────────────────────────────────────────────────────────
@@ -339,82 +466,46 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [projectId, handleFileSelect]);
 
-	// Handle save
-	const handleSave = useCallback(async () => {
-		if (!documentModel.filePath || !documentModel.projectId) return;
-		if (documentModel.saving) return;
+	// Manual retry from error banner
+	const handleRetryManual = useCallback(() => {
+		saveRetryCount.current = 0;
+		performServerSave();
+	}, [performServerSave]);
 
-		const { projectId: pid, filePath: fpath } = documentModel;
-		documentModel.saving = true;
-		try {
-			// Include comments in the markdown output
-			const markdown = toMarkdown(documentModel.content, documentModel.comments);
-			await fetchClient.put(
-				`/api/projects/${pid}/files?path=${encodeURIComponent(fpath)}`,
-				{ content: markdown }
-			);
-			documentModel.markSaved();
-			try {
-				clearLocalStorage(pid, fpath);
-			} catch (storageErr) {
-				console.warn('Failed to clear local draft from localStorage:', storageErr);
-			}
-		} catch (err) {
-			console.error('Failed to save file:', err);
-			// Could show error UI here
-		} finally {
-			documentModel.saving = false;
-		}
-	}, [documentModel]);
-
-	// Handle revert - reload file from server, discarding local changes
-	const handleRevert = useCallback(async () => {
-		const { filePath, projectId: pid } = documentModel;
-		if (!filePath || !pid) return;
-
-		// Clear any cached local changes
-		clearLocalStorage(pid, filePath);
-
-		// Reload from server
-		await loadFileFromServer(filePath);
-	}, [documentModel, loadFileFromServer]);
-
-	// Debounced localStorage persistence on content change
+	// Immediate localStorage save + debounced server save on content change
 	useEffect(() => {
 		const { filePath, projectId: pid, content, comments } = documentModel;
 		if (!filePath || !pid) return;
 		if (!documentModel.isDirty) return;
 
-		// Clear previous timer
-		if (saveTimerRef.current) {
-			clearTimeout(saveTimerRef.current);
+		// Immediate localStorage save (crash recovery)
+		saveToLocalStorage(pid, filePath, content, comments);
+
+		// Clear previous server save timer
+		if (serverSaveTimerRef.current) {
+			clearTimeout(serverSaveTimerRef.current);
 		}
 
-		// Save to localStorage after 1 second of inactivity
-		// Capture values before setTimeout to avoid stale references
-		saveTimerRef.current = setTimeout(() => {
-			saveToLocalStorage(pid, filePath, content, comments);
-		}, 1000);
+		// Debounced server save
+		serverSaveTimerRef.current = setTimeout(() => {
+			performServerSave();
+		}, AUTO_SAVE_DEBOUNCE_MS);
 
 		return () => {
-			if (saveTimerRef.current) {
-				clearTimeout(saveTimerRef.current);
+			if (serverSaveTimerRef.current) {
+				clearTimeout(serverSaveTimerRef.current);
 			}
 		};
-	}, [documentModel.content, documentModel.comments, documentModel.filePath, documentModel.projectId, documentModel.isDirty]);
+	}, [documentModel.content, documentModel.comments, documentModel.filePath, documentModel.projectId, documentModel.isDirty, performServerSave]);
 
-	// Keyboard shortcut for save (Ctrl/Cmd+S)
+	// Cleanup retry timer on unmount
 	useEffect(() => {
-		const handleKeyDown = (e: KeyboardEvent): void => {
-			if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-				e.preventDefault();
-				handleSave();
+		return () => {
+			if (saveRetryTimerRef.current) {
+				clearTimeout(saveRetryTimerRef.current);
 			}
 		};
-
-		window.addEventListener('keydown', handleKeyDown);
-		return () => window.removeEventListener('keydown', handleKeyDown);
-	}, [handleSave]);
+	}, []);
 
 	// Handle receiving the startNewFile function from FileBrowser
 	const handleStartNewFileRef = useCallback((startNewFile: (parentPath: string) => void) => {
@@ -432,6 +523,15 @@ export function Editor(props: RouteProps): JSX.Element {
 	const handleCancelNewFile = useCallback(() => {
 		setIsCreatingFile(false);
 	}, []);
+
+	// Handle file deleted - clear selection if deleted file was open
+	const handleFileDeleted = useCallback((deletedPath: string) => {
+		if (documentModel.filePath === deletedPath) {
+			documentModel.clear();
+			saveSelectedFile(projectId, null);
+			setLinkedEpicId(undefined);
+		}
+	}, [documentModel, projectId]);
 
 	// Handle receiving the renameFile function from FileBrowser
 	const handleRenameFileRef = useCallback((renameFile: (path: string, newFilename: string) => Promise<string>) => {
@@ -483,14 +583,24 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	return (
 		<Page projectId={projectId} activeTab="Pages">
+			{saveError && (
+				<SaveErrorBanner
+					message={saveError.message}
+					retryCount={saveError.retryCount}
+					maxRetries={MAX_SAVE_RETRIES}
+					onRetry={handleRetryManual}
+				/>
+			)}
 			<div class={styles.body}>
 				<FileBrowser
 					projectId={projectId}
 					selectedPath={documentModel.filePath || undefined}
+					gitStatus={gitStatusModel}
 					onFileSelect={handleFileSelect}
 					onFileCreated={handleFileCreated}
 					onCancelNewFile={handleCancelNewFile}
 					onFileRenamed={handleFileRenamed}
+					onFileDeleted={handleFileDeleted}
 					onStartNewFileRef={handleStartNewFileRef}
 					onRenameFileRef={handleRenameFileRef}
 					class={styles.sidebar}
@@ -529,15 +639,37 @@ export function Editor(props: RouteProps): JSX.Element {
 								</div>
 							</div>
 						</div>
+					) : isCurrentFileDeleted ? (
+						<div class={styles.deletedState}>
+							<div class={styles.deletedStateContent}>
+								<div class={styles.deletedStateIcon}>
+									<Icon name="trash-2" class="size-lg" />
+								</div>
+								<div class={styles.deletedStateTitle}>File deleted</div>
+								<div class={styles.deletedStateMessage}>
+									This file has been deleted but not yet committed.
+									You can restore it to recover your work.
+								</div>
+								<div class={styles.deletedStateFile}>{documentModel.filePath}</div>
+								<div class={styles.deletedStateActions}>
+									<button
+										class={styles.restoreButton}
+										onClick={handleRestoreDeletedFile}
+										disabled={isRestoring}
+									>
+										<Icon name="rotate-ccw" class="size-sm" />
+										{isRestoring ? 'Restoring...' : 'Restore File'}
+									</button>
+								</div>
+							</div>
+						</div>
 					) : documentModel.filePath ? (
 						<>
 							<EditorHeader
 								title={documentModel.title}
 								filePath={documentModel.filePath}
 								isDirty={documentModel.isDirty}
-								saving={documentModel.saving}
-								onSave={handleSave}
-								onRevert={handleRevert}
+								isSaving={isSaving}
 								onRename={handleRename}
 								linkedEpicId={linkedEpicId}
 								creatingEpic={creatingEpic}

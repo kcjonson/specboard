@@ -54,3 +54,7 @@ export { UserModel } from './user';
 // File browser model
 export { FileTreeModel } from './FileTreeModel';
 export type { FileEntry, PendingNewFile } from './FileTreeModel';
+
+// Git status model
+export { GitStatusModel } from './GitStatusModel';
+export type { ChangedFile, CommitError } from './GitStatusModel';

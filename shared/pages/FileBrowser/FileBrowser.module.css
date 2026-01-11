@@ -7,6 +7,9 @@
 }
 
 .header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
 	padding: var(--space-2) var(--space-3);
 	border-bottom: 1px solid var(--color-border);
 	font-size: var(--text-sm);
@@ -119,8 +122,10 @@
 	opacity: 1;
 }
 
+/* Action buttons in tree */
 .addFileButton,
-.removeButton {
+.removeButton,
+.deleteButton {
 	background: none;
 	border: none;
 	cursor: pointer;
@@ -139,9 +144,34 @@
 	color: var(--color-primary);
 }
 
-.removeButton:hover {
+.removeButton:hover,
+.deleteButton:hover {
 	background: var(--color-error-subtle);
 	color: var(--color-error);
+}
+
+/* File actions container */
+.fileActions {
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	margin-left: auto;
+}
+
+/* Hide delete button by default, show on hover */
+.fileActions .deleteButton,
+.folderActions .deleteButton {
+	display: none;
+}
+
+.treeItem:hover .fileActions .deleteButton,
+.folderItem:hover .folderActions .deleteButton {
+	display: flex;
+}
+
+/* Hide status dot when showing delete button */
+.treeItem:hover .fileActions .dot {
+	display: none;
 }
 
 /* Add button */
@@ -208,3 +238,14 @@
 .newFileInput:focus {
 	border-color: var(--color-primary);
 }
+
+/* Deleted files in tree */
+.treeItem.deleted {
+	opacity: 0.5;
+}
+
+.treeItem.deleted .fileName {
+	text-decoration: line-through;
+	color: var(--color-text-muted);
+}
+

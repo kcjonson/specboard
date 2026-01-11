@@ -41,6 +41,10 @@ export type { CardProps } from './Card/Card';
 export { Badge } from './Badge/Badge';
 export type { BadgeProps } from './Badge/Badge';
 
+// Notice - user attention messages (trivial, info, success, warning, error)
+export { Notice } from './Notice/Notice';
+export type { NoticeProps, NoticeVariant } from './Notice/Notice';
+
 // StatusDot
 export { StatusDot } from './StatusDot/StatusDot';
 export type { StatusDotProps, StatusType } from './StatusDot/StatusDot';
