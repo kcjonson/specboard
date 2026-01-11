@@ -21,8 +21,8 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@doc-platform/platform": "workspace:*",
-		"@doc-platform/fetch": "workspace:*"
+		"@doc-platform/platform": "*",
+		"@doc-platform/fetch": "*"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.2"

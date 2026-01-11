@@ -21,7 +21,7 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@doc-platform/platform": "workspace:*"
+		"@doc-platform/platform": "*"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.2"

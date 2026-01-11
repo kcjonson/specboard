@@ -3,8 +3,6 @@
 # Source and deps are mounted/installed at runtime
 FROM node:25-alpine AS dev
 
-RUN npm install -g pnpm@9.15.1
-
 WORKDIR /app
 
 # Download AWS RDS CA bundle for SSL certificate verification
@@ -20,15 +18,10 @@ FROM node:25-alpine AS builder
 # Build arg for git SHA (passed at build time)
 ARG GIT_SHA=unknown
 
-# Install pnpm
-RUN npm install -g pnpm@9.15.1
-
 WORKDIR /app
 
 # Copy workspace config first (for better layer caching)
-# Use Docker-specific workspace that only includes packages we need
-COPY pnpm-workspace.yaml ./
-COPY package.json pnpm-lock.yaml ./
+COPY package.json package-lock.json ./
 
 # Copy only package.json files to install dependencies
 # Frontend server dependencies
@@ -47,7 +40,7 @@ COPY web/package.json ./web/
 COPY ssg/package.json ./ssg/
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile
+RUN npm ci
 
 # Copy source code
 COPY tsconfig.json ./
@@ -69,8 +62,8 @@ COPY shared/styles ./shared/styles
 
 # Build client-side bundles only (Vite handles TypeScript)
 # SSG must run after web build to read CSS manifest
-RUN pnpm --filter @doc-platform/web build && \
-    pnpm --filter @doc-platform/ssg build
+RUN npm run --workspace @doc-platform/web build && \
+    npm run --workspace @doc-platform/ssg build
 
 # Create version.txt with git SHA
 RUN echo "${GIT_SHA}" > /app/web/dist/version.txt
@@ -79,23 +72,20 @@ RUN echo "${GIT_SHA}" > /app/web/dist/version.txt
 # Node 25 runs TypeScript directly, no build step needed for server
 FROM node:25-alpine AS runner
 
-RUN npm install -g pnpm@9.15.1
-
 WORKDIR /app
 
 # Download AWS RDS CA bundle for SSL certificate verification
 RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 # Copy workspace config and package files
-COPY pnpm-workspace.yaml ./
-COPY package.json pnpm-lock.yaml ./
+COPY package.json package-lock.json ./
 COPY shared/core/package.json ./shared/core/
 COPY shared/db/package.json ./shared/db/
 COPY shared/auth/package.json ./shared/auth/
 COPY frontend/package.json ./frontend/
 
 # Install production dependencies only
-RUN pnpm install --frozen-lockfile --prod
+RUN npm ci --omit=dev
 
 # Copy source code for server (Node 25 runs TypeScript directly)
 COPY tsconfig.json ./

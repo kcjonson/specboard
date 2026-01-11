@@ -2,13 +2,23 @@
 	"name": "doc-platform",
 	"private": true,
 	"type": "module",
-	"packageManager": "pnpm@9.15.1",
+	"workspaces": [
+		"api",
+		"frontend",
+		"mcp",
+		"ssg",
+		"web",
+		"infra",
+		"docs-desktop",
+		"planning-desktop",
+		"shared/*"
+	],
 	"scripts": {
-		"test": "pnpm -r --parallel run test",
-		"typecheck": "pnpm -r --parallel run typecheck",
-		"lint": "pnpm -r --parallel run lint",
-		"lint:fix": "pnpm -r --parallel run lint:fix",
-		"clean": "pnpm -r run clean && rm -rf node_modules"
+		"test": "npm run --workspaces --if-present test",
+		"typecheck": "npm run --workspaces --if-present typecheck",
+		"lint": "npm run --workspaces --if-present lint",
+		"lint:fix": "npm run --workspaces --if-present lint:fix",
+		"clean": "npm run --workspaces --if-present clean && rm -rf node_modules"
 	},
 	"devDependencies": {
 		"@swc/core": "^1.15.7",
@@ -24,10 +34,8 @@
 	"dependencies": {
 		"polyfill-symbol-metadata": "^0.0.2"
 	},
-	"pnpm": {
-		"overrides": {
-			"react": "npm:@preact/compat@^10.25.4",
-			"react-dom": "npm:@preact/compat@^10.25.4"
-		}
+	"overrides": {
+		"react": "npm:@preact/compat@^10.25.4",
+		"react-dom": "npm:@preact/compat@^10.25.4"
 	}
 }

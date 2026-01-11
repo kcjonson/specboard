@@ -21,7 +21,7 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@doc-platform/fetch": "workspace:*",
+		"@doc-platform/fetch": "*",
 		"preact": "^10.25.4"
 	},
 	"devDependencies": {

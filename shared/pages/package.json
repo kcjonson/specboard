@@ -16,11 +16,11 @@
 		"vitest": "^2.1.9"
 	},
 	"dependencies": {
-		"@doc-platform/fetch": "workspace:*",
-		"@doc-platform/models": "workspace:*",
-		"@doc-platform/router": "workspace:*",
-		"@doc-platform/telemetry": "workspace:*",
-		"@doc-platform/ui": "workspace:*",
+		"@doc-platform/fetch": "*",
+		"@doc-platform/models": "*",
+		"@doc-platform/router": "*",
+		"@doc-platform/telemetry": "*",
+		"@doc-platform/ui": "*",
 		"is-hotkey": "^0.2.0",
 		"preact": "^10.25.4",
 		"remark-gfm": "^4.0.1",

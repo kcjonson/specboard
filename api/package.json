@@ -10,10 +10,10 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.71.2",
-		"@doc-platform/auth": "workspace:*",
-		"@doc-platform/core": "workspace:*",
-		"@doc-platform/db": "workspace:*",
-		"@doc-platform/email": "workspace:*",
+		"@doc-platform/auth": "*",
+		"@doc-platform/core": "*",
+		"@doc-platform/db": "*",
+		"@doc-platform/email": "*",
 		"@hono/node-server": "^1.19.7",
 		"hono": "^4.11.1",
 		"ioredis": "^5.4.2"

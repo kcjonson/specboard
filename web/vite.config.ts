@@ -8,7 +8,7 @@ import { resolve } from 'path';
  * injected by @preact/preset-vite's Babel transform.
  */
 function forcePreactResolution(): Plugin {
-	const jsxRuntimePath = resolve(__dirname, 'node_modules/preact/jsx-runtime/dist/jsxRuntime.mjs');
+	const jsxRuntimePath = resolve(__dirname, '../node_modules/preact/jsx-runtime/dist/jsxRuntime.mjs');
 	return {
 		name: 'force-preact-resolution',
 		// No enforce - runs in normal phase, after pre-phase JSX transform
@@ -102,16 +102,16 @@ export default defineConfig({
 			'@doc-platform/core': resolve(__dirname, '../shared/core/src'),
 			'@doc-platform/telemetry': resolve(__dirname, '../shared/telemetry/src'),
 			// Preact core aliases (jsx-runtime handled by forcePreactResolution plugin)
-			'preact': resolve(__dirname, 'node_modules/preact'),
-			'preact/hooks': resolve(__dirname, 'node_modules/preact/hooks'),
+			'preact': resolve(__dirname, '../node_modules/preact'),
+			'preact/hooks': resolve(__dirname, '../node_modules/preact/hooks'),
 			// Alias React to Preact for slate-react compatibility
-			'react': resolve(__dirname, 'node_modules/preact/compat'),
-			'react-dom': resolve(__dirname, 'node_modules/preact/compat'),
+			'react': resolve(__dirname, '../node_modules/preact/compat'),
+			'react-dom': resolve(__dirname, '../node_modules/preact/compat'),
 			// Ensure slate packages resolve from web's node_modules
-			'slate': resolve(__dirname, 'node_modules/slate'),
-			'slate-react': resolve(__dirname, 'node_modules/slate-react'),
-			'slate-history': resolve(__dirname, 'node_modules/slate-history'),
-			'is-hotkey': resolve(__dirname, 'node_modules/is-hotkey'),
+			'slate': resolve(__dirname, '../node_modules/slate'),
+			'slate-react': resolve(__dirname, '../node_modules/slate-react'),
+			'slate-history': resolve(__dirname, '../node_modules/slate-history'),
+			'is-hotkey': resolve(__dirname, '../node_modules/is-hotkey'),
 		},
 		dedupe: ['preact', 'preact/hooks', 'preact/jsx-runtime', 'preact/jsx-dev-runtime', 'slate', 'slate-react', 'slate-history'],
 	},

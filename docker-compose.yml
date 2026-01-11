@@ -42,7 +42,7 @@ services:
       context: .
       dockerfile: api/Dockerfile
       target: dev
-    command: sh -c "pnpm install && node --watch api/src/index.ts"
+    command: sh -c "npm install && node --watch api/src/index.ts"
     ports:
       - "3001:3001"
     volumes:
@@ -67,7 +67,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       target: dev
-    command: sh -c "pnpm install && cd web && ../node_modules/.bin/vite build && cd .. && node_modules/.bin/tsx --tsconfig ssg/tsconfig.json ssg/src/build.ts && (cd web && ../node_modules/.bin/vite --host 0.0.0.0 --port 5173 &) && node --watch frontend/src/index.ts"
+    command: sh -c "npm install && cd web && ../node_modules/.bin/vite build && cd .. && node_modules/.bin/tsx --tsconfig ssg/tsconfig.json ssg/src/build.ts && (cd web && ../node_modules/.bin/vite --host 0.0.0.0 --port 5173 &) && node --watch frontend/src/index.ts"
     ports:
       - "3000:3000"
       - "5173:5173"
@@ -94,7 +94,7 @@ services:
       context: .
       dockerfile: mcp/Dockerfile
       target: dev
-    command: sh -c "pnpm install && node --watch mcp/src/index.ts"
+    command: sh -c "npm install && node --watch mcp/src/index.ts"
     ports:
       - "3002:3002"
     volumes:

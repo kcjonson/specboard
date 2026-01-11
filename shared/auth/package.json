@@ -12,7 +12,7 @@
 		"lint:fix": "eslint src --fix"
 	},
 	"dependencies": {
-		"@doc-platform/db": "workspace:*",
+		"@doc-platform/db": "*",
 		"bcrypt": "^6.0.0",
 		"hono": "^4.11.1",
 		"ioredis": "^5.6.1"

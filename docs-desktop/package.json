@@ -12,8 +12,8 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
-		"@doc-platform/platform": "workspace:*",
-		"@doc-platform/platform-electron": "workspace:*"
+		"@doc-platform/platform": "*",
+		"@doc-platform/platform-electron": "*"
 	},
 	"devDependencies": {
 		"electron": "^33.2.1",
