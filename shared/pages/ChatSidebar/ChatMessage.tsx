@@ -62,25 +62,27 @@ export const ChatMessage = memo(function ChatMessage({
 			(segment) => segment.type !== 'text'
 		);
 
-		return edits.textSegments.map((segment, index) => {
-			if (segment.type === 'text') {
-				return <span key={index}>{segment.content}</span>;
-			}
-			// Only render EditCard for the first edit block
-			// (subsequent edit blocks are skipped - one card applies all edits)
-			if (index !== firstEditIndex) {
-				return null;
-			}
-			return (
-				<EditCard
-					key={index}
-					stats={edits.stats}
-					onApply={handleApply}
-					isStreaming={isStreaming}
-					isApplied={isApplied}
-				/>
-			);
-		});
+		return edits.textSegments
+			.map((segment, index) => {
+				if (segment.type === 'text') {
+					return <span key={index}>{segment.content}</span>;
+				}
+				// Only render EditCard for the first edit block
+				// (subsequent edit blocks are skipped - one card applies all edits)
+				if (index !== firstEditIndex) {
+					return null;
+				}
+				return (
+					<EditCard
+						key={index}
+						stats={edits.stats}
+						onApply={handleApply}
+						isStreaming={isStreaming}
+						isApplied={isApplied}
+					/>
+				);
+			})
+			.filter((element): element is JSX.Element => element !== null);
 	};
 
 	return (

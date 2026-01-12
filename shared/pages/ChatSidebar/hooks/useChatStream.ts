@@ -85,10 +85,11 @@ export function useChatStream({
 			setMessages(prev => {
 				const updated = [...prev];
 				const lastIndex = updated.findIndex(m => m.id === assistantId);
-				if (lastIndex !== -1) {
+				const existingMsg = updated[lastIndex];
+				if (lastIndex !== -1 && existingMsg) {
 					updated[lastIndex] = {
-						...updated[lastIndex],
-						content: updated[lastIndex].content + contentToAdd,
+						...existingMsg,
+						content: existingMsg.content + contentToAdd,
 					};
 				}
 				return updated;
@@ -202,7 +203,7 @@ export function useChatStream({
 									flushTimeoutRef.current = setTimeout(
 										flushPendingContent,
 										STREAMING_THROTTLE_MS
-									);
+									) as unknown as number;
 								}
 							} else if ('error' in parsed) {
 								// Error event

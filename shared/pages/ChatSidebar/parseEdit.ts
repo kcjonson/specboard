@@ -41,11 +41,15 @@ export function parseEditBlocks(content: string): EditBlock[] {
 	let match;
 
 	while ((match = regex.exec(content)) !== null) {
-		blocks.push({
-			search: match[1],
-			replace: match[2],
-			matched: false,
-		});
+		const search = match[1];
+		const replace = match[2];
+		if (search !== undefined && replace !== undefined) {
+			blocks.push({
+				search,
+				replace,
+				matched: false,
+			});
+		}
 	}
 
 	return blocks;
@@ -151,7 +155,10 @@ function findNormalizedMatch(document: string, search: string): NormalizedMatchR
 			// Calculate character position
 			let pos = 0;
 			for (let k = 0; k < i; k++) {
-				pos += docLines[k].length + 1; // +1 for newline
+				const line = docLines[k];
+				if (line !== undefined) {
+					pos += line.length + 1; // +1 for newline
+				}
 			}
 			// Get the actual text from the document (including original whitespace)
 			const matchedLines = docLines.slice(i, i + searchLines.length);

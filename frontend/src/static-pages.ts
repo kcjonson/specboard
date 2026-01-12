@@ -12,6 +12,28 @@ export interface CachedPage {
 	preloadHeader: string;
 }
 
+const isDev = !!process.env.VITE_DEV_SERVER;
+
+/**
+ * Rewrite production CSS paths to Vite-servable dev paths.
+ * Production: /assets/styles/common-HASH.css, /assets/styles/ssg/login-HASH.css
+ * Dev: /@fs/app/shared/styles/common.css, /@fs/app/ssg/src/styles/login.css
+ */
+function rewriteCssPathsForDev(html: string): string {
+	return html
+		// Shared: /assets/styles/common-HASH.css → /@fs/app/shared/styles/common.css
+		// Hash length may vary (Vite default is 8, but could change)
+		.replace(
+			/\/assets\/styles\/common-[A-Za-z0-9_-]{8,}\.css/g,
+			'/@fs/app/shared/styles/common.css'
+		)
+		// SSG: /assets/styles/ssg/NAME-HASH.css → /@fs/app/ssg/src/styles/NAME.css
+		.replace(
+			/\/assets\/styles\/ssg\/([a-z-]+)-[A-Za-z0-9_-]{8,}\.css/g,
+			'/@fs/app/ssg/src/styles/$1.css'
+		);
+}
+
 /**
  * Extract CSS paths from HTML and build Link preload header
  */
@@ -29,12 +51,22 @@ function buildPreloadHeader(html: string): string {
 		.join(', ');
 }
 
+// In dev, SSG dist is at ./ssg/dist; in prod it's copied to ./static/ssg
+const ssgBase = isDev ? './ssg/dist' : './static/ssg';
+const spaBase = isDev ? './web/dist' : './static';
+
 /**
  * Load a page into memory with precomputed headers
  */
 function loadPage(path: string): CachedPage {
 	try {
-		const html = readFileSync(path, 'utf-8');
+		let html = readFileSync(path, 'utf-8');
+
+		// In dev mode, rewrite CSS paths to Vite-servable paths
+		if (isDev) {
+			html = rewriteCssPathsForDev(html);
+		}
+
 		return {
 			html,
 			preloadHeader: buildPreloadHeader(html),
@@ -54,17 +86,17 @@ function loadPage(path: string): CachedPage {
  * All SSG pages loaded at startup
  */
 export const pages = {
-	login: loadPage('./static/ssg/login.html'),
-	signup: loadPage('./static/ssg/signup.html'),
-	home: loadPage('./static/ssg/home.html'),
-	notFound: loadPage('./static/ssg/not-found.html'),
-	verifyEmail: loadPage('./static/ssg/verify-email.html'),
-	verifyEmailConfirm: loadPage('./static/ssg/verify-email/confirm.html'),
-	forgotPassword: loadPage('./static/ssg/forgot-password.html'),
-	resetPassword: loadPage('./static/ssg/reset-password.html'),
+	login: loadPage(`${ssgBase}/login.html`),
+	signup: loadPage(`${ssgBase}/signup.html`),
+	home: loadPage(`${ssgBase}/home.html`),
+	notFound: loadPage(`${ssgBase}/not-found.html`),
+	verifyEmail: loadPage(`${ssgBase}/verify-email.html`),
+	verifyEmailConfirm: loadPage(`${ssgBase}/verify-email/confirm.html`),
+	forgotPassword: loadPage(`${ssgBase}/forgot-password.html`),
+	resetPassword: loadPage(`${ssgBase}/reset-password.html`),
 };
 
 /**
  * SPA index.html cached at startup
  */
-export const spaIndex = loadPage('./static/index.html');
+export const spaIndex = loadPage(`${spaBase}/index.html`);

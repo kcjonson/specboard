@@ -14,11 +14,15 @@ import {
 	type FileChange,
 	type Commit,
 	type PullResult,
-} from './types.js';
-import { execGit, validatePath } from './git-utils.js';
+} from './types.ts';
+import { execGit, validatePath } from './git-utils.ts';
 
 export class LocalStorageProvider implements StorageProvider {
-	constructor(private repoPath: string) {}
+	private repoPath: string;
+
+	constructor(repoPath: string) {
+		this.repoPath = repoPath;
+	}
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// File operations

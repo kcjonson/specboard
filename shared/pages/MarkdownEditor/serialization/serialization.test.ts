@@ -158,8 +158,8 @@ describe('Markdown Serialization', () => {
 			it('should have list-item children', () => {
 				const result = fromMarkdown('- Item 1\n- Item 2');
 				const list = result.content[0] as { type: string; children: { type: string }[] };
-				expect(list.children[0].type).toBe('list-item');
-				expect(list.children[1].type).toBe('list-item');
+				expect(list.children[0]!.type).toBe('list-item');
+				expect(list.children[1]!.type).toBe('list-item');
 			});
 		});
 
@@ -197,7 +197,7 @@ describe('Markdown Serialization', () => {
 `.trim();
 				const result = fromMarkdown(markdown);
 				const table = result.content[0] as { children: { type: string }[] };
-				expect(table.children[0].type).toBe('table-row');
+				expect(table.children[0]!.type).toBe('table-row');
 			});
 
 			it('should parse table cells', () => {
@@ -208,8 +208,8 @@ describe('Markdown Serialization', () => {
 `.trim();
 				const result = fromMarkdown(markdown);
 				const table = result.content[0] as { children: { children: { type: string }[] }[] };
-				const firstRow = table.children[0];
-				expect(firstRow.children[0].type).toBe('table-cell');
+				const firstRow = table.children[0]!;
+				expect(firstRow.children[0]!.type).toBe('table-cell');
 			});
 		});
 

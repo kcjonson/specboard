@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@doc-platform/router';
-import { navigate } from '@doc-platform/router';
 import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
 import { Button, Page } from '@doc-platform/ui';
 import { Column } from '../Column/Column';

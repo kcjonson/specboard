@@ -1,7 +1,7 @@
 import { Redis } from 'ioredis';
 import crypto from 'node:crypto';
-import type { Session } from './types.js';
-import { SESSION_TTL_SECONDS } from './types.js';
+import type { Session } from './types.ts';
+import { SESSION_TTL_SECONDS } from './types.ts';
 
 /**
  * Generate a cryptographically random session ID

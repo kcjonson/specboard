@@ -4,8 +4,8 @@
 
 import type { Context } from 'hono';
 import { query, type ProgressNote as DbProgressNote } from '@doc-platform/db';
-import { dbProgressNoteToApi } from '../transform.js';
-import { isValidUUID } from '../validation.js';
+import { dbProgressNoteToApi } from '../transform.ts';
+import { isValidUUID } from '../validation.ts';
 
 export async function handleListEpicProgress(context: Context): Promise<Response> {
 	const projectId = context.req.param('projectId');

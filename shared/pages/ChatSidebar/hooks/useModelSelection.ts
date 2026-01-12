@@ -27,8 +27,10 @@ const MODEL_STORAGE_KEY = 'chat-selected-model';
  */
 export function parseModelSelection(value: string): ModelSelection | null {
 	const parts = value.split(':');
-	if (parts.length !== 2) return null;
-	return { provider: parts[0], model: parts[1] };
+	const provider = parts[0];
+	const model = parts[1];
+	if (parts.length !== 2 || !provider || !model) return null;
+	return { provider, model };
 }
 
 /**

@@ -11,8 +11,8 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import type { Redis } from 'ioredis';
 import { getCookie } from 'hono/cookie';
-import { getSession } from './session.js';
-import { SESSION_COOKIE_NAME } from './types.js';
+import { getSession } from './session.ts';
+import { SESSION_COOKIE_NAME } from './types.ts';
 
 export const CSRF_HEADER_NAME = 'X-CSRF-Token';
 

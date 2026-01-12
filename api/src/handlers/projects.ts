@@ -13,8 +13,8 @@ import {
 	updateProject,
 	deleteProject,
 } from '@doc-platform/db';
-import { projectResponseToApi } from '../transform.js';
-import { isValidUUID, isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.js';
+import { projectResponseToApi } from '../transform.ts';
+import { isValidUUID, isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);

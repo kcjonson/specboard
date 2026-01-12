@@ -29,7 +29,7 @@ import {
 	handleForgotPassword,
 	handleResetPassword,
 	handleChangePassword,
-} from './handlers/auth/index.js';
+} from './handlers/auth/index.ts';
 import {
 	handleListUsers,
 	handleGetUser,
@@ -37,7 +37,7 @@ import {
 	handleUpdateUser,
 	handleListUserTokens,
 	handleRevokeUserToken,
-} from './handlers/users.js';
+} from './handlers/users.ts';
 import {
 	handleOAuthMetadata,
 	handleAuthorizeGet,
@@ -46,7 +46,7 @@ import {
 	handleRevoke,
 	handleListAuthorizations,
 	handleDeleteAuthorization,
-} from './handlers/oauth.js';
+} from './handlers/oauth.ts';
 import {
 	handleListEpics,
 	handleGetEpic,
@@ -55,7 +55,7 @@ import {
 	handleDeleteEpic,
 	handleGetCurrentWork,
 	handleSignalReadyForReview,
-} from './handlers/epics.js';
+} from './handlers/epics.ts';
 import {
 	handleListTasks,
 	handleCreateTask,
@@ -66,20 +66,20 @@ import {
 	handleCompleteTask,
 	handleBlockTask,
 	handleUnblockTask,
-} from './handlers/tasks.js';
+} from './handlers/tasks.ts';
 import {
 	handleListEpicProgress,
 	handleCreateEpicProgress,
 	handleListTaskProgress,
 	handleCreateTaskProgress,
-} from './handlers/progress.js';
+} from './handlers/progress.ts';
 import {
 	handleListProjects,
 	handleGetProject,
 	handleCreateProject,
 	handleUpdateProject,
 	handleDeleteProject,
-} from './handlers/projects.js';
+} from './handlers/projects.ts';
 import {
 	handleAddFolder,
 	handleRemoveFolder,
@@ -93,16 +93,16 @@ import {
 	handleCommit,
 	handleRestore,
 	handlePull,
-} from './handlers/storage/index.js';
+} from './handlers/storage/index.ts';
 import {
 	handleListApiKeys,
 	handleCreateApiKey,
 	handleDeleteApiKey,
 	handlePreValidateApiKey,
 	handleValidateApiKey,
-} from './handlers/api-keys.js';
-import { handleChat } from './handlers/chat.js';
-import { handleGetChatModels, handleGetChatProviders } from './handlers/chat-models.js';
+} from './handlers/api-keys.ts';
+import { handleChat } from './handlers/chat.ts';
+import { handleGetChatModels, handleGetChatProviders } from './handlers/chat-models.ts';
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('api');

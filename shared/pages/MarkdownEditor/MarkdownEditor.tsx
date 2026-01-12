@@ -151,8 +151,16 @@ function renderElement(props: RenderElementProps): JSX.Element {
 			const level = typeof rawLevel === 'number' && rawLevel >= 1 && rawLevel <= 6
 				? rawLevel
 				: 1;
-			const HeadingTag = `h${level}` as keyof JSX.IntrinsicElements;
-			return <HeadingTag {...attributes} class={styles.heading}>{children}</HeadingTag>;
+			// Use explicit switch to avoid complex union type
+			switch (level) {
+				case 1: return <h1 {...attributes} class={styles.heading}>{children}</h1>;
+				case 2: return <h2 {...attributes} class={styles.heading}>{children}</h2>;
+				case 3: return <h3 {...attributes} class={styles.heading}>{children}</h3>;
+				case 4: return <h4 {...attributes} class={styles.heading}>{children}</h4>;
+				case 5: return <h5 {...attributes} class={styles.heading}>{children}</h5>;
+				case 6: return <h6 {...attributes} class={styles.heading}>{children}</h6>;
+				default: return <h1 {...attributes} class={styles.heading}>{children}</h1>;
+			}
 		}
 		case 'blockquote':
 			return <blockquote {...attributes} class={styles.blockquote}>{children}</blockquote>;
@@ -232,14 +240,13 @@ function renderLeaf(props: RenderLeafProps): JSX.Element {
 	}
 	if (text.commentId) {
 		content = (
-			<span
+			<mark
 				class={styles.commentHighlight}
 				data-comment-id={text.commentId}
-				role="mark"
 				aria-label="Text with comment"
 			>
 				{content}
-			</span>
+			</mark>
 		);
 	}
 
@@ -409,7 +416,9 @@ export function MarkdownEditor({
 				if (isHotkey(hotkey, event)) {
 					event.preventDefault();
 					const mark = HOTKEYS[hotkey];
-					toggleMark(editor, mark);
+					if (mark) {
+						toggleMark(editor, mark);
+					}
 				}
 			}
 		},
@@ -455,7 +464,7 @@ export function MarkdownEditor({
 		<div class={styles.container}>
 			{/* Key on documentId forces Slate to re-mount when loading different documents.
 			    Slate's initialValue is only read on mount, so we need a new instance for new docs. */}
-			<Slate key={model.documentId} editor={editor} initialValue={model.content} onChange={handleChange}>
+			<Slate key={model.documentId} editor={editor} initialValue={model.content as Descendant[]} onChange={handleChange}>
 				{!readOnly && (
 					<Toolbar
 						isMarkActive={(mark) => isMarkActive(editor, mark)}

@@ -26,6 +26,9 @@ export function parseCommentsFromMarkdown(markdown: string): {
 	}
 
 	const jsonStr = match[1];
+	if (!jsonStr) {
+		return { content: markdown, comments: [] };
+	}
 	const content = markdown.slice(0, match.index);
 
 	try {

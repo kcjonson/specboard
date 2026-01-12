@@ -99,7 +99,7 @@ export function SetPasswordDialog({ open, onClose, userId, userName }: SetPasswo
 						type="password"
 						value={newPassword}
 						onInput={(e) => setNewPassword((e.target as HTMLInputElement).value)}
-						autocomplete="new-password"
+						autoComplete="new-password"
 						required
 					/>
 					<span class={styles.hint}>
@@ -116,7 +116,7 @@ export function SetPasswordDialog({ open, onClose, userId, userName }: SetPasswo
 						type="password"
 						value={confirmPassword}
 						onInput={(e) => setConfirmPassword((e.target as HTMLInputElement).value)}
-						autocomplete="new-password"
+						autoComplete="new-password"
 						required
 					/>
 				</div>

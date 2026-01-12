@@ -66,6 +66,8 @@ export interface ToolbarButtonProps {
 	ariaLabel: string;
 	/** Compact size variant */
 	compact?: boolean;
+	/** Whether the button is disabled */
+	disabled?: boolean;
 }
 
 /** Toolbar button that maintains editor focus */
@@ -76,19 +78,23 @@ export function ToolbarButton({
 	title,
 	ariaLabel,
 	compact = false,
+	disabled = false,
 }: ToolbarButtonProps): JSX.Element {
 	return (
 		<button
 			type="button"
 			class={`${styles.button} ${active ? styles.active : ''} ${compact ? styles.compact : ''}`}
+			disabled={disabled}
 			onMouseDown={(event) => {
 				// Prevent editor from losing focus on mouse click
 				event.preventDefault();
-				onAction();
+				if (!disabled) {
+					onAction();
+				}
 			}}
 			onKeyDown={(event) => {
 				// Handle keyboard activation (Enter/Space)
-				if (event.key === 'Enter' || event.key === ' ') {
+				if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
 					event.preventDefault();
 					onAction();
 				}

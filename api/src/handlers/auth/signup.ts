@@ -16,8 +16,8 @@ import {
 	getVerificationEmailContent,
 } from '@doc-platform/email';
 
-import { isValidEmail, isValidUsername } from '../../validation.js';
-import { logAuthEvent, isValidInviteKey, APP_URL } from './utils.js';
+import { isValidEmail, isValidUsername } from '../../validation.ts';
+import { logAuthEvent, isValidInviteKey, APP_URL } from './utils.ts';
 
 interface SignupRequest {
 	username: string;

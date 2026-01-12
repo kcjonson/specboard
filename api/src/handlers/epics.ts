@@ -4,8 +4,8 @@
 
 import type { Context } from 'hono';
 import { query, type Epic as DbEpic, type Task as DbTask, type ProgressNote as DbProgressNote } from '@doc-platform/db';
-import type { ApiEpic, TaskStats } from '../types.js';
-import { dbEpicToApi, dbTaskToApi, dbProgressNoteToApi } from '../transform.js';
+import type { ApiEpic, TaskStats } from '../types.ts';
+import { dbEpicToApi, dbTaskToApi, dbProgressNoteToApi } from '../transform.ts';
 import {
 	isValidUUID,
 	isValidOptionalUUID,
@@ -13,7 +13,7 @@ import {
 	isValidTitle,
 	normalizeOptionalString,
 	MAX_TITLE_LENGTH,
-} from '../validation.js';
+} from '../validation.ts';
 
 export async function handleListEpics(context: Context): Promise<Response> {
 	const projectId = context.req.param('projectId');

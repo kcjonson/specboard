@@ -2,8 +2,8 @@
  * Task service - shared business logic for tasks
  */
 
-import { query } from '../index.js';
-import type { Task, TaskStatus } from '../types.js';
+import { query } from '../index.ts';
+import type { Task, TaskStatus } from '../types.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)

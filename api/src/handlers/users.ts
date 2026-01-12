@@ -13,7 +13,7 @@ import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME, hashPassword, validatePassword } from '@doc-platform/auth';
 import { query, type User } from '@doc-platform/db';
-import { isValidUUID, isValidEmail, isValidUsername } from '../validation.js';
+import { isValidUUID, isValidEmail, isValidUsername } from '../validation.ts';
 
 /**
  * Get current user from session, including their roles

@@ -26,7 +26,7 @@ import { Admin } from './routes/admin/Admin';
 import { AdminUsers } from './routes/admin/AdminUsers';
 
 // Global styles - common CSS shared with SSG pages, then app-specific
-import '../../ssg/src/styles/common.css';
+import '../../shared/styles/common.css';
 import './styles/tokens.css';
 import './styles/global.css';
 
@@ -56,10 +56,12 @@ function RootRedirect(_props: RouteProps): JSX.Element | null {
 					navigate('/projects');
 				} else if (projects.length === 1) {
 					// Single project - go directly there
-					const project = projects[0];
-					setCookie('lastProjectId', project.id, 30);
-					setCookie('lastProjectName', project.name, 30);
-					navigate(`/projects/${project.id}/planning`);
+					const [project] = projects;
+					if (project) {
+						setCookie('lastProjectId', project.id, 30);
+						setCookie('lastProjectName', project.name, 30);
+						navigate(`/projects/${project.id}/planning`);
+					}
 				} else if (lastProjectId && isValidUUID(lastProjectId)) {
 					// Multiple projects with valid cookie - check if project exists
 					const project = projects.find((p) => p.id === lastProjectId);

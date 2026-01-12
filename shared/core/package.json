@@ -3,26 +3,16 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"main": "./dist/index.js",
-	"types": "./dist/index.d.ts",
 	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		},
-		"./cookies": {
-			"types": "./dist/cookies.d.ts",
-			"import": "./dist/cookies.js"
-		}
+		".": "./src/index.ts",
+		"./cookies": "./src/cookies.ts"
 	},
 	"scripts": {
-		"build": "tsc",
-		"dev": "tsc --watch",
+		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"lint": "eslint src",
-		"lint:fix": "eslint src --fix",
-		"clean": "rm -rf dist"
+		"lint:fix": "eslint src --fix"
 	},
 	"dependencies": {
 		"@aws-sdk/client-cloudwatch-logs": "^3.600.0"

@@ -1,19 +1,18 @@
 {
-  "name": "@doc-platform/db",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "lint": "eslint src",
-    "lint:fix": "eslint src --fix",
-    "clean": "rm -rf dist",
-    "migrate": "tsx src/migrate.ts",
-    "seed": "node seed.mjs"
-  },
+	"name": "@doc-platform/db",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"lint": "eslint src",
+		"lint:fix": "eslint src --fix",
+		"migrate": "node src/migrate.ts",
+		"seed": "node seed.mjs"
+	},
   "dependencies": {
     "bcrypt": "^6.0.0",
     "pg": "^8.16.3"

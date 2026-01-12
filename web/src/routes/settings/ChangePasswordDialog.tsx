@@ -94,7 +94,7 @@ export function ChangePasswordDialog({ open, onClose }: ChangePasswordDialogProp
 						type="password"
 						value={currentPassword}
 						onInput={(e) => setCurrentPassword((e.target as HTMLInputElement).value)}
-						autocomplete="current-password"
+						autoComplete="current-password"
 						required
 					/>
 				</div>
@@ -108,7 +108,7 @@ export function ChangePasswordDialog({ open, onClose }: ChangePasswordDialogProp
 						type="password"
 						value={newPassword}
 						onInput={(e) => setNewPassword((e.target as HTMLInputElement).value)}
-						autocomplete="new-password"
+						autoComplete="new-password"
 						required
 					/>
 					<span class={styles.hint}>
@@ -125,7 +125,7 @@ export function ChangePasswordDialog({ open, onClose }: ChangePasswordDialogProp
 						type="password"
 						value={confirmPassword}
 						onInput={(e) => setConfirmPassword((e.target as HTMLInputElement).value)}
-						autocomplete="new-password"
+						autoComplete="new-password"
 						required
 					/>
 				</div>

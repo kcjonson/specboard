@@ -13,6 +13,10 @@ export interface ButtonProps {
 	class?: string;
 	/** Aria label for icon buttons */
 	'aria-label'?: string;
+	/** Tooltip text */
+	title?: string;
+	/** Button style variant */
+	variant?: 'primary' | 'secondary' | 'danger';
 }
 
 export function Button({
@@ -22,14 +26,18 @@ export function Button({
 	type = 'button',
 	class: className,
 	'aria-label': ariaLabel,
+	title,
+	variant,
 }: ButtonProps): JSX.Element {
+	const classes = [className, variant].filter(Boolean).join(' ') || undefined;
 	return (
 		<button
 			type={type}
-			class={className || undefined}
+			class={classes}
 			onClick={onClick}
 			disabled={disabled}
 			aria-label={ariaLabel}
+			title={title}
 		>
 			{children}
 		</button>

@@ -67,7 +67,9 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 
 	// Check if spec document exists when epic changes
 	useEffect(() => {
-		if (!epic?.specDocPath || !epic?.projectId) {
+		const specDocPath = epic?.specDocPath;
+		const projectId = epic?.projectId;
+		if (!specDocPath || !projectId) {
 			setSpecDocExists(null);
 			return;
 		}
@@ -78,7 +80,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 		const checkExists = async (): Promise<void> => {
 			try {
 				await fetchClient.get(
-					`/api/projects/${epic.projectId}/files?path=${encodeURIComponent(epic.specDocPath)}`
+					`/api/projects/${projectId}/files?path=${encodeURIComponent(specDocPath)}`
 				);
 				if (!cancelled) {
 					setSpecDocExists(true);
@@ -290,7 +292,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 									class={specDocExists === false ? styles.specLinkMissing : styles.specLink}
 									disabled={specDocExists === false}
 									aria-label={specDocExists === false ? 'Specification document not found' : 'Open specification document'}
-									onClick={() => navigate(`/projects/${epic.projectId}/pages?file=${encodeURIComponent(epic.specDocPath)}`)}
+									onClick={() => navigate(`/projects/${epic.projectId}/pages?file=${encodeURIComponent(epic.specDocPath!)}`)}
 								>
 									{epic.specDocPath}
 								</button>

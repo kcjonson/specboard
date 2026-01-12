@@ -4,8 +4,8 @@
 
 import type { Context } from 'hono';
 import { query, type Task as DbTask } from '@doc-platform/db';
-import type { ApiTask } from '../types.js';
-import { dbTaskToApi } from '../transform.js';
+import type { ApiTask } from '../types.ts';
+import { dbTaskToApi } from '../transform.ts';
 import {
 	isValidUUID,
 	isValidOptionalUUID,
@@ -14,7 +14,7 @@ import {
 	isValidDateFormat,
 	normalizeOptionalString,
 	MAX_TITLE_LENGTH,
-} from '../validation.js';
+} from '../validation.ts';
 
 // Helper to verify task belongs to project (via epic)
 async function verifyTaskInProject(taskId: string, projectId: string): Promise<DbTask | null> {

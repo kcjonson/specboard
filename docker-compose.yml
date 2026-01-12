@@ -41,8 +41,15 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
+      target: dev
+    command: sh -c "pnpm install && node --watch api/src/index.ts"
     ports:
       - "3001:3001"
+    # Anonymous /app/node_modules volume prevents host node_modules from
+    # overriding container's installed dependencies.
+    volumes:
+      - .:/app:cached
+      - /app/node_modules
     environment:
       PORT: 3001
       DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
@@ -60,14 +67,21 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      target: dev
+    command: sh -c "pnpm install && cd web && ../node_modules/.bin/vite build && cd .. && node_modules/.bin/tsx --tsconfig ssg/tsconfig.json ssg/src/build.ts && (cd web && ../node_modules/.bin/vite --host 0.0.0.0 --port 5173 &) && node --watch frontend/src/index.ts"
     ports:
       - "3000:3000"
+      - "5173:5173"
+    volumes:
+      - .:/app:cached
+      - /app/node_modules
     environment:
       PORT: 3000
       REDIS_URL: redis://redis:6379
       API_URL: http://api:3001
       DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
       NODE_ENV: development
+      VITE_DEV_SERVER: http://localhost:5173
     depends_on:
       api:
         condition: service_started
@@ -80,8 +94,13 @@ services:
     build:
       context: .
       dockerfile: mcp/Dockerfile
+      target: dev
+    command: sh -c "pnpm install && node --watch mcp/src/index.ts"
     ports:
       - "3002:3002"
+    volumes:
+      - .:/app:cached
+      - /app/node_modules
     environment:
       PORT: 3002
       DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform

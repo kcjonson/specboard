@@ -451,7 +451,7 @@ export function FileBrowser({
 						const isRoot = model.isRootPath(file.path);
 						const isFolder = file.type === 'directory';
 						const isRenaming = model.pendingRename?.path === file.path;
-						const changeStatus = gitStatus?.getChangeStatus(file.path);
+						const changeStatus = gitStatus?.getChangeStatus(file.path) ?? undefined;
 						const isDeleted = changeStatus === 'deleted';
 
 						return (

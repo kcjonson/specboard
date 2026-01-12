@@ -1,5 +1,6 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
+import type { Descendant } from 'slate';
 import { navigate, type RouteProps } from '@doc-platform/router';
 import { Page, Icon, ErrorBoundary } from '@doc-platform/ui';
 import {
@@ -84,7 +85,7 @@ function migrateLocalStorageContent(projectId: string, oldPath: string, newPath:
 	if (hasPersistedContent(projectId, oldPath)) {
 		const cached = loadFromLocalStorage(projectId, oldPath);
 		if (cached) {
-			saveToLocalStorage(projectId, newPath, cached);
+			saveToLocalStorage(projectId, newPath, cached.content, cached.comments);
 		}
 		clearLocalStorage(projectId, oldPath);
 	}
@@ -217,7 +218,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 		setIsSaving(true);
 		try {
-			const markdown = toMarkdown(content, comments);
+			const markdown = toMarkdown(content as Descendant[], comments);
 			await fetchClient.put(
 				`/api/projects/${pid}/files?path=${encodeURIComponent(fpath)}`,
 				{ content: markdown }
@@ -508,7 +509,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	}, []);
 
 	// Handle receiving the startNewFile function from FileBrowser
-	const handleStartNewFileRef = useCallback((startNewFile: (parentPath: string) => void) => {
+	const handleStartNewFileRef = useCallback((startNewFile: (parentPath?: string) => void) => {
 		startNewFileRef.current = startNewFile;
 	}, []);
 
@@ -577,7 +578,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Memoize document content for chat to avoid recomputing on every render
 	const documentContentForChat = useMemo(
-		() => toMarkdown(documentModel.content, documentModel.comments),
+		() => toMarkdown(documentModel.content as Descendant[], documentModel.comments),
 		[documentModel.content, documentModel.comments]
 	);
 

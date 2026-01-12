@@ -1,39 +1,24 @@
-# Build stage
-FROM node:20-alpine AS builder
+# ===== DEV TARGET =====
+# Used by docker-compose for local development
+# Source and deps are mounted/installed at runtime
+FROM node:25-alpine AS dev
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
+RUN npm install -g pnpm@9.15.1
 
 WORKDIR /app
 
-# Copy workspace config first (for better layer caching)
-# Use Docker-specific workspace that only includes packages we need
-COPY mcp/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
-COPY package.json pnpm-lock.yaml ./
+# Download AWS RDS CA bundle for SSL certificate verification
+RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
-# Copy only package.json files to install dependencies
-COPY shared/core/package.json ./shared/core/
-COPY shared/db/package.json ./shared/db/
-COPY mcp/package.json ./mcp/
+EXPOSE 3002
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+CMD ["node", "--watch", "mcp/src/index.ts"]
 
-# Copy source code
-COPY tsconfig.json ./
-COPY shared/core ./shared/core
-COPY shared/db ./shared/db
-COPY mcp ./mcp
+# ===== PRODUCTION STAGE =====
+# Node 25 runs TypeScript natively, no build step needed
+FROM node:25-alpine AS runner
 
-# Build shared packages first, then MCP
-RUN pnpm --filter @doc-platform/core build && \
-    pnpm --filter @doc-platform/db build && \
-    pnpm --filter @doc-platform/mcp build
-
-# Production stage
-FROM node:20-alpine AS runner
-
-RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
+RUN npm install -g pnpm@9.15.1
 
 WORKDIR /app
 
@@ -41,7 +26,7 @@ WORKDIR /app
 RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 # Copy workspace config
-COPY mcp/pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
+COPY pnpm-workspace.yaml ./
 COPY package.json pnpm-lock.yaml ./
 COPY shared/core/package.json ./shared/core/
 COPY shared/db/package.json ./shared/db/
@@ -50,13 +35,14 @@ COPY mcp/package.json ./mcp/
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
-# Copy built output
-COPY --from=builder /app/shared/core/dist ./shared/core/dist
-COPY --from=builder /app/shared/db/dist ./shared/db/dist
-COPY --from=builder /app/mcp/dist ./mcp/dist
+# Copy source code (Node 25 runs TypeScript directly)
+COPY tsconfig.json ./
+COPY shared/core ./shared/core
+COPY shared/db ./shared/db
+COPY mcp ./mcp
 
 EXPOSE 3002
 
 ENV PORT=3002
 
-CMD ["node", "mcp/dist/index.js"]
+CMD ["node", "mcp/src/index.ts"]

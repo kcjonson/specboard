@@ -4,8 +4,8 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { isValidUUID } from '../../validation.js';
-import { getUserId, getStorageProvider } from './utils.js';
+import { isValidUUID } from '../../validation.ts';
+import { getUserId, getStorageProvider } from './utils.ts';
 
 /**
  * GET /api/projects/:id/git/status

@@ -13,7 +13,7 @@ import {
 } from '@doc-platform/auth';
 import { query, type User } from '@doc-platform/db';
 
-import { logAuthEvent } from './utils.js';
+import { logAuthEvent } from './utils.ts';
 
 /**
  * Handle user logout

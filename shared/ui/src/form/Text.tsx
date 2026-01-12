@@ -34,6 +34,8 @@ export interface TextProps {
 	autoFocus?: boolean;
 	/** Autocomplete */
 	autoComplete?: string;
+	/** Required field */
+	required?: boolean;
 }
 
 export function Text({
@@ -53,6 +55,7 @@ export function Text({
 	id,
 	autoFocus,
 	autoComplete,
+	required,
 }: TextProps): JSX.Element {
 	const fieldClasses = `${styles.field} ${error ? styles.hasError : ''}`;
 	const errorClasses = `${styles.error} ${error ? styles.errorVisible : ''}`;
@@ -75,6 +78,7 @@ export function Text({
 				id={id}
 				autoFocus={autoFocus}
 				autoComplete={autoComplete}
+				required={required}
 			/>
 			<span class={errorClasses}>{error || '\u00A0'}</span>
 		</div>

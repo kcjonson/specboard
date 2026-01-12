@@ -77,10 +77,8 @@ function build(): void {
 	const manifest = loadManifest();
 
 	// Get CSS paths from manifest
-	// NOTE: Manifest keys use '../ssg/src/styles/' prefix because Vite generates
-	// keys relative to the web directory where the build runs. These keys must
-	// match the paths defined in web/vite.config.ts rollupOptions.input.
-	const commonCss = getCssPath(manifest, '../ssg/src/styles/common.css');
+	// Keys match the rollupOptions.input keys in web/vite.config.ts
+	const commonCss = getCssPath(manifest, '../shared/styles/common.css');
 	const loginCss = getCssPath(manifest, '../ssg/src/styles/login.css');
 	const signupCss = getCssPath(manifest, '../ssg/src/styles/signup.css');
 	const notFoundCss = getCssPath(manifest, '../ssg/src/styles/not-found.css');

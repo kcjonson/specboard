@@ -5,8 +5,8 @@
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { getProject, query } from '@doc-platform/db';
-import { isValidUUID } from '../../validation.js';
-import type { FileEntry } from '../../services/storage/types.js';
+import { isValidUUID } from '../../validation.ts';
+import type { FileEntry } from '../../services/storage/types.ts';
 import {
 	getUserId,
 	getStorageProvider,
@@ -17,7 +17,7 @@ import {
 	pathsToExpandedTree,
 	sortPathsByDepth,
 	getDisplayName,
-} from './utils.js';
+} from './utils.ts';
 
 const MAX_EXPANDED_PATHS = 200;
 

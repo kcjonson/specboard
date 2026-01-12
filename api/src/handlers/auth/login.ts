@@ -15,7 +15,7 @@ import {
 } from '@doc-platform/auth';
 import { query, type User } from '@doc-platform/db';
 
-import { logAuthEvent, isSecureRequest } from './utils.js';
+import { logAuthEvent, isSecureRequest } from './utils.ts';
 
 interface LoginRequest {
 	identifier: string; // username or email

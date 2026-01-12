@@ -12,8 +12,8 @@ import { streamSSE } from 'hono/streaming';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
-import { getDecryptedApiKey } from './api-keys.js';
-import { isValidProvider, getProvider, isValidModel, type ChatMessage } from '../providers/index.js';
+import { getDecryptedApiKey } from './api-keys.ts';
+import { isValidProvider, getProvider, isValidModel, type ChatMessage } from '../providers/index.ts';
 
 // Constants
 const MAX_MESSAGE_LENGTH = 10000;

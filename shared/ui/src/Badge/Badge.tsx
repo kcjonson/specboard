@@ -6,14 +6,17 @@ export interface BadgeProps {
 	children: ComponentChildren;
 	/** Additional CSS class (use variant-*, size-sm for modifiers) */
 	class?: string;
+	/** Tooltip text */
+	title?: string;
 }
 
 export function Badge({
 	children,
 	class: className,
+	title,
 }: BadgeProps): JSX.Element {
 	return (
-		<span class={`${styles.badge} ${className || ''}`}>
+		<span class={`${styles.badge} ${className || ''}`} title={title}>
 			{children}
 		</span>
 	);

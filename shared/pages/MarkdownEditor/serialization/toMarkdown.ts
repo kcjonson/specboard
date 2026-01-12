@@ -9,7 +9,7 @@ import { unified } from 'unified';
 import remarkStringify from 'remark-stringify';
 import remarkGfm from 'remark-gfm';
 import type { Descendant } from 'slate';
-import type { Root, RootContent, PhrasingContent, TableContent, RowContent } from 'mdast';
+import type { Root, RootContent, PhrasingContent, TableContent, RowContent, BlockContent, DefinitionContent, ListItem } from 'mdast';
 import type { CustomElement, CustomText, Comment, CommentWithRange } from '../types';
 import { appendCommentsToMarkdown, calculateCommentRange } from './comments';
 
@@ -88,7 +88,7 @@ function elementToMdast(element: CustomElement): RootContent | null {
 						};
 					}
 					return elementToMdast(child as CustomElement);
-				}).filter((n): n is RootContent => n !== null),
+				}).filter((n): n is BlockContent | DefinitionContent => n !== null),
 			};
 
 		case 'code-block': {
@@ -110,7 +110,7 @@ function elementToMdast(element: CustomElement): RootContent | null {
 				spread: false,
 				children: element.children
 					.filter((child): child is CustomElement => !('text' in child) && (child as CustomElement).type === 'list-item')
-					.map((item) => ({
+					.map((item): ListItem => ({
 						type: 'listItem' as const,
 						spread: false,
 						children: item.children.map((child) => {
@@ -122,8 +122,8 @@ function elementToMdast(element: CustomElement): RootContent | null {
 							}
 							// Handle nested content in list items
 							const nested = elementToMdast(child as CustomElement);
-							return nested as RootContent;
-						}).filter((n): n is RootContent => n !== null),
+							return nested;
+						}).filter((n): n is BlockContent | DefinitionContent => n !== null),
 					})),
 			};
 
@@ -135,7 +135,7 @@ function elementToMdast(element: CustomElement): RootContent | null {
 				spread: false,
 				children: element.children
 					.filter((child): child is CustomElement => !('text' in child) && (child as CustomElement).type === 'list-item')
-					.map((item) => ({
+					.map((item): ListItem => ({
 						type: 'listItem' as const,
 						spread: false,
 						children: item.children.map((child) => {
@@ -146,8 +146,8 @@ function elementToMdast(element: CustomElement): RootContent | null {
 								};
 							}
 							const nested = elementToMdast(child as CustomElement);
-							return nested as RootContent;
-						}).filter((n): n is RootContent => n !== null),
+							return nested;
+						}).filter((n): n is BlockContent | DefinitionContent => n !== null),
 					})),
 			};
 
@@ -166,8 +166,9 @@ function elementToMdast(element: CustomElement): RootContent | null {
 							.map((cell): RowContent => {
 								// Table cells may have paragraph wrappers - unwrap them for serialization
 								let cellContent = cell.children;
-								if (cellContent.length === 1 && !('text' in cellContent[0]) && (cellContent[0] as CustomElement).type === 'paragraph') {
-									cellContent = (cellContent[0] as CustomElement).children;
+								const firstChild = cellContent[0];
+								if (cellContent.length === 1 && firstChild && !('text' in firstChild) && (firstChild as CustomElement).type === 'paragraph') {
+									cellContent = (firstChild as CustomElement).children;
 								}
 								return {
 									type: 'tableCell',

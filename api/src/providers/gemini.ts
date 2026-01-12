@@ -7,8 +7,8 @@
  */
 
 import type { SSEStreamingApi } from 'hono/streaming';
-import type { ChatProvider, ProviderConfig, ChatMessage } from './types.js';
-import { getSafeErrorMessage } from './utils.js';
+import type { ChatProvider, ProviderConfig, ChatMessage } from './types.ts';
+import { getSafeErrorMessage } from './utils.ts';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
