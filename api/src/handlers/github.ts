@@ -8,6 +8,7 @@ import type { Redis } from 'ioredis';
 import { randomBytes } from 'node:crypto';
 import { getSession, SESSION_COOKIE_NAME, encrypt, decrypt, type EncryptedData } from '@doc-platform/auth';
 import { query } from '@doc-platform/db';
+import { log } from '@doc-platform/core';
 
 // GitHub OAuth configuration
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
@@ -237,9 +238,25 @@ export async function handleGitHubAuthCallback(
 			]
 		);
 	} catch (err) {
-		console.error('Failed to store GitHub connection:', err);
+		log({
+			type: 'auth',
+			level: 'error',
+			event: 'github_connect_failed',
+			userId,
+			reason: 'database_error',
+			error: err instanceof Error ? err.message : String(err),
+		});
 		return context.redirect('/settings?github_error=Failed+to+save+connection');
 	}
+
+	// Log successful connection
+	log({
+		type: 'auth',
+		level: 'info',
+		event: 'github_connect',
+		userId,
+		githubUsername,
+	});
 
 	// Redirect to settings with success
 	return context.redirect('/settings?github_connected=true');
@@ -311,6 +328,13 @@ export async function handleGitHubDisconnect(
 		[session.userId]
 	);
 
+	log({
+		type: 'auth',
+		level: 'info',
+		event: 'github_disconnect',
+		userId: session.userId,
+	});
+
 	return new Response(null, { status: 204 });
 }
 
@@ -340,8 +364,9 @@ export async function handleListGitHubRepos(
 		[session.userId]
 	);
 
+	// Return empty array if not connected (not an error - just no repos available)
 	if (connectionResult.rows.length === 0) {
-		return context.json({ error: 'GitHub not connected' }, 400);
+		return context.json([]);
 	}
 
 	// Decrypt access token
@@ -349,8 +374,14 @@ export async function handleListGitHubRepos(
 	try {
 		const encryptedToken: EncryptedData = JSON.parse(connectionResult.rows[0]!.access_token);
 		accessToken = decrypt(encryptedToken);
-	} catch {
-		console.error('Failed to decrypt GitHub token for user:', session.userId);
+	} catch (err) {
+		log({
+			type: 'auth',
+			level: 'error',
+			event: 'github_token_decrypt_failed',
+			userId: session.userId,
+			error: err instanceof Error ? err.message : String(err),
+		});
 		return context.json({ error: 'GitHub connection corrupted. Please reconnect.' }, 500);
 	}
 
@@ -423,7 +454,14 @@ export async function handleListGitHubRepos(
 			}
 		}
 	} catch (err) {
-		console.error('GitHub API error:', err);
+		log({
+			type: 'github',
+			level: 'error',
+			event: 'github_api_error',
+			userId: session.userId,
+			endpoint: 'repos',
+			error: err instanceof Error ? err.message : String(err),
+		});
 		return context.json({ error: 'Failed to fetch repositories' }, 500);
 	}
 
@@ -491,8 +529,14 @@ export async function handleListGitHubBranches(
 	try {
 		const encryptedToken: EncryptedData = JSON.parse(connectionResult.rows[0]!.access_token);
 		accessToken = decrypt(encryptedToken);
-	} catch {
-		console.error('Failed to decrypt GitHub token for user:', session.userId);
+	} catch (err) {
+		log({
+			type: 'auth',
+			level: 'error',
+			event: 'github_token_decrypt_failed',
+			userId: session.userId,
+			error: err instanceof Error ? err.message : String(err),
+		});
 		return context.json({ error: 'GitHub connection corrupted. Please reconnect.' }, 500);
 	}
 
@@ -553,7 +597,16 @@ export async function handleListGitHubBranches(
 
 		return context.json(formattedBranches);
 	} catch (err) {
-		console.error('GitHub API error:', err);
+		log({
+			type: 'github',
+			level: 'error',
+			event: 'github_api_error',
+			userId: session.userId,
+			endpoint: 'branches',
+			owner,
+			repo,
+			error: err instanceof Error ? err.message : String(err),
+		});
 		return context.json({ error: 'Failed to fetch branches' }, 500);
 	}
 }
