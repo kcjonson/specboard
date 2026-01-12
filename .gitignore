@@ -24,7 +24,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
-pnpm-debug.log*
 
 # Test coverage
 coverage/
@@ -50,4 +49,3 @@ scripts/seed-dev.sql
 # Local seed configuration (contains admin credentials)
 seed.local.json
 docker-compose.override.yml
-.pnpm-store/

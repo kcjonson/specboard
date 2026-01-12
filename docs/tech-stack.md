@@ -52,8 +52,7 @@ Both share a common infrastructure and are developed in a single monorepo.
 
 | Tool | Purpose |
 |------|---------|
-| pnpm | Package manager |
-| Turborepo | Monorepo build orchestration |
+| npm | Package manager (workspaces) |
 | ESLint | Code linting and formatting |
 | EditorConfig | Basic editor formatting |
 
@@ -89,8 +88,6 @@ doc-platform/
 ├── docker-compose.yml         # Local development containers
 ├── .editorconfig
 ├── eslint.config.js
-├── turbo.json
-├── pnpm-workspace.yaml
 └── package.json
 ```
 
@@ -155,17 +152,14 @@ Future extensions:
 
 ### Local Development
 ```bash
-# Install dependencies
-pnpm install
+# Start all services in Docker
+docker compose up
 
-# Start all apps in development mode
-pnpm dev
+# Run tests (inside container)
+docker compose run --rm api npm test
 
-# Run tests
-pnpm test
-
-# Lint code
-pnpm lint
+# Lint code (inside container)
+docker compose run --rm api npm run lint
 ```
 
 ### Branch Strategy
@@ -304,10 +298,6 @@ See [docs/setup.md](setup.md) for detailed local development setup instructions.
 ```bash
 # Start all services (db, redis, api, frontend)
 docker compose up
-
-# Or hybrid mode (faster frontend iteration)
-docker compose up db redis api
-pnpm --filter web dev
 ```
 
 ---

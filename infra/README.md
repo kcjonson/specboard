@@ -50,8 +50,8 @@ aws sts get-caller-identity
 # Docker running
 docker info
 
-# Dependencies installed and built
-pnpm install && pnpm build
+# Dependencies installed (run inside container)
+docker compose run --rm api npm install
 ```
 
 ### Full Deployment

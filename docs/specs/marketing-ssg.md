@@ -357,16 +357,16 @@ Delete the old template-string based page renderers:
 
 ```bash
 # Build CSS bundles
-pnpm --filter web build:css
+npm run --workspace web build:css
 
 # Generate static HTML
-pnpm --filter ssg build
+npm run --workspace ssg build
 
 # Build SPA
-pnpm --filter web build
+npm run --workspace web build
 
 # Copy all to frontend/static
-pnpm --filter frontend build:static
+npm run --workspace frontend build:static
 ```
 
 ## Implementation Steps

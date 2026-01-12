@@ -40,7 +40,7 @@ function loadManifest(): Manifest {
 		return JSON.parse(readFileSync(manifestPath, 'utf-8'));
 	} catch {
 		console.error('Failed to read Vite manifest:', manifestPath);
-		console.error('Make sure to run `pnpm --filter web build` first');
+		console.error('Make sure to run `npm run --workspace web build` first');
 		throw new Error('Manifest not found');
 	}
 }

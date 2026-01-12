@@ -11,7 +11,7 @@ Doc-platform is a monorepo containing two products:
 Built with Preact, TypeScript, and AWS services. For full details, see [docs/tech-stack.md](docs/tech-stack.md).
 
 **Critical Architectural Decisions:**
-- Monorepo with pnpm workspaces + Turborepo
+- Monorepo with npm workspaces
 - Preact (not React) with custom router, fetch wrapper, and state management
 - AWS backend: ECS Fargate, Aurora Postgres, Redis, Bedrock
 - Platform abstraction layer for Electron + Web
@@ -23,7 +23,7 @@ Built with Preact, TypeScript, and AWS services. For full details, see [docs/tec
 
 ### Local Development: Always Use Docker
 
-**CRITICAL: NEVER run pnpm, npm, or any Node.js commands on the host machine. ALL package management and Node operations happen inside containers.**
+**CRITICAL: NEVER run npm or any Node.js commands on the host machine. ALL package management and Node operations happen inside containers.**
 
 ```bash
 # Start all services (the ONLY way to run dev)
@@ -35,8 +35,8 @@ docker compose build && docker compose up
 
 - All services run in containers: api, frontend, db, redis, nginx, mcp
 - Access the app at http://localhost (port 80 via nginx)
-- Dependencies are installed inside containers on startup via `pnpm install`
-- The host machine should NEVER have node_modules or .pnpm-store directories
+- Dependencies are installed inside containers on startup via `npm install`
+- The host machine should NEVER have node_modules directories
 - See [docs/setup.md](docs/setup.md) for full setup instructions
 
 ### Workflow: Before Writing Code

@@ -6,20 +6,15 @@ This guide covers setting up doc-platform for local development.
 
 ## Prerequisites
 
-- **Node.js** 20+
-- **pnpm** 8+
 - **Docker** and **Docker Compose**
 
 ---
 
 ## Quick Start
 
-> **Important:** All development runs in Docker containers. Never run services locally with `pnpm dev`.
+> **Important:** All development runs in Docker containers. Never run npm or node commands on the host machine.
 
 ```bash
-# Install dependencies
-pnpm install
-
 # Start all services
 docker compose up
 
@@ -31,7 +26,7 @@ open http://localhost
 
 ```bash
 # Rebuild and restart
-pnpm build && docker compose build && docker compose up
+docker compose build && docker compose up
 ```
 
 ---
@@ -95,7 +90,7 @@ Migrations run automatically when the API container starts. To run manually:
 
 ```bash
 # From the api container
-docker compose exec api pnpm migrate
+docker compose exec api npm run migrate
 ```
 
 ### Connecting Directly
@@ -113,9 +108,6 @@ docker compose exec db psql -U dev -d doc_platform
 ## Common Commands
 
 ```bash
-# Install dependencies
-pnpm install
-
 # Start all services
 docker compose up
 
@@ -128,14 +120,11 @@ docker compose logs -f api
 # Rebuild after code changes
 docker compose build api
 
-# Run tests
-pnpm test
+# Run tests (inside container)
+docker compose run --rm api npm test
 
-# Lint code
-pnpm lint
-
-# Build packages
-pnpm build
+# Lint code (inside container)
+docker compose run --rm api npm run lint
 ```
 
 ---
@@ -187,7 +176,6 @@ docker compose logs db
 After modifying shared packages, rebuild:
 
 ```bash
-pnpm build
 docker compose build api frontend
 docker compose up
 ```
