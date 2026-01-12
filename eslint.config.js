@@ -31,6 +31,7 @@ export default [
 				Headers: 'readonly',
 				RequestInit: 'readonly',
 				URLSearchParams: 'readonly',
+				URL: 'readonly',
 				AbortController: 'readonly',
 				AbortSignal: 'readonly',
 				Element: 'readonly',
