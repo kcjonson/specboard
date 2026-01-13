@@ -89,3 +89,26 @@ jobs:
             ${{ steps.prefix.outputs.value }}/mcp:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Check if Storage Dockerfile exists
+        id: storage-check
+        run: |
+          if [ -f "./storage/Dockerfile" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Storage Dockerfile not found, skipping build"
+          fi
+
+      - name: Build Storage image
+        if: steps.storage-check.outputs.exists == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./storage/Dockerfile
+          push: ${{ inputs.push }}
+          tags: |
+            ${{ steps.prefix.outputs.value }}/storage:latest
+            ${{ steps.prefix.outputs.value }}/storage:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

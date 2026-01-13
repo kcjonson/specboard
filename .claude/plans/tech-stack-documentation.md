@@ -30,7 +30,7 @@ Create a foundational tech stack document for doc-platform (Documentation Editor
 | Component | AWS Service | Notes |
 |-----------|-------------|-------|
 | Compute | **ECS Fargate** | Containers, same locally and in AWS |
-| Database | **Aurora Serverless v2** | Postgres, auto-scaling |
+| Database | **RDS PostgreSQL** | t4g.micro, single-AZ staging |
 | AI | **Amazon Bedrock** | Claude via AWS platform |
 | Auth | **PostgreSQL + bcrypt + Redis sessions** | Self-managed identity |
 | Storage | **S3** | Document/asset storage |

@@ -13,7 +13,7 @@ Built with Preact, TypeScript, and AWS services. For full details, see [docs/tec
 **Critical Architectural Decisions:**
 - Monorepo with npm workspaces
 - Preact (not React) with custom router, fetch wrapper, and state management
-- AWS backend: ECS Fargate, Aurora Postgres, Redis, Bedrock
+- AWS backend: ECS Fargate, RDS Postgres, Redis, Bedrock
 - Platform abstraction layer for Electron + Web
 - See `/docs/specs/` for detailed specifications
 
