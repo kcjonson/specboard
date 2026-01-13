@@ -273,7 +273,7 @@ Use this template for all work items:
 **Dependencies:** Authentication System
 **Status:** in progress
 
-**Goal:** Build backend API with Aurora Postgres database.
+**Goal:** Build backend API with RDS Postgres database.
 
 **Tasks:**
 - [x] Database setup

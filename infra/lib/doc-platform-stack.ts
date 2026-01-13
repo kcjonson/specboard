@@ -11,6 +11,8 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -102,6 +104,12 @@ export class DocPlatformStack extends cdk.Stack {
 			lifecycleRules: ecrLifecycleRules,
 		});
 
+		const storageRepository = new ecr.Repository(this, 'StorageRepository', {
+			repositoryName: 'doc-platform/storage',
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
+			lifecycleRules: ecrLifecycleRules,
+		});
+
 		// ===========================================
 		// RDS PostgreSQL (Single-AZ for staging)
 		// ===========================================
@@ -170,6 +178,70 @@ export class DocPlatformStack extends cdk.Stack {
 			deletionProtection: false,
 			removalPolicy: cdk.RemovalPolicy.DESTROY,
 			backupRetention: cdk.Duration.days(1),
+		});
+
+		// ===========================================
+		// Storage Service Infrastructure (Separate DB + S3)
+		// ===========================================
+		// Storage service API key for internal service-to-service auth
+		const storageApiKeySecret = new secretsmanager.Secret(this, 'StorageApiKey', {
+			secretName: 'doc-platform/storage-api-key',
+			description: 'Internal API key for main API to call storage service',
+			generateSecretString: {
+				excludePunctuation: true,
+				passwordLength: 64,
+			},
+		});
+
+		// Separate database for storage service (isolates file workload from main app)
+		const storageDbCredentials = new secretsmanager.Secret(this, 'StorageDbCredentials', {
+			secretName: 'doc-platform/storage-db-credentials',
+			generateSecretString: {
+				secretStringTemplate: JSON.stringify({ username: 'postgres' }),
+				generateStringKey: 'password',
+				excludePunctuation: true,
+				passwordLength: 32,
+			},
+		});
+
+		const storageDbSecurityGroup = new ec2.SecurityGroup(this, 'StorageDbSecurityGroup', {
+			vpc,
+			description: 'Security group for Storage Service RDS PostgreSQL',
+			allowAllOutbound: false,
+		});
+
+		const storageDatabase = new rds.DatabaseInstance(this, 'StorageDatabase', {
+			engine: rds.DatabaseInstanceEngine.postgres({
+				version: rds.PostgresEngineVersion.VER_16,
+			}),
+			instanceType: ec2.InstanceType.of(
+				ec2.InstanceClass.T4G,
+				ec2.InstanceSize.MICRO
+			),
+			vpc,
+			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+			securityGroups: [storageDbSecurityGroup],
+			credentials: rds.Credentials.fromSecret(storageDbCredentials),
+			databaseName: 'storage',
+			allocatedStorage: 20,
+			maxAllocatedStorage: 100,
+			multiAz: false,
+			deletionProtection: false,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+			backupRetention: cdk.Duration.days(1),
+		});
+
+		// S3 bucket for file content storage
+		const storageBucket = new s3.Bucket(this, 'StorageBucket', {
+			bucketName: `doc-platform-storage-${this.account}`,
+			versioned: true, // Keep file versions for potential rollback
+			encryption: s3.BucketEncryption.S3_MANAGED,
+			blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+			removalPolicy: cdk.RemovalPolicy.RETAIN, // Keep files on stack deletion
+			lifecycleRules: [{
+				// Delete old versions after 30 days to control costs
+				noncurrentVersionExpiration: cdk.Duration.days(30),
+			}],
 		});
 
 		// ===========================================
@@ -265,6 +337,12 @@ export class DocPlatformStack extends cdk.Stack {
 			allowAllOutbound: true,
 		});
 
+		const storageSecurityGroup = new ec2.SecurityGroup(this, 'StorageSecurityGroup', {
+			vpc,
+			description: 'Security group for Storage service (internal only)',
+			allowAllOutbound: true,
+		});
+
 		// Allow ALB to reach services
 		apiSecurityGroup.addIngressRule(
 			ec2.Peer.securityGroupId(alb.connections.securityGroups[0]!.securityGroupId),
@@ -284,6 +362,13 @@ export class DocPlatformStack extends cdk.Stack {
 			'Allow MCP to API'
 		);
 
+		// Allow API to reach Storage service (internal service-to-service)
+		storageSecurityGroup.addIngressRule(
+			apiSecurityGroup,
+			ec2.Port.tcp(3003),
+			'Allow API to Storage'
+		);
+
 		// Allow services to reach database
 		dbSecurityGroup.addIngressRule(
 			apiSecurityGroup,
@@ -294,6 +379,13 @@ export class DocPlatformStack extends cdk.Stack {
 			mcpSecurityGroup,
 			ec2.Port.tcp(5432),
 			'Allow MCP to PostgreSQL'
+		);
+
+		// Allow Storage service to reach its database
+		storageDbSecurityGroup.addIngressRule(
+			storageSecurityGroup,
+			ec2.Port.tcp(5432),
+			'Allow Storage to Storage-DB'
 		);
 
 		// Allow services to reach Redis
@@ -409,6 +501,8 @@ export class DocPlatformStack extends cdk.Stack {
 				APP_URL: `https://${stagingDomain}`,
 				// Email safety: only send to team domains in staging
 				EMAIL_ALLOWLIST: 'specboard.io',
+				// Storage service internal URL
+				STORAGE_SERVICE_URL: 'http://storage.internal:3003',
 			},
 			secrets: {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
@@ -416,6 +510,8 @@ export class DocPlatformStack extends cdk.Stack {
 				API_KEY_ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(apiKeyEncryptionSecret),
 				GITHUB_CLIENT_ID: ecs.Secret.fromSecretsManager(githubClientIdSecret),
 				GITHUB_CLIENT_SECRET: ecs.Secret.fromSecretsManager(githubClientSecretSecret),
+				// For calling storage service internally
+				STORAGE_SERVICE_API_KEY: ecs.Secret.fromSecretsManager(storageApiKeySecret),
 			},
 			portMappings: [{ containerPort: 3001 }],
 			healthCheck: {
@@ -538,8 +634,8 @@ export class DocPlatformStack extends cdk.Stack {
 			environment: {
 				PORT: '3002',
 				NODE_ENV: 'production',
-				// MCP calls API via staging domain
-				API_URL: `https://${stagingDomain}`,
+				// MCP calls API via internal DNS (private network)
+				API_URL: 'http://api.internal:3001',
 				// Database connection for direct DB access
 				DB_HOST: database.instanceEndpoint.hostname,
 				DB_PORT: database.instanceEndpoint.port.toString(),
@@ -576,6 +672,94 @@ export class DocPlatformStack extends cdk.Stack {
 
 		// Grant MCP task permission to write to error log group
 		errorLogGroup.grantWrite(mcpTaskDefinition.taskRole);
+
+		// ===========================================
+		// Storage Service (Fargate) - Internal Only
+		// ===========================================
+		const storageLogGroup = new logs.LogGroup(this, 'StorageLogGroup', {
+			logGroupName: '/ecs/storage',
+			retention: logs.RetentionDays.ONE_MONTH,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+		});
+
+		const storageTaskDefinition = new ecs.FargateTaskDefinition(this, 'StorageTaskDef', {
+			memoryLimitMiB: 512,
+			cpu: 256,
+		});
+
+		storageTaskDefinition.addContainer('storage', {
+			image: ecs.ContainerImage.fromEcrRepository(storageRepository, 'latest'),
+			logging: ecs.LogDrivers.awsLogs({
+				logGroup: storageLogGroup,
+				streamPrefix: 'storage',
+			}),
+			environment: {
+				PORT: '3003',
+				NODE_ENV: 'production',
+				// Storage database connection
+				DB_HOST: storageDatabase.instanceEndpoint.hostname,
+				DB_PORT: storageDatabase.instanceEndpoint.port.toString(),
+				DB_NAME: 'storage',
+				DB_USER: 'postgres',
+				// S3 bucket for file content
+				S3_BUCKET: storageBucket.bucketName,
+				S3_REGION: this.region,
+			},
+			secrets: {
+				DB_PASSWORD: ecs.Secret.fromSecretsManager(storageDbCredentials, 'password'),
+				STORAGE_API_KEY: ecs.Secret.fromSecretsManager(storageApiKeySecret),
+			},
+			portMappings: [{ containerPort: 3003 }],
+			healthCheck: {
+				command: ['CMD-SHELL', 'node -e "fetch(\'http://localhost:3003/health\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'],
+				interval: cdk.Duration.seconds(30),
+				timeout: cdk.Duration.seconds(5),
+				retries: 3,
+				startPeriod: cdk.Duration.seconds(60),
+			},
+		});
+
+		// Grant storage service permission to read/write S3 bucket
+		storageBucket.grantReadWrite(storageTaskDefinition.taskRole);
+
+		const storageService = new ecs.FargateService(this, 'StorageService', {
+			cluster,
+			taskDefinition: storageTaskDefinition,
+			desiredCount: isBootstrap ? 0 : 1,
+			securityGroups: [storageSecurityGroup],
+			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+			serviceName: 'storage',
+			circuitBreaker: { enable: true, rollback: true },
+			minHealthyPercent: 50,
+			maxHealthyPercent: 200,
+			healthCheckGracePeriod: cdk.Duration.seconds(60),
+		});
+
+		// ===========================================
+		// CloudMap Service Discovery (Internal DNS)
+		// ===========================================
+		// Enables internal service-to-service communication without going through ALB
+		const internalNamespace = new servicediscovery.PrivateDnsNamespace(this, 'InternalNamespace', {
+			name: 'internal',
+			vpc,
+			description: 'Internal service discovery namespace',
+		});
+
+		// Register API so MCP can call it at http://api.internal:3001
+		apiService.enableCloudMap({
+			cloudMapNamespace: internalNamespace,
+			name: 'api',
+			dnsRecordType: servicediscovery.DnsRecordType.A,
+			dnsTtl: cdk.Duration.seconds(10),
+		});
+
+		// Register Storage so API can call it at http://storage.internal:3003
+		storageService.enableCloudMap({
+			cloudMapNamespace: internalNamespace,
+			name: 'storage',
+			dnsRecordType: servicediscovery.DnsRecordType.A,
+			dnsTtl: cdk.Duration.seconds(10),
+		});
 
 		// ===========================================
 		// ALB Target Groups & Routing
@@ -768,6 +952,7 @@ export class DocPlatformStack extends cdk.Stack {
 				apiRepository.repositoryArn,
 				frontendRepository.repositoryArn,
 				mcpRepository.repositoryArn,
+				storageRepository.repositoryArn,
 			],
 		}));
 
@@ -921,6 +1106,21 @@ export class DocPlatformStack extends cdk.Stack {
 		new cdk.CfnOutput(this, 'StagingUrl', {
 			value: `https://${stagingDomain}`,
 			description: 'Staging environment URL',
+		});
+
+		new cdk.CfnOutput(this, 'StorageRepositoryUri', {
+			value: storageRepository.repositoryUri,
+			description: 'ECR Repository URI for Storage service',
+		});
+
+		new cdk.CfnOutput(this, 'StorageDatabaseEndpoint', {
+			value: storageDatabase.instanceEndpoint.hostname,
+			description: 'Storage service RDS PostgreSQL Endpoint',
+		});
+
+		new cdk.CfnOutput(this, 'StorageBucketName', {
+			value: storageBucket.bucketName,
+			description: 'S3 bucket for file content storage',
 		});
 
 	}

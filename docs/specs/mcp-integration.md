@@ -61,7 +61,7 @@ The MCP server is deployed as a **separate service** from the main API, providin
           │                │                │
           ▼                ▼                ▼
 ┌─────────────────┐ ┌────────────┐ ┌───────────────────┐
-│   Main API      │ │  Aurora    │ │ OpenSearch        │
+│   Main API      │ │    RDS     │ │ OpenSearch        │
 │   (ECS)         │ │  Postgres  │ │ Serverless        │
 └─────────────────┘ └────────────┘ └───────────────────┘
 ```

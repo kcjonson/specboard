@@ -39,7 +39,7 @@ Both share a common infrastructure and are developed in a single monorepo.
 | AWS Service | Purpose |
 |-------------|---------|
 | ECS Fargate | Container hosting (frontend + API) |
-| Aurora Serverless v2 | PostgreSQL database |
+| RDS PostgreSQL | PostgreSQL database (t4g.micro) |
 | ElastiCache Redis | Session storage |
 | Amazon Bedrock | AI features (Claude) |
 | SES | Email sending (verification, password reset) |
@@ -319,10 +319,10 @@ ElastiCache Redis:
 - 30-day TTL with sliding expiration
 
 ### Database
-Aurora Serverless v2 (PostgreSQL):
-- Scales capacity automatically (0.5 - 128 ACUs)
-- Full PostgreSQL compatibility
-- Automatic backups
+RDS PostgreSQL (t4g.micro):
+- Single-AZ for staging, Multi-AZ for production
+- Full PostgreSQL 16 compatibility
+- Automatic backups (1 day retention)
 
 ### Git Operations
 - Backend handles all Git operations (clone, commit, push)
@@ -381,5 +381,5 @@ The following topics require deeper design documents:
 | Custom state | Model pattern | Familiar pattern, fits app needs |
 | CSS Modules | CSS Modules | Scoped styles, no runtime |
 | ECS over Lambda | ECS Fargate | Consistent local/cloud environment, better for Git ops |
-| Aurora over DynamoDB | Aurora | Relational data model, full SQL |
+| RDS over DynamoDB | RDS PostgreSQL | Relational data model, full SQL |
 | CDK over Terraform | CDK | TypeScript, same language as app |
