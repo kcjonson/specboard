@@ -1,4 +1,3 @@
-/* global URL */
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Icon } from '@doc-platform/ui';

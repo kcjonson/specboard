@@ -137,6 +137,20 @@ export class DocPlatformStack extends cdk.Stack {
 			description: 'AES-256 encryption key for user API keys - must be 64 hex characters. Set manually after deployment.',
 		});
 
+		// GitHub OAuth credentials for connecting user GitHub accounts
+		// Set these in AWS Secrets Manager after deployment:
+		// aws secretsmanager put-secret-value --secret-id doc-platform/github-client-id --secret-string "your-client-id"
+		// aws secretsmanager put-secret-value --secret-id doc-platform/github-client-secret --secret-string "your-client-secret"
+		const githubClientIdSecret = new secretsmanager.Secret(this, 'GitHubClientId', {
+			secretName: 'doc-platform/github-client-id',
+			description: 'GitHub OAuth App client ID for staging.specboard.io',
+		});
+
+		const githubClientSecretSecret = new secretsmanager.Secret(this, 'GitHubClientSecret', {
+			secretName: 'doc-platform/github-client-secret',
+			description: 'GitHub OAuth App client secret for staging.specboard.io',
+		});
+
 		const database = new rds.DatabaseInstance(this, 'Database', {
 			engine: rds.DatabaseInstanceEngine.postgres({
 				version: rds.PostgresEngineVersion.VER_16,
@@ -400,6 +414,8 @@ export class DocPlatformStack extends cdk.Stack {
 				DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
 				INVITE_KEYS: ecs.Secret.fromSecretsManager(inviteKeysSecret),
 				API_KEY_ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(apiKeyEncryptionSecret),
+				GITHUB_CLIENT_ID: ecs.Secret.fromSecretsManager(githubClientIdSecret),
+				GITHUB_CLIENT_SECRET: ecs.Secret.fromSecretsManager(githubClientSecretSecret),
 			},
 			portMappings: [{ containerPort: 3001 }],
 			healthCheck: {

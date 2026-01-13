@@ -2,7 +2,7 @@
  * Project service - shared business logic for projects
  */
 
-import { query } from '../index.ts';
+import { query, transaction } from '../index.ts';
 import { type Project, type StorageMode, type RepositoryConfig, isLocalRepository } from '../types.ts';
 
 // Maximum number of root paths per project to prevent abuse
@@ -119,15 +119,48 @@ export async function getProject(
 /**
  * Create a new project
  */
+export interface RepositoryConfigInput {
+	provider: 'github';
+	owner: string;
+	repo: string;
+	branch: string;
+	url: string;
+}
+
 export interface CreateProjectInput {
 	name: string;
 	description?: string;
+	repository?: RepositoryConfigInput;
 }
 
 export async function createProject(
 	userId: string,
 	data: CreateProjectInput
 ): Promise<ProjectResponse> {
+	// If repository is provided, set up cloud mode
+	if (data.repository) {
+		const repoConfig = {
+			type: 'cloud' as const,
+			remote: {
+				provider: data.repository.provider,
+				owner: data.repository.owner,
+				repo: data.repository.repo,
+				url: data.repository.url,
+			},
+			branch: data.repository.branch,
+		};
+
+		const result = await query<Project>(
+			`INSERT INTO projects (name, description, owner_id, storage_mode, repository, root_paths)
+			 VALUES ($1, $2, $3, 'cloud', $4, $5)
+			 RETURNING *`,
+			[data.name, data.description || null, userId, JSON.stringify(repoConfig), JSON.stringify(['/'])]
+		);
+
+		return transformProject(result.rows[0]!);
+	}
+
+	// No repository - create with default storage_mode 'none'
 	const result = await query<Project>(
 		`INSERT INTO projects (name, description, owner_id)
 		 VALUES ($1, $2, $3)
@@ -209,100 +242,107 @@ export interface AddFolderInput {
 /**
  * Add a folder to a project (local mode)
  * This sets the repository config and adds a root path
+ * Uses transaction with FOR UPDATE to prevent race conditions
  */
 export async function addFolder(
 	projectId: string,
 	userId: string,
 	data: AddFolderInput
 ): Promise<ProjectResponse | null> {
-	// First get the project to check current state
-	const existing = await query<Project>(
-		'SELECT * FROM projects WHERE id = $1 AND owner_id = $2',
-		[projectId, userId]
-	);
+	return transaction(async (client) => {
+		// Get the project with FOR UPDATE lock to prevent race conditions
+		const existing = await client.query<Project>(
+			'SELECT * FROM projects WHERE id = $1 AND owner_id = $2 FOR UPDATE',
+			[projectId, userId]
+		);
 
-	if (existing.rows.length === 0) {
-		return null;
-	}
+		if (existing.rows.length === 0) {
+			return null;
+		}
 
-	const project = existing.rows[0]!;
+		const project = existing.rows[0]!;
 
-	// If project already has a local path, verify it matches
-	const currentRepo = project.repository as RepositoryConfig | Record<string, never>;
-	if (isLocalRepository(currentRepo) && currentRepo.localPath !== data.repoPath) {
-		throw new Error('DIFFERENT_REPO');
-	}
+		// If project already has a local path, verify it matches
+		const currentRepo = project.repository as RepositoryConfig | Record<string, never>;
+		if (isLocalRepository(currentRepo) && currentRepo.localPath !== data.repoPath) {
+			throw new Error('DIFFERENT_REPO');
+		}
 
-	// Check if root path already exists
-	if (project.root_paths.includes(data.rootPath)) {
-		throw new Error('DUPLICATE_PATH');
-	}
+		// Check if root path already exists
+		if (project.root_paths.includes(data.rootPath)) {
+			throw new Error('DUPLICATE_PATH');
+		}
 
-	// Enforce maximum root paths limit
-	if (project.root_paths.length >= MAX_ROOT_PATHS) {
-		throw new Error('MAX_ROOT_PATHS_EXCEEDED');
-	}
+		// Enforce maximum root paths limit
+		if (project.root_paths.length >= MAX_ROOT_PATHS) {
+			throw new Error('MAX_ROOT_PATHS_EXCEEDED');
+		}
 
-	// Update project with new storage config
-	const newRepository = {
-		type: 'local' as const,
-		localPath: data.repoPath,
-		branch: data.branch,
-	};
-	const newRootPaths = [...project.root_paths, data.rootPath];
+		// Update project with new storage config
+		const newRepository = {
+			type: 'local' as const,
+			localPath: data.repoPath,
+			branch: data.branch,
+		};
+		const newRootPaths = [...project.root_paths, data.rootPath];
 
-	const result = await query<Project>(
-		`UPDATE projects
-		 SET storage_mode = 'local',
-		     repository = $1,
-		     root_paths = $2,
-		     updated_at = NOW()
-		 WHERE id = $3 AND owner_id = $4
-		 RETURNING *`,
-		[JSON.stringify(newRepository), JSON.stringify(newRootPaths), projectId, userId]
-	);
+		const result = await client.query<Project>(
+			`UPDATE projects
+			 SET storage_mode = 'local',
+			     repository = $1,
+			     root_paths = $2,
+			     updated_at = NOW()
+			 WHERE id = $3 AND owner_id = $4
+			 RETURNING *`,
+			[JSON.stringify(newRepository), JSON.stringify(newRootPaths), projectId, userId]
+		);
 
-	if (result.rows.length === 0) {
-		return null;
-	}
+		if (result.rows.length === 0) {
+			return null;
+		}
 
-	return transformProject(result.rows[0]!);
+		return transformProject(result.rows[0]!);
+	});
 }
 
 /**
  * Remove a folder from a project (doesn't delete files)
+ * Uses transaction with FOR UPDATE to prevent race conditions
  */
 export async function removeFolder(
 	projectId: string,
 	userId: string,
 	rootPath: string
 ): Promise<ProjectResponse | null> {
-	const existing = await query<Project>(
-		'SELECT * FROM projects WHERE id = $1 AND owner_id = $2',
-		[projectId, userId]
-	);
+	return transaction(async (client) => {
+		// Get the project with FOR UPDATE lock to prevent race conditions
+		const existing = await client.query<Project>(
+			'SELECT * FROM projects WHERE id = $1 AND owner_id = $2 FOR UPDATE',
+			[projectId, userId]
+		);
 
-	if (existing.rows.length === 0) {
-		return null;
-	}
+		if (existing.rows.length === 0) {
+			return null;
+		}
 
-	const project = existing.rows[0]!;
-	const newRootPaths = project.root_paths.filter((p) => p !== rootPath);
+		const project = existing.rows[0]!;
+		const newRootPaths = project.root_paths.filter((p) => p !== rootPath);
 
-	const result = await query<Project>(
-		`UPDATE projects
-		 SET root_paths = $1::jsonb,
-		     repository = CASE WHEN jsonb_array_length($1::jsonb) = 0 THEN '{}'::jsonb ELSE repository END,
-		     storage_mode = CASE WHEN jsonb_array_length($1::jsonb) = 0 THEN 'none' ELSE storage_mode END,
-		     updated_at = NOW()
-		 WHERE id = $2 AND owner_id = $3
-		 RETURNING *`,
-		[JSON.stringify(newRootPaths), projectId, userId]
-	);
+		const result = await client.query<Project>(
+			`UPDATE projects
+			 SET root_paths = $1::jsonb,
+			     repository = CASE WHEN jsonb_array_length($1::jsonb) = 0 THEN '{}'::jsonb ELSE repository END,
+			     storage_mode = CASE WHEN jsonb_array_length($1::jsonb) = 0 THEN 'none' ELSE storage_mode END,
+			     updated_at = NOW()
+			 WHERE id = $2 AND owner_id = $3
+			 RETURNING *`,
+			[JSON.stringify(newRootPaths), projectId, userId]
+		);
 
-	if (result.rows.length === 0) {
-		return null;
-	}
+		if (result.rows.length === 0) {
+			return null;
+		}
 
-	return transformProject(result.rows[0]!);
+		return transformProject(result.rows[0]!);
+	});
 }

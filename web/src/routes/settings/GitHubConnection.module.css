@@ -1,0 +1,170 @@
+.container {
+	margin-top: var(--space-6);
+	padding: var(--space-6);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+}
+
+.title {
+	font-size: var(--text-lg);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+	margin: 0 0 var(--space-2) 0;
+}
+
+.description {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	margin: 0 0 var(--space-5) 0;
+}
+
+.loading {
+	padding: var(--space-6);
+	text-align: center;
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+}
+
+.error {
+	padding: var(--space-4);
+	background: rgba(239, 68, 68, 0.1);
+	border: 1px solid var(--color-error);
+	border-radius: var(--radius-md);
+	color: var(--color-error);
+	font-size: var(--text-sm);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	margin-bottom: var(--space-4);
+}
+
+.connectedCard,
+.disconnectedCard {
+	background: var(--color-background);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	padding: var(--space-4);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-4);
+}
+
+.accountInfo {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+}
+
+.icon {
+	font-size: 1.5rem;
+	line-height: 1;
+	color: var(--color-text);
+}
+
+.details {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+}
+
+.provider {
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+	font-size: var(--text-base);
+}
+
+.username {
+	font-size: var(--text-sm);
+	color: var(--color-primary);
+}
+
+.connectedDate {
+	font-size: var(--text-xs);
+	color: var(--color-text-muted);
+}
+
+.notConnected {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+.confirmActions {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+}
+
+.confirmText {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+/* Button variants */
+.dismissButton,
+.ghostButton,
+.dangerButton,
+.primaryButton {
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-md);
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	cursor: pointer;
+	transition: background-color 0.15s, border-color 0.15s;
+}
+
+.dismissButton,
+.ghostButton {
+	background: transparent;
+	border: 1px solid var(--color-border);
+	color: var(--color-text);
+}
+
+.dismissButton:hover,
+.ghostButton:hover {
+	background: var(--color-background);
+	border-color: var(--color-text-muted);
+}
+
+.dangerButton {
+	background: var(--color-error);
+	border: 1px solid var(--color-error);
+	color: white;
+}
+
+.dangerButton:hover {
+	filter: brightness(0.9);
+}
+
+.primaryButton {
+	background: var(--color-primary);
+	border: 1px solid var(--color-primary);
+	color: white;
+}
+
+.primaryButton:hover {
+	filter: brightness(0.9);
+}
+
+.dismissButton:disabled,
+.ghostButton:disabled,
+.dangerButton:disabled,
+.primaryButton:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Focus visible styles for keyboard navigation */
+.dismissButton:focus-visible,
+.ghostButton:focus-visible,
+.primaryButton:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+.dangerButton:focus-visible {
+	outline: 2px solid var(--color-error);
+	outline-offset: 2px;
+}

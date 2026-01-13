@@ -207,6 +207,13 @@ Use this template for all work items:
   - [x] Display validation errors (not git repo, different repo)
   - [x] File tree display with expand/collapse
   - [x] Remove folder button on root items
+- [ ] Cloud mode support
+  - [ ] Platform detection (isCloud vs isElectron)
+  - [ ] FileBrowser shows "Connect Repository" for cloud mode
+  - [ ] ConnectRepository dialog component
+  - [ ] POST /api/projects/:id/repository endpoint
+  - [ ] GitStorageProvider implementation
+  - [ ] GitHub OAuth for repo access (depends on GitHub OAuth epic)
 
 ---
 

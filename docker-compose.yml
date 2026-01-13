@@ -60,6 +60,14 @@ services:
       NODE_ENV: development
       INVITE_KEYS: localdev
       APP_URL: http://localhost
+      # GitHub OAuth - create an OAuth App at https://github.com/settings/developers
+      # Set callback URL to: http://localhost/api/auth/github/callback
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      # Encryption key for storing tokens (64 hex chars = 32 bytes)
+      # Generate with: openssl rand -hex 32
+      # For local dev, set in .env file. For production, use AWS Secrets Manager.
+      API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:-}
     depends_on:
       db:
         condition: service_healthy

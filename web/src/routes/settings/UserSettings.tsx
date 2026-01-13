@@ -6,6 +6,7 @@ import { fetchClient } from '@doc-platform/fetch';
 import { useModel, UserModel, AuthorizationsCollection } from '@doc-platform/models';
 import { AuthorizedApps } from './AuthorizedApps';
 import { ApiKeys } from './ApiKeys';
+import { GitHubConnection } from './GitHubConnection';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 import { SetPasswordDialog } from './SetPasswordDialog';
 import styles from './UserSettings.module.css';
@@ -398,7 +399,12 @@ export function UserSettings(props: RouteProps): JSX.Element {
 						<ApiKeys />
 					)}
 
-					{/* Section 5: Admin (admin only) */}
+					{/* Section 5: Connected Accounts (GitHub) */}
+					{!isViewingOther && (
+						<GitHubConnection />
+					)}
+
+					{/* Section 6: Admin (admin only) */}
 					{isCurrentUserAdmin && (
 						<div class={styles.card}>
 							<h2 class={styles.sectionTitle}>Admin</h2>
