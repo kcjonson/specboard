@@ -11,7 +11,7 @@ const INLINE_THRESHOLD = 100 * 1024; // 100KB
 // Types
 // ============================================================
 
-export interface ProjectFile {
+export interface ProjectDocument {
 	id: string;
 	projectId: string;
 	path: string;
@@ -34,13 +34,13 @@ export interface PendingChange {
 }
 
 // ============================================================
-// Project Files (synced from GitHub)
+// Project Documents (synced from GitHub)
 // ============================================================
 
-export async function getProjectFile(
+export async function getProjectDocument(
 	projectId: string,
 	path: string
-): Promise<ProjectFile | null> {
+): Promise<ProjectDocument | null> {
 	const pool = getPool();
 	const result = await pool.query<{
 		id: string;
@@ -52,7 +52,7 @@ export async function getProjectFile(
 		synced_at: Date;
 	}>(
 		`SELECT id, project_id, path, s3_key, content_hash, size_bytes, synced_at
-		 FROM project_files
+		 FROM project_documents
 		 WHERE project_id = $1 AND path = $2`,
 		[projectId, path]
 	);
@@ -71,7 +71,7 @@ export async function getProjectFile(
 	};
 }
 
-export async function listProjectFiles(projectId: string): Promise<ProjectFile[]> {
+export async function listProjectDocuments(projectId: string): Promise<ProjectDocument[]> {
 	const pool = getPool();
 	const result = await pool.query<{
 		id: string;
@@ -83,7 +83,7 @@ export async function listProjectFiles(projectId: string): Promise<ProjectFile[]
 		synced_at: Date;
 	}>(
 		`SELECT id, project_id, path, s3_key, content_hash, size_bytes, synced_at
-		 FROM project_files
+		 FROM project_documents
 		 WHERE project_id = $1
 		 ORDER BY path`,
 		[projectId]
@@ -100,7 +100,7 @@ export async function listProjectFiles(projectId: string): Promise<ProjectFile[]
 	}));
 }
 
-export async function upsertProjectFile(
+export async function upsertProjectDocument(
 	projectId: string,
 	path: string,
 	s3Key: string,
@@ -109,7 +109,7 @@ export async function upsertProjectFile(
 ): Promise<void> {
 	const pool = getPool();
 	await pool.query(
-		`INSERT INTO project_files (project_id, path, s3_key, content_hash, size_bytes, synced_at)
+		`INSERT INTO project_documents (project_id, path, s3_key, content_hash, size_bytes, synced_at)
 		 VALUES ($1, $2, $3, $4, $5, NOW())
 		 ON CONFLICT (project_id, path) DO UPDATE SET
 		   s3_key = EXCLUDED.s3_key,
@@ -120,17 +120,17 @@ export async function upsertProjectFile(
 	);
 }
 
-export async function deleteProjectFile(projectId: string, path: string): Promise<void> {
+export async function deleteProjectDocument(projectId: string, path: string): Promise<void> {
 	const pool = getPool();
 	await pool.query(
-		`DELETE FROM project_files WHERE project_id = $1 AND path = $2`,
+		`DELETE FROM project_documents WHERE project_id = $1 AND path = $2`,
 		[projectId, path]
 	);
 }
 
-export async function deleteAllProjectFiles(projectId: string): Promise<void> {
+export async function deleteAllProjectDocuments(projectId: string): Promise<void> {
 	const pool = getPool();
-	await pool.query(`DELETE FROM project_files WHERE project_id = $1`, [projectId]);
+	await pool.query(`DELETE FROM project_documents WHERE project_id = $1`, [projectId]);
 }
 
 // ============================================================

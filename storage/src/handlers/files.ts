@@ -7,10 +7,10 @@ import { Hono } from 'hono';
 import crypto from 'crypto';
 
 import {
-	getProjectFile,
-	listProjectFiles,
-	upsertProjectFile,
-	deleteProjectFile,
+	getProjectDocument,
+	listProjectDocuments,
+	upsertProjectDocument,
+	deleteProjectDocument,
 } from '../db/queries.ts';
 import {
 	getFileContent,
@@ -28,7 +28,7 @@ export const filesRoutes = new Hono();
 filesRoutes.get('/:projectId', async (c) => {
 	const projectId = c.req.param('projectId');
 
-	const files = await listProjectFiles(projectId);
+	const files = await listProjectDocuments(projectId);
 
 	return c.json({
 		files: files.map((f) => ({
@@ -57,8 +57,8 @@ filesRoutes.get('/:projectId/*', async (c) => {
 		return c.json({ error: 'Invalid path' }, 400);
 	}
 
-	// Check if file exists in database
-	const file = await getProjectFile(projectId, validPath);
+	// Check if document exists in database
+	const file = await getProjectDocument(projectId, validPath);
 	if (!file) {
 		return c.json({ error: 'File not found' }, 404);
 	}
@@ -110,7 +110,7 @@ filesRoutes.put('/:projectId/*', async (c) => {
 	await putFileContent(projectId, validPath, body.content);
 
 	// Update database record
-	await upsertProjectFile(projectId, validPath, s3Key, contentHash, sizeBytes);
+	await upsertProjectDocument(projectId, validPath, s3Key, contentHash, sizeBytes);
 
 	return c.json({
 		path: validPath,
@@ -140,7 +140,7 @@ filesRoutes.delete('/:projectId/*', async (c) => {
 	await deleteFileContent(projectId, validPath);
 
 	// Delete from database
-	await deleteProjectFile(projectId, validPath);
+	await deleteProjectDocument(projectId, validPath);
 
 	return c.json({ deleted: true });
 });

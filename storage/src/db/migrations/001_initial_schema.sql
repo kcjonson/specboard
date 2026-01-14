@@ -1,8 +1,8 @@
 -- Storage service initial schema
 -- File metadata and pending changes tables
 
--- File metadata (synced from GitHub)
-CREATE TABLE IF NOT EXISTS project_files (
+-- Document metadata (synced from GitHub)
+CREATE TABLE IF NOT EXISTS project_documents (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	project_id UUID NOT NULL,
 	path TEXT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS project_files (
 	UNIQUE(project_id, path)
 );
 
-CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_documents_project ON project_documents(project_id);
 
 -- Uncommitted user changes (durable)
 CREATE TABLE IF NOT EXISTS pending_changes (
