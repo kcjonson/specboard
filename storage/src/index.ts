@@ -11,6 +11,7 @@ import { apiKeyAuth } from './middleware/auth.ts';
 import { filesRoutes } from './handlers/files.ts';
 import { pendingRoutes } from './handlers/pending.ts';
 import { initDb, closeDb } from './db/index.ts';
+import { runMigrations } from './db/migrate.ts';
 
 const app = new Hono();
 
@@ -36,16 +37,27 @@ app.onError((error, c) => {
 // Start server
 const PORT = Number(process.env.PORT) || 3003;
 
-// Initialize database pool
-initDb();
+async function start(): Promise<void> {
+	// Run migrations first
+	console.log('Running migrations...');
+	await runMigrations();
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-	console.log('SIGTERM received, shutting down...');
-	await closeDb();
-	process.exit(0);
-});
+	// Initialize database pool for request handling
+	initDb();
 
-serve({ fetch: app.fetch, port: PORT }, () => {
-	console.log(`Storage service running on http://localhost:${PORT}`);
+	// Graceful shutdown
+	process.on('SIGTERM', async () => {
+		console.log('SIGTERM received, shutting down...');
+		await closeDb();
+		process.exit(0);
+	});
+
+	serve({ fetch: app.fetch, port: PORT }, () => {
+		console.log(`Storage service running on http://localhost:${PORT}`);
+	});
+}
+
+start().catch((error) => {
+	console.error('Failed to start storage service:', error);
+	process.exit(1);
 });

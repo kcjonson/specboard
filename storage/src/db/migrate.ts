@@ -1,6 +1,6 @@
 /**
  * Database migration runner for storage service.
- * Run with: node storage/src/db/migrate.ts
+ * Can be imported and called, or run directly via CLI.
  */
 
 import fs from 'fs';
@@ -13,7 +13,11 @@ const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function migrate(): Promise<void> {
+/**
+ * Run all pending migrations.
+ * Creates a new pool connection specifically for migrations.
+ */
+export async function runMigrations(): Promise<void> {
 	const config: pg.PoolConfig = {
 		host: process.env.DB_HOST || 'localhost',
 		port: Number(process.env.DB_PORT) || 5432,
@@ -85,7 +89,10 @@ async function migrate(): Promise<void> {
 	}
 }
 
-migrate().catch((error) => {
-	console.error('Migration failed:', error);
-	process.exit(1);
-});
+// CLI execution
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+	runMigrations().catch((error) => {
+		console.error('Migration failed:', error);
+		process.exit(1);
+	});
+}
