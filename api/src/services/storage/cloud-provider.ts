@@ -77,7 +77,11 @@ export class CloudStorageProvider implements StorageProvider {
 				// Apply filters
 				if (!options?.showHidden && name.startsWith('.')) continue;
 				if (options?.extensions) {
-					const ext = name.split('.').pop() || '';
+					// Extract extension properly - handle files without extensions
+					const lastDotIndex = name.lastIndexOf('.');
+					const ext = lastDotIndex > 0 && lastDotIndex < name.length - 1
+						? name.slice(lastDotIndex + 1)
+						: '';
 					if (!options.extensions.includes(ext)) continue;
 				}
 
@@ -210,10 +214,16 @@ export class CloudStorageProvider implements StorageProvider {
 		const unstaged: GitStatus['unstaged'] = [];
 
 		for (const change of pending) {
+			const status =
+				change.action === 'created'
+					? 'added'
+					: change.action === 'deleted'
+						? 'deleted'
+						: 'modified';
+
 			unstaged.push({
 				path: change.path,
-				status: change.action === 'created' ? 'added' :
-					change.action === 'deleted' ? 'deleted' : 'modified',
+				status,
 			});
 		}
 

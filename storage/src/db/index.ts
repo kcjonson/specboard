@@ -24,11 +24,28 @@ export function initDb(): void {
 		connectionTimeoutMillis: 5000,
 	};
 
-	// SSL for AWS RDS
-	if (process.env.NODE_ENV === 'production') {
+	// SSL for AWS RDS (production and staging)
+	if (process.env.NODE_ENV !== 'development') {
+		const caPath = '/app/rds-ca-bundle.pem';
+
+		if (!fs.existsSync(caPath)) {
+			throw new Error(
+				`RDS CA bundle not found at "${caPath}". ` +
+				'Ensure the CA file is downloaded during image build.'
+			);
+		}
+
+		let ca: string;
+		try {
+			ca = fs.readFileSync(caPath, 'utf8');
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			throw new Error(`Failed to read RDS CA bundle: ${message}`);
+		}
+
 		config.ssl = {
 			rejectUnauthorized: true,
-			ca: fs.readFileSync('/app/rds-ca-bundle.pem', 'utf8'),
+			ca,
 		};
 	}
 

@@ -1,12 +1,10 @@
 # ===== DEV TARGET =====
 # Used by docker-compose for local development with hot reloading
 # Source and deps are mounted/installed at runtime
+# No RDS CA bundle needed - dev uses local databases without SSL
 FROM node:25-alpine AS dev
 
 WORKDIR /app
-
-# Download AWS RDS CA bundle for SSL certificate verification
-RUN wget -O /app/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 EXPOSE 3003
 

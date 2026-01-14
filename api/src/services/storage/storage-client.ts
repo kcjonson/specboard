@@ -52,25 +52,40 @@ export class StorageClient {
 	private async request<T>(
 		method: string,
 		path: string,
-		body?: unknown
+		body?: unknown,
+		timeoutMs = 30000
 	): Promise<T> {
 		const url = `${this.baseUrl}${path}`;
 
-		const response = await fetch(url, {
-			method,
-			headers: {
-				'Content-Type': 'application/json',
-				'X-Internal-API-Key': this.apiKey,
-			},
-			body: body ? JSON.stringify(body) : undefined,
-		});
+		// Add timeout to prevent indefinite hangs
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-		if (!response.ok) {
-			const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-			throw new Error(`Storage service error: ${error.error || response.statusText}`);
+		try {
+			const response = await fetch(url, {
+				method,
+				headers: {
+					'Content-Type': 'application/json',
+					'X-Internal-API-Key': this.apiKey,
+				},
+				body: body ? JSON.stringify(body) : undefined,
+				signal: controller.signal,
+			});
+
+			if (!response.ok) {
+				const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+				throw new Error(`Storage service error: ${error.error || response.statusText}`);
+			}
+
+			return response.json() as Promise<T>;
+		} catch (err) {
+			if (err instanceof Error && err.name === 'AbortError') {
+				throw new Error(`Storage service timeout after ${timeoutMs}ms`);
+			}
+			throw err;
+		} finally {
+			clearTimeout(timeoutId);
 		}
-
-		return response.json() as Promise<T>;
 	}
 
 	// ============================================================

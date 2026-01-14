@@ -48,7 +48,7 @@ filesRoutes.get('/:projectId/*', async (c) => {
 	const projectId = c.req.param('projectId');
 	const path = c.req.param('*');
 
-	if (!path) {
+	if (!path || path.length === 0) {
 		return c.json({ error: 'Path required' }, 400);
 	}
 
@@ -86,7 +86,7 @@ filesRoutes.put('/:projectId/*', async (c) => {
 	const projectId = c.req.param('projectId');
 	const path = c.req.param('*');
 
-	if (!path) {
+	if (!path || path.length === 0) {
 		return c.json({ error: 'Path required' }, 400);
 	}
 
@@ -106,11 +106,21 @@ filesRoutes.put('/:projectId/*', async (c) => {
 	const sizeBytes = Buffer.byteLength(body.content, 'utf8');
 	const s3Key = `${projectId}/files/${validPath}`;
 
-	// Store in S3
+	// Store in S3 first
 	await putFileContent(projectId, validPath, body.content);
 
-	// Update database record
-	await upsertProjectDocument(projectId, validPath, s3Key, contentHash, sizeBytes);
+	// Update database record - if this fails, clean up S3 to avoid orphaned objects
+	try {
+		await upsertProjectDocument(projectId, validPath, s3Key, contentHash, sizeBytes);
+	} catch (err) {
+		// Best-effort cleanup - original error is more important
+		try {
+			await deleteFileContent(projectId, validPath);
+		} catch {
+			// Ignore cleanup errors
+		}
+		throw err;
+	}
 
 	return c.json({
 		path: validPath,
@@ -127,7 +137,7 @@ filesRoutes.delete('/:projectId/*', async (c) => {
 	const projectId = c.req.param('projectId');
 	const path = c.req.param('*');
 
-	if (!path) {
+	if (!path || path.length === 0) {
 		return c.json({ error: 'Path required' }, 400);
 	}
 

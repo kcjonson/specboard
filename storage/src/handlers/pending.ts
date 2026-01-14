@@ -90,7 +90,7 @@ pendingRoutes.put('/:projectId/:userId/*', async (c) => {
 	const userId = c.req.param('userId');
 	const path = c.req.param('*');
 
-	if (!path) {
+	if (!path || path.length === 0) {
 		return c.json({ error: 'Path required' }, 400);
 	}
 
@@ -127,7 +127,20 @@ pendingRoutes.put('/:projectId/:userId/*', async (c) => {
 		}
 	}
 
-	await upsertPendingChange(projectId, userId, validPath, inlineContent, s3Key, body.action);
+	// Update database - if this fails after S3 upload, clean up S3
+	try {
+		await upsertPendingChange(projectId, userId, validPath, inlineContent, s3Key, body.action);
+	} catch (err) {
+		// Clean up S3 content if DB update failed
+		if (s3Key) {
+			try {
+				await deletePendingContent(projectId, userId, validPath);
+			} catch {
+				// Ignore cleanup errors - original error is more important
+			}
+		}
+		throw err;
+	}
 
 	return c.json({
 		path: validPath,
@@ -145,17 +158,22 @@ pendingRoutes.delete('/:projectId/:userId/*', async (c) => {
 	const userId = c.req.param('userId');
 	const path = c.req.param('*');
 
-	if (!path) {
+	if (!path || path.length === 0) {
 		// Delete all pending changes for this user in this project
 		const changes = await listPendingChanges(projectId, userId);
 
 		// Delete from database first to avoid orphaned metadata
 		await deleteAllPendingChanges(projectId, userId);
 
-		// Then delete S3 content for large files
+		// Best-effort S3 cleanup - failures here don't affect the already-deleted DB records
 		for (const change of changes) {
 			if (change.s3Key) {
-				await deletePendingContent(projectId, userId, change.path);
+				try {
+					await deletePendingContent(projectId, userId, change.path);
+				} catch {
+					// Log but continue - DB records are already deleted
+					console.warn(`Failed to delete S3 content for ${change.path}`);
+				}
 			}
 		}
 
