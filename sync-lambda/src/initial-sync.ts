@@ -83,8 +83,9 @@ function createStorageClient(
 			);
 
 			if (!response.ok) {
-				const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-				throw new Error((error as { error?: string }).error || response.statusText);
+				const error = await response.json().catch(() => ({}));
+				const message = (error as { error?: string })?.error || response.statusText;
+				throw new Error(message || 'Storage service request failed');
 			}
 		},
 	};

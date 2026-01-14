@@ -82,12 +82,12 @@ export async function streamGitHubZipToStorage(
 			.pipe(unzipper.Parse())
 			.on('entry', async (entry: unzipper.Entry) => {
 				const zipPath = entry.path;
-				const type = entry.type; // 'Directory' or 'File'
+				const entryType = entry.type; // 'Directory' or 'File'
 				// Use compressed size as estimate; actual size checked after reading
 				const estimatedSize = entry.vars?.compressedSize ?? 0;
 
 				// Skip directories
-				if (type === 'Directory') {
+				if (entryType === 'Directory') {
 					entry.autodrain();
 					return;
 				}

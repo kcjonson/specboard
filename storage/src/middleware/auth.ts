@@ -15,7 +15,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 	const bufA = Buffer.from(a);
 	const bufB = Buffer.from(b);
 
-	// If lengths differ, compare against itself to maintain constant time
+	// Dummy comparison to prevent timing attacks from revealing length differences
 	if (bufA.length !== bufB.length) {
 		crypto.timingSafeEqual(bufA, bufA);
 		return false;

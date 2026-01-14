@@ -97,7 +97,7 @@ filesRoutes.put('/:projectId/*', async (c) => {
 
 	const body = await c.req.json<{ content: string; contentHash?: string }>();
 	if (typeof body.content !== 'string') {
-		return c.json({ error: 'Content required' }, 400);
+		return c.json({ error: 'Content must be a string' }, 400);
 	}
 
 	// Calculate content hash if not provided

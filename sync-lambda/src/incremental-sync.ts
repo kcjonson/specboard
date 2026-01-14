@@ -116,8 +116,9 @@ function createStorageClient(
 			);
 
 			if (!response.ok) {
-				const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-				throw new Error((error as { error?: string }).error || response.statusText);
+				const error = await response.json().catch(() => ({}));
+				const message = (error as { error?: string })?.error || response.statusText;
+				throw new Error(message || 'Storage service request failed');
 			}
 		},
 
@@ -134,8 +135,9 @@ function createStorageClient(
 
 			// Ignore 404 errors - file may not exist
 			if (!response.ok && response.status !== 404) {
-				const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-				throw new Error((error as { error?: string }).error || response.statusText);
+				const error = await response.json().catch(() => ({}));
+				const message = (error as { error?: string })?.error || response.statusText;
+				throw new Error(message || 'Storage service request failed');
 			}
 		},
 	};
@@ -174,7 +176,7 @@ async function getChangedFiles(
 	// Get the latest commit SHA
 	const headSha =
 		data.commits.length > 0
-			? data.commits[data.commits.length - 1]!.sha
+			? (data.commits[data.commits.length - 1]?.sha ?? base)
 			: base;
 
 	return {

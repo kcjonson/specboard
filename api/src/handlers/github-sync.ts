@@ -97,9 +97,9 @@ async function getProjectWithRepo(
 		return null;
 	}
 
-	// Parse repository JSONB
+	// Parse repository JSONB with null check
 	const repo = row.repository;
-	if (!repo.remote || repo.remote.provider !== 'github') {
+	if (!repo || !repo.remote || repo.remote.provider !== 'github') {
 		return null;
 	}
 
