@@ -25,6 +25,20 @@ if (process.env.AWS_ENDPOINT_URL) {
 const s3 = new S3Client(s3Config);
 const BUCKET = process.env.S3_BUCKET || 'doc-platform-storage';
 
+/**
+ * Type guard for AWS SDK errors.
+ */
+function isAwsError(error: unknown): error is { name: string } {
+	return typeof error === 'object' && error !== null && 'name' in error;
+}
+
+/**
+ * Get error name from AWS SDK error.
+ */
+function getErrorName(error: unknown): string | undefined {
+	return isAwsError(error) ? error.name : undefined;
+}
+
 // Ensure bucket exists (for LocalStack in dev)
 async function ensureBucket(): Promise<void> {
 	if (!process.env.AWS_ENDPOINT_URL) return; // Only for LocalStack
@@ -33,7 +47,7 @@ async function ensureBucket(): Promise<void> {
 		await s3.send(new CreateBucketCommand({ Bucket: BUCKET }));
 		console.log(`Created S3 bucket: ${BUCKET}`);
 	} catch (error: unknown) {
-		const errorName = (error as { name?: string }).name;
+		const errorName = getErrorName(error);
 		// Ignore if bucket already exists
 		if (errorName === 'BucketAlreadyOwnedByYou' || errorName === 'BucketAlreadyExists') {
 			console.log('Bucket already exists');
@@ -73,7 +87,7 @@ export async function getFileContent(projectId: string, path: string): Promise<s
 		);
 		return (await response.Body?.transformToString()) ?? null;
 	} catch (error: unknown) {
-		if ((error as { name?: string }).name === 'NoSuchKey') {
+		if (getErrorName(error) === 'NoSuchKey') {
 			return null;
 		}
 		throw error;
@@ -127,7 +141,7 @@ export async function getPendingContent(
 		);
 		return (await response.Body?.transformToString()) ?? null;
 	} catch (error: unknown) {
-		if ((error as { name?: string }).name === 'NoSuchKey') {
+		if (getErrorName(error) === 'NoSuchKey') {
 			return null;
 		}
 		throw error;

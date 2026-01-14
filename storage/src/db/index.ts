@@ -72,5 +72,3 @@ export async function closeDb(): Promise<void> {
 		console.log('Database pool closed');
 	}
 }
-
-export { pool };

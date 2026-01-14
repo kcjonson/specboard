@@ -69,6 +69,7 @@ services:
       # For local dev, set in .env file. For production, use AWS Secrets Manager.
       API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:-}
       # Storage service connection (for cloud mode)
+      # WARNING: Hardcoded key for local dev only. Use AWS Secrets Manager in production.
       STORAGE_SERVICE_URL: http://storage:3003
       STORAGE_SERVICE_API_KEY: local-dev-storage-key
     depends_on:
@@ -179,7 +180,7 @@ services:
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_ENDPOINT_URL: http://localstack:4566
-      # Internal API key (any value for local dev)
+      # Internal API key - WARNING: Hardcoded for local dev only. Use AWS Secrets Manager in production.
       STORAGE_API_KEY: local-dev-storage-key
     depends_on:
       storage-db:

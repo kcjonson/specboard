@@ -19,6 +19,9 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
+// Lambda function name - used in both Lambda definition and API environment
+const GITHUB_SYNC_LAMBDA_NAME = 'doc-platform-github-sync';
+
 export class DocPlatformStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
 		super(scope, id, props);
@@ -506,7 +509,7 @@ export class DocPlatformStack extends cdk.Stack {
 				// Storage service internal URL
 				STORAGE_SERVICE_URL: 'http://storage.internal:3003',
 				// GitHub Sync Lambda function name (API constructs ARN from this)
-				GITHUB_SYNC_LAMBDA_NAME: 'doc-platform-github-sync',
+				GITHUB_SYNC_LAMBDA_NAME,
 				AWS_REGION: this.region,
 			},
 			secrets: {
@@ -772,7 +775,7 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 
 		const syncLambda = new lambda.Function(this, 'GitHubSyncLambda', {
-			functionName: 'doc-platform-github-sync',
+			functionName: GITHUB_SYNC_LAMBDA_NAME,
 			runtime: lambda.Runtime.NODEJS_20_X,
 			handler: 'index.handler',
 			code: lambda.Code.fromAsset(path.join(__dirname, '../../sync-lambda/dist')),
