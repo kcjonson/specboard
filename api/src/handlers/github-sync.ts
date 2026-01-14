@@ -117,13 +117,18 @@ async function getProjectWithRepo(
 }
 
 /**
- * Update project sync status to pending.
+ * Atomically set sync status to pending if not already syncing.
+ * Returns true if status was updated, false if sync already in progress.
  */
-async function setSyncPending(projectId: string): Promise<void> {
-	await query(
-		`UPDATE projects SET sync_status = 'pending', sync_error = NULL WHERE id = $1`,
+async function trySetSyncPending(projectId: string): Promise<boolean> {
+	const result = await query(
+		`UPDATE projects
+		 SET sync_status = 'pending', sync_error = NULL
+		 WHERE id = $1 AND (sync_status IS NULL OR sync_status NOT IN ('pending', 'syncing'))
+		 RETURNING id`,
 		[projectId]
 	);
+	return result.rows.length > 0;
 }
 
 /**
@@ -136,12 +141,12 @@ export async function handleGitHubInitialSync(
 ): Promise<Response> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 	if (!sessionId) {
-		return context.json({ error: 'unauthorized' }, 401);
+		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
 	const session = await getSession(redis, sessionId);
 	if (!session) {
-		return context.json({ error: 'unauthorized' }, 401);
+		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
 	const projectId = context.req.param('id');
@@ -155,19 +160,17 @@ export async function handleGitHubInitialSync(
 		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
 	}
 
-	// Check if sync is already in progress
-	if (project.syncStatus === 'pending' || project.syncStatus === 'syncing') {
-		return context.json({ error: 'Sync already in progress' }, 409);
-	}
-
 	// Get encrypted GitHub token
 	const encryptedToken = await getEncryptedGitHubToken(session.userId);
 	if (!encryptedToken) {
 		return context.json({ error: 'GitHub not connected' }, 400);
 	}
 
-	// Mark sync as pending
-	await setSyncPending(projectId);
+	// Atomically mark sync as pending (prevents race condition)
+	const acquired = await trySetSyncPending(projectId);
+	if (!acquired) {
+		return context.json({ error: 'Sync already in progress' }, 409);
+	}
 
 	// Invoke Lambda asynchronously
 	try {
@@ -228,12 +231,12 @@ export async function handleGitHubSync(
 ): Promise<Response> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 	if (!sessionId) {
-		return context.json({ error: 'unauthorized' }, 401);
+		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
 	const session = await getSession(redis, sessionId);
 	if (!session) {
-		return context.json({ error: 'unauthorized' }, 401);
+		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
 	const projectId = context.req.param('id');
@@ -255,19 +258,17 @@ export async function handleGitHubSync(
 		);
 	}
 
-	// Check if sync is already in progress
-	if (project.syncStatus === 'pending' || project.syncStatus === 'syncing') {
-		return context.json({ error: 'Sync already in progress' }, 409);
-	}
-
 	// Get encrypted GitHub token
 	const encryptedToken = await getEncryptedGitHubToken(session.userId);
 	if (!encryptedToken) {
 		return context.json({ error: 'GitHub not connected' }, 400);
 	}
 
-	// Mark sync as pending
-	await setSyncPending(projectId);
+	// Atomically mark sync as pending (prevents race condition)
+	const acquired = await trySetSyncPending(projectId);
+	if (!acquired) {
+		return context.json({ error: 'Sync already in progress' }, 409);
+	}
 
 	// Invoke Lambda asynchronously
 	try {
@@ -330,12 +331,12 @@ export async function handleGitHubSyncStatus(
 ): Promise<Response> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 	if (!sessionId) {
-		return context.json({ error: 'unauthorized' }, 401);
+		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
 	const session = await getSession(redis, sessionId);
 	if (!session) {
-		return context.json({ error: 'unauthorized' }, 401);
+		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
 	const projectId = context.req.param('id');

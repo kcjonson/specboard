@@ -108,6 +108,7 @@ export async function putFileContent(
 			Key: fileKey(projectId, path),
 			Body: content,
 			ContentType: 'text/plain; charset=utf-8',
+			ServerSideEncryption: 'AES256', // Explicit encryption (defense-in-depth)
 		})
 	);
 }
@@ -163,6 +164,7 @@ export async function putPendingContent(
 			Key: pendingKey(projectId, userId, path),
 			Body: content,
 			ContentType: 'text/plain; charset=utf-8',
+			ServerSideEncryption: 'AES256', // Explicit encryption (defense-in-depth)
 		})
 	);
 }

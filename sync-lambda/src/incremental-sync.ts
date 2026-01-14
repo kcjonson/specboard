@@ -3,8 +3,9 @@
  * Much faster than full sync when only a few files have changed.
  */
 
-import { query } from '@doc-platform/db';
 import { isTextFile } from './file-filter.ts';
+import { updateSyncStatus } from './shared/db-utils.ts';
+import { createStorageClient } from './shared/storage-client.ts';
 
 const GITHUB_API_URL = 'https://api.github.com';
 
@@ -54,95 +55,6 @@ interface GitHubBlob {
 	size: number;
 }
 
-interface StorageClient {
-	putFile(projectId: string, path: string, content: string): Promise<void>;
-	deleteFile(projectId: string, path: string): Promise<void>;
-}
-
-/**
- * Update project sync status in the database.
- */
-async function updateSyncStatus(
-	projectId: string,
-	status: 'pending' | 'syncing' | 'completed' | 'failed',
-	commitSha?: string | null,
-	error?: string | null
-): Promise<void> {
-	const now = new Date().toISOString();
-
-	if (status === 'syncing') {
-		await query(
-			`UPDATE projects
-			 SET sync_status = $1, sync_started_at = $2, sync_error = NULL
-			 WHERE id = $3`,
-			[status, now, projectId]
-		);
-	} else if (status === 'completed') {
-		await query(
-			`UPDATE projects
-			 SET sync_status = $1, sync_completed_at = $2, last_synced_commit_sha = $3, sync_error = NULL
-			 WHERE id = $4`,
-			[status, now, commitSha, projectId]
-		);
-	} else if (status === 'failed') {
-		await query(
-			`UPDATE projects
-			 SET sync_status = $1, sync_completed_at = $2, sync_error = $3
-			 WHERE id = $4`,
-			[status, now, error, projectId]
-		);
-	}
-}
-
-/**
- * Create a storage client that calls the storage service HTTP API.
- */
-function createStorageClient(
-	storageServiceUrl: string,
-	storageApiKey: string
-): StorageClient {
-	return {
-		async putFile(projectId: string, path: string, content: string): Promise<void> {
-			const response = await fetch(
-				`${storageServiceUrl}/files/${projectId}/${path}`,
-				{
-					method: 'PUT',
-					headers: {
-						'Content-Type': 'application/json',
-						'X-Internal-API-Key': storageApiKey,
-					},
-					body: JSON.stringify({ content }),
-				}
-			);
-
-			if (!response.ok) {
-				const error = await response.json().catch(() => ({}));
-				const message = (error as { error?: string })?.error || response.statusText;
-				throw new Error(message || 'Storage service request failed');
-			}
-		},
-
-		async deleteFile(projectId: string, path: string): Promise<void> {
-			const response = await fetch(
-				`${storageServiceUrl}/files/${projectId}/${path}`,
-				{
-					method: 'DELETE',
-					headers: {
-						'X-Internal-API-Key': storageApiKey,
-					},
-				}
-			);
-
-			// Ignore 404 errors - file may not exist
-			if (!response.ok && response.status !== 404) {
-				const error = await response.json().catch(() => ({}));
-				const message = (error as { error?: string })?.error || response.statusText;
-				throw new Error(message || 'Storage service request failed');
-			}
-		},
-	};
-}
-
 /**
  * Compare two commits and get the list of changed files.
  */
@@ -167,6 +79,11 @@ async function getChangedFiles(
 	if (!response.ok) {
 		if (response.status === 404) {
 			throw new Error('Repository or commits not found');
+		}
+		if (response.status === 403 || response.status === 429) {
+			const resetHeader = response.headers.get('X-RateLimit-Reset');
+			const resetAt = resetHeader ? new Date(parseInt(resetHeader, 10) * 1000).toISOString() : 'unknown';
+			throw new Error(`GitHub rate limit exceeded. Resets at ${resetAt}`);
 		}
 		throw new Error(`GitHub Compare API error: ${response.status}`);
 	}
@@ -206,6 +123,11 @@ async function fetchBlob(
 	);
 
 	if (!response.ok) {
+		if (response.status === 403 || response.status === 429) {
+			const resetHeader = response.headers.get('X-RateLimit-Reset');
+			const resetAt = resetHeader ? new Date(parseInt(resetHeader, 10) * 1000).toISOString() : 'unknown';
+			throw new Error(`GitHub rate limit exceeded. Resets at ${resetAt}`);
+		}
 		throw new Error(`Failed to fetch blob ${sha}: ${response.status}`);
 	}
 

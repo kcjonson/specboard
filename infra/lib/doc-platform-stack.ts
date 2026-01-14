@@ -14,6 +14,9 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as sns from 'aws-cdk-lib/aws-sns';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -751,17 +754,38 @@ export class DocPlatformStack extends cdk.Stack {
 		const syncLambdaSecurityGroup = new ec2.SecurityGroup(this, 'SyncLambdaSecurityGroup', {
 			vpc,
 			description: 'Security group for GitHub Sync Lambda',
-			allowAllOutbound: true,
+			allowAllOutbound: false, // Restrict outbound to minimize attack surface
 		});
 
-		// Allow Lambda to reach Storage service
+		// Lambda egress: HTTPS to anywhere (GitHub API)
+		syncLambdaSecurityGroup.addEgressRule(
+			ec2.Peer.anyIpv4(),
+			ec2.Port.tcp(443),
+			'Allow HTTPS to GitHub API'
+		);
+
+		// Lambda egress: Storage service
+		syncLambdaSecurityGroup.addEgressRule(
+			storageSecurityGroup,
+			ec2.Port.tcp(3003),
+			'Allow Lambda to Storage'
+		);
+
+		// Lambda egress: Database
+		syncLambdaSecurityGroup.addEgressRule(
+			dbSecurityGroup,
+			ec2.Port.tcp(5432),
+			'Allow Lambda to PostgreSQL'
+		);
+
+		// Allow Lambda to reach Storage service (ingress on storage SG)
 		storageSecurityGroup.addIngressRule(
 			syncLambdaSecurityGroup,
 			ec2.Port.tcp(3003),
 			'Allow Sync Lambda to Storage'
 		);
 
-		// Allow Lambda to reach main database (for updating sync status)
+		// Allow Lambda to reach main database (ingress on DB SG)
 		dbSecurityGroup.addIngressRule(
 			syncLambdaSecurityGroup,
 			ec2.Port.tcp(5432),
@@ -774,6 +798,31 @@ export class DocPlatformStack extends cdk.Stack {
 			removalPolicy: cdk.RemovalPolicy.DESTROY,
 		});
 
+		// Dead Letter Queue for failed Lambda invocations
+		const syncLambdaDlq = new sqs.Queue(this, 'SyncLambdaDlq', {
+			queueName: 'doc-platform-github-sync-dlq',
+			retentionPeriod: cdk.Duration.days(14), // Keep failed messages for 2 weeks
+		});
+
+		// SNS topic for DLQ alarm notifications
+		const syncLambdaAlarmTopic = new sns.Topic(this, 'SyncLambdaAlarmTopic', {
+			topicName: 'doc-platform-github-sync-alarms',
+		});
+
+		// Alarm when messages arrive in DLQ (indicates sync failures)
+		const dlqAlarm = new cloudwatch.Alarm(this, 'SyncLambdaDlqAlarm', {
+			alarmName: 'doc-platform-github-sync-dlq-messages',
+			alarmDescription: 'GitHub sync Lambda failures detected in DLQ',
+			metric: syncLambdaDlq.metricApproximateNumberOfMessagesVisible({
+				period: cdk.Duration.minutes(1),
+				statistic: 'Sum',
+			}),
+			threshold: 1,
+			evaluationPeriods: 1,
+			comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+		});
+		dlqAlarm.addAlarmAction(new cloudwatchActions.SnsAction(syncLambdaAlarmTopic));
+
 		const syncLambda = new lambda.Function(this, 'GitHubSyncLambda', {
 			functionName: GITHUB_SYNC_LAMBDA_NAME,
 			runtime: lambda.Runtime.NODEJS_20_X,
@@ -781,6 +830,9 @@ export class DocPlatformStack extends cdk.Stack {
 			code: lambda.Code.fromAsset(path.join(__dirname, '../../sync-lambda/dist')),
 			memorySize: 512,
 			timeout: cdk.Duration.minutes(5),
+			retryAttempts: 2, // Retry twice before sending to DLQ
+			deadLetterQueue: syncLambdaDlq,
+			reservedConcurrentExecutions: 10, // Prevent runaway costs/DDoS
 			vpc,
 			vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
 			securityGroups: [syncLambdaSecurityGroup],

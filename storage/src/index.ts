@@ -22,6 +22,9 @@ const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 1000;
 
 // In-memory rate limit store
+// TODO: Move to Redis for multi-instance deployments. Current in-memory approach
+// means each ECS task has its own rate limit counter. For production scale,
+// use Redis INCR with EXPIRE for shared, atomic rate limiting.
 interface RateLimitEntry {
 	count: number;
 	resetAt: number;

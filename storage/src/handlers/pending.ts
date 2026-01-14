@@ -20,6 +20,21 @@ import {
 } from '../services/s3.ts';
 import { validatePath } from './utils.ts';
 
+/**
+ * Audit log for pending changes access.
+ * Logs all operations for security monitoring.
+ */
+function auditLog(action: string, projectId: string, userId: string, path?: string): void {
+	console.log(JSON.stringify({
+		type: 'audit',
+		timestamp: new Date().toISOString(),
+		action: `pending:${action}`,
+		projectId,
+		userId,
+		path: path || null,
+	}));
+}
+
 export const pendingRoutes = new Hono();
 
 /**
@@ -29,6 +44,7 @@ export const pendingRoutes = new Hono();
 pendingRoutes.get('/:projectId/:userId', async (c) => {
 	const projectId = c.req.param('projectId');
 	const userId = c.req.param('userId');
+	auditLog('list', projectId, userId);
 
 	const changes = await listPendingChanges(projectId, userId);
 
@@ -61,6 +77,8 @@ pendingRoutes.get('/:projectId/:userId/*', async (c) => {
 	if (!validPath) {
 		return c.json({ error: 'Invalid path' }, 400);
 	}
+
+	auditLog('read', projectId, userId, validPath);
 
 	const change = await getPendingChange(projectId, userId, validPath);
 	if (!change) {
@@ -113,6 +131,8 @@ pendingRoutes.put('/:projectId/:userId/*', async (c) => {
 		return c.json({ error: 'Content required for modified/created actions' }, 400);
 	}
 
+	auditLog('write', projectId, userId, validPath);
+
 	let inlineContent: string | null = null;
 	let s3Key: string | null = null;
 
@@ -160,6 +180,7 @@ pendingRoutes.delete('/:projectId/:userId/*', async (c) => {
 
 	if (!path || path.length === 0) {
 		// Delete all pending changes for this user in this project
+		auditLog('delete-all', projectId, userId);
 		const changes = await listPendingChanges(projectId, userId);
 
 		// Delete from database first to avoid orphaned metadata
@@ -184,6 +205,8 @@ pendingRoutes.delete('/:projectId/:userId/*', async (c) => {
 	if (!validPath) {
 		return c.json({ error: 'Invalid path' }, 400);
 	}
+
+	auditLog('delete', projectId, userId, validPath);
 
 	// Check if change exists and has S3 content
 	const change = await getPendingChange(projectId, userId, validPath);

@@ -19,24 +19,46 @@ import {
 } from '../services/s3.ts';
 import { validatePath } from './utils.ts';
 
+/**
+ * Audit log for storage access.
+ * Logs all file operations for security monitoring.
+ */
+function auditLog(action: string, projectId: string, path?: string): void {
+	console.log(JSON.stringify({
+		type: 'audit',
+		timestamp: new Date().toISOString(),
+		action,
+		projectId,
+		path: path || null,
+	}));
+}
+
 export const filesRoutes = new Hono();
 
 /**
  * List all files for a project.
- * GET /files/:projectId
+ * GET /files/:projectId?limit=100&offset=0
  */
 filesRoutes.get('/:projectId', async (c) => {
 	const projectId = c.req.param('projectId');
+	auditLog('list', projectId);
 
-	const files = await listProjectDocuments(projectId);
+	// Parse optional pagination params
+	const limitParam = c.req.query('limit');
+	const offsetParam = c.req.query('offset');
+	const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+	const offset = offsetParam ? parseInt(offsetParam, 10) : undefined;
+
+	const result = await listProjectDocuments(projectId, { limit, offset });
 
 	return c.json({
-		files: files.map((f) => ({
+		files: result.documents.map((f) => ({
 			path: f.path,
 			contentHash: f.contentHash,
 			sizeBytes: f.sizeBytes,
 			syncedAt: f.syncedAt.toISOString(),
 		})),
+		total: result.total,
 	});
 });
 
@@ -56,6 +78,8 @@ filesRoutes.get('/:projectId/*', async (c) => {
 	if (!validPath) {
 		return c.json({ error: 'Invalid path' }, 400);
 	}
+
+	auditLog('read', projectId, validPath);
 
 	// Check if document exists in database
 	const file = await getProjectDocument(projectId, validPath);
@@ -94,6 +118,8 @@ filesRoutes.put('/:projectId/*', async (c) => {
 	if (!validPath) {
 		return c.json({ error: 'Invalid path' }, 400);
 	}
+
+	auditLog('write', projectId, validPath);
 
 	const body = await c.req.json<{ content: string; contentHash?: string }>();
 	if (typeof body.content !== 'string') {
@@ -145,6 +171,8 @@ filesRoutes.delete('/:projectId/*', async (c) => {
 	if (!validPath) {
 		return c.json({ error: 'Invalid path' }, 400);
 	}
+
+	auditLog('delete', projectId, validPath);
 
 	// Delete from database first to avoid orphaned metadata if S3 delete fails
 	await deleteProjectDocument(projectId, validPath);

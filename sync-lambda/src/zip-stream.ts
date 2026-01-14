@@ -56,6 +56,12 @@ export async function streamGitHubZipToStorage(
 	});
 
 	if (!response.ok) {
+		// Check for rate limiting
+		if (response.status === 403 || response.status === 429) {
+			const resetHeader = response.headers.get('X-RateLimit-Reset');
+			const resetAt = resetHeader ? new Date(parseInt(resetHeader, 10) * 1000).toISOString() : 'unknown';
+			throw new Error(`GitHub rate limit exceeded. Resets at ${resetAt}`);
+		}
 		throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
 	}
 
@@ -172,6 +178,11 @@ export async function getHeadCommitSha(
 	);
 
 	if (!response.ok) {
+		if (response.status === 403 || response.status === 429) {
+			const resetHeader = response.headers.get('X-RateLimit-Reset');
+			const resetAt = resetHeader ? new Date(parseInt(resetHeader, 10) * 1000).toISOString() : 'unknown';
+			throw new Error(`GitHub rate limit exceeded. Resets at ${resetAt}`);
+		}
 		throw new Error(`Failed to get HEAD commit: ${response.status}`);
 	}
 

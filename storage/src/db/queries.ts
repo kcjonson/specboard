@@ -71,8 +71,46 @@ export async function getProjectDocument(
 	};
 }
 
-export async function listProjectDocuments(projectId: string): Promise<ProjectDocument[]> {
+export interface ListDocumentsOptions {
+	limit?: number;
+	offset?: number;
+}
+
+export interface ListDocumentsResult {
+	documents: ProjectDocument[];
+	total: number;
+}
+
+export async function listProjectDocuments(
+	projectId: string,
+	options?: ListDocumentsOptions
+): Promise<ListDocumentsResult> {
 	const pool = getPool();
+	const { limit, offset } = options || {};
+
+	// Get total count
+	const countResult = await pool.query<{ count: string }>(
+		`SELECT COUNT(*) as count FROM project_documents WHERE project_id = $1`,
+		[projectId]
+	);
+	const total = parseInt(countResult.rows[0]?.count || '0', 10);
+
+	// Build query with optional pagination
+	let query = `SELECT id, project_id, path, s3_key, content_hash, size_bytes, synced_at
+		 FROM project_documents
+		 WHERE project_id = $1
+		 ORDER BY path`;
+	const params: (string | number)[] = [projectId];
+
+	if (limit !== undefined) {
+		query += ` LIMIT $${params.length + 1}`;
+		params.push(limit);
+	}
+	if (offset !== undefined) {
+		query += ` OFFSET $${params.length + 1}`;
+		params.push(offset);
+	}
+
 	const result = await pool.query<{
 		id: string;
 		project_id: string;
@@ -81,23 +119,20 @@ export async function listProjectDocuments(projectId: string): Promise<ProjectDo
 		content_hash: string;
 		size_bytes: number;
 		synced_at: Date;
-	}>(
-		`SELECT id, project_id, path, s3_key, content_hash, size_bytes, synced_at
-		 FROM project_documents
-		 WHERE project_id = $1
-		 ORDER BY path`,
-		[projectId]
-	);
+	}>(query, params);
 
-	return result.rows.map((row) => ({
-		id: row.id,
-		projectId: row.project_id,
-		path: row.path,
-		s3Key: row.s3_key,
-		contentHash: row.content_hash,
-		sizeBytes: row.size_bytes,
-		syncedAt: row.synced_at,
-	}));
+	return {
+		documents: result.rows.map((row) => ({
+			id: row.id,
+			projectId: row.project_id,
+			path: row.path,
+			s3Key: row.s3_key,
+			contentHash: row.content_hash,
+			sizeBytes: row.size_bytes,
+			syncedAt: row.synced_at,
+		})),
+		total,
+	};
 }
 
 export async function upsertProjectDocument(

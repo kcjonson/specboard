@@ -19,8 +19,13 @@ import {
 // Secrets Manager client - reused across invocations
 const secretsClient = new SecretsManagerClient({});
 
-// Cache for fetched secrets (Lambda container reuse)
-const secretsCache: Map<string, string> = new Map();
+// Cache for fetched secrets (Lambda container reuse) with TTL
+const SECRETS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+interface CachedSecret {
+	value: string;
+	cachedAt: number;
+}
+const secretsCache: Map<string, CachedSecret> = new Map();
 
 /**
  * Event structure passed from API to Lambda.
@@ -62,13 +67,14 @@ function getEnvVar(name: string): string {
 
 /**
  * Fetch a secret value from AWS Secrets Manager.
- * Caches results for Lambda container reuse efficiency.
+ * Caches results for Lambda container reuse efficiency with 5-minute TTL.
  */
 async function getSecretValue(secretArn: string): Promise<string> {
-	// Check cache first
+	// Check cache first (with TTL)
 	const cached = secretsCache.get(secretArn);
-	if (cached) {
-		return cached;
+	const now = Date.now();
+	if (cached && now - cached.cachedAt < SECRETS_CACHE_TTL_MS) {
+		return cached.value;
 	}
 
 	const response = await secretsClient.send(
@@ -80,7 +86,7 @@ async function getSecretValue(secretArn: string): Promise<string> {
 	}
 
 	// Cache for future invocations
-	secretsCache.set(secretArn, response.SecretString);
+	secretsCache.set(secretArn, { value: response.SecretString, cachedAt: now });
 	return response.SecretString;
 }
 
@@ -202,14 +208,26 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 		}
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
+
+		// Log full error internally for debugging
 		console.error('Sync failed:', errorMessage);
+		if (err instanceof Error && err.stack) {
+			console.error('Stack trace:', err.stack);
+		}
+
+		// Return sanitized error message to caller (stored in DB, shown to users)
+		// Keep rate limit messages clear, sanitize everything else
+		const isRateLimitError = errorMessage.includes('rate limit');
+		const sanitizedError = isRateLimitError
+			? errorMessage
+			: 'Sync failed. Check Lambda logs for details.';
 
 		return {
 			success: false,
 			mode: event.mode,
 			synced: 0,
 			commitSha: null,
-			error: errorMessage,
+			error: sanitizedError,
 		};
 	}
 }
