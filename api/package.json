@@ -10,6 +10,7 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.71.2",
+		"@aws-sdk/client-lambda": "^3.726.0",
 		"@doc-platform/auth": "*",
 		"@doc-platform/core": "*",
 		"@doc-platform/db": "*",

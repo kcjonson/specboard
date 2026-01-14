@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-09 (Added multi-provider AI support with Gemini)
+Last Updated: 2026-01-14 (GitHub sync Lambda implementation)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,46 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ GitHub Sync Lambda
+**Spec/Documentation:** `.claude/plans/github-sync-lambda.md`
+**Dependencies:** Project Storage & Git Integration, GitHub OAuth
+**Status:** complete
+
+**Tasks:**
+- [x] Database migration (010_github_sync_tracking.sql)
+  - [x] Add sync_status, last_synced_commit_sha columns to projects
+  - [x] Add sync_started_at, sync_completed_at, sync_error columns
+- [x] sync-lambda package scaffold
+  - [x] New workspace package with esbuild build
+  - [x] TypeScript configuration
+- [x] Streaming ZIP extraction
+  - [x] file-filter.ts (text vs binary detection)
+  - [x] zip-stream.ts (GitHub ZIP → unzipper → storage service)
+  - [x] Memory-efficient streaming (512MB Lambda handles any repo size)
+- [x] Initial sync (full repository download)
+  - [x] Download ZIP from GitHub API
+  - [x] Stream extraction with unzipper
+  - [x] Upload text files to storage service
+  - [x] Track commit SHA for incremental sync
+- [x] Incremental sync (changed files only)
+  - [x] Use GitHub Compare API
+  - [x] Fetch only added/modified files
+  - [x] Delete removed files from storage
+- [x] Lambda handler
+  - [x] Secrets Manager integration for DB password, encryption key, storage API key
+  - [x] Async invocation from API service
+- [x] CDK infrastructure
+  - [x] Lambda function with VPC access
+  - [x] Security groups for Lambda → Storage and Lambda → DB
+  - [x] Secrets Manager permissions
+- [x] API endpoints
+  - [x] POST /api/projects/:id/sync/initial (start initial sync)
+  - [x] POST /api/projects/:id/sync (start incremental sync)
+  - [x] GET /api/projects/:id/sync/status (poll for completion)
+  - [x] Fix JSONB parsing for repository config
+
+---
 
 ### ✅ AI Chat Sidebar
 **Spec/Documentation:** `.claude/plans/ai-chat-sidebar.md`, `.claude/plans/gemini-integration.md`, `docs/setup.md`
@@ -85,17 +125,6 @@ Use this template for all work items:
 
 ---
 
-### ✅ Staging Deployment
-**Spec/Documentation:** `infra/lib/`, `docs/tech-stack.md`
-**Status:** complete
-
-**Tasks:**
-- [x] CDK Infrastructure (VPC, ECR, ECS, RDS, Redis, ALB)
-- [x] GitHub Actions CD (build, migrate, deploy)
-- [x] Test data seeding (admin account, GitHub secrets)
-
----
-
 ## In Progress Epics
 
 ### Authentication System
@@ -141,10 +170,10 @@ Use this template for all work items:
   - [x] Password reset emails
   - [x] Development mode (console logging)
   - [x] Staging allowlist for test emails
-- [ ] GitHub OAuth
-  - [ ] Connect flow (link to existing account)
-  - [ ] Token encryption (KMS)
-  - [ ] GitHub API proxy
+- [x] GitHub OAuth
+  - [x] Connect flow (link to existing account)
+  - [x] Token encryption (AES-256-GCM)
+  - [x] GitHub repos/branches listing endpoints
   - [ ] Login with GitHub (future)
 
 ---
@@ -210,10 +239,11 @@ Use this template for all work items:
 - [ ] Cloud mode support
   - [ ] Platform detection (isCloud vs isElectron)
   - [ ] FileBrowser shows "Connect Repository" for cloud mode
-  - [ ] ConnectRepository dialog component
+  - [ ] ConnectRepository dialog component (repo/branch picker)
   - [ ] POST /api/projects/:id/repository endpoint
-  - [ ] GitStorageProvider implementation
-  - [ ] GitHub OAuth for repo access (depends on GitHub OAuth epic)
+  - [x] Storage service backend (S3 + Postgres metadata)
+  - [x] GitHub sync Lambda (initial + incremental sync)
+  - [x] GitHub OAuth for repo access
 
 ---
 

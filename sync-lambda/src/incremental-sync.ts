@@ -1,0 +1,355 @@
+/**
+ * Incremental sync: Use GitHub Compare API to fetch only changed files.
+ * Much faster than full sync when only a few files have changed.
+ */
+
+import { query } from '@doc-platform/db';
+import { isTextFile } from './file-filter.ts';
+
+const GITHUB_API_URL = 'https://api.github.com';
+
+// Batch size for parallel blob fetches
+const BATCH_SIZE = 10;
+
+// Delay between batches to avoid rate limiting (ms)
+const BATCH_DELAY_MS = 100;
+
+export interface IncrementalSyncParams {
+	projectId: string;
+	owner: string;
+	repo: string;
+	branch: string;
+	token: string;
+	lastCommitSha: string;
+}
+
+export interface IncrementalSyncResult {
+	success: boolean;
+	synced: number;
+	removed: number;
+	commitSha: string | null;
+	error?: string;
+}
+
+interface GitHubCompareFile {
+	sha: string;
+	filename: string;
+	status: 'added' | 'modified' | 'removed' | 'renamed';
+	previous_filename?: string;
+}
+
+interface GitHubCompareResponse {
+	status: string;
+	ahead_by: number;
+	behind_by: number;
+	total_commits: number;
+	commits: Array<{ sha: string }>;
+	files?: GitHubCompareFile[];
+}
+
+interface GitHubBlob {
+	content: string;
+	encoding: 'base64' | 'utf-8';
+	sha: string;
+	size: number;
+}
+
+interface StorageClient {
+	putFile(projectId: string, path: string, content: string): Promise<void>;
+	deleteFile(projectId: string, path: string): Promise<void>;
+}
+
+/**
+ * Update project sync status in the database.
+ */
+async function updateSyncStatus(
+	projectId: string,
+	status: 'pending' | 'syncing' | 'completed' | 'failed',
+	commitSha?: string | null,
+	error?: string | null
+): Promise<void> {
+	const now = new Date().toISOString();
+
+	if (status === 'syncing') {
+		await query(
+			`UPDATE projects
+			 SET sync_status = $1, sync_started_at = $2, sync_error = NULL
+			 WHERE id = $3`,
+			[status, now, projectId]
+		);
+	} else if (status === 'completed') {
+		await query(
+			`UPDATE projects
+			 SET sync_status = $1, sync_completed_at = $2, last_synced_commit_sha = $3, sync_error = NULL
+			 WHERE id = $4`,
+			[status, now, commitSha, projectId]
+		);
+	} else if (status === 'failed') {
+		await query(
+			`UPDATE projects
+			 SET sync_status = $1, sync_completed_at = $2, sync_error = $3
+			 WHERE id = $4`,
+			[status, now, error, projectId]
+		);
+	}
+}
+
+/**
+ * Create a storage client that calls the storage service HTTP API.
+ */
+function createStorageClient(
+	storageServiceUrl: string,
+	storageApiKey: string
+): StorageClient {
+	return {
+		async putFile(projectId: string, path: string, content: string): Promise<void> {
+			const response = await fetch(
+				`${storageServiceUrl}/files/${projectId}/${path}`,
+				{
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-Internal-API-Key': storageApiKey,
+					},
+					body: JSON.stringify({ content }),
+				}
+			);
+
+			if (!response.ok) {
+				const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+				throw new Error((error as { error?: string }).error || response.statusText);
+			}
+		},
+
+		async deleteFile(projectId: string, path: string): Promise<void> {
+			const response = await fetch(
+				`${storageServiceUrl}/files/${projectId}/${path}`,
+				{
+					method: 'DELETE',
+					headers: {
+						'X-Internal-API-Key': storageApiKey,
+					},
+				}
+			);
+
+			// Ignore 404 errors - file may not exist
+			if (!response.ok && response.status !== 404) {
+				const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+				throw new Error((error as { error?: string }).error || response.statusText);
+			}
+		},
+	};
+}
+
+/**
+ * Compare two commits and get the list of changed files.
+ */
+async function getChangedFiles(
+	owner: string,
+	repo: string,
+	base: string,
+	head: string,
+	token: string
+): Promise<{ files: GitHubCompareFile[]; headSha: string }> {
+	const response = await fetch(
+		`${GITHUB_API_URL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${base}...${head}`,
+		{
+			headers: {
+				Accept: 'application/vnd.github+json',
+				Authorization: `Bearer ${token}`,
+				'X-GitHub-Api-Version': '2022-11-28',
+			},
+		}
+	);
+
+	if (!response.ok) {
+		if (response.status === 404) {
+			throw new Error('Repository or commits not found');
+		}
+		throw new Error(`GitHub Compare API error: ${response.status}`);
+	}
+
+	const data: GitHubCompareResponse = await response.json();
+
+	// Get the latest commit SHA
+	const headSha =
+		data.commits.length > 0
+			? data.commits[data.commits.length - 1]!.sha
+			: base;
+
+	return {
+		files: data.files || [],
+		headSha,
+	};
+}
+
+/**
+ * Fetch a blob's content from GitHub.
+ */
+async function fetchBlob(
+	owner: string,
+	repo: string,
+	sha: string,
+	token: string
+): Promise<string> {
+	const response = await fetch(
+		`${GITHUB_API_URL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${sha}`,
+		{
+			headers: {
+				Accept: 'application/vnd.github+json',
+				Authorization: `Bearer ${token}`,
+				'X-GitHub-Api-Version': '2022-11-28',
+			},
+		}
+	);
+
+	if (!response.ok) {
+		throw new Error(`Failed to fetch blob ${sha}: ${response.status}`);
+	}
+
+	const blob: GitHubBlob = await response.json();
+
+	// Decode content
+	if (blob.encoding === 'base64') {
+		return Buffer.from(blob.content, 'base64').toString('utf-8');
+	}
+
+	return blob.content;
+}
+
+/**
+ * Process files in batches to avoid rate limiting.
+ */
+async function processBatches<T, R>(
+	items: T[],
+	batchSize: number,
+	delayMs: number,
+	processor: (item: T) => Promise<R>
+): Promise<R[]> {
+	const results: R[] = [];
+
+	for (let i = 0; i < items.length; i += batchSize) {
+		const batch = items.slice(i, i + batchSize);
+		const batchResults = await Promise.all(batch.map(processor));
+		results.push(...batchResults);
+
+		// Delay between batches (except for the last batch)
+		if (i + batchSize < items.length) {
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+		}
+	}
+
+	return results;
+}
+
+/**
+ * Perform incremental sync: fetch only changed files since last sync.
+ */
+export async function performIncrementalSync(
+	params: IncrementalSyncParams,
+	storageServiceUrl: string,
+	storageApiKey: string
+): Promise<IncrementalSyncResult> {
+	const { projectId, owner, repo, branch, token, lastCommitSha } = params;
+
+	try {
+		// Mark sync as in progress
+		await updateSyncStatus(projectId, 'syncing');
+
+		// Get changed files since last sync
+		const { files, headSha } = await getChangedFiles(
+			owner,
+			repo,
+			lastCommitSha,
+			branch,
+			token
+		);
+
+		// If no changes, we're done
+		if (files.length === 0) {
+			await updateSyncStatus(projectId, 'completed', headSha);
+			return {
+				success: true,
+				synced: 0,
+				removed: 0,
+				commitSha: headSha,
+			};
+		}
+
+		// Create storage client
+		const storageClient = createStorageClient(storageServiceUrl, storageApiKey);
+
+		// Separate files by action
+		const toSync = files.filter(
+			(f) =>
+				(f.status === 'added' || f.status === 'modified') &&
+				isTextFile(f.filename)
+		);
+
+		const toRemove = files.filter(
+			(f) => f.status === 'removed' && isTextFile(f.filename)
+		);
+
+		// Handle renamed files: remove old, add new
+		const renamed = files.filter(
+			(f) => f.status === 'renamed' && isTextFile(f.filename)
+		);
+		for (const file of renamed) {
+			if (file.previous_filename) {
+				toRemove.push({
+					...file,
+					filename: file.previous_filename,
+					status: 'removed',
+				});
+			}
+			toSync.push({ ...file, status: 'added' });
+		}
+
+		let synced = 0;
+		let removed = 0;
+
+		// Sync added/modified files in batches
+		await processBatches(toSync, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
+			try {
+				const content = await fetchBlob(owner, repo, file.sha, token);
+				await storageClient.putFile(projectId, file.filename, content);
+				synced++;
+			} catch (err) {
+				console.error(`Failed to sync ${file.filename}:`, err);
+			}
+		});
+
+		// Remove deleted files
+		await processBatches(toRemove, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
+			try {
+				await storageClient.deleteFile(projectId, file.filename);
+				removed++;
+			} catch (err) {
+				console.error(`Failed to remove ${file.filename}:`, err);
+			}
+		});
+
+		// Mark sync as completed
+		await updateSyncStatus(projectId, 'completed', headSha);
+
+		return {
+			success: true,
+			synced,
+			removed,
+			commitSha: headSha,
+		};
+	} catch (err) {
+		const errorMessage = err instanceof Error ? err.message : String(err);
+
+		// Mark sync as failed
+		await updateSyncStatus(projectId, 'failed', null, errorMessage);
+
+		return {
+			success: false,
+			synced: 0,
+			removed: 0,
+			commitSha: null,
+			error: errorMessage,
+		};
+	}
+}

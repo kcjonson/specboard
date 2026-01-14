@@ -1,0 +1,215 @@
+/**
+ * GitHub Sync Lambda Handler
+ *
+ * Handles both initial sync (full ZIP download) and incremental sync (changed files only).
+ * Invoked asynchronously from the API service when a user triggers a sync.
+ */
+
+import {
+	SecretsManagerClient,
+	GetSecretValueCommand,
+} from '@aws-sdk/client-secrets-manager';
+import { decrypt, type EncryptedData } from '@doc-platform/auth';
+import { performInitialSync, type InitialSyncResult } from './initial-sync.ts';
+import {
+	performIncrementalSync,
+	type IncrementalSyncResult,
+} from './incremental-sync.ts';
+
+// Secrets Manager client - reused across invocations
+const secretsClient = new SecretsManagerClient({});
+
+// Cache for fetched secrets (Lambda container reuse)
+const secretsCache: Map<string, string> = new Map();
+
+/**
+ * Event structure passed from API to Lambda.
+ */
+export interface SyncEvent {
+	projectId: string;
+	userId: string;
+	owner: string;
+	repo: string;
+	branch: string;
+	encryptedToken: string; // Encrypted GitHub token (JSON string of EncryptedData)
+	mode: 'initial' | 'incremental';
+	lastCommitSha?: string; // Required for incremental mode
+}
+
+/**
+ * Lambda response structure.
+ */
+export interface SyncResponse {
+	success: boolean;
+	mode: 'initial' | 'incremental';
+	synced: number;
+	removed?: number;
+	skipped?: number;
+	commitSha: string | null;
+	error?: string;
+}
+
+/**
+ * Get environment variables with validation.
+ */
+function getEnvVar(name: string): string {
+	const value = process.env[name];
+	if (!value) {
+		throw new Error(`Missing required environment variable: ${name}`);
+	}
+	return value;
+}
+
+/**
+ * Fetch a secret value from AWS Secrets Manager.
+ * Caches results for Lambda container reuse efficiency.
+ */
+async function getSecretValue(secretArn: string): Promise<string> {
+	// Check cache first
+	const cached = secretsCache.get(secretArn);
+	if (cached) {
+		return cached;
+	}
+
+	const response = await secretsClient.send(
+		new GetSecretValueCommand({ SecretId: secretArn })
+	);
+
+	if (!response.SecretString) {
+		throw new Error(`Secret ${secretArn} has no string value`);
+	}
+
+	// Cache for future invocations
+	secretsCache.set(secretArn, response.SecretString);
+	return response.SecretString;
+}
+
+/**
+ * Initialize secrets from AWS Secrets Manager.
+ * Sets environment variables needed by @doc-platform/auth and @doc-platform/db.
+ */
+async function initializeSecrets(): Promise<{ storageApiKey: string }> {
+	// Fetch secrets from Secrets Manager using ARN env vars
+	const [storageApiKey, encryptionKey, dbCredentialsJson] = await Promise.all([
+		getSecretValue(getEnvVar('STORAGE_API_KEY_SECRET_ARN')),
+		getSecretValue(getEnvVar('API_KEY_ENCRYPTION_KEY_SECRET_ARN')),
+		getSecretValue(getEnvVar('DB_PASSWORD_SECRET_ARN')),
+	]);
+
+	// Set encryption key in process.env for @doc-platform/auth decrypt()
+	process.env.API_KEY_ENCRYPTION_KEY = encryptionKey;
+
+	// Parse DB credentials (stored as JSON { username, password })
+	// and set DB_PASSWORD for @doc-platform/db
+	try {
+		const dbCredentials = JSON.parse(dbCredentialsJson) as { password: string };
+		process.env.DB_PASSWORD = dbCredentials.password;
+	} catch {
+		// Fallback: if it's a plain string, use it directly
+		process.env.DB_PASSWORD = dbCredentialsJson;
+	}
+
+	return { storageApiKey };
+}
+
+/**
+ * Lambda handler entry point.
+ */
+export async function handler(event: SyncEvent): Promise<SyncResponse> {
+	console.log('Sync event received:', {
+		projectId: event.projectId,
+		userId: event.userId,
+		owner: event.owner,
+		repo: event.repo,
+		branch: event.branch,
+		mode: event.mode,
+		hasLastCommitSha: !!event.lastCommitSha,
+	});
+
+	try {
+		// Validate required fields
+		if (!event.projectId || !event.userId || !event.owner || !event.repo || !event.branch) {
+			throw new Error('Missing required event fields');
+		}
+
+		if (event.mode === 'incremental' && !event.lastCommitSha) {
+			throw new Error('lastCommitSha required for incremental sync');
+		}
+
+		// Initialize secrets from AWS Secrets Manager
+		const { storageApiKey } = await initializeSecrets();
+
+		// Get storage service URL from environment
+		const storageServiceUrl = getEnvVar('STORAGE_SERVICE_URL');
+
+		// Decrypt the GitHub token (uses API_KEY_ENCRYPTION_KEY set by initializeSecrets)
+		let token: string;
+		try {
+			const encrypted: EncryptedData = JSON.parse(event.encryptedToken);
+			token = decrypt(encrypted);
+		} catch (err) {
+			throw new Error('Failed to decrypt GitHub token');
+		}
+
+		// Perform sync based on mode
+		if (event.mode === 'initial') {
+			const result: InitialSyncResult = await performInitialSync(
+				{
+					projectId: event.projectId,
+					owner: event.owner,
+					repo: event.repo,
+					branch: event.branch,
+					token,
+				},
+				storageServiceUrl,
+				storageApiKey
+			);
+
+			console.log('Initial sync completed:', result);
+
+			return {
+				success: result.success,
+				mode: 'initial',
+				synced: result.synced,
+				skipped: result.skipped,
+				commitSha: result.commitSha,
+				error: result.error,
+			};
+		} else {
+			const result: IncrementalSyncResult = await performIncrementalSync(
+				{
+					projectId: event.projectId,
+					owner: event.owner,
+					repo: event.repo,
+					branch: event.branch,
+					token,
+					lastCommitSha: event.lastCommitSha!,
+				},
+				storageServiceUrl,
+				storageApiKey
+			);
+
+			console.log('Incremental sync completed:', result);
+
+			return {
+				success: result.success,
+				mode: 'incremental',
+				synced: result.synced,
+				removed: result.removed,
+				commitSha: result.commitSha,
+				error: result.error,
+			};
+		}
+	} catch (err) {
+		const errorMessage = err instanceof Error ? err.message : String(err);
+		console.error('Sync failed:', errorMessage);
+
+		return {
+			success: false,
+			mode: event.mode,
+			synced: 0,
+			commitSha: null,
+			error: errorMessage,
+		};
+	}
+}
