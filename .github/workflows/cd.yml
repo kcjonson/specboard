@@ -53,7 +53,7 @@ jobs:
 
   build-push:
     name: Build and Push
-    needs: check
+    needs: [setup-aws, check]
     if: needs.check.outputs.should_deploy == 'true'
     permissions:
       id-token: write
@@ -88,9 +88,10 @@ jobs:
       include_superadmin_env: true
     secrets: inherit
 
-  deploy-infra:
-    name: Deploy Infrastructure
-    needs: seed
+  setup-aws:
+    name: Setup AWS Resources
+    needs: check
+    if: needs.check.outputs.should_deploy == 'true'
     permissions:
       id-token: write
       contents: read
@@ -101,7 +102,7 @@ jobs:
 
   deploy-services:
     name: Deploy Services
-    needs: deploy-infra
+    needs: seed
     runs-on: ubuntu-latest
     permissions:
       id-token: write
