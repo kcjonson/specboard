@@ -16,6 +16,9 @@ const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 const GITHUB_API_URL = 'https://api.github.com';
 
 // Required scopes for repository access
+// - 'repo': Full access to private/public repos (needed for sync + future commit feature)
+//   Note: 'public_repo' would only work for public repos, insufficient for private repos
+// - 'user:email': Access user's email for account linking
 const GITHUB_SCOPES = ['repo', 'user:email'];
 
 // State token TTL in Redis (10 minutes)

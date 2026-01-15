@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build sync-lambda
+        run: npm run --workspace @doc-platform/sync-lambda build
+
       - name: Build infrastructure
         run: npm run --workspace @doc-platform/infra build
 

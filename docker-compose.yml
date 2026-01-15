@@ -68,6 +68,10 @@ services:
       # Generate with: openssl rand -hex 32
       # For local dev, set in .env file. For production, use AWS Secrets Manager.
       API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:-}
+      # Storage service connection (for cloud mode)
+      # WARNING: Hardcoded key for local dev only. Use AWS Secrets Manager in production.
+      STORAGE_SERVICE_URL: http://storage:3003
+      STORAGE_SERVICE_API_KEY: local-dev-storage-key
     depends_on:
       db:
         condition: service_healthy
@@ -122,7 +126,71 @@ services:
       db:
         condition: service_healthy
 
+  # Storage database (separate from main app DB)
+  storage-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: storage
+    ports:
+      - "5433:5432"
+    volumes:
+      - storage_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d storage"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # LocalStack for S3 emulation
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3
+      DEBUG: 0
+    volumes:
+      - localstack_data:/var/lib/localstack
+
+  storage:
+    build:
+      context: .
+      dockerfile: storage/Dockerfile
+      target: dev
+    command: sh -c "npm install && node --watch storage/src/index.ts"
+    ports:
+      - "3003:3003"
+    volumes:
+      - .:/app:cached
+      - /app/node_modules
+      - npm_cache:/root/.npm
+    environment:
+      PORT: 3003
+      DB_HOST: storage-db
+      DB_PORT: 5432
+      DB_NAME: storage
+      DB_USER: dev
+      DB_PASSWORD: dev
+      NODE_ENV: development
+      # LocalStack S3 configuration
+      S3_BUCKET: doc-platform-storage
+      S3_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      # Internal API key - WARNING: Hardcoded for local dev only. Use AWS Secrets Manager in production.
+      STORAGE_API_KEY: local-dev-storage-key
+    depends_on:
+      storage-db:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
 volumes:
   postgres_data:
+  storage_postgres_data:
   redis_data:
   npm_cache:
+  localstack_data:

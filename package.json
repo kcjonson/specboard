@@ -6,6 +6,8 @@
 		"api",
 		"frontend",
 		"mcp",
+		"storage",
+		"sync-lambda",
 		"ssg",
 		"web",
 		"infra",

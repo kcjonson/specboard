@@ -110,6 +110,12 @@ import {
 	handleListGitHubRepos,
 	handleListGitHubBranches,
 } from './handlers/github.ts';
+import {
+	handleGitHubSync,
+	handleGitHubInitialSync,
+	handleGitHubSyncStatus,
+	handleGitHubCommit,
+} from './handlers/github-sync.ts';
 import { handleGetChatModels, handleGetChatProviders } from './handlers/chat-models.ts';
 
 // Install global error handlers for uncaught exceptions
@@ -376,11 +382,17 @@ app.put('/api/projects/:id/files', (context) => handleWriteFile(context, redis))
 app.put('/api/projects/:id/files/rename', (context) => handleRenameFile(context, redis));
 app.delete('/api/projects/:id/files', (context) => handleDeleteFile(context, redis));
 
-// Project git routes
+// Project git routes (local mode)
 app.get('/api/projects/:id/git/status', (context) => handleGetGitStatus(context, redis));
 app.post('/api/projects/:id/git/commit', (context) => handleCommit(context, redis));
 app.post('/api/projects/:id/git/restore', (context) => handleRestore(context, redis));
 app.post('/api/projects/:id/git/pull', (context) => handlePull(context, redis));
+
+// GitHub sync routes (cloud mode)
+app.post('/api/projects/:id/sync', (context) => handleGitHubSync(context, redis));
+app.post('/api/projects/:id/sync/initial', (context) => handleGitHubInitialSync(context, redis));
+app.get('/api/projects/:id/sync/status', (context) => handleGitHubSyncStatus(context, redis));
+app.post('/api/projects/:id/github/commit', (context) => handleGitHubCommit(context, redis));
 
 // Project-scoped epic routes
 app.get('/api/projects/:projectId/epics', handleListEpics);

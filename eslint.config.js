@@ -78,12 +78,14 @@ export default [
 			'no-var': 'error',
 		},
 	},
-	// Node.js files (api, mcp, infra, desktop, frontend server, shared server packages)
+	// Node.js files (api, mcp, storage, infra, desktop, frontend server, shared server packages, lambda)
 	{
 		files: [
 			'api/**/*.ts',
 			'mcp/**/*.ts',
+			'storage/**/*.ts',
 			'infra/**/*.ts',
+			'sync-lambda/**/*.ts',
 			'*-desktop/**/*.ts',
 			'frontend/**/*.ts',
 			'shared/db/**/*.ts',
