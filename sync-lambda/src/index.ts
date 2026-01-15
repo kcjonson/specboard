@@ -189,7 +189,7 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 					repo: event.repo,
 					branch: event.branch,
 					token,
-					lastCommitSha: event.lastCommitSha!,
+					lastCommitSha: event.lastCommitSha as string, // Validated at line 141-143
 				},
 				storageServiceUrl,
 				storageApiKey

@@ -8,36 +8,41 @@ import { isBinaryFile } from 'isbinaryfile';
 // Maximum file size to sync (500KB)
 export const MAX_FILE_SIZE_BYTES = 500 * 1024;
 
-// Directories to always skip
+// Directories to always skip (without trailing slashes for boundary matching)
 const SKIP_DIRECTORIES = [
-	'node_modules/',
-	'.git/',
-	'vendor/',
-	'dist/',
-	'build/',
-	'__pycache__/',
-	'.next/',
-	'.nuxt/',
-	'.cache/',
-	'coverage/',
-	'.pytest_cache/',
-	'.mypy_cache/',
-	'target/', // Rust
-	'bin/', // Go
-	'obj/', // .NET
-	'.gradle/',
-	'.idea/',
-	'.vscode/',
+	'node_modules',
+	'.git',
+	'vendor',
+	'dist',
+	'build',
+	'__pycache__',
+	'.next',
+	'.nuxt',
+	'.cache',
+	'coverage',
+	'.pytest_cache',
+	'.mypy_cache',
+	'target', // Rust
+	'bin', // Go
+	'obj', // .NET
+	'.gradle',
+	'.idea',
+	'.vscode',
 ];
 
 /**
  * Check if a path should be skipped because it's in a skip directory.
+ * Uses boundary checking to avoid matching partial directory names
+ * (e.g., 'node_modules' won't match 'mynode_modules').
  */
 export function shouldSkipDirectory(path: string): boolean {
 	const normalizedPath = path.startsWith('/') ? path.substring(1) : path;
 
 	for (const dir of SKIP_DIRECTORIES) {
-		if (normalizedPath.includes(dir)) {
+		// Check for exact directory match at path boundaries
+		// Must be at start or after '/', and followed by '/' or end of string
+		const pattern = new RegExp(`(^|/)${dir}(/|$)`);
+		if (pattern.test(normalizedPath)) {
 			return true;
 		}
 	}

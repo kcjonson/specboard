@@ -71,8 +71,8 @@ export async function streamGitHubZipToStorage(
 	const contentDisposition = response.headers.get('content-disposition');
 	if (contentDisposition) {
 		const match = contentDisposition.match(/filename=.*?-([a-f0-9]+)\.zip/i);
-		if (match) {
-			result.commitSha = match[1] ?? null;
+		if (match && match[1]) {
+			result.commitSha = match[1];
 		}
 	}
 
@@ -81,6 +81,9 @@ export async function streamGitHubZipToStorage(
 
 	// Process the ZIP stream
 	await new Promise<void>((resolve, reject) => {
+		// Handle errors on the source stream
+		nodeStream.on('error', reject);
+
 		nodeStream
 			.pipe(unzipper.Parse())
 			.on('entry', async (entry: unzipper.Entry) => {

@@ -15,3 +15,11 @@ COMMENT ON COLUMN projects.sync_status IS 'Current sync status: pending, syncing
 COMMENT ON COLUMN projects.sync_started_at IS 'Timestamp when the current/last sync started';
 COMMENT ON COLUMN projects.sync_completed_at IS 'Timestamp when the last sync completed (success or failure)';
 COMMENT ON COLUMN projects.sync_error IS 'Error message if sync_status is failed';
+
+-- Rollback instructions:
+-- ALTER TABLE projects
+--   DROP COLUMN IF EXISTS last_synced_commit_sha,
+--   DROP COLUMN IF EXISTS sync_status,
+--   DROP COLUMN IF EXISTS sync_started_at,
+--   DROP COLUMN IF EXISTS sync_completed_at,
+--   DROP COLUMN IF EXISTS sync_error;
