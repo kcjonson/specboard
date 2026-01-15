@@ -243,12 +243,15 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 
 		// S3 bucket for file content storage
+		// DESTROY policy to prevent orphans on failed deploys (same as ECR repos)
+		// autoDeleteObjects allows deletion even with contents
 		const storageBucket = new s3.Bucket(this, 'StorageBucket', {
 			bucketName: `doc-platform-storage-${this.account}`,
 			versioned: true, // Keep file versions for potential rollback
 			encryption: s3.BucketEncryption.S3_MANAGED,
 			blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-			removalPolicy: cdk.RemovalPolicy.RETAIN, // Keep files on stack deletion
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+			autoDeleteObjects: true,
 			lifecycleRules: [{
 				// Delete old versions after 30 days to control costs
 				noncurrentVersionExpiration: cdk.Duration.days(30),
