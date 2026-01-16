@@ -15,6 +15,7 @@ import {
 } from '@doc-platform/db';
 import { projectResponseToApi } from '../transform.ts';
 import { isValidUUID, isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
+import { startGitHubInitialSync } from './github-sync.ts';
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
@@ -182,6 +183,13 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 			description: description || undefined,
 			repository: validatedRepository,
 		});
+
+		// Trigger initial sync for cloud projects (fire-and-forget)
+		if (validatedRepository) {
+			void startGitHubInitialSync(project.id, userId).catch((err) => {
+				console.error('Failed to start GitHub initial sync:', err);
+			});
+		}
 
 		return context.json(projectResponseToApi(project), 201);
 	} catch (error) {
