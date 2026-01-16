@@ -98,7 +98,6 @@ jobs:
     uses: ./.github/workflows/_deploy-cdk.yml
     with:
       action: deploy
-      bootstrap: true
     secrets: inherit
 
   deploy-services:
