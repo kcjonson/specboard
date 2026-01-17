@@ -72,6 +72,12 @@ services:
       # WARNING: Hardcoded key for local dev only. Use AWS Secrets Manager in production.
       STORAGE_SERVICE_URL: http://storage:3003
       STORAGE_SERVICE_API_KEY: local-dev-storage-key
+      # DB vars for sync-lambda when invoked locally (must match DATABASE_URL)
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: doc_platform
+      DB_USER: dev
+      DB_PASSWORD: dev
     depends_on:
       db:
         condition: service_healthy

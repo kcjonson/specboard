@@ -35,38 +35,50 @@ async function invokeSyncLambda(payload: SyncEvent): Promise<void> {
 	if (process.env.NODE_ENV === 'development') {
 		// Local dev: import and call handler directly
 		// Dynamic import to avoid loading Lambda deps in production
-		const { handler } = await import('@doc-platform/sync-lambda');
+		// Wrap in try-catch to handle sync errors during import
+		try {
+			const { handler } = await import('@doc-platform/sync-lambda');
 
-		// Run async (don't await) to mimic Lambda async invocation
-		handler(payload)
-			.then((result) => {
-				log({
-					type: 'github',
-					level: result.success ? 'info' : 'warn',
-					event: 'local_sync_completed',
-					projectId: payload.projectId,
-					success: result.success,
-					synced: result.synced,
-					error: result.error,
+			// Run async (don't await) to mimic Lambda async invocation
+			Promise.resolve()
+				.then(() => handler(payload))
+				.then((result) => {
+					log({
+						type: 'github',
+						level: result.success ? 'info' : 'warn',
+						event: 'local_sync_completed',
+						projectId: payload.projectId,
+						success: result.success,
+						synced: result.synced,
+						error: result.error,
+					});
+				})
+				.catch((err) => {
+					log({
+						type: 'github',
+						level: 'error',
+						event: 'local_sync_error',
+						projectId: payload.projectId,
+						error: err instanceof Error ? err.message : String(err),
+					});
 				});
-			})
-			.catch((err) => {
-				log({
-					type: 'github',
-					level: 'error',
-					event: 'local_sync_error',
-					projectId: payload.projectId,
-					error: err instanceof Error ? err.message : String(err),
-				});
+
+			log({
+				type: 'github',
+				level: 'info',
+				event: 'local_sync_started',
+				projectId: payload.projectId,
+				mode: payload.mode,
 			});
-
-		log({
-			type: 'github',
-			level: 'info',
-			event: 'local_sync_started',
-			projectId: payload.projectId,
-			mode: payload.mode,
-		});
+		} catch (err) {
+			log({
+				type: 'github',
+				level: 'error',
+				event: 'local_sync_import_error',
+				projectId: payload.projectId,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
 		return;
 	}
 

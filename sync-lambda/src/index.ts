@@ -97,12 +97,20 @@ async function getSecretValue(secretArn: string): Promise<string> {
  * In production (when *_SECRET_ARN env vars are set), fetches from Secrets Manager.
  */
 async function initializeSecrets(): Promise<{ storageApiKey: string }> {
-	// Local dev mode: env vars are directly set (no Secrets Manager)
-	if (process.env.API_KEY_ENCRYPTION_KEY && process.env.DB_PASSWORD) {
-		// STORAGE_SERVICE_API_KEY is the env var name used in docker-compose
+	// Local dev mode detection:
+	// - NODE_ENV=development, OR
+	// - STORAGE_SERVICE_API_KEY is set (only in docker-compose, not Lambda)
+	const isLocalDev =
+		process.env.NODE_ENV === 'development' ||
+		!!process.env.STORAGE_SERVICE_API_KEY;
+
+	if (isLocalDev) {
 		const storageApiKey = process.env.STORAGE_SERVICE_API_KEY;
 		if (!storageApiKey) {
 			throw new Error('Missing STORAGE_SERVICE_API_KEY for local dev');
+		}
+		if (!process.env.API_KEY_ENCRYPTION_KEY) {
+			throw new Error('Missing API_KEY_ENCRYPTION_KEY for local dev');
 		}
 		console.log('Using local dev secrets (Secrets Manager skipped)');
 		return { storageApiKey };
