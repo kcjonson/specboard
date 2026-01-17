@@ -11,7 +11,7 @@ import type { Context, Next } from 'hono';
 import { apiKeyAuth } from './middleware/auth.ts';
 import { filesRoutes } from './handlers/files.ts';
 import { pendingRoutes } from './handlers/pending.ts';
-import { initDb, closeDb } from './db/index.ts';
+import { closeDb } from './db/index.ts';
 import { runMigrations } from './db/migrate.ts';
 
 // Request size limit: 50MB max
@@ -135,9 +135,6 @@ async function start(): Promise<void> {
 	// Run migrations first
 	console.log('Running migrations...');
 	await runMigrations();
-
-	// Initialize database pool for request handling
-	initDb();
 
 	server = serve({ fetch: app.fetch, port: PORT }, () => {
 		console.log(`Storage service running on http://localhost:${PORT}`);

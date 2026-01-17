@@ -1,6 +1,7 @@
 /**
  * Database connection pool for storage service.
  * Uses separate database from main app to isolate file workload.
+ * Pool is lazily initialized on first use.
  */
 
 import fs from 'fs';
@@ -8,11 +9,9 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-let pool: pg.Pool | null = null;
+let _pool: pg.Pool | null = null;
 
-export function initDb(): void {
-	if (pool) return;
-
+function createPool(): pg.Pool {
 	const config: pg.PoolConfig = {
 		host: process.env.DB_HOST || 'localhost',
 		port: Number(process.env.DB_PORT) || 5432,
@@ -49,26 +48,33 @@ export function initDb(): void {
 		};
 	}
 
-	pool = new Pool(config);
+	const newPool = new Pool(config);
 
-	pool.on('error', (err) => {
+	newPool.on('error', (err) => {
 		console.error('Unexpected database pool error:', err);
 	});
 
 	console.log('Database pool initialized');
+	return newPool;
 }
 
-export function getPool(): pg.Pool {
-	if (!pool) {
-		throw new Error('Database pool not initialized');
-	}
-	return pool;
-}
+/**
+ * Database pool with lazy initialization.
+ * Access via pool.instance - creates connection on first use.
+ */
+export const pool = {
+	get instance(): pg.Pool {
+		if (!_pool) {
+			_pool = createPool();
+		}
+		return _pool;
+	},
+};
 
 export async function closeDb(): Promise<void> {
-	if (pool) {
-		await pool.end();
-		pool = null;
+	if (_pool) {
+		await _pool.end();
+		_pool = null;
 		console.log('Database pool closed');
 	}
 }
