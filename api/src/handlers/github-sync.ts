@@ -54,7 +54,7 @@ interface ProjectWithRepo {
  * Get encrypted GitHub access token for a user.
  * Returns the encrypted token string (to pass to Lambda for decryption).
  */
-async function getEncryptedGitHubToken(userId: string): Promise<string | null> {
+export async function getEncryptedGitHubToken(userId: string): Promise<string | null> {
 	const result = await query<{ access_token: string }>(
 		'SELECT access_token FROM github_connections WHERE user_id = $1',
 		[userId]
@@ -71,7 +71,7 @@ async function getEncryptedGitHubToken(userId: string): Promise<string | null> {
 /**
  * Get project with repository info from JSONB column.
  */
-async function getProjectWithRepo(
+export async function getProjectWithRepo(
 	projectId: string,
 	userId: string
 ): Promise<ProjectWithRepo | null> {
@@ -120,7 +120,7 @@ async function getProjectWithRepo(
  * Atomically set sync status to pending if not already syncing.
  * Returns true if status was updated, false if sync already in progress.
  */
-async function trySetSyncPending(projectId: string): Promise<boolean> {
+export async function trySetSyncPending(projectId: string): Promise<boolean> {
 	const result = await query(
 		`UPDATE projects
 		 SET sync_status = 'pending', sync_error = NULL
@@ -129,6 +129,63 @@ async function trySetSyncPending(projectId: string): Promise<boolean> {
 		[projectId]
 	);
 	return result.rows.length > 0;
+}
+
+/**
+ * Start initial sync programmatically (non-HTTP, for use from other handlers).
+ * Fire-and-forget - invokes Lambda asynchronously.
+ */
+export async function startGitHubInitialSync(
+	projectId: string,
+	userId: string
+): Promise<void> {
+	const project = await getProjectWithRepo(projectId, userId);
+	if (!project) {
+		throw new Error('Project not found or not in cloud mode');
+	}
+
+	const encryptedToken = await getEncryptedGitHubToken(userId);
+	if (!encryptedToken) {
+		throw new Error('GitHub not connected');
+	}
+
+	const acquired = await trySetSyncPending(projectId);
+	if (!acquired) {
+		throw new Error('Sync already in progress');
+	}
+
+	try {
+		const payload = {
+			projectId,
+			userId,
+			owner: project.owner,
+			repo: project.repo,
+			branch: project.branch,
+			encryptedToken,
+			mode: 'initial' as const,
+		};
+
+		await lambdaClient.send(
+			new InvokeCommand({
+				FunctionName: GITHUB_SYNC_LAMBDA_NAME,
+				InvocationType: 'Event',
+				Payload: Buffer.from(JSON.stringify(payload)),
+			})
+		);
+
+		log({
+			type: 'github',
+			level: 'info',
+			event: 'github_initial_sync_started',
+			projectId,
+			owner: project.owner,
+			repo: project.repo,
+		});
+	} catch (err) {
+		// Reset sync status on failure to invoke
+		await query(`UPDATE projects SET sync_status = NULL WHERE id = $1`, [projectId]);
+		throw err;
+	}
 }
 
 /**

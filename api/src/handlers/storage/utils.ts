@@ -7,8 +7,10 @@ import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import path from 'path';
 import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
-import { getProject, type RepositoryConfig, isLocalRepository } from '@doc-platform/db';
+import { getProject, type RepositoryConfig, isLocalRepository, isCloudRepository } from '@doc-platform/db';
 import { LocalStorageProvider } from '../../services/storage/local-provider.ts';
+import { CloudStorageProvider } from '../../services/storage/cloud-provider.ts';
+import type { StorageProvider } from '../../services/storage/types.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth helpers
@@ -29,16 +31,25 @@ export async function getUserId(context: Context, redis: Redis): Promise<string 
 export async function getStorageProvider(
 	projectId: string,
 	userId: string
-): Promise<LocalStorageProvider | null> {
+): Promise<StorageProvider | null> {
 	const project = await getProject(projectId, userId);
 	if (!project) return null;
 
 	const repo = project.repository as RepositoryConfig | Record<string, never>;
-	if (!isLocalRepository(repo)) {
-		return null;
+
+	if (isLocalRepository(repo)) {
+		return new LocalStorageProvider(repo.localPath);
 	}
 
-	return new LocalStorageProvider(repo.localPath);
+	if (isCloudRepository(repo)) {
+		return new CloudStorageProvider(projectId, userId, {
+			repositoryOwner: repo.remote.owner,
+			repositoryName: repo.remote.repo,
+			defaultBranch: repo.branch,
+		});
+	}
+
+	return null; // storage_mode: 'none'
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
