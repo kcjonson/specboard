@@ -2,7 +2,7 @@
  * Database queries for storage service.
  */
 
-import { getPool } from './index.ts';
+import { pool } from './index.ts';
 
 // Size threshold for inline storage vs S3
 const INLINE_THRESHOLD = 100 * 1024; // 100KB
@@ -41,8 +41,8 @@ export async function getProjectDocument(
 	projectId: string,
 	path: string
 ): Promise<ProjectDocument | null> {
-	const pool = getPool();
-	const result = await pool.query<{
+	const db = pool.instance;
+	const result = await db.query<{
 		id: string;
 		project_id: string;
 		path: string;
@@ -85,11 +85,11 @@ export async function listProjectDocuments(
 	projectId: string,
 	options?: ListDocumentsOptions
 ): Promise<ListDocumentsResult> {
-	const pool = getPool();
+	const db = pool.instance;
 	const { limit, offset } = options || {};
 
 	// Get total count
-	const countResult = await pool.query<{ count: string }>(
+	const countResult = await db.query<{ count: string }>(
 		`SELECT COUNT(*) as count FROM project_documents WHERE project_id = $1`,
 		[projectId]
 	);
@@ -111,7 +111,7 @@ export async function listProjectDocuments(
 		params.push(offset);
 	}
 
-	const result = await pool.query<{
+	const result = await db.query<{
 		id: string;
 		project_id: string;
 		path: string;
@@ -142,8 +142,8 @@ export async function upsertProjectDocument(
 	contentHash: string,
 	sizeBytes: number
 ): Promise<void> {
-	const pool = getPool();
-	await pool.query(
+	const db = pool.instance;
+	await db.query(
 		`INSERT INTO project_documents (project_id, path, s3_key, content_hash, size_bytes, synced_at)
 		 VALUES ($1, $2, $3, $4, $5, NOW())
 		 ON CONFLICT (project_id, path) DO UPDATE SET
@@ -156,16 +156,16 @@ export async function upsertProjectDocument(
 }
 
 export async function deleteProjectDocument(projectId: string, path: string): Promise<void> {
-	const pool = getPool();
-	await pool.query(
+	const db = pool.instance;
+	await db.query(
 		`DELETE FROM project_documents WHERE project_id = $1 AND path = $2`,
 		[projectId, path]
 	);
 }
 
 export async function deleteAllProjectDocuments(projectId: string): Promise<void> {
-	const pool = getPool();
-	await pool.query(`DELETE FROM project_documents WHERE project_id = $1`, [projectId]);
+	const db = pool.instance;
+	await db.query(`DELETE FROM project_documents WHERE project_id = $1`, [projectId]);
 }
 
 // ============================================================
@@ -177,8 +177,8 @@ export async function getPendingChange(
 	userId: string,
 	path: string
 ): Promise<PendingChange | null> {
-	const pool = getPool();
-	const result = await pool.query<{
+	const db = pool.instance;
+	const result = await db.query<{
 		id: string;
 		project_id: string;
 		user_id: string;
@@ -215,8 +215,8 @@ export async function listPendingChanges(
 	projectId: string,
 	userId: string
 ): Promise<PendingChange[]> {
-	const pool = getPool();
-	const result = await pool.query<{
+	const db = pool.instance;
+	const result = await db.query<{
 		id: string;
 		project_id: string;
 		user_id: string;
@@ -255,8 +255,8 @@ export async function upsertPendingChange(
 	s3Key: string | null,
 	action: 'modified' | 'created' | 'deleted'
 ): Promise<void> {
-	const pool = getPool();
-	await pool.query(
+	const db = pool.instance;
+	await db.query(
 		`INSERT INTO pending_changes (project_id, user_id, path, content, s3_key, action, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 		 ON CONFLICT (project_id, user_id, path) DO UPDATE SET
@@ -273,16 +273,16 @@ export async function deletePendingChange(
 	userId: string,
 	path: string
 ): Promise<void> {
-	const pool = getPool();
-	await pool.query(
+	const db = pool.instance;
+	await db.query(
 		`DELETE FROM pending_changes WHERE project_id = $1 AND user_id = $2 AND path = $3`,
 		[projectId, userId, path]
 	);
 }
 
 export async function deleteAllPendingChanges(projectId: string, userId: string): Promise<void> {
-	const pool = getPool();
-	await pool.query(
+	const db = pool.instance;
+	await db.query(
 		`DELETE FROM pending_changes WHERE project_id = $1 AND user_id = $2`,
 		[projectId, userId]
 	);
