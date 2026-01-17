@@ -44,6 +44,8 @@ export interface ApiProgressNote {
 	createdAt: string;
 }
 
+export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+
 export interface ApiProject {
 	id: string;
 	name: string;
@@ -52,6 +54,8 @@ export interface ApiProject {
 	storageMode: StorageMode;
 	repository: RepositoryConfig | Record<string, never>;
 	rootPaths: string[];
+	syncStatus: SyncStatus | null;
+	syncError: string | null;
 	createdAt: string;
 	updatedAt: string;
 }

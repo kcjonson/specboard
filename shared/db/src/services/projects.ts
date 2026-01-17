@@ -3,7 +3,7 @@
  */
 
 import { query, transaction } from '../index.ts';
-import { type Project, type StorageMode, type RepositoryConfig, isLocalRepository } from '../types.ts';
+import { type Project, type StorageMode, type RepositoryConfig, type SyncStatus, isLocalRepository } from '../types.ts';
 
 // Maximum number of root paths per project to prevent abuse
 const MAX_ROOT_PATHS = 20;
@@ -20,6 +20,8 @@ export interface ProjectResponse {
 	storageMode: StorageMode;
 	repository: RepositoryConfig | Record<string, never>;
 	rootPaths: string[];
+	syncStatus: SyncStatus | null;
+	syncError: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -49,6 +51,8 @@ function transformProject(project: Project): ProjectResponse {
 		storageMode: project.storage_mode,
 		repository: project.repository,
 		rootPaths: project.root_paths,
+		syncStatus: project.sync_status,
+		syncError: project.sync_error,
 		createdAt: project.created_at,
 		updatedAt: project.updated_at,
 	};

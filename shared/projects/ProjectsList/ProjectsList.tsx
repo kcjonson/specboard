@@ -92,6 +92,22 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		}
 	}
 
+	async function handleRetrySync(project: Project): Promise<void> {
+		try {
+			// Update local state to show pending
+			setProjects((prev) =>
+				prev.map((p) => (p.id === project.id ? { ...p, syncStatus: 'pending' as const, syncError: null } : p))
+			);
+			await fetchClient.post(`/api/projects/${project.id}/sync/initial`);
+			// Refetch projects to get updated sync status
+			await fetchProjects();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to retry sync');
+			// Refetch to get accurate state
+			await fetchProjects();
+		}
+	}
+
 	if (loading) {
 		return (
 			<Page title="Projects">
@@ -135,6 +151,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 								project={project}
 								onClick={handleProjectClick}
 								onEdit={handleEditProject}
+								onRetrySync={handleRetrySync}
 							/>
 						))}
 					</div>

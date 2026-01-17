@@ -1,6 +1,9 @@
 import type { JSX } from 'preact';
+import { useState } from 'preact/hooks';
 import { Card, StatusDot, Icon } from '@doc-platform/ui';
 import styles from './ProjectCard.module.css';
+
+export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
 
 export interface EpicCounts {
 	ready: number;
@@ -9,12 +12,26 @@ export interface EpicCounts {
 	done: number;
 }
 
+export interface RepositoryConfigCloud {
+	type: 'cloud';
+	remote: {
+		provider: 'github';
+		owner: string;
+		repo: string;
+		url: string;
+	};
+	branch: string;
+}
+
 export interface Project {
 	id: string;
 	name: string;
 	description?: string;
 	epicCount: number;
 	epicCounts?: EpicCounts;
+	repository?: RepositoryConfigCloud | Record<string, never>;
+	syncStatus?: SyncStatus | null;
+	syncError?: string | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -23,9 +40,12 @@ export interface ProjectCardProps {
 	project: Project;
 	onClick: (project: Project) => void;
 	onEdit?: (project: Project) => void;
+	onRetrySync?: (project: Project) => Promise<void>;
 }
 
-export function ProjectCard({ project, onClick, onEdit }: ProjectCardProps): JSX.Element {
+export function ProjectCard({ project, onClick, onEdit, onRetrySync }: ProjectCardProps): JSX.Element {
+	const [isRetrying, setIsRetrying] = useState(false);
+
 	function handleClick(): void {
 		onClick(project);
 	}
@@ -48,8 +68,21 @@ export function ProjectCard({ project, onClick, onEdit }: ProjectCardProps): JSX
 		}
 	}
 
-	const { epicCounts } = project;
+	async function handleRetryClick(event: MouseEvent): Promise<void> {
+		event.stopPropagation();
+		if (!onRetrySync || isRetrying) return;
+		setIsRetrying(true);
+		try {
+			await onRetrySync(project);
+		} finally {
+			setIsRetrying(false);
+		}
+	}
+
+	const { epicCounts, syncStatus, syncError } = project;
 	const hasEpics = project.epicCount > 0;
+	const isSyncing = syncStatus === 'pending' || syncStatus === 'syncing';
+	const hasSyncError = syncStatus === 'failed';
 
 	return (
 		<Card
@@ -78,38 +111,69 @@ export function ProjectCard({ project, onClick, onEdit }: ProjectCardProps): JSX
 					{project.description}
 				</p>
 			)}
-			<div class={styles.stats}>
-				{hasEpics && epicCounts ? (
-					<div class={styles.epicStats}>
-						{epicCounts.ready > 0 && (
-							<span class={styles.statItem}>
-								<StatusDot status="ready" />
-								<span class={styles.statCount}>{epicCounts.ready}</span>
-							</span>
-						)}
-						{epicCounts.in_progress > 0 && (
-							<span class={styles.statItem}>
-								<StatusDot status="in_progress" />
-								<span class={styles.statCount}>{epicCounts.in_progress}</span>
-							</span>
-						)}
-						{epicCounts.in_review > 0 && (
-							<span class={styles.statItem}>
-								<StatusDot status="in_review" />
-								<span class={styles.statCount}>{epicCounts.in_review}</span>
-							</span>
-						)}
-						{epicCounts.done > 0 && (
-							<span class={styles.statItem}>
-								<StatusDot status="done" />
-								<span class={styles.statCount}>{epicCounts.done}</span>
-							</span>
+			{/* Sync status display */}
+			{isSyncing && (
+				<div class={styles.syncStatus}>
+					<span class={styles.spinner} />
+					<span>Syncing repository...</span>
+				</div>
+			)}
+			{hasSyncError && (
+				<div class={styles.syncError}>
+					<div class={styles.syncErrorHeader}>
+						<span class={styles.errorDot} />
+						<span>Sync failed</span>
+						{onRetrySync && (
+							<button
+								type="button"
+								class={styles.retryButton}
+								onClick={handleRetryClick}
+								disabled={isRetrying}
+							>
+								{isRetrying ? 'Retrying...' : 'Retry'}
+							</button>
 						)}
 					</div>
-				) : (
-					<span class={styles.noEpics}>No epics yet</span>
-				)}
-			</div>
+					{syncError && (
+						<p class={styles.syncErrorMessage}>{syncError}</p>
+					)}
+				</div>
+			)}
+			{/* Only show epic stats when not showing sync error */}
+			{!hasSyncError && (
+				<div class={styles.stats}>
+					{hasEpics && epicCounts ? (
+						<div class={styles.epicStats}>
+							{epicCounts.ready > 0 && (
+								<span class={styles.statItem}>
+									<StatusDot status="ready" />
+									<span class={styles.statCount}>{epicCounts.ready}</span>
+								</span>
+							)}
+							{epicCounts.in_progress > 0 && (
+								<span class={styles.statItem}>
+									<StatusDot status="in_progress" />
+									<span class={styles.statCount}>{epicCounts.in_progress}</span>
+								</span>
+							)}
+							{epicCounts.in_review > 0 && (
+								<span class={styles.statItem}>
+									<StatusDot status="in_review" />
+									<span class={styles.statCount}>{epicCounts.in_review}</span>
+								</span>
+							)}
+							{epicCounts.done > 0 && (
+								<span class={styles.statItem}>
+									<StatusDot status="done" />
+									<span class={styles.statCount}>{epicCounts.done}</span>
+								</span>
+							)}
+						</div>
+					) : (
+						<span class={styles.noEpics}>No epics yet</span>
+					)}
+				</div>
+			)}
 			<div class={styles.footer}>
 				<span class={styles.updatedAt}>
 					Updated {formatRelativeTime(project.updatedAt)}

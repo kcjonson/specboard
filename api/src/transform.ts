@@ -58,6 +58,8 @@ export function projectResponseToApi(project: ProjectResponse): ApiProject {
 		storageMode: project.storageMode,
 		repository: project.repository,
 		rootPaths: project.rootPaths,
+		syncStatus: project.syncStatus,
+		syncError: project.syncError,
 		createdAt: project.createdAt.toISOString(),
 		updatedAt: project.updatedAt.toISOString(),
 	};

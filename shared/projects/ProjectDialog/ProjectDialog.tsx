@@ -1,14 +1,18 @@
 import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Dialog, Button } from '@doc-platform/ui';
+import { Dialog, Button, Icon } from '@doc-platform/ui';
 import {
 	GitHubConnectionModel,
 	GitHubReposCollection,
 	GitHubBranchesCollection,
 	useModel,
 } from '@doc-platform/models';
-import type { Project } from '../ProjectCard/ProjectCard';
+import type { Project, RepositoryConfigCloud } from '../ProjectCard/ProjectCard';
 import styles from './ProjectDialog.module.css';
+
+function isCloudRepository(repo: unknown): repo is RepositoryConfigCloud {
+	return typeof repo === 'object' && repo !== null && 'type' in repo && (repo as RepositoryConfigCloud).type === 'cloud';
+}
 
 interface RepositoryConfig {
 	provider: 'github';
@@ -243,6 +247,52 @@ export function ProjectDialog({
 						/>
 					</label>
 				</div>
+
+				{/* Repository info - read-only display for edit mode with existing repo */}
+				{isEditMode && project?.repository && isCloudRepository(project.repository) && (
+					<div class={styles.repositoryInfo}>
+						<div class={styles.sectionHeader}>
+							<span class={styles.labelText}>Repository</span>
+						</div>
+						<div class={styles.repoDisplay}>
+							<Icon name="github" class="size-sm" />
+							<a
+								href={project.repository.remote.url}
+								target="_blank"
+								rel="noopener noreferrer"
+								class={styles.repoLink}
+							>
+								{project.repository.remote.owner}/{project.repository.remote.repo}
+							</a>
+							<span class={styles.branchBadge}>
+								<Icon name="git-branch" class="size-xs" />
+								{project.repository.branch}
+							</span>
+						</div>
+						{/* Sync status */}
+						<div class={styles.syncStatusDisplay}>
+							{project.syncStatus === 'pending' || project.syncStatus === 'syncing' ? (
+								<>
+									<span class={styles.spinner} />
+									<span>Syncing...</span>
+								</>
+							) : project.syncStatus === 'completed' ? (
+								<>
+									<span class={styles.successDot} />
+									<span>Synced</span>
+								</>
+							) : project.syncStatus === 'failed' ? (
+								<>
+									<span class={styles.errorDot} />
+									<span class={styles.errorText}>Sync failed</span>
+									{project.syncError && (
+										<span class={styles.errorDetail}>{project.syncError}</span>
+									)}
+								</>
+							) : null}
+						</div>
+					</div>
+				)}
 
 				{/* Repository section - only for new projects or projects without repo */}
 				{!isEditMode && (

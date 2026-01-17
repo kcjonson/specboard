@@ -124,6 +124,8 @@ export function isCloudRepository(repo: RepositoryConfig | Record<string, never>
 	return 'type' in repo && repo.type === 'cloud';
 }
 
+export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+
 export interface Project {
 	id: string;
 	name: string;
@@ -132,6 +134,11 @@ export interface Project {
 	storage_mode: StorageMode;
 	repository: RepositoryConfig | Record<string, never>;
 	root_paths: string[];
+	last_synced_commit_sha: string | null;
+	sync_status: SyncStatus | null;
+	sync_started_at: Date | null;
+	sync_completed_at: Date | null;
+	sync_error: string | null;
 	created_at: Date;
 	updated_at: Date;
 }
