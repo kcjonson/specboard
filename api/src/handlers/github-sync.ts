@@ -1,6 +1,9 @@
 /**
  * GitHub sync handlers for cloud storage mode.
  * Invokes Lambda for initial/incremental sync operations.
+ *
+ * In local development, calls the Lambda handler directly.
+ * In production, invokes AWS Lambda asynchronously.
  */
 
 import type { Context } from 'hono';
@@ -13,14 +16,69 @@ import {
 } from '@doc-platform/auth';
 import { query } from '@doc-platform/db';
 import { log } from '@doc-platform/core';
+import type { SyncEvent } from '@doc-platform/sync-lambda';
 
-// Lambda client for invoking sync function
+// Lambda client for invoking sync function (production only)
 const lambdaClient = new LambdaClient({
 	region: process.env.AWS_REGION || 'us-west-2',
 });
 
 const GITHUB_SYNC_LAMBDA_NAME =
 	process.env.GITHUB_SYNC_LAMBDA_NAME || 'doc-platform-github-sync';
+
+/**
+ * Invoke the sync Lambda function.
+ * In development, calls the handler directly (in-process).
+ * In production, invokes AWS Lambda asynchronously.
+ */
+async function invokeSyncLambda(payload: SyncEvent): Promise<void> {
+	if (process.env.NODE_ENV === 'development') {
+		// Local dev: import and call handler directly
+		// Dynamic import to avoid loading Lambda deps in production
+		const { handler } = await import('@doc-platform/sync-lambda');
+
+		// Run async (don't await) to mimic Lambda async invocation
+		handler(payload)
+			.then((result) => {
+				log({
+					type: 'github',
+					level: result.success ? 'info' : 'warn',
+					event: 'local_sync_completed',
+					projectId: payload.projectId,
+					success: result.success,
+					synced: result.synced,
+					error: result.error,
+				});
+			})
+			.catch((err) => {
+				log({
+					type: 'github',
+					level: 'error',
+					event: 'local_sync_error',
+					projectId: payload.projectId,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
+
+		log({
+			type: 'github',
+			level: 'info',
+			event: 'local_sync_started',
+			projectId: payload.projectId,
+			mode: payload.mode,
+		});
+		return;
+	}
+
+	// Production: invoke AWS Lambda
+	await lambdaClient.send(
+		new InvokeCommand({
+			FunctionName: GITHUB_SYNC_LAMBDA_NAME,
+			InvocationType: 'Event', // Async invocation
+			Payload: Buffer.from(JSON.stringify(payload)),
+		})
+	);
+}
 
 /**
  * Repository config from JSONB column.
@@ -155,23 +213,17 @@ export async function startGitHubInitialSync(
 	}
 
 	try {
-		const payload = {
+		const payload: SyncEvent = {
 			projectId,
 			userId,
 			owner: project.owner,
 			repo: project.repo,
 			branch: project.branch,
 			encryptedToken,
-			mode: 'initial' as const,
+			mode: 'initial',
 		};
 
-		await lambdaClient.send(
-			new InvokeCommand({
-				FunctionName: GITHUB_SYNC_LAMBDA_NAME,
-				InvocationType: 'Event',
-				Payload: Buffer.from(JSON.stringify(payload)),
-			})
-		);
+		await invokeSyncLambda(payload);
 
 		log({
 			type: 'github',
@@ -231,23 +283,17 @@ export async function handleGitHubInitialSync(
 
 	// Invoke Lambda asynchronously
 	try {
-		const payload = {
+		const payload: SyncEvent = {
 			projectId,
 			userId: session.userId,
 			owner: project.owner,
 			repo: project.repo,
 			branch: project.branch,
 			encryptedToken,
-			mode: 'initial' as const,
+			mode: 'initial',
 		};
 
-		await lambdaClient.send(
-			new InvokeCommand({
-				FunctionName: GITHUB_SYNC_LAMBDA_NAME,
-				InvocationType: 'Event', // Async invocation
-				Payload: Buffer.from(JSON.stringify(payload)),
-			})
-		);
+		await invokeSyncLambda(payload);
 
 		log({
 			type: 'github',
@@ -329,24 +375,18 @@ export async function handleGitHubSync(
 
 	// Invoke Lambda asynchronously
 	try {
-		const payload = {
+		const payload: SyncEvent = {
 			projectId,
 			userId: session.userId,
 			owner: project.owner,
 			repo: project.repo,
 			branch: project.branch,
 			encryptedToken,
-			mode: 'incremental' as const,
+			mode: 'incremental',
 			lastCommitSha: project.lastSyncedCommitSha,
 		};
 
-		await lambdaClient.send(
-			new InvokeCommand({
-				FunctionName: GITHUB_SYNC_LAMBDA_NAME,
-				InvocationType: 'Event', // Async invocation
-				Payload: Buffer.from(JSON.stringify(payload)),
-			})
-		);
+		await invokeSyncLambda(payload);
 
 		log({
 			type: 'github',

@@ -15,6 +15,7 @@
 		"@doc-platform/core": "*",
 		"@doc-platform/db": "*",
 		"@doc-platform/email": "*",
+		"@doc-platform/sync-lambda": "*",
 		"@hono/node-server": "^1.19.7",
 		"hono": "^4.11.1",
 		"ioredis": "^5.4.2"

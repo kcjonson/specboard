@@ -91,11 +91,24 @@ async function getSecretValue(secretArn: string): Promise<string> {
 }
 
 /**
- * Initialize secrets from AWS Secrets Manager.
- * Sets environment variables needed by @doc-platform/auth and @doc-platform/db.
+ * Initialize secrets for sync operations.
+ *
+ * In local development (when env vars are directly set), skips AWS Secrets Manager.
+ * In production (when *_SECRET_ARN env vars are set), fetches from Secrets Manager.
  */
 async function initializeSecrets(): Promise<{ storageApiKey: string }> {
-	// Fetch secrets from Secrets Manager using ARN env vars
+	// Local dev mode: env vars are directly set (no Secrets Manager)
+	if (process.env.API_KEY_ENCRYPTION_KEY && process.env.DB_PASSWORD) {
+		// STORAGE_SERVICE_API_KEY is the env var name used in docker-compose
+		const storageApiKey = process.env.STORAGE_SERVICE_API_KEY;
+		if (!storageApiKey) {
+			throw new Error('Missing STORAGE_SERVICE_API_KEY for local dev');
+		}
+		console.log('Using local dev secrets (Secrets Manager skipped)');
+		return { storageApiKey };
+	}
+
+	// Production mode: fetch secrets from AWS Secrets Manager
 	const [storageApiKey, encryptionKey, dbCredentialsJson] = await Promise.all([
 		getSecretValue(getEnvVar('STORAGE_API_KEY_SECRET_ARN')),
 		getSecretValue(getEnvVar('API_KEY_ENCRYPTION_KEY_SECRET_ARN')),
