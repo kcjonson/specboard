@@ -844,6 +844,7 @@ export class DocPlatformStack extends cdk.Stack {
 			securityGroups: [syncLambdaSecurityGroup],
 			logGroup: syncLambdaLogGroup,
 			environment: {
+				NODE_ENV: 'production',
 				NODE_OPTIONS: '--enable-source-maps',
 				// Storage service internal URL (via CloudMap)
 				STORAGE_SERVICE_URL: 'http://storage.internal:3003',
