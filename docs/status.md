@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-14 (GitHub sync Lambda implementation)
+Last Updated: 2026-01-18 (Documentation cleanup)
 
 ## Epic/Story/Task Template
 
@@ -114,14 +114,21 @@ Use this template for all work items:
 
 ---
 
-### ✅ Logging & Monitoring
-**Spec/Documentation:** `/docs/specs/logging-monitoring.md`
+### ✅ Project Storage & Git Integration
+**Spec/Documentation:** `/docs/specs/project-storage.md`
+**Dependencies:** Projects Page
 **Status:** complete
 
 **Tasks:**
-- [x] Error tracking integration (Sentry-compatible, tunneled through our API)
-- [x] CloudWatch alarms (CPU, memory, 5xx errors)
-- [x] Audit logging (login, logout, signup events)
+- [x] Database migration (storage_mode, repository, root_paths columns)
+- [x] Storage provider interface (Local + Cloud providers)
+- [x] API endpoints (folders, tree, files CRUD)
+- [x] FileBrowser UI (tree display, expand/collapse, add/remove folders)
+- [x] Cloud mode support
+  - [x] Repository selection in ProjectDialog
+  - [x] Storage service backend (S3 + Postgres)
+  - [x] GitHub sync Lambda
+  - [x] Sync status UI
 
 ---
 
@@ -207,43 +214,6 @@ Use this template for all work items:
   - [x] Inline comments UI (Google Docs-style margin comments)
   - [x] Comment storage in markdown (hidden appendix format)
   - [x] Add/reply/resolve comments UI
-
----
-
-### Project Storage & Git Integration
-**Spec/Documentation:** `/docs/specs/project-storage.md`
-**Dependencies:** Projects Page
-**Status:** in progress
-
-**Goal:** Connect projects to git repositories with local and cloud storage modes.
-
-**Tasks:**
-- [x] Database migration
-  - [x] Add storage_mode, repository, root_paths columns to projects
-- [x] Storage provider interface
-  - [x] Define StorageProvider interface
-  - [x] LocalStorageProvider implementation
-  - [ ] GitStorageProvider implementation (cloud mode)
-- [x] API endpoints (local mode first)
-  - [x] POST /api/projects/:id/folders (add folder with git validation)
-  - [x] DELETE /api/projects/:id/folders (remove from view)
-  - [x] GET/POST /api/projects/:id/tree (file listing with expanded state)
-  - [x] GET /api/projects/:id/files?path=... (read file)
-  - [x] PUT /api/projects/:id/files?path=... (write file)
-- [x] FileBrowser UI
-  - [x] Empty state with "Add Folder" button
-  - [x] Folder picker dialog (local mode - window.prompt for now)
-  - [x] Display validation errors (not git repo, different repo)
-  - [x] File tree display with expand/collapse
-  - [x] Remove folder button on root items
-- [ ] Cloud mode support
-  - [ ] Platform detection (isCloud vs isElectron)
-  - [ ] FileBrowser shows "Connect Repository" for cloud mode
-  - [ ] ConnectRepository dialog component (repo/branch picker)
-  - [ ] POST /api/projects/:id/repository endpoint
-  - [x] Storage service backend (S3 + Postgres metadata)
-  - [x] GitHub sync Lambda (initial + incremental sync)
-  - [x] GitHub OAuth for repo access
 
 ---
 
