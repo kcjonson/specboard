@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-18 (Documentation cleanup)
+Last Updated: 2026-01-18 (Added GitHub Commit for Cloud Projects epic)
 
 ## Epic/Story/Task Template
 
@@ -214,6 +214,30 @@ Use this template for all work items:
   - [x] Inline comments UI (Google Docs-style margin comments)
   - [x] Comment storage in markdown (hidden appendix format)
   - [x] Add/reply/resolve comments UI
+
+---
+
+### GitHub Commit for Cloud Projects
+**Spec/Documentation:** `.claude/plans/github-commit-cloud.md`
+**Dependencies:** Project Storage & Git Integration, GitHub OAuth
+**Status:** in progress
+
+**Goal:** Allow users to commit pending changes from cloud-mode projects back to GitHub.
+
+**Tasks:**
+- [ ] GitHub commit service
+  - [ ] Create `api/src/services/github-commit.ts`
+  - [ ] GraphQL `createCommitOnBranch` mutation (atomic, single API call)
+  - [ ] Conflict detection via `expectedHeadOid`
+  - [ ] Auto-generate commit message from changes
+- [ ] API handler implementation
+  - [ ] Implement `handleGitHubCommit()` in `github-sync.ts`
+  - [ ] Get & decrypt GitHub token
+  - [ ] Fetch pending changes with content from storage service
+  - [ ] Clear pending changes on success
+  - [ ] Update `last_synced_commit_sha` after commit
+- [ ] Integration
+  - [ ] Update `CloudStorageProvider.commit()` stub
 
 ---
 
