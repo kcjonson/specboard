@@ -64,10 +64,10 @@ pendingRoutes.get('/:projectId/:userId', async (c) => {
  * Get pending change content.
  * GET /pending/:projectId/:userId/*path
  */
-pendingRoutes.get('/:projectId/:userId/*', async (c) => {
+pendingRoutes.get('/:projectId/:userId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');
 	const userId = c.req.param('userId');
-	const path = c.req.param('*');
+	const path = c.req.param('path');
 
 	if (!path) {
 		return c.json({ error: 'Path required' }, 400);
@@ -103,10 +103,10 @@ pendingRoutes.get('/:projectId/:userId/*', async (c) => {
  * Store pending change.
  * PUT /pending/:projectId/:userId/*path
  */
-pendingRoutes.put('/:projectId/:userId/*', async (c) => {
+pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');
 	const userId = c.req.param('userId');
-	const path = c.req.param('*');
+	const path = c.req.param('path');
 
 	if (!path || path.length === 0) {
 		return c.json({ error: 'Path required' }, 400);
@@ -173,10 +173,10 @@ pendingRoutes.put('/:projectId/:userId/*', async (c) => {
  * Delete pending change.
  * DELETE /pending/:projectId/:userId/*path
  */
-pendingRoutes.delete('/:projectId/:userId/*', async (c) => {
+pendingRoutes.delete('/:projectId/:userId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');
 	const userId = c.req.param('userId');
-	const path = c.req.param('*');
+	const path = c.req.param('path');
 
 	if (!path || path.length === 0) {
 		// Delete all pending changes for this user in this project
