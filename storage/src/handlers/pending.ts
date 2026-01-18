@@ -1,6 +1,6 @@
 /**
  * Pending changes handlers.
- * GET/PUT/DELETE /pending/:projectId/:userId/*path
+ * GET/PUT/DELETE /pending/:projectId/:userId/:path
  */
 
 import { Hono } from 'hono';
@@ -62,7 +62,7 @@ pendingRoutes.get('/:projectId/:userId', async (c) => {
 
 /**
  * Get pending change content.
- * GET /pending/:projectId/:userId/*path
+ * GET /pending/:projectId/:userId/:path
  */
 pendingRoutes.get('/:projectId/:userId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');
@@ -101,7 +101,7 @@ pendingRoutes.get('/:projectId/:userId/:path{.+}', async (c) => {
 
 /**
  * Store pending change.
- * PUT /pending/:projectId/:userId/*path
+ * PUT /pending/:projectId/:userId/:path
  */
 pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');
@@ -171,7 +171,7 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 
 /**
  * Delete pending change.
- * DELETE /pending/:projectId/:userId/*path
+ * DELETE /pending/:projectId/:userId/:path
  */
 pendingRoutes.delete('/:projectId/:userId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');

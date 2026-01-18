@@ -1,6 +1,6 @@
 /**
  * File storage handlers.
- * GET/PUT/DELETE /files/:projectId/*path
+ * GET/PUT/DELETE /files/:projectId/:path
  */
 
 import { Hono } from 'hono';
@@ -64,7 +64,7 @@ filesRoutes.get('/:projectId', async (c) => {
 
 /**
  * Get file content.
- * GET /files/:projectId/*path
+ * GET /files/:projectId/:path
  */
 filesRoutes.get('/:projectId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');
@@ -104,7 +104,7 @@ filesRoutes.get('/:projectId/:path{.+}', async (c) => {
 
 /**
  * Store file content.
- * PUT /files/:projectId/*path
+ * PUT /files/:projectId/:path
  */
 filesRoutes.put('/:projectId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');
@@ -157,7 +157,7 @@ filesRoutes.put('/:projectId/:path{.+}', async (c) => {
 
 /**
  * Delete file.
- * DELETE /files/:projectId/*path
+ * DELETE /files/:projectId/:path
  */
 filesRoutes.delete('/:projectId/:path{.+}', async (c) => {
 	const projectId = c.req.param('projectId');
