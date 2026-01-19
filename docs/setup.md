@@ -22,7 +22,7 @@ docker compose up
 open http://localhost
 ```
 
-### After Code Changes
+### After Code Changes (when not in watch mode)
 
 ```bash
 # Rebuild and restart
@@ -37,14 +37,14 @@ docker compose build && docker compose up
 
 The base configuration includes:
 
-| Service | Port | Description |
-|---------|------|-------------|
-| nginx | 80 | Reverse proxy, routes to frontend/api |
-| db | 5432 | PostgreSQL 16 |
-| redis | 6379 | Session storage |
-| api | 3001 | Backend API (Hono) |
-| frontend | 3000 | Frontend server (Hono, serves SPA) |
-| mcp | 3002 | MCP server |
+| Service  | Port | Description                           |
+| -------- | ---- | ------------------------------------- |
+| nginx    | 80   | Reverse proxy, routes to frontend/api |
+| db       | 5432 | PostgreSQL 16                         |
+| redis    | 6379 | Session storage                       |
+| api      | 3001 | Backend API (Hono)                    |
+| frontend | 3000 | Frontend server (Hono, serves SPA)    |
+| mcp      | 3002 | MCP server                            |
 
 ### Local Overrides (`docker-compose.override.yml`)
 
@@ -74,6 +74,7 @@ The host volume mount (`- .:/host/doc-platform`) enables local file operations f
 The `API_KEY_ENCRYPTION_KEY` is required for the AI chat feature, which stores user Anthropic API keys encrypted in the database.
 
 **To generate a secure key:**
+
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
