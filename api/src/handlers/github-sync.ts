@@ -352,31 +352,32 @@ export async function handleGitHubSync(
 	context: Context,
 	redis: Redis
 ): Promise<Response> {
+	// All error responses include `success: false` for PullResponse compatibility
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 	if (!sessionId) {
-		return context.json({ error: 'Unauthorized' }, 401);
+		return context.json({ success: false, error: 'Unauthorized' }, 401);
 	}
 
 	const session = await getSession(redis, sessionId);
 	if (!session) {
-		return context.json({ error: 'Unauthorized' }, 401);
+		return context.json({ success: false, error: 'Unauthorized' }, 401);
 	}
 
 	const projectId = context.req.param('id');
 	if (!projectId) {
-		return context.json({ error: 'Project ID required' }, 400);
+		return context.json({ success: false, error: 'Project ID required' }, 400);
 	}
 
 	// Get project with repository info
 	const project = await getProjectWithRepo(projectId, session.userId);
 	if (!project) {
-		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
+		return context.json({ success: false, error: 'Project not found or not in cloud mode' }, 404);
 	}
 
 	// Check if initial sync has been done
 	if (!project.lastSyncedCommitSha) {
 		return context.json(
-			{ error: 'Initial sync required. Use POST /sync/initial first.' },
+			{ success: false, error: 'Initial sync required. Use POST /sync/initial first.' },
 			400
 		);
 	}
@@ -384,13 +385,13 @@ export async function handleGitHubSync(
 	// Get encrypted GitHub token
 	const encryptedToken = await getEncryptedGitHubToken(session.userId);
 	if (!encryptedToken) {
-		return context.json({ error: 'GitHub not connected' }, 400);
+		return context.json({ success: false, error: 'GitHub not connected' }, 400);
 	}
 
 	// Atomically mark sync as pending (prevents race condition)
 	const acquired = await trySetSyncPending(projectId);
 	if (!acquired) {
-		return context.json({ error: 'Sync already in progress' }, 409);
+		return context.json({ success: false, error: 'Sync already in progress' }, 409);
 	}
 
 	// Invoke Lambda asynchronously
@@ -418,7 +419,12 @@ export async function handleGitHubSync(
 			lastCommitSha: project.lastSyncedCommitSha,
 		});
 
+		// Return response compatible with PullResponse interface expected by frontend.
+		// The sync runs asynchronously via Lambda, so we indicate success that it started.
+		// commits: 0 indicates the sync is pending - frontend should poll sync status.
 		return context.json({
+			success: true,
+			commits: 0,
 			status: 'pending',
 			message: 'Incremental sync started',
 		});
@@ -434,7 +440,8 @@ export async function handleGitHubSync(
 		// Reset sync status on failure to invoke
 		await query(`UPDATE projects SET sync_status = NULL WHERE id = $1`, [projectId]);
 
-		return context.json({ error: 'Failed to start sync' }, 500);
+		// Return response compatible with PullResponse interface expected by frontend
+		return context.json({ success: false, error: 'Failed to start sync' }, 500);
 	}
 }
 
