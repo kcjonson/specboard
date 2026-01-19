@@ -224,14 +224,16 @@ export async function createGitHubCommit(params: {
 		};
 	}
 
-	const commit = result.data?.createCommitOnBranch?.commit;
-	if (!commit) {
+	// Validate response structure explicitly
+	const data = result.data;
+	if (!data || !data.createCommitOnBranch || !data.createCommitOnBranch.commit) {
 		return {
 			success: false,
 			error: 'Unexpected response from GitHub API',
 		};
 	}
 
+	const commit = data.createCommitOnBranch.commit;
 	return {
 		success: true,
 		sha: commit.oid,
