@@ -1,8 +1,9 @@
-import { useState } from 'preact/hooks';
+import { useState, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Badge, Button, Icon, Notice } from '@doc-platform/ui';
 import type { GitStatusModel } from '@doc-platform/models';
 import { CommitErrorBanner } from './CommitErrorBanner';
+import { CommitDialog } from './CommitDialog';
 import styles from './GitStatusBar.module.css';
 
 export interface GitStatusBarProps {
@@ -10,46 +11,33 @@ export interface GitStatusBarProps {
 }
 
 export function GitStatusBar({ gitStatus }: GitStatusBarProps): JSX.Element {
-	const [showCommitInput, setShowCommitInput] = useState(false);
-	const [commitMessage, setCommitMessage] = useState('');
+	const [showCommitDialog, setShowCommitDialog] = useState(false);
+	// Track last commit message for retry scenarios
+	const lastCommitMessageRef = useRef<string>('');
 
 	const handlePull = async (): Promise<void> => {
 		await gitStatus.pull();
 	};
 
-	const handleCommit = async (): Promise<void> => {
-		// Use custom message if provided, otherwise let server auto-generate
-		const message = commitMessage.trim() || undefined;
+	const handleCommit = async (message?: string): Promise<void> => {
+		// Store the message for potential retry
+		lastCommitMessageRef.current = message || '';
 		await gitStatus.commit(message);
 
-		// Reset state on success
+		// Close dialog and clear stored message on success
 		if (!gitStatus.commitError) {
-			setShowCommitInput(false);
-			setCommitMessage('');
-		}
-	};
-
-	const handleCommitKeyDown = (e: KeyboardEvent): void => {
-		if (e.key === 'Enter' && !e.shiftKey) {
-			e.preventDefault();
-			handleCommit();
-		} else if (e.key === 'Escape') {
-			setShowCommitInput(false);
-			setCommitMessage('');
+			setShowCommitDialog(false);
+			lastCommitMessageRef.current = '';
 		}
 	};
 
 	const handleRetry = (): void => {
-		handleCommit();
+		// Open dialog - it will use initialMessage prop to restore previous message
+		setShowCommitDialog(true);
 	};
 
 	const handleDismiss = (): void => {
 		gitStatus.clearErrors();
-	};
-
-	const handleCancelCommit = (): void => {
-		setShowCommitInput(false);
-		setCommitMessage('');
 	};
 
 	return (
@@ -97,54 +85,27 @@ export function GitStatusBar({ gitStatus }: GitStatusBarProps): JSX.Element {
 						<Icon name="download" />
 					</Button>
 
-					{/* Commit button */}
-					{gitStatus.hasAnyChanges && (
-						<>
-							{showCommitInput ? (
-								<div class={styles.commitInputContainer}>
-									<input
-										type="text"
-										class={styles.commitInput}
-										value={commitMessage}
-										onInput={(e) => setCommitMessage((e.target as HTMLInputElement).value)}
-										onKeyDown={handleCommitKeyDown}
-										placeholder="Message (optional)"
-										aria-label="Commit message"
-										autoFocus
-									/>
-									<Button
-										onClick={handleCommit}
-										class="icon"
-										disabled={gitStatus.committing}
-										aria-label="Commit changes"
-										title="Commit changes"
-									>
-										<Icon name="check" />
-									</Button>
-									<Button
-										onClick={handleCancelCommit}
-										class="icon"
-										aria-label="Cancel commit"
-										title="Cancel"
-									>
-										<Icon name="x" />
-									</Button>
-								</div>
-							) : (
-								<Button
-									onClick={() => setShowCommitInput(true)}
-									class="icon"
-									disabled={gitStatus.committing}
-									aria-label="Commit changes"
-									title="Commit changes"
-								>
-									<Icon name="git-commit" />
-								</Button>
-							)}
-						</>
-					)}
+					{/* Commit button - always visible, disabled when no changes */}
+					<Button
+						onClick={() => setShowCommitDialog(true)}
+						class="icon"
+						disabled={gitStatus.committing || !gitStatus.hasAnyChanges}
+						aria-label="Commit changes"
+						title={gitStatus.hasAnyChanges ? 'Commit changes' : 'No changes to commit'}
+					>
+						<Icon name="git-commit" />
+					</Button>
 				</div>
 			</div>
+
+			{/* Commit dialog */}
+			<CommitDialog
+				open={showCommitDialog}
+				gitStatus={gitStatus}
+				onClose={() => setShowCommitDialog(false)}
+				onCommit={handleCommit}
+				initialMessage={lastCommitMessageRef.current}
+			/>
 		</div>
 	);
 }

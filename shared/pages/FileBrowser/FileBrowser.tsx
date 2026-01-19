@@ -94,10 +94,22 @@ export function FileBrowser({
 	// Local state for delete confirmation dialog
 	const [deleteTarget, setDeleteTarget] = useState<{ path: string; type: 'file' | 'directory'; isUntracked: boolean } | null>(null);
 
+	// Track previous selectedPath to avoid unnecessary expandToFile calls
+	const prevSelectedPathRef = useRef<string | undefined>(undefined);
+
 	// Initialize model when projectId changes
 	useEffect(() => {
 		model.initialize(projectId);
 	}, [model, projectId]);
+
+	// Expand to selected file only when it changes and needs expanding
+	useEffect(() => {
+		if (selectedPath && selectedPath !== prevSelectedPathRef.current) {
+			prevSelectedPathRef.current = selectedPath;
+			// expandToFile already has early-return if path is visible
+			model.expandToFile(selectedPath);
+		}
+	}, [model, selectedPath]);
 
 	// Expose startNewFile function to parent
 	// If no parentPath provided, uses first rootPath

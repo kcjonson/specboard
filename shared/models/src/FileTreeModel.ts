@@ -210,9 +210,17 @@ export class FileTreeModel extends Model {
 
 	/**
 	 * Initialize the model with a project ID and load data
+	 * @param projectId - The project to load
+	 * @param currentFilePath - Optional path to currently open file (will expand to show it)
 	 */
-	async initialize(projectId: string): Promise<void> {
-		if (this.projectId === projectId) return;
+	async initialize(projectId: string, currentFilePath?: string): Promise<void> {
+		if (this.projectId === projectId && !currentFilePath) return;
+
+		// If same project but new file path, just expand to it
+		if (this.projectId === projectId && currentFilePath) {
+			await this.expandToFile(currentFilePath);
+			return;
+		}
 
 		this.projectId = projectId;
 		this.files = [];
@@ -220,7 +228,7 @@ export class FileTreeModel extends Model {
 		this.rootPaths = [];
 		this.error = null;
 
-		await this.loadTree();
+		await this.loadTree(currentFilePath);
 	}
 
 	/**
@@ -271,6 +279,51 @@ export class FileTreeModel extends Model {
 		const newExpanded = addPathToTree(this.expanded, path);
 		saveExpandedTreeToStorage(this.projectId, newExpanded);
 		await this.loadTree();
+	}
+
+	/**
+	 * Expand all parent folders to reveal a file path.
+	 * Adds the parent folders to the expanded state and reloads.
+	 */
+	async expandToFile(filePath: string): Promise<void> {
+		// Get parent folder path
+		const lastSlash = filePath.lastIndexOf('/');
+		if (lastSlash <= 0) return; // File is at root, no folders to expand
+
+		const parentPath = filePath.slice(0, lastSlash);
+
+		// Check if already expanded to this path
+		if (this.isExpanded(parentPath)) return;
+
+		// Add all parent folders to expanded tree
+		let newExpanded = this.expanded;
+		const parts = parentPath.split('/').filter(Boolean);
+		let currentPath = '';
+
+		for (const part of parts) {
+			currentPath = currentPath ? `${currentPath}/${part}` : `/${part}`;
+			if (!this.isExpandedInTree(newExpanded, currentPath)) {
+				newExpanded = addPathToTree(newExpanded, currentPath);
+			}
+		}
+
+		// Update local state and reload with the new expanded tree
+		// Pass directly to loadTree to avoid storage round-trip race condition
+		this.expanded = newExpanded;
+		await this.loadTree(undefined, newExpanded);
+	}
+
+	/**
+	 * Check if a path is expanded in a given tree (helper for expandToFile)
+	 */
+	private isExpandedInTree(tree: ExpandedTree, path: string): boolean {
+		const parts = path.split('/').filter(Boolean);
+		let current = tree;
+		for (const part of parts) {
+			if (!current[part]) return false;
+			current = current[part];
+		}
+		return true;
 	}
 
 	/**
@@ -449,18 +502,33 @@ export class FileTreeModel extends Model {
 	// Private methods
 	// ─────────────────────────────────────────────────────────────────────────
 
-	private async loadTree(): Promise<void> {
+	private async loadTree(currentFilePath?: string, providedExpandedTree?: ExpandedTree): Promise<void> {
 		this.loading = true;
 		this.error = null;
 
 		try {
-			// Get saved expanded tree from localStorage
-			const savedExpanded = loadExpandedTreeFromStorage(this.projectId);
+			// Use provided expanded tree, or load from localStorage
+			let expandedTree = providedExpandedTree ?? loadExpandedTreeFromStorage(this.projectId);
+
+			// If there's a current file, expand to show it
+			if (currentFilePath) {
+				const lastSlash = currentFilePath.lastIndexOf('/');
+				if (lastSlash > 0) {
+					const parentPath = currentFilePath.slice(0, lastSlash);
+					const parts = parentPath.split('/').filter(Boolean);
+					let currentPath = '';
+
+					for (const part of parts) {
+						currentPath = currentPath ? `${currentPath}/${part}` : `/${part}`;
+						expandedTree = addPathToTree(expandedTree, currentPath);
+					}
+				}
+			}
 
 			// Single request to server - returns ready-to-render data
 			const data = await fetchClient.post<FileTreeResponse>(
 				`/api/projects/${this.projectId}/tree`,
-				{ expanded: savedExpanded }
+				{ expanded: expandedTree }
 			);
 
 			this.files = data.files;
