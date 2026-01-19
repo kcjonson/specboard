@@ -6,10 +6,16 @@ import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { isValidUUID } from '../../validation.ts';
 import { getUserId, getStorageProvider } from './utils.ts';
+import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
+import { getProject, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@doc-platform/db';
 
 /**
  * GET /api/projects/:id/git/status
  * Get git status including branch, ahead/behind, and changed files
+ *
+ * Works for both local and cloud mode projects:
+ * - Local: Returns actual git status (branch, staged/unstaged files)
+ * - Cloud: Returns pending changes tracked in storage service
  */
 export async function handleGetGitStatus(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
@@ -22,9 +28,24 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
 		return context.json({ error: 'Invalid project ID format' }, 400);
 	}
 
+	// Get project first to verify it exists and check mode
+	let project;
+	try {
+		project = await getProject(projectId, userId);
+	} catch (error) {
+		console.error('Failed to get project:', error);
+		return context.json({ error: 'Failed to load project' }, 500);
+	}
+
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+
+	// Get storage provider based on project mode
 	const provider = await getStorageProvider(projectId, userId);
 	if (!provider) {
-		return context.json({ error: 'No repository configured' }, 404);
+		// Project exists but has no storage configured (storage_mode: 'none')
+		return context.json({ error: 'Project has no storage configured' }, 400);
 	}
 
 	try {
@@ -69,6 +90,8 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
  * POST /api/projects/:id/git/commit
  * Commit all changes with optional message
  * Auto-generates message if not provided
+ *
+ * For cloud-mode projects, this delegates to the GitHub commit handler.
  */
 export async function handleCommit(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
@@ -81,6 +104,26 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 		return context.json({ error: 'Invalid project ID format' }, 400);
 	}
 
+	// Check project mode - must be either cloud or local, never ambiguous
+	let project;
+	try {
+		project = await getProject(projectId, userId);
+	} catch (error) {
+		console.error('Failed to get project:', error);
+		return context.json({ error: 'Failed to load project' }, 500);
+	}
+
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+
+	// Route based on project storage mode
+	const repo = project.repository as RepositoryConfig | Record<string, never>;
+	if (isCloudRepository(repo)) {
+		return handleGitHubCommit(context, redis);
+	}
+
+	// Local storage mode - get storage provider
 	const provider = await getStorageProvider(projectId, userId);
 	if (!provider) {
 		return context.json({ error: 'No repository configured' }, 404);
@@ -172,6 +215,9 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 /**
  * POST /api/projects/:id/git/restore
  * Restore a deleted file from git
+ *
+ * Only available for local mode projects. Cloud mode projects should
+ * use sync to get files back from GitHub.
  */
 export async function handleRestore(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
@@ -184,9 +230,36 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 		return context.json({ error: 'Invalid project ID format' }, 400);
 	}
 
+	// Get project and check mode - restore only works for local mode
+	let project;
+	try {
+		project = await getProject(projectId, userId);
+	} catch (error) {
+		console.error('Failed to get project:', error);
+		return context.json({ error: 'Failed to load project' }, 500);
+	}
+
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+
+	const repo = project.repository as RepositoryConfig | Record<string, never>;
+
+	// Cloud mode: restore from git doesn't apply - use sync instead
+	if (isCloudRepository(repo)) {
+		return context.json({
+			error: 'Restore is not available for cloud projects. Use sync to get the latest files from GitHub.',
+		}, 400);
+	}
+
+	// Must be local mode
+	if (!isLocalRepository(repo)) {
+		return context.json({ error: 'Project has no storage configured' }, 400);
+	}
+
 	const provider = await getStorageProvider(projectId, userId);
 	if (!provider) {
-		return context.json({ error: 'No repository configured' }, 404);
+		return context.json({ error: 'Failed to initialize storage provider' }, 500);
 	}
 
 	try {
@@ -213,6 +286,9 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 /**
  * POST /api/projects/:id/git/pull
  * Pull latest changes from remote
+ *
+ * For local mode: Runs git pull
+ * For cloud mode: Delegates to GitHub incremental sync
  */
 export async function handlePull(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
@@ -225,9 +301,34 @@ export async function handlePull(context: Context, redis: Redis): Promise<Respon
 		return context.json({ error: 'Invalid project ID format' }, 400);
 	}
 
+	// Get project and check mode
+	let project;
+	try {
+		project = await getProject(projectId, userId);
+	} catch (error) {
+		console.error('Failed to get project:', error);
+		return context.json({ error: 'Failed to load project' }, 500);
+	}
+
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+
+	const repo = project.repository as RepositoryConfig | Record<string, never>;
+
+	// Cloud mode: delegate to GitHub sync (incremental)
+	if (isCloudRepository(repo)) {
+		return handleGitHubSync(context, redis);
+	}
+
+	// Must be local mode
+	if (!isLocalRepository(repo)) {
+		return context.json({ error: 'Project has no storage configured' }, 400);
+	}
+
 	const provider = await getStorageProvider(projectId, userId);
 	if (!provider) {
-		return context.json({ error: 'No repository configured' }, 404);
+		return context.json({ error: 'Failed to initialize storage provider' }, 500);
 	}
 
 	try {

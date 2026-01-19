@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-18 (Added GitHub Commit for Cloud Projects epic)
+Last Updated: 2026-01-19 (Added Better Error Handling & Notifications epic)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,30 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ GitHub Commit for Cloud Projects
+**Spec/Documentation:** `.claude/plans/github-commit-cloud.md`
+**Dependencies:** Project Storage & Git Integration, GitHub OAuth
+**Status:** complete
+
+**Goal:** Allow users to commit pending changes from cloud-mode projects back to GitHub.
+
+**Tasks:**
+- [x] GitHub commit service
+  - [x] Create `api/src/services/github-commit.ts`
+  - [x] GraphQL `createCommitOnBranch` mutation (atomic, single API call)
+  - [x] Conflict detection via `expectedHeadOid`
+  - [x] Auto-generate commit message from changes
+- [x] API handler implementation
+  - [x] Implement `handleGitHubCommit()` in `github-sync.ts`
+  - [x] Get & decrypt GitHub token
+  - [x] Fetch pending changes with content from storage service
+  - [x] Clear pending changes on success
+  - [x] Update `last_synced_commit_sha` after commit
+- [x] Integration
+  - [x] Update `CloudStorageProvider.commit()` stub
+
+---
 
 ### ✅ GitHub Sync Lambda
 **Spec/Documentation:** `.claude/plans/github-sync-lambda.md`
@@ -114,24 +138,6 @@ Use this template for all work items:
 
 ---
 
-### ✅ Project Storage & Git Integration
-**Spec/Documentation:** `/docs/specs/project-storage.md`
-**Dependencies:** Projects Page
-**Status:** complete
-
-**Tasks:**
-- [x] Database migration (storage_mode, repository, root_paths columns)
-- [x] Storage provider interface (Local + Cloud providers)
-- [x] API endpoints (folders, tree, files CRUD)
-- [x] FileBrowser UI (tree display, expand/collapse, add/remove folders)
-- [x] Cloud mode support
-  - [x] Repository selection in ProjectDialog
-  - [x] Storage service backend (S3 + Postgres)
-  - [x] GitHub sync Lambda
-  - [x] Sync status UI
-
----
-
 ## In Progress Epics
 
 ### Authentication System
@@ -214,30 +220,6 @@ Use this template for all work items:
   - [x] Inline comments UI (Google Docs-style margin comments)
   - [x] Comment storage in markdown (hidden appendix format)
   - [x] Add/reply/resolve comments UI
-
----
-
-### GitHub Commit for Cloud Projects
-**Spec/Documentation:** `.claude/plans/github-commit-cloud.md`
-**Dependencies:** Project Storage & Git Integration, GitHub OAuth
-**Status:** in progress
-
-**Goal:** Allow users to commit pending changes from cloud-mode projects back to GitHub.
-
-**Tasks:**
-- [ ] GitHub commit service
-  - [ ] Create `api/src/services/github-commit.ts`
-  - [ ] GraphQL `createCommitOnBranch` mutation (atomic, single API call)
-  - [ ] Conflict detection via `expectedHeadOid`
-  - [ ] Auto-generate commit message from changes
-- [ ] API handler implementation
-  - [ ] Implement `handleGitHubCommit()` in `github-sync.ts`
-  - [ ] Get & decrypt GitHub token
-  - [ ] Fetch pending changes with content from storage service
-  - [ ] Clear pending changes on success
-  - [ ] Update `last_synced_commit_sha` after commit
-- [ ] Integration
-  - [ ] Update `CloudStorageProvider.commit()` stub
 
 ---
 
@@ -375,6 +357,39 @@ Use this template for all work items:
   - [ ] electron-builder config
   - [ ] macOS build
   - [ ] Auto-update (future)
+
+---
+
+### Better Error Handling & Notifications
+**Spec/Documentation:** (needs spec)
+**Dependencies:** None
+**Status:** needs spec
+
+**Goal:** Create a universal toast/notification system and ensure consistent error handling across all features.
+
+**Tasks:**
+- [ ] Audit existing error handling
+  - [ ] Review all API endpoints for error response consistency
+  - [ ] Review all frontend features for error display patterns
+  - [ ] Document current error handling patterns and gaps
+- [ ] Design universal toast system
+  - [ ] Toast component design (success, error, warning, info variants)
+  - [ ] Toast positioning and stacking behavior
+  - [ ] Auto-dismiss timing and manual dismiss
+  - [ ] Accessibility (screen readers, focus management)
+- [ ] Implement toast system
+  - [ ] Toast component in @doc-platform/ui
+  - [ ] ToastProvider context for app-wide notifications
+  - [ ] useToast hook for triggering toasts
+- [ ] Migrate existing features
+  - [ ] Git commit success/error notifications
+  - [ ] Sync status notifications
+  - [ ] API error handling standardization
+- [ ] Document save state notifications
+  - [ ] "Saved locally" indicator (local storage mode)
+  - [ ] "Saved to cloud" indicator (S3/cloud storage mode)
+  - [ ] "Pushed to GitHub" confirmation (after successful commit)
+  - [ ] Clear visual distinction between pending changes vs committed
 
 ---
 

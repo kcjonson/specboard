@@ -276,17 +276,12 @@ export class CloudStorageProvider implements StorageProvider {
 		// This is a no-op
 	}
 
-	async commit(message: string): Promise<string> {
-		// TODO: Implement via GitHub API
-		// See /docs/specs/project-storage.md for implementation details:
-		// 1. Get pending changes from storage service
-		// 2. Create blobs for each changed file
-		// 3. Create tree with base_tree
-		// 4. Create commit
-		// 5. Update ref
-		// 6. Clear pending changes
-		console.warn('CloudStorageProvider.commit() not implemented - requires GitHub API');
-		throw new Error(`Commit not implemented in cloud mode: ${message}`);
+	async commit(_message: string): Promise<string> {
+		// In cloud mode, commits are handled via the API endpoint:
+		// POST /api/projects/:id/github/commit
+		// This is because commits require authenticated GitHub tokens
+		// which are managed at the handler level, not the provider level.
+		throw new Error('Use POST /api/projects/:id/github/commit for cloud mode commits');
 	}
 
 	async push(): Promise<void> {

@@ -13,9 +13,17 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import {
 	getSession,
 	SESSION_COOKIE_NAME,
+	decrypt,
+	type EncryptedData,
 } from '@doc-platform/auth';
 import { query } from '@doc-platform/db';
 import { log } from '@doc-platform/core';
+import { getStorageClient } from '../services/storage/storage-client.ts';
+import {
+	createGitHubCommit,
+	generateCommitMessage,
+	type PendingChange,
+} from '../services/github-commit.ts';
 import type { SyncEvent } from '@doc-platform/sync-lambda';
 
 // Lambda client for invoking sync function (production only)
@@ -472,17 +480,203 @@ export async function handleGitHubSyncStatus(
  * Commit pending changes to GitHub repository.
  * POST /api/projects/:id/github/commit
  *
- * Uses GitHub Git Data API to create commits without cloning:
- * 1. Get pending changes from storage service
- * 2. Create blobs for each changed file
- * 3. Create tree with base_tree
- * 4. Create commit
- * 5. Update ref
- * 6. Clear pending changes and update storage
+ * Uses GitHub GraphQL createCommitOnBranch mutation for atomic commits:
+ * 1. Get pending changes with content from storage service
+ * 2. Create commit via GraphQL (all-or-nothing, built-in conflict detection)
+ * 3. Clear pending changes on success
+ * 4. Update last_synced_commit_sha
  */
 export async function handleGitHubCommit(
 	context: Context,
-	_redis: Redis
+	redis: Redis
 ): Promise<Response> {
-	return context.json({ error: 'Not implemented' }, 501);
+	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
+	if (!sessionId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+
+	const session = await getSession(redis, sessionId);
+	if (!session) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+
+	const projectId = context.req.param('id');
+	if (!projectId) {
+		return context.json({ error: 'Project ID required' }, 400);
+	}
+
+	// Get project with repository info
+	const project = await getProjectWithRepo(projectId, session.userId);
+	if (!project) {
+		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
+	}
+
+	// Get encrypted GitHub token
+	const encryptedTokenString = await getEncryptedGitHubToken(session.userId);
+	if (!encryptedTokenString) {
+		return context.json({ error: 'GitHub not connected' }, 400);
+	}
+
+	// Decrypt the token
+	let accessToken: string;
+	try {
+		const encryptedToken: EncryptedData = JSON.parse(encryptedTokenString);
+		accessToken = decrypt(encryptedToken);
+	} catch (err) {
+		log({
+			type: 'auth',
+			level: 'error',
+			event: 'github_token_decrypt_failed',
+			userId: session.userId,
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return context.json({ error: 'GitHub connection corrupted. Please reconnect.' }, 500);
+	}
+
+	// Get pending changes with content
+	const storageClient = getStorageClient();
+	let pendingChanges;
+	try {
+		pendingChanges = await storageClient.listPendingChangesWithContent(
+			projectId,
+			session.userId
+		);
+	} catch (err) {
+		log({
+			type: 'storage',
+			level: 'error',
+			event: 'list_pending_changes_failed',
+			userId: session.userId,
+			projectId,
+			error: err instanceof Error ? err.message : String(err),
+		});
+		const commitError = {
+			stage: 'commit' as const,
+			message: 'Failed to load pending changes. Please try again.',
+		};
+		return context.json({ success: false, error: commitError }, 500);
+	}
+
+	if (pendingChanges.length === 0) {
+		return context.json({ error: 'No changes to commit' }, 400);
+	}
+
+	// Convert to PendingChange format for the commit service
+	const changes: PendingChange[] = pendingChanges.map((c) => ({
+		path: c.path,
+		content: c.content,
+		action: c.action,
+	}));
+
+	// Get commit message from request body or auto-generate
+	let commitMessage: string;
+	try {
+		const body = await context.req.json() as { message?: string };
+		commitMessage = body.message || generateCommitMessage(changes);
+	} catch {
+		// No body or invalid JSON - auto-generate message
+		commitMessage = generateCommitMessage(changes);
+	}
+
+	// Create commit on GitHub
+	log({
+		type: 'github',
+		level: 'info',
+		event: 'github_commit_started',
+		projectId,
+		owner: project.owner,
+		repo: project.repo,
+		branch: project.branch,
+		filesCount: changes.length,
+	});
+
+	const result = await createGitHubCommit({
+		owner: project.owner,
+		repo: project.repo,
+		branch: project.branch,
+		token: accessToken,
+		message: commitMessage,
+		changes,
+	});
+
+	if (!result.success) {
+		log({
+			type: 'github',
+			level: 'warn',
+			event: 'github_commit_failed',
+			projectId,
+			error: result.error,
+			conflictDetected: result.conflictDetected,
+		});
+
+		// Format error to match frontend CommitError interface
+		const commitError = {
+			stage: 'commit' as const,
+			message: result.error || 'Commit failed',
+		};
+
+		if (result.conflictDetected) {
+			return context.json(
+				{
+					success: false,
+					error: commitError,
+					conflictDetected: true,
+				},
+				409
+			);
+		}
+
+		return context.json(
+			{
+				success: false,
+				error: commitError,
+			},
+			500
+		);
+	}
+
+	// Success - clear pending changes and update sync SHA
+	try {
+		await storageClient.deleteAllPendingChanges(projectId, session.userId);
+
+		await query(
+			`UPDATE projects SET last_synced_commit_sha = $1 WHERE id = $2`,
+			[result.sha, projectId]
+		);
+
+		log({
+			type: 'github',
+			level: 'info',
+			event: 'github_commit_success',
+			projectId,
+			sha: result.sha,
+			filesCommitted: result.filesCommitted,
+		});
+
+		return context.json({
+			success: true,
+			sha: result.sha,
+			url: result.url,
+			filesCommitted: result.filesCommitted,
+		});
+	} catch (err) {
+		// Commit succeeded on GitHub but cleanup failed
+		// Log but still return success since the commit is there
+		log({
+			type: 'github',
+			level: 'error',
+			event: 'github_commit_cleanup_failed',
+			projectId,
+			sha: result.sha,
+			error: err instanceof Error ? err.message : String(err),
+		});
+
+		return context.json({
+			success: true,
+			sha: result.sha,
+			url: result.url,
+			filesCommitted: result.filesCommitted,
+			warning: 'Commit succeeded but cleanup failed. Pending changes may persist.',
+		});
+	}
 }

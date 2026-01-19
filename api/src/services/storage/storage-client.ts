@@ -25,7 +25,7 @@ interface PendingChange {
 	updatedAt: string;
 }
 
-interface PendingChangeContent {
+export interface PendingChangeContent {
 	path: string;
 	content: string | null;
 	action: 'modified' | 'created' | 'deleted';
@@ -209,6 +209,37 @@ export class StorageClient {
 		userId: string
 	): Promise<{ deleted: boolean; count: number }> {
 		return this.request('DELETE', `/pending/${projectId}/${userId}`);
+	}
+
+	/**
+	 * List pending changes with their content.
+	 * Used for committing changes to GitHub.
+	 *
+	 * Note: Fetches content in parallel using Promise.all. For typical documentation
+	 * commits (< 50 files), this is efficient. If we ever need to handle very large
+	 * changesets, consider implementing batching to avoid overwhelming the storage service.
+	 */
+	async listPendingChangesWithContent(
+		projectId: string,
+		userId: string
+	): Promise<PendingChangeContent[]> {
+		// Get the list of pending changes
+		const changes = await this.listPendingChanges(projectId, userId);
+
+		// Fetch content for each change in parallel
+		const changesWithContent = await Promise.all(
+			changes.map(async (change) => {
+				const content = await this.getPendingChange(projectId, userId, change.path);
+				return {
+					path: change.path,
+					content: content?.content ?? null,
+					action: change.action,
+					updatedAt: change.updatedAt,
+				};
+			})
+		);
+
+		return changesWithContent;
 	}
 }
 
