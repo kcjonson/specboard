@@ -592,11 +592,17 @@ export async function handleGitHubCommit(
 			conflictDetected: result.conflictDetected,
 		});
 
+		// Format error to match frontend CommitError interface
+		const commitError = {
+			stage: 'commit' as const,
+			message: result.error || 'Commit failed',
+		};
+
 		if (result.conflictDetected) {
 			return context.json(
 				{
 					success: false,
-					error: result.error,
+					error: commitError,
 					conflictDetected: true,
 				},
 				409
@@ -606,7 +612,7 @@ export async function handleGitHubCommit(
 		return context.json(
 			{
 				success: false,
-				error: result.error,
+				error: commitError,
 			},
 			500
 		);
