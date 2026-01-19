@@ -6,6 +6,8 @@ import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { isValidUUID } from '../../validation.ts';
 import { getUserId, getStorageProvider } from './utils.ts';
+import { handleGitHubCommit } from '../github-sync.ts';
+import { getProject, isCloudRepository, type RepositoryConfig } from '@doc-platform/db';
 
 /**
  * GET /api/projects/:id/git/status
@@ -69,6 +71,8 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
  * POST /api/projects/:id/git/commit
  * Commit all changes with optional message
  * Auto-generates message if not provided
+ *
+ * For cloud-mode projects, this delegates to the GitHub commit handler.
  */
 export async function handleCommit(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
@@ -79,6 +83,15 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 	const projectId = context.req.param('id');
 	if (!isValidUUID(projectId)) {
 		return context.json({ error: 'Invalid project ID format' }, 400);
+	}
+
+	// Check if this is a cloud-mode project - delegate to GitHub commit handler
+	const project = await getProject(projectId, userId);
+	if (project) {
+		const repo = project.repository as RepositoryConfig | Record<string, never>;
+		if (isCloudRepository(repo)) {
+			return handleGitHubCommit(context, redis);
+		}
 	}
 
 	const provider = await getStorageProvider(projectId, userId);
