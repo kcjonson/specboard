@@ -383,9 +383,13 @@ Use this template for all work items:
   - [ ] useToast hook for triggering toasts
 - [ ] Migrate existing features
   - [ ] Git commit success/error notifications
-  - [ ] File save confirmations
   - [ ] Sync status notifications
   - [ ] API error handling standardization
+- [ ] Document save state notifications
+  - [ ] "Saved locally" indicator (local storage mode)
+  - [ ] "Saved to cloud" indicator (S3/cloud storage mode)
+  - [ ] "Pushed to GitHub" confirmation (after successful commit)
+  - [ ] Clear visual distinction between pending changes vs committed
 
 ---
 
