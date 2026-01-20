@@ -368,6 +368,11 @@ export class DocPlatformStack extends cdk.Stack {
 			ec2.Port.tcp(3000),
 			'Allow ALB to Frontend'
 		);
+		mcpSecurityGroup.addIngressRule(
+			ec2.Peer.securityGroupId(alb.connections.securityGroups[0]!.securityGroupId),
+			ec2.Port.tcp(3002),
+			'Allow ALB to MCP'
+		);
 
 		// Allow MCP to reach API (internal service-to-service)
 		apiSecurityGroup.addIngressRule(
@@ -674,7 +679,7 @@ export class DocPlatformStack extends cdk.Stack {
 			},
 		});
 
-		new ecs.FargateService(this, 'McpService', {
+		const mcpService = new ecs.FargateService(this, 'McpService', {
 			cluster,
 			taskDefinition: mcpTaskDefinition,
 			desiredCount: isBootstrap ? 0 : 1,
@@ -926,7 +931,21 @@ export class DocPlatformStack extends cdk.Stack {
 		});
 		frontendService.attachToApplicationTargetGroup(frontendTargetGroup);
 
-		// Path-based routing: /api/* -> API, everything else -> Frontend
+		const mcpTargetGroup = new elbv2.ApplicationTargetGroup(this, 'McpTargetGroup', {
+			vpc,
+			port: 3002,
+			protocol: elbv2.ApplicationProtocol.HTTP,
+			targetType: elbv2.TargetType.IP,
+			healthCheck: {
+				path: '/health',
+				interval: cdk.Duration.seconds(30),
+				healthyThresholdCount: 2,
+				unhealthyThresholdCount: 3,
+			},
+		});
+		mcpService.attachToApplicationTargetGroup(mcpTargetGroup);
+
+		// Path-based routing: /api/* -> API, /mcp -> MCP, everything else -> Frontend
 		httpsListener.addTargetGroups('ApiRoutes', {
 			targetGroups: [apiTargetGroup],
 			priority: 10,
@@ -950,6 +969,15 @@ export class DocPlatformStack extends cdk.Stack {
 			priority: 30,
 			conditions: [
 				elbv2.ListenerCondition.pathPatterns(['/.well-known/*']),
+			],
+		});
+
+		// MCP endpoints -> MCP service (OAuth-protected)
+		httpsListener.addTargetGroups('McpRoutes', {
+			targetGroups: [mcpTargetGroup],
+			priority: 40,
+			conditions: [
+				elbv2.ListenerCondition.pathPatterns(['/mcp', '/mcp/*']),
 			],
 		});
 

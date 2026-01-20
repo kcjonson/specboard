@@ -71,9 +71,9 @@ export function AuthorizedApps({ authorizations }: AuthorizedAppsProps): JSX.Ele
 
 	return (
 		<div class={styles.container}>
-			<h2 class={styles.title}>Authorized Apps</h2>
+			<h2 class={styles.title}>Authorized MCP Sessions</h2>
 			<p class={styles.description}>
-				These applications have access to your account. You can revoke access at any time.
+				These MCP clients (like Claude Code) have access to your account. You can revoke access at any time.
 			</p>
 
 			{revokeError && (
@@ -82,7 +82,7 @@ export function AuthorizedApps({ authorizations }: AuthorizedAppsProps): JSX.Ele
 
 			{authorizations.length === 0 ? (
 				<div class={styles.empty}>
-					No applications are currently authorized to access your account.
+					No MCP clients are currently authorized to access your account.
 				</div>
 			) : (
 				<div class={styles.list}>

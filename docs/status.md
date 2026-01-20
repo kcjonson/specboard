@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-19 (Added Better Error Handling & Notifications epic)
+Last Updated: 2026-01-19 (Added Expose MCP at Staging epic)
 
 ## Epic/Story/Task Template
 
@@ -139,6 +139,32 @@ Use this template for all work items:
 ---
 
 ## In Progress Epics
+
+### Expose MCP at Staging
+**Spec/Documentation:** `.claude/plans/expose-mcp-staging.md`
+**Dependencies:** MCP Server
+**Status:** in progress
+
+**Goal:** Expose MCP server through ALB with OAuth authentication for Claude Code access.
+
+**Tasks:**
+- [x] Convert MCP to Hono framework
+  - [x] Add hono, @hono/node-server dependencies
+  - [x] Rewrite index.ts with Hono app
+  - [x] Integrate mcpAuthMiddleware from @doc-platform/auth
+- [x] Infrastructure changes (CDK)
+  - [x] Add MCP target group with health check
+  - [x] Add ALB listener rule for /mcp paths (priority 40)
+  - [x] Add security group rule: ALB → MCP on port 3002
+  - [x] Capture mcpService reference for target group attachment
+- [x] UI updates
+  - [x] Rename "Authorized Apps" to "Authorized MCP Sessions"
+- [ ] Verification
+  - [ ] Test locally with docker compose
+  - [ ] Deploy to staging
+  - [ ] Connect Claude Code to staging MCP
+
+---
 
 ### Authentication System
 **Spec/Documentation:** `/docs/specs/authentication.md`
