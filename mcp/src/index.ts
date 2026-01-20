@@ -129,10 +129,13 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 app.use('*', async (c, next) => {
 	const start = Date.now();
 	await next();
+	// For MCP routes, the transport writes directly to c.env.outgoing,
+	// so we need to get the status from there instead of c.res.status
+	const status = c.env.outgoing.statusCode || c.res.status;
 	logRequest({
 		method: c.req.method,
 		path: c.req.path,
-		status: c.res.status,
+		status,
 		duration: Date.now() - start,
 		ip: c.req.header('x-forwarded-for') || c.env.incoming.socket.remoteAddress || 'unknown',
 		userAgent: c.req.header('user-agent'),

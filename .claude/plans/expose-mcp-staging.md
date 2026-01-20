@@ -6,7 +6,7 @@ Expose the MCP server through the ALB at `https://staging.specboard.io/mcp` with
 
 ## Approach
 
-1. **Convert MCP to Hono** - Use `@hono/mcp` for native streaming support
+1. **Convert MCP to Hono** - Use Hono framework with `@hono/node-server`, bridging to MCP SDK transport via `c.env.incoming/outgoing`
 2. **Integrate OAuth middleware** - Use existing `mcpAuthMiddleware()` from `@doc-platform/auth`
 3. **Expose through ALB** - Add target group and listener rules in CDK
 4. **Rename UI** - Change "Authorized Apps" to "Authorized MCP Sessions"
@@ -16,8 +16,8 @@ Expose the MCP server through the ALB at `https://staging.specboard.io/mcp` with
 
 | File | Changes |
 |------|---------|
-| `mcp/src/index.ts` | Convert to Hono with `@hono/mcp` |
-| `mcp/package.json` | Add `hono`, `@hono/node-server`, `@hono/mcp` |
+| `mcp/src/index.ts` | Convert to Hono, bridge to MCP SDK transport |
+| `mcp/package.json` | Add `hono`, `@hono/node-server` |
 | `infra/lib/doc-platform-stack.ts` | Target group, listener rule, security group |
 | `web/src/routes/settings/AuthorizedApps.tsx` | Rename to "Authorized MCP Sessions" |
 | `docs/status.md` | Add epic for this work |
@@ -33,14 +33,14 @@ Expose the MCP server through the ALB at `https://staging.specboard.io/mcp` with
 Add:
 - `hono`
 - `@hono/node-server`
-- `@hono/mcp`
 
 ### 2. Convert MCP Server to Hono
 
 **File:** `mcp/src/index.ts`
 
-- Replace `http.createServer()` with Hono app
-- Use `@hono/mcp` `StreamableHTTPTransport` for streaming
+- Replace `http.createServer()` with Hono app via `@hono/node-server`
+- Use `c.env.incoming` and `c.env.outgoing` to access raw Node.js request/response
+- Pass raw objects to MCP SDK's `StreamableHTTPServerTransport.handleRequest(req, res)`
 - Add `mcpAuthMiddleware()` from `@doc-platform/auth` to `/mcp` routes
 - Keep `/health` unauthenticated (ALB health checks)
 - Preserve session management with transports Map
@@ -76,11 +76,11 @@ const mcpTargetGroup = new elbv2.ApplicationTargetGroup(this, 'McpTargetGroup', 
 
 c) Capture mcpService reference and attach to target group
 
-d) Add listener rule (priority 15, before default):
+d) Add listener rule (priority 40, after API/OAuth/well-known routes):
 ```typescript
 httpsListener.addTargetGroups('McpRoutes', {
   targetGroups: [mcpTargetGroup],
-  priority: 15,
+  priority: 40,
   conditions: [
     elbv2.ListenerCondition.pathPatterns(['/mcp', '/mcp/*']),
   ],
@@ -136,4 +136,4 @@ claude mcp add staging-mcp https://staging.specboard.io/mcp
 - Scopes: `docs:read`, `docs:write`, `tasks:read`, `tasks:write`
 - Health endpoint unauthenticated (ALB requirement)
 - HTTPS via ALB TLS termination
-- Streaming via `@hono/mcp` StreamableHTTPTransport
+- Streaming via MCP SDK's `StreamableHTTPServerTransport` (bridged from Hono via `c.env.incoming/outgoing`)
