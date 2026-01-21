@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-01-19 (Added Expose MCP at Staging epic)
+Last Updated: 2026-01-20 (MCP staging deployment complete)
 
 ## Epic/Story/Task Template
 
@@ -159,9 +159,10 @@ Use this template for all work items:
   - [x] Capture mcpService reference for target group attachment
 - [x] UI updates
   - [x] Rename "Authorized Apps" to "Authorized MCP Sessions"
-- [ ] Verification
-  - [ ] Test locally with docker compose
-  - [ ] Deploy to staging
+- [x] Fix Dockerfile to include @doc-platform/auth
+- [x] Verification
+  - [x] Test locally with docker compose
+  - [x] Deploy to staging
   - [ ] Connect Claude Code to staging MCP
 
 ---
