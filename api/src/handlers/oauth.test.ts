@@ -42,6 +42,48 @@ function createMockSession(userId: string): Session {
 // Create a mock Redis instance with minimal type safety
 const mockRedis = {} as Redis;
 
+// Standard mock client data for tests
+const mockClientData = {
+	client_id: 'claude-code',
+	client_name: 'Claude Code',
+	redirect_uris: [
+		'http://localhost:3000/callback',
+		'http://127.0.0.1:8080/callback',
+		'https://claude.ai/api/mcp/auth_callback',
+		'https://claude.com/api/mcp/auth_callback',
+	],
+	token_endpoint_auth_method: 'none',
+	grant_types: ['authorization_code', 'refresh_token'],
+	response_types: ['code'],
+};
+
+// Standard mock user data
+const mockUserData = { id: 'user-123', email: 'test@example.com' };
+
+// Helper to set up standard mocks for client + user lookup
+function setupClientAndUserMocks(): void {
+	vi.mocked(query).mockImplementation(async (sql: string) => {
+		// Check if this is a client lookup or user lookup based on SQL
+		if (sql.includes('oauth_clients')) {
+			return {
+				rows: [mockClientData],
+				rowCount: 1,
+				command: 'SELECT',
+				oid: 0,
+				fields: [],
+			};
+		}
+		// Default to user lookup
+		return {
+			rows: [mockUserData],
+			rowCount: 1,
+			command: 'SELECT',
+			oid: 0,
+			fields: [],
+		};
+	});
+}
+
 describe('oauth handlers', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
@@ -142,36 +184,8 @@ describe('oauth handlers', () => {
 		beforeEach(() => {
 			// Mock authenticated session
 			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
-			// Mock database queries: first call is client lookup, second is user lookup
-			vi.mocked(query)
-				.mockResolvedValueOnce({
-					// Client lookup (getClient)
-					rows: [{
-						client_id: 'claude-code',
-						client_name: 'Claude Code',
-						redirect_uris: [
-							'http://localhost:3000/callback',
-							'http://127.0.0.1:8080/callback',
-							'https://claude.ai/api/mcp/auth_callback',
-							'https://claude.com/api/mcp/auth_callback',
-						],
-						token_endpoint_auth_method: 'none',
-						grant_types: ['authorization_code', 'refresh_token'],
-						response_types: ['code'],
-					}],
-					rowCount: 1,
-					command: 'SELECT',
-					oid: 0,
-					fields: [],
-				})
-				.mockResolvedValueOnce({
-					// User lookup
-					rows: [{ id: 'user-123', email: 'test@example.com' }],
-					rowCount: 1,
-					command: 'SELECT',
-					oid: 0,
-					fields: [],
-				});
+			// Mock database queries for client + user lookup
+			setupClientAndUserMocks();
 		});
 
 		it('should allow localhost redirect URI', async () => {
@@ -337,6 +351,14 @@ describe('oauth handlers', () => {
 		});
 
 		it('should reject unknown client_id', async () => {
+			// Override mock to return empty client result
+			vi.mocked(query).mockImplementation(async (sql: string) => {
+				if (sql.includes('oauth_clients')) {
+					return { rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] };
+				}
+				return { rows: [mockUserData], rowCount: 1, command: 'SELECT', oid: 0, fields: [] };
+			});
+
 			const app = new Hono();
 			app.get('/oauth/authorize', (c) => handleAuthorizeGet(c, mockRedis));
 
@@ -474,13 +496,7 @@ describe('oauth handlers', () => {
 
 		beforeEach(() => {
 			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
-			vi.mocked(query).mockResolvedValue({
-				rows: [{ id: 'user-123', email: 'test@example.com' }],
-				rowCount: 1,
-				command: 'SELECT',
-				oid: 0,
-				fields: [],
-			});
+			setupClientAndUserMocks();
 		});
 
 		it('should prevent open redirect via redirect_uri to arbitrary domains', async () => {
@@ -563,6 +579,7 @@ describe('oauth handlers', () => {
 			app.post('/oauth/authorize', (c) => handleAuthorizePost(c, mockRedis));
 
 			// Attempt to POST with a malicious redirect_uri
+			// Include valid CSRF token to test redirect_uri validation (not CSRF)
 			const res = await app.request('http://localhost/oauth/authorize', {
 				method: 'POST',
 				headers: {
@@ -578,6 +595,7 @@ describe('oauth handlers', () => {
 					code_challenge_method: 'S256',
 					device_name: 'Test Device',
 					action: 'approve',
+					csrf_token: 'mock-csrf-token', // Valid CSRF to test redirect_uri validation
 				}),
 			});
 
@@ -593,13 +611,7 @@ describe('oauth handlers', () => {
 
 		beforeEach(() => {
 			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
-			vi.mocked(query).mockResolvedValue({
-				rows: [{ id: 'user-123', email: 'test@example.com' }],
-				rowCount: 1,
-				command: 'SELECT',
-				oid: 0,
-				fields: [],
-			});
+			setupClientAndUserMocks();
 		});
 
 		it('should reject authorization without PKCE code_challenge', async () => {
@@ -700,6 +712,14 @@ describe('oauth handlers', () => {
 		});
 
 		it('should reject unknown client IDs', async () => {
+			// Mock empty client result for unknown clients
+			vi.mocked(query).mockImplementation(async (sql: string) => {
+				if (sql.includes('oauth_clients')) {
+					return { rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] };
+				}
+				return { rows: [mockUserData], rowCount: 1, command: 'SELECT', oid: 0, fields: [] };
+			});
+
 			const app = new Hono();
 			app.get('/oauth/authorize', (c) => handleAuthorizeGet(c, mockRedis));
 
@@ -725,18 +745,12 @@ describe('oauth handlers', () => {
 		});
 
 		it('should only allow pre-registered clients', async () => {
-			vi.mocked(query).mockResolvedValue({
-				rows: [{ id: 'user-123', email: 'test@example.com' }],
-				rowCount: 1,
-				command: 'SELECT',
-				oid: 0,
-				fields: [],
-			});
+			setupClientAndUserMocks();
 
 			const app = new Hono();
 			app.get('/oauth/authorize', (c) => handleAuthorizeGet(c, mockRedis));
 
-			// Test allowed clients
+			// Test allowed clients (both should work with the mock client data)
 			const allowedClients = ['claude-code', 'doc-platform-cli'];
 
 			for (const clientId of allowedClients) {
@@ -763,13 +777,7 @@ describe('oauth handlers', () => {
 
 		beforeEach(() => {
 			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
-			vi.mocked(query).mockResolvedValue({
-				rows: [{ id: 'user-123', email: 'test@example.com' }],
-				rowCount: 1,
-				command: 'SELECT',
-				oid: 0,
-				fields: [],
-			});
+			setupClientAndUserMocks();
 		});
 
 		it('should reject requests with no valid scopes', async () => {
