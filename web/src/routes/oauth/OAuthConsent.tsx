@@ -103,36 +103,20 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 				headers,
 				body: formData.toString(),
 				credentials: 'same-origin',
-				redirect: 'manual',
 			});
 
-			// Handle redirect response (3xx status with Location header)
-			if (response.status >= 300 && response.status < 400) {
-				const location = response.headers.get('Location');
-				if (location) {
-					window.location.href = location;
-					return;
-				}
-			}
+			// Parse JSON response
+			const data = await response.json();
 
-			// Handle opaqueredirect (shouldn't happen with redirect: 'manual', but be defensive)
-			if (response.type === 'opaqueredirect') {
-				// Cannot access redirect URL from opaqueredirect, show error
-				setError('Redirect failed. Please try again.');
+			// Handle success - server returns redirect_url in JSON body
+			if (response.ok && data.redirect_url) {
+				window.location.href = data.redirect_url;
 				return;
 			}
 
 			// Handle error response
-			if (!response.ok) {
-				let errorMessage = 'Authorization failed';
-				try {
-					const data = await response.json();
-					errorMessage = data.error_description || data.error || errorMessage;
-				} catch {
-					// Response wasn't JSON, use default message
-				}
-				setError(errorMessage);
-			}
+			const errorMessage = data.error_description || data.error || 'Authorization failed';
+			setError(errorMessage);
 		} catch {
 			setError('Network error. Please try again.');
 		} finally {

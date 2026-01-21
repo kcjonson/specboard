@@ -569,12 +569,12 @@ export async function handleAuthorizePost(
 	// Build redirect URL (safe now that we've validated)
 	const redirectUrl = new URL(redirect_uri);
 
-	// If denied, redirect with error
+	// If denied, return redirect URL in JSON (browser can't read Location header from opaque redirect)
 	if (action === 'deny') {
 		redirectUrl.searchParams.set('error', 'access_denied');
 		redirectUrl.searchParams.set('error_description', 'The resource owner denied the request');
 		if (state) redirectUrl.searchParams.set('state', state);
-		return context.redirect(redirectUrl.toString());
+		return context.json({ redirect_url: redirectUrl.toString() });
 	}
 
 	if (!device_name || device_name.trim().length === 0) {
@@ -608,11 +608,11 @@ export async function handleAuthorizePost(
 		[code, session.userId, client_id, sanitizedDeviceName, code_challenge, code_challenge_method, scopes, redirect_uri, expiresAt]
 	);
 
-	// Redirect with code
+	// Return redirect URL in JSON (browser can't read Location header from opaque redirect)
 	redirectUrl.searchParams.set('code', code);
 	if (state) redirectUrl.searchParams.set('state', state);
 
-	return context.redirect(redirectUrl.toString());
+	return context.json({ redirect_url: redirectUrl.toString() });
 }
 
 /**
