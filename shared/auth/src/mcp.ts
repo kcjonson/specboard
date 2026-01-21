@@ -36,6 +36,18 @@ function extractBearerToken(authHeader: string | undefined): string | null {
 }
 
 /**
+ * Build the WWW-Authenticate header value for 401 responses
+ * Per MCP OAuth spec, this tells the client where to find OAuth discovery
+ */
+function buildWwwAuthenticateHeader(c: Context): string {
+	// Build the resource URL from the request
+	const proto = c.req.header('x-forwarded-proto') || 'https';
+	const host = c.req.header('host') || 'localhost';
+	const resourceUrl = `${proto}://${host}/mcp`;
+	return `Bearer resource="${resourceUrl}"`;
+}
+
+/**
  * MCP auth middleware - validates Bearer token and attaches user info
  */
 export function mcpAuthMiddleware() {
@@ -44,6 +56,7 @@ export function mcpAuthMiddleware() {
 		const token = extractBearerToken(authHeader);
 
 		if (!token) {
+			c.header('WWW-Authenticate', buildWwwAuthenticateHeader(c));
 			return c.json({
 				error: 'auth_required',
 				message: 'Missing or invalid Authorization header',
@@ -67,6 +80,7 @@ export function mcpAuthMiddleware() {
 
 		const tokenRecord = result.rows[0];
 		if (!tokenRecord) {
+			c.header('WWW-Authenticate', buildWwwAuthenticateHeader(c));
 			return c.json({
 				error: 'auth_required',
 				message: 'Invalid access token',
@@ -75,6 +89,7 @@ export function mcpAuthMiddleware() {
 
 		// Check expiration (tokens expire based on refresh token lifetime stored in expires_at)
 		if (new Date(tokenRecord.expires_at).getTime() < Date.now()) {
+			c.header('WWW-Authenticate', buildWwwAuthenticateHeader(c));
 			return c.json({
 				error: 'auth_required',
 				message: 'Access token expired',
