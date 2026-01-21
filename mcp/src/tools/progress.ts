@@ -12,6 +12,8 @@ import {
 	addTaskProgressNote,
 	signalReadyForReview as signalReadyForReviewService,
 	verifyProjectAccess,
+	verifyEpicOwnership,
+	verifyTaskOwnership,
 } from '@doc-platform/db';
 
 export const progressTools: Tool[] = [
@@ -92,15 +94,39 @@ export async function handleProgressTool(
 	}
 
 	try {
+		// For operations that reference an epic or task, verify it belongs to the project
+		const epicId = args?.epic_id as string | undefined;
+		const taskId = args?.task_id as string | undefined;
+
+		if (epicId) {
+			const epicBelongsToProject = await verifyEpicOwnership(projectId, epicId);
+			if (!epicBelongsToProject) {
+				return {
+					content: [{ type: 'text', text: 'Access denied: Epic does not belong to this project' }],
+					isError: true,
+				};
+			}
+		}
+
+		if (taskId) {
+			const taskBelongsToProject = await verifyTaskOwnership(projectId, taskId);
+			if (!taskBelongsToProject) {
+				return {
+					content: [{ type: 'text', text: 'Access denied: Task does not belong to this project' }],
+					isError: true,
+				};
+			}
+		}
+
 		switch (name) {
 			case 'add_progress_note':
 				return await addProgressNote(
-					args?.epic_id as string | undefined,
-					args?.task_id as string | undefined,
+					epicId,
+					taskId,
 					args?.note as string
 				);
 			case 'signal_ready_for_review':
-				return await signalReadyForReview(projectId, args?.epic_id as string, args?.pr_url as string);
+				return await signalReadyForReview(projectId, epicId as string, args?.pr_url as string);
 			default:
 				return {
 					content: [{ type: 'text', text: `Unknown progress tool: ${name}` }],

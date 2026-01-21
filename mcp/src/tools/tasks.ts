@@ -17,6 +17,7 @@ import {
 	blockTask as blockTaskService,
 	unblockTask as unblockTaskService,
 	verifyProjectAccess,
+	verifyTaskOwnership,
 } from '@doc-platform/db';
 
 export const taskTools: Tool[] = [
@@ -215,6 +216,19 @@ export async function handleTaskTool(
 	}
 
 	try {
+		// For operations that take task_id, verify the task belongs to the project
+		const taskId = args?.task_id as string | undefined;
+		const taskOperations = ['update_task', 'start_task', 'complete_task', 'block_task', 'unblock_task'];
+		if (taskId && taskOperations.includes(name)) {
+			const taskBelongsToProject = await verifyTaskOwnership(projectId, taskId);
+			if (!taskBelongsToProject) {
+				return {
+					content: [{ type: 'text', text: 'Access denied: Task does not belong to this project' }],
+					isError: true,
+				};
+			}
+		}
+
 		switch (name) {
 			case 'create_task':
 				return await createTask(

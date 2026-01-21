@@ -72,7 +72,10 @@ function buildWwwAuthenticateHeader(c: Context): string {
 		return `Bearer resource_metadata="https://specboard.io/.well-known/oauth-protected-resource"`;
 	}
 
-	const proto = c.req.header('x-forwarded-proto') || 'https';
+	// Determine protocol: use header if present, otherwise default based on host
+	const protoHeader = c.req.header('x-forwarded-proto');
+	const proto = protoHeader ||
+		(hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1' ? 'http' : 'https');
 	const baseUrl = `${proto}://${host}`;
 	return `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`;
 }

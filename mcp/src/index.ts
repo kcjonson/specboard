@@ -173,7 +173,7 @@ app.post('/mcp', async (c) => {
 
 		// Security: Verify the requesting user matches the session owner
 		if (session.userId !== userId) {
-			return c.json({ error: 'Session belongs to a different user' }, 403);
+			return c.json({ error: 'Cannot access session: This session belongs to a different user' }, 403);
 		}
 
 		// Existing session - route to existing transport
@@ -224,7 +224,7 @@ app.get('/mcp', async (c) => {
 
 	// Security: Verify the requesting user matches the session owner
 	if (session.userId !== userId) {
-		return c.json({ error: 'Session belongs to a different user' }, 403);
+		return c.json({ error: 'Cannot access session: This session belongs to a different user' }, 403);
 	}
 
 	// Access raw Node.js request/response for MCP transport
@@ -251,7 +251,7 @@ app.delete('/mcp', async (c) => {
 
 	// Security: Verify the requesting user matches the session owner
 	if (session.userId !== userId) {
-		return c.json({ error: 'Session belongs to a different user' }, 403);
+		return c.json({ error: 'Cannot close session: This session belongs to a different user' }, 403);
 	}
 
 	await session.transport.close();

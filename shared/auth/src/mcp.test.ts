@@ -58,6 +58,23 @@ describe('MCP auth middleware', () => {
 			expect(wwwAuth).toBe('Bearer resource_metadata="http://localhost/.well-known/oauth-protected-resource"');
 		});
 
+		it('should default to http for localhost when x-forwarded-proto is not set', async () => {
+			const app = new Hono<{ Variables: McpAuthVariables }>();
+			app.use('/mcp', mcpAuthMiddleware());
+			app.post('/mcp', (c) => c.json({ success: true }));
+
+			// No x-forwarded-proto header - should default to http for localhost
+			const res = await app.request('http://localhost/mcp', {
+				method: 'POST',
+				headers: {
+					host: 'localhost',
+				},
+			});
+
+			const wwwAuth = res.headers.get('www-authenticate');
+			expect(wwwAuth).toBe('Bearer resource_metadata="http://localhost/.well-known/oauth-protected-resource"');
+		});
+
 		it('should use x-forwarded-proto for WWW-Authenticate URL', async () => {
 			const app = new Hono<{ Variables: McpAuthVariables }>();
 			app.use('/mcp', mcpAuthMiddleware());
