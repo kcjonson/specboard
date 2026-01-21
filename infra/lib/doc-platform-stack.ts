@@ -959,7 +959,7 @@ export class DocPlatformStack extends cdk.Stack {
 			targetGroups: [apiTargetGroup],
 			priority: 20,
 			conditions: [
-				elbv2.ListenerCondition.pathPatterns(['/oauth/authorize', '/oauth/token', '/oauth/revoke']),
+				elbv2.ListenerCondition.pathPatterns(['/oauth/authorize', '/oauth/token', '/oauth/revoke', '/oauth/register']),
 			],
 		});
 
