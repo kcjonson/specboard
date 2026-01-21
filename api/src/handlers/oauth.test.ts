@@ -65,6 +65,7 @@ describe('oauth handlers', () => {
 				authorization_endpoint: 'http://localhost/oauth/authorize',
 				token_endpoint: 'http://localhost/oauth/token',
 				revocation_endpoint: 'http://localhost/oauth/revoke',
+				registration_endpoint: 'http://localhost/oauth/register',
 				scopes_supported: ['docs:read', 'docs:write', 'tasks:read', 'tasks:write'],
 				response_types_supported: ['code'],
 				grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -141,14 +142,36 @@ describe('oauth handlers', () => {
 		beforeEach(() => {
 			// Mock authenticated session
 			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
-			// Mock user lookup
-			vi.mocked(query).mockResolvedValue({
-				rows: [{ id: 'user-123', email: 'test@example.com' }],
-				rowCount: 1,
-				command: 'SELECT',
-				oid: 0,
-				fields: [],
-			});
+			// Mock database queries: first call is client lookup, second is user lookup
+			vi.mocked(query)
+				.mockResolvedValueOnce({
+					// Client lookup (getClient)
+					rows: [{
+						client_id: 'claude-code',
+						client_name: 'Claude Code',
+						redirect_uris: [
+							'http://localhost:3000/callback',
+							'http://127.0.0.1:8080/callback',
+							'https://claude.ai/api/mcp/auth_callback',
+							'https://claude.com/api/mcp/auth_callback',
+						],
+						token_endpoint_auth_method: 'none',
+						grant_types: ['authorization_code', 'refresh_token'],
+						response_types: ['code'],
+					}],
+					rowCount: 1,
+					command: 'SELECT',
+					oid: 0,
+					fields: [],
+				})
+				.mockResolvedValueOnce({
+					// User lookup
+					rows: [{ id: 'user-123', email: 'test@example.com' }],
+					rowCount: 1,
+					command: 'SELECT',
+					oid: 0,
+					fields: [],
+				});
 		});
 
 		it('should allow localhost redirect URI', async () => {

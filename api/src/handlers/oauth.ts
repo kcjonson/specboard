@@ -111,10 +111,18 @@ function parseScopes(scopeString: string): string[] {
  * Removes control characters and escapes HTML entities
  */
 function sanitizeForDisplay(input: string): string {
-	return input
-		// Remove control characters (except space, tab, newline)
-		.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-		// Escape HTML entities
+	// Remove control characters (except space \x20, tab \x09, newline \x0A, carriage return \x0D)
+	// Using character code filtering to avoid eslint no-control-regex issues
+	const filtered = Array.from(input)
+		.filter(char => {
+			const code = char.charCodeAt(0);
+			// Allow printable ASCII (space and above) plus tab, newline, carriage return
+			return code >= 0x20 || code === 0x09 || code === 0x0A || code === 0x0D;
+		})
+		.join('');
+
+	// Escape HTML entities
+	return filtered
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
@@ -186,12 +194,20 @@ export async function handleClientRegistration(context: Context): Promise<Respon
 		}, 400);
 	}
 
-	// Validate client_name length
-	if (body.client_name && body.client_name.length > 255) {
-		return context.json({
-			error: 'invalid_client_metadata',
-			error_description: 'client_name too long (max 255 characters)',
-		}, 400);
+	// Validate client_name type and length
+	if (body.client_name !== undefined) {
+		if (typeof body.client_name !== 'string') {
+			return context.json({
+				error: 'invalid_client_metadata',
+				error_description: 'client_name must be a string',
+			}, 400);
+		}
+		if (body.client_name.length > 255) {
+			return context.json({
+				error: 'invalid_client_metadata',
+				error_description: 'client_name too long (max 255 characters)',
+			}, 400);
+		}
 	}
 
 	// Validate redirect_uris (required)
@@ -223,7 +239,13 @@ export async function handleClientRegistration(context: Context): Promise<Respon
 	// Deduplicate redirect URIs
 	const uniqueRedirectUris = [...new Set(body.redirect_uris)];
 
-	// Validate optional fields
+	// Validate token_endpoint_auth_method type
+	if (body.token_endpoint_auth_method !== undefined && typeof body.token_endpoint_auth_method !== 'string') {
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'token_endpoint_auth_method must be a string',
+		}, 400);
+	}
 	const tokenEndpointAuthMethod = body.token_endpoint_auth_method || 'none';
 	if (tokenEndpointAuthMethod !== 'none') {
 		// We only support public clients with PKCE
@@ -233,13 +255,28 @@ export async function handleClientRegistration(context: Context): Promise<Respon
 		}, 400);
 	}
 
+	// Validate grant_types type
+	if (body.grant_types !== undefined && !Array.isArray(body.grant_types)) {
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'grant_types must be an array',
+		}, 400);
+	}
 	const grantTypes = body.grant_types || ['authorization_code', 'refresh_token'];
+
+	// Validate response_types type
+	if (body.response_types !== undefined && !Array.isArray(body.response_types)) {
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'response_types must be an array',
+		}, 400);
+	}
 	const responseTypes = body.response_types || ['code'];
 
-	// Validate grant_types
+	// Validate grant_types values
 	const validGrantTypes = new Set(['authorization_code', 'refresh_token']);
 	for (const gt of grantTypes) {
-		if (!validGrantTypes.has(gt)) {
+		if (typeof gt !== 'string' || !validGrantTypes.has(gt)) {
 			return context.json({
 				error: 'invalid_client_metadata',
 				error_description: `Unsupported grant_type: ${gt}`,
@@ -247,7 +284,15 @@ export async function handleClientRegistration(context: Context): Promise<Respon
 		}
 	}
 
-	// Validate response_types
+	// Validate response_types values
+	for (const rt of responseTypes) {
+		if (typeof rt !== 'string') {
+			return context.json({
+				error: 'invalid_client_metadata',
+				error_description: 'response_types must contain strings',
+			}, 400);
+		}
+	}
 	if (responseTypes.length !== 1 || responseTypes[0] !== 'code') {
 		return context.json({
 			error: 'invalid_client_metadata',
