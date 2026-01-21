@@ -11,6 +11,9 @@ import {
 	addEpicProgressNote,
 	addTaskProgressNote,
 	signalReadyForReview as signalReadyForReviewService,
+	verifyProjectAccess,
+	verifyEpicOwnership,
+	verifyTaskOwnership,
 } from '@doc-platform/db';
 
 export const progressTools: Tool[] = [
@@ -70,7 +73,8 @@ type ToolResult = { content: Array<{ type: string; text: string }>; isError?: bo
 
 export async function handleProgressTool(
 	name: string,
-	args: Record<string, unknown> | undefined
+	args: Record<string, unknown> | undefined,
+	userId: string
 ): Promise<ToolResult> {
 	const projectId = args?.project_id as string;
 	if (!projectId) {
@@ -80,16 +84,49 @@ export async function handleProgressTool(
 		};
 	}
 
+	// Security: Verify the user has access to this project
+	const hasAccess = await verifyProjectAccess(projectId, userId);
+	if (!hasAccess) {
+		return {
+			content: [{ type: 'text', text: 'Access denied: You do not have permission to access this project' }],
+			isError: true,
+		};
+	}
+
 	try {
+		// For operations that reference an epic or task, verify it belongs to the project
+		const epicId = args?.epic_id as string | undefined;
+		const taskId = args?.task_id as string | undefined;
+
+		if (epicId) {
+			const epicBelongsToProject = await verifyEpicOwnership(projectId, epicId);
+			if (!epicBelongsToProject) {
+				return {
+					content: [{ type: 'text', text: 'Access denied: Epic does not belong to this project' }],
+					isError: true,
+				};
+			}
+		}
+
+		if (taskId) {
+			const taskBelongsToProject = await verifyTaskOwnership(projectId, taskId);
+			if (!taskBelongsToProject) {
+				return {
+					content: [{ type: 'text', text: 'Access denied: Task does not belong to this project' }],
+					isError: true,
+				};
+			}
+		}
+
 		switch (name) {
 			case 'add_progress_note':
 				return await addProgressNote(
-					args?.epic_id as string | undefined,
-					args?.task_id as string | undefined,
+					epicId,
+					taskId,
 					args?.note as string
 				);
 			case 'signal_ready_for_review':
-				return await signalReadyForReview(projectId, args?.epic_id as string, args?.pr_url as string);
+				return await signalReadyForReview(projectId, epicId as string, args?.pr_url as string);
 			default:
 				return {
 					content: [{ type: 'text', text: `Unknown progress tool: ${name}` }],

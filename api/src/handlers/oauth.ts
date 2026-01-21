@@ -20,6 +20,29 @@ const ALLOWED_CLIENTS = new Set(['claude-code', 'doc-platform-cli']);
 // Valid scopes
 const VALID_SCOPES = new Set(['docs:read', 'docs:write', 'tasks:read', 'tasks:write']);
 
+// Allowed redirect URIs for Claude Code (exact match required)
+const ALLOWED_REDIRECT_URIS = new Set([
+	'https://claude.ai/api/mcp/auth_callback',
+	'https://claude.com/api/mcp/auth_callback',
+]);
+
+/**
+ * Validate a redirect URI
+ * Returns true if valid, false otherwise
+ */
+function isValidRedirectUri(redirectUri: string): boolean {
+	try {
+		const url = new URL(redirectUri);
+		// Allow localhost with http (for local CLI tools)
+		const isLocalhost = ['127.0.0.1', 'localhost'].includes(url.hostname) && url.protocol === 'http:';
+		// Allow exact match against pre-approved URIs (Claude Code callbacks)
+		const isAllowedCallback = ALLOWED_REDIRECT_URIS.has(redirectUri);
+		return isLocalhost || isAllowedCallback;
+	} catch {
+		return false;
+	}
+}
+
 // Scope descriptions for consent screen
 export const SCOPE_DESCRIPTIONS: Record<string, string> = {
 	'docs:read': 'Read your documents',
@@ -77,6 +100,22 @@ export async function handleOAuthMetadata(context: Context): Promise<Response> {
 		grant_types_supported: ['authorization_code', 'refresh_token'],
 		code_challenge_methods_supported: ['S256'],
 		token_endpoint_auth_methods_supported: ['none'], // Public client
+	});
+}
+
+/**
+ * OAuth 2.0 Protected Resource Metadata (RFC 9728)
+ * GET /.well-known/oauth-protected-resource
+ *
+ * Tells MCP clients which authorization server to use for this resource.
+ */
+export async function handleProtectedResourceMetadata(context: Context): Promise<Response> {
+	const baseUrl = getBaseUrl(context);
+
+	return context.json({
+		resource: `${baseUrl}/mcp`,
+		authorization_servers: [baseUrl],
+		scopes_supported: Array.from(VALID_SCOPES),
 	});
 }
 
@@ -165,17 +204,9 @@ export async function handleAuthorizeGet(
 		return context.json({ error: 'invalid_request', error_description: 'redirect_uri required' }, 400);
 	}
 
-	// Validate redirect_uri (must be http://localhost for public clients)
-	try {
-		const redirectUrl = new URL(redirectUri);
-		if (!['127.0.0.1', 'localhost'].includes(redirectUrl.hostname)) {
-			return context.json({ error: 'invalid_request', error_description: 'redirect_uri must be localhost' }, 400);
-		}
-		if (redirectUrl.protocol !== 'http:') {
-			return context.json({ error: 'invalid_request', error_description: 'redirect_uri must use http protocol' }, 400);
-		}
-	} catch {
-		return context.json({ error: 'invalid_request', error_description: 'Invalid redirect_uri' }, 400);
+	// Validate redirect_uri
+	if (!isValidRedirectUri(redirectUri)) {
+		return context.json({ error: 'invalid_request', error_description: 'redirect_uri not allowed' }, 400);
 	}
 
 	if (!codeChallenge || codeChallengeMethod !== 'S256') {
@@ -263,7 +294,12 @@ export async function handleAuthorizePost(
 
 	const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, device_name, action } = body;
 
-	// Build redirect URL
+	// Validate redirect_uri BEFORE using it (security: prevent open redirect)
+	if (!redirect_uri || !isValidRedirectUri(redirect_uri)) {
+		return context.json({ error: 'invalid_request', error_description: 'redirect_uri not allowed' }, 400);
+	}
+
+	// Build redirect URL (safe now that we've validated)
 	const redirectUrl = new URL(redirect_uri);
 
 	// If denied, redirect with error

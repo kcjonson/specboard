@@ -49,8 +49,16 @@ const taskToolNames = new Set([
 ]);
 const progressToolNames = new Set(['add_progress_note', 'signal_ready_for_review']);
 
+// Session-to-user binding for security
+// Prevents session hijacking by ensuring a session can only be used by the user who created it
+interface SessionBinding {
+	userId: string;
+	transport: StreamableHTTPServerTransport;
+}
+
 // Create MCP server factory - each session gets its own server instance
-function createMcpServer(): Server {
+// userId is passed from the auth middleware to ensure all operations are authorized
+function createMcpServer(userId: string): Server {
 	const server = new Server(
 		{
 			name: 'doc-platform',
@@ -70,22 +78,23 @@ function createMcpServer(): Server {
 		};
 	});
 
-	// Handle tool calls
+	// Handle tool calls - pass userId for authorization
 	server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		const { name, arguments: args } = request.params;
 
 		try {
 			// Route to appropriate handler using exact matching
+			// Each handler receives userId to verify project ownership
 			if (epicToolNames.has(name)) {
-				return await handleEpicTool(name, args);
+				return await handleEpicTool(name, args, userId);
 			}
 
 			if (taskToolNames.has(name)) {
-				return await handleTaskTool(name, args);
+				return await handleTaskTool(name, args, userId);
 			}
 
 			if (progressToolNames.has(name)) {
-				return await handleProgressTool(name, args);
+				return await handleProgressTool(name, args, userId);
 			}
 
 			return {
@@ -115,8 +124,9 @@ function createMcpServer(): Server {
 	return server;
 }
 
-// Map to store transports by session ID
-const transports = new Map<string, StreamableHTTPServerTransport>();
+// Map to store session bindings by session ID
+// Each session is bound to the user who created it for security
+const sessions = new Map<string, SessionBinding>();
 
 // Define bindings type for Hono with Node.js server
 type Bindings = HttpBindings;
@@ -151,15 +161,23 @@ app.use('/mcp', mcpAuthMiddleware());
 // MCP POST - new session or existing session request
 app.post('/mcp', async (c) => {
 	const sessionId = c.req.header('mcp-session-id');
+	const mcpToken = c.get('mcpToken');
+	const userId = mcpToken.userId;
 
 	// Access raw Node.js request/response for MCP transport
 	const req = c.env.incoming;
 	const res = c.env.outgoing;
 
-	if (sessionId && transports.has(sessionId)) {
+	if (sessionId && sessions.has(sessionId)) {
+		const session = sessions.get(sessionId)!;
+
+		// Security: Verify the requesting user matches the session owner
+		if (session.userId !== userId) {
+			return c.json({ error: 'Cannot access session: This session belongs to a different user' }, 403);
+		}
+
 		// Existing session - route to existing transport
-		const transport = transports.get(sessionId)!;
-		await transport.handleRequest(req, res);
+		await session.transport.handleRequest(req, res);
 		// Response handled by transport, return empty response to Hono
 		return new Response(null);
 	}
@@ -168,20 +186,21 @@ app.post('/mcp', async (c) => {
 	const transport = new StreamableHTTPServerTransport({
 		sessionIdGenerator: () => randomUUID(),
 		onsessioninitialized: (newSessionId) => {
-			transports.set(newSessionId, transport);
-			console.log(`Session initialized: ${newSessionId}`);
+			// Bind the session to the authenticated user
+			sessions.set(newSessionId, { userId, transport });
+			console.log(`Session initialized: ${newSessionId} for user: ${userId}`);
 		},
 	});
 
 	transport.onclose = () => {
 		if (transport.sessionId) {
-			transports.delete(transport.sessionId);
+			sessions.delete(transport.sessionId);
 			console.log(`Session closed: ${transport.sessionId}`);
 		}
 	};
 
-	// Create and connect MCP server
-	const server = createMcpServer();
+	// Create and connect MCP server with the authenticated userId
+	const server = createMcpServer(userId);
 	await server.connect(transport);
 
 	// Handle the request
@@ -194,17 +213,25 @@ app.post('/mcp', async (c) => {
 // MCP GET - existing session (SSE streaming)
 app.get('/mcp', async (c) => {
 	const sessionId = c.req.header('mcp-session-id');
+	const mcpToken = c.get('mcpToken');
+	const userId = mcpToken.userId;
 
-	if (!sessionId || !transports.has(sessionId)) {
+	if (!sessionId || !sessions.has(sessionId)) {
 		return c.json({ error: 'Session ID required for GET requests' }, 400);
+	}
+
+	const session = sessions.get(sessionId)!;
+
+	// Security: Verify the requesting user matches the session owner
+	if (session.userId !== userId) {
+		return c.json({ error: 'Cannot access session: This session belongs to a different user' }, 403);
 	}
 
 	// Access raw Node.js request/response for MCP transport
 	const req = c.env.incoming;
 	const res = c.env.outgoing;
 
-	const transport = transports.get(sessionId)!;
-	await transport.handleRequest(req, res);
+	await session.transport.handleRequest(req, res);
 
 	// Response handled by transport
 	return new Response(null);
@@ -213,14 +240,22 @@ app.get('/mcp', async (c) => {
 // MCP DELETE - close session
 app.delete('/mcp', async (c) => {
 	const sessionId = c.req.header('mcp-session-id');
+	const mcpToken = c.get('mcpToken');
+	const userId = mcpToken.userId;
 
-	if (!sessionId || !transports.has(sessionId)) {
+	if (!sessionId || !sessions.has(sessionId)) {
 		return c.json({ error: 'Session not found' }, 404);
 	}
 
-	const transport = transports.get(sessionId)!;
-	await transport.close();
-	transports.delete(sessionId);
+	const session = sessions.get(sessionId)!;
+
+	// Security: Verify the requesting user matches the session owner
+	if (session.userId !== userId) {
+		return c.json({ error: 'Cannot close session: This session belongs to a different user' }, 403);
+	}
+
+	await session.transport.close();
+	sessions.delete(sessionId);
 
 	return c.json({ status: 'closed' });
 });

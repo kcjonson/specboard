@@ -63,6 +63,18 @@ function transformProject(project: Project): ProjectResponse {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Verify that a user has access to a project
+ * Returns true if the user owns the project, false otherwise
+ */
+export async function verifyProjectAccess(projectId: string, userId: string): Promise<boolean> {
+	const result = await query<{ id: string }>(
+		'SELECT id FROM projects WHERE id = $1 AND owner_id = $2',
+		[projectId, userId]
+	);
+	return result.rows.length > 0;
+}
+
+/**
  * Get all projects for a user
  */
 interface ProjectQueryRow extends Project {

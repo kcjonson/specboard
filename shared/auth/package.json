@@ -9,6 +9,8 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
 		"lint": "eslint src",
 		"lint:fix": "eslint src --fix"
 	},

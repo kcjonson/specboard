@@ -16,6 +16,8 @@ import {
 	completeTask as completeTaskService,
 	blockTask as blockTaskService,
 	unblockTask as unblockTaskService,
+	verifyProjectAccess,
+	verifyTaskOwnership,
 } from '@doc-platform/db';
 
 export const taskTools: Tool[] = [
@@ -193,7 +195,8 @@ type ToolResult = { content: Array<{ type: string; text: string }>; isError?: bo
 
 export async function handleTaskTool(
 	name: string,
-	args: Record<string, unknown> | undefined
+	args: Record<string, unknown> | undefined,
+	userId: string
 ): Promise<ToolResult> {
 	const projectId = args?.project_id as string;
 	if (!projectId) {
@@ -203,7 +206,29 @@ export async function handleTaskTool(
 		};
 	}
 
+	// Security: Verify the user has access to this project
+	const hasAccess = await verifyProjectAccess(projectId, userId);
+	if (!hasAccess) {
+		return {
+			content: [{ type: 'text', text: 'Access denied: You do not have permission to access this project' }],
+			isError: true,
+		};
+	}
+
 	try {
+		// For operations that take task_id, verify the task belongs to the project
+		const taskId = args?.task_id as string | undefined;
+		const taskOperations = ['update_task', 'start_task', 'complete_task', 'block_task', 'unblock_task'];
+		if (taskId && taskOperations.includes(name)) {
+			const taskBelongsToProject = await verifyTaskOwnership(projectId, taskId);
+			if (!taskBelongsToProject) {
+				return {
+					content: [{ type: 'text', text: 'Access denied: Task does not belong to this project' }],
+					isError: true,
+				};
+			}
+		}
+
 		switch (name) {
 			case 'create_task':
 				return await createTask(

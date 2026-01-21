@@ -40,6 +40,7 @@ import {
 } from './handlers/users.ts';
 import {
 	handleOAuthMetadata,
+	handleProtectedResourceMetadata,
 	handleAuthorizeGet,
 	handleAuthorizePost,
 	handleToken,
@@ -133,11 +134,46 @@ redis.on('connect', () => {
 	console.log('Connected to Redis');
 });
 
+// Allowed origins for CORS
+// In production, this restricts which domains can make cross-origin requests
+const getAllowedOrigins = (): string[] => {
+	if (process.env.NODE_ENV === 'production') {
+		return [
+			'https://specboard.io',
+			'https://www.specboard.io',
+			'https://staging.specboard.io',
+			'https://claude.ai',
+			'https://claude.com',
+		];
+	}
+	// In development, allow localhost origins
+	return [
+		'http://localhost',
+		'http://localhost:80',
+		'http://localhost:3000',
+		'http://localhost:5173',
+		'http://127.0.0.1',
+		'http://127.0.0.1:80',
+		'http://127.0.0.1:3000',
+		'http://127.0.0.1:5173',
+	];
+};
+
 // App
 const app = new Hono();
 
-// Middleware
-app.use('*', cors());
+// Middleware - CORS with origin validation
+app.use('*', cors({
+	origin: (origin) => {
+		// Allow requests with no origin (e.g., curl, server-to-server)
+		if (!origin) return null;
+		const allowed = getAllowedOrigins();
+		return allowed.includes(origin) ? origin : null;
+	},
+	credentials: true,
+	allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+	allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+}));
 
 // Request logging middleware with error capture
 app.use('*', async (context, next) => {
@@ -340,6 +376,7 @@ app.get('/api/github/repos/:owner/:repo/branches', (context) => handleListGitHub
 
 // OAuth 2.1 routes (MCP authentication)
 app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);
+app.get('/.well-known/oauth-protected-resource', handleProtectedResourceMetadata);
 app.get('/oauth/authorize', (context) => handleAuthorizeGet(context, redis));
 app.post('/oauth/authorize', (context) => handleAuthorizePost(context, redis));
 app.post('/oauth/token', handleToken);

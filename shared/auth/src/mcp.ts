@@ -36,15 +36,48 @@ function extractBearerToken(authHeader: string | undefined): string | null {
 }
 
 /**
+ * Allowed hosts for OAuth protected resource metadata.
+ * Used to prevent host header injection attacks.
+ */
+const ALLOWED_HOSTS = new Set([
+	'localhost',
+	'specboard.io',
+	'staging.specboard.io',
+	'www.specboard.io',
+]);
+
+/**
  * Build the WWW-Authenticate header value for 401 responses
- * Per MCP OAuth spec, this tells the client where to find OAuth discovery
+ * Per MCP OAuth spec (RFC 9728), this tells the client where to find
+ * the protected resource metadata for OAuth discovery.
+ *
+ * Security: Validates host header against allowlist to prevent injection attacks.
+ * Falls back to configured MCP_BASE_URL environment variable if available.
  */
 function buildWwwAuthenticateHeader(c: Context): string {
-	// Build the resource URL from the request
-	const proto = c.req.header('x-forwarded-proto') || 'https';
+	// First, try environment variable (most secure - can't be manipulated by client)
+	const configuredBaseUrl = process.env.MCP_BASE_URL;
+	if (configuredBaseUrl) {
+		return `Bearer resource_metadata="${configuredBaseUrl}/.well-known/oauth-protected-resource"`;
+	}
+
+	// Fall back to validated host header (for local development)
 	const host = c.req.header('host') || 'localhost';
-	const resourceUrl = `${proto}://${host}/mcp`;
-	return `Bearer resource="${resourceUrl}"`;
+	const hostWithoutPort = host.split(':')[0]!;
+
+	// Validate host against allowlist
+	if (!ALLOWED_HOSTS.has(hostWithoutPort)) {
+		// For unrecognized hosts, use a safe default
+		console.warn(`[mcp-auth] Rejecting unrecognized host: ${host}`);
+		return `Bearer resource_metadata="https://specboard.io/.well-known/oauth-protected-resource"`;
+	}
+
+	// Determine protocol: use header if present, otherwise default based on host
+	const protoHeader = c.req.header('x-forwarded-proto');
+	const proto = protoHeader ||
+		(hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1' ? 'http' : 'https');
+	const baseUrl = `${proto}://${host}`;
+	return `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`;
 }
 
 /**

@@ -82,6 +82,22 @@ export async function verifyEpicOwnership(
 }
 
 /**
+ * Verify task exists and belongs to project (via its epic)
+ */
+export async function verifyTaskOwnership(
+	projectId: string,
+	taskId: string
+): Promise<boolean> {
+	const result = await query(
+		`SELECT t.id FROM tasks t
+		 JOIN epics e ON t.epic_id = e.id
+		 WHERE t.id = $1 AND e.project_id = $2`,
+		[taskId, projectId]
+	);
+	return result.rows.length > 0;
+}
+
+/**
  * Create a single task
  */
 export interface CreateTaskInput {
