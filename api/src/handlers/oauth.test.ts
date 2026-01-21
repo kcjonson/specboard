@@ -25,7 +25,21 @@ vi.mock('@doc-platform/auth', () => ({
 }));
 
 import { query } from '@doc-platform/db';
-import { getSession } from '@doc-platform/auth';
+import { getSession, type Session } from '@doc-platform/auth';
+import type { Redis } from 'ioredis';
+
+// Helper to create a valid mock session
+function createMockSession(userId: string): Session {
+	return {
+		userId,
+		csrfToken: 'mock-csrf-token',
+		createdAt: Date.now(),
+		lastAccessedAt: Date.now(),
+	};
+}
+
+// Create a mock Redis instance with minimal type safety
+const mockRedis = {} as Redis;
 
 describe('oauth handlers', () => {
 	beforeEach(() => {
@@ -121,15 +135,11 @@ describe('oauth handlers', () => {
 	});
 
 	describe('handleAuthorizeGet - redirect URI validation', () => {
-		const mockRedis = {} as any;
+		// Use global mockRedis
 
 		beforeEach(() => {
 			// Mock authenticated session
-			vi.mocked(getSession).mockResolvedValue({
-				userId: 'user-123',
-				email: 'test@example.com',
-				roles: ['user'],
-			});
+			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
 			// Mock user lookup
 			vi.mocked(query).mockResolvedValue({
 				rows: [{ id: 'user-123', email: 'test@example.com' }],
@@ -436,14 +446,10 @@ describe('oauth handlers', () => {
 	 * These tests explicitly verify security-critical behaviors
 	 */
 	describe('Security: Open Redirect Prevention', () => {
-		const mockRedis = {} as any;
+		// Use global mockRedis
 
 		beforeEach(() => {
-			vi.mocked(getSession).mockResolvedValue({
-				userId: 'user-123',
-				email: 'test@example.com',
-				roles: ['user'],
-			});
+			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
 			vi.mocked(query).mockResolvedValue({
 				rows: [{ id: 'user-123', email: 'test@example.com' }],
 				rowCount: 1,
@@ -526,14 +532,10 @@ describe('oauth handlers', () => {
 	});
 
 	describe('Security: PKCE Enforcement', () => {
-		const mockRedis = {} as any;
+		// Use global mockRedis
 
 		beforeEach(() => {
-			vi.mocked(getSession).mockResolvedValue({
-				userId: 'user-123',
-				email: 'test@example.com',
-				roles: ['user'],
-			});
+			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
 			vi.mocked(query).mockResolvedValue({
 				rows: [{ id: 'user-123', email: 'test@example.com' }],
 				rowCount: 1,
@@ -587,7 +589,7 @@ describe('oauth handlers', () => {
 	});
 
 	describe('Security: Session Validation', () => {
-		const mockRedis = {} as any;
+		// Use global mockRedis
 
 		it('should reject requests without session cookie', async () => {
 			vi.mocked(getSession).mockResolvedValue(null);
@@ -634,14 +636,10 @@ describe('oauth handlers', () => {
 	});
 
 	describe('Security: Client Validation', () => {
-		const mockRedis = {} as any;
+		// Use global mockRedis
 
 		beforeEach(() => {
-			vi.mocked(getSession).mockResolvedValue({
-				userId: 'user-123',
-				email: 'test@example.com',
-				roles: ['user'],
-			});
+			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
 		});
 
 		it('should reject unknown client IDs', async () => {
@@ -704,14 +702,10 @@ describe('oauth handlers', () => {
 	});
 
 	describe('Security: Scope Validation', () => {
-		const mockRedis = {} as any;
+		// Use global mockRedis
 
 		beforeEach(() => {
-			vi.mocked(getSession).mockResolvedValue({
-				userId: 'user-123',
-				email: 'test@example.com',
-				roles: ['user'],
-			});
+			vi.mocked(getSession).mockResolvedValue(createMockSession('user-123'));
 			vi.mocked(query).mockResolvedValue({
 				rows: [{ id: 'user-123', email: 'test@example.com' }],
 				rowCount: 1,

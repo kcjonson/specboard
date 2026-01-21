@@ -325,12 +325,16 @@ describe('MCP auth middleware', () => {
 			const secretToken = 'super-secret-token-12345';
 
 			// This will cause an error to be logged
-			await app.request('http://localhost/mcp', {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${secretToken}`,
-				},
-			}).catch(() => {});
+			try {
+				await app.request('http://localhost/mcp', {
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${secretToken}`,
+					},
+				});
+			} catch {
+				// Expected to fail - we're testing that tokens aren't logged
+			}
 
 			// Check that the token was not logged
 			for (const call of consoleSpy.mock.calls) {
