@@ -14,33 +14,56 @@ const ACCESS_TOKEN_TTL_SECONDS = 3600; // 1 hour
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 3600; // 30 days
 const AUTH_CODE_TTL_SECONDS = 600; // 10 minutes
 
-// Allowed clients (in production, this could be a database table)
-const ALLOWED_CLIENTS = new Set(['claude-code', 'doc-platform-cli']);
-
 // Valid scopes
 const VALID_SCOPES = new Set(['docs:read', 'docs:write', 'tasks:read', 'tasks:write']);
 
-// Allowed redirect URIs for Claude Code (exact match required)
-const ALLOWED_REDIRECT_URIS = new Set([
-	'https://claude.ai/api/mcp/auth_callback',
-	'https://claude.com/api/mcp/auth_callback',
-]);
+/**
+ * OAuth client stored in database
+ */
+interface OAuthClient {
+	client_id: string;
+	client_name: string | null;
+	redirect_uris: string[];
+	token_endpoint_auth_method: string;
+	grant_types: string[];
+	response_types: string[];
+	client_id_issued_at: Date;
+	created_at: Date;
+}
 
 /**
- * Validate a redirect URI
- * Returns true if valid, false otherwise
+ * Validate a redirect URI for client registration
+ * Only allows localhost (http) or HTTPS URLs
  */
-function isValidRedirectUri(redirectUri: string): boolean {
+function isValidRedirectUriForRegistration(redirectUri: string): boolean {
 	try {
 		const url = new URL(redirectUri);
 		// Allow localhost with http (for local CLI tools)
 		const isLocalhost = ['127.0.0.1', 'localhost'].includes(url.hostname) && url.protocol === 'http:';
-		// Allow exact match against pre-approved URIs (Claude Code callbacks)
-		const isAllowedCallback = ALLOWED_REDIRECT_URIS.has(redirectUri);
-		return isLocalhost || isAllowedCallback;
+		// Require HTTPS for non-localhost
+		const isSecure = url.protocol === 'https:';
+		return isLocalhost || isSecure;
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Check if a redirect URI matches one of the client's registered URIs
+ */
+function isRedirectUriAllowedForClient(redirectUri: string, client: OAuthClient): boolean {
+	return client.redirect_uris.includes(redirectUri);
+}
+
+/**
+ * Look up a client by ID from the database
+ */
+async function getClient(clientId: string): Promise<OAuthClient | null> {
+	const result = await query<OAuthClient>(
+		'SELECT * FROM oauth_clients WHERE client_id = $1',
+		[clientId]
+	);
+	return result.rows[0] || null;
 }
 
 // Scope descriptions for consent screen
@@ -84,6 +107,30 @@ function parseScopes(scopeString: string): string[] {
 }
 
 /**
+ * Sanitize a string for safe display (prevents XSS)
+ * Removes control characters and escapes HTML entities
+ */
+function sanitizeForDisplay(input: string): string {
+	// Remove control characters (except space \x20, tab \x09, newline \x0A, carriage return \x0D)
+	// Using character code filtering to avoid eslint no-control-regex issues
+	const filtered = Array.from(input)
+		.filter(char => {
+			const code = char.charCodeAt(0);
+			// Allow printable ASCII (space and above) plus tab, newline, carriage return
+			return code >= 0x20 || code === 0x09 || code === 0x0A || code === 0x0D;
+		})
+		.join('');
+
+	// Escape HTML entities
+	return filtered
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#x27;');
+}
+
+/**
  * OAuth 2.0 Authorization Server Metadata
  * GET /.well-known/oauth-authorization-server
  */
@@ -95,6 +142,7 @@ export async function handleOAuthMetadata(context: Context): Promise<Response> {
 		authorization_endpoint: `${baseUrl}/oauth/authorize`,
 		token_endpoint: `${baseUrl}/oauth/token`,
 		revocation_endpoint: `${baseUrl}/oauth/revoke`,
+		registration_endpoint: `${baseUrl}/oauth/register`,
 		scopes_supported: Array.from(VALID_SCOPES),
 		response_types_supported: ['code'],
 		grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -117,6 +165,187 @@ export async function handleProtectedResourceMetadata(context: Context): Promise
 		authorization_servers: [baseUrl],
 		scopes_supported: Array.from(VALID_SCOPES),
 	});
+}
+
+/**
+ * RFC 7591 Dynamic Client Registration
+ * POST /oauth/register
+ *
+ * Allows OAuth clients to register themselves dynamically.
+ * This is required for tools like Claude Code that need to authenticate
+ * with arbitrary OAuth servers without pre-registration.
+ */
+export async function handleClientRegistration(context: Context): Promise<Response> {
+	// Parse request body
+	let body: {
+		client_name?: string;
+		redirect_uris?: string[];
+		token_endpoint_auth_method?: string;
+		grant_types?: string[];
+		response_types?: string[];
+	};
+
+	try {
+		body = await context.req.json();
+	} catch {
+		return context.json({
+			error: 'invalid_request',
+			error_description: 'Invalid JSON body',
+		}, 400);
+	}
+
+	// Validate client_name type, length, and non-empty
+	let clientName: string | null = null;
+	if (body.client_name !== undefined) {
+		if (typeof body.client_name !== 'string') {
+			return context.json({
+				error: 'invalid_client_metadata',
+				error_description: 'client_name must be a string',
+			}, 400);
+		}
+		const trimmedClientName = body.client_name.trim();
+		if (trimmedClientName.length === 0) {
+			return context.json({
+				error: 'invalid_client_metadata',
+				error_description: 'client_name must not be empty or whitespace',
+			}, 400);
+		}
+		if (trimmedClientName.length > 255) {
+			return context.json({
+				error: 'invalid_client_metadata',
+				error_description: 'client_name too long (max 255 characters)',
+			}, 400);
+		}
+		clientName = trimmedClientName;
+	}
+
+	// Validate redirect_uris (required)
+	if (!body.redirect_uris || !Array.isArray(body.redirect_uris) || body.redirect_uris.length === 0) {
+		return context.json({
+			error: 'invalid_redirect_uri',
+			error_description: 'At least one redirect_uri is required',
+		}, 400);
+	}
+
+	// Limit number of redirect URIs to prevent abuse
+	if (body.redirect_uris.length > 20) {
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'Too many redirect_uris (max 20)',
+		}, 400);
+	}
+
+	// Validate each redirect URI
+	for (const uri of body.redirect_uris) {
+		if (typeof uri !== 'string' || !isValidRedirectUriForRegistration(uri)) {
+			return context.json({
+				error: 'invalid_redirect_uri',
+				error_description: 'One or more redirect_uri values are invalid. Must be localhost (http) or HTTPS URLs.',
+			}, 400);
+		}
+	}
+
+	// Deduplicate redirect URIs
+	const uniqueRedirectUris = [...new Set(body.redirect_uris)];
+
+	// Validate token_endpoint_auth_method type
+	if (body.token_endpoint_auth_method !== undefined && typeof body.token_endpoint_auth_method !== 'string') {
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'token_endpoint_auth_method must be a string',
+		}, 400);
+	}
+	const tokenEndpointAuthMethod = body.token_endpoint_auth_method || 'none';
+	if (tokenEndpointAuthMethod !== 'none') {
+		// We only support public clients with PKCE
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'Only token_endpoint_auth_method "none" is supported (public client with PKCE)',
+		}, 400);
+	}
+
+	// Validate grant_types type
+	if (body.grant_types !== undefined && !Array.isArray(body.grant_types)) {
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'grant_types must be an array',
+		}, 400);
+	}
+	const grantTypes = body.grant_types || ['authorization_code', 'refresh_token'];
+
+	// Validate response_types type
+	if (body.response_types !== undefined && !Array.isArray(body.response_types)) {
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'response_types must be an array',
+		}, 400);
+	}
+	const responseTypes = body.response_types || ['code'];
+
+	// Validate grant_types values
+	const validGrantTypes = new Set(['authorization_code', 'refresh_token']);
+	for (const gt of grantTypes) {
+		if (typeof gt !== 'string' || !validGrantTypes.has(gt)) {
+			return context.json({
+				error: 'invalid_client_metadata',
+				error_description: `Unsupported grant_type: ${gt}`,
+			}, 400);
+		}
+	}
+
+	// Validate response_types values
+	for (const rt of responseTypes) {
+		if (typeof rt !== 'string') {
+			return context.json({
+				error: 'invalid_client_metadata',
+				error_description: 'response_types must contain strings',
+			}, 400);
+		}
+	}
+	if (responseTypes.length !== 1 || responseTypes[0] !== 'code') {
+		return context.json({
+			error: 'invalid_client_metadata',
+			error_description: 'Only response_type "code" is supported',
+		}, 400);
+	}
+
+	// Generate a secure client_id
+	const clientId = randomBytes(16).toString('hex');
+	const clientIdIssuedAt = Math.floor(Date.now() / 1000);
+
+	// Store client in database
+	try {
+		await query(
+			`INSERT INTO oauth_clients (client_id, client_name, redirect_uris, token_endpoint_auth_method, grant_types, response_types, client_id_issued_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, to_timestamp($7))`,
+			[
+				clientId,
+				clientName,
+				uniqueRedirectUris,
+				tokenEndpointAuthMethod,
+				grantTypes,
+				responseTypes,
+				clientIdIssuedAt,
+			]
+		);
+	} catch (error) {
+		console.error('Failed to register OAuth client:', error);
+		return context.json({
+			error: 'server_error',
+			error_description: 'Failed to register client',
+		}, 500);
+	}
+
+	// Return client registration response (RFC 7591)
+	return context.json({
+		client_id: clientId,
+		client_name: clientName,
+		redirect_uris: uniqueRedirectUris,
+		token_endpoint_auth_method: tokenEndpointAuthMethod,
+		grant_types: grantTypes,
+		response_types: responseTypes,
+		client_id_issued_at: clientIdIssuedAt,
+	}, 201);
 }
 
 /**
@@ -192,7 +421,19 @@ export async function handleAuthorizeGet(
 	const codeChallengeMethod = url.searchParams.get('code_challenge_method');
 
 	// Validate required parameters
-	if (!clientId || !ALLOWED_CLIENTS.has(clientId)) {
+	if (!clientId) {
+		return context.json({ error: 'invalid_client', error_description: 'client_id required' }, 400);
+	}
+
+	// Look up client in database
+	let client: OAuthClient | null;
+	try {
+		client = await getClient(clientId);
+	} catch (error) {
+		console.error('Database error looking up OAuth client:', error);
+		return context.json({ error: 'server_error', error_description: 'Internal server error' }, 500);
+	}
+	if (!client) {
 		return context.json({ error: 'invalid_client', error_description: 'Unknown client' }, 400);
 	}
 
@@ -204,8 +445,8 @@ export async function handleAuthorizeGet(
 		return context.json({ error: 'invalid_request', error_description: 'redirect_uri required' }, 400);
 	}
 
-	// Validate redirect_uri
-	if (!isValidRedirectUri(redirectUri)) {
+	// Validate redirect_uri against client's registered URIs
+	if (!isRedirectUriAllowedForClient(redirectUri, client)) {
 		return context.json({ error: 'invalid_request', error_description: 'redirect_uri not allowed' }, 400);
 	}
 
@@ -271,7 +512,8 @@ export async function handleAuthorizePost(
 		code_challenge: string;
 		code_challenge_method: string;
 		device_name: string;
-		action: 'approve' | 'deny';
+		action: string;
+		csrf_token: string;
 	};
 
 	const contentType = context.req.header('content-type') || '';
@@ -288,14 +530,39 @@ export async function handleAuthorizePost(
 			code_challenge: String(formData.code_challenge || ''),
 			code_challenge_method: String(formData.code_challenge_method || ''),
 			device_name: String(formData.device_name || ''),
-			action: formData.action as 'approve' | 'deny',
+			action: String(formData.action || ''),
+			csrf_token: String(formData.csrf_token || ''),
 		};
 	}
 
 	const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, device_name, action } = body;
 
+	// Note: CSRF protection is handled by csrfMiddleware which validates the X-CSRF-Token header
+	// No manual validation needed here
+
+	// Validate action field
+	if (action !== 'approve' && action !== 'deny') {
+		return context.json({ error: 'invalid_request', error_description: 'Invalid action' }, 400);
+	}
+
+	// Look up client from database (must happen before redirect_uri validation)
+	if (!client_id) {
+		return context.json({ error: 'invalid_client', error_description: 'client_id required' }, 400);
+	}
+
+	let client: OAuthClient | null;
+	try {
+		client = await getClient(client_id);
+	} catch (error) {
+		console.error('Database error looking up OAuth client:', error);
+		return context.json({ error: 'server_error', error_description: 'Internal server error' }, 500);
+	}
+	if (!client) {
+		return context.json({ error: 'invalid_client', error_description: 'Unknown client' }, 400);
+	}
+
 	// Validate redirect_uri BEFORE using it (security: prevent open redirect)
-	if (!redirect_uri || !isValidRedirectUri(redirect_uri)) {
+	if (!redirect_uri || !isRedirectUriAllowedForClient(redirect_uri, client)) {
 		return context.json({ error: 'invalid_request', error_description: 'redirect_uri not allowed' }, 400);
 	}
 
@@ -308,11 +575,6 @@ export async function handleAuthorizePost(
 		redirectUrl.searchParams.set('error_description', 'The resource owner denied the request');
 		if (state) redirectUrl.searchParams.set('state', state);
 		return context.redirect(redirectUrl.toString());
-	}
-
-	// Validate inputs
-	if (!client_id || !ALLOWED_CLIENTS.has(client_id)) {
-		return context.json({ error: 'invalid_client' }, 400);
 	}
 
 	if (!device_name || device_name.trim().length === 0) {
@@ -336,11 +598,14 @@ export async function handleAuthorizePost(
 	const code = generateToken();
 	const expiresAt = new Date(Date.now() + AUTH_CODE_TTL_SECONDS * 1000);
 
+	// Sanitize device name for safe display
+	const sanitizedDeviceName = sanitizeForDisplay(device_name.trim());
+
 	// Store authorization code
 	await query(
 		`INSERT INTO oauth_codes (code, user_id, client_id, device_name, code_challenge, code_challenge_method, scopes, redirect_uri, expires_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		[code, session.userId, client_id, device_name.trim(), code_challenge, code_challenge_method, scopes, redirect_uri, expiresAt]
+		[code, session.userId, client_id, sanitizedDeviceName, code_challenge, code_challenge_method, scopes, redirect_uri, expiresAt]
 	);
 
 	// Redirect with code
@@ -359,14 +624,18 @@ export async function handleToken(context: Context): Promise<Response> {
 	const contentType = context.req.header('content-type') || '';
 	let body: Record<string, string>;
 
-	if (contentType.includes('application/json')) {
-		body = await context.req.json();
-	} else {
-		const formData = await context.req.parseBody();
-		body = {};
-		for (const [key, value] of Object.entries(formData)) {
-			body[key] = String(value);
+	try {
+		if (contentType.includes('application/json')) {
+			body = await context.req.json();
+		} else {
+			const formData = await context.req.parseBody();
+			body = {};
+			for (const [key, value] of Object.entries(formData)) {
+				body[key] = String(value);
+			}
 		}
+	} catch {
+		return context.json({ error: 'invalid_request', error_description: 'Invalid request body' }, 400);
 	}
 
 	const grantType = body.grant_type;

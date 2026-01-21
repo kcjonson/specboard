@@ -41,6 +41,7 @@ import {
 import {
 	handleOAuthMetadata,
 	handleProtectedResourceMetadata,
+	handleClientRegistration,
 	handleAuthorizeGet,
 	handleAuthorizePost,
 	handleToken,
@@ -240,6 +241,7 @@ app.use(
 			{ path: '/api/auth/github', config: RATE_LIMIT_CONFIGS.login }, // OAuth start - same limit as login
 			{ path: '/oauth/token', config: RATE_LIMIT_CONFIGS.oauthToken },
 			{ path: '/oauth/authorize', config: RATE_LIMIT_CONFIGS.oauthAuthorize },
+			{ path: '/oauth/register', config: RATE_LIMIT_CONFIGS.oauthToken }, // Same limit as token endpoint
 			{ path: '/api/chat', config: RATE_LIMIT_CONFIGS.chat },
 		],
 		defaultLimit: RATE_LIMIT_CONFIGS.api,
@@ -267,6 +269,7 @@ app.use(
 			'/api/metrics',
 			'/oauth/token',
 			'/oauth/revoke',
+			'/oauth/register',
 			'/.well-known/oauth-authorization-server',
 			'/health',
 			'/api/health',
@@ -377,6 +380,7 @@ app.get('/api/github/repos/:owner/:repo/branches', (context) => handleListGitHub
 // OAuth 2.1 routes (MCP authentication)
 app.get('/.well-known/oauth-authorization-server', handleOAuthMetadata);
 app.get('/.well-known/oauth-protected-resource', handleProtectedResourceMetadata);
+app.post('/oauth/register', handleClientRegistration);
 app.get('/oauth/authorize', (context) => handleAuthorizeGet(context, redis));
 app.post('/oauth/authorize', (context) => handleAuthorizePost(context, redis));
 app.post('/oauth/token', handleToken);
