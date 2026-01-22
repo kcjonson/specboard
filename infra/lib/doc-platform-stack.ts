@@ -671,7 +671,7 @@ export class DocPlatformStack extends cdk.Stack {
 			},
 			portMappings: [{ containerPort: 3002 }],
 			healthCheck: {
-				command: ['CMD-SHELL', 'node -e "fetch(\'http://localhost:3002/health\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'],
+				command: ['CMD-SHELL', 'node -e "fetch(\'http://localhost:3002/mcp/health\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'],
 				interval: cdk.Duration.seconds(30),
 				timeout: cdk.Duration.seconds(5),
 				retries: 3,
@@ -937,7 +937,7 @@ export class DocPlatformStack extends cdk.Stack {
 			protocol: elbv2.ApplicationProtocol.HTTP,
 			targetType: elbv2.TargetType.IP,
 			healthCheck: {
-				path: '/health',
+				path: '/mcp/health',
 				interval: cdk.Duration.seconds(30),
 				healthyThresholdCount: 2,
 				unhealthyThresholdCount: 3,

@@ -153,7 +153,8 @@ app.use('*', async (c, next) => {
 });
 
 // Health check endpoint - no auth required (ALB needs this)
-app.get('/health', (c) => c.json({ status: 'ok' }));
+// Uses /mcp/health to match the service's public route prefix for consistency
+app.get('/mcp/health', (c) => c.json({ status: 'ok' }));
 
 // MCP endpoints - require OAuth Bearer token
 app.use('/mcp', mcpAuthMiddleware());
@@ -267,5 +268,5 @@ app.notFound((c) => c.json({ error: 'Not found' }, 404));
 serve({ fetch: app.fetch, port }, () => {
 	console.log(`doc-platform MCP server running on http://localhost:${port}`);
 	console.log(`MCP endpoint: http://localhost:${port}/mcp`);
-	console.log(`Health check: http://localhost:${port}/health`);
+	console.log(`Health check: http://localhost:${port}/mcp/health`);
 });
