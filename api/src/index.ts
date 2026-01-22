@@ -119,6 +119,7 @@ import {
 	handleGitHubCommit,
 } from './handlers/github-sync.ts';
 import { handleGetChatModels, handleGetChatProviders } from './handlers/chat-models.ts';
+import { handleWaitlistSignup, handleListWaitlist } from './handlers/waitlist.ts';
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('api');
@@ -267,6 +268,7 @@ app.use(
 			'/api/auth/forgot-password',
 			'/api/auth/reset-password',
 			'/api/auth/github/callback', // GitHub OAuth callback (comes from redirect)
+			'/api/waitlist', // Public signup form
 			'/api/metrics',
 			'/oauth/token',
 			'/oauth/revoke',
@@ -291,6 +293,12 @@ app.onError((error, context) => {
 // Health check
 app.get('/health', (context) => context.json({ status: 'ok' }));
 app.get('/api/health', (context) => context.json({ status: 'ok' }));
+
+// Public waitlist signup (no auth required)
+app.post('/api/waitlist', handleWaitlistSignup);
+
+// Waitlist admin routes (requires admin)
+app.get('/api/waitlist', (context) => handleListWaitlist(context, redis));
 
 // Error reporting endpoint - receives frontend errors and forwards to error tracking service
 // Excluded from CSRF (sendBeacon can't send headers) but protected by Origin check

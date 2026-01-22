@@ -28,6 +28,11 @@
 	--color-primary: #3b82f6;
 	--color-primary-hover: #2563eb;
 
+	/* Colors - Accent (warm highlight) */
+	--color-accent: #f59e0b;
+	--color-accent-hover: #d97706;
+	--color-accent-soft: #fef3c7;
+
 	/* Notice colors - bg variants derived from base */
 	--color-success: #10b981;
 	--color-success-bg: color-mix(in srgb, var(--color-success) 10%, white);
@@ -124,6 +129,11 @@
 		/* Colors - Interactive */
 		--color-primary: #60a5fa;
 		--color-primary-hover: #3b82f6;
+
+		/* Colors - Accent (warm highlight) */
+		--color-accent: #fbbf24;
+		--color-accent-hover: #f59e0b;
+		--color-accent-soft: rgba(251, 191, 36, 0.15);
 
 		/* Notice colors - bg variants derived from base */
 		--color-success: #34d399;

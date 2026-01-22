@@ -24,6 +24,7 @@ import { UIDemo } from './routes/ui-demo/UIDemo';
 import { OAuthConsent } from './routes/oauth/OAuthConsent';
 import { Admin } from './routes/admin/Admin';
 import { AdminUsers } from './routes/admin/AdminUsers';
+import { AdminWaitlist } from './routes/admin/AdminWaitlist';
 
 // Global styles - common CSS shared with SSG pages, then app-specific
 import '../../shared/styles/common.css';
@@ -113,6 +114,7 @@ const routes = [
 	{ route: '/admin', entry: Admin },
 	{ route: '/admin/users', entry: AdminUsers },
 	{ route: '/admin/users/:userId', entry: UserSettings },
+	{ route: '/admin/waitlist', entry: AdminWaitlist },
 	{ route: '/admin/ui', entry: UIDemo },
 
 	// Smart redirect based on cookie

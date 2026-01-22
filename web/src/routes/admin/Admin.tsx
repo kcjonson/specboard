@@ -15,6 +15,13 @@ export function Admin(_props: RouteProps): JSX.Element {
 						</p>
 					</a>
 
+					<a href="/admin/waitlist" class={styles.card}>
+						<h2 class={styles.cardTitle}>Early Access Waitlist</h2>
+						<p class={styles.cardDesc}>
+							View all early access signups from the public homepage.
+						</p>
+					</a>
+
 					<a href="/admin/ui" class={styles.card}>
 						<h2 class={styles.cardTitle}>UI Components</h2>
 						<p class={styles.cardDesc}>
