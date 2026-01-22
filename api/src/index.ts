@@ -213,21 +213,22 @@ app.use('*', async (context, next) => {
 			// Don't let error reporting failure affect the response
 		});
 		throw error; // Re-throw to let Hono's error handler respond
+	} finally {
+		// Always log the request, even when errors occur
+		const duration = Date.now() - start;
+
+		logRequest({
+			method: context.req.method,
+			path: context.req.path,
+			status: context.res.status,
+			duration,
+			ip: context.req.header('x-forwarded-for') || context.req.header('x-real-ip'),
+			userAgent: context.req.header('user-agent'),
+			referer: context.req.header('referer'),
+			userId,
+			contentLength: parseInt(context.res.headers.get('content-length') || '0', 10),
+		});
 	}
-
-	const duration = Date.now() - start;
-
-	logRequest({
-		method: context.req.method,
-		path: context.req.path,
-		status: context.res.status,
-		duration,
-		ip: context.req.header('x-forwarded-for') || context.req.header('x-real-ip'),
-		userAgent: context.req.header('user-agent'),
-		referer: context.req.header('referer'),
-		userId,
-		contentLength: parseInt(context.res.headers.get('content-length') || '0', 10),
-	});
 });
 
 // Rate limiting middleware (per spec requirements)
