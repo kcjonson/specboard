@@ -1,6 +1,6 @@
 /**
  * Specboard marketing home page
- * The briefing system for AI coding agents
+ * The project system for AI-assisted development
  */
 import type { JSX } from 'preact';
 
@@ -101,7 +101,7 @@ export function HomeContent(): JSX.Element {
 
 			{/* Section 1: Hero */}
 			<section class="hero" id="hero">
-				<span class="hero-badge">The briefing system for AI coding agents</span>
+				<span class="hero-badge">The project system for AI-assisted development</span>
 				<h1>Write requirements. Set priorities.<br />Your agents handle the rest.</h1>
 				<p class="hero-subtitle">
 					AI agents need context, not copy-paste. Specboard connects your docs and tasks
