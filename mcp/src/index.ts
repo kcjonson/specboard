@@ -153,11 +153,12 @@ app.use('*', async (c, next) => {
 });
 
 // Health check endpoint - no auth required (ALB needs this)
-// Uses /mcp/health to match the service's public route prefix for consistency
 app.get('/mcp/health', (c) => c.json({ status: 'ok' }));
 
 // MCP endpoints - require OAuth Bearer token
-app.use('/mcp', mcpAuthMiddleware());
+app.use('/mcp', mcpAuthMiddleware({
+	excludePaths: ['/mcp/health'],
+}));
 
 // MCP POST - new session or existing session request
 app.post('/mcp', async (c) => {

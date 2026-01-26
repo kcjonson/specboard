@@ -18,6 +18,29 @@ export interface McpAuthVariables {
 	mcpToken: McpTokenPayload;
 }
 
+export interface McpAuthMiddlewareOptions {
+	/** Paths that don't require authentication */
+	excludePaths?: string[];
+}
+
+/**
+ * Check if a path matches any of the excluded patterns
+ */
+function isExcludedPath(path: string, excludePaths: string[]): boolean {
+	return excludePaths.some((pattern) => {
+		// Exact match
+		if (pattern === path) return true;
+
+		// Wildcard match (e.g., '/mcp/health*' matches '/mcp/health' and '/mcp/health/check')
+		if (pattern.endsWith('*')) {
+			const prefix = pattern.slice(0, -1);
+			return path.startsWith(prefix);
+		}
+
+		return false;
+	});
+}
+
 /**
  * Hash a token using SHA-256
  */
@@ -82,9 +105,25 @@ function buildWwwAuthenticateHeader(c: Context): string {
 
 /**
  * MCP auth middleware - validates Bearer token and attaches user info
+ *
+ * @example
+ * ```typescript
+ * // Protect all /mcp routes except /mcp/health
+ * app.use('/mcp', mcpAuthMiddleware({
+ *   excludePaths: ['/mcp/health'],
+ * }));
+ * ```
  */
-export function mcpAuthMiddleware() {
+export function mcpAuthMiddleware(options: McpAuthMiddlewareOptions = {}) {
+	const { excludePaths = [] } = options;
+
 	return async (c: Context<{ Variables: McpAuthVariables }>, next: Next) => {
+		// Skip auth for excluded paths
+		const path = new URL(c.req.url).pathname;
+		if (isExcludedPath(path, excludePaths)) {
+			return next();
+		}
+
 		const authHeader = c.req.header('Authorization');
 		const token = extractBearerToken(authHeader);
 

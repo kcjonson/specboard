@@ -49,6 +49,7 @@ export {
 	getMcpToken,
 	type McpTokenPayload,
 	type McpAuthVariables,
+	type McpAuthMiddlewareOptions,
 } from './mcp.ts';
 
 // Admin middleware
