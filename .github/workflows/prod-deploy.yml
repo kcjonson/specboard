@@ -121,7 +121,7 @@ jobs:
     needs: [resolve, setup-aws, migrate]
     if: "!cancelled() && inputs.bootstrap != true && needs.setup-aws.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')"
     runs-on: ubuntu-latest
-    # environment: production — re-enable after OIDC trust policy includes environment patterns
+    # environment: production — re-enable after OIDC trust policy includes environment patterns (requires CDK deploy first)
     permissions:
       id-token: write
       contents: read

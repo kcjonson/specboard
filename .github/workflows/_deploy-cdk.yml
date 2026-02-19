@@ -26,7 +26,7 @@ jobs:
   cdk:
     name: CDK ${{ inputs.action }} (${{ inputs.environment }})
     runs-on: ubuntu-latest
-    # environment: ${{ inputs.environment }} — re-enable after OIDC trust policy includes environment patterns
+    # environment: ${{ inputs.environment }} — sets OIDC sub claim to environment:<name>, requires matching IAM trust policy patterns
     permissions:
       id-token: write
       contents: read

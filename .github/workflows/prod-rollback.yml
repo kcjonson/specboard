@@ -120,7 +120,7 @@ jobs:
     needs: [resolve, verify-images, cdk-deploy, migrate]
     if: always() && needs.verify-images.result == 'success' && (needs.cdk-deploy.result == 'success' || needs.cdk-deploy.result == 'skipped') && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
-    # environment: production — re-enable after OIDC trust policy includes environment patterns
+    # environment: production — re-enable after OIDC trust policy includes environment patterns (requires CDK deploy first)
     permissions:
       id-token: write
       contents: read

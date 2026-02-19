@@ -1206,9 +1206,10 @@ export class DocPlatformStack extends cdk.Stack {
 						StringEquals: {
 							'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
 						},
-						// StringLike allows branch-based (staging CD), tag-based
-						// (production release), and environment-based (GitHub
-						// Environment protection) OIDC sub claims.
+						// StringLike allows multiple OIDC sub claim formats:
+						// - ref-based: used when job has no `environment:` key (staging CD, tag-triggered deploys)
+						// - environment-based: used when job has `environment:` key (GitHub Environment protection)
+						// Note: `environment:` on a job REPLACES the ref in the sub claim (it's either/or, not both)
 						StringLike: {
 							'token.actions.githubusercontent.com:sub': [
 								'repo:kcjonson/doc-platform:ref:refs/heads/main',
