@@ -1,30 +1,69 @@
 #!/bin/bash
 set -euo pipefail
 
-# Force new deployment on all ECS services and wait for stabilization
-# Usage: deploy-services.sh
+# Deploy all ECS services with a specific image tag.
 #
-# Why force deployment after CDK deploy?
-# CDK updates task definitions with new image tags, but ECS may cache the :latest
-# image. --force-new-deployment ensures containers pull fresh images even if the
-# tag (latest) hasn't changed. This runs after deploy-infra completes.
+# For each service, registers a new task definition revision with the pinned
+# image tag, then updates the service to use it. This ensures the exact image
+# (identified by SHA) is deployed, regardless of what :latest or :init points to.
+#
+# Usage: deploy-services.sh <image-tag>
 #
 # Required environment variables:
 #   AWS_REGION, CLUSTER, ALB_DNS
 
-echo "Forcing new deployment on all services..."
+IMAGE_TAG="${1:?Usage: deploy-services.sh <image-tag>}"
 
-aws ecs update-service --cluster "$CLUSTER" --service api --force-new-deployment --region "$AWS_REGION" --no-cli-pager
-aws ecs update-service --cluster "$CLUSTER" --service frontend --force-new-deployment --region "$AWS_REGION" --no-cli-pager
-aws ecs update-service --cluster "$CLUSTER" --service mcp --force-new-deployment --region "$AWS_REGION" --no-cli-pager
+echo "Deploying services with image tag: $IMAGE_TAG"
+
+deploy_service() {
+  local SERVICE=$1
+
+  # Get current task definition from the service
+  TASK_DEF_ARN=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+    --query 'services[0].taskDefinition' --output text --region "$AWS_REGION")
+
+  # Get task definition details
+  TASK_DEF=$(aws ecs describe-task-definition --task-definition "$TASK_DEF_ARN" \
+    --query taskDefinition --output json --region "$AWS_REGION")
+
+  # Replace image tag in all containers (preserves the ECR repo URI, only changes the tag)
+  UPDATED_CONTAINERS=$(echo "$TASK_DEF" | jq --arg TAG "$IMAGE_TAG" \
+    '.containerDefinitions | map(.image = (.image | split(":")[0] + ":" + $TAG))')
+
+  # Strip read-only fields and register a new task definition revision
+  NEW_TASK_DEF=$(echo "$TASK_DEF" | jq --argjson CONTAINERS "$UPDATED_CONTAINERS" \
+    'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy) | .containerDefinitions = $CONTAINERS')
+
+  NEW_ARN=$(echo "$NEW_TASK_DEF" | aws ecs register-task-definition \
+    --cli-input-json file:///dev/stdin \
+    --query 'taskDefinition.taskDefinitionArn' --output text --region "$AWS_REGION")
+
+  echo "  Registered: $NEW_ARN"
+
+  # Update service to use the new task definition
+  aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+    --task-definition "$NEW_ARN" --force-new-deployment \
+    --region "$AWS_REGION" --no-cli-pager
+
+  echo "  Updated $SERVICE"
+}
+
+# Deploy core services
+for SERVICE in api frontend mcp; do
+  echo "Deploying $SERVICE..."
+  deploy_service "$SERVICE"
+done
 
 # Storage service (only deploy if service exists and has desired count > 0)
-STORAGE_STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services storage --region "$AWS_REGION" --query 'services[0].status' --output text 2>/dev/null || echo "MISSING")
+STORAGE_STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services storage \
+  --region "$AWS_REGION" --query 'services[0].status' --output text 2>/dev/null || echo "MISSING")
 if [ "$STORAGE_STATUS" = "ACTIVE" ]; then
-  STORAGE_DESIRED=$(aws ecs describe-services --cluster "$CLUSTER" --services storage --region "$AWS_REGION" --query 'services[0].desiredCount' --output text)
+  STORAGE_DESIRED=$(aws ecs describe-services --cluster "$CLUSTER" --services storage \
+    --region "$AWS_REGION" --query 'services[0].desiredCount' --output text)
   if [ "$STORAGE_DESIRED" -gt 0 ]; then
-    echo "Deploying storage service..."
-    aws ecs update-service --cluster "$CLUSTER" --service storage --force-new-deployment --region "$AWS_REGION" --no-cli-pager
+    echo "Deploying storage..."
+    deploy_service "storage"
   else
     echo "Storage service exists but desiredCount=0, skipping"
   fi

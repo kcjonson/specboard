@@ -16,14 +16,20 @@ on:
         required: false
         type: boolean
         default: false
+      environment:
+        description: 'Target environment (staging or production)'
+        required: false
+        type: string
+        default: 'staging'
 
 env:
   AWS_REGION: us-west-2
 
 jobs:
   run:
-    name: ${{ inputs.task_name }}
+    name: ${{ inputs.task_name }} (${{ inputs.environment }})
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     permissions:
       id-token: write
       contents: read
@@ -36,10 +42,20 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Resolve stack name
+        id: stack
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            echo "name=DocPlatformProd" >> $GITHUB_OUTPUT
+          else
+            echo "name=DocPlatformStack" >> $GITHUB_OUTPUT
+          fi
 
       - name: Run ${{ inputs.task_name }}
         env:
           SUPERADMIN_PASSWORD: ${{ inputs.include_superadmin_env && secrets.SUPERADMIN_PASSWORD || '' }}
         run: |
-          source .github/scripts/get-stack-outputs.sh
+          source .github/scripts/get-stack-outputs.sh "${{ steps.stack.outputs.name }}"
           .github/scripts/run-ecs-task.sh "${{ inputs.task_name }}" '${{ inputs.command }}' "${{ inputs.include_superadmin_env }}"

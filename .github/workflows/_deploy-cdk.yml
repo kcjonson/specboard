@@ -13,14 +13,20 @@ on:
         required: false
         type: boolean
         default: false
+      environment:
+        description: 'Target environment (staging or production)'
+        required: false
+        type: string
+        default: 'staging'
 
 env:
   AWS_REGION: us-west-2
 
 jobs:
   cdk:
-    name: CDK ${{ inputs.action }}
+    name: CDK ${{ inputs.action }} (${{ inputs.environment }})
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     permissions:
       id-token: write
       contents: read
@@ -50,22 +56,49 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-duration-seconds: 7200
 
+      - name: Resolve CDK context
+        id: context
+        run: |
+          CONTEXT="--context env=${{ inputs.environment }}"
+
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            # Get shared resource IDs from staging stack outputs
+            STAGING_OUTPUTS=$(aws cloudformation describe-stacks \
+              --stack-name DocPlatformStack \
+              --query "Stacks[0].Outputs" \
+              --output json \
+              --region "$AWS_REGION")
+
+            HOSTED_ZONE_ID=$(echo "$STAGING_OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneId") | .OutputValue')
+            CERT_ARN=$(echo "$STAGING_OUTPUTS" | jq -r '.[] | select(.OutputKey=="CertificateArn") | .OutputValue')
+
+            if [ -z "$HOSTED_ZONE_ID" ] || [ "$HOSTED_ZONE_ID" = "null" ] || [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = "null" ]; then
+              echo "ERROR: Cannot resolve shared resources from staging stack."
+              echo "Ensure DocPlatformStack is deployed before deploying production."
+              exit 1
+            fi
+
+            CONTEXT="$CONTEXT --context hostedZoneId=$HOSTED_ZONE_ID --context certificateArn=$CERT_ARN"
+          fi
+
+          if [ "${{ inputs.bootstrap }}" = "true" ]; then
+            CONTEXT="$CONTEXT --context bootstrap=true"
+          fi
+
+          echo "context=$CONTEXT" >> $GITHUB_OUTPUT
+
       - name: CDK ${{ inputs.action }}
         run: |
           cd infra
           case "${{ inputs.action }}" in
             diff)
-              npx cdk diff
+              npx cdk diff ${{ steps.context.outputs.context }}
               ;;
             deploy)
-              BOOTSTRAP_FLAG=""
-              if [ "${{ inputs.bootstrap }}" = "true" ]; then
-                BOOTSTRAP_FLAG="--context bootstrap=true"
-              fi
-              npx cdk deploy --require-approval never $BOOTSTRAP_FLAG
+              npx cdk deploy --require-approval never ${{ steps.context.outputs.context }}
               ;;
             destroy)
-              npx cdk destroy --force
+              npx cdk destroy --force ${{ steps.context.outputs.context }}
               ;;
             *)
               echo "Unknown action: ${{ inputs.action }}"
@@ -73,11 +106,21 @@ jobs:
               ;;
           esac
 
+      - name: Resolve stack name
+        if: inputs.action == 'deploy'
+        id: stack
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            echo "name=DocPlatformProd" >> $GITHUB_OUTPUT
+          else
+            echo "name=DocPlatformStack" >> $GITHUB_OUTPUT
+          fi
+
       - name: Output Stack Info
         if: inputs.action == 'deploy'
         run: |
           aws cloudformation describe-stacks \
-            --stack-name DocPlatformStack \
+            --stack-name ${{ steps.stack.outputs.name }} \
             --query "Stacks[0].Outputs" \
             --output table \
             --region ${{ env.AWS_REGION }}

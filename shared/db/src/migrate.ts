@@ -41,9 +41,22 @@ async function migrate(): Promise<void> {
 	const databaseUrl = getDatabaseUrl();
 	const pool = new Pool({ connectionString: databaseUrl });
 
+	// Use a dedicated client for the entire migration run.
+	// The advisory lock is session-level — it must stay on the same connection
+	// that runs the migrations. pool.query() would release the connection back
+	// to the pool where it could be closed by idle timeout.
+	const client = await pool.connect();
+
 	try {
+		// Acquire advisory lock to prevent concurrent migration execution.
+		// If another migration is running (e.g. from a cancelled pipeline that
+		// left an ECS task running), this will block until it completes.
+		// The lock is released automatically when the client disconnects.
+		await client.query(`SELECT pg_advisory_lock(hashtext('doc-platform-migrations'))`);
+		console.log('Acquired migration lock');
+
 		// Create migrations table if it doesn't exist
-		await pool.query(`
+		await client.query(`
 			CREATE TABLE IF NOT EXISTS schema_migrations (
 				name VARCHAR(255) PRIMARY KEY,
 				applied_at TIMESTAMPTZ DEFAULT NOW()
@@ -51,7 +64,7 @@ async function migrate(): Promise<void> {
 		`);
 
 		// Get already applied migrations
-		const { rows: applied } = await pool.query<{ name: string }>(
+		const { rows: applied } = await client.query<{ name: string }>(
 			'SELECT name FROM schema_migrations ORDER BY name'
 		);
 		const appliedSet = new Set(applied.map((r) => r.name));
@@ -72,7 +85,6 @@ async function migrate(): Promise<void> {
 			console.log(`Running migration: ${file}`);
 			const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf-8');
 
-			const client = await pool.connect();
 			try {
 				await client.query('BEGIN');
 				await client.query(sql);
@@ -86,8 +98,6 @@ async function migrate(): Promise<void> {
 			} catch (err) {
 				await client.query('ROLLBACK');
 				throw err;
-			} finally {
-				client.release();
 			}
 		}
 
@@ -97,6 +107,7 @@ async function migrate(): Promise<void> {
 			console.log(`Applied ${count} migration(s)`);
 		}
 	} finally {
+		client.release();
 		await pool.end();
 	}
 }
