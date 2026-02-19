@@ -31,8 +31,8 @@ function isExcludedPath(path: string, excludePaths: string[]): boolean {
 		// Exact match
 		if (pattern === path) return true;
 
-		// Wildcard match (e.g., '/mcp/health*' matches '/mcp/health' and '/mcp/health/check')
-		if (pattern.endsWith('*')) {
+		// Wildcard match (e.g., '/mcp/health/*' matches '/mcp/health/check')
+		if (pattern.endsWith('/*')) {
 			const prefix = pattern.slice(0, -1);
 			return path.startsWith(prefix);
 		}
