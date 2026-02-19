@@ -20,7 +20,6 @@ import { getCookie } from 'hono/cookie';
 
 // Context variables for request tracking
 type AppVariables = {
-	requestStart: number;
 	userId: string | undefined;
 };
 
@@ -186,7 +185,7 @@ app.use('*', cors({
 
 // Request logging middleware
 // Note: await next() never throws in Hono - errors are caught internally and passed to app.onError()
-// We store userId and start time in context so app.onError() can access them for error reporting
+// We store userId in context so app.onError() can access it for error reporting
 app.use('*', async (context, next) => {
 	const start = Date.now();
 
@@ -199,7 +198,6 @@ app.use('*', async (context, next) => {
 	}
 
 	// Store in context for access by app.onError()
-	context.set('requestStart', start);
 	context.set('userId', userId);
 
 	await next();

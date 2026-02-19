@@ -8,9 +8,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Redis } from 'ioredis';
-import { authMiddleware, getSession, SESSION_COOKIE_NAME, type AuthVariables } from '@doc-platform/auth';
-import { logRequest } from '@doc-platform/core';
-import { getCookie } from 'hono/cookie';
+import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
+import { reportError, installErrorHandlers, logRequest } from '@doc-platform/core';
 import { pages, spaIndex, type CachedPage } from './static-pages.ts';
 
 // Vite dev server URL for hot reloading (set in docker-compose for dev mode)
@@ -91,21 +90,19 @@ redis.on('connect', () => {
 	console.log('Connected to Redis');
 });
 
+// Install global error handlers for uncaught exceptions
+installErrorHandlers('frontend');
+
 // Request logging middleware
 // Logs all requests in Combined Log Format style for CloudWatch Logs Insights queries
 // Note: await next() never throws in Hono - errors are caught internally and passed to app.onError()
 app.use('*', async (c, next) => {
 	const start = Date.now();
 
-	// Get user ID from session if available (matches API pattern)
-	let userId: string | undefined;
-	const sessionId = getCookie(c, SESSION_COOKIE_NAME);
-	if (sessionId) {
-		const session = await getSession(redis, sessionId);
-		userId = session?.userId;
-	}
-
 	await next();
+
+	// Get userId from auth middleware context (set for authenticated routes, undefined for public routes)
+	const user = c.get('user');
 
 	// Log the request (runs for both success and error responses)
 	const duration = Date.now() - start;
@@ -117,7 +114,7 @@ app.use('*', async (c, next) => {
 		ip: c.req.header('x-forwarded-for') || c.req.header('x-real-ip'),
 		userAgent: c.req.header('user-agent'),
 		referer: c.req.header('referer'),
-		userId,
+		userId: user?.id,
 		contentLength: parseInt(c.res.headers.get('content-length') || '0', 10),
 	});
 });
@@ -491,6 +488,31 @@ app.get('*', async (c) => {
 
 // Custom 404 handler - friendly page for all not found requests
 app.notFound((c) => servePage(c, pages.notFound, 404));
+
+app.onError((error, c) => {
+	// Report error to error tracking service
+	const user = c.get('user');
+	reportError({
+		name: error.name,
+		message: error.message,
+		stack: error.stack,
+		timestamp: Date.now(),
+		url: c.req.url,
+		userAgent: c.req.header('user-agent'),
+		userId: user?.id,
+		source: 'frontend',
+		environment: process.env.NODE_ENV,
+		extra: {
+			method: c.req.method,
+			path: c.req.path,
+		},
+	}).catch(() => {
+		// Don't let error reporting failure affect the response
+	});
+
+	console.error('Unhandled error:', error);
+	return c.html(pages.notFound.html, 500);
+});
 
 // Start server
 const PORT = Number(process.env.PORT) || 3000;
