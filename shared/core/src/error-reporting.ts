@@ -21,7 +21,7 @@ export interface ErrorReport {
 	url?: string;
 	userAgent?: string;
 	userId?: string;
-	source: 'web' | 'api' | 'mcp';
+	source: 'web' | 'api' | 'mcp' | 'frontend';
 	environment?: string;
 	extra?: Record<string, unknown>;
 }
@@ -215,7 +215,7 @@ export async function reportError(report: ErrorReport): Promise<void> {
  */
 export function captureException(
 	error: Error,
-	source: 'api' | 'mcp',
+	source: 'api' | 'mcp' | 'frontend',
 	extra?: Record<string, unknown>
 ): void {
 	reportError({
@@ -237,7 +237,7 @@ let handlersInstalled = false;
  * Install global error handlers for uncaught exceptions and unhandled rejections.
  * Call this once at application startup.
  */
-export function installErrorHandlers(source: 'api' | 'mcp'): void {
+export function installErrorHandlers(source: 'api' | 'mcp' | 'frontend'): void {
 	// Prevent duplicate handler installation
 	if (handlersInstalled) {
 		return;
