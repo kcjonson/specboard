@@ -1,0 +1,177 @@
+name: Production Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to roll back to (e.g., v1.0.0)'
+        required: true
+        type: string
+      run_migrations:
+        description: 'Run migrations (only if rollback needs a migration)'
+        required: false
+        type: boolean
+        default: false
+      run_cdk:
+        description: 'Run CDK deploy (for infrastructure-level rollback)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-rollback
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-west-2
+
+jobs:
+  resolve:
+    name: Resolve Release
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve SHA from tag
+        id: resolve
+        run: |
+          TAG="${{ inputs.tag }}"
+
+          SHA=$(curl -sf -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/git/ref/tags/$TAG" \
+            | jq -r '.object.sha')
+
+          if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
+            echo "ERROR: Could not resolve SHA for tag $TAG"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Rolling back to tag $TAG (SHA: $SHA)"
+
+  verify-images:
+    name: Verify ECR Images
+    needs: resolve
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Verify images exist for SHA
+        run: |
+          SHA="${{ needs.resolve.outputs.sha }}"
+          MISSING=""
+
+          for REPO in doc-platform/api doc-platform/frontend doc-platform/mcp; do
+            if ! aws ecr describe-images \
+              --repository-name "$REPO" \
+              --image-ids imageTag="$SHA" \
+              --region "$AWS_REGION" > /dev/null 2>&1; then
+              MISSING="$MISSING $REPO"
+            fi
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "ERROR: Missing images for SHA $SHA:$MISSING"
+            echo "Images may have been garbage collected. Cannot roll back."
+            exit 1
+          fi
+
+          echo "All required images verified for SHA $SHA"
+
+  cdk-deploy:
+    name: CDK Deploy (Rollback)
+    needs: [resolve, verify-images]
+    if: inputs.run_cdk
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_deploy-cdk.yml
+    with:
+      action: deploy
+      environment: production
+    secrets: inherit
+
+  migrate:
+    name: Run Migrations
+    needs: [resolve, verify-images, cdk-deploy]
+    if: always() && inputs.run_migrations && needs.verify-images.result == 'success' && (needs.cdk-deploy.result == 'success' || needs.cdk-deploy.result == 'skipped')
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_run-ecs-task.yml
+    with:
+      task_name: migrate
+      command: '["node", "shared/db/src/migrate.ts"]'
+      environment: production
+    secrets: inherit
+
+  deploy-services:
+    name: Deploy Services
+    needs: [resolve, verify-images, cdk-deploy, migrate]
+    if: always() && needs.verify-images.result == 'success' && (needs.cdk-deploy.result == 'success' || needs.cdk-deploy.result == 'skipped') && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout at rollback tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Deploy services
+        run: |
+          source .github/scripts/get-stack-outputs.sh DocPlatformProd
+          .github/scripts/deploy-services.sh
+
+  health-check:
+    name: Health Check
+    needs: deploy-services
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait and verify health
+        run: |
+          echo "Waiting 30s for services to stabilize..."
+          sleep 30
+
+          MAX_RETRIES=5
+          RETRY_DELAY=15
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Health check attempt $i/$MAX_RETRIES..."
+
+            API_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "https://specboard.io/api/health" || echo "000")
+            FRONTEND_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "https://specboard.io/health" || echo "000")
+
+            echo "  API: $API_STATUS, Frontend: $FRONTEND_STATUS"
+
+            if [ "$API_STATUS" = "200" ] && [ "$FRONTEND_STATUS" = "200" ]; then
+              echo "Rollback health checks passed!"
+              exit 0
+            fi
+
+            if [ "$i" -lt "$MAX_RETRIES" ]; then
+              echo "  Retrying in ${RETRY_DELAY}s..."
+              sleep $RETRY_DELAY
+            fi
+          done
+
+          echo "ERROR: Health checks failed after $MAX_RETRIES attempts"
+          exit 1

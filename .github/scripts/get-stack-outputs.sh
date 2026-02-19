@@ -2,7 +2,10 @@
 set -euo pipefail
 
 # Get CloudFormation stack outputs and export as environment variables
-# Usage: source get-stack-outputs.sh
+# Usage: source get-stack-outputs.sh [stack-name]
+#
+# Arguments:
+#   stack-name  Optional. Defaults to STACK_NAME env var or 'DocPlatformStack'.
 #
 # Required environment variables:
 #   AWS_REGION
@@ -10,8 +13,10 @@ set -euo pipefail
 # Exports:
 #   CLUSTER, TASK_DEF, SUBNETS, SECURITY_GROUP, LOG_GROUP, ALB_DNS
 
+STACK="${1:-${STACK_NAME:-DocPlatformStack}}"
+
 OUTPUTS=$(aws cloudformation describe-stacks \
-  --stack-name DocPlatformStack \
+  --stack-name "$STACK" \
   --query "Stacks[0].Outputs" \
   --output json \
   --region "$AWS_REGION")
@@ -34,11 +39,11 @@ MISSING=""
 
 if [ -n "$MISSING" ]; then
   echo "ERROR: Missing required stack outputs:$MISSING"
-  echo "Ensure DocPlatformStack is deployed and outputs are configured correctly."
+  echo "Ensure $STACK is deployed and outputs are configured correctly."
   exit 1
 fi
 
-echo "Stack outputs loaded:"
+echo "Stack outputs loaded ($STACK):"
 echo "  CLUSTER=$CLUSTER"
 echo "  TASK_DEF=$TASK_DEF"
 echo "  SUBNETS=$SUBNETS"

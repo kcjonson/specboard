@@ -72,6 +72,7 @@ jobs:
     uses: ./.github/workflows/_deploy-cdk.yml
     with:
       action: deploy
+      environment: staging
     secrets: inherit
 
   migrate:
@@ -84,6 +85,7 @@ jobs:
     with:
       task_name: migrate
       command: '["node", "shared/db/src/migrate.ts"]'
+      environment: staging
     secrets: inherit
 
   seed:
@@ -97,6 +99,7 @@ jobs:
       task_name: seed
       command: '["node", "shared/db/seed.mjs"]'
       include_superadmin_env: true
+      environment: staging
     secrets: inherit
 
   deploy-services:
@@ -119,5 +122,5 @@ jobs:
 
       - name: Deploy services
         run: |
-          source .github/scripts/get-stack-outputs.sh
+          source .github/scripts/get-stack-outputs.sh DocPlatformStack
           .github/scripts/deploy-services.sh
