@@ -1098,6 +1098,7 @@ export class DocPlatformStack extends cdk.Stack {
 				'sts:AssumeRoleWithWebIdentity'
 			),
 			description: 'Role for GitHub Actions to deploy to ECS',
+			maxSessionDuration: cdk.Duration.hours(2),
 		});
 
 		// ECR permissions - GetAuthorizationToken requires * resource
