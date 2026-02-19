@@ -104,7 +104,7 @@ jobs:
 
   deploy-services:
     name: Deploy Services
-    needs: seed
+    needs: [check, seed]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -123,4 +123,4 @@ jobs:
       - name: Deploy services
         run: |
           source .github/scripts/get-stack-outputs.sh DocPlatformStack
-          .github/scripts/deploy-services.sh
+          .github/scripts/deploy-services.sh "${{ needs.check.outputs.sha }}"

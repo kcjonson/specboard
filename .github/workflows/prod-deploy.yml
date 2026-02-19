@@ -9,6 +9,11 @@ on:
         description: 'Release tag to deploy (e.g., v1.0.0)'
         required: true
         type: string
+      bootstrap:
+        description: 'Bootstrap mode - create infrastructure only (desiredCount=0, skip service deploy)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: production-deploy
@@ -94,11 +99,13 @@ jobs:
     with:
       action: deploy
       environment: production
+      bootstrap: ${{ inputs.bootstrap || false }}
     secrets: inherit
 
   migrate:
     name: Run Migrations
     needs: setup-aws
+    if: inputs.bootstrap != true
     permissions:
       id-token: write
       contents: read
@@ -111,7 +118,8 @@ jobs:
 
   deploy-services:
     name: Deploy Services
-    needs: [resolve, migrate]
+    needs: [resolve, setup-aws, migrate]
+    if: "!cancelled() && inputs.bootstrap != true && needs.setup-aws.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')"
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -132,7 +140,7 @@ jobs:
       - name: Deploy services
         run: |
           source .github/scripts/get-stack-outputs.sh DocPlatformProd
-          .github/scripts/deploy-services.sh
+          .github/scripts/deploy-services.sh "${{ needs.resolve.outputs.sha }}"
 
   health-check:
     name: Health Check

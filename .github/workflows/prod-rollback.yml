@@ -139,7 +139,7 @@ jobs:
       - name: Deploy services
         run: |
           source .github/scripts/get-stack-outputs.sh DocPlatformProd
-          .github/scripts/deploy-services.sh
+          .github/scripts/deploy-services.sh "${{ needs.resolve.outputs.sha }}"
 
   health-check:
     name: Health Check
