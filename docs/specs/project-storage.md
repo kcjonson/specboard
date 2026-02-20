@@ -6,7 +6,7 @@ This specification defines how projects connect to git repositories for file sto
 
 ## Overview
 
-Every project in doc-platform is backed by exactly **one git repository**. The editor is designed around git workflows: viewing file history, making commits, and pushing changes. This git-centric model is fundamental, not optional.
+Every project in Specboard is backed by exactly **one git repository**. The editor is designed around git workflows: viewing file history, making commits, and pushing changes. This git-centric model is fundamental, not optional.
 
 ### Storage Modes by Platform
 

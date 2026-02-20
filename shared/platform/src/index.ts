@@ -1,5 +1,5 @@
 /**
- * @doc-platform/platform
+ * @specboard/platform
  * Platform abstraction interfaces for FileSystem, Git, and System.
  */
 

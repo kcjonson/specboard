@@ -98,7 +98,7 @@ Use this template for all work items:
 
 **Tasks:**
 - [x] Database & Encryption
-  - [x] Create AES-256-GCM encryption utilities in @doc-platform/auth
+  - [x] Create AES-256-GCM encryption utilities in @specboard/auth
   - [x] Database migration for user_api_keys table
   - [x] Add UserApiKey type to shared/db
 - [x] Backend API
@@ -151,7 +151,7 @@ Use this template for all work items:
 - [x] Convert MCP to Hono framework
   - [x] Add hono, @hono/node-server dependencies
   - [x] Rewrite index.ts with Hono app
-  - [x] Integrate mcpAuthMiddleware from @doc-platform/auth
+  - [x] Integrate mcpAuthMiddleware from @specboard/auth
 - [x] Infrastructure changes (CDK)
   - [x] Add MCP target group with health check
   - [x] Add ALB listener rule for /mcp paths (priority 40)
@@ -159,7 +159,7 @@ Use this template for all work items:
   - [x] Capture mcpService reference for target group attachment
 - [x] UI updates
   - [x] Rename "Authorized Apps" to "Authorized MCP Sessions"
-- [x] Fix Dockerfile to include @doc-platform/auth
+- [x] Fix Dockerfile to include @specboard/auth
 - [x] Verification
   - [x] Test locally with docker compose
   - [x] Deploy to staging
@@ -181,13 +181,13 @@ Use this template for all work items:
   - [x] Frontend Dockerfile
   - [x] CI Docker build verification
 - [x] Database foundation
-  - [x] @doc-platform/db package
+  - [x] @specboard/db package
   - [x] PostgreSQL connection pool
   - [x] Migration runner (raw SQL)
   - [x] Initial schema migration (users, emails, connections)
 - [x] Session infrastructure
   - [x] Redis in Docker Compose
-  - [x] @doc-platform/auth package
+  - [x] @specboard/auth package
   - [x] Session middleware for Hono
 - [x] Frontend container
   - [x] Hono server for static files
@@ -199,13 +199,13 @@ Use this template for all work items:
   - [x] Session creation in Redis
   - [x] /api/auth/me endpoint
 - [x] Real user auth (PostgreSQL + bcrypt)
-  - [x] Add bcrypt to @doc-platform/auth
+  - [x] Add bcrypt to @specboard/auth
   - [x] Database migration for user_passwords table
   - [x] Signup endpoint with email verification
   - [x] Login against database users
   - [x] Password reset flow
   - [x] Change password in settings
-- [x] Email sending (SES via @doc-platform/email)
+- [x] Email sending (SES via @specboard/email)
   - [x] Verification emails
   - [x] Password reset emails
   - [x] Development mode (console logging)
@@ -312,7 +312,7 @@ Use this template for all work items:
 - [x] Database setup
   - [x] RDS Postgres (via CDK staging stack)
   - [x] Schema migrations (users, epics, tasks, projects)
-  - [x] Connection pooling (@doc-platform/db)
+  - [x] Connection pooling (@specboard/db)
 - [x] API framework
   - [x] Hono server setup
   - [x] Auth middleware (session-based)
@@ -342,7 +342,7 @@ Use this template for all work items:
   - [x] Epic tools (get_ready_epics, get_epic, get_current_work)
   - [x] Task tools (create, update, start/complete/block/unblock)
   - [x] Progress tools (add_progress_note, signal_ready_for_review)
-  - [x] Shared service layer in @doc-platform/db
+  - [x] Shared service layer in @specboard/db
   - [x] Streamable HTTP transport on port 3002
   - [x] Docker container with DATABASE_URL
 - [x] Project-scoped APIs
@@ -405,7 +405,7 @@ Use this template for all work items:
   - [ ] Auto-dismiss timing and manual dismiss
   - [ ] Accessibility (screen readers, focus management)
 - [ ] Implement toast system
-  - [ ] Toast component in @doc-platform/ui
+  - [ ] Toast component in @specboard/ui
   - [ ] ToastProvider context for app-wide notifications
   - [ ] useToast hook for triggering toasts
 - [ ] Migrate existing features

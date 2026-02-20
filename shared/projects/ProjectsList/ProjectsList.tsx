@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { RouteProps } from '@doc-platform/router';
-import { navigate } from '@doc-platform/router';
-import { getCookie, setCookie } from '@doc-platform/core/cookies';
-import { fetchClient } from '@doc-platform/fetch';
-import { Button, Page } from '@doc-platform/ui';
+import type { RouteProps } from '@specboard/router';
+import { navigate } from '@specboard/router';
+import { getCookie, setCookie } from '@specboard/core/cookies';
+import { fetchClient } from '@specboard/fetch';
+import { Button, Page } from '@specboard/ui';
 import { ProjectCard, type Project } from '../ProjectCard/ProjectCard';
 import { ProjectDialog } from '../ProjectDialog/ProjectDialog';
 import styles from './ProjectsList.module.css';

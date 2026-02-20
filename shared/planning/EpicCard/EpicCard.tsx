@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
-import type { EpicModel } from '@doc-platform/models';
-import { Icon } from '@doc-platform/ui';
+import type { EpicModel } from '@specboard/models';
+import { Icon } from '@specboard/ui';
 import styles from './EpicCard.module.css';
 
 interface EpicCardProps {

@@ -2,7 +2,7 @@
  * Shared database utilities for sync operations.
  */
 
-import { query } from '@doc-platform/db';
+import { query } from '@specboard/db';
 
 /**
  * Update project sync status in the database.

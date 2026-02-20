@@ -1,5 +1,5 @@
 /**
- * @doc-platform/fetch - FetchClient
+ * @specboard/fetch - FetchClient
  *
  * Thin wrapper around native fetch for:
  * - Auth middleware (request interceptors)

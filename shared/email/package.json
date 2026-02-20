@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/email",
+	"name": "@specboard/email",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",

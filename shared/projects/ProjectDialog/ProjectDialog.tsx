@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Dialog, Button, Icon } from '@doc-platform/ui';
+import { Dialog, Button, Icon } from '@specboard/ui';
 import {
 	GitHubConnectionModel,
 	GitHubReposCollection,
 	GitHubBranchesCollection,
 	useModel,
-} from '@doc-platform/models';
+} from '@specboard/models';
 import type { Project, RepositoryConfigCloud } from '../ProjectCard/ProjectCard';
 import styles from './ProjectDialog.module.css';
 

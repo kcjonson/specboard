@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
-import type { TaskModel } from '@doc-platform/models';
-import { Icon } from '@doc-platform/ui';
+import type { TaskModel } from '@specboard/models';
+import { Icon } from '@specboard/ui';
 import styles from './TaskCard.module.css';
 
 interface TaskCardProps {

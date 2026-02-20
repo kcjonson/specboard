@@ -1,5 +1,5 @@
 import type { JSX, RefObject } from 'preact';
-import { Icon } from '@doc-platform/ui';
+import { Icon } from '@specboard/ui';
 import { FileStatus, type FileChangeStatus } from './FileStatus';
 import styles from './FileBrowser.module.css';
 

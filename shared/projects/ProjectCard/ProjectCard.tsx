@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
-import { Card, StatusDot, Icon } from '@doc-platform/ui';
+import { Card, StatusDot, Icon } from '@specboard/ui';
 import styles from './ProjectCard.module.css';
 
 export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';

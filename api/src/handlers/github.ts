@@ -6,9 +6,9 @@ import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { randomBytes } from 'node:crypto';
-import { getSession, SESSION_COOKIE_NAME, encrypt, decrypt, type EncryptedData } from '@doc-platform/auth';
-import { query } from '@doc-platform/db';
-import { log } from '@doc-platform/core';
+import { getSession, SESSION_COOKIE_NAME, encrypt, decrypt, type EncryptedData } from '@specboard/auth';
+import { query } from '@specboard/db';
+import { log } from '@specboard/core';
 
 // GitHub OAuth configuration
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';

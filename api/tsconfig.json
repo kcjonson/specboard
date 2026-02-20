@@ -7,14 +7,14 @@
 		"types": ["node"],
 		"baseUrl": "..",
 		"paths": {
-			"@doc-platform/core": ["./shared/core/src"],
-			"@doc-platform/core/*": ["./shared/core/src/*"],
-			"@doc-platform/db": ["./shared/db/src"],
-			"@doc-platform/db/*": ["./shared/db/src/*"],
-			"@doc-platform/auth": ["./shared/auth/src"],
-			"@doc-platform/auth/*": ["./shared/auth/src/*"],
-			"@doc-platform/email": ["./shared/email/src"],
-			"@doc-platform/email/*": ["./shared/email/src/*"]
+			"@specboard/core": ["./shared/core/src"],
+			"@specboard/core/*": ["./shared/core/src/*"],
+			"@specboard/db": ["./shared/db/src"],
+			"@specboard/db/*": ["./shared/db/src/*"],
+			"@specboard/auth": ["./shared/auth/src"],
+			"@specboard/auth/*": ["./shared/auth/src/*"],
+			"@specboard/email": ["./shared/email/src"],
+			"@specboard/email/*": ["./shared/email/src/*"]
 		}
 	},
 	"include": ["src"]

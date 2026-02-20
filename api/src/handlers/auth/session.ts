@@ -10,8 +10,8 @@ import {
 	deleteSession,
 	SESSION_COOKIE_NAME,
 	CSRF_COOKIE_NAME,
-} from '@doc-platform/auth';
-import { query, type User } from '@doc-platform/db';
+} from '@specboard/auth';
+import { query, type User } from '@specboard/db';
 
 import { logAuthEvent } from './utils.ts';
 

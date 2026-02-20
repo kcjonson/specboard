@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Button, Icon } from '@doc-platform/ui';
-import { fetchClient } from '@doc-platform/fetch';
+import { Button, Icon } from '@specboard/ui';
+import { fetchClient } from '@specboard/fetch';
 import styles from './ApiKeys.module.css';
 
 interface ApiKey {

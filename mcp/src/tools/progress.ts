@@ -14,7 +14,7 @@ import {
 	verifyProjectAccess,
 	verifyEpicOwnership,
 	verifyTaskOwnership,
-} from '@doc-platform/db';
+} from '@specboard/db';
 
 export const progressTools: Tool[] = [
 	{

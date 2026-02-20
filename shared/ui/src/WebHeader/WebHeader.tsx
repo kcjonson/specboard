@@ -1,8 +1,8 @@
 import { useMemo, useState, useEffect } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
-import { getCookie, setCookie } from '@doc-platform/core/cookies';
-import { fetchClient } from '@doc-platform/fetch';
-import { useModel, UserModel } from '@doc-platform/models';
+import { getCookie, setCookie } from '@specboard/core/cookies';
+import { fetchClient } from '@specboard/fetch';
+import { useModel, UserModel } from '@specboard/models';
 import { UserMenu } from '../UserMenu/UserMenu';
 import styles from './WebHeader.module.css';
 

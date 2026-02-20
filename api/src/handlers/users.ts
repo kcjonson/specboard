@@ -10,8 +10,8 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { hashPassword, validatePassword } from '@doc-platform/auth';
-import { query, type User } from '@doc-platform/db';
+import { hashPassword, validatePassword } from '@specboard/auth';
+import { query, type User } from '@specboard/db';
 import { isValidUUID, isValidEmail, isValidUsername } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
 

@@ -1,7 +1,7 @@
 import type { BaseEditor, Descendant } from 'slate';
 import type { ReactEditor } from 'slate-react';
 import type { HistoryEditor } from 'slate-history';
-import type { DocumentComment } from '@doc-platform/models';
+import type { DocumentComment } from '@specboard/models';
 
 // Custom element types
 export type ParagraphElement = {

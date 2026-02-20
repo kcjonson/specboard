@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - Model base class
+ * @specboard/models - Model base class
  *
  * Observable state container with change subscriptions.
  * Use the @prop decorator on accessor fields to define properties.

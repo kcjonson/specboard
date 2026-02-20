@@ -1,5 +1,5 @@
 /**
- * @doc-platform/api
+ * @specboard/api
  * Backend API server using Hono.
  */
 
@@ -14,8 +14,8 @@ import {
 	RATE_LIMIT_CONFIGS,
 	getSession,
 	SESSION_COOKIE_NAME,
-} from '@doc-platform/auth';
-import { reportError, installErrorHandlers, logRequest } from '@doc-platform/core';
+} from '@specboard/auth';
+import { reportError, installErrorHandlers, logRequest } from '@specboard/core';
 import { getCookie } from 'hono/cookie';
 
 // Context variables for request tracking

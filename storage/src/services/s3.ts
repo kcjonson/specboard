@@ -23,7 +23,7 @@ if (process.env.AWS_ENDPOINT_URL) {
 }
 
 const s3 = new S3Client(s3Config);
-const BUCKET = process.env.S3_BUCKET || 'doc-platform-storage';
+const BUCKET = process.env.S3_BUCKET || 'specboard-storage';
 
 /**
  * Type guard for AWS SDK errors.

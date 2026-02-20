@@ -10,7 +10,7 @@ import {
 	Badge,
 	StatusDot,
 	Icon,
-} from '@doc-platform/ui';
+} from '@specboard/ui';
 import styles from './UIDemo.module.css';
 
 export function UIDemo(): JSX.Element {

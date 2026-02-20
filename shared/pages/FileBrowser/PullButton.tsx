@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
-import { Badge, Button, Icon, Notice } from '@doc-platform/ui';
-import type { GitStatusModel } from '@doc-platform/models';
+import { Badge, Button, Icon, Notice } from '@specboard/ui';
+import type { GitStatusModel } from '@specboard/models';
 import styles from './PullButton.module.css';
 
 export interface PullButtonProps {

@@ -64,7 +64,7 @@ function secureCompare(a: string, b: string): boolean {
  *
  * @example
  * ```typescript
- * import { csrfMiddleware } from '@doc-platform/auth';
+ * import { csrfMiddleware } from '@specboard/auth';
  *
  * app.use('*', csrfMiddleware(redis, {
  *   excludePaths: ['/api/auth/login', '/api/auth/signup'],

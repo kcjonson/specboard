@@ -5,7 +5,7 @@
  * Follows the Model/SyncModel/SyncCollection patterns.
  */
 
-import { fetchClient } from '@doc-platform/fetch';
+import { fetchClient } from '@specboard/fetch';
 import { Model } from './Model';
 import { SyncModel } from './SyncModel';
 import { SyncCollection } from './SyncCollection';

@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/pages",
+	"name": "@specboard/pages",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -16,11 +16,11 @@
 		"vitest": "^2.1.9"
 	},
 	"dependencies": {
-		"@doc-platform/fetch": "*",
-		"@doc-platform/models": "*",
-		"@doc-platform/router": "*",
-		"@doc-platform/telemetry": "*",
-		"@doc-platform/ui": "*",
+		"@specboard/fetch": "*",
+		"@specboard/models": "*",
+		"@specboard/router": "*",
+		"@specboard/telemetry": "*",
+		"@specboard/ui": "*",
 		"is-hotkey": "^0.2.0",
 		"preact": "^10.25.4",
 		"remark-gfm": "^4.0.1",

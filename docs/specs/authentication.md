@@ -1,6 +1,6 @@
 # Authentication Specification
 
-This specification defines the authentication and authorization architecture for doc-platform.
+This specification defines the authentication and authorization architecture for Specboard.
 
 ---
 
@@ -404,10 +404,10 @@ All GitHub API calls go through our backend:
 Returns:
 ```json
 {
-  "issuer": "https://api.doc-platform.com",
-  "authorization_endpoint": "https://api.doc-platform.com/oauth/authorize",
-  "token_endpoint": "https://api.doc-platform.com/oauth/token",
-  "revocation_endpoint": "https://api.doc-platform.com/oauth/revoke",
+  "issuer": "https://api.specboard.io",
+  "authorization_endpoint": "https://api.specboard.io/oauth/authorize",
+  "token_endpoint": "https://api.specboard.io/oauth/token",
+  "revocation_endpoint": "https://api.specboard.io/oauth/revoke",
   "scopes_supported": ["docs:read", "docs:write", "tasks:read", "tasks:write"],
   "response_types_supported": ["code"],
   "grant_types_supported": ["authorization_code", "refresh_token"],
@@ -456,7 +456,7 @@ Returns:
           │                              │                                     │
           │                              │  ┌─────────────────────────────┐   │
           │                              │  │ Claude Code wants access to │   │
-          │                              │  │ your doc-platform account   │   │
+          │                              │  │ your Specboard account   │   │
           │                              │  └─────────────────────────────┘   │
           │                              │                                     │
           │                              │  Device name:                       │
@@ -653,7 +653,7 @@ Response: `204 No Content`
 
 ## Shared Auth Package
 
-Both containers use `@doc-platform/auth` for session validation:
+Both containers use `@specboard/auth` for session validation:
 
 ```
 shared/auth/
@@ -671,7 +671,7 @@ shared/auth/
 
 ```typescript
 // Used by both frontend and API containers
-import { authMiddleware } from '@doc-platform/auth';
+import { authMiddleware } from '@specboard/auth';
 
 app.use('*', authMiddleware({
   redis: redisClient,
@@ -818,7 +818,7 @@ Signup is gated behind invite keys for early access control. Valid keys are stor
 
 1. **Via AWS Console:**
    - Go to AWS Secrets Manager
-   - Find `doc-platform/invite-keys`
+   - Find `specboard/invite-keys`
    - Click "Retrieve secret value" → "Edit"
    - Enter comma-separated keys: `key-one,key-two,another-key`
    - Save
@@ -826,7 +826,7 @@ Signup is gated behind invite keys for early access control. Valid keys are stor
 2. **Via AWS CLI:**
    ```bash
    aws secretsmanager put-secret-value \
-     --secret-id doc-platform/invite-keys \
+     --secret-id specboard/invite-keys \
      --secret-string "key-one,key-two,another-key"
    ```
 
@@ -844,7 +844,7 @@ Update the secret value in Secrets Manager. Changes take effect on the next ECS 
 
 To force an immediate update, redeploy the API service:
 ```bash
-aws ecs update-service --cluster doc-platform --service api --force-new-deployment
+aws ecs update-service --cluster specboard --service api --force-new-deployment
 ```
 
 ---

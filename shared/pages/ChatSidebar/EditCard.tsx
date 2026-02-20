@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Button } from '@doc-platform/ui';
+import { Button } from '@specboard/ui';
 import type { EditStats } from './parseEdit';
 import styles from './EditCard.module.css';
 

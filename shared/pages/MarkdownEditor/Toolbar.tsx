@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useSlate } from 'slate-react';
-import { ToolbarContainer, ToolbarGroup, ToolbarSeparator, ToolbarButton } from '@doc-platform/ui';
+import { ToolbarContainer, ToolbarGroup, ToolbarSeparator, ToolbarButton } from '@specboard/ui';
 import type { MarkType, BlockType } from './types';
 
 export interface ToolbarProps {

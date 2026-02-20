@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { RouteProps } from '@doc-platform/router';
-import { fetchClient } from '@doc-platform/fetch';
-import { Button, Page } from '@doc-platform/ui';
+import type { RouteProps } from '@specboard/router';
+import { fetchClient } from '@specboard/fetch';
+import { Button, Page } from '@specboard/ui';
 import styles from './AdminWaitlist.module.css';
 
 interface WaitlistSignup {

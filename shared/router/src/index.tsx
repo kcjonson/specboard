@@ -1,12 +1,12 @@
 /**
- * @doc-platform/router
+ * @specboard/router
  *
  * Minimal client-side router. Intercepts <a> clicks automatically.
  * View components don't need to know about routing.
  *
  * @example
  * ```tsx
- * import { startRouter } from '@doc-platform/router';
+ * import { startRouter } from '@specboard/router';
  *
  * const routes = [
  *   { route: '/', entry: HomePage },

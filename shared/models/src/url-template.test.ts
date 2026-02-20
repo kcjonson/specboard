@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - URL template tests
+ * @specboard/models - URL template tests
  */
 
 import { describe, it, expect } from 'vitest';

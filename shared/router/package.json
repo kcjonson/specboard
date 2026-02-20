@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/router",
+	"name": "@specboard/router",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",

@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono';
-import { query, type User, type UserRole } from '@doc-platform/db';
+import { query, type User, type UserRole } from '@specboard/db';
 import type { AuthVariables } from './middleware.ts';
 
 /**

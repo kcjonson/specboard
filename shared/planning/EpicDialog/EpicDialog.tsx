@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
-import type { EpicModel, Status } from '@doc-platform/models';
-import { Dialog, Icon } from '@doc-platform/ui';
+import type { EpicModel, Status } from '@specboard/models';
+import { Dialog, Icon } from '@specboard/ui';
 import { EpicView } from '../EpicView/EpicView';
 import styles from './EpicDialog.module.css';
 

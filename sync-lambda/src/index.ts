@@ -9,7 +9,7 @@ import {
 	SecretsManagerClient,
 	GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
-import { decrypt, type EncryptedData } from '@doc-platform/auth/encryption';
+import { decrypt, type EncryptedData } from '@specboard/auth/encryption';
 import { performInitialSync, type InitialSyncResult } from './initial-sync.ts';
 import {
 	performIncrementalSync,
@@ -123,11 +123,11 @@ async function initializeSecrets(): Promise<{ storageApiKey: string }> {
 		getSecretValue(getEnvVar('DB_PASSWORD_SECRET_ARN')),
 	]);
 
-	// Set encryption key in process.env for @doc-platform/auth decrypt()
+	// Set encryption key in process.env for @specboard/auth decrypt()
 	process.env.API_KEY_ENCRYPTION_KEY = encryptionKey;
 
 	// Parse DB credentials (stored as JSON { username, password })
-	// and set DB_PASSWORD for @doc-platform/db
+	// and set DB_PASSWORD for @specboard/db
 	try {
 		const dbCredentials = JSON.parse(dbCredentialsJson) as { password: string };
 		process.env.DB_PASSWORD = dbCredentials.password;

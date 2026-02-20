@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { navigate } from '@doc-platform/router';
-import { useModel, EpicModel, type TaskModel, type Status } from '@doc-platform/models';
-import { fetchClient } from '@doc-platform/fetch';
-import { Button, Select, Text } from '@doc-platform/ui';
+import { navigate } from '@specboard/router';
+import { useModel, EpicModel, type TaskModel, type Status } from '@specboard/models';
+import { fetchClient } from '@specboard/fetch';
+import { Button, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import styles from './EpicView.module.css';

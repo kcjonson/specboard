@@ -5,7 +5,7 @@
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import fs from 'fs/promises';
-import { addFolder, removeFolder } from '@doc-platform/db';
+import { addFolder, removeFolder } from '@specboard/db';
 import { isValidUUID } from '../../validation.ts';
 import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/storage/git-utils.ts';
 import { getUserId } from './utils.ts';

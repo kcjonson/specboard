@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - URL template utility
+ * @specboard/models - URL template utility
  *
  * Compiles path-to-regexp style URL templates.
  *

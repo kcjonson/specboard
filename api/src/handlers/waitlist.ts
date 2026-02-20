@@ -4,7 +4,7 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { query } from '@doc-platform/db';
+import { query } from '@specboard/db';
 import { isValidEmail } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
 

@@ -18,7 +18,7 @@ import {
 	unblockTask as unblockTaskService,
 	verifyProjectAccess,
 	verifyTaskOwnership,
-} from '@doc-platform/db';
+} from '@specboard/db';
 
 export const taskTools: Tool[] = [
 	{

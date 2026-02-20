@@ -7,7 +7,7 @@ import type { Redis } from 'ioredis';
 import { isValidUUID } from '../../validation.ts';
 import { getUserId, getStorageProvider } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
-import { getProject, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@doc-platform/db';
+import { getProject, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
 
 /**
  * GET /api/projects/:id/git/status

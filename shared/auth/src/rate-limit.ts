@@ -137,7 +137,7 @@ async function checkRateLimit(
  *
  * @example
  * ```typescript
- * import { rateLimitMiddleware } from '@doc-platform/auth';
+ * import { rateLimitMiddleware } from '@specboard/auth';
  *
  * app.use('*', rateLimitMiddleware(redis, {
  *   rules: [

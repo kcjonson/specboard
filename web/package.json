@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/web",
+	"name": "@specboard/web",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -12,13 +12,13 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
-		"@doc-platform/core": "*",
-		"@doc-platform/fetch": "*",
-		"@doc-platform/models": "*",
-		"@doc-platform/pages": "*",
-		"@doc-platform/router": "*",
-		"@doc-platform/telemetry": "*",
-		"@doc-platform/ui": "*",
+		"@specboard/core": "*",
+		"@specboard/fetch": "*",
+		"@specboard/models": "*",
+		"@specboard/pages": "*",
+		"@specboard/router": "*",
+		"@specboard/telemetry": "*",
+		"@specboard/ui": "*",
 		"is-hotkey": "^0.2.0",
 		"preact": "^10.25.4",
 		"slate": "^0.120.0",

@@ -6,8 +6,8 @@ import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { createHash, randomBytes } from 'node:crypto';
-import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
-import { query, transaction, type User } from '@doc-platform/db';
+import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
+import { query, transaction, type User } from '@specboard/db';
 
 // Constants
 const ACCESS_TOKEN_TTL_SECONDS = 3600; // 1 hour

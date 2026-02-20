@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { Button } from '@doc-platform/ui';
+import { Button } from '@specboard/ui';
 import styles from './EditorHeader.module.css';
 
 export interface EditorHeaderProps {

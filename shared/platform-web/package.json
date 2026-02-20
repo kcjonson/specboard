@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/platform-web",
+	"name": "@specboard/platform-web",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -21,8 +21,8 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@doc-platform/platform": "*",
-		"@doc-platform/fetch": "*"
+		"@specboard/platform": "*",
+		"@specboard/fetch": "*"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.2"

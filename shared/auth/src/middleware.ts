@@ -47,7 +47,7 @@ function isExcludedPath(path: string, excludePaths: string[]): boolean {
  * @example
  * ```typescript
  * import { Redis } from 'ioredis';
- * import { authMiddleware } from '@doc-platform/auth';
+ * import { authMiddleware } from '@specboard/auth';
  *
  * const redis = new Redis(process.env.REDIS_URL);
  *

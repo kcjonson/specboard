@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Doc-platform is a monorepo containing two products:
+Specboard is a monorepo containing two products:
 1. **Documentation Editor** - Git-backed markdown editor with WYSIWYG/raw modes, commenting, and AI assistance
 2. **Planning** - Lightweight task manager with epic/task hierarchy
 

@@ -3,10 +3,10 @@
 	"compilerOptions": {
 		"baseUrl": "../..",
 		"paths": {
-			"@doc-platform/core": ["./shared/core/src"],
-			"@doc-platform/core/*": ["./shared/core/src/*"],
-			"@doc-platform/db": ["./shared/db/src"],
-			"@doc-platform/db/*": ["./shared/db/src/*"]
+			"@specboard/core": ["./shared/core/src"],
+			"@specboard/core/*": ["./shared/core/src/*"],
+			"@specboard/db": ["./shared/db/src"],
+			"@specboard/db/*": ["./shared/db/src/*"]
 		}
 	},
 	"include": ["src"]

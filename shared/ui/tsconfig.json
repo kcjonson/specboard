@@ -3,8 +3,8 @@
 	"compilerOptions": {
 		"baseUrl": "../..",
 		"paths": {
-			"@doc-platform/fetch": ["./shared/fetch/src"],
-			"@doc-platform/models": ["./shared/models/src"]
+			"@specboard/fetch": ["./shared/fetch/src"],
+			"@specboard/models": ["./shared/models/src"]
 		},
 		"jsx": "react-jsx",
 		"jsxImportSource": "preact"

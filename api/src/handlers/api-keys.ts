@@ -12,8 +12,8 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import { getSession, SESSION_COOKIE_NAME, encrypt, decrypt, maskApiKey } from '@doc-platform/auth';
-import { query, type UserApiKey, type ApiKeyProvider } from '@doc-platform/db';
+import { getSession, SESSION_COOKIE_NAME, encrypt, decrypt, maskApiKey } from '@specboard/auth';
+import { query, type UserApiKey, type ApiKeyProvider } from '@specboard/db';
 import { isValidProvider, getProvider, PROVIDER_NAMES } from '../providers/index.ts';
 
 /**

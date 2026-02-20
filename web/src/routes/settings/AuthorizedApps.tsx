@@ -1,13 +1,13 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { type AuthorizationsCollection, type AuthorizationModel } from '@doc-platform/models';
-import { Button, Icon } from '@doc-platform/ui';
+import { type AuthorizationsCollection, type AuthorizationModel } from '@specboard/models';
+import { Button, Icon } from '@specboard/ui';
 import styles from './AuthorizedApps.module.css';
 
 // Friendly names for clients
 const CLIENT_NAMES: Record<string, string> = {
 	'claude-code': 'Claude Code',
-	'doc-platform-cli': 'Doc Platform CLI',
+	'specboard-cli': 'Specboard CLI',
 };
 
 // Friendly descriptions for scopes

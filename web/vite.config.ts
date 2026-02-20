@@ -66,17 +66,17 @@ export default defineConfig({
 			'@shared/planning': resolve(__dirname, '../shared/planning'),
 			'@shared/projects': resolve(__dirname, '../shared/projects'),
 			// Workspace packages (source, no build)
-			'@doc-platform/pages': resolve(__dirname, '../shared/pages'),
+			'@specboard/pages': resolve(__dirname, '../shared/pages'),
 			// Workspace packages - resolve to src for hot reloading
-			'@doc-platform/ui': resolve(__dirname, '../shared/ui/src'),
-			'@doc-platform/ui/tokens.css': resolve(__dirname, '../shared/ui/src/tokens.css'),
-			'@doc-platform/ui/elements.css': resolve(__dirname, '../shared/ui/src/elements.css'),
-			'@doc-platform/ui/shared.css': resolve(__dirname, '../shared/ui/src/shared.css'),
-			'@doc-platform/router': resolve(__dirname, '../shared/router/src'),
-			'@doc-platform/models': resolve(__dirname, '../shared/models/src'),
-			'@doc-platform/fetch': resolve(__dirname, '../shared/fetch/src'),
-			'@doc-platform/core': resolve(__dirname, '../shared/core/src'),
-			'@doc-platform/telemetry': resolve(__dirname, '../shared/telemetry/src'),
+			'@specboard/ui': resolve(__dirname, '../shared/ui/src'),
+			'@specboard/ui/tokens.css': resolve(__dirname, '../shared/ui/src/tokens.css'),
+			'@specboard/ui/elements.css': resolve(__dirname, '../shared/ui/src/elements.css'),
+			'@specboard/ui/shared.css': resolve(__dirname, '../shared/ui/src/shared.css'),
+			'@specboard/router': resolve(__dirname, '../shared/router/src'),
+			'@specboard/models': resolve(__dirname, '../shared/models/src'),
+			'@specboard/fetch': resolve(__dirname, '../shared/fetch/src'),
+			'@specboard/core': resolve(__dirname, '../shared/core/src'),
+			'@specboard/telemetry': resolve(__dirname, '../shared/telemetry/src'),
 			// Alias React to Preact for slate-react compatibility
 			// (Vite doesn't respect npm overrides in dev mode)
 			'react': resolve(__dirname, '../node_modules/preact/compat'),

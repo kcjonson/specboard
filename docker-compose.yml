@@ -14,13 +14,13 @@ services:
     environment:
       POSTGRES_USER: dev
       POSTGRES_PASSWORD: dev
-      POSTGRES_DB: doc_platform
+      POSTGRES_DB: specboard
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dev -d doc_platform"]
+      test: ["CMD-SHELL", "pg_isready -U dev -d specboard"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -50,12 +50,12 @@ services:
     # npm_cache volume persists npm cache across container rebuilds.
     volumes:
       - .:/app:cached
-      - ${HOST_PROJECT_PATH:-.}:/host/doc-platform
+      - ${HOST_PROJECT_PATH:-.}:/host/specboard
       - /app/node_modules
       - npm_cache:/root/.npm
     environment:
       PORT: 3001
-      DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
+      DATABASE_URL: postgresql://dev:dev@db:5432/specboard
       REDIS_URL: redis://redis:6379
       NODE_ENV: development
       INVITE_KEYS: localdev
@@ -75,7 +75,7 @@ services:
       # DB vars for sync-lambda when invoked locally (must match DATABASE_URL)
       DB_HOST: db
       DB_PORT: "5432"
-      DB_NAME: doc_platform
+      DB_NAME: specboard
       DB_USER: dev
       DB_PASSWORD: dev
     depends_on:
@@ -101,7 +101,7 @@ services:
       PORT: 3000
       REDIS_URL: redis://redis:6379
       API_URL: http://api:3001
-      DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
+      DATABASE_URL: postgresql://dev:dev@db:5432/specboard
       NODE_ENV: development
       VITE_DEV_SERVER: http://localhost:5173
     depends_on:
@@ -126,7 +126,7 @@ services:
       - npm_cache:/root/.npm
     environment:
       PORT: 3002
-      DATABASE_URL: postgresql://dev:dev@db:5432/doc_platform
+      DATABASE_URL: postgresql://dev:dev@db:5432/specboard
       NODE_ENV: development
     depends_on:
       db:
@@ -181,7 +181,7 @@ services:
       DB_PASSWORD: dev
       NODE_ENV: development
       # LocalStack S3 configuration
-      S3_BUCKET: doc-platform-storage
+      S3_BUCKET: specboard-storage
       S3_REGION: us-east-1
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test

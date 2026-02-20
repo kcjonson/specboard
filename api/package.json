@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/api",
+	"name": "@specboard/api",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -13,11 +13,11 @@
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.71.2",
 		"@aws-sdk/client-lambda": "^3.726.0",
-		"@doc-platform/auth": "*",
-		"@doc-platform/core": "*",
-		"@doc-platform/db": "*",
-		"@doc-platform/email": "*",
-		"@doc-platform/sync-lambda": "*",
+		"@specboard/auth": "*",
+		"@specboard/core": "*",
+		"@specboard/db": "*",
+		"@specboard/email": "*",
+		"@specboard/sync-lambda": "*",
 		"@hono/node-server": "^1.19.7",
 		"hono": "^4.11.1",
 		"ioredis": "^5.4.2"

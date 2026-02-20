@@ -2,7 +2,7 @@
  * Transform functions: snake_case DB → camelCase API
  */
 
-import type { Epic as DbEpic, Task as DbTask, ProgressNote as DbProgressNote, ProjectResponse } from '@doc-platform/db';
+import type { Epic as DbEpic, Task as DbTask, ProgressNote as DbProgressNote, ProjectResponse } from '@specboard/db';
 import type { ApiEpic, ApiTask, ApiProgressNote, ApiProject } from './types.ts';
 
 export function dbEpicToApi(epic: DbEpic): ApiEpic {

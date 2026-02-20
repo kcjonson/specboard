@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'preact/hooks';
-import type { EpicModel, Status } from '@doc-platform/models';
+import type { EpicModel, Status } from '@specboard/models';
 
 const STATUSES: Status[] = ['ready', 'in_progress', 'done'];
 

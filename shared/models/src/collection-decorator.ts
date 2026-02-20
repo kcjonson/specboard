@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - @collection decorator
+ * @specboard/models - @collection decorator
  *
  * Decorator for declaring a property as a collection of child models.
  * Handles instantiation, event bubbling, and subscription management.

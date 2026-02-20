@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Icon } from '@doc-platform/ui';
+import { Icon } from '@specboard/ui';
 import styles from './FileBrowser.module.css';
 
 export interface FolderItemProps {

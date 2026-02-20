@@ -12,8 +12,8 @@ import {
 	SESSION_COOKIE_NAME,
 	CSRF_COOKIE_NAME,
 	SESSION_TTL_SECONDS,
-} from '@doc-platform/auth';
-import { query, type User } from '@doc-platform/db';
+} from '@specboard/auth';
+import { query, type User } from '@specboard/db';
 
 import { logAuthEvent, isSecureRequest } from './utils.ts';
 

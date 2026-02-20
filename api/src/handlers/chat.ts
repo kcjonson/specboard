@@ -11,7 +11,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
+import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
 import { getDecryptedApiKey } from './api-keys.ts';
 import { isValidProvider, getProvider, isValidModel, type ChatMessage } from '../providers/index.ts';
 

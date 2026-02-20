@@ -34,7 +34,7 @@ For web deployments:
 ┌─────────────────────────────────────────────────────────────────┐
 │                       Editor Core                                │
 │                                                                  │
-│   import { useFileSystem, useGit } from '@doc-platform/platform' │
+│   import { useFileSystem, useGit } from '@specboard/platform' │
 │                                                                  │
 │   // Platform-agnostic code                                     │
 │   content = await fs.readFile('/docs/readme.md')                │
@@ -54,7 +54,7 @@ For web deployments:
             ┌─────────────────┴─────────────────┐
             ▼                                   ▼
 ┌─────────────────────────┐       ┌─────────────────────────┐
-│  @doc-platform/         │       │  @doc-platform/         │
+│  @specboard/         │       │  @specboard/         │
 │  platform-electron      │       │  platform-web           │
 │                         │       │                         │
 │  - Node.js fs           │       │  - REST API calls       │

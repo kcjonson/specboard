@@ -8,12 +8,12 @@ import {
 	hashToken,
 	getTokenExpiry,
 	isTokenExpired,
-} from '@doc-platform/auth';
-import { query, type User } from '@doc-platform/db';
+} from '@specboard/auth';
+import { query, type User } from '@specboard/db';
 import {
 	sendEmail,
 	getVerificationEmailContent,
-} from '@doc-platform/email';
+} from '@specboard/email';
 
 import { logAuthEvent, APP_URL } from './utils.ts';
 

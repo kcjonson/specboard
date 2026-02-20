@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { Status, EpicModel } from '@doc-platform/models';
-import { StatusDot } from '@doc-platform/ui';
+import type { Status, EpicModel } from '@specboard/models';
+import { StatusDot } from '@specboard/ui';
 import { EpicCard } from '../EpicCard/EpicCard';
 import styles from './Column.module.css';
 

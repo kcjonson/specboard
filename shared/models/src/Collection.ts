@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - Collection type
+ * @specboard/models - Collection type
  *
  * A typed collection of child models with event bubbling.
  * Implements Observable for use with useModel hook.

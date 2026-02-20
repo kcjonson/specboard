@@ -38,7 +38,7 @@ Minimal observability stack focused on catching errors and understanding basic s
 
 ### Minimal Frontend Bundle
 
-The frontend uses `@doc-platform/telemetry`, a minimal (~1KB) package that:
+The frontend uses `@specboard/telemetry`, a minimal (~1KB) package that:
 - Captures unhandled errors and promise rejections
 - Sends simple JSON to `/api/metrics`
 - Uses `navigator.sendBeacon()` for reliable delivery
@@ -53,7 +53,7 @@ The frontend uses `@doc-platform/telemetry`, a minimal (~1KB) package that:
 Minimal error capture and reporting:
 
 ```typescript
-import { init } from '@doc-platform/telemetry';
+import { init } from '@specboard/telemetry';
 
 init({
   enabled: import.meta.env.WEB_ERROR_REPORTING_ENABLED === 'true',
@@ -98,7 +98,7 @@ app.post('/api/metrics', async (c) => {
 
 ### 3. CloudWatch Alarms
 
-**Location:** `infra/lib/doc-platform-stack.ts`
+**Location:** `infra/lib/specboard-stack.ts`
 
 Alarms for resource utilization:
 - CPU > 80% for 5 minutes

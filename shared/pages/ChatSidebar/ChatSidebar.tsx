@@ -1,6 +1,6 @@
 import { useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Button, Icon } from '@doc-platform/ui';
+import { Button, Icon } from '@specboard/ui';
 import { ChatMessage } from './ChatMessage';
 import {
 	useModelSelection,

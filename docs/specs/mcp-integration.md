@@ -1,6 +1,6 @@
 # MCP Integration Specification
 
-This specification defines how Claude Code integrates with doc-platform via the Model Context Protocol (MCP).
+This specification defines how Claude Code integrates with Specboard via the Model Context Protocol (MCP).
 
 ---
 
@@ -83,7 +83,7 @@ MCP uses OAuth 2.1 + PKCE (defined in `authentication.md`).
 
 ### Token Flow
 
-1. User runs `doc-platform connect` or configures `.mcp.json`
+1. User runs `specboard connect` or configures `.mcp.json`
 2. OAuth flow obtains access + refresh tokens
 3. Claude Code stores tokens securely
 4. MCP server validates token on each request
@@ -97,10 +97,10 @@ MCP uses OAuth 2.1 + PKCE (defined in `authentication.md`).
 
 ```bash
 # Install CLI globally
-npm install -g @doc-platform/cli
+npm install -g @specboard/cli
 
 # Connect (opens browser for OAuth)
-doc-platform connect
+specboard connect
 
 # Outputs:
 # ✓ Authenticated as user@example.com
@@ -113,8 +113,8 @@ doc-platform connect
 ```json
 {
 	"mcpServers": {
-		"doc-platform": {
-			"url": "https://mcp.doc-platform.com",
+		"specboard": {
+			"url": "https://mcp.specboard.io",
 			"transport": "http",
 			"auth": {
 				"type": "oauth",
@@ -133,14 +133,14 @@ For advanced users or CI environments:
 ```json
 {
 	"mcpServers": {
-		"doc-platform": {
-			"url": "https://mcp.doc-platform.com",
+		"specboard": {
+			"url": "https://mcp.specboard.io",
 			"transport": "http",
 			"auth": {
 				"type": "oauth",
 				"clientId": "claude-code-mcp",
-				"authorizationUrl": "https://api.doc-platform.com/oauth/authorize",
-				"tokenUrl": "https://api.doc-platform.com/oauth/token",
+				"authorizationUrl": "https://api.specboard.io/oauth/authorize",
+				"tokenUrl": "https://api.specboard.io/oauth/token",
 				"scopes": ["docs:read", "docs:write", "tasks:read", "tasks:write"],
 				"pkce": true
 			}
@@ -557,7 +557,7 @@ Documents are indexed with:
 ### Installation & Commands
 
 ```bash
-npm install -g @doc-platform/cli
+npm install -g @specboard/cli
 ```
 
 #### connect
@@ -565,7 +565,7 @@ npm install -g @doc-platform/cli
 Authenticate and create `.mcp.json`:
 
 ```bash
-doc-platform connect [--global]
+specboard connect [--global]
 
 # Options:
 #   --global    Install to ~/.mcp.json instead of project
@@ -576,7 +576,7 @@ doc-platform connect [--global]
 Remove authentication:
 
 ```bash
-doc-platform disconnect
+specboard disconnect
 ```
 
 #### status
@@ -584,7 +584,7 @@ doc-platform disconnect
 Check connection status:
 
 ```bash
-doc-platform status
+specboard status
 
 # Output:
 # Connected as: user@example.com
@@ -749,7 +749,7 @@ All planning endpoints use project ID in the URL:
 ```json
 {
 	"mcpServers": {
-		"doc-platform": {
+		"specboard": {
 			"url": "http://localhost:3002/mcp",
 			"transport": "http"
 		}
@@ -766,7 +766,7 @@ Environment variables for MCP server:
 #### Not Yet Implemented
 
 - OAuth 2.1 + PKCE authentication (using simple token for now)
-- CLI tool (`doc-platform connect`)
+- CLI tool (`specboard connect`)
 - Documentation tools (docs:read, docs:write)
 - OpenSearch integration for full-text search
 - Rate limiting in MCP server

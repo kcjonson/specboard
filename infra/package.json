@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/infra",
+	"name": "@specboard/infra",
 	"version": "0.0.1",
 	"private": true,
 	"scripts": {

@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - Model tests
+ * @specboard/models - Model tests
  */
 
 import { describe, it, expect, vi } from 'vitest';

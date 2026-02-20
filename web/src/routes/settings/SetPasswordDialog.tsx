@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Dialog, Button, Text } from '@doc-platform/ui';
-import { fetchClient } from '@doc-platform/fetch';
+import { Dialog, Button, Text } from '@specboard/ui';
+import { fetchClient } from '@specboard/fetch';
 import styles from './ChangePasswordDialog.module.css';
 
 interface SetPasswordDialogProps {

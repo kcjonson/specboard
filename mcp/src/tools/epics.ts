@@ -13,7 +13,7 @@ import {
 	getEpicWithDetails,
 	getCurrentWork as getCurrentWorkService,
 	verifyProjectAccess,
-} from '@doc-platform/db';
+} from '@specboard/db';
 
 export const epicTools: Tool[] = [
 	{

@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - Type definitions
+ * @specboard/models - Type definitions
  */
 
 export type ChangeCallback = () => void;

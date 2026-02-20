@@ -1,9 +1,9 @@
 import { useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { RouteProps } from '@doc-platform/router';
-import { navigate } from '@doc-platform/router';
-import { useModel, EpicModel } from '@doc-platform/models';
-import { Icon } from '@doc-platform/ui';
+import type { RouteProps } from '@specboard/router';
+import { navigate } from '@specboard/router';
+import { useModel, EpicModel } from '@specboard/models';
+import { Icon } from '@specboard/ui';
 import { EpicView } from '../EpicView/EpicView';
 import styles from './EpicDetail.module.css';
 

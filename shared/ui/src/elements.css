@@ -1,5 +1,5 @@
 /**
- * Base element styles for @doc-platform/ui
+ * Base element styles for @specboard/ui
  *
  * Styles native HTML elements (button, input, textarea) using design tokens.
  * Works with both SSR pages (native elements) and Preact components.

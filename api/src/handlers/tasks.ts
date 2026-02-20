@@ -3,7 +3,7 @@
  */
 
 import type { Context } from 'hono';
-import { query, type Task as DbTask } from '@doc-platform/db';
+import { query, type Task as DbTask } from '@specboard/db';
 import type { ApiTask } from '../types.ts';
 import { dbTaskToApi } from '../transform.ts';
 import {

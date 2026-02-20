@@ -9,12 +9,12 @@ import {
 	generateToken,
 	hashToken,
 	getTokenExpiry,
-} from '@doc-platform/auth';
-import { query, type User } from '@doc-platform/db';
+} from '@specboard/auth';
+import { query, type User } from '@specboard/db';
 import {
 	sendEmail,
 	getVerificationEmailContent,
-} from '@doc-platform/email';
+} from '@specboard/email';
 
 import { isValidEmail, isValidUsername } from '../../validation.ts';
 import { logAuthEvent, isValidInviteKey, APP_URL } from './utils.ts';

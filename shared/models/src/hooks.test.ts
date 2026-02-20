@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - Hooks tests
+ * @specboard/models - Hooks tests
  *
  * @vitest-environment jsdom
  */

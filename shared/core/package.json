@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/core",
+	"name": "@specboard/core",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",

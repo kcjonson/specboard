@@ -1,6 +1,6 @@
 # REST API & Database Schema Specification
 
-This specification defines the REST API endpoints and database schema for doc-platform.
+This specification defines the REST API endpoints and database schema for Specboard.
 
 > **Related Specs**:
 > - [Project Storage](./project-storage.md) - Git repository connection and storage modes
@@ -259,7 +259,7 @@ CREATE INDEX idx_audit_entity ON audit_log(entity_type, entity_id);
 
 ### Base URL
 
-- Production: `https://api.doc-platform.com`
+- Production: `https://api.specboard.io`
 - Development: `http://localhost:3000`
 
 ### Authentication

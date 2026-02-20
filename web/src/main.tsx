@@ -1,11 +1,11 @@
-import { init as initTelemetry } from '@doc-platform/telemetry';
-import { startRouter, navigate } from '@doc-platform/router';
-import type { RouteProps } from '@doc-platform/router';
+import { init as initTelemetry } from '@specboard/telemetry';
+import { startRouter, navigate } from '@specboard/router';
+import type { RouteProps } from '@specboard/router';
 import { useEffect, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { getCookie, setCookie } from '@doc-platform/core/cookies';
-import { fetchClient } from '@doc-platform/fetch';
-import { NotFound } from '@doc-platform/ui';
+import { getCookie, setCookie } from '@specboard/core/cookies';
+import { fetchClient } from '@specboard/fetch';
+import { NotFound } from '@specboard/ui';
 
 // Initialize error reporting
 initTelemetry({
@@ -15,7 +15,7 @@ initTelemetry({
 
 // Shared feature components
 import { Board, EpicDetail } from '@shared/planning';
-import { Editor } from '@doc-platform/pages';
+import { Editor } from '@specboard/pages';
 import { ProjectsList, type Project } from '@shared/projects';
 
 // App-specific routes

@@ -10,11 +10,11 @@ import { createHash } from 'node:crypto';
 import { mcpAuthMiddleware, requireScope, getMcpToken, type McpAuthVariables } from './mcp.ts';
 
 // Mock database
-vi.mock('@doc-platform/db', () => ({
+vi.mock('@specboard/db', () => ({
 	query: vi.fn(),
 }));
 
-import { query } from '@doc-platform/db';
+import { query } from '@specboard/db';
 
 describe('MCP auth middleware', () => {
 	beforeEach(() => {

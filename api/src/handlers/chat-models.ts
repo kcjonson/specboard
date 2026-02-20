@@ -9,8 +9,8 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
-import { query, type UserApiKey } from '@doc-platform/db';
+import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
+import { query, type UserApiKey } from '@specboard/db';
 import { PROVIDER_NAMES, getProvider, type ProviderName, type ModelInfo } from '../providers/index.ts';
 
 /**

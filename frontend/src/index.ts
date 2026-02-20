@@ -8,8 +8,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Redis } from 'ioredis';
-import { authMiddleware, type AuthVariables } from '@doc-platform/auth';
-import { reportError, installErrorHandlers, logRequest } from '@doc-platform/core';
+import { authMiddleware, type AuthVariables } from '@specboard/auth';
+import { reportError, installErrorHandlers, logRequest } from '@specboard/core';
 import { pages, spaIndex, type CachedPage } from './static-pages.ts';
 
 // Vite dev server URL for hot reloading (set in docker-compose for dev mode)

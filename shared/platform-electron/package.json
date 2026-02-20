@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/platform-electron",
+	"name": "@specboard/platform-electron",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -21,7 +21,7 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@doc-platform/platform": "*"
+		"@specboard/platform": "*"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.2"

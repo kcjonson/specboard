@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { FileTreeModel, useModel, type GitStatusModel } from '@doc-platform/models';
-import { Badge, Button, Icon } from '@doc-platform/ui';
-import { fetchClient } from '@doc-platform/fetch';
+import { FileTreeModel, useModel, type GitStatusModel } from '@specboard/models';
+import { Badge, Button, Icon } from '@specboard/ui';
+import { fetchClient } from '@specboard/fetch';
 import { GitStatusBar } from './GitStatusBar';
 import { ConfirmDialog } from './ConfirmDialog';
 import { FileItem } from './FileItem';

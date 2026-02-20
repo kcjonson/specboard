@@ -1,5 +1,5 @@
 /**
- * @doc-platform/platform-web
+ * @specboard/platform-web
  * Web implementations of platform interfaces (REST API clients).
  */
 

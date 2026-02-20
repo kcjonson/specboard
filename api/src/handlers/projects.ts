@@ -5,14 +5,14 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
+import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
 import {
 	getProjects,
 	getProject,
 	createProject,
 	updateProject,
 	deleteProject,
-} from '@doc-platform/db';
+} from '@specboard/db';
 import { projectResponseToApi } from '../transform.ts';
 import { isValidUUID, isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
 import { startGitHubInitialSync } from './github-sync.ts';

@@ -3,7 +3,7 @@
  */
 
 import type { Context } from 'hono';
-import { query, type ProgressNote as DbProgressNote } from '@doc-platform/db';
+import { query, type ProgressNote as DbProgressNote } from '@specboard/db';
 import { dbProgressNoteToApi } from '../transform.ts';
 import { isValidUUID } from '../validation.ts';
 

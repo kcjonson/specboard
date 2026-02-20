@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { RouteProps } from '@doc-platform/router';
-import { Button, Text, Page } from '@doc-platform/ui';
-import { fetchClient } from '@doc-platform/fetch';
-import { useModel, UserModel, AuthorizationsCollection } from '@doc-platform/models';
+import type { RouteProps } from '@specboard/router';
+import { Button, Text, Page } from '@specboard/ui';
+import { fetchClient } from '@specboard/fetch';
+import { useModel, UserModel, AuthorizationsCollection } from '@specboard/models';
 import { AuthorizedApps } from './AuthorizedApps';
 import { ApiKeys } from './ApiKeys';
 import { GitHubConnection } from './GitHubConnection';

@@ -1,5 +1,5 @@
 /**
- * @doc-platform/platform-electron
+ * @specboard/platform-electron
  * Electron implementations of platform interfaces.
  */
 

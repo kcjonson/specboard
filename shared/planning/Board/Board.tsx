@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { RouteProps } from '@doc-platform/router';
-import { useModel, EpicsCollection, type EpicModel, type Status } from '@doc-platform/models';
-import { Button, Page } from '@doc-platform/ui';
+import type { RouteProps } from '@specboard/router';
+import { useModel, EpicsCollection, type EpicModel, type Status } from '@specboard/models';
+import { Button, Page } from '@specboard/ui';
 import { Column } from '../Column/Column';
 import { EpicDialog } from '../EpicDialog/EpicDialog';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';

@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/ui",
+	"name": "@specboard/ui",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -24,9 +24,9 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@doc-platform/core": "*",
-		"@doc-platform/fetch": "*",
-		"@doc-platform/models": "*",
+		"@specboard/core": "*",
+		"@specboard/fetch": "*",
+		"@specboard/models": "*",
 		"preact": "^10.25.4"
 	},
 	"devDependencies": {

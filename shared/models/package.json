@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/models",
+	"name": "@specboard/models",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -21,7 +21,7 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@doc-platform/fetch": "*",
+		"@specboard/fetch": "*",
 		"preact": "^10.25.4"
 	},
 	"devDependencies": {

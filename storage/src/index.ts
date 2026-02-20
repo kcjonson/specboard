@@ -1,5 +1,5 @@
 /**
- * @doc-platform/storage
+ * @specboard/storage
  * Internal storage service - dumb filesystem API for S3 + Postgres.
  * No user auth - validated by main API before calling.
  */

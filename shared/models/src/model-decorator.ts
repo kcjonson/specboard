@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - @model decorator
+ * @specboard/models - @model decorator
  *
  * Decorator for declaring a property as a nested child model.
  * Handles instantiation and event bubbling.

@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
-import type { RouteProps } from '@doc-platform/router';
-import { Page } from '@doc-platform/ui';
+import type { RouteProps } from '@specboard/router';
+import { Page } from '@specboard/ui';
 import styles from './Admin.module.css';
 
 export function Admin(_props: RouteProps): JSX.Element {

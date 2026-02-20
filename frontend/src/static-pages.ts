@@ -75,7 +75,7 @@ function loadPage(path: string): CachedPage {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(
 			`Failed to load static page "${path}". ` +
-			`Ensure the SSG build has been run (npm run --workspace @doc-platform/ssg build). ` +
+			`Ensure the SSG build has been run (npm run --workspace @specboard/ssg build). ` +
 			`Error: ${message}`,
 		);
 		throw error;

@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Button, Notice } from '@doc-platform/ui';
+import { Button, Notice } from '@specboard/ui';
 import styles from './SaveErrorBanner.module.css';
 
 export interface SaveErrorBannerProps {

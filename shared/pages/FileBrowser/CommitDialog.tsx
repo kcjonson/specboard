@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Button, Dialog, Icon } from '@doc-platform/ui';
-import type { IconName } from '@doc-platform/ui';
-import type { GitStatusModel, ChangedFile } from '@doc-platform/models';
+import { Button, Dialog, Icon } from '@specboard/ui';
+import type { IconName } from '@specboard/ui';
+import type { GitStatusModel, ChangedFile } from '@specboard/models';
 import styles from './CommitDialog.module.css';
 
 export interface CommitDialogProps {

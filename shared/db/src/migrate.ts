@@ -52,7 +52,7 @@ async function migrate(): Promise<void> {
 		// If another migration is running (e.g. from a cancelled pipeline that
 		// left an ECS task running), this will block until it completes.
 		// The lock is released automatically when the client disconnects.
-		await client.query(`SELECT pg_advisory_lock(hashtext('doc-platform-migrations'))`);
+		await client.query(`SELECT pg_advisory_lock(hashtext('specboard-migrations'))`);
 		console.log('Acquired migration lock');
 
 		// Create migrations table if it doesn't exist

@@ -7,10 +7,10 @@ import {
 	addPathToTree,
 	removePathFromTree,
 } from './FileTreeModel';
-import { fetchClient } from '@doc-platform/fetch';
+import { fetchClient } from '@specboard/fetch';
 
 // Mock fetchClient
-vi.mock('@doc-platform/fetch', () => ({
+vi.mock('@specboard/fetch', () => ({
 	fetchClient: {
 		post: vi.fn(),
 	},

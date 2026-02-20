@@ -7,7 +7,7 @@
 
 import { Model } from './Model';
 import { prop } from './prop';
-import { fetchClient } from '@doc-platform/fetch';
+import { fetchClient } from '@specboard/fetch';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

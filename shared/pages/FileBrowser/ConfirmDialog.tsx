@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Button, Dialog } from '@doc-platform/ui';
+import { Button, Dialog } from '@specboard/ui';
 import styles from './ConfirmDialog.module.css';
 
 export interface ConfirmDialogProps {

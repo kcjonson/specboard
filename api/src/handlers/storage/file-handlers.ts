@@ -4,7 +4,7 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { getProject, query } from '@doc-platform/db';
+import { getProject, query } from '@specboard/db';
 import { isValidUUID } from '../../validation.ts';
 import type { FileEntry } from '../../services/storage/types.ts';
 import {

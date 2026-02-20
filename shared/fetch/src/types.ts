@@ -1,5 +1,5 @@
 /**
- * @doc-platform/fetch - Type definitions
+ * @specboard/fetch - Type definitions
  */
 
 export interface FetchConfig {

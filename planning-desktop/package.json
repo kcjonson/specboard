@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/planning-desktop",
+	"name": "@specboard/planning-desktop",
 	"version": "0.0.1",
 	"private": true,
 	"main": "dist/main.js",
@@ -12,8 +12,8 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
-		"@doc-platform/platform": "*",
-		"@doc-platform/platform-electron": "*"
+		"@specboard/platform": "*",
+		"@specboard/platform-electron": "*"
 	},
 	"devDependencies": {
 		"electron": "^33.2.1",

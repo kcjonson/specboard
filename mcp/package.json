@@ -1,11 +1,11 @@
 {
-	"name": "@doc-platform/mcp",
+	"name": "@specboard/mcp",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
 	"main": "dist/index.js",
 	"bin": {
-		"doc-platform-mcp": "dist/index.js"
+		"specboard-mcp": "dist/index.js"
 	},
 	"scripts": {
 		"build": "tsc",
@@ -16,9 +16,9 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
-		"@doc-platform/auth": "*",
-		"@doc-platform/core": "*",
-		"@doc-platform/db": "*",
+		"@specboard/auth": "*",
+		"@specboard/core": "*",
+		"@specboard/db": "*",
 		"@hono/node-server": "^1.19.7",
 		"hono": "^4.11.1",
 		"@modelcontextprotocol/sdk": "^1.0.0",

@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { RouteProps } from '@doc-platform/router';
-import { getCookie } from '@doc-platform/core/cookies';
-import { Button, Icon } from '@doc-platform/ui';
-import { useModel, UserModel } from '@doc-platform/models';
+import type { RouteProps } from '@specboard/router';
+import { getCookie } from '@specboard/core/cookies';
+import { Button, Icon } from '@specboard/ui';
+import { useModel, UserModel } from '@specboard/models';
 import styles from './OAuthConsent.module.css';
 
 /** CSRF cookie name (must match server) */
@@ -20,7 +20,7 @@ const SCOPE_DESCRIPTIONS: Record<string, string> = {
 // Client display names
 const CLIENT_NAMES: Record<string, string> = {
 	'claude-code': 'Claude Code',
-	'doc-platform-cli': 'Doc Platform CLI',
+	'specboard-cli': 'Specboard CLI',
 };
 
 export function OAuthConsent(_props: RouteProps): JSX.Element {

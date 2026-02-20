@@ -1,5 +1,5 @@
 /**
- * @doc-platform/router - Tests
+ * @specboard/router - Tests
  */
 
 import { describe, it, expect } from 'vitest';

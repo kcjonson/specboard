@@ -1,6 +1,6 @@
 # Local Development Setup
 
-This guide covers setting up doc-platform for local development.
+This guide covers setting up Specboard for local development.
 
 ---
 
@@ -57,7 +57,7 @@ Create this file for local-only configuration that shouldn't be committed:
 services:
   api:
     volumes:
-      - .:/host/doc-platform
+      - .:/host/specboard
     environment:
       # Local dev encryption key for user API keys (AI chat feature)
       # Generate a real key with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -67,7 +67,7 @@ services:
 
 #### Volume Mount
 
-The host volume mount (`- .:/host/doc-platform`) enables local file operations from within the API container. This is required for Git operations on local repositories.
+The host volume mount (`- .:/host/specboard`) enables local file operations from within the API container. This is required for Git operations on local repositories.
 
 #### API Key Encryption
 
@@ -98,10 +98,10 @@ docker compose exec api npm run migrate
 
 ```bash
 # psql connection
-psql postgresql://dev:dev@localhost:5432/doc_platform
+psql postgresql://dev:dev@localhost:5432/specboard
 
 # Or via Docker
-docker compose exec db psql -U dev -d doc_platform
+docker compose exec db psql -U dev -d specboard
 ```
 
 ---
@@ -139,7 +139,7 @@ After the first CDK deployment, you must manually set the API key encryption sec
 ```bash
 # Generate and set the encryption key
 aws secretsmanager put-secret-value \
-  --secret-id doc-platform/api-key-encryption \
+  --secret-id specboard/api-key-encryption \
   --secret-string "$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" \
   --region us-west-2
 ```

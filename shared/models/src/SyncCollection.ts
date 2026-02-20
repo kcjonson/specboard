@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - SyncCollection
+ * @specboard/models - SyncCollection
  *
  * A collection that syncs with a REST API.
  * Auto-fetches on construction, items are SyncModels.
@@ -22,7 +22,7 @@
  * ```
  */
 
-import { fetchClient } from '@doc-platform/fetch';
+import { fetchClient } from '@specboard/fetch';
 import type { SyncModel } from './SyncModel';
 import type { ChangeCallback, Observable, ModelData } from './types';
 

@@ -1,14 +1,14 @@
 /**
- * @doc-platform/models - SyncModel tests
+ * @specboard/models - SyncModel tests
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncModel } from './SyncModel';
 import { prop } from './prop';
-import { fetchClient } from '@doc-platform/fetch';
+import { fetchClient } from '@specboard/fetch';
 
 // Mock fetchClient
-vi.mock('@doc-platform/fetch', () => ({
+vi.mock('@specboard/fetch', () => ({
 	fetchClient: {
 		get: vi.fn(),
 		post: vi.fn(),

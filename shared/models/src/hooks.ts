@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - Preact hooks
+ * @specboard/models - Preact hooks
  *
  * Hooks for subscribing to Model and Collection changes in Preact components.
  */

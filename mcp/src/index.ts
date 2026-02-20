@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @doc-platform/mcp
+ * @specboard/mcp
  * MCP server for Claude Code integration with the planning system.
  *
  * This server provides tools for Claude to:
@@ -23,8 +23,8 @@ import {
 	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { installErrorHandlers, logRequest } from '@doc-platform/core';
-import { mcpAuthMiddleware, type McpAuthVariables } from '@doc-platform/auth';
+import { installErrorHandlers, logRequest } from '@specboard/core';
+import { mcpAuthMiddleware, type McpAuthVariables } from '@specboard/auth';
 
 import { epicTools, handleEpicTool } from './tools/epics.ts';
 import { taskTools, handleTaskTool } from './tools/tasks.ts';
@@ -61,7 +61,7 @@ interface SessionBinding {
 function createMcpServer(userId: string): Server {
 	const server = new Server(
 		{
-			name: 'doc-platform',
+			name: 'specboard',
 			version: '0.1.0',
 		},
 		{
@@ -267,7 +267,7 @@ app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
 // Start the server
 serve({ fetch: app.fetch, port }, () => {
-	console.log(`doc-platform MCP server running on http://localhost:${port}`);
+	console.log(`Specboard MCP server running on http://localhost:${port}`);
 	console.log(`MCP endpoint: http://localhost:${port}/mcp`);
 	console.log(`Health check: http://localhost:${port}/mcp/health`);
 });

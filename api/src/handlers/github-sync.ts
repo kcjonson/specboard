@@ -15,16 +15,16 @@ import {
 	SESSION_COOKIE_NAME,
 	decrypt,
 	type EncryptedData,
-} from '@doc-platform/auth';
-import { query } from '@doc-platform/db';
-import { log } from '@doc-platform/core';
+} from '@specboard/auth';
+import { query } from '@specboard/db';
+import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
 import {
 	createGitHubCommit,
 	generateCommitMessage,
 	type PendingChange,
 } from '../services/github-commit.ts';
-import type { SyncEvent } from '@doc-platform/sync-lambda';
+import type { SyncEvent } from '@specboard/sync-lambda';
 
 // Lambda client for invoking sync function (production only)
 const lambdaClient = new LambdaClient({
@@ -32,7 +32,7 @@ const lambdaClient = new LambdaClient({
 });
 
 const GITHUB_SYNC_LAMBDA_NAME =
-	process.env.GITHUB_SYNC_LAMBDA_NAME || 'doc-platform-github-sync';
+	process.env.GITHUB_SYNC_LAMBDA_NAME || 'specboard-github-sync';
 
 /**
  * Invoke the sync Lambda function.
@@ -45,7 +45,7 @@ async function invokeSyncLambda(payload: SyncEvent): Promise<void> {
 		// Dynamic import to avoid loading Lambda deps in production
 		// Wrap in try-catch to handle sync errors during import
 		try {
-			const { handler } = await import('@doc-platform/sync-lambda');
+			const { handler } = await import('@specboard/sync-lambda');
 
 			// Run async (don't await) to mimic Lambda async invocation
 			Promise.resolve()

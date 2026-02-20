@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - @prop decorator
+ * @specboard/models - @prop decorator
  *
  * Native ES decorator for registering Model properties.
  * Uses decorator metadata to store property names at class definition time.

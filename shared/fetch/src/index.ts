@@ -1,5 +1,5 @@
 /**
- * @doc-platform/fetch
+ * @specboard/fetch
  *
  * Thin fetch wrapper for auth middleware and global error handling.
  */

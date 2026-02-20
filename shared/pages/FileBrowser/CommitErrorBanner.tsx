@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
-import { Button, Icon, Notice } from '@doc-platform/ui';
-import type { CommitError } from '@doc-platform/models';
+import { Button, Icon, Notice } from '@specboard/ui';
+import type { CommitError } from '@specboard/models';
 import styles from './CommitErrorBanner.module.css';
 
 export interface CommitErrorBannerProps {

@@ -15,19 +15,19 @@ import {
 } from './oauth.ts';
 
 // Mock database
-vi.mock('@doc-platform/db', () => ({
+vi.mock('@specboard/db', () => ({
 	query: vi.fn(),
 	transaction: vi.fn(),
 }));
 
 // Mock auth
-vi.mock('@doc-platform/auth', () => ({
+vi.mock('@specboard/auth', () => ({
 	getSession: vi.fn(),
 	SESSION_COOKIE_NAME: 'session',
 }));
 
-import { query } from '@doc-platform/db';
-import { getSession, type Session } from '@doc-platform/auth';
+import { query } from '@specboard/db';
+import { getSession, type Session } from '@specboard/auth';
 import type { Redis } from 'ioredis';
 
 // Helper to create a valid mock session
@@ -752,7 +752,7 @@ describe('oauth handlers', () => {
 			app.get('/oauth/authorize', (c) => handleAuthorizeGet(c, mockRedis));
 
 			// Test allowed clients (both should work with the mock client data)
-			const allowedClients = ['claude-code', 'doc-platform-cli'];
+			const allowedClients = ['claude-code', 'specboard-cli'];
 
 			for (const clientId of allowedClients) {
 				const url = new URL('http://localhost/oauth/authorize');

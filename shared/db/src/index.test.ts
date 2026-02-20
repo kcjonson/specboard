@@ -1,5 +1,5 @@
 /**
- * @doc-platform/db - Database module tests
+ * @specboard/db - Database module tests
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -42,7 +42,7 @@ vi.mock('fs', () => ({
 // Import after mocks are set up
 import { pool, query, getClient, transaction, close } from './index.ts';
 
-describe('@doc-platform/db', () => {
+describe('@specboard/db', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});

@@ -1,10 +1,10 @@
 /**
- * @doc-platform/ui
+ * @specboard/ui
  * Shared Preact UI components with element-based styling.
  *
  * Import CSS files:
- * - `@doc-platform/ui/tokens.css` - Design tokens (colors, spacing, etc.)
- * - `@doc-platform/ui/elements.css` - Base element styles (button, input, textarea)
+ * - `@specboard/ui/tokens.css` - Design tokens (colors, spacing, etc.)
+ * - `@specboard/ui/elements.css` - Base element styles (button, input, textarea)
  *
  * Components pass through CSS classes for styling:
  * - <Button class="secondary size-sm">

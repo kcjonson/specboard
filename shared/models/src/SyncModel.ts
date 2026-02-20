@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models - SyncModel class
+ * @specboard/models - SyncModel class
  *
  * Extends Model with REST API synchronization.
  * Auto-fetches on construction, provides save/delete methods.
@@ -18,7 +18,7 @@
  * ```
  */
 
-import { fetchClient } from '@doc-platform/fetch';
+import { fetchClient } from '@specboard/fetch';
 import { Model } from './Model';
 import type { ModelMeta, ModelData } from './types';
 

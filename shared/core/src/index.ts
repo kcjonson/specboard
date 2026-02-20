@@ -1,5 +1,5 @@
 /**
- * @doc-platform/core
+ * @specboard/core
  * Shared types and utilities used across the platform.
  */
 

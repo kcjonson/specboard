@@ -1,5 +1,5 @@
 {
-	"name": "doc-platform",
+	"name": "specboard",
 	"private": true,
 	"type": "module",
 	"workspaces": [

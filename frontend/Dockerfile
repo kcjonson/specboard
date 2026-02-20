@@ -64,8 +64,8 @@ COPY shared/styles ./shared/styles
 
 # Build client-side bundles only (Vite handles TypeScript)
 # SSG must run after web build to read CSS manifest
-RUN npm run --workspace @doc-platform/web build && \
-    npm run --workspace @doc-platform/ssg build
+RUN npm run --workspace @specboard/web build && \
+    npm run --workspace @specboard/ssg build
 
 # Create version.txt with git SHA
 RUN echo "${GIT_SHA}" > /app/web/dist/version.txt

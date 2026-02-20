@@ -1,12 +1,12 @@
 # Tech Stack & Best Practices
 
-This document defines the core technologies, architecture decisions, and development practices for doc-platform.
+This document defines the core technologies, architecture decisions, and development practices for Specboard.
 
 ---
 
 ## Overview
 
-doc-platform consists of two integrated products:
+Specboard consists of two integrated products:
 1. **Documentation Editor** - Git-backed Markdown editor with inline comments and AI assistance
 2. **Kanban Board** - Lightweight task manager with epic/task hierarchy
 
@@ -61,7 +61,7 @@ Both share a common infrastructure and are developed in a single monorepo.
 ## Monorepo Structure
 
 ```
-doc-platform/
+specboard/
 ├── shared/
 │   ├── pages/                 # Pages feature source (no build step)
 │   ├── planning/              # Planning feature source (no build step)
@@ -199,7 +199,7 @@ docker compose run --rm api npm run lint
 - Co-locate styles with components (`Component.module.css`)
 
 ### Imports
-- Absolute imports for packages (`@doc-platform/ui`)
+- Absolute imports for packages (`@specboard/ui`)
 - Relative imports within a package (`./utils`)
 - Group imports: external, internal, relative
 

@@ -1,8 +1,8 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { navigate, type RouteProps } from '@doc-platform/router';
-import { Page, Icon, ErrorBoundary } from '@doc-platform/ui';
+import { navigate, type RouteProps } from '@specboard/router';
+import { Page, Icon, ErrorBoundary } from '@specboard/ui';
 import {
 	DocumentModel,
 	UserModel,
@@ -13,9 +13,9 @@ import {
 	hasPersistedContent,
 	clearLocalStorage,
 	type DocumentComment,
-} from '@doc-platform/models';
-import { fetchClient } from '@doc-platform/fetch';
-import { captureError } from '@doc-platform/telemetry';
+} from '@specboard/models';
+import { fetchClient } from '@specboard/fetch';
+import { captureError } from '@specboard/telemetry';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
 import { MarkdownEditor, fromMarkdown, toMarkdown, type MarkdownEditorHandle } from '../MarkdownEditor';
 import { ChatSidebar } from '../ChatSidebar';

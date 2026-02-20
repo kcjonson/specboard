@@ -5,8 +5,8 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import { getSession, SESSION_COOKIE_NAME } from '@doc-platform/auth';
-import { query, type User } from '@doc-platform/db';
+import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
+import { query, type User } from '@specboard/db';
 
 /**
  * Get current user from session, including their roles

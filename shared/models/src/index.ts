@@ -1,5 +1,5 @@
 /**
- * @doc-platform/models
+ * @specboard/models
  *
  * State management with Model, SyncModel, and Collection classes.
  */

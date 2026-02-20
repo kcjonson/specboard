@@ -3,7 +3,7 @@
 	"compilerOptions": {
 		"baseUrl": "../..",
 		"paths": {
-			"@doc-platform/fetch": ["./shared/fetch/src"]
+			"@specboard/fetch": ["./shared/fetch/src"]
 		}
 	},
 	"include": ["src"],

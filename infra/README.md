@@ -1,6 +1,6 @@
 # Infrastructure
 
-AWS CDK infrastructure for doc-platform staging environment.
+AWS CDK infrastructure for Specboard staging environment.
 
 ## Architecture
 
@@ -60,7 +60,7 @@ docker compose run --rm api npm install
 # Set variables
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 AWS_REGION=us-west-2
-ECR_BASE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/doc-platform
+ECR_BASE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/specboard
 
 # Login to ECR
 aws ecr get-login-password --region $AWS_REGION | \

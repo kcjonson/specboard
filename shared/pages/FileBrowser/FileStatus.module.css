@@ -1,7 +1,7 @@
 /**
  * FileStatus - git change indicator dot
  *
- * Uses global color tokens from @doc-platform/ui/tokens.css
+ * Uses global color tokens from @specboard/ui/tokens.css
  */
 
 .dot {

@@ -1,5 +1,5 @@
 {
-	"name": "@doc-platform/sync-lambda",
+	"name": "@specboard/sync-lambda",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -17,8 +17,8 @@
 		"@aws-sdk/client-s3": "^3.726.0",
 		"@aws-sdk/client-secrets-manager": "^3.726.0",
 		"@aws-sdk/lib-storage": "^3.726.0",
-		"@doc-platform/auth": "*",
-		"@doc-platform/db": "*",
+		"@specboard/auth": "*",
+		"@specboard/db": "*",
 		"isbinaryfile": "^6.0.0",
 		"unzipper": "^0.12.3"
 	},

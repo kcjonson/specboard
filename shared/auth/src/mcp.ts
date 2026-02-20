@@ -5,7 +5,7 @@
 
 import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
-import { query } from '@doc-platform/db';
+import { query } from '@specboard/db';
 
 export interface McpTokenPayload {
 	userId: string;

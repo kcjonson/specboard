@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Dialog, Button } from '@doc-platform/ui';
+import { Dialog, Button } from '@specboard/ui';
 import styles from './RecoveryDialog.module.css';
 
 export interface RecoveryDialogProps {

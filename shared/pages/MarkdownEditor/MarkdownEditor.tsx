@@ -5,7 +5,7 @@ import { createEditor, Descendant, Editor, Element as SlateElement, Transforms, 
 import { Slate, Editable, withReact, RenderElementProps, RenderLeafProps, ReactEditor } from 'slate-react';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
-import { useModel, DocumentModel } from '@doc-platform/models';
+import { useModel, DocumentModel } from '@specboard/models';
 import type { MarkType, CustomElement, CustomText, Comment } from './types';
 import { Toolbar } from './Toolbar';
 import { CommentsMargin, PendingComment } from './CommentsMargin';
