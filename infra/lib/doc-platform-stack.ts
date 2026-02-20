@@ -1277,8 +1277,15 @@ export class DocPlatformStack extends cdk.Stack {
 
 			deployRole.addToPolicy(new iam.PolicyStatement({
 				effect: iam.Effect.ALLOW,
-				actions: ['ecs:RunTask', 'ecs:RegisterTaskDefinition'],
+				actions: ['ecs:RunTask'],
 				resources: [taskDefArnPattern],
+			}));
+
+			// RegisterTaskDefinition does not support resource-level permissions
+			deployRole.addToPolicy(new iam.PolicyStatement({
+				effect: iam.Effect.ALLOW,
+				actions: ['ecs:RegisterTaskDefinition'],
+				resources: ['*'],
 			}));
 
 			deployRole.addToPolicy(new iam.PolicyStatement({
