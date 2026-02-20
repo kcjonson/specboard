@@ -94,13 +94,47 @@ export class SpecboardStack extends cdk.Stack {
 		}
 
 		// ===========================================
-		// ECR Repositories (created manually, imported by all stacks)
+		// ECR Repositories
 		// ===========================================
-		const repoNames = config.ecrRepoNames;
-		const apiRepository = ecr.Repository.fromRepositoryName(this, 'ApiRepository', repoNames.api);
-		const frontendRepository = ecr.Repository.fromRepositoryName(this, 'FrontendRepository', repoNames.frontend);
-		const mcpRepository = ecr.Repository.fromRepositoryName(this, 'McpRepository', repoNames.mcp);
-		const storageRepository = ecr.Repository.fromRepositoryName(this, 'StorageRepository', repoNames.storage);
+		let apiRepository: ecr.IRepository;
+		let frontendRepository: ecr.IRepository;
+		let mcpRepository: ecr.IRepository;
+		let storageRepository: ecr.IRepository;
+
+		if (config.createSharedResources) {
+			// Staging stack creates ECR repos (shared across environments).
+			// Images are promoted by SHA tag, not rebuilt per environment.
+			const ecrLifecycleRules: ecr.LifecycleRule[] = [
+				{
+					description: 'Keep last 20 images for SHA-based promotion',
+					maxImageCount: 20,
+					rulePriority: 1,
+					tagStatus: ecr.TagStatus.ANY,
+				},
+			];
+
+			const createRepo = (id: string, name: string): ecr.Repository =>
+				new ecr.Repository(this, id, {
+					repositoryName: name,
+					// RETAIN: shared ECR repos serve both staging and production.
+					// Destroying staging must not delete production images.
+					removalPolicy: cdk.RemovalPolicy.RETAIN,
+					lifecycleRules: ecrLifecycleRules,
+					imageScanOnPush: true,
+				});
+
+			apiRepository = createRepo('ApiRepository', config.ecrRepoNames.api);
+			frontendRepository = createRepo('FrontendRepository', config.ecrRepoNames.frontend);
+			mcpRepository = createRepo('McpRepository', config.ecrRepoNames.mcp);
+			storageRepository = createRepo('StorageRepository', config.ecrRepoNames.storage);
+		} else {
+			// Production imports ECR repos by name (no cross-stack refs)
+			const repoNames = config.shared!.ecrRepoNames;
+			apiRepository = ecr.Repository.fromRepositoryName(this, 'ApiRepository', repoNames.api);
+			frontendRepository = ecr.Repository.fromRepositoryName(this, 'FrontendRepository', repoNames.frontend);
+			mcpRepository = ecr.Repository.fromRepositoryName(this, 'McpRepository', repoNames.mcp);
+			storageRepository = ecr.Repository.fromRepositoryName(this, 'StorageRepository', repoNames.storage);
+		}
 
 		// ===========================================
 		// RDS PostgreSQL
@@ -1169,10 +1203,10 @@ export class SpecboardStack extends cdk.Stack {
 					'ecr:CompleteLayerUpload',
 				],
 				resources: [
-					apiRepository.repositoryArn,
-					frontendRepository.repositoryArn,
-					mcpRepository.repositoryArn,
-					storageRepository.repositoryArn,
+					(apiRepository as ecr.Repository).repositoryArn,
+					(frontendRepository as ecr.Repository).repositoryArn,
+					(mcpRepository as ecr.Repository).repositoryArn,
+					(storageRepository as ecr.Repository).repositoryArn,
 				],
 			}));
 
@@ -1335,6 +1369,26 @@ export class SpecboardStack extends cdk.Stack {
 
 		// Shared resource outputs (only from the stack that creates them)
 		if (config.createSharedResources) {
+			new cdk.CfnOutput(this, 'ApiRepositoryUri', {
+				value: (apiRepository as ecr.Repository).repositoryUri,
+				description: 'ECR Repository URI for API',
+			});
+
+			new cdk.CfnOutput(this, 'FrontendRepositoryUri', {
+				value: (frontendRepository as ecr.Repository).repositoryUri,
+				description: 'ECR Repository URI for Frontend',
+			});
+
+			new cdk.CfnOutput(this, 'McpRepositoryUri', {
+				value: (mcpRepository as ecr.Repository).repositoryUri,
+				description: 'ECR Repository URI for MCP',
+			});
+
+			new cdk.CfnOutput(this, 'StorageRepositoryUri', {
+				value: (storageRepository as ecr.Repository).repositoryUri,
+				description: 'ECR Repository URI for Storage service',
+			});
+
 			new cdk.CfnOutput(this, 'HostedZoneId', {
 				value: (hostedZone as route53.HostedZone).hostedZoneId,
 				description: 'Route53 Hosted Zone ID',

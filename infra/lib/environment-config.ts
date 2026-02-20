@@ -5,6 +5,13 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
  * Production references these by name/ARN instead of CDK cross-stack exports.
  */
 export interface SharedResourceConfig {
+	/** ECR repository names (deterministic, same across environments) */
+	ecrRepoNames: {
+		api: string;
+		frontend: string;
+		mcp: string;
+		storage: string;
+	};
 	/** Route53 hosted zone ID (from staging stack output) */
 	hostedZoneId: string;
 	/** Route53 zone name */
@@ -27,7 +34,7 @@ export interface EnvironmentConfig {
 	subdomain?: string;
 
 	/**
-	 * Whether this stack creates shared resources (Route53 zone,
+	 * Whether this stack creates shared resources (ECR repos, Route53 zone,
 	 * ACM certificate, OIDC provider, deploy role). Only one stack should
 	 * create these — currently staging.
 	 */
@@ -132,7 +139,7 @@ export const stagingConfig: EnvironmentConfig = {
 
 /**
  * Production environment configuration.
- * Shared resources (Route53, ACM, OIDC) are imported from the staging stack.
+ * Shared resources (ECR, Route53, ACM, OIDC) are imported from the staging stack.
  * The `shared` field must be populated with values from staging stack outputs
  * before the first production deploy.
  */
@@ -143,6 +150,7 @@ export const productionConfig: EnvironmentConfig = {
 	subdomain: undefined,
 	createSharedResources: false,
 	shared: {
+		ecrRepoNames: ECR_REPO_NAMES,
 		hostedZoneId: '', // Set from staging stack output before first deploy
 		hostedZoneName: 'specboard.io',
 		certificateArn: '', // Set from staging stack output before first deploy
@@ -192,7 +200,7 @@ export function getEnvironmentConfig(envName: string, context?: {
 		database: { ...base.database },
 		ecs: { ...base.ecs },
 		ecrRepoNames: { ...base.ecrRepoNames },
-		shared: base.shared ? { ...base.shared } : undefined,
+		shared: base.shared ? { ...base.shared, ecrRepoNames: { ...base.shared.ecrRepoNames } } : undefined,
 	};
 
 	// Apply context overrides for production shared resources
