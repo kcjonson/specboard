@@ -1277,7 +1277,7 @@ export class DocPlatformStack extends cdk.Stack {
 
 			deployRole.addToPolicy(new iam.PolicyStatement({
 				effect: iam.Effect.ALLOW,
-				actions: ['ecs:RunTask'],
+				actions: ['ecs:RunTask', 'ecs:RegisterTaskDefinition'],
 				resources: [taskDefArnPattern],
 			}));
 
