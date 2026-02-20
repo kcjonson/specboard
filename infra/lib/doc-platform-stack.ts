@@ -1,7 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as cr from 'aws-cdk-lib/custom-resources';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -436,63 +435,17 @@ export class DocPlatformStack extends cdk.Stack {
 		// Log Groups
 		// ===========================================
 		// Error logs - 1 year retention for debugging and compliance
-		// Uses custom resource to handle "already exists" case (e.g., after failed deployments)
+		// LogRetention handles both createLogGroup and putRetentionPolicy in a single
+		// Lambda invocation, avoiding the IAM eventual consistency race condition that
+		// occurs with separate AwsCustomResource instances (CDK issue #18237).
+		// It also gracefully handles the "log group already exists" case.
 		const errorLogGroupName = `/${config.resourcePrefix}/errors`;
-		const errorLogGroupArn = cdk.Stack.of(this).formatArn({
-			service: 'logs',
-			resource: 'log-group',
-			resourceName: `${errorLogGroupName}:*`,
-		});
 
-		const ensureErrorLogGroup = new cr.AwsCustomResource(this, 'EnsureErrorLogGroup', {
-			onCreate: {
-				service: 'CloudWatchLogs',
-				action: 'createLogGroup',
-				parameters: { logGroupName: errorLogGroupName },
-				physicalResourceId: cr.PhysicalResourceId.of(errorLogGroupName),
-				ignoreErrorCodesMatching: 'ResourceAlreadyExistsException',
-			},
-			onUpdate: {
-				service: 'CloudWatchLogs',
-				action: 'createLogGroup',
-				parameters: { logGroupName: errorLogGroupName },
-				physicalResourceId: cr.PhysicalResourceId.of(errorLogGroupName),
-				ignoreErrorCodesMatching: 'ResourceAlreadyExistsException',
-			},
-			policy: cr.AwsCustomResourcePolicy.fromStatements([
-				new iam.PolicyStatement({
-					// Include PutRetentionPolicy here because AwsCustomResource uses a shared
-					// singleton Lambda. Adding both permissions to the first custom resource
-					// ensures the role has PutRetentionPolicy by the time SetErrorLogRetention
-					// runs, avoiding IAM eventual consistency issues on fresh stack creation.
-					actions: ['logs:CreateLogGroup', 'logs:PutRetentionPolicy'],
-					resources: [errorLogGroupArn],
-				}),
-			]),
+		new logs.LogRetention(this, 'ErrorLogRetention', {
+			logGroupName: errorLogGroupName,
+			retention: logs.RetentionDays.ONE_YEAR,
+			removalPolicy: cdk.RemovalPolicy.RETAIN,
 		});
-
-		const setErrorLogRetention = new cr.AwsCustomResource(this, 'SetErrorLogRetention', {
-			onCreate: {
-				service: 'CloudWatchLogs',
-				action: 'putRetentionPolicy',
-				parameters: { logGroupName: errorLogGroupName, retentionInDays: 365 },
-				physicalResourceId: cr.PhysicalResourceId.of(`${errorLogGroupName}-retention`),
-			},
-			onUpdate: {
-				service: 'CloudWatchLogs',
-				action: 'putRetentionPolicy',
-				parameters: { logGroupName: errorLogGroupName, retentionInDays: 365 },
-				physicalResourceId: cr.PhysicalResourceId.of(`${errorLogGroupName}-retention`),
-			},
-			policy: cr.AwsCustomResourcePolicy.fromStatements([
-				new iam.PolicyStatement({
-					actions: ['logs:PutRetentionPolicy'],
-					resources: [errorLogGroupArn],
-				}),
-			]),
-		});
-
-		setErrorLogRetention.node.addDependency(ensureErrorLogGroup);
 
 		const errorLogGroup = logs.LogGroup.fromLogGroupName(this, 'ErrorLogGroup', errorLogGroupName);
 
