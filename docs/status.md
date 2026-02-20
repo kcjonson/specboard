@@ -420,6 +420,77 @@ Use this template for all work items:
 
 ---
 
+### Production Email
+**Spec/Documentation:** (needs spec)
+**Dependencies:** Authentication System
+**Status:** ready
+**Priority:** high
+
+**Goal:** Get SES email sending working in production (verification, password reset, etc.).
+
+**Tasks:**
+- [ ] Configure SES for production
+- [ ] Verify sending domain
+- [ ] Test verification and password reset flows end-to-end
+
+---
+
+### Multi-User Collaboration
+**Spec/Documentation:** (needs spec)
+**Dependencies:** Authentication System, REST API & Database
+**Status:** needs spec
+
+**Goal:** Allow users to add other people to collaborate on their projects.
+
+**Tasks:**
+- [ ] Design collaboration model (roles, permissions, invitations)
+- [ ] Project sharing / invitation flow
+- [ ] Collaborator management UI
+
+---
+
+### Doc Metrics & MCP Access Tracking
+**Spec/Documentation:** (needs spec)
+**Dependencies:** MCP Server
+**Status:** needs spec
+
+**Goal:** Record when specs or epics are accessed over MCP, surface usage data in the UI.
+
+**Tasks:**
+- [ ] Track MCP access events (which docs/epics, when, by whom)
+- [ ] Metrics storage (database schema)
+- [ ] Reporting UI (access frequency, most-used docs)
+
+---
+
+### MCP Document Operations
+**Spec/Documentation:** (needs spec)
+**Dependencies:** MCP Server
+**Status:** needs spec
+
+**Goal:** Full document CRUD via MCP - create, edit, move, and delete documents from Claude Code.
+
+**Tasks:**
+- [ ] Add MCP tools for document create/edit/move/delete
+- [ ] Add ability to directly pull/read document content via MCP
+- [ ] Permission checks for document operations
+
+---
+
+### MCP Document Linking & Context
+**Spec/Documentation:** (needs spec)
+**Dependencies:** MCP Server, MCP Document Operations
+**Status:** needs spec
+
+**Goal:** Enhance MCP to surface relationships between docs and provide relevant files to clients.
+
+**Tasks:**
+- [ ] Design document linking model (spec ↔ epic, doc ↔ doc references)
+- [ ] MCP tool to get relevant/related files for a given context
+- [ ] Expose document links to MCP clients
+
+---
+
 ## Blockers & Issues
 
 (None currently)
