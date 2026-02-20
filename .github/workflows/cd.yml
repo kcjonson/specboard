@@ -6,6 +6,12 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: 'Bootstrap mode - deploy infrastructure only (skip image build and service deploy)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: staging-deploy
@@ -54,7 +60,7 @@ jobs:
   build-push:
     name: Build and Push
     needs: check
-    if: needs.check.outputs.should_deploy == 'true'
+    if: needs.check.outputs.should_deploy == 'true' && inputs.bootstrap != true
     permissions:
       id-token: write
       contents: read
@@ -65,7 +71,8 @@ jobs:
 
   setup-aws:
     name: Setup AWS Resources
-    needs: build-push
+    needs: [check, build-push]
+    if: "!cancelled() && (inputs.bootstrap == true || needs.build-push.result == 'success')"
     permissions:
       id-token: write
       contents: read
@@ -73,11 +80,13 @@ jobs:
     with:
       action: deploy
       environment: staging
+      bootstrap: ${{ inputs.bootstrap || false }}
     secrets: inherit
 
   migrate:
     name: Run Migrations
     needs: setup-aws
+    if: inputs.bootstrap != true
     permissions:
       id-token: write
       contents: read
@@ -91,6 +100,7 @@ jobs:
   seed:
     name: Seed Database
     needs: migrate
+    if: inputs.bootstrap != true
     permissions:
       id-token: write
       contents: read
@@ -105,6 +115,7 @@ jobs:
   deploy-services:
     name: Deploy Services
     needs: [check, seed]
+    if: inputs.bootstrap != true
     runs-on: ubuntu-latest
     permissions:
       id-token: write
