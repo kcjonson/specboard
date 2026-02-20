@@ -461,7 +461,11 @@ export class DocPlatformStack extends cdk.Stack {
 			},
 			policy: cr.AwsCustomResourcePolicy.fromStatements([
 				new iam.PolicyStatement({
-					actions: ['logs:CreateLogGroup'],
+					// Include PutRetentionPolicy here because AwsCustomResource uses a shared
+					// singleton Lambda. Adding both permissions to the first custom resource
+					// ensures the role has PutRetentionPolicy by the time SetErrorLogRetention
+					// runs, avoiding IAM eventual consistency issues on fresh stack creation.
+					actions: ['logs:CreateLogGroup', 'logs:PutRetentionPolicy'],
 					resources: [errorLogGroupArn],
 				}),
 			]),
