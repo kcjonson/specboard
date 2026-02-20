@@ -1232,13 +1232,14 @@ export class DocPlatformStack extends cdk.Stack {
 				resources: ['*'],
 			}));
 
-			// ECR permissions - push images to specific repositories
+			// ECR permissions - push and verify images in specific repositories
 			deployRole.addToPolicy(new iam.PolicyStatement({
 				effect: iam.Effect.ALLOW,
 				actions: [
 					'ecr:BatchCheckLayerAvailability',
 					'ecr:GetDownloadUrlForLayer',
 					'ecr:BatchGetImage',
+					'ecr:DescribeImages',
 					'ecr:PutImage',
 					'ecr:InitiateLayerUpload',
 					'ecr:UploadLayerPart',
