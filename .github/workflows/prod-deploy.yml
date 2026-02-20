@@ -207,11 +207,13 @@ jobs:
           SHA="${{ needs.resolve.outputs.sha }}"
           DEPLOY_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
-          BODY="$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body')"
+          RELEASE="$(gh api "repos/${{ github.repository }}/releases/tags/$TAG")"
+          RELEASE_ID="$(echo "$RELEASE" | jq -r '.id')"
+          BODY="$(echo "$RELEASE" | jq -r '.body')"
           DEPLOY_NOTE=$'\n\n---\n**Deployed to production** at '"$DEPLOY_TIME"$'\nSHA: `'"$SHA"'`'
 
           printf '%s' "$BODY$DEPLOY_NOTE" | jq -Rs '{body:.}' | \
-            gh api "repos/${{ github.repository }}/releases/tags/$TAG" \
+            gh api "repos/${{ github.repository }}/releases/$RELEASE_ID" \
               -X PATCH \
               -H "Content-Type: application/json" \
               --input -
