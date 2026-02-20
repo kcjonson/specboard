@@ -18,25 +18,27 @@ echo "Deploying services with image tag: $IMAGE_TAG"
 
 deploy_service() {
   local SERVICE=$1
+  local TMPFILE
+  TMPFILE=$(mktemp)
+  trap "rm -f $TMPFILE" RETURN
 
   # Get current task definition from the service
   TASK_DEF_ARN=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
     --query 'services[0].taskDefinition' --output text --region "$AWS_REGION")
 
-  # Get task definition details
-  TASK_DEF=$(aws ecs describe-task-definition --task-definition "$TASK_DEF_ARN" \
-    --query taskDefinition --output json --region "$AWS_REGION")
+  # Get task definition details, strip read-only fields, and pin the image tag.
+  # describe-task-definition returns fields that register-task-definition rejects,
+  # so we must remove them all.
+  aws ecs describe-task-definition --task-definition "$TASK_DEF_ARN" \
+    --query taskDefinition --output json --region "$AWS_REGION" \
+    | jq --arg TAG "$IMAGE_TAG" '
+      del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+          .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+      | .containerDefinitions |= map(.image = (.image | split(":")[0] + ":" + $TAG))
+    ' > "$TMPFILE"
 
-  # Replace image tag in all containers (preserves the ECR repo URI, only changes the tag)
-  UPDATED_CONTAINERS=$(echo "$TASK_DEF" | jq --arg TAG "$IMAGE_TAG" \
-    '.containerDefinitions | map(.image = (.image | split(":")[0] + ":" + $TAG))')
-
-  # Strip read-only fields and register a new task definition revision
-  NEW_TASK_DEF=$(echo "$TASK_DEF" | jq --argjson CONTAINERS "$UPDATED_CONTAINERS" \
-    'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy) | .containerDefinitions = $CONTAINERS')
-
-  NEW_ARN=$(echo "$NEW_TASK_DEF" | aws ecs register-task-definition \
-    --cli-input-json file:///dev/stdin \
+  NEW_ARN=$(aws ecs register-task-definition \
+    --cli-input-json "file://$TMPFILE" \
     --query 'taskDefinition.taskDefinitionArn' --output text --region "$AWS_REGION")
 
   echo "  Registered: $NEW_ARN"
