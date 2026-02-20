@@ -79,10 +79,18 @@ if [ "$STORAGE_STATUS" = "ACTIVE" ] && [ "${STORAGE_DESIRED:-0}" -gt 0 ]; then
   SERVICES_TO_WAIT="$SERVICES_TO_WAIT storage"
 fi
 
-echo "Waiting for services to stabilize (up to 10 minutes)..."
-aws ecs wait services-stable \
+echo "Waiting for services to stabilize..."
+# services-stable waiter polls every 15s for 40 attempts (10 min).
+# Rolling updates with deregistration delay can exceed this, so retry once.
+if ! aws ecs wait services-stable \
   --cluster "$CLUSTER" \
   --services $SERVICES_TO_WAIT \
-  --region "$AWS_REGION"
+  --region "$AWS_REGION" 2>/dev/null; then
+  echo "First wait timed out, retrying (old deployments may still be draining)..."
+  aws ecs wait services-stable \
+    --cluster "$CLUSTER" \
+    --services $SERVICES_TO_WAIT \
+    --region "$AWS_REGION"
+fi
 
 echo "Deployed to: http://$ALB_DNS"
