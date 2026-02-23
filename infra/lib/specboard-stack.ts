@@ -1147,13 +1147,13 @@ export class SpecboardStack extends cdk.Stack {
 		// GitHub Actions OIDC & IAM Role
 		// ===========================================
 		if (config.createSharedResources) {
-			// OIDC provider and deploy role are account-level singletons,
-			// created by the staging stack and used by all environments.
-			const githubOidcProvider = new iam.OpenIdConnectProvider(this, 'GitHubOidcProvider', {
-				url: 'https://token.actions.githubusercontent.com',
-				clientIds: ['sts.amazonaws.com'],
-				thumbprints: ['6938fd4d98bab03faadb97b34396831e3780aea1'],
-			});
+			// OIDC provider is an account-level singleton, created once during bootstrap
+			// (via AWS CLI or console) and imported here. CDK cannot create it because
+			// the deploy role needs the OIDC provider to exist before CDK can run.
+			const githubOidcProvider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
+				this, 'GitHubOidcProvider',
+				`arn:aws:iam::${this.account}:oidc-provider/token.actions.githubusercontent.com`
+			);
 
 			const deployRole = new iam.Role(this, 'GitHubActionsDeployRole', {
 				roleName: 'specboard-github-actions-deploy',
