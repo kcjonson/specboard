@@ -15,7 +15,7 @@ on:
 
 concurrency:
   group: staging-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   AWS_REGION: us-west-2
