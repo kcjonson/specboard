@@ -116,10 +116,25 @@ jobs:
       environment: production
     secrets: inherit
 
+  seed:
+    name: Seed Database
+    needs: migrate
+    if: inputs.bootstrap != true
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_run-ecs-task.yml
+    with:
+      task_name: seed
+      command: '["node", "shared/db/seed.mjs"]'
+      include_superadmin_env: true
+      environment: production
+    secrets: inherit
+
   deploy-services:
     name: Deploy Services
-    needs: [resolve, setup-aws, migrate]
-    if: "!cancelled() && inputs.bootstrap != true && needs.setup-aws.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')"
+    needs: [resolve, setup-aws, seed]
+    if: "!cancelled() && inputs.bootstrap != true && needs.setup-aws.result == 'success' && (needs.seed.result == 'success' || needs.seed.result == 'skipped')"
     runs-on: ubuntu-latest
     environment: production
     permissions:
