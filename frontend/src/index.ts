@@ -140,6 +140,9 @@ app.get('/reset-password', (c) => servePage(c, pages.resetPassword));
 app.get('/home', (c) => servePage(c, pages.home));
 
 // Root - marketing for unauthenticated, SPA for authenticated
+// IMPORTANT: This route returns different content based on auth state,
+// so the unauthenticated response must use private/no-cache to prevent
+// browsers from caching the marketing page and serving it after login.
 app.get('/', async (c) => {
 	// Check for session cookie (cookie name is 'session_id')
 	const cookieHeader = c.req.header('Cookie') || '';
@@ -147,25 +150,50 @@ app.get('/', async (c) => {
 	const sessionId = sessionMatch?.[1];
 
 	if (sessionId) {
-		// Verify session exists in Redis
-		const sessionData = await redis.get(`session:${sessionId}`);
-		if (sessionData) {
-			// Authenticated - serve SPA
-			if (VITE_DEV_SERVER) {
-				// Dev mode: proxy to Vite for HMR
-				return proxyToVite(c, '/');
+		try {
+			// Verify session exists in Redis
+			const sessionData = await redis.get(`session:${sessionId}`);
+			if (sessionData) {
+				// Authenticated - serve SPA
+				if (VITE_DEV_SERVER) {
+					// Dev mode: proxy to Vite for HMR
+					return proxyToVite(c, '/');
+				}
+				// Production: serve cached SPA
+				return servePage(c, spaIndex);
 			}
-			// Production: serve cached SPA
-			return servePage(c, spaIndex);
+		} catch (error) {
+			console.error('Redis error checking session:', error);
+			// Fall through to marketing page on Redis error
 		}
 	}
 
-	// Unauthenticated - serve marketing home page
-	return servePage(c, pages.home);
+	// Unauthenticated (or Redis error) - serve marketing home page
+	// Must use private no-cache since this URL varies by auth state
+	const headers: Record<string, string> = {
+		'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+	};
+	if (!VITE_DEV_SERVER && pages.home.preloadHeader) {
+		headers['Link'] = pages.home.preloadHeader;
+	}
+	return c.html(pages.home.html, 200, headers);
 });
 
 // API URL for proxying
 const apiUrl = process.env.API_URL || 'http://localhost:3001';
+
+/**
+ * Forward Set-Cookie headers from a proxied API response to the client response.
+ * Uses getSetCookie() to handle multiple Set-Cookie headers correctly.
+ * headers.get('Set-Cookie') joins multiple values with ", " which produces
+ * malformed cookies that browsers may parse incorrectly.
+ */
+function forwardSetCookies(from: Response, to: Response): void {
+	const setCookies = from.headers.getSetCookie();
+	for (const cookie of setCookies) {
+		to.headers.append('Set-Cookie', cookie);
+	}
+}
 
 // =============================================================================
 // OAuth Proxy Routes (for local development only)
@@ -327,16 +355,10 @@ app.post('/api/auth/login', async (c) => {
 
 		const data = await response.json();
 
-		// Forward the response including Set-Cookie header
+		// Forward the response including Set-Cookie headers
 		const status = response.status === 200 ? 200 : response.status === 401 ? 401 : 400;
 		const result = c.json(data, status);
-
-		// Copy session cookie from API response
-		const setCookieHeader = response.headers.get('Set-Cookie');
-		if (setCookieHeader) {
-			result.headers.set('Set-Cookie', setCookieHeader);
-		}
-
+		forwardSetCookies(response, result);
 		return result;
 	} catch {
 		return c.json({ error: 'Authentication service unavailable' }, 503);
@@ -360,16 +382,10 @@ app.post('/api/auth/signup', async (c) => {
 
 		const data = await response.json();
 
-		// Forward the response including Set-Cookie header
+		// Forward the response including any Set-Cookie headers
 		const status = response.status === 201 ? 201 : response.status === 409 ? 409 : response.status === 500 ? 500 : 400;
 		const result = c.json(data, status);
-
-		// Copy session cookie from API response (user is logged in after signup)
-		const setCookieHeader = response.headers.get('Set-Cookie');
-		if (setCookieHeader) {
-			result.headers.set('Set-Cookie', setCookieHeader);
-		}
-
+		forwardSetCookies(response, result);
 		return result;
 	} catch {
 		return c.json({ error: 'Signup service unavailable' }, 503);
@@ -388,11 +404,8 @@ app.post('/api/auth/logout', async (c) => {
 		const data = await response.json();
 		const result = c.json(data, 200);
 
-		// Copy Set-Cookie header to clear the cookie
-		const setCookieHeader = response.headers.get('Set-Cookie');
-		if (setCookieHeader) {
-			result.headers.set('Set-Cookie', setCookieHeader);
-		}
+		// Forward Set-Cookie headers (clears session + CSRF cookies)
+		forwardSetCookies(response, result);
 
 		return result;
 	} catch {
@@ -441,9 +454,11 @@ app.use(
 		onUnauthenticated: () => {
 			// Show 404 for unauthenticated requests
 			// This avoids revealing which routes exist and eliminates route duplication
+			// Must use private no-cache since these URLs serve different content
+			// when authenticated (SPA) vs unauthenticated (404 page)
 			const headers: Record<string, string> = {
 				'Content-Type': 'text/html; charset=UTF-8',
-				'Cache-Control': 'public, max-age=3600',
+				'Cache-Control': 'private, no-cache, no-store, must-revalidate',
 			};
 			// Only send preload headers in production
 			if (!VITE_DEV_SERVER && pages.notFound.preloadHeader) {
