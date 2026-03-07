@@ -257,7 +257,7 @@ export async function getCurrentWork(projectId: string): Promise<CurrentWorkResp
 
 	// Get ready epics for context
 	const readyResult = await query<Epic>(
-		`SELECT id, title, description, spec_doc_path, created_at
+		`SELECT id, title, type, description, spec_doc_path, created_at
 		 FROM epics
 		 WHERE project_id = $1 AND status = 'ready'
 		 ORDER BY rank ASC

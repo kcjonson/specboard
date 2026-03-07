@@ -96,6 +96,7 @@ export function SplitButton({
 				disabled={disabled}
 				aria-label="More options"
 				aria-expanded={open}
+				aria-haspopup="menu"
 			>
 				<Icon name="chevron-down" class="size-xs" />
 			</button>

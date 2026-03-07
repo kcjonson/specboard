@@ -19,7 +19,7 @@ export function TypeBadge({ type, class: className }: TypeBadgeProps): JSX.Eleme
 	const classes = [styles.badge, styles[type], className].filter(Boolean).join(' ');
 
 	return (
-		<span class={classes} title={config.label}>
+		<span class={classes} title={config.label} role="img" aria-label={config.label}>
 			<Icon name={config.icon} class="size-xs" />
 		</span>
 	);

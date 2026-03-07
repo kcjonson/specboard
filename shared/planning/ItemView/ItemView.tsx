@@ -146,8 +146,12 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		if (!item || isNew) return;
 		const trimmed = titleDraft.trim();
 		if (trimmed && trimmed !== item.title) {
+			const previousTitle = item.title;
 			item.title = trimmed;
-			item.save();
+			item.save().catch(() => {
+				item.title = previousTitle;
+				setTitleDraft(previousTitle);
+			});
 		}
 	};
 
@@ -165,9 +169,13 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 	const handleDescriptionBlur = (): void => {
 		if (!item || isNew || !descriptionDirtyRef.current) return;
+		const previousDescription = item.description;
 		item.description = serializeToText(descriptionAst);
-		item.save();
-		descriptionDirtyRef.current = false;
+		item.save().then(() => {
+			descriptionDirtyRef.current = false;
+		}).catch(() => {
+			item.description = previousDescription;
+		});
 	};
 
 	// Add task
@@ -191,8 +199,11 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		if (isNew) {
 			setStatusDraft(newStatus);
 		} else if (item) {
+			const previousStatus = item.status;
 			item.status = newStatus;
-			item.save();
+			item.save().catch(() => {
+				item.status = previousStatus;
+			});
 		}
 	};
 
@@ -238,16 +249,18 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 							onBlur={handleTitleBlur}
 							onKeyDown={handleTitleKeyDown}
 							placeholder={`${typeLabel} title...`}
+							aria-label={`${typeLabel} title`}
 						/>
 					</div>
 				)}
 				<div class={styles.fields}>
 					<div class={styles.field}>
-						<label class={styles.fieldLabel}>Status</label>
 						<Select
+							id="item-status"
 							value={isNew ? statusDraft : (item?.status || 'ready')}
 							options={STATUS_OPTIONS}
 							onChange={handleStatusChange}
+							label="Status"
 						/>
 					</div>
 					{!isNew && (
