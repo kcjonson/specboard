@@ -14,7 +14,7 @@ initTelemetry({
 });
 
 // Shared feature components
-import { Board, EpicDetail } from '@shared/planning';
+import { Board, ItemDetail } from '@shared/planning';
 import { Editor } from '@specboard/pages';
 import { ProjectsList, type Project } from '@shared/projects';
 
@@ -103,7 +103,7 @@ const routes = [
 
 	// Project-scoped routes
 	{ route: '/projects/:projectId/planning', entry: Board },
-	{ route: '/projects/:projectId/planning/items/:id', entry: EpicDetail },
+	{ route: '/projects/:projectId/planning/items/:id', entry: ItemDetail },
 	{ route: '/projects/:projectId/pages', entry: Editor },
 
 	// App routes (not project-scoped)

@@ -2,27 +2,27 @@ import { useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
-import { useModel, EpicModel } from '@specboard/models';
+import { useModel, ItemModel } from '@specboard/models';
 import { Icon } from '@specboard/ui';
-import { EpicView } from '../EpicView/EpicView';
-import styles from './EpicDetail.module.css';
+import { ItemView } from '../ItemView/ItemView';
+import styles from './ItemDetail.module.css';
 
-export function EpicDetail({ params }: RouteProps): JSX.Element {
+export function ItemDetail({ params }: RouteProps): JSX.Element {
 	const projectId = params.projectId || 'demo';
-	const epicId = params.id || '';
+	const itemId = params.id || '';
 
 	// Model auto-fetches when given an id
-	const epic = useMemo(() => new EpicModel({ id: epicId, projectId }), [epicId, projectId]);
-	useModel(epic);
+	const item = useMemo(() => new ItemModel({ id: itemId, projectId }), [itemId, projectId]);
+	useModel(item);
 
 	const handleDelete = (): void => {
-		epic.delete().then(() => {
+		item.delete().then(() => {
 			navigate(`/projects/${projectId}/planning`);
 		});
 	};
 
 	// Loading state - show while fetching and data hasn't arrived yet
-	if (!epic.$meta.lastFetched && !epic.$meta.error) {
+	if (!item.$meta.lastFetched && !item.$meta.error) {
 		return (
 			<div class={styles.container}>
 				<div class={styles.loading}>Loading...</div>
@@ -31,11 +31,11 @@ export function EpicDetail({ params }: RouteProps): JSX.Element {
 	}
 
 	// Error state
-	if (epic.$meta.error) {
+	if (item.$meta.error) {
 		return (
 			<div class={styles.container}>
 				<div class={styles.error}>
-					<p>Error: {epic.$meta.error.message}</p>
+					<p>Error: {item.$meta.error.message}</p>
 					<a href={`/projects/${projectId}/planning`}>Back to Board</a>
 				</div>
 			</div>
@@ -50,7 +50,7 @@ export function EpicDetail({ params }: RouteProps): JSX.Element {
 				</a>
 			</nav>
 			<div class={styles.content}>
-				<EpicView epic={epic} onDelete={handleDelete} />
+				<ItemView item={item} onDelete={handleDelete} />
 			</div>
 		</div>
 	);

@@ -6,19 +6,19 @@
  *
  * @example
  * ```typescript
- * class EpicsCollection extends SyncCollection<EpicModel> {
- *   static url = '/api/epics';
- *   static Model = EpicModel;
+ * class ItemsCollection extends SyncCollection<ItemModel> {
+ *   static url = '/api/items';
+ *   static Model = ItemModel;
  *
- *   byStatus(status: Status): EpicModel[] {
+ *   byStatus(status: Status): ItemModel[] {
  *     return this.filter((e) => e.status === status);
  *   }
  * }
  *
- * const epics = new EpicsCollection(); // Auto-fetches
- * epics.$meta.working // true while loading
- * epics[0] // index access works
- * epics.byStatus('ready') // custom methods work
+ * const items = new ItemsCollection(); // Auto-fetches
+ * items.$meta.working // true while loading
+ * items[0] // index access works
+ * items.byStatus('ready') // custom methods work
  * ```
  */
 

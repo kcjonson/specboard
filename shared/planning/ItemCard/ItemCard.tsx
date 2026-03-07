@@ -1,17 +1,17 @@
 import type { JSX } from 'preact';
-import type { EpicModel } from '@specboard/models';
+import type { ItemModel } from '@specboard/models';
 import { Icon } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
-import styles from './EpicCard.module.css';
+import styles from './ItemCard.module.css';
 
-interface EpicCardProps {
-	epic: EpicModel;
+interface ItemCardProps {
+	item: ItemModel;
 	projectId: string;
 	isSelected?: boolean;
 	isHighlighted?: boolean;
-	onSelect?: (epic: EpicModel) => void;
-	onOpen?: (epic: EpicModel) => void;
-	onDragStart?: (e: DragEvent, epic: EpicModel) => void;
+	onSelect?: (item: ItemModel) => void;
+	onOpen?: (item: ItemModel) => void;
+	onDragStart?: (e: DragEvent, item: ItemModel) => void;
 	onDragEnd?: (e: DragEvent) => void;
 }
 
@@ -40,8 +40,8 @@ function formatTimeAgo(dateString: string): string {
 	return 'just now';
 }
 
-export function EpicCard({
-	epic,
+export function ItemCard({
+	item,
 	projectId,
 	isSelected = false,
 	isHighlighted = false,
@@ -49,31 +49,31 @@ export function EpicCard({
 	onOpen,
 	onDragStart,
 	onDragEnd,
-}: EpicCardProps): JSX.Element {
-	const taskStats = epic.taskStats;
+}: ItemCardProps): JSX.Element {
+	const taskStats = item.taskStats;
 	const progressPercent = taskStats.total > 0 ? (taskStats.done / taskStats.total) * 100 : 0;
 
 	const handleClick = (): void => {
-		onSelect?.(epic);
+		onSelect?.(item);
 	};
 
 	const handleDoubleClick = (): void => {
-		onOpen?.(epic);
+		onOpen?.(item);
 	};
 
 	const handleKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === 'Enter') {
-			onOpen?.(epic);
+			onOpen?.(item);
 		}
 	};
 
 	const handleDragStart = (e: DragEvent): void => {
-		onDragStart?.(e, epic);
+		onDragStart?.(e, item);
 	};
 
 	const handleOpenInNewWindow = (e: MouseEvent): void => {
 		e.stopPropagation();
-		window.open(`/projects/${projectId}/planning/items/${epic.id}`, '_blank', 'noopener,noreferrer');
+		window.open(`/projects/${projectId}/planning/items/${item.id}`, '_blank', 'noopener,noreferrer');
 	};
 
 	const cardClass = [
@@ -85,7 +85,7 @@ export function EpicCard({
 	return (
 		<div
 			class={cardClass}
-			data-epic-card
+			data-item-card
 			onClick={handleClick}
 			onDblClick={handleDoubleClick}
 			onKeyDown={handleKeyDown}
@@ -98,8 +98,8 @@ export function EpicCard({
 		>
 			<div class={styles.header}>
 				<div class={styles.titleRow}>
-					<TypeBadge type={epic.type} />
-					<h3 class={styles.title}>{epic.title}</h3>
+					<TypeBadge type={item.type} />
+					<h3 class={styles.title}>{item.title}</h3>
 				</div>
 				<div class={styles.headerActions}>
 					<button
@@ -111,16 +111,16 @@ export function EpicCard({
 					>
 						<Icon name="external-link" />
 					</button>
-					{epic.assignee && (
-						<div class={styles.assignee} title={epic.assignee}>
-							{getInitials(epic.assignee)}
+					{item.assignee && (
+						<div class={styles.assignee} title={item.assignee}>
+							{getInitials(item.assignee)}
 						</div>
 					)}
 				</div>
 			</div>
 
-			{epic.description && (
-				<p class={styles.description}>{epic.description}</p>
+			{item.description && (
+				<p class={styles.description}>{item.description}</p>
 			)}
 
 			{taskStats.total > 0 && (
@@ -138,7 +138,7 @@ export function EpicCard({
 			)}
 
 			<div class={styles.footer}>
-				Updated {formatTimeAgo(epic.updatedAt)}
+				Updated {formatTimeAgo(item.updatedAt)}
 			</div>
 		</div>
 	);

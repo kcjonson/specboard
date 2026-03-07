@@ -1,94 +1,94 @@
 import { useEffect, useCallback } from 'preact/hooks';
-import type { EpicModel, Status } from '@specboard/models';
+import type { ItemModel, Status } from '@specboard/models';
 
 const STATUSES: Status[] = ['ready', 'in_progress', 'done'];
 
 interface KeyboardNavigationOptions {
-	/** All epics grouped by status */
-	epicsByStatus: Record<Status, EpicModel[]>;
-	/** Currently selected epic ID */
-	selectedEpicId: string | undefined;
+	/** All items grouped by status */
+	itemsByStatus: Record<Status, ItemModel[]>;
+	/** Currently selected item ID */
+	selectedItemId: string | undefined;
 	/** Whether a dialog is open (disables shortcuts) */
 	dialogOpen: boolean;
 	/** Callback when selection changes */
-	onSelectEpic: (epic: EpicModel | undefined) => void;
-	/** Callback to open an epic */
-	onOpenEpic: (epic: EpicModel) => void;
-	/** Callback to create a new epic */
-	onCreateEpic: () => void;
-	/** Callback to move epic to a status */
-	onMoveEpic: (epic: EpicModel, status: Status) => void;
+	onSelectItem: (item: ItemModel | undefined) => void;
+	/** Callback to open an item */
+	onOpenItem: (item: ItemModel) => void;
+	/** Callback to create a new item */
+	onCreateItem: () => void;
+	/** Callback to move item to a status */
+	onMoveItem: (item: ItemModel, status: Status) => void;
 }
 
 export function useKeyboardNavigation({
-	epicsByStatus,
-	selectedEpicId,
+	itemsByStatus,
+	selectedItemId,
 	dialogOpen,
-	onSelectEpic,
-	onOpenEpic,
-	onCreateEpic,
-	onMoveEpic,
+	onSelectItem,
+	onOpenItem,
+	onCreateItem,
+	onMoveItem,
 }: KeyboardNavigationOptions): void {
-	// Find the selected epic and its position
-	const findSelectedEpic = useCallback((): {
-		epic: EpicModel | undefined;
+	// Find the selected item and its position
+	const findSelectedItem = useCallback((): {
+		item: ItemModel | undefined;
 		status: Status | undefined;
 		index: number;
 	} => {
-		if (!selectedEpicId) {
-			return { epic: undefined, status: undefined, index: -1 };
+		if (!selectedItemId) {
+			return { item: undefined, status: undefined, index: -1 };
 		}
 
 		for (const status of STATUSES) {
-			const epics = epicsByStatus[status];
-			const index = epics.findIndex((e) => e.id === selectedEpicId);
+			const items = itemsByStatus[status];
+			const index = items.findIndex((e) => e.id === selectedItemId);
 			if (index !== -1) {
-				return { epic: epics[index], status, index };
+				return { item: items[index], status, index };
 			}
 		}
 
-		return { epic: undefined, status: undefined, index: -1 };
-	}, [selectedEpicId, epicsByStatus]);
+		return { item: undefined, status: undefined, index: -1 };
+	}, [selectedItemId, itemsByStatus]);
 
 	// Navigate up/down within a column
 	const navigateVertical = useCallback(
 		(direction: 'up' | 'down') => {
-			const { status, index } = findSelectedEpic();
+			const { status, index } = findSelectedItem();
 
 			if (!status) {
-				// No selection, select first epic in first non-empty column
+				// No selection, select first item in first non-empty column
 				for (const s of STATUSES) {
-					const epics = epicsByStatus[s];
-					if (epics.length > 0) {
-						onSelectEpic(epics[0]);
+					const items = itemsByStatus[s];
+					if (items.length > 0) {
+						onSelectItem(items[0]);
 						return;
 					}
 				}
 				return;
 			}
 
-			const epics = epicsByStatus[status];
+			const items = itemsByStatus[status];
 			const newIndex = direction === 'up' ? index - 1 : index + 1;
 
-			if (newIndex >= 0 && newIndex < epics.length) {
-				onSelectEpic(epics[newIndex]);
+			if (newIndex >= 0 && newIndex < items.length) {
+				onSelectItem(items[newIndex]);
 			}
 		},
-		[findSelectedEpic, epicsByStatus, onSelectEpic]
+		[findSelectedItem, itemsByStatus, onSelectItem]
 	);
 
 	// Navigate left/right between columns
 	const navigateHorizontal = useCallback(
 		(direction: 'left' | 'right') => {
-			const { status, index } = findSelectedEpic();
+			const { status, index } = findSelectedItem();
 
 			if (!status) {
-				// No selection, select first epic in first/last non-empty column
+				// No selection, select first item in first/last non-empty column
 				const statuses = direction === 'left' ? [...STATUSES].reverse() : STATUSES;
 				for (const s of statuses) {
-					const epics = epicsByStatus[s];
-					if (epics.length > 0) {
-						onSelectEpic(epics[0]);
+					const items = itemsByStatus[s];
+					if (items.length > 0) {
+						onSelectItem(items[0]);
 						return;
 					}
 				}
@@ -102,27 +102,27 @@ export function useKeyboardNavigation({
 			if (newStatusIndex >= 0 && newStatusIndex < STATUSES.length) {
 				const newStatus = STATUSES[newStatusIndex];
 				if (newStatus) {
-					const newColumnEpics = epicsByStatus[newStatus];
-					if (newColumnEpics.length > 0) {
+					const newColumnItems = itemsByStatus[newStatus];
+					if (newColumnItems.length > 0) {
 						// Try to maintain similar position, or go to last item
-						const newIndex = Math.min(index, newColumnEpics.length - 1);
-						onSelectEpic(newColumnEpics[newIndex]);
+						const newIndex = Math.min(index, newColumnItems.length - 1);
+						onSelectItem(newColumnItems[newIndex]);
 					}
 				}
 			}
 		},
-		[findSelectedEpic, epicsByStatus, onSelectEpic]
+		[findSelectedItem, itemsByStatus, onSelectItem]
 	);
 
-	// Move selected epic to a status
+	// Move selected item to a status
 	const moveToStatus = useCallback(
 		(targetStatus: Status) => {
-			const { epic } = findSelectedEpic();
-			if (epic && epic.status !== targetStatus) {
-				onMoveEpic(epic, targetStatus);
+			const { item } = findSelectedItem();
+			if (item && item.status !== targetStatus) {
+				onMoveItem(item, targetStatus);
 			}
 		},
-		[findSelectedEpic, onMoveEpic]
+		[findSelectedItem, onMoveItem]
 	);
 
 	const handleKeyDown = useCallback(
@@ -138,7 +138,7 @@ export function useKeyboardNavigation({
 
 			if (isInput) return;
 
-			const { epic } = findSelectedEpic();
+			const { item } = findSelectedItem();
 
 			switch (e.key) {
 				case 'ArrowUp':
@@ -162,39 +162,39 @@ export function useKeyboardNavigation({
 					break;
 
 				case 'Enter':
-					if (epic) {
+					if (item) {
 						e.preventDefault();
-						onOpenEpic(epic);
+						onOpenItem(item);
 					}
 					break;
 
 				case 'Escape':
 					e.preventDefault();
-					onSelectEpic(undefined);
+					onSelectItem(undefined);
 					break;
 
 				case 'n':
 				case 'N':
 					e.preventDefault();
-					onCreateEpic();
+					onCreateItem();
 					break;
 
 				case '1':
-					if (epic) {
+					if (item) {
 						e.preventDefault();
 						moveToStatus('ready');
 					}
 					break;
 
 				case '2':
-					if (epic) {
+					if (item) {
 						e.preventDefault();
 						moveToStatus('in_progress');
 					}
 					break;
 
 				case '3':
-					if (epic) {
+					if (item) {
 						e.preventDefault();
 						moveToStatus('done');
 					}
@@ -203,12 +203,12 @@ export function useKeyboardNavigation({
 		},
 		[
 			dialogOpen,
-			findSelectedEpic,
+			findSelectedItem,
 			navigateVertical,
 			navigateHorizontal,
-			onSelectEpic,
-			onOpenEpic,
-			onCreateEpic,
+			onSelectItem,
+			onOpenItem,
+			onCreateItem,
 			moveToStatus,
 		]
 	);

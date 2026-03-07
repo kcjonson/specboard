@@ -1,5 +1,5 @@
 /**
- * Planning models - Epic and Task
+ * Planning models - Item and Task
  *
  * These models are used by the planning-web app for the kanban board.
  */
@@ -11,14 +11,14 @@ import { collection } from './collection-decorator';
 import type { Collection } from './Collection';
 import { SyncCollection } from './SyncCollection';
 
-/** Status type for epics and tasks */
+/** Status type for items and tasks */
 export type Status = 'ready' | 'in_progress' | 'done';
 
 /** Work item type */
 export type ItemType = 'epic' | 'chore' | 'bug';
 
 /**
- * Task model (non-syncing for now, nested within Epic)
+ * Task model (non-syncing for now, nested within Item)
  */
 export class TaskModel extends Model {
 	@prop accessor id!: string;
@@ -31,7 +31,7 @@ export class TaskModel extends Model {
 }
 
 /**
- * TaskStats for epic progress tracking
+ * TaskStats for item progress tracking
  */
 export interface TaskStats {
 	total: number;
@@ -39,9 +39,9 @@ export interface TaskStats {
 }
 
 /**
- * Epic model - syncs with /api/projects/:projectId/epics/:id
+ * Item model - syncs with /api/projects/:projectId/epics/:id
  */
-export class EpicModel extends SyncModel {
+export class ItemModel extends SyncModel {
 	static override url = '/api/projects/:projectId/epics/:id';
 
 	@prop accessor id!: string;
@@ -60,7 +60,7 @@ export class EpicModel extends SyncModel {
 	@collection(TaskModel) accessor tasks!: Collection<TaskModel>;
 
 	/**
-	 * Get task statistics for this epic
+	 * Get task statistics for this item
 	 */
 	get taskStats(): TaskStats {
 		const total = this.tasks.length;
@@ -70,40 +70,40 @@ export class EpicModel extends SyncModel {
 }
 
 /**
- * Collection of epics - syncs with /api/projects/:projectId/epics
+ * Collection of items - syncs with /api/projects/:projectId/epics
  *
  * @example
  * ```tsx
- * const epics = new EpicsCollection();
- * epics.projectId = projectId;
- * epics.fetch();
- * useModel(epics);
+ * const items = new ItemsCollection();
+ * items.projectId = projectId;
+ * items.fetch();
+ * useModel(items);
  *
- * if (epics.$meta.working) return <Loading />;
+ * if (items.$meta.working) return <Loading />;
  *
- * epics.add({ title: 'New Epic' });
- * const readyEpics = epics.byStatus('ready');
+ * items.add({ title: 'New Item' });
+ * const readyItems = items.byStatus('ready');
  * ```
  */
-export class EpicsCollection extends SyncCollection<EpicModel> {
+export class ItemsCollection extends SyncCollection<ItemModel> {
 	static url = '/api/projects/:projectId/epics';
-	static Model = EpicModel;
+	static Model = ItemModel;
 
 	// Note: projectId is set dynamically via constructor initialProps
 	// Do NOT declare it as a class field or it will overwrite the value
 	declare projectId: string;
 
 	/**
-	 * Get epics filtered by status, sorted by rank.
+	 * Get items filtered by status, sorted by rank.
 	 */
-	byStatus(status: Status): EpicModel[] {
+	byStatus(status: Status): ItemModel[] {
 		return this.filter((e) => e.status === status).sort((a, b) => a.rank - b.rank);
 	}
 
 	/**
-	 * Get epics filtered by type.
+	 * Get items filtered by type.
 	 */
-	byType(type: ItemType): EpicModel[] {
+	byType(type: ItemType): ItemModel[] {
 		return this.filter((e) => e.type === type);
 	}
 }

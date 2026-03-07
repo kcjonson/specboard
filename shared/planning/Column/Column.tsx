@@ -1,21 +1,21 @@
 import { useState, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { Status, EpicModel } from '@specboard/models';
+import type { Status, ItemModel } from '@specboard/models';
 import { StatusDot } from '@specboard/ui';
-import { EpicCard } from '../EpicCard/EpicCard';
+import { ItemCard } from '../ItemCard/ItemCard';
 import styles from './Column.module.css';
 
 interface ColumnProps {
 	status: Status;
 	title: string;
-	epics: EpicModel[];
+	items: ItemModel[];
 	projectId: string;
-	selectedEpicId?: string;
-	highlightedEpicId?: string;
-	onSelectEpic?: (epic: EpicModel) => void;
-	onOpenEpic?: (epic: EpicModel) => void;
-	onDropEpic?: (epicId: string, status: Status, index: number) => void;
-	onDragStart?: (e: DragEvent, epic: EpicModel) => void;
+	selectedItemId?: string;
+	highlightedItemId?: string;
+	onSelectItem?: (item: ItemModel) => void;
+	onOpenItem?: (item: ItemModel) => void;
+	onDropItem?: (itemId: string, status: Status, index: number) => void;
+	onDragStart?: (e: DragEvent, item: ItemModel) => void;
 	onDragEnd?: (e: DragEvent) => void;
 }
 
@@ -28,13 +28,13 @@ const STATUS_LABELS: Record<Status, string> = {
 export function Column({
 	status,
 	title,
-	epics,
+	items,
 	projectId,
-	selectedEpicId,
-	highlightedEpicId,
-	onSelectEpic,
-	onOpenEpic,
-	onDropEpic,
+	selectedItemId,
+	highlightedItemId,
+	onSelectItem,
+	onOpenItem,
+	onDropItem,
 	onDragStart,
 	onDragEnd,
 }: ColumnProps): JSX.Element {
@@ -44,9 +44,9 @@ export function Column({
 
 	// Calculate drop index based on mouse position
 	const calculateDropIndex = useCallback((e: DragEvent): number => {
-		if (!dropZoneRef.current) return epics.length;
+		if (!dropZoneRef.current) return items.length;
 
-		const cards = dropZoneRef.current.querySelectorAll('[data-epic-card]');
+		const cards = dropZoneRef.current.querySelectorAll('[data-item-card]');
 		if (cards.length === 0) return 0;
 
 		const mouseY = e.clientY;
@@ -61,8 +61,8 @@ export function Column({
 			}
 		}
 
-		return epics.length;
-	}, [epics.length]);
+		return items.length;
+	}, [items.length]);
 
 	const handleDragOver = (e: DragEvent): void => {
 		e.preventDefault();
@@ -83,12 +83,12 @@ export function Column({
 		e.preventDefault();
 		setIsDragOver(false);
 
-		const epicId = e.dataTransfer?.getData('text/plain');
-		const index = dropIndex ?? epics.length;
+		const itemId = e.dataTransfer?.getData('text/plain');
+		const index = dropIndex ?? items.length;
 		setDropIndex(null);
 
-		if (epicId && onDropEpic) {
-			onDropEpic(epicId, status, index);
+		if (itemId && onDropItem) {
+			onDropItem(itemId, status, index);
 		}
 	};
 
@@ -104,7 +104,7 @@ export function Column({
 					<StatusDot status={status} />
 					{STATUS_LABELS[status]}
 				</h2>
-				<span class={styles.count}>{epics.length}</span>
+				<span class={styles.count}>{items.length}</span>
 			</div>
 
 			<div class={styles.content}>
@@ -115,28 +115,28 @@ export function Column({
 					onDragLeave={handleDragLeave}
 					onDrop={handleDrop}
 				>
-					{epics.length === 0 ? (
+					{items.length === 0 ? (
 						<div class={styles.empty}>No items</div>
 					) : (
-						epics.map((epic, index) => (
-							<div key={epic.id} class={styles.cardWrapper}>
+						items.map((item, index) => (
+							<div key={item.id} class={styles.cardWrapper}>
 								{isDragOver && dropIndex === index && (
 									<div class={styles.dropIndicator} />
 								)}
-								<EpicCard
-									epic={epic}
+								<ItemCard
+									item={item}
 									projectId={projectId}
-									isSelected={epic.id === selectedEpicId}
-									isHighlighted={epic.id === highlightedEpicId}
-									onSelect={onSelectEpic}
-									onOpen={onOpenEpic}
+									isSelected={item.id === selectedItemId}
+									isHighlighted={item.id === highlightedItemId}
+									onSelect={onSelectItem}
+									onOpen={onOpenItem}
 									onDragStart={onDragStart}
 									onDragEnd={onDragEnd}
 								/>
 							</div>
 						))
 					)}
-					{isDragOver && dropIndex === epics.length && epics.length > 0 && (
+					{isDragOver && dropIndex === items.length && items.length > 0 && (
 						<div class={styles.dropIndicator} />
 					)}
 				</div>

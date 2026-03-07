@@ -2,13 +2,13 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { navigate } from '@specboard/router';
-import { useModel, EpicModel, type TaskModel, type Status, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type TaskModel, type Status, type ItemType } from '@specboard/models';
 import { fetchClient } from '@specboard/fetch';
 import { Button, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
-import styles from './EpicView.module.css';
+import styles from './ItemView.module.css';
 
 const TYPE_LABELS: Record<ItemType, string> = {
 	epic: 'Epic',
@@ -16,25 +16,25 @@ const TYPE_LABELS: Record<ItemType, string> = {
 	bug: 'Bug',
 };
 
-/** Props for viewing/editing an existing epic */
-interface EpicViewExistingProps {
-	epic: EpicModel;
+/** Props for viewing/editing an existing item */
+interface ItemViewExistingProps {
+	item: ItemModel;
 	isNew?: false;
 	createType?: never;
-	onDelete?: (epic: EpicModel) => void;
+	onDelete?: (item: ItemModel) => void;
 	onCreate?: never;
 }
 
-/** Props for creating a new epic */
-interface EpicViewCreateProps {
-	epic?: never;
+/** Props for creating a new item */
+interface ItemViewCreateProps {
+	item?: never;
 	isNew: true;
 	createType?: ItemType;
 	onDelete?: never;
 	onCreate: (data: { title: string; description?: string; status: Status; type?: ItemType }) => void;
 }
 
-export type EpicViewProps = EpicViewExistingProps | EpicViewCreateProps;
+export type ItemViewProps = ItemViewExistingProps | ItemViewCreateProps;
 
 const STATUS_OPTIONS: { value: Status; label: string }[] = [
 	{ value: 'ready', label: 'Ready' },
@@ -42,27 +42,27 @@ const STATUS_OPTIONS: { value: Status; label: string }[] = [
 	{ value: 'done', label: 'Done' },
 ];
 
-export function EpicView(props: EpicViewProps): JSX.Element {
+export function ItemView(props: ItemViewProps): JSX.Element {
 	const { isNew = false } = props;
-	const epic = isNew ? undefined : props.epic;
+	const item = isNew ? undefined : props.item;
 	const onDelete = isNew ? undefined : props.onDelete;
 	const onCreate = isNew ? props.onCreate : undefined;
-	const itemType: ItemType = isNew ? (props.createType || 'epic') : (epic?.type || 'epic');
+	const itemType: ItemType = isNew ? (props.createType || 'epic') : (item?.type || 'epic');
 	const typeLabel = TYPE_LABELS[itemType];
 
 	// Always call hook unconditionally (hook now handles undefined)
-	useModel(epic);
+	useModel(item);
 
-	// Initialize description AST from plain text (recomputed when epic description changes)
+	// Initialize description AST from plain text (recomputed when item description changes)
 	const initialDescriptionAst = useMemo(
-		() => deserializeFromText(epic?.description || ''),
-		[epic?.description]
+		() => deserializeFromText(item?.description || ''),
+		[item?.description]
 	);
 
 	// State
-	const [titleDraft, setTitleDraft] = useState(epic?.title || '');
+	const [titleDraft, setTitleDraft] = useState(item?.title || '');
 	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
-	const [statusDraft, setStatusDraft] = useState<Status>(epic?.status || 'ready');
+	const [statusDraft, setStatusDraft] = useState<Status>(item?.status || 'ready');
 	const [newTaskTitle, setNewTaskTitle] = useState('');
 
 	// Track whether description has unsaved changes
@@ -71,25 +71,25 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 	// Spec document existence check: null = checking, true = exists, false = missing
 	const [specDocExists, setSpecDocExists] = useState<boolean | null>(null);
 
-	const taskStats = epic?.taskStats || { total: 0, done: 0 };
+	const taskStats = item?.taskStats || { total: 0, done: 0 };
 
-	// Sync title draft when epic data loads
+	// Sync title draft when item data loads
 	useEffect(() => {
-		if (epic?.title) {
-			setTitleDraft(epic.title);
+		if (item?.title) {
+			setTitleDraft(item.title);
 		}
-	}, [epic?.title]);
+	}, [item?.title]);
 
-	// Sync description AST state when epic changes (for navigation between epics)
+	// Sync description AST state when item changes (for navigation between items)
 	useEffect(() => {
 		setDescriptionAst(initialDescriptionAst);
 		descriptionDirtyRef.current = false;
 	}, [initialDescriptionAst]);
 
-	// Check if spec document exists when epic changes
+	// Check if spec document exists when item changes
 	useEffect(() => {
-		const specDocPath = epic?.specDocPath;
-		const projectId = epic?.projectId;
+		const specDocPath = item?.specDocPath;
+		const projectId = item?.projectId;
 		if (!specDocPath || !projectId) {
 			setSpecDocExists(null);
 			return;
@@ -117,24 +117,24 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 		return () => {
 			cancelled = true;
 		};
-	}, [epic?.specDocPath, epic?.projectId]);
+	}, [item?.specDocPath, item?.projectId]);
 
-	// Unlink spec document from epic
+	// Unlink spec document from item
 	const handleUnlinkSpec = useCallback(async (): Promise<void> => {
-		if (!epic) return;
+		if (!item) return;
 
-		const previousSpecDocPath = epic.specDocPath;
-		epic.specDocPath = undefined;
+		const previousSpecDocPath = item.specDocPath;
+		item.specDocPath = undefined;
 
 		try {
-			await epic.save();
+			await item.save();
 			setSpecDocExists(null);
 		} catch (err) {
 			// Revert on failure
-			epic.specDocPath = previousSpecDocPath;
+			item.specDocPath = previousSpecDocPath;
 			console.error('Failed to unlink spec document:', err);
 		}
-	}, [epic]);
+	}, [item]);
 
 	// Task status toggle
 	const handleToggleTaskStatus = (task: TaskModel): void => {
@@ -143,11 +143,11 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 
 	// Title — save on blur
 	const handleTitleBlur = (): void => {
-		if (!epic || isNew) return;
+		if (!item || isNew) return;
 		const trimmed = titleDraft.trim();
-		if (trimmed && trimmed !== epic.title) {
-			epic.title = trimmed;
-			epic.save();
+		if (trimmed && trimmed !== item.title) {
+			item.title = trimmed;
+			item.save();
 		}
 	};
 
@@ -164,9 +164,9 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 	};
 
 	const handleDescriptionBlur = (): void => {
-		if (!epic || isNew || !descriptionDirtyRef.current) return;
-		epic.description = serializeToText(descriptionAst);
-		epic.save();
+		if (!item || isNew || !descriptionDirtyRef.current) return;
+		item.description = serializeToText(descriptionAst);
+		item.save();
 		descriptionDirtyRef.current = false;
 	};
 
@@ -190,9 +190,9 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 		const newStatus = target.value as Status;
 		if (isNew) {
 			setStatusDraft(newStatus);
-		} else if (epic) {
-			epic.status = newStatus;
-			epic.save();
+		} else if (item) {
+			item.status = newStatus;
+			item.save();
 		}
 	};
 
@@ -210,8 +210,8 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 
 	// Delete item
 	const handleDelete = (): void => {
-		if (epic && confirm(`Are you sure you want to delete this ${typeLabel.toLowerCase()}?`)) {
-			onDelete?.(epic);
+		if (item && confirm(`Are you sure you want to delete this ${typeLabel.toLowerCase()}?`)) {
+			onDelete?.(item);
 		}
 	};
 
@@ -245,7 +245,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 					<div class={styles.field}>
 						<label class={styles.fieldLabel}>Status</label>
 						<Select
-							value={isNew ? statusDraft : (epic?.status || 'ready')}
+							value={isNew ? statusDraft : (item?.status || 'ready')}
 							options={STATUS_OPTIONS}
 							onChange={handleStatusChange}
 						/>
@@ -253,7 +253,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 					{!isNew && (
 						<div class={styles.field}>
 							<label class={styles.fieldLabel}>Assignee</label>
-							<span class={styles.fieldValue}>{epic?.assignee || 'Unassigned'}</span>
+							<span class={styles.fieldValue}>{item?.assignee || 'Unassigned'}</span>
 						</div>
 					)}
 				</div>
@@ -264,7 +264,7 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 				<h3 class={styles.sectionTitle}>Description</h3>
 				<div onBlur={handleDescriptionBlur}>
 					<RichTextEditor
-						key={epic?.id || 'new'}
+						key={item?.id || 'new'}
 						value={descriptionAst}
 						onChange={handleDescriptionChange}
 						placeholder="Add a description..."
@@ -273,13 +273,13 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 			</section>
 
 			{/* Tasks — only show for existing items */}
-			{!isNew && epic && (
+			{!isNew && item && (
 				<section class={styles.section}>
 					<h3 class={styles.sectionTitle}>
 						Tasks ({taskStats.done}/{taskStats.total})
 					</h3>
 					<div class={styles.taskList} role="list">
-						{epic.tasks.map((task) => (
+						{item.tasks.map((task) => (
 							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} />
 						))}
 					</div>
@@ -302,10 +302,10 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 			)}
 
 			{/* Specification Document — only show for epics */}
-			{!isNew && epic?.type === 'epic' && (
+			{!isNew && item?.type === 'epic' && (
 				<section class={styles.section}>
 					<h3 class={styles.sectionTitle}>Specification</h3>
-					{epic?.specDocPath ? (
+					{item?.specDocPath ? (
 						<div class={styles.specContainer}>
 							{specDocExists === false && (
 								<div class={styles.specWarning}>
@@ -318,9 +318,9 @@ export function EpicView(props: EpicViewProps): JSX.Element {
 									class={specDocExists === false ? styles.specLinkMissing : styles.specLink}
 									disabled={specDocExists === false}
 									aria-label={specDocExists === false ? 'Specification document not found' : 'Open specification document'}
-									onClick={() => navigate(`/projects/${epic.projectId}/pages?file=${encodeURIComponent(epic.specDocPath!)}`)}
+									onClick={() => navigate(`/projects/${item.projectId}/pages?file=${encodeURIComponent(item.specDocPath!)}`)}
 								>
-									{epic.specDocPath}
+									{item.specDocPath}
 								</button>
 								<Button class="text" onClick={handleUnlinkSpec}>
 									Unlink
