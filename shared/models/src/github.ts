@@ -48,7 +48,7 @@ export class GitHubConnectionModel extends SyncModel {
 			connectedAt: null,
 		});
 
-		this.fetch();
+		this.fetch().catch(() => {});
 	}
 
 	/**
