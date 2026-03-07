@@ -65,7 +65,7 @@ export class SyncModel extends Model {
 		const excludedKeys = new Set<string>();
 		const urlTemplate = ctor.url || '';
 		for (const match of urlTemplate.matchAll(/:(\w+)/g)) {
-			excludedKeys.add(match[1]);
+			if (match[1]) excludedKeys.add(match[1]);
 		}
 		const metadata = ctor[Symbol.metadata];
 		const collectionKeys = metadata?.[COLLECTIONS] as Map<string, unknown> | undefined;
