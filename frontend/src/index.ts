@@ -15,6 +15,18 @@ import { pages, spaIndex, type CachedPage } from './static-pages.ts';
 // Vite dev server URL for hot reloading (set in docker-compose for dev mode)
 const VITE_DEV_SERVER = process.env.VITE_DEV_SERVER;
 
+/**
+ * Forward Set-Cookie headers from a proxied response.
+ * headers.get('Set-Cookie') joins multiple cookies with ', ' which breaks
+ * browser parsing (RFC 6265 requires separate headers). Use getSetCookie()
+ * to forward each cookie individually.
+ */
+function forwardSetCookieHeaders(from: Response, to: Response): void {
+	for (const cookie of from.headers.getSetCookie()) {
+		to.headers.append('Set-Cookie', cookie);
+	}
+}
+
 const app = new Hono<{ Variables: AuthVariables }>();
 
 /**
@@ -327,15 +339,10 @@ app.post('/api/auth/login', async (c) => {
 
 		const data = await response.json();
 
-		// Forward the response including Set-Cookie header
+		// Forward the response including Set-Cookie headers
 		const status = response.status === 200 ? 200 : response.status === 401 ? 401 : 400;
 		const result = c.json(data, status);
-
-		// Copy session cookie from API response
-		const setCookieHeader = response.headers.get('Set-Cookie');
-		if (setCookieHeader) {
-			result.headers.set('Set-Cookie', setCookieHeader);
-		}
+		forwardSetCookieHeaders(response, result);
 
 		return result;
 	} catch {
@@ -360,15 +367,10 @@ app.post('/api/auth/signup', async (c) => {
 
 		const data = await response.json();
 
-		// Forward the response including Set-Cookie header
+		// Forward the response including Set-Cookie headers
 		const status = response.status === 201 ? 201 : response.status === 409 ? 409 : response.status === 500 ? 500 : 400;
 		const result = c.json(data, status);
-
-		// Copy session cookie from API response (user is logged in after signup)
-		const setCookieHeader = response.headers.get('Set-Cookie');
-		if (setCookieHeader) {
-			result.headers.set('Set-Cookie', setCookieHeader);
-		}
+		forwardSetCookieHeaders(response, result);
 
 		return result;
 	} catch {
@@ -387,12 +389,7 @@ app.post('/api/auth/logout', async (c) => {
 
 		const data = await response.json();
 		const result = c.json(data, 200);
-
-		// Copy Set-Cookie header to clear the cookie
-		const setCookieHeader = response.headers.get('Set-Cookie');
-		if (setCookieHeader) {
-			result.headers.set('Set-Cookie', setCookieHeader);
-		}
+		forwardSetCookieHeaders(response, result);
 
 		return result;
 	} catch {
