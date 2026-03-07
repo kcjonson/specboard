@@ -7,6 +7,7 @@ import { fetchClient } from '@specboard/fetch';
 import { Button, Page } from '@specboard/ui';
 import { ProjectCard, type Project } from '../ProjectCard/ProjectCard';
 import { ProjectDialog } from '../ProjectDialog/ProjectDialog';
+import { SyncProgressDialog } from '../SyncProgressDialog/SyncProgressDialog';
 import styles from './ProjectsList.module.css';
 
 export function ProjectsList(_props: RouteProps): JSX.Element {
@@ -15,6 +16,8 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [error, setError] = useState<string | null>(null);
 	// Dialog state: null = closed, undefined = create mode, Project = edit mode
 	const [dialogProject, setDialogProject] = useState<Project | null | undefined>(null);
+	// Sync progress dialog state: shown after creating a project with a repo
+	const [syncingProject, setSyncingProject] = useState<{ id: string; name: string } | null>(null);
 
 	const fetchProjects = useCallback(async (): Promise<void> => {
 		try {
@@ -52,17 +55,23 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		setDialogProject(null);
 	}
 
-	async function handleSaveProject(data: { name: string; description?: string }): Promise<void> {
+	async function handleSaveProject(data: { name: string; description?: string; repository?: { provider: string; owner: string; repo: string; branch: string; url: string } }): Promise<void> {
 		try {
 			if (dialogProject === undefined) {
 				// Create mode
 				const project = await fetchClient.post<Project>('/api/projects', data);
 				setProjects((prev) => [project, ...prev]);
 				setDialogProject(null);
-				// Navigate to the new project
-				setCookie('lastProjectId', project.id, 30);
-				setCookie('lastProjectName', project.name, 30);
-				navigate(`/projects/${project.id}/planning`);
+
+				if (project.repository && 'type' in project.repository && project.repository.type === 'cloud') {
+					// Repository configured — show sync progress dialog
+					setSyncingProject({ id: project.id, name: project.name });
+				} else {
+					// No repository — navigate immediately
+					setCookie('lastProjectId', project.id, 30);
+					setCookie('lastProjectName', project.name, 30);
+					navigate(`/projects/${project.id}/planning`);
+				}
 			} else if (dialogProject) {
 				// Edit mode
 				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.id}`, data);
@@ -90,6 +99,22 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to delete project');
 		}
+	}
+
+	function handleSyncNavigate(destination: 'planning' | 'pages'): void {
+		if (!syncingProject) return;
+		setCookie('lastProjectId', syncingProject.id, 30);
+		setCookie('lastProjectName', syncingProject.name, 30);
+		setSyncingProject(null);
+		navigate(`/projects/${syncingProject.id}/${destination}`);
+	}
+
+	function handleSyncDismiss(): void {
+		if (!syncingProject) return;
+		setCookie('lastProjectId', syncingProject.id, 30);
+		setCookie('lastProjectName', syncingProject.name, 30);
+		setSyncingProject(null);
+		navigate(`/projects/${syncingProject.id}/planning`);
 	}
 
 	async function handleRetrySync(project: Project): Promise<void> {
@@ -165,6 +190,15 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 					onClose={handleCloseDialog}
 					onSave={handleSaveProject}
 					onDelete={dialogProject ? handleDeleteProject : undefined}
+				/>
+			)}
+
+			{syncingProject && (
+				<SyncProgressDialog
+					projectId={syncingProject.id}
+					projectName={syncingProject.name}
+					onNavigate={handleSyncNavigate}
+					onDismiss={handleSyncDismiss}
 				/>
 			)}
 		</Page>

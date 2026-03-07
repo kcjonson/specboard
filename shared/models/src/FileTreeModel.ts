@@ -40,10 +40,14 @@ export interface FileEntry {
 /** Nested tree for expanded paths - compact format */
 export type ExpandedTree = { [name: string]: ExpandedTree };
 
+export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+
 interface FileTreeResponse {
 	files: FileEntry[];
 	expanded: ExpandedTree;
 	rootPaths: string[];
+	syncStatus?: SyncStatus | null;
+	syncError?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,6 +198,13 @@ export class FileTreeModel extends Model {
 	@prop accessor error!: string | null;
 	@prop accessor pendingNewFile!: PendingNewFile | null;
 	@prop accessor pendingRename!: PendingRename | null;
+	@prop accessor syncStatus!: SyncStatus | null;
+	@prop accessor syncError!: string | null;
+
+	private _pollTimer: ReturnType<typeof setTimeout> | null = null;
+	private _abortController: AbortController | null = null;
+	private _destroyed = false;
+	private _pollCount = 0;
 
 	constructor() {
 		super({
@@ -205,6 +216,8 @@ export class FileTreeModel extends Model {
 			error: null,
 			pendingNewFile: null,
 			pendingRename: null,
+			syncStatus: null,
+			syncError: null,
 		});
 	}
 
@@ -222,11 +235,17 @@ export class FileTreeModel extends Model {
 			return;
 		}
 
+		// Abort any in-flight request for the old project
+		this._abortInflight();
+
 		this.projectId = projectId;
 		this.files = [];
 		this.expanded = {};
 		this.rootPaths = [];
 		this.error = null;
+		this.syncStatus = null;
+		this.syncError = null;
+		this._pollCount = 0;
 
 		await this.loadTree(currentFilePath);
 	}
@@ -502,9 +521,17 @@ export class FileTreeModel extends Model {
 	// Private methods
 	// ─────────────────────────────────────────────────────────────────────────
 
-	private async loadTree(currentFilePath?: string, providedExpandedTree?: ExpandedTree): Promise<void> {
-		this.loading = true;
-		this.error = null;
+	private async loadTree(currentFilePath?: string, providedExpandedTree?: ExpandedTree, isSyncPoll = false): Promise<void> {
+		// B1 fix: Only show loading indicator for user-initiated loads, not background polls
+		if (!isSyncPoll) {
+			this.loading = true;
+			this.error = null;
+		}
+
+		// Abort any previous in-flight request to prevent races
+		this._abortInflight();
+		const controller = new AbortController();
+		this._abortController = controller;
 
 		try {
 			// Use provided expanded tree, or load from localStorage
@@ -528,20 +555,85 @@ export class FileTreeModel extends Model {
 			// Single request to server - returns ready-to-render data
 			const data = await fetchClient.post<FileTreeResponse>(
 				`/api/projects/${this.projectId}/tree`,
-				{ expanded: expandedTree }
+				{ expanded: expandedTree },
+				{ signal: controller.signal }
 			);
+
+			// If aborted (e.g. by a newer loadTree call), discard results
+			if (controller.signal.aborted) return;
 
 			this.files = data.files;
 			this.expanded = data.expanded;
 			this.rootPaths = data.rootPaths;
+			this.syncStatus = data.syncStatus ?? null;
+			this.syncError = data.syncError ?? null;
 
 			// Persist validated expanded tree (server removes invalid paths)
 			saveExpandedTreeToStorage(this.projectId, data.expanded);
 		} catch (err) {
+			// Ignore abort errors
+			if (controller.signal.aborted) return;
 			console.error('Failed to load file tree:', err);
-			this.error = 'Failed to load files';
+			if (!isSyncPoll) {
+				this.error = 'Failed to load files';
+			}
 		} finally {
-			this.loading = false;
+			if (!controller.signal.aborted) {
+				if (!isSyncPoll) {
+					this.loading = false;
+				}
+				// B2 fix: Schedule poll in finally block so network errors don't kill the loop
+				this._scheduleSyncPoll();
+			}
+		}
+	}
+
+	/** Abort any in-flight fetch request */
+	private _abortInflight(): void {
+		if (this._abortController) {
+			this._abortController.abort();
+			this._abortController = null;
+		}
+	}
+
+	private _scheduleSyncPoll(): void {
+		// Clear any existing timer
+		if (this._pollTimer) {
+			clearTimeout(this._pollTimer);
+			this._pollTimer = null;
+		}
+
+		// Don't poll if destroyed
+		if (this._destroyed) return;
+
+		// Only poll while sync is in progress
+		if (this.syncStatus !== 'pending' && this.syncStatus !== 'syncing') {
+			return;
+		}
+
+		// Cap polling at 60 attempts (~5 minutes) to avoid indefinite polling
+		if (this._pollCount >= 60) {
+			this.error = 'Sync is taking longer than expected. Try refreshing the page.';
+			return;
+		}
+
+		this._pollCount++;
+		this._pollTimer = setTimeout(() => {
+			this._pollTimer = null;
+			this.loadTree(undefined, undefined, true);
+		}, 5000);
+	}
+
+	/**
+	 * Clean up poll timer and abort in-flight requests.
+	 * Call when the component using this model unmounts.
+	 */
+	destroy(): void {
+		this._destroyed = true;
+		this._abortInflight();
+		if (this._pollTimer) {
+			clearTimeout(this._pollTimer);
+			this._pollTimer = null;
 		}
 	}
 }

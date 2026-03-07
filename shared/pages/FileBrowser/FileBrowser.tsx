@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { FileTreeModel, useModel, type GitStatusModel } from '@specboard/models';
 import { Badge, Button, Icon } from '@specboard/ui';
-import { fetchClient } from '@specboard/fetch';
+import { fetchClient, FetchError } from '@specboard/fetch';
 import { GitStatusBar } from './GitStatusBar';
 import { ConfirmDialog } from './ConfirmDialog';
 import { FileItem } from './FileItem';
@@ -94,6 +94,9 @@ export function FileBrowser({
 	// Local state for delete confirmation dialog
 	const [deleteTarget, setDeleteTarget] = useState<{ path: string; type: 'file' | 'directory'; isUntracked: boolean } | null>(null);
 
+	// Guard against rapid retry clicks
+	const [retryingSync, setRetryingSync] = useState(false);
+
 	// Track previous selectedPath to avoid unnecessary expandToFile calls
 	const prevSelectedPathRef = useRef<string | undefined>(undefined);
 
@@ -101,6 +104,11 @@ export function FileBrowser({
 	useEffect(() => {
 		model.initialize(projectId);
 	}, [model, projectId]);
+
+	// Clean up poll timer on unmount
+	useEffect(() => {
+		return () => model.destroy();
+	}, [model]);
 
 	// Expand to selected file only when it changes and needs expanding
 	useEffect(() => {
@@ -322,6 +330,27 @@ export function FileBrowser({
 		}
 	};
 
+	// Handle retry sync with click guard
+	const handleRetrySync = async (): Promise<void> => {
+		if (retryingSync) return;
+		setRetryingSync(true);
+		model.error = null;
+		try {
+			await fetchClient.post(`/api/projects/${projectId}/sync/initial`);
+			await model.reload();
+		} catch (err) {
+			console.error('Failed to retry sync:', err);
+			if (err instanceof FetchError && err.data) {
+				const data = err.data as Record<string, unknown>;
+				model.error = typeof data.error === 'string' ? data.error : err.message;
+			} else {
+				model.error = err instanceof Error ? err.message : 'Failed to retry sync';
+			}
+		} finally {
+			setRetryingSync(false);
+		}
+	};
+
 	// Handle item click
 	const handleItemClick = (path: string, type: 'file' | 'directory'): void => {
 		// Don't handle click if we're renaming this file
@@ -419,20 +448,46 @@ export function FileBrowser({
 		);
 	};
 
-	// Empty state
+	// Empty state — check sync status before showing "no folders"
 	if (!model.loading && model.rootPaths.length === 0) {
+		const isSyncing = model.syncStatus === 'pending' || model.syncStatus === 'syncing';
+		const isFailed = model.syncStatus === 'failed';
+
 		return (
 			<div class={`${styles.container} ${className || ''}`}>
 				<div class={styles.header}>Files</div>
 				<div class={styles.emptyState}>
-					<div class={styles.emptyIcon}><Icon name="folder" class="size-2xl" /></div>
-					<div class={styles.emptyTitle}>No folders added</div>
-					<Button onClick={handleAddFolder} class={styles.addButton}>
-						+ Add Folder
-					</Button>
-					<div class={styles.emptyHint}>
-						Add a folder from a git repository to get started.
-					</div>
+					{isSyncing ? (
+						<>
+							<div class={styles.spinner} role="status" aria-label="Syncing repository" />
+							<div class={styles.emptyTitle}>Syncing repository...</div>
+							<div class={styles.emptyHint}>
+								Files will appear here once the initial sync completes.
+							</div>
+						</>
+					) : isFailed ? (
+						<>
+							<div class={styles.emptyIcon}><Icon name="alert-circle" class="size-2xl" /></div>
+							<div class={styles.emptyTitle}>Sync failed</div>
+							{model.syncError && (
+								<div class={styles.syncErrorMessage}>{model.syncError}</div>
+							)}
+							<Button onClick={handleRetrySync} class={styles.addButton} disabled={retryingSync}>
+								{retryingSync ? 'Retrying...' : 'Retry Sync'}
+							</Button>
+						</>
+					) : (
+						<>
+							<div class={styles.emptyIcon}><Icon name="folder" class="size-2xl" /></div>
+							<div class={styles.emptyTitle}>No folders added</div>
+							<Button onClick={handleAddFolder} class={styles.addButton}>
+								+ Add Folder
+							</Button>
+							<div class={styles.emptyHint}>
+								Add a folder from a git repository to get started.
+							</div>
+						</>
+					)}
 					{model.error && <div class={styles.error}>{model.error}</div>}
 				</div>
 			</div>

@@ -49,6 +49,8 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 				files: [],
 				expanded: {},
 				rootPaths: [],
+				syncStatus: project.syncStatus ?? null,
+				syncError: project.syncError ?? null,
 			});
 		}
 
@@ -144,6 +146,8 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 			files,
 			expanded: validExpandedTree,
 			rootPaths,
+			syncStatus: project.syncStatus ?? null,
+			syncError: project.syncError ?? null,
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

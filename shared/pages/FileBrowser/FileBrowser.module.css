@@ -59,8 +59,35 @@
 	font-size: var(--text-sm);
 	color: var(--color-text-muted);
 	max-width: 200px;
-	line-height: 1.5;
+	line-height: var(--leading-normal);
 	margin-top: var(--space-3);
+}
+
+/* Sync spinner */
+.spinner {
+	width: 24px;
+	height: 24px;
+	border: 3px solid var(--color-border);
+	border-top-color: var(--color-primary);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+	margin-bottom: var(--space-3);
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.syncErrorMessage {
+	font-size: var(--text-sm);
+	color: var(--color-error);
+	margin-bottom: var(--space-3);
+	max-width: 200px;
+	text-align: center;
+	line-height: var(--leading-normal);
+	overflow-wrap: break-word;
 }
 
 /* Tree */
@@ -205,6 +232,7 @@
 	font-size: var(--text-sm);
 	border-radius: var(--radius-sm);
 	text-align: center;
+	overflow-wrap: break-word;
 }
 
 /* New file inline input */
