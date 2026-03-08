@@ -16,29 +16,32 @@ Specboard is a monorepo containing two products (Documentation Editor and Planni
 ┌───────────────────────────────▼─────────────────────────────────┐
 │                    ALB (HTTPS termination)                       │
 │                                                                  │
-│    /*        → Frontend       /api/*   → API                     │
-│    /auth/*   → API            /mcp/*   → MCP                     │
-└──────┬──────────────┬───────────────┬──────────────┬────────────┘
-       │              │               │              │
-┌──────▼──────┐ ┌─────▼──────┐ ┌─────▼──────┐ ┌─────▼──────┐
-│  Frontend   │ │    API     │ │    MCP     │ │  Storage   │
-│   (Hono)    │ │   (Hono)   │ │   (Hono)   │ │   (Hono)   │
-│             │ │            │ │            │ │            │
-│ Static SPA  │ │ REST API   │ │ MCP tools  │ │ S3 proxy   │
-│ + auth gate │ │ + auth     │ │ + OAuth    │ │ + metadata │
-└──────┬──────┘ └─────┬──────┘ └─────┬──────┘ └─────┬──────┘
-       │              │               │              │
-       └──────────────┼───────────────┘              │
-                      │                              │
-              ┌───────▼───────┐              ┌───────▼───────┐
-              │    Redis      │              │      S3       │
-              │  (sessions)   │              │   (files)     │
-              └───────────────┘              └───────────────┘
-                      │
-              ┌───────▼───────┐
-              │  PostgreSQL   │
-              │  (RDS)        │
-              └───────────────┘
+│    /*              → Frontend       /api/*    → API              │
+│    /oauth/consent  → Frontend       /oauth/*  → API              │
+│                                     /mcp/*    → MCP              │
+└──────┬──────────────┬───────────────┬───────────────────────────┘
+       │              │               │
+┌──────▼──────┐ ┌─────▼──────┐ ┌─────▼──────┐
+│  Frontend   │ │    API     │ │    MCP     │
+│   (Hono)    │ │   (Hono)   │ │   (Hono)   │
+│             │ │            │ │            │
+│ Static SPA  │ │ REST API   │ │ MCP tools  │
+│ + auth gate │ │ + auth     │ │ + OAuth    │
+└──────┬──────┘ └──┬─────┬──┘ └─────┬──────┘
+       │           │     │           │
+       └───────────┼─────┼───────────┘
+                   │     │
+           ┌───────▼──┐  │  ┌──────────────┐
+           │  Redis   │  └──▶   Storage    │ (internal only)
+           │(sessions)│     │   (Hono)     │
+           └──────────┘     │ S3 proxy +   │
+                   │        │ metadata     │
+           ┌───────▼──┐     └──────┬───────┘
+           │ Main DB  │            │
+           │ (RDS)    │     ┌──────▼───────┐
+           └──────────┘     │ Storage DB   │──▶ S3
+                            │ (RDS)        │
+                            └──────────────┘
 ```
 
 ---
@@ -62,16 +65,18 @@ Specboard is a monorepo containing two products (Documentation Editor and Planni
 - Exposes planning tools (epics, tasks, progress tracking) to Claude Code and similar clients
 - Streamable HTTP transport via the MCP SDK
 
-### Storage Container
+### Storage Container (internal only — not ALB-routed)
 - Hono server proxying file operations to S3
-- Manages file metadata in PostgreSQL
+- Manages file metadata in its own dedicated PostgreSQL (RDS) instance
 - Tracks pending changes for GitHub commit flow
+- Accessed by the API service and GitHub Sync Lambda, not directly by clients
 
 ### Supporting Services
 
 | Service | Purpose |
 |---------|---------|
-| **PostgreSQL (RDS)** | Primary data store — users, projects, epics, tasks, file metadata |
+| **Main DB (RDS PostgreSQL)** | Primary data store — users, projects, epics, tasks |
+| **Storage DB (RDS PostgreSQL)** | Dedicated to the Storage service — file metadata, pending changes |
 | **Redis (ElastiCache)** | Session storage shared across containers |
 | **S3** | File storage for cloud-mode project content |
 | **GitHub Sync Lambda** | Syncs GitHub repositories to S3 (initial ZIP download + incremental via Compare API) |
@@ -161,9 +166,10 @@ All infrastructure is defined in TypeScript using AWS CDK, deployed to a single 
 - **Lambda** — GitHub sync function (ZIP download + incremental updates)
 
 ### Data
-- **RDS PostgreSQL 16** — primary database (t4g.micro staging, t4g.medium production)
+- **RDS PostgreSQL 16 (Main DB)** — users, projects, epics, tasks (t4g.micro staging, t4g.medium production)
+- **RDS PostgreSQL 16 (Storage DB)** — file metadata and pending changes for the Storage service
 - **ElastiCache Redis** — session storage
-- **S3** — file storage for cloud-mode projects
+- **S3** — file storage for cloud-mode project content
 
 ### Networking
 - **ALB** — path-based routing to containers, TLS termination
@@ -188,10 +194,13 @@ The entire stack runs locally via Docker Compose, mirroring the production archi
 | Service | Container Port | Description |
 |---------|---------------|-------------|
 | nginx | 80 | Reverse proxy (matches ALB routing) |
-| db | 5432 | PostgreSQL 16 |
+| db | 5432 | PostgreSQL 16 (main database) |
+| storage-db | 5433 | PostgreSQL 16 (storage database) |
 | redis | 6379 | Session storage |
 | api | 3001 | Backend API |
 | frontend | 3000 | Frontend server |
 | mcp | 3002 | MCP server |
+| storage | 3003 | Storage service (S3 proxy) |
+| localstack | 4566 | Local S3 emulation |
 
 See [setup.md](setup.md) for detailed setup instructions.
