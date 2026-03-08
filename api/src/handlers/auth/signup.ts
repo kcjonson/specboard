@@ -119,18 +119,18 @@ export async function handleSignup(context: Context): Promise<Response> {
 		// Hash password
 		const passwordHash = await hashPassword(password);
 
-		// Build signup metadata (truncate UTM fields to prevent storage abuse)
+		// Build signup metadata (only accept strings, truncate to prevent storage abuse)
 		const MAX_UTM_LENGTH = 500;
-		const truncate = (val: string | undefined): string | undefined =>
-			val ? val.slice(0, MAX_UTM_LENGTH) : undefined;
+		const sanitize = (val: unknown): string | undefined =>
+			typeof val === 'string' && val ? val.slice(0, MAX_UTM_LENGTH) : undefined;
 
-		const signupMetadata: SignupMetadata = { invite_key };
-		if (utm_source) signupMetadata.utm_source = truncate(utm_source);
-		if (utm_medium) signupMetadata.utm_medium = truncate(utm_medium);
-		if (utm_campaign) signupMetadata.utm_campaign = truncate(utm_campaign);
-		if (utm_term) signupMetadata.utm_term = truncate(utm_term);
-		if (utm_content) signupMetadata.utm_content = truncate(utm_content);
-		if (referral_source) signupMetadata.referral_source = truncate(referral_source);
+		const signupMetadata: SignupMetadata = { invite_key: invite_key.trim() };
+		if (utm_source) signupMetadata.utm_source = sanitize(utm_source);
+		if (utm_medium) signupMetadata.utm_medium = sanitize(utm_medium);
+		if (utm_campaign) signupMetadata.utm_campaign = sanitize(utm_campaign);
+		if (utm_term) signupMetadata.utm_term = sanitize(utm_term);
+		if (utm_content) signupMetadata.utm_content = sanitize(utm_content);
+		if (referral_source) signupMetadata.referral_source = sanitize(referral_source);
 
 		// Create user
 		const userResult = await query<User>(

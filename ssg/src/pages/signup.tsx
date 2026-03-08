@@ -135,7 +135,7 @@ export const signupScript = `(function() {
 		submitBtn.disabled = true;
 		submitBtn.textContent = 'Creating account...';
 
-		// UTM data merged first, form fields override to prevent URL param tampering
+		// Merge whitelisted UTM/referral data with form fields (form values take precedence for overlapping keys)
 		var body = Object.assign({}, utmData, {
 			username: username,
 			email: email,
