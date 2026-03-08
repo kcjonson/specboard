@@ -261,8 +261,9 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 
 		// Strip control characters from system_prompt if provided
 		// eslint-disable-next-line no-control-regex
+		const CONTROL_CHAR_REGEX = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
 		const sanitizedSystemPrompt = typeof system_prompt === 'string'
-			? system_prompt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+			? system_prompt.replace(CONTROL_CHAR_REGEX, '')
 			: undefined;
 
 		const project = await updateProject(id, userId, {
