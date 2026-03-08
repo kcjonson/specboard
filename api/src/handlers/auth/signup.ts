@@ -10,7 +10,7 @@ import {
 	hashToken,
 	getTokenExpiry,
 } from '@specboard/auth';
-import { query, type User } from '@specboard/db';
+import { query, type User, type SignupMetadata } from '@specboard/db';
 import {
 	sendEmail,
 	getVerificationEmailContent,
@@ -26,6 +26,13 @@ interface SignupRequest {
 	first_name: string;
 	last_name: string;
 	invite_key: string;
+	// Optional acquisition tracking
+	utm_source?: string;
+	utm_medium?: string;
+	utm_campaign?: string;
+	utm_term?: string;
+	utm_content?: string;
+	referral_source?: string;
 }
 
 /**
@@ -39,7 +46,10 @@ export async function handleSignup(context: Context): Promise<Response> {
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	const { username, email, password, first_name, last_name, invite_key } = body;
+	const {
+		username, email, password, first_name, last_name, invite_key,
+		utm_source, utm_medium, utm_campaign, utm_term, utm_content, referral_source,
+	} = body;
 
 	// Validate required fields
 	if (!username || !email || !password || !first_name || !last_name || !invite_key) {
@@ -109,12 +119,25 @@ export async function handleSignup(context: Context): Promise<Response> {
 		// Hash password
 		const passwordHash = await hashPassword(password);
 
+		// Build signup metadata (only accept strings, truncate to prevent storage abuse)
+		const MAX_UTM_LENGTH = 500;
+		const sanitize = (val: unknown): string | undefined =>
+			typeof val === 'string' && val ? val.slice(0, MAX_UTM_LENGTH) : undefined;
+
+		const signupMetadata: SignupMetadata = { invite_key: invite_key.trim() };
+		if (utm_source) signupMetadata.utm_source = sanitize(utm_source);
+		if (utm_medium) signupMetadata.utm_medium = sanitize(utm_medium);
+		if (utm_campaign) signupMetadata.utm_campaign = sanitize(utm_campaign);
+		if (utm_term) signupMetadata.utm_term = sanitize(utm_term);
+		if (utm_content) signupMetadata.utm_content = sanitize(utm_content);
+		if (referral_source) signupMetadata.referral_source = sanitize(referral_source);
+
 		// Create user
 		const userResult = await query<User>(
-			`INSERT INTO users (username, first_name, last_name, email, email_verified)
-			 VALUES ($1, $2, $3, $4, false)
+			`INSERT INTO users (username, first_name, last_name, email, email_verified, signup_metadata)
+			 VALUES ($1, $2, $3, $4, false, $5)
 			 RETURNING *`,
-			[username.toLowerCase(), trimmedFirstName, trimmedLastName, email.toLowerCase()]
+			[username.toLowerCase(), trimmedFirstName, trimmedLastName, email.toLowerCase(), JSON.stringify(signupMetadata)]
 		);
 
 		const user = userResult.rows[0];

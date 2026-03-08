@@ -11,7 +11,7 @@
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { hashPassword, validatePassword } from '@specboard/auth';
-import { query, type User } from '@specboard/db';
+import { query, type User, type SignupMetadata } from '@specboard/db';
 import { isValidUUID, isValidEmail, isValidUsername } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
 
@@ -30,10 +30,11 @@ interface UserApiResponse {
 	created_at: string;
 	updated_at: string;
 	deactivated_at: string | null;
+	signup_metadata?: SignupMetadata;
 }
 
-function userToApiResponse(user: User): UserApiResponse {
-	return {
+function userToApiResponse(user: User, includeAdminFields = false): UserApiResponse {
+	const response: UserApiResponse = {
 		id: user.id,
 		username: user.username,
 		email: user.email,
@@ -46,6 +47,10 @@ function userToApiResponse(user: User): UserApiResponse {
 		updated_at: user.updated_at.toISOString(),
 		deactivated_at: user.deactivated_at?.toISOString() ?? null,
 	};
+	if (includeAdminFields) {
+		response.signup_metadata = user.signup_metadata;
+	}
+	return response;
 }
 
 // Valid roles that can be assigned
@@ -153,7 +158,7 @@ export async function handleListUsers(
 		);
 
 		return context.json({
-			users: usersResult.rows.map(userToApiResponse),
+			users: usersResult.rows.map(u => userToApiResponse(u, true)),
 			total,
 			limit: limitNum,
 			offset: offsetNum,
@@ -185,7 +190,7 @@ export async function handleGetUser(
 
 	// Handle "me" as a special case - return current user
 	if (idParam === 'me') {
-		return context.json(userToApiResponse(currentUser));
+		return context.json(userToApiResponse(currentUser, isAdmin(currentUser)));
 	}
 
 	if (!isValidUUID(idParam)) {
@@ -208,7 +213,7 @@ export async function handleGetUser(
 			return context.json({ error: 'User not found' }, 404);
 		}
 
-		return context.json(userToApiResponse(user));
+		return context.json(userToApiResponse(user, isAdmin(currentUser)));
 	} catch (error) {
 		console.error('Failed to get user:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -475,7 +480,7 @@ export async function handleUpdateUser(
 			console.log(`Password set for user ${id} by superadmin ${currentUser.id}`);
 		}
 
-		return context.json(userToApiResponse(user));
+		return context.json(userToApiResponse(user, userIsAdmin));
 	} catch (error) {
 		console.error('Failed to update user:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -580,7 +585,7 @@ export async function handleCreateUser(
 			[user.id, passwordHash]
 		);
 
-		return context.json(userToApiResponse(user), 201);
+		return context.json(userToApiResponse(user, true), 201);
 	} catch (error) {
 		// Handle unique constraint violations (race condition on concurrent creates)
 		const pgError = error as { code?: string };

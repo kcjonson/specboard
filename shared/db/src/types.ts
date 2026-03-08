@@ -23,8 +23,25 @@ export interface User {
 	roles: string[];
 	is_active: boolean;
 	deactivated_at: Date | null;
+	signup_metadata: SignupMetadata;
 	created_at: Date;
 	updated_at: Date;
+}
+
+/**
+ * Typed structure for signup metadata.
+ * Used when building the metadata object at signup time.
+ * The DB column is JSONB so it can hold additional fields beyond these.
+ */
+export interface SignupMetadata {
+	invite_key?: string;
+	referral_source?: string;
+	utm_source?: string;
+	utm_medium?: string;
+	utm_campaign?: string;
+	utm_term?: string;
+	utm_content?: string;
+	[key: string]: unknown;
 }
 
 export interface UserPassword {

@@ -103,6 +103,15 @@ export const signupScript = `(function() {
 	var errorEl = document.getElementById('error');
 	var submitBtn = document.getElementById('submit-btn');
 
+	// Capture UTM and referral parameters from the URL for acquisition tracking
+	var params = new URLSearchParams(window.location.search);
+	var utmFields = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'referral_source'];
+	var utmData = {};
+	utmFields.forEach(function(field) {
+		var val = params.get(field);
+		if (val) utmData[field] = val;
+	});
+
 	function showError(message) {
 		errorEl.textContent = message;
 		errorEl.classList.remove('hidden');
@@ -126,17 +135,20 @@ export const signupScript = `(function() {
 		submitBtn.disabled = true;
 		submitBtn.textContent = 'Creating account...';
 
+		// Merge whitelisted UTM/referral data with form fields (form values take precedence for overlapping keys)
+		var body = Object.assign({}, utmData, {
+			username: username,
+			email: email,
+			password: password,
+			first_name: first_name,
+			last_name: last_name,
+			invite_key: invite_key
+		});
+
 		fetch('/api/auth/signup', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				username: username,
-				email: email,
-				password: password,
-				first_name: first_name,
-				last_name: last_name,
-				invite_key: invite_key
-			}),
+			body: JSON.stringify(body),
 			credentials: 'same-origin'
 		})
 		.then(function(res) {
