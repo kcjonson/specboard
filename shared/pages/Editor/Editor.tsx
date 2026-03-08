@@ -92,7 +92,7 @@ function migrateLocalStorageContent(projectId: string, oldPath: string, newPath:
 }
 
 export function Editor(props: RouteProps): JSX.Element {
-	const projectId = props.params.projectId || 'demo';
+	const projectId = props.params.projectId!;
 
 	// Document model - source of truth for editor content
 	const documentModel = useMemo(() => new DocumentModel(), []);
@@ -710,6 +710,7 @@ export function Editor(props: RouteProps): JSX.Element {
 									<ChatSidebar
 										documentContent={documentContentForChat}
 										documentPath={documentModel.filePath}
+										projectId={projectId}
 										onApplyEdit={handleApplyEdit}
 									/>
 								</ErrorBoundary>

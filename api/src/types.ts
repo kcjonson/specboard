@@ -55,6 +55,7 @@ export interface ApiProject {
 	storageMode: StorageMode;
 	repository: RepositoryConfig | Record<string, never>;
 	rootPaths: string[];
+	systemPrompt?: string;
 	syncStatus: SyncStatus | null;
 	syncError: string | null;
 	createdAt: string;

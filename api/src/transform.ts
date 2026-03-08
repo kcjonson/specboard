@@ -59,6 +59,7 @@ export function projectResponseToApi(project: ProjectResponse): ApiProject {
 		storageMode: project.storageMode,
 		repository: project.repository,
 		rootPaths: project.rootPaths,
+		systemPrompt: project.systemPrompt ?? undefined,
 		syncStatus: project.syncStatus,
 		syncError: project.syncError,
 		createdAt: project.createdAt.toISOString(),

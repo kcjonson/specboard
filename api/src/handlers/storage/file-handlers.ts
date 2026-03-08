@@ -6,6 +6,7 @@ import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { getProject, query } from '@specboard/db';
 import { isValidUUID } from '../../validation.ts';
+import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 import type { FileEntry } from '../../services/storage/types.ts';
 import {
 	getUserId,
@@ -287,6 +288,11 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 		// Create file with default markdown heading
 		await provider.writeFile(filePath, '# Untitled\n\n');
 
+		// Invalidate convention file cache if a convention file was created
+		if (isConventionFile(filePath)) {
+			await invalidateRepoConventions(projectId, userId, redis);
+		}
+
 		return context.json({
 			path: filePath,
 			success: true,
@@ -379,6 +385,11 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Failed to update epic references' }, 500);
 		}
 
+		// Invalidate convention file cache if a convention file was renamed to/from
+		if (isConventionFile(oldPath) || isConventionFile(newPath)) {
+			await invalidateRepoConventions(projectId, userId, redis);
+		}
+
 		return context.json({
 			oldPath,
 			newPath,
@@ -453,6 +464,11 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 			[projectId, filePath]
 		);
 
+		// Invalidate convention file cache if a convention file was deleted
+		if (isConventionFile(filePath)) {
+			await invalidateRepoConventions(projectId, userId, redis);
+		}
+
 		return context.json({
 			path: filePath,
 			success: true,
@@ -514,6 +530,11 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 		}
 
 		await provider.writeFile(filePath, content);
+
+		// Invalidate convention file cache if a convention file was edited
+		if (isConventionFile(filePath)) {
+			await invalidateRepoConventions(projectId, userId, redis);
+		}
 
 		return context.json({
 			path: filePath,

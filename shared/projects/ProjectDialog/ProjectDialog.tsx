@@ -28,7 +28,7 @@ export interface ProjectDialogProps {
 	/** Called when dialog should close */
 	onClose: () => void;
 	/** Called when project is saved (created or updated) */
-	onSave: (data: { name: string; description?: string; repository?: RepositoryConfig }) => Promise<void>;
+	onSave: (data: { name: string; description?: string; systemPrompt?: string; repository?: RepositoryConfig }) => Promise<void>;
 	/** Called when project is deleted (only available in edit mode) */
 	onDelete?: () => Promise<void>;
 }
@@ -42,6 +42,7 @@ export function ProjectDialog({
 	const isEditMode = project !== null;
 	const [name, setName] = useState(project?.name ?? '');
 	const [description, setDescription] = useState(project?.description ?? '');
+	const [systemPrompt, setSystemPrompt] = useState(project?.systemPrompt ?? '');
 	const [saving, setSaving] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -112,6 +113,7 @@ export function ProjectDialog({
 	useEffect(() => {
 		setName(project?.name ?? '');
 		setDescription(project?.description ?? '');
+		setSystemPrompt(project?.systemPrompt ?? '');
 		setShowDeleteConfirm(false);
 		setError(null);
 		setSelectedRepo('');
@@ -126,9 +128,10 @@ export function ProjectDialog({
 			setSaving(true);
 			setError(null);
 
-			const data: { name: string; description?: string; repository?: RepositoryConfig } = {
+			const data: { name: string; description?: string; systemPrompt?: string; repository?: RepositoryConfig } = {
 				name: name.trim(),
 				description: description.trim() || undefined,
+				systemPrompt: systemPrompt.trim(),
 			};
 
 			// Include repository config if selected
@@ -256,6 +259,22 @@ export function ProjectDialog({
 							placeholder="A brief description of your project"
 							rows={3}
 						/>
+					</label>
+				</div>
+
+				<div class={styles.field}>
+					<label class={styles.label}>
+						<span class={styles.labelText}>AI Instructions (optional)</span>
+						<span class={styles.hint}>Custom instructions for the AI assistant when working in this project.</span>
+						<textarea
+							class={styles.textarea}
+							value={systemPrompt}
+							onInput={(e) => setSystemPrompt((e.target as HTMLTextAreaElement).value)}
+							placeholder="e.g., Always respond in bullet points. Use formal tone."
+							rows={4}
+							maxLength={10000}
+						/>
+						<span class={styles.charCount}>{systemPrompt.length} / 10,000</span>
 					</label>
 				</div>
 
