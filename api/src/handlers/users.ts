@@ -11,7 +11,7 @@
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { hashPassword, validatePassword } from '@specboard/auth';
-import { query, type User } from '@specboard/db';
+import { query, type User, type SignupMetadata } from '@specboard/db';
 import { isValidUUID, isValidEmail, isValidUsername } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
 
@@ -30,7 +30,7 @@ interface UserApiResponse {
 	created_at: string;
 	updated_at: string;
 	deactivated_at: string | null;
-	signup_metadata?: Record<string, unknown>;
+	signup_metadata?: SignupMetadata;
 }
 
 function userToApiResponse(user: User, includeAdminFields = false): UserApiResponse {

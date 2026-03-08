@@ -23,7 +23,7 @@ export interface User {
 	roles: string[];
 	is_active: boolean;
 	deactivated_at: Date | null;
-	signup_metadata: Record<string, unknown>;
+	signup_metadata: SignupMetadata;
 	created_at: Date;
 	updated_at: Date;
 }

@@ -103,7 +103,7 @@ export const signupScript = `(function() {
 	var errorEl = document.getElementById('error');
 	var submitBtn = document.getElementById('submit-btn');
 
-	// Capture UTM parameters from the URL for acquisition tracking
+	// Capture UTM and referral parameters from the URL for acquisition tracking
 	var params = new URLSearchParams(window.location.search);
 	var utmFields = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'referral_source'];
 	var utmData = {};
