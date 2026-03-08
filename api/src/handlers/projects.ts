@@ -188,7 +188,7 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 				return context.json({ error: 'System prompt must be 10,000 characters or less' }, 400);
 			}
 			// eslint-disable-next-line no-control-regex
-			sanitizedCreatePrompt = createSystemPrompt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+			sanitizedCreatePrompt = createSystemPrompt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
 		}
 
 		const project = await createProject(userId, {
@@ -262,7 +262,7 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 		// Strip control characters from system_prompt if provided
 		// eslint-disable-next-line no-control-regex
 		const sanitizedSystemPrompt = typeof system_prompt === 'string'
-			? system_prompt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+			? system_prompt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
 			: undefined;
 
 		const project = await updateProject(id, userId, {

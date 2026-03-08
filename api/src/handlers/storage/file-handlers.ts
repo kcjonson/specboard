@@ -290,7 +290,7 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 
 		// Invalidate convention file cache if a convention file was created
 		if (isConventionFile(filePath)) {
-			await invalidateRepoConventions(projectId, redis);
+			await invalidateRepoConventions(projectId, userId, redis);
 		}
 
 		return context.json({
@@ -387,7 +387,7 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 
 		// Invalidate convention file cache if a convention file was renamed to/from
 		if (isConventionFile(oldPath) || isConventionFile(newPath)) {
-			await invalidateRepoConventions(projectId, redis);
+			await invalidateRepoConventions(projectId, userId, redis);
 		}
 
 		return context.json({
@@ -466,7 +466,7 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 
 		// Invalidate convention file cache if a convention file was deleted
 		if (isConventionFile(filePath)) {
-			await invalidateRepoConventions(projectId, redis);
+			await invalidateRepoConventions(projectId, userId, redis);
 		}
 
 		return context.json({
@@ -533,7 +533,7 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 
 		// Invalidate convention file cache if a convention file was edited
 		if (isConventionFile(filePath)) {
-			await invalidateRepoConventions(projectId, redis);
+			await invalidateRepoConventions(projectId, userId, redis);
 		}
 
 		return context.json({

@@ -173,7 +173,7 @@ export async function createProject(
 			`INSERT INTO projects (name, description, owner_id, storage_mode, repository, root_paths, system_prompt)
 			 VALUES ($1, $2, $3, 'cloud', $4, $5, $6)
 			 RETURNING *`,
-			[data.name, data.description || null, userId, JSON.stringify(repoConfig), JSON.stringify(['/']), data.systemPrompt || null]
+			[data.name, data.description || null, userId, JSON.stringify(repoConfig), JSON.stringify(['/']), data.systemPrompt || null]  // Empty string or undefined → NULL in DB
 		);
 
 		return transformProject(result.rows[0]!);
@@ -184,7 +184,7 @@ export async function createProject(
 		`INSERT INTO projects (name, description, owner_id, system_prompt)
 		 VALUES ($1, $2, $3, $4)
 		 RETURNING *`,
-		[data.name, data.description || null, userId, data.systemPrompt || null]
+		[data.name, data.description || null, userId, data.systemPrompt || null]  // Empty string or undefined → NULL in DB
 	);
 
 	return transformProject(result.rows[0]!);
@@ -218,7 +218,7 @@ export async function updateProject(
 	}
 	if (data.systemPrompt !== undefined) {
 		updates.push(`system_prompt = $${paramIndex++}`);
-		values.push(data.systemPrompt || null);
+		values.push(data.systemPrompt || null);  // Empty string or undefined → NULL in DB
 	}
 
 	if (updates.length === 0) {

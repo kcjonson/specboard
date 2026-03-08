@@ -8,7 +8,7 @@ import { isValidUUID } from '../../validation.ts';
 import { getUserId, getStorageProvider } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
 import { getProject, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
-import { invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
+import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 
 /**
  * GET /api/projects/:id/git/status
@@ -273,6 +273,11 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 
 		await provider.restore(filePath);
 
+		// Invalidate convention file cache if a convention file was restored
+		if (isConventionFile(filePath)) {
+			await invalidateRepoConventions(projectId, userId, redis);
+		}
+
 		return context.json({
 			success: true,
 			path: filePath,
@@ -343,7 +348,7 @@ export async function handlePull(context: Context, redis: Redis): Promise<Respon
 		}
 
 		// Invalidate cached repo conventions after successful pull
-		await invalidateRepoConventions(projectId, redis);
+		await invalidateRepoConventions(projectId, userId, redis);
 
 		return context.json({
 			success: true,

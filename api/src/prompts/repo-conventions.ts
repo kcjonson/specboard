@@ -15,12 +15,13 @@ const CACHE_KEY_SUFFIX = ':repo-prompt';
 const CACHE_TTL_SECONDS = 300; // 5 minutes
 const EMPTY_SENTINEL_TTL_SECONDS = 120; // 2 minutes for "no files found"
 const MAX_CONTENT_LENGTH = 20_000;
+const MAX_SINGLE_FILE_LENGTH = 10_000; // Per-file limit (half of total budget)
 const EMPTY_SENTINEL = '__EMPTY__';
 
 const CONVENTION_FILES = ['CLAUDE.md', 'AGENT.md'];
 
-function cacheKey(projectId: string): string {
-	return `${CACHE_KEY_PREFIX}${projectId}${CACHE_KEY_SUFFIX}`;
+function cacheKey(projectId: string, userId: string): string {
+	return `${CACHE_KEY_PREFIX}${projectId}:${userId}${CACHE_KEY_SUFFIX}`;
 }
 
 /**
@@ -38,9 +39,14 @@ export function isConventionFile(filePath: string): boolean {
  */
 async function readConventionFile(provider: StorageProvider, filename: string): Promise<string | null> {
 	try {
-		const content = await provider.readFile(`/${filename}`);
-		const trimmed = content.trim();
-		return trimmed || null;
+		let content = await provider.readFile(`/${filename}`);
+		content = content.trim();
+		if (!content) return null;
+		// Truncate per file to prevent split-injection across multiple files
+		if (content.length > MAX_SINGLE_FILE_LENGTH) {
+			content = content.slice(0, MAX_SINGLE_FILE_LENGTH);
+		}
+		return content;
 	} catch {
 		return null;
 	}
@@ -63,7 +69,7 @@ export async function readRepoConventions(
 	redis: Redis,
 	existingProvider?: StorageProvider | null
 ): Promise<string | null> {
-	const key = cacheKey(projectId);
+	const key = cacheKey(projectId, userId);
 
 	// Check cache first (graceful on Redis failure)
 	try {
@@ -107,7 +113,7 @@ export async function readRepoConventions(
 	// Concatenate, strip control characters, and truncate
 	let result = contents.join('\n---\n');
 	// eslint-disable-next-line no-control-regex
-	result = result.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+	result = result.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
 	if (result.length > MAX_CONTENT_LENGTH) {
 		result = result.slice(0, MAX_CONTENT_LENGTH);
 	}
@@ -126,10 +132,11 @@ export async function readRepoConventions(
  */
 export async function invalidateRepoConventions(
 	projectId: string,
+	userId: string,
 	redis: Redis
 ): Promise<void> {
 	try {
-		await redis.del(cacheKey(projectId));
+		await redis.del(cacheKey(projectId, userId));
 	} catch {
 		// Redis unavailable — cache will expire via TTL
 	}
