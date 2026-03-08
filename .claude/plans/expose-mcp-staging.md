@@ -1,3 +1,5 @@
+# COMPLETE - 2026-02-25
+
 # Expose MCP Service at staging.specboard.io
 
 ## Overview

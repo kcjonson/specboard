@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-02-25 (Production email setup in progress)
+Last Updated: 2026-03-07 (Doc cleanup: reorganized epics into correct sections)
 
 ## Epic/Story/Task Template
 
@@ -26,6 +26,32 @@ Use this template for all work items:
 ---
 
 ## Recently Completed Epics (Last 4)
+
+### ✅ Expose MCP at Staging
+**Spec/Documentation:** `.claude/plans/expose-mcp-staging.md`
+**Dependencies:** MCP Server
+**Status:** complete
+
+**Goal:** Expose MCP server through ALB with OAuth authentication for Claude Code access.
+
+**Tasks:**
+- [x] Convert MCP to Hono framework
+  - [x] Add hono, @hono/node-server dependencies
+  - [x] Rewrite index.ts with Hono app
+  - [x] Integrate mcpAuthMiddleware from @specboard/auth
+- [x] Infrastructure changes (CDK)
+  - [x] Add MCP target group with health check
+  - [x] Add ALB listener rule for /mcp paths (priority 40)
+  - [x] Add security group rule: ALB → MCP on port 3002
+  - [x] Capture mcpService reference for target group attachment
+- [x] UI updates
+  - [x] Rename "Authorized Apps" to "Authorized MCP Sessions"
+- [x] Fix Dockerfile to include @specboard/auth
+- [x] Verification
+  - [x] Test locally with docker compose
+  - [x] Deploy to staging
+
+---
 
 ### ✅ GitHub Commit for Cloud Projects
 **Spec/Documentation:** `.claude/plans/github-commit-cloud.md`
@@ -91,50 +117,37 @@ Use this template for all work items:
 
 ---
 
-### ✅ AI Chat Sidebar
-**Spec/Documentation:** `.claude/plans/ai-chat-sidebar.md`, `.claude/plans/gemini-integration.md`, `docs/setup.md`
-**Dependencies:** Markdown Editor, Authentication System
+### ✅ MCP Server
+**Spec/Documentation:** `/docs/specs/mcp-integration.md`, `/docs/specs/mcp-claude-workflow.md`
+**Dependencies:** REST API & Database
 **Status:** complete
 
-**Tasks:**
-- [x] Database & Encryption
-  - [x] Create AES-256-GCM encryption utilities in @specboard/auth
-  - [x] Database migration for user_api_keys table
-  - [x] Add UserApiKey type to shared/db
-- [x] Backend API
-  - [x] API key CRUD endpoints (list, create, delete, validate)
-  - [x] Chat streaming endpoint with SSE
-  - [x] Install Anthropic SDK
-- [x] Settings UI
-  - [x] ApiKeys component (list, add dialog, delete)
-  - [x] Integrate into UserSettings page
-- [x] Chat Sidebar
-  - [x] ChatSidebar component with message list and input
-  - [x] ChatMessage component with streaming support
-  - [x] Integrate into Editor with toggle button
-- [x] Environment & Deployment
-  - [x] Add API_KEY_ENCRYPTION_KEY to dev environment (docker-compose.override.yml)
-  - [x] Add encryption key secret to CDK/Secrets Manager
-  - [x] Create local development setup documentation
-- [x] Multi-Provider Support (2026-01-09)
-  - [x] Provider abstraction layer (api/src/providers/)
-  - [x] Anthropic provider with model selection
-  - [x] Google Gemini provider (free tier)
-  - [x] Model selector dropdown in chat sidebar
-  - [x] Test button for API keys in settings
-  - [x] GET /api/chat/models and /api/chat/providers endpoints
-
----
-
-### ✅ Admin User Management
-**Spec/Documentation:** `api/src/handlers/users.ts`, `web/src/routes/settings/UserManagement.tsx`
-**Status:** complete
+**Goal:** Build MCP server for Claude Code integration with planning system.
 
 **Tasks:**
-- [x] Database schema (roles array, is_active, deactivated_at on users)
-- [x] Unified /api/users endpoints with role-based permissions
-- [x] UserManagement component in settings page
-- [x] Password reset flow (admins use standard forgot-password flow)
+- [x] MCP server v1 (direct DB access)
+  - [x] Epic tools (get_ready_epics, get_epic, get_current_work)
+  - [x] Task tools (create, update, start/complete/block/unblock)
+  - [x] Progress tools (add_progress_note, signal_ready_for_review)
+  - [x] Shared service layer in @specboard/db
+  - [x] Streamable HTTP transport on port 3002
+  - [x] Docker container with DATABASE_URL
+- [x] Project-scoped APIs
+  - [x] All routes use /api/projects/:projectId/...
+  - [x] Project ID required for all MCP tools
+- [x] CI/CD
+  - [x] MCP Docker build in CI
+  - [x] MCP ECR repo and Fargate service in infra
+  - [x] CD workflow for MCP deployment
+- [x] MCP OAuth 2.1 + PKCE
+  - [x] OAuth metadata, authorization, and token endpoints
+  - [x] PKCE validation and token refresh
+  - [x] MCP auth middleware
+- [x] Authorized Apps UI
+  - [x] Authorizations API endpoints
+  - [x] Settings page section with revoke dialog
+
+**Note:** Document tools and CLI tool are v2 features, tracked separately.
 
 ---
 
@@ -170,33 +183,6 @@ Use this template for all work items:
   - [ ] Test password reset email in staging
   - [ ] Test signup + verification email in production
   - [ ] Test password reset email in production
-
----
-
-### Expose MCP at Staging
-**Spec/Documentation:** `.claude/plans/expose-mcp-staging.md`
-**Dependencies:** MCP Server
-**Status:** in progress
-
-**Goal:** Expose MCP server through ALB with OAuth authentication for Claude Code access.
-
-**Tasks:**
-- [x] Convert MCP to Hono framework
-  - [x] Add hono, @hono/node-server dependencies
-  - [x] Rewrite index.ts with Hono app
-  - [x] Integrate mcpAuthMiddleware from @specboard/auth
-- [x] Infrastructure changes (CDK)
-  - [x] Add MCP target group with health check
-  - [x] Add ALB listener rule for /mcp paths (priority 40)
-  - [x] Add security group rule: ALB → MCP on port 3002
-  - [x] Capture mcpService reference for target group attachment
-- [x] UI updates
-  - [x] Rename "Authorized Apps" to "Authorized MCP Sessions"
-- [x] Fix Dockerfile to include @specboard/auth
-- [x] Verification
-  - [x] Test locally with docker compose
-  - [x] Deploy to staging
-  - [ ] Connect Claude Code to staging MCP
 
 ---
 
@@ -283,32 +269,6 @@ Use this template for all work items:
 
 ---
 
-## Planned Epics
-
-### Platform Abstraction Layer
-**Spec/Documentation:** `/docs/specs/platform-abstraction.md`
-**Dependencies:** Monorepo Scaffolding
-**Status:** ready
-
-**Goal:** Create interfaces for FileSystem, Git, and System that work on both Electron and Web.
-
-**Tasks:**
-- [ ] Define interfaces
-  - [ ] FileSystem interface
-  - [ ] Git interface
-  - [ ] System interface
-- [ ] Electron implementations
-  - [ ] Node.js fs for FileSystem
-  - [ ] Git CLI wrapper
-  - [ ] Electron dialog/shell APIs
-- [ ] Web implementations
-  - [ ] REST API client for FileSystem
-  - [ ] REST API client for Git
-  - [ ] Browser APIs for System
-- [ ] Preact provider
-
----
-
 ### File Tree & Command Palette
 **Spec/Documentation:** `/docs/specs/file-tree-command-palette.md`
 **Dependencies:** Project Storage & Git Integration
@@ -363,37 +323,29 @@ Use this template for all work items:
 
 ---
 
-### MCP Server
-**Spec/Documentation:** `/docs/specs/mcp-integration.md`, `/docs/specs/mcp-claude-workflow.md`
-**Dependencies:** REST API & Database
-**Status:** complete
+## Planned Epics
 
-**Goal:** Build MCP server for Claude Code integration with planning system.
+### Platform Abstraction Layer
+**Spec/Documentation:** `/docs/specs/platform-abstraction.md`
+**Dependencies:** Monorepo Scaffolding
+**Status:** ready
+
+**Goal:** Create interfaces for FileSystem, Git, and System that work on both Electron and Web.
 
 **Tasks:**
-- [x] MCP server v1 (direct DB access)
-  - [x] Epic tools (get_ready_epics, get_epic, get_current_work)
-  - [x] Task tools (create, update, start/complete/block/unblock)
-  - [x] Progress tools (add_progress_note, signal_ready_for_review)
-  - [x] Shared service layer in @specboard/db
-  - [x] Streamable HTTP transport on port 3002
-  - [x] Docker container with DATABASE_URL
-- [x] Project-scoped APIs
-  - [x] All routes use /api/projects/:projectId/...
-  - [x] Project ID required for all MCP tools
-- [x] CI/CD
-  - [x] MCP Docker build in CI
-  - [x] MCP ECR repo and Fargate service in infra
-  - [x] CD workflow for MCP deployment
-- [x] MCP OAuth 2.1 + PKCE
-  - [x] OAuth metadata, authorization, and token endpoints
-  - [x] PKCE validation and token refresh
-  - [x] MCP auth middleware
-- [x] Authorized Apps UI
-  - [x] Authorizations API endpoints
-  - [x] Settings page section with revoke dialog
-
-**Note:** Document tools and CLI tool are v2 features, tracked separately.
+- [ ] Define interfaces
+  - [ ] FileSystem interface
+  - [ ] Git interface
+  - [ ] System interface
+- [ ] Electron implementations
+  - [ ] Node.js fs for FileSystem
+  - [ ] Git CLI wrapper
+  - [ ] Electron dialog/shell APIs
+- [ ] Web implementations
+  - [ ] REST API client for FileSystem
+  - [ ] REST API client for Git
+  - [ ] Browser APIs for System
+- [ ] Preact provider
 
 ---
 
