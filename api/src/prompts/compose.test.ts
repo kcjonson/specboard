@@ -78,13 +78,21 @@ function createUser(data: CreateUserInput): Promise<User> {
 		expect(result).not.toContain('<document');
 	});
 
-	it('sanitizes document path by stripping control characters', () => {
+	it('sanitizes document path by stripping control characters and delimiter chars', () => {
 		const result = composeSystemPrompt({
 			documentPath: '/docs/test\x00\x01file.md',
 			documentContent: 'content',
 		});
 		expect(result).toContain('path="/docs/testfile.md"');
 		expect(result).not.toContain('\x00');
+
+		// Also strips quotes and angle brackets to prevent delimiter breakout
+		const result2 = composeSystemPrompt({
+			documentPath: '/docs/test"<script>file.md',
+			documentContent: 'content',
+		});
+		expect(result2).toContain('path="/docs/testscriptfile.md"');
+		expect(result2).not.toContain('"<script>');
 	});
 
 	it('truncates long document paths', () => {

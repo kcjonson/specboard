@@ -84,7 +84,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				// Edit mode
 				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.id}`, apiData);
 				setProjects((prev) =>
-					prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+					prev.map((p) => (p.id === updated.id ? { ...updated } : p))
 				);
 				// Update cookie if this is the current project
 				if (getCookie('lastProjectId') === updated.id) {

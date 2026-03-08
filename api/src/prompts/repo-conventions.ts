@@ -2,7 +2,8 @@
  * Auto-read convention files (CLAUDE.md, AGENT.md) from project repositories
  *
  * Reads convention files from the repo root and caches them in Redis.
- * Cache is invalidated on pull/sync operations and file edits.
+ * Cache is invalidated on local pull operations and convention file edits.
+ * Cloud sync relies on TTL-based expiry to avoid race conditions.
  */
 
 import type { Redis } from 'ioredis';

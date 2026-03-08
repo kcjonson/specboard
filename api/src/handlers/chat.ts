@@ -143,10 +143,12 @@ export async function handleChat(
 	let repoConventions: string | null = null;
 	if (project_id) {
 		const project = await getProject(project_id, session.userId);
-		if (project?.systemPrompt) {
-			projectPrompt = project.systemPrompt;
+		if (project) {
+			if (project.systemPrompt) {
+				projectPrompt = project.systemPrompt;
+			}
+			repoConventions = await readRepoConventions(project_id, session.userId, redis);
 		}
-		repoConventions = await readRepoConventions(project_id, session.userId, redis);
 	}
 
 	// Build messages array

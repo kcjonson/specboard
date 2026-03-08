@@ -52,7 +52,7 @@ export function composeSystemPrompt(options: ComposeOptions): string {
 	if (documentPath && documentContent) {
 		// Sanitize path to prevent injection (limit length, remove control chars)
 		// eslint-disable-next-line no-control-regex
-		const safePath = documentPath.slice(0, 500).replace(/[\x00-\x1f]/g, '');
+		const safePath = documentPath.slice(0, 500).replace(/[\x00-\x1f"<>]/g, '');
 
 		prompt += `
 
