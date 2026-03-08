@@ -101,7 +101,7 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 
 	try {
 		const body = await context.req.json();
-		const { name, description, repository } = body;
+		const { name, description, repository, system_prompt: createSystemPrompt } = body;
 
 		if (!name || typeof name !== 'string') {
 			return context.json({ error: 'Name is required' }, 400);
@@ -178,9 +178,23 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 			};
 		}
 
+		// Validate and sanitize system_prompt for create
+		let sanitizedCreatePrompt: string | undefined;
+		if (createSystemPrompt !== undefined && createSystemPrompt !== null) {
+			if (typeof createSystemPrompt !== 'string') {
+				return context.json({ error: 'System prompt must be a string' }, 400);
+			}
+			if (createSystemPrompt.length > 10000) {
+				return context.json({ error: 'System prompt must be 10,000 characters or less' }, 400);
+			}
+			// eslint-disable-next-line no-control-regex
+			sanitizedCreatePrompt = createSystemPrompt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+		}
+
 		const project = await createProject(userId, {
 			name,
 			description: description || undefined,
+			systemPrompt: sanitizedCreatePrompt,
 			repository: validatedRepository,
 		});
 
@@ -212,7 +226,7 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 
 	try {
 		const body = await context.req.json();
-		const { name, description } = body;
+		const { name, description, system_prompt } = body;
 
 		if (name !== undefined && (typeof name !== 'string' || !isValidTitle(name))) {
 			return context.json(
@@ -235,9 +249,26 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 			);
 		}
 
+		// Validate system_prompt
+		if (system_prompt !== undefined && system_prompt !== null) {
+			if (typeof system_prompt !== 'string') {
+				return context.json({ error: 'System prompt must be a string' }, 400);
+			}
+			if (system_prompt.length > 10000) {
+				return context.json({ error: 'System prompt must be 10,000 characters or less' }, 400);
+			}
+		}
+
+		// Strip control characters from system_prompt if provided
+		// eslint-disable-next-line no-control-regex
+		const sanitizedSystemPrompt = typeof system_prompt === 'string'
+			? system_prompt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+			: undefined;
+
 		const project = await updateProject(id, userId, {
 			name,
 			description,
+			systemPrompt: sanitizedSystemPrompt,
 		});
 
 		if (!project) {

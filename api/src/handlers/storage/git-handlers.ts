@@ -8,6 +8,7 @@ import { isValidUUID } from '../../validation.ts';
 import { getUserId, getStorageProvider } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
 import { getProject, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
+import { invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 
 /**
  * GET /api/projects/:id/git/status
@@ -340,6 +341,9 @@ export async function handlePull(context: Context, redis: Redis): Promise<Respon
 				error: 'Pull failed',
 			});
 		}
+
+		// Invalidate cached repo conventions after successful pull
+		await invalidateRepoConventions(projectId, redis);
 
 		return context.json({
 			success: true,

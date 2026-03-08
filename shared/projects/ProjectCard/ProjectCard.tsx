@@ -27,6 +27,7 @@ export interface Project {
 	id: string;
 	name: string;
 	description?: string;
+	systemPrompt?: string;
 	epicCount: number;
 	epicCounts?: EpicCounts;
 	repository?: RepositoryConfigCloud | Record<string, never>;

@@ -15,6 +15,7 @@ const STREAMING_THROTTLE_MS = 50;
 export interface UseChatStreamOptions {
 	documentContent?: string;
 	documentPath?: string;
+	projectId?: string;
 	selectedModel: string;
 	inputRef: RefObject<HTMLTextAreaElement>;
 }
@@ -37,6 +38,7 @@ export interface UseChatStreamReturn {
 export function useChatStream({
 	documentContent,
 	documentPath,
+	projectId,
 	selectedModel,
 	inputRef,
 }: UseChatStreamOptions): UseChatStreamReturn {
@@ -156,6 +158,7 @@ export function useChatStream({
 					message: trimmedInput,
 					document_content: documentContent,
 					document_path: documentPath,
+					project_id: projectId,
 					conversation_history: conversationHistory,
 					provider: modelSelection.provider,
 					model: modelSelection.model,
@@ -252,7 +255,7 @@ export function useChatStream({
 			currentAssistantIdRef.current = null;
 			pendingContentRef.current = '';
 		}
-	}, [input, isStreaming, selectedModel, messages, documentContent, documentPath, inputRef, flushPendingContent]);
+	}, [input, isStreaming, selectedModel, messages, documentContent, documentPath, projectId, inputRef, flushPendingContent]);
 
 	const handleKeyDown = useCallback((e: KeyboardEvent): void => {
 		if (e.key === 'Enter' && !e.shiftKey) {

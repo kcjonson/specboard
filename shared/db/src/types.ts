@@ -134,6 +134,7 @@ export interface Project {
 	storage_mode: StorageMode;
 	repository: RepositoryConfig | Record<string, never>;
 	root_paths: string[];
+	system_prompt: string | null;
 	last_synced_commit_sha: string | null;
 	sync_status: SyncStatus | null;
 	sync_started_at: Date | null;

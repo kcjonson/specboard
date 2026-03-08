@@ -20,6 +20,7 @@ export interface ProjectResponse {
 	storageMode: StorageMode;
 	repository: RepositoryConfig | Record<string, never>;
 	rootPaths: string[];
+	systemPrompt: string | null;
 	syncStatus: SyncStatus | null;
 	syncError: string | null;
 	createdAt: Date;
@@ -51,6 +52,7 @@ function transformProject(project: Project): ProjectResponse {
 		storageMode: project.storage_mode,
 		repository: project.repository,
 		rootPaths: project.root_paths,
+		systemPrompt: project.system_prompt,
 		syncStatus: project.sync_status,
 		syncError: project.sync_error,
 		createdAt: project.created_at,
@@ -146,6 +148,7 @@ export interface RepositoryConfigInput {
 export interface CreateProjectInput {
 	name: string;
 	description?: string;
+	systemPrompt?: string;
 	repository?: RepositoryConfigInput;
 }
 
@@ -167,10 +170,10 @@ export async function createProject(
 		};
 
 		const result = await query<Project>(
-			`INSERT INTO projects (name, description, owner_id, storage_mode, repository, root_paths)
-			 VALUES ($1, $2, $3, 'cloud', $4, $5)
+			`INSERT INTO projects (name, description, owner_id, storage_mode, repository, root_paths, system_prompt)
+			 VALUES ($1, $2, $3, 'cloud', $4, $5, $6)
 			 RETURNING *`,
-			[data.name, data.description || null, userId, JSON.stringify(repoConfig), JSON.stringify(['/'])]
+			[data.name, data.description || null, userId, JSON.stringify(repoConfig), JSON.stringify(['/']), data.systemPrompt || null]
 		);
 
 		return transformProject(result.rows[0]!);
@@ -178,10 +181,10 @@ export async function createProject(
 
 	// No repository - create with default storage_mode 'none'
 	const result = await query<Project>(
-		`INSERT INTO projects (name, description, owner_id)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO projects (name, description, owner_id, system_prompt)
+		 VALUES ($1, $2, $3, $4)
 		 RETURNING *`,
-		[data.name, data.description || null, userId]
+		[data.name, data.description || null, userId, data.systemPrompt || null]
 	);
 
 	return transformProject(result.rows[0]!);
@@ -193,6 +196,7 @@ export async function createProject(
 export interface UpdateProjectInput {
 	name?: string;
 	description?: string;
+	systemPrompt?: string;
 }
 
 export async function updateProject(
@@ -211,6 +215,10 @@ export async function updateProject(
 	if (data.description !== undefined) {
 		updates.push(`description = $${paramIndex++}`);
 		values.push(data.description || null);
+	}
+	if (data.systemPrompt !== undefined) {
+		updates.push(`system_prompt = $${paramIndex++}`);
+		values.push(data.systemPrompt || null);
 	}
 
 	if (updates.length === 0) {

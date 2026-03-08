@@ -55,11 +55,19 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		setDialogProject(null);
 	}
 
-	async function handleSaveProject(data: { name: string; description?: string; repository?: RepositoryConfig }): Promise<void> {
+	async function handleSaveProject(data: { name: string; description?: string; systemPrompt?: string; repository?: RepositoryConfig }): Promise<void> {
 		try {
+			// Map systemPrompt to system_prompt for API
+			const apiData = {
+				name: data.name,
+				description: data.description,
+				system_prompt: data.systemPrompt,
+				repository: data.repository,
+			};
+
 			if (dialogProject === undefined) {
 				// Create mode
-				const project = await fetchClient.post<Project>('/api/projects', data);
+				const project = await fetchClient.post<Project>('/api/projects', apiData);
 				setProjects((prev) => [project, ...prev]);
 				setDialogProject(null);
 
@@ -74,7 +82,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				}
 			} else if (dialogProject) {
 				// Edit mode
-				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.id}`, data);
+				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.id}`, apiData);
 				setProjects((prev) =>
 					prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
 				);
