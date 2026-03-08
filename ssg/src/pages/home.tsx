@@ -185,13 +185,15 @@ export function HomeContent(): JSX.Element {
 								<line x1="16" y1="17" x2="8" y2="17"></line>
 							</svg>
 						</div>
-						<h3>For Product People</h3>
-						<ul>
-							<li>Write requirements that agents can actually read</li>
-							<li>See what's being worked on and what's done</li>
-							<li>Stay in control—agents can't close epics without you</li>
-							<li>No more "that's not what I meant in the spec"</li>
-						</ul>
+						<div>
+							<h3>For Product People</h3>
+							<ul>
+								<li>Write requirements that agents can actually read</li>
+								<li>See what's being worked on and what's done</li>
+								<li>Stay in control—agents can't close epics without you</li>
+								<li>No more "that's not what I meant in the spec"</li>
+							</ul>
+						</div>
 					</div>
 					<div class="audience-card">
 						<div class="audience-icon">
@@ -200,13 +202,15 @@ export function HomeContent(): JSX.Element {
 								<polyline points="8 6 2 12 8 18"></polyline>
 							</svg>
 						</div>
-						<h3>For Developers</h3>
-						<ul>
-							<li>Get specs your AI agents can query directly</li>
-							<li>Stop copy-pasting context into every session</li>
-							<li>Let agents ask "what are the requirements?" and get a real answer</li>
-							<li>No more translating between PM-speak and agent prompts</li>
-						</ul>
+						<div>
+							<h3>For Developers</h3>
+							<ul>
+								<li>Get specs your AI agents can query directly</li>
+								<li>Stop copy-pasting context into every session</li>
+								<li>Let agents ask "what are the requirements?" and get a real answer</li>
+								<li>No more translating between PM-speak and agent prompts</li>
+							</ul>
+						</div>
 					</div>
 				</div>
 				<p class="audience-note">
@@ -227,9 +231,11 @@ export function HomeContent(): JSX.Element {
 								<line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
 							</svg>
 						</div>
-						<h3>Scattered context</h3>
-						<p>Requirements in Notion, tasks in Jira, specs in Google Docs. Product people
-						write detailed specs that never reach the agent intact.</p>
+						<div>
+							<h3>Scattered context</h3>
+							<p>Requirements in Notion, tasks in Jira, specs in Google Docs. Product people
+							write detailed specs that never reach the agent intact.</p>
+						</div>
 					</div>
 					<div class="problem-card">
 						<div class="problem-icon">
@@ -239,9 +245,11 @@ export function HomeContent(): JSX.Element {
 								<line x1="12" y1="12" x2="12" y2="12"></line>
 							</svg>
 						</div>
-						<h3>The telephone game</h3>
-						<p>Product writes spec → Dev interprets → Dev prompts agent → Agent guesses.
-						By the time context reaches the AI, half of it is gone.</p>
+						<div>
+							<h3>The telephone game</h3>
+							<p>Product writes spec → Dev interprets → Dev prompts agent → Agent guesses.
+							By the time context reaches the AI, half of it is gone.</p>
+						</div>
 					</div>
 					<div class="problem-card">
 						<div class="problem-icon">
@@ -251,9 +259,11 @@ export function HomeContent(): JSX.Element {
 								<line x1="12" y1="22.08" x2="12" y2="12"></line>
 							</svg>
 						</div>
-						<h3>Scale breaks everything</h3>
-						<p>Full products have hundreds of requirement files. Too many to dump into a
-						prompt. No structure to know which docs matter for which task.</p>
+						<div>
+							<h3>Scale breaks everything</h3>
+							<p>Full products have hundreds of requirement files. Too many to dump into a
+							prompt. No structure to know which docs matter for which task.</p>
+						</div>
 					</div>
 					<div class="problem-card">
 						<div class="problem-icon">
@@ -263,9 +273,11 @@ export function HomeContent(): JSX.Element {
 								<line x1="6" y1="6" x2="18" y2="18"></line>
 							</svg>
 						</div>
-						<h3>Links break as you iterate</h3>
-						<p>Plans evolve, specs update, requirements shift. The connections between
-						sessions, plans, and requirements drift apart.</p>
+						<div>
+							<h3>Links break as you iterate</h3>
+							<p>Plans evolve, specs update, requirements shift. The connections between
+							sessions, plans, and requirements drift apart.</p>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -283,9 +295,11 @@ export function HomeContent(): JSX.Element {
 								<line x1="16" y1="17" x2="8" y2="17"></line>
 							</svg>
 						</div>
-						<h3>Requirements agents can read</h3>
-						<p>Git-backed Markdown documentation. True <code>.md</code> files, not
-						proprietary blocks. Version history through Git.</p>
+						<div>
+							<h3>Requirements agents can read</h3>
+							<p>Git-backed Markdown documentation. True <code>.md</code> files, not
+							proprietary blocks. Version history through Git.</p>
+						</div>
 					</div>
 					<div class="pillar-card">
 						<div class="pillar-icon">
@@ -296,9 +310,11 @@ export function HomeContent(): JSX.Element {
 								<rect x="3" y="14" width="7" height="7"></rect>
 							</svg>
 						</div>
-						<h3>Priorities agents can query</h3>
-						<p>Simple kanban: Ready → In Progress → Done. Drag to rank.
-						Agents ask "what should I work on?" and get a real answer.</p>
+						<div>
+							<h3>Priorities agents can query</h3>
+							<p>Simple kanban: Ready → In Progress → Done. Drag to rank.
+							Agents ask "what should I work on?" and get a real answer.</p>
+						</div>
 					</div>
 					<div class="pillar-card">
 						<div class="pillar-icon">
@@ -307,9 +323,11 @@ export function HomeContent(): JSX.Element {
 								<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
 							</svg>
 						</div>
-						<h3>Structured linking</h3>
-						<p>Tasks link to their relevant requirement docs. Agent picks up a task
-						→ gets the <em>right</em> context, not <em>all</em> context.</p>
+						<div>
+							<h3>Structured linking</h3>
+							<p>Tasks link to their relevant requirement docs. Agent picks up a task
+							→ gets the <em>right</em> context, not <em>all</em> context.</p>
+						</div>
 					</div>
 					<div class="pillar-card">
 						<div class="pillar-icon">
@@ -319,9 +337,11 @@ export function HomeContent(): JSX.Element {
 								<path d="M2 12l10 5 10-5"></path>
 							</svg>
 						</div>
-						<h3>MCP that just works</h3>
-						<p>Native MCP server included. Works with any MCP-compatible agent.
-						Query docs, query tasks, update progress.</p>
+						<div>
+							<h3>MCP that just works</h3>
+							<p>Native MCP server included. Works with any MCP-compatible agent.
+							Query docs, query tasks, update progress.</p>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -426,8 +446,10 @@ export function HomeContent(): JSX.Element {
 								<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
 							</svg>
 						</div>
-						<h3>Product people write specs</h3>
-						<p>They define what gets built.</p>
+						<div>
+							<h3>Product people write specs</h3>
+							<p>They define what gets built.</p>
+						</div>
 					</div>
 					<div class="control-point">
 						<div class="control-icon">
@@ -440,8 +462,10 @@ export function HomeContent(): JSX.Element {
 								<line x1="3" y1="18" x2="3.01" y2="18"></line>
 							</svg>
 						</div>
-						<h3>Product people set priorities</h3>
-						<p>They decide what matters most.</p>
+						<div>
+							<h3>Product people set priorities</h3>
+							<p>They decide what matters most.</p>
+						</div>
 					</div>
 					<div class="control-point">
 						<div class="control-icon">
@@ -449,8 +473,10 @@ export function HomeContent(): JSX.Element {
 								<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
 							</svg>
 						</div>
-						<h3>Agents propose work</h3>
-						<p>They create subtasks and submit PRs.</p>
+						<div>
+							<h3>Agents propose work</h3>
+							<p>They create subtasks and submit PRs.</p>
+						</div>
 					</div>
 					<div class="control-point">
 						<div class="control-icon">
@@ -459,8 +485,10 @@ export function HomeContent(): JSX.Element {
 								<path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
 							</svg>
 						</div>
-						<h3>Humans approve completion</h3>
-						<p>Agents can't mark epics "done."</p>
+						<div>
+							<h3>Humans approve completion</h3>
+							<p>Agents can't mark epics "done."</p>
+						</div>
 					</div>
 					<div class="control-point">
 						<div class="control-icon">
@@ -469,8 +497,10 @@ export function HomeContent(): JSX.Element {
 								<circle cx="12" cy="12" r="3"></circle>
 							</svg>
 						</div>
-						<h3>Everyone sees the same context</h3>
-						<p>No more "that's not what I meant."</p>
+						<div>
+							<h3>Everyone sees the same context</h3>
+							<p>No more "that's not what I meant."</p>
+						</div>
 					</div>
 					<div class="control-point">
 						<div class="control-icon">
@@ -480,8 +510,10 @@ export function HomeContent(): JSX.Element {
 								<line x1="17.01" y1="12" x2="22.96" y2="12"></line>
 							</svg>
 						</div>
-						<h3>Git-backed everything</h3>
-						<p>Full history, portable, no lock-in.</p>
+						<div>
+							<h3>Git-backed everything</h3>
+							<p>Full history, portable, no lock-in.</p>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -524,8 +556,10 @@ export function HomeContent(): JSX.Element {
 								<line x1="17.01" y1="12" x2="22.96" y2="12"></line>
 							</svg>
 						</div>
-						<h3>Git-backed</h3>
-						<p>Your docs live in a git repository you control. Full version history built in.</p>
+						<div>
+							<h3>Git-backed</h3>
+							<p>Your docs live in a git repository you control. Full version history built in.</p>
+						</div>
 					</div>
 					<div class="data-point">
 						<div class="data-icon">
@@ -536,9 +570,11 @@ export function HomeContent(): JSX.Element {
 								<line x1="16" y1="17" x2="8" y2="17"></line>
 							</svg>
 						</div>
-						<h3>True Markdown</h3>
-						<p>Plain <code>.md</code> files, not proprietary formats. Read them anywhere,
-						edit them with any tool.</p>
+						<div>
+							<h3>True Markdown</h3>
+							<p>Plain <code>.md</code> files, not proprietary formats. Read them anywhere,
+							edit them with any tool.</p>
+						</div>
 					</div>
 					<div class="data-point">
 						<div class="data-icon">
@@ -548,9 +584,11 @@ export function HomeContent(): JSX.Element {
 								<line x1="12" y1="15" x2="12" y2="3"></line>
 							</svg>
 						</div>
-						<h3>Export anytime</h3>
-						<p>Your docs are just markdown. Leave whenever you want.
-						No data hostage situation.</p>
+						<div>
+							<h3>Export anytime</h3>
+							<p>Your docs are just markdown. Leave whenever you want.
+							No data hostage situation.</p>
+						</div>
 					</div>
 				</div>
 			</section>

@@ -130,8 +130,8 @@ html {
 
 .hero {
 	text-align: center;
-	padding: 3rem 1.5rem 2rem;
-	background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-background) 100%);
+	padding: 5rem 1.5rem 3rem;
+	background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface) 40%, var(--color-background) 100%);
 }
 
 .hero-badge {
@@ -178,7 +178,7 @@ html {
 
 /* Connection Diagram */
 .hero-visual {
-	max-width: 800px;
+	max-width: 900px;
 	margin: 0 auto;
 	padding: 0 1rem;
 }
@@ -224,7 +224,7 @@ html {
 
 .who-its-for {
 	padding: 4rem 1.5rem;
-	max-width: 900px;
+	max-width: 960px;
 	margin: 0 auto;
 	width: 100%;
 	box-sizing: border-box;
@@ -250,6 +250,10 @@ html {
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-lg);
 	padding: 1.5rem;
+	box-shadow: var(--shadow-card);
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
 }
 
 .audience-icon {
@@ -260,14 +264,15 @@ html {
 	justify-content: center;
 	background: var(--color-primary);
 	border-radius: var(--radius-md);
-	margin-bottom: 1rem;
+	margin: 0;
+	flex-shrink: 0;
 	color: white;
 }
 
 .audience-card h3 {
 	font-size: 1.125rem;
 	font-weight: 600;
-	margin-bottom: 1rem;
+	margin-bottom: 0.5rem;
 	letter-spacing: -0.01em;
 }
 
@@ -279,7 +284,7 @@ html {
 
 .audience-card li {
 	position: relative;
-	padding-left: 1.25rem;
+	padding-left: 0.875rem;
 	margin-bottom: 0.625rem;
 	color: var(--color-text);
 	font-size: 0.9375rem;
@@ -311,8 +316,9 @@ html {
    ========================================================================== */
 
 .problem {
-	padding: 4rem 1.5rem;
+	padding: 5rem 1.5rem;
 	background: var(--color-surface);
+	border-top: 1px solid var(--color-border);
 }
 
 .problem h2 {
@@ -327,7 +333,7 @@ html {
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);
 	gap: 1.25rem;
-	max-width: 900px;
+	max-width: 960px;
 	margin: 0 auto;
 }
 
@@ -336,6 +342,11 @@ html {
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-lg);
 	padding: 1.5rem;
+	box-shadow: var(--shadow-card);
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
+	text-align: left;
 }
 
 .problem-icon {
@@ -346,7 +357,8 @@ html {
 	justify-content: center;
 	background: var(--color-accent-soft);
 	border-radius: var(--radius-md);
-	margin-bottom: 1rem;
+	margin: 0;
+	flex-shrink: 0;
 	color: var(--color-accent);
 }
 
@@ -370,7 +382,7 @@ html {
 
 .solution {
 	padding: 4rem 1.5rem;
-	max-width: 1000px;
+	max-width: 960px;
 	margin: 0 auto;
 	width: 100%;
 	box-sizing: border-box;
@@ -389,7 +401,7 @@ html {
 
 .pillars-grid {
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(2, 1fr);
 	gap: 1.25rem;
 }
 
@@ -398,19 +410,24 @@ html {
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-lg);
 	padding: 1.5rem;
-	text-align: center;
+	text-align: left;
+	box-shadow: var(--shadow-card);
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
 }
 
 .pillar-icon {
-	width: 48px;
-	height: 48px;
+	width: 40px;
+	height: 40px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	background: var(--color-primary);
 	background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
 	border-radius: var(--radius-md);
-	margin: 0 auto 1rem;
+	margin: 0;
+	flex-shrink: 0;
 	color: white;
 }
 
@@ -441,8 +458,9 @@ html {
    ========================================================================== */
 
 .how-it-works {
-	padding: 4rem 1.5rem;
+	padding: 5rem 1.5rem;
 	background: var(--color-surface);
+	border-top: 1px solid var(--color-border);
 }
 
 .how-it-works h2 {
@@ -465,8 +483,8 @@ html {
 .workflow-step {
 	flex: 1;
 	text-align: center;
-	padding: 0 0.75rem;
-	max-width: 180px;
+	padding: 0 1rem;
+	max-width: 220px;
 }
 
 .step-number {
@@ -525,7 +543,7 @@ html {
 
 .comparison {
 	padding: 4rem 1.5rem;
-	max-width: 900px;
+	max-width: 960px;
 	margin: 0 auto;
 	width: 100%;
 	box-sizing: border-box;
@@ -615,13 +633,61 @@ html {
 	color: var(--color-success);
 }
 
-/* Mobile sticky first column */
+/* Comparison table: stacked card layout on tablet/mobile */
 @media (max-width: 768px) {
-	.comparison-table td:first-child,
-	.comparison-table th:first-child {
-		position: sticky;
-		left: 0;
-		z-index: 1;
+	.comparison-table {
+		min-width: unset;
+	}
+
+	.comparison-table thead {
+		display: none;
+	}
+
+	.comparison-table tbody tr {
+		display: flex;
+		flex-direction: column;
+		padding: 1rem 1.25rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.comparison-table tbody tr:last-child {
+		border-bottom: none;
+	}
+
+	.comparison-table td {
+		display: block;
+		padding: 0.25rem 0;
+		border-bottom: none;
+		white-space: normal;
+		background: none;
+		font-weight: normal;
+	}
+
+	.comparison-table td:first-child {
+		font-weight: 600;
+		background: none;
+		font-size: 1rem;
+		padding-bottom: 0.5rem;
+	}
+
+	.comparison-table td:nth-child(2)::before {
+		content: "Problem: ";
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.comparison-table td:nth-child(3)::before {
+		content: "Specboard: ";
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.comparison-table tbody tr:hover {
+		background: none;
+	}
+
+	.comparison-table tbody tr:hover td:first-child {
+		background: none;
 	}
 }
 
@@ -630,8 +696,9 @@ html {
    ========================================================================== */
 
 .control {
-	padding: 4rem 1.5rem;
+	padding: 3.5rem 1.5rem;
 	background: var(--color-surface);
+	border-top: 1px solid var(--color-border);
 }
 
 .control h2 {
@@ -646,13 +713,20 @@ html {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
 	gap: 1.5rem;
-	max-width: 900px;
+	max-width: 960px;
 	margin: 0 auto;
 }
 
 .control-point {
-	text-align: center;
+	text-align: left;
 	padding: 1rem;
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-card);
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
 }
 
 .control-icon {
@@ -663,7 +737,8 @@ html {
 	justify-content: center;
 	background: var(--color-background);
 	border-radius: var(--radius-md);
-	margin: 0 auto 0.75rem;
+	margin: 0;
+	flex-shrink: 0;
 	color: var(--color-primary);
 }
 
@@ -687,7 +762,7 @@ html {
 
 .mcp-architecture {
 	padding: 4rem 1.5rem;
-	max-width: 800px;
+	max-width: 960px;
 	margin: 0 auto;
 	width: 100%;
 	box-sizing: border-box;
@@ -715,6 +790,7 @@ html {
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-lg);
 	padding: 2rem;
+	box-shadow: var(--shadow-card);
 }
 
 .mcp-capabilities h3 {
@@ -769,8 +845,9 @@ html {
    ========================================================================== */
 
 .data-control {
-	padding: 4rem 1.5rem;
+	padding: 3.5rem 1.5rem;
 	background: var(--color-surface);
+	border-top: 1px solid var(--color-border);
 }
 
 .data-control h2 {
@@ -785,27 +862,32 @@ html {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
 	gap: 1.5rem;
-	max-width: 900px;
+	max-width: 960px;
 	margin: 0 auto;
 }
 
 .data-point {
-	text-align: center;
+	text-align: left;
 	padding: 1.5rem;
 	background: var(--color-background);
 	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-card);
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
 }
 
 .data-icon {
-	width: 48px;
-	height: 48px;
+	width: 40px;
+	height: 40px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	background: var(--color-surface);
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);
-	margin: 0 auto 1rem;
+	margin: 0;
+	flex-shrink: 0;
 	color: var(--color-primary);
 }
 
@@ -836,7 +918,7 @@ html {
    ========================================================================== */
 
 .early-access {
-	padding: 4rem 1.5rem;
+	padding: 5rem 1.5rem;
 	max-width: 500px;
 	margin: 0 auto;
 	width: 100%;
@@ -1002,7 +1084,7 @@ html {
    ========================================================================== */
 
 .final-cta {
-	padding: 4rem 1.5rem;
+	padding: 5rem 1.5rem;
 	text-align: center;
 	background: var(--color-surface);
 	border-top: 1px solid var(--color-border);
@@ -1103,7 +1185,7 @@ html {
 	}
 
 	.hero {
-		padding: 2rem 1rem 1.5rem;
+		padding: 3rem 1rem 2rem;
 	}
 
 	.hero-badge {
