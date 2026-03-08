@@ -68,7 +68,9 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			if (dialogProject === undefined) {
 				// Create mode
 				const project = await fetchClient.post<Project>('/api/projects', apiData);
-				setProjects((prev) => [project, ...prev]);
+				// API create response doesn't include stats — initialize them
+				const projectWithStats = { ...project, epicCount: project.epicCount ?? 0, epicCounts: project.epicCounts ?? { ready: 0, in_progress: 0, in_review: 0, done: 0 } };
+				setProjects((prev) => [projectWithStats, ...prev]);
 				setDialogProject(null);
 
 				if (project.repository && 'type' in project.repository && project.repository.type === 'cloud') {

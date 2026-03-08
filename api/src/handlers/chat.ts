@@ -152,12 +152,18 @@ export async function handleChat(
 	}
 
 	// Build messages array
-	const systemPrompt = composeSystemPrompt({
-		documentPath: document_path,
-		documentContent: document_content,
-		projectPrompt,
-		repoConventions: repoConventions ?? undefined,
-	});
+	let systemPrompt: string;
+	try {
+		systemPrompt = composeSystemPrompt({
+			documentPath: document_path,
+			documentContent: document_content,
+			projectPrompt,
+			repoConventions: repoConventions ?? undefined,
+		});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Failed to compose system prompt';
+		return context.json({ error: message }, 400);
+	}
 	const messages: ChatMessage[] = [
 		...conversation_history,
 		{ role: 'user', content: message },
