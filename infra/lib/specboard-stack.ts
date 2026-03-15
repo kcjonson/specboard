@@ -1061,7 +1061,10 @@ export class SpecboardStack extends cdk.Stack {
 							managedRuleGroupStatement: {
 								vendorName: 'AWS',
 								name: 'AWSManagedRulesCommonRuleSet',
-								excludedRules: [{ name: 'SizeRestrictions_BODY' }],
+								excludedRules: [
+									{ name: 'SizeRestrictions_BODY' },
+									{ name: 'CrossSiteScripting_BODY' },
+								],
 							},
 						},
 						visibilityConfig: {
