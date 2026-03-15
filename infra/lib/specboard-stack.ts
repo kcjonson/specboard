@@ -1064,6 +1064,7 @@ export class SpecboardStack extends cdk.Stack {
 								excludedRules: [
 									{ name: 'SizeRestrictions_BODY' },
 									{ name: 'CrossSiteScripting_BODY' },
+									{ name: 'EC2MetaDataSSRF_BODY' },
 								],
 							},
 						},
