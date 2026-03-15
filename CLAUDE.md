@@ -46,10 +46,8 @@ docker compose build && docker compose up
 0. **Determine git status**
    - Are you on the correct branch? You most likely need to be on main
 
-1. **Read documentation first**
-   - `/docs/status.md` - Current project state
-   - Keep explicit todos and work items in this list, with checkboxes
-   - Update this document before and after doing any work
+1. **Check current work**
+   - Run `/whats-next` to check Specboard for current work items and priorities
    - Relevant specs in `/docs/specs/`
    - Tech stack decisions in `/docs/tech-stack.md`
 
@@ -231,7 +229,7 @@ infra/                     # AWS CDK infrastructure
 ## Documentation System
 
 ### When Asked "What are we working on?" or "Where are we?"
-→ Check `/docs/status.md` FIRST
+→ Run `/whats-next` — it queries Specboard MCP for live project data
 
 ### For Technical Specifications
 → Check `/docs/specs/` for feature specifications
@@ -246,78 +244,18 @@ infra/                     # AWS CDK infrastructure
 
 | When You Need... | Check... |
 |------------------|----------|
-| Current project status | `/docs/status.md` |
+| Current work / project status | `/whats-next` |
 | Tech stack decisions | `/docs/tech-stack.md` |
 | Feature specifications | `/docs/specs/` |
 | Product requirements | `/docs/initial-requirements.md` |
 | Build commands | `README.md` |
 
-## Status.md Format and Workflow
-
-### Structure: Epic/Story/Task Hierarchy
-
-`/docs/status.md` is a **CHECKLIST-ONLY** document. NO long-form content, architectural decisions, or detailed rationale.
-
-**Format:**
-- **Epic** → **Story** → **Task** → **Sub-task** (max 3 levels of nesting)
-- Use terminology: Epic (top level), Story (major feature), Task (implementation step), Sub-task (detail)
-
-**Required Fields for Each Epic:**
-```markdown
-## Epic Title
-**Spec/Documentation:** /path/to/doc.md or /path/to/folder/
-**Dependencies:** Other Epic Name (if applicable)
-**Status:** ready | in progress | blocked | needs spec
-
-**Tasks:**
-- [ ] Story Title
-  - [ ] Task Title
-    - [ ] Sub-task Title
-```
-
-**Sections in status.md:**
-1. **Recently Completed Epics** - Last 4 completed (with ALL tasks marked [x])
-2. **In Progress Epics** - Currently active work (at least one task incomplete)
-3. **Planned Epics** - Future work
-4. **Blockers & Issues** - Current problems
-
-### When to Update status.md
-
-**Before starting work:**
-1. Find or create the relevant Epic
-2. Mark the Story/Task you're working on as in-progress
-3. Check Dependencies field for prerequisite work
-
-**After completing a task:**
-1. Mark task as [x]
-2. If all tasks in an Epic are complete, mark Epic as complete
-3. Update Last Updated timestamp
-
-### Content Placement Rules
-
-**status.md contains:**
-- Checklists (Epic/Story/Task/Sub-task)
-- Status indicators (ready/in progress/blocked/needs spec)
-- Dependencies between epics
-- Blockers & issues
-
-**status.md does NOT contain:**
-- Architectural decisions (→ specs or tech-stack.md)
-- Implementation rationale (→ specs)
-- Detailed technical discussion (→ specs)
-- Long-form content or paragraphs
-
 ## After Significant Work
-
-### Update `/docs/status.md`:
-- Mark completed tasks with `[x]`
-- Update "Blockers & Issues" if any
-- Update "Last Updated" timestamp
 
 ### Workflow: After Writing Code
 
 1. **Open a PR**
-2. **Switch back to the main branch**
+2. **Stay on the feature branch** — PR feedback may come immediately
 
 ## Plan File Management
 

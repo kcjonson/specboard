@@ -429,10 +429,10 @@ export async function handleBlockTask(context: Context): Promise<Response> {
 		return context.json({ error: 'Invalid task ID format' }, 400);
 	}
 
-	const body = await context.req.json<{ reason?: string }>();
+	const body = await context.req.json<{ note?: string }>();
 
-	if (!body.reason || typeof body.reason !== 'string') {
-		return context.json({ error: 'reason is required' }, 400);
+	if (!body.note || typeof body.note !== 'string') {
+		return context.json({ error: 'note is required' }, 400);
 	}
 
 	try {
@@ -443,8 +443,8 @@ export async function handleBlockTask(context: Context): Promise<Response> {
 		}
 
 		const result = await query<DbTask>(
-			`UPDATE tasks SET status = 'blocked', block_reason = $2 WHERE id = $1 RETURNING *`,
-			[id, body.reason]
+			`UPDATE tasks SET status = 'blocked', note = $2 WHERE id = $1 RETURNING *`,
+			[id, body.note]
 		);
 
 		if (result.rows.length === 0) {
@@ -483,7 +483,7 @@ export async function handleUnblockTask(context: Context): Promise<Response> {
 		}
 
 		const result = await query<DbTask>(
-			`UPDATE tasks SET status = 'ready', block_reason = NULL WHERE id = $1 RETURNING *`,
+			`UPDATE tasks SET status = 'ready' WHERE id = $1 RETURNING *`,
 			[id]
 		);
 

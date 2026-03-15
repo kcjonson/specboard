@@ -18,7 +18,7 @@ export interface TaskResponse {
 	dueDate: Date | null;
 	rank: number;
 	details: string | null;
-	blockReason: string | null;
+	note: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -37,7 +37,7 @@ function transformTask(task: Task): TaskResponse {
 		dueDate: task.due_date,
 		rank: task.rank,
 		details: task.details,
-		blockReason: task.block_reason,
+		note: task.note,
 		createdAt: task.created_at,
 		updatedAt: task.updated_at,
 	};
@@ -181,7 +181,7 @@ export interface UpdateTaskInput {
 	rank?: number;
 	assignee?: string;
 	dueDate?: Date;
-	blockReason?: string;
+	note?: string;
 }
 
 export async function updateTask(
@@ -216,9 +216,9 @@ export async function updateTask(
 		updates.push(`due_date = $${paramIndex++}`);
 		values.push(data.dueDate);
 	}
-	if (data.blockReason !== undefined) {
-		updates.push(`block_reason = $${paramIndex++}`);
-		values.push(data.blockReason);
+	if (data.note !== undefined) {
+		updates.push(`note = $${paramIndex++}`);
+		values.push(data.note);
 	}
 
 	if (updates.length === 0) {
@@ -269,12 +269,12 @@ export async function startTask(taskId: string): Promise<TaskResponse | null> {
 }
 
 /**
- * Complete a task - sets status to done
+ * Complete a task - sets status to done with optional note
  */
-export async function completeTask(taskId: string): Promise<TaskResponse | null> {
+export async function completeTask(taskId: string, note?: string): Promise<TaskResponse | null> {
 	const result = await query<Task>(
-		`UPDATE tasks SET status = 'done', updated_at = NOW() WHERE id = $1 RETURNING *`,
-		[taskId]
+		`UPDATE tasks SET status = 'done', note = COALESCE($2, note), updated_at = NOW() WHERE id = $1 RETURNING *`,
+		[taskId, note ?? null]
 	);
 
 	if (result.rows.length === 0) return null;
@@ -282,16 +282,16 @@ export async function completeTask(taskId: string): Promise<TaskResponse | null>
 }
 
 /**
- * Block a task with a reason
+ * Block a task with a note explaining why
  */
 export async function blockTask(
 	taskId: string,
-	reason: string
+	note: string
 ): Promise<TaskResponse | null> {
 	const result = await query<Task>(
-		`UPDATE tasks SET status = 'blocked', block_reason = $2, updated_at = NOW()
+		`UPDATE tasks SET status = 'blocked', note = $2, updated_at = NOW()
 		 WHERE id = $1 RETURNING *`,
-		[taskId, reason]
+		[taskId, note]
 	);
 
 	if (result.rows.length === 0) return null;
@@ -299,11 +299,11 @@ export async function blockTask(
 }
 
 /**
- * Unblock a task - sets status back to ready
+ * Unblock a task - sets status back to ready (preserves note for context)
  */
 export async function unblockTask(taskId: string): Promise<TaskResponse | null> {
 	const result = await query<Task>(
-		`UPDATE tasks SET status = 'ready', block_reason = NULL, updated_at = NOW()
+		`UPDATE tasks SET status = 'ready', updated_at = NOW()
 		 WHERE id = $1 RETURNING *`,
 		[taskId]
 	);

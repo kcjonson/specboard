@@ -12,11 +12,14 @@ export function dbEpicToApi(epic: DbEpic): ApiEpic {
 		type: epic.type,
 		description: epic.description ?? undefined,
 		status: epic.status,
+		subStatus: epic.sub_status,
 		creator: epic.creator ?? undefined,
 		assignee: epic.assignee ?? undefined,
 		rank: epic.rank,
 		specDocPath: epic.spec_doc_path ?? undefined,
 		prUrl: epic.pr_url ?? undefined,
+		branchName: epic.branch_name ?? undefined,
+		notes: epic.notes ?? undefined,
 		createdAt: epic.created_at.toISOString(),
 		updatedAt: epic.updated_at.toISOString(),
 	};
@@ -32,7 +35,7 @@ export function dbTaskToApi(task: DbTask): ApiTask {
 		dueDate: task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : undefined,
 		rank: task.rank,
 		details: task.details ?? undefined,
-		blockReason: task.block_reason ?? undefined,
+		note: task.note ?? undefined,
 	};
 }
 

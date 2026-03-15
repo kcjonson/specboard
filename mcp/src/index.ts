@@ -4,9 +4,10 @@
  * MCP server for Claude Code integration with the planning system.
  *
  * This server provides tools for Claude to:
+ * - Discover projects (list_projects)
  * - Read epics and specs (human-defined work)
- * - Create and manage tasks (Claude's breakdown)
- * - Track progress and signal completion
+ * - Create and manage items and tasks (unified CRUD)
+ * - Track progress via sub-status and notes
  *
  * Runs as an HTTP server using Hono with MCP Streamable HTTP transport.
  * Requires OAuth 2.1 Bearer token for /mcp endpoints.
@@ -26,9 +27,8 @@ import {
 import { installErrorHandlers, logRequest } from '@specboard/core';
 import { mcpAuthMiddleware, type McpAuthVariables } from '@specboard/auth';
 
-import { epicTools, handleEpicTool } from './tools/epics.ts';
-import { taskTools, handleTaskTool } from './tools/tasks.ts';
-import { progressTools, handleProgressTool } from './tools/progress.ts';
+import { epicTools, handleEpicTool } from './tools/items/index.ts';
+import { projectTools, handleProjectTool } from './tools/projects.ts';
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('mcp');
@@ -37,17 +37,16 @@ installErrorHandlers('mcp');
 const port = parseInt(process.env.PORT || '3002', 10);
 
 // Tool routing configuration
-const epicToolNames = new Set(['get_ready_epics', 'get_epic', 'get_current_work', 'create_item']);
-const taskToolNames = new Set([
-	'create_task',
-	'create_tasks',
-	'update_task',
-	'start_task',
-	'complete_task',
-	'block_task',
-	'unblock_task',
+const epicToolNames = new Set([
+	'get_ready_epics',
+	'get_epic',
+	'get_current_work',
+	'create_item',
+	'create_items',
+	'update_item',
+	'delete_item',
 ]);
-const progressToolNames = new Set(['add_progress_note', 'signal_ready_for_review']);
+const projectToolNames = new Set(['list_projects']);
 
 // Session-to-user binding for security
 // Prevents session hijacking by ensuring a session can only be used by the user who created it
@@ -62,7 +61,7 @@ function createMcpServer(userId: string): Server {
 	const server = new Server(
 		{
 			name: 'specboard',
-			version: '0.1.0',
+			version: '0.2.0',
 		},
 		{
 			capabilities: {
@@ -74,7 +73,7 @@ function createMcpServer(userId: string): Server {
 	// List all available tools
 	server.setRequestHandler(ListToolsRequestSchema, async () => {
 		return {
-			tools: [...epicTools, ...taskTools, ...progressTools],
+			tools: [...projectTools, ...epicTools],
 		};
 	});
 
@@ -85,16 +84,12 @@ function createMcpServer(userId: string): Server {
 		try {
 			// Route to appropriate handler using exact matching
 			// Each handler receives userId to verify project ownership
+			if (projectToolNames.has(name)) {
+				return await handleProjectTool(name, args, userId);
+			}
+
 			if (epicToolNames.has(name)) {
 				return await handleEpicTool(name, args, userId);
-			}
-
-			if (taskToolNames.has(name)) {
-				return await handleTaskTool(name, args, userId);
-			}
-
-			if (progressToolNames.has(name)) {
-				return await handleProgressTool(name, args, userId);
 			}
 
 			return {
