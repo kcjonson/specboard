@@ -49,9 +49,7 @@ const port = parseInt(process.env.PORT || '3002', 10);
 
 // Tool routing configuration
 const epicToolNames = new Set([
-	'get_ready_epics',
-	'get_epic',
-	'get_current_work',
+	'get_items',
 	'create_item',
 	'create_items',
 	'update_item',

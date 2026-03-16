@@ -1,8 +1,16 @@
 import type { JSX } from 'preact';
-import type { ItemModel } from '@specboard/models';
+import type { ItemModel, SubStatus } from '@specboard/models';
 import { Icon } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import styles from './ItemCard.module.css';
+
+const SUB_STATUS_LABELS: Partial<Record<SubStatus, string>> = {
+	scoping: 'Scoping',
+	in_development: 'In Dev',
+	paused: 'Paused',
+	needs_input: 'Needs Input',
+	pr_open: 'PR Open',
+};
 
 interface ItemCardProps {
 	item: ItemModel;
@@ -52,6 +60,7 @@ export function ItemCard({
 }: ItemCardProps): JSX.Element {
 	const taskStats = item.taskStats;
 	const progressPercent = taskStats.total > 0 ? (taskStats.done / taskStats.total) * 100 : 0;
+	const subStatusLabel = SUB_STATUS_LABELS[item.subStatus];
 
 	const handleClick = (): void => {
 		onSelect?.(item);
@@ -138,7 +147,27 @@ export function ItemCard({
 			)}
 
 			<div class={styles.footer}>
-				Updated {formatTimeAgo(item.updatedAt)}
+				{subStatusLabel && (
+					<span class={`${styles.subStatus} ${styles[`subStatus_${item.subStatus}`] || ''}`}>
+						{subStatusLabel}
+					</span>
+				)}
+				{item.prUrl && (
+					<a
+						class={styles.prLink}
+						href={item.prUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						onClick={(e: MouseEvent) => e.stopPropagation()}
+						title="Open pull request"
+					>
+						<Icon name="external-link" />
+						PR
+					</a>
+				)}
+				<span class={styles.updated}>
+					Updated {formatTimeAgo(item.updatedAt)}
+				</span>
 			</div>
 		</div>
 	);

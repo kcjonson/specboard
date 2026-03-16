@@ -6,7 +6,7 @@ import { query } from '../../index.ts';
 import type { Epic, Task, EpicStatus, SubStatus } from '../../types.ts';
 import type { EpicResponse, CreateEpicInput, UpdateEpicInput } from './types.ts';
 import { transformEpic, calculateTaskStats } from './transforms.ts';
-import { getEpic } from './reads.ts';
+import { getItems } from './reads.ts';
 
 /**
  * Derive board status from sub_status at key transitions.
@@ -16,9 +16,8 @@ function deriveStatusFromSubStatus(subStatus: SubStatus): EpicStatus | undefined
 	switch (subStatus) {
 		case 'scoping':
 		case 'in_development':
-			return 'in_progress';
 		case 'pr_open':
-			return 'in_review';
+			return 'in_progress';
 		case 'complete':
 			return 'done';
 		default:
@@ -146,7 +145,8 @@ export async function updateEpic(
 	}
 
 	if (updates.length === 0) {
-		return getEpic(projectId, epicId);
+		const items = await getItems({ projectId, itemId: epicId });
+		return items[0] ?? null;
 	}
 
 	updates.push('updated_at = NOW()');
@@ -196,5 +196,5 @@ export async function signalReadyForReview(
 	epicId: string,
 	prUrl: string
 ): Promise<EpicResponse | null> {
-	return updateEpic(projectId, epicId, { status: 'in_review', prUrl });
+	return updateEpic(projectId, epicId, { status: 'in_progress', subStatus: 'pr_open', prUrl });
 }

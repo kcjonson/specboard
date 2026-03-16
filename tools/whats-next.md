@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git status:*), Bash(git branch:*), Bash(git log:*), Bash(git checkout:*), Bash(git push:*), Bash(git rev-parse:*), Bash(git worktree list:*), Bash(git fetch:*), Bash(git for-each-ref:*), Bash(bash ~/.claude/scripts/assess-git-state.sh), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr create:*), Glob, Grep, Read, mcp__specboard__list_projects, mcp__specboard__get_current_work, mcp__specboard__get_ready_epics, mcp__specboard__get_epic, mcp__specboard__create_item, mcp__specboard__create_items, mcp__specboard__update_item, mcp__specboard__delete_item
+allowed-tools: Bash(git status:*), Bash(git branch:*), Bash(git log:*), Bash(git checkout:*), Bash(git push:*), Bash(git rev-parse:*), Bash(git worktree list:*), Bash(git fetch:*), Bash(git for-each-ref:*), Bash(bash ~/.claude/scripts/assess-git-state.sh), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr create:*), Glob, Grep, Read, mcp__specboard__list_projects, mcp__specboard__get_items, mcp__specboard__create_item, mcp__specboard__create_items, mcp__specboard__update_item, mcp__specboard__delete_item
 description: Check current work, find what to do next, and manage your development workflow via Specboard
 ---
 
@@ -36,8 +36,9 @@ If the script is not available, gather this manually:
 - `gh pr list --author=@me` — open PRs (feedback takes highest priority)
 
 ### 2c. MCP State
-- `get_current_work(project_id)` — in-progress and in-review items with task stats, sub-status, branch names
-- `get_ready_epics(project_id)` — available work to pick up
+- `get_items(project_id, { status: 'in_progress', include_tasks: true, include_notes: true })` — in-progress items with tasks and notes
+- `get_items(project_id, { status: 'in_review', include_tasks: true })` — items in review
+- `get_items(project_id, { status: 'ready' })` — available work to pick up
 
 ## 3. Cross-Reference & Classify
 
@@ -92,7 +93,7 @@ Output a structured summary:
 
 When the user selects an item:
 
-1. `get_epic(project_id, epic_id)` — read full details + spec_doc_path
+1. `get_items(project_id, { item_id: epic_id, include_tasks: true, include_notes: true })` — read full details + spec_doc_path
 2. If `spec_doc_path` is set, read the spec document from the filesystem
 3. For epics: create a plan file at `.claude/plans/{description}.md`
 4. For chores/bugs: plan file optional (depends on complexity)

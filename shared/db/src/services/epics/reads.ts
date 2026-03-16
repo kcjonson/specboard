@@ -5,192 +5,120 @@
 import { query } from '../../index.ts';
 import type { Epic, Task, ProgressNote, EpicStatus, EpicType } from '../../types.ts';
 import type {
-	EpicResponse,
-	EpicSummary,
-	EpicWithTasks,
 	EpicWithDetails,
-	CurrentWorkResponse,
 } from './types.ts';
-import { transformEpic, transformTask, transformProgressNote, calculateTaskStats } from './transforms.ts';
+import { transformEpic, transformTask, transformProgressNote } from './transforms.ts';
+
+export interface GetItemsParams {
+	projectId: string;
+	itemId?: string;
+	status?: EpicStatus;
+	type?: EpicType;
+	search?: string;
+	includeTasks?: boolean;
+	includeNotes?: boolean;
+	limit?: number;
+}
 
 /**
- * Get all epics for a project, optionally filtered by status
+ * Flexible item query with filtering, search, and optional includes.
+ * Replaces getReadyEpics, getEpic, getEpicWithDetails, getCurrentWork.
+ *
+ * Always returns task stats. Optionally includes full task lists and progress notes.
+ * Uses batch fetching (ANY) to avoid N+1 queries.
  */
-export async function getEpics(projectId: string, status?: EpicStatus): Promise<EpicResponse[]> {
+export async function getItems(params: GetItemsParams): Promise<EpicWithDetails[]> {
+	const { projectId, itemId, status, type, search, includeTasks, includeNotes, limit = 25 } = params;
+
+	// Build dynamic query with aggregated task stats
 	let sql = `
 		SELECT e.*,
 			COUNT(t.id) as task_count,
-			COUNT(t.id) FILTER (WHERE t.status = 'done') as done_count
+			COUNT(t.id) FILTER (WHERE t.status = 'done') as done_count,
+			COUNT(t.id) FILTER (WHERE t.status = 'in_progress') as in_progress_count,
+			COUNT(t.id) FILTER (WHERE t.status = 'blocked') as blocked_count
 		FROM epics e
 		LEFT JOIN tasks t ON t.epic_id = e.id
 		WHERE e.project_id = $1
 	`;
-	const params: unknown[] = [projectId];
+	const queryParams: unknown[] = [projectId];
+	let paramIndex = 2;
 
-	if (status) {
-		sql += ` AND e.status = $2`;
-		params.push(status);
+	if (itemId) {
+		// Single-item lookup — skip other filters and limit
+		sql += ` AND e.id = $${paramIndex}`;
+		queryParams.push(itemId);
+		paramIndex++;
+	} else {
+		if (status) {
+			sql += ` AND e.status = $${paramIndex}`;
+			queryParams.push(status);
+			paramIndex++;
+		}
+
+		if (type) {
+			sql += ` AND e.type = $${paramIndex}`;
+			queryParams.push(type);
+			paramIndex++;
+		}
+
+		if (search) {
+			sql += ` AND (e.title ILIKE $${paramIndex} OR e.description ILIKE $${paramIndex})`;
+			queryParams.push(`%${search}%`);
+			paramIndex++;
+		}
 	}
 
 	sql += ` GROUP BY e.id ORDER BY e.rank ASC`;
 
-	const result = await query<Epic & { task_count: string; done_count: string }>(sql, params);
+	if (!itemId) {
+		sql += ` LIMIT $${paramIndex}`;
+		queryParams.push(limit);
+	}
+
+	type EpicWithCounts = Epic & { task_count: string; done_count: string; in_progress_count: string; blocked_count: string };
+	const result = await query<EpicWithCounts>(sql, queryParams);
+
+	const epicIds = result.rows.map((r) => r.id);
+
+	// Batch fetch tasks if requested
+	const tasksByEpicId = new Map<string, Task[]>();
+	if (includeTasks && epicIds.length > 0) {
+		const tasksResult = await query<Task>(
+			'SELECT * FROM tasks WHERE epic_id = ANY($1) ORDER BY rank ASC',
+			[epicIds]
+		);
+		for (const task of tasksResult.rows) {
+			const existing = tasksByEpicId.get(task.epic_id) || [];
+			existing.push(task);
+			tasksByEpicId.set(task.epic_id, existing);
+		}
+	}
+
+	// Batch fetch progress notes if requested
+	const notesByEpicId = new Map<string, ProgressNote[]>();
+	if (includeNotes && epicIds.length > 0) {
+		const notesResult = await query<ProgressNote>(
+			'SELECT * FROM progress_notes WHERE epic_id = ANY($1) ORDER BY created_at DESC',
+			[epicIds]
+		);
+		for (const note of notesResult.rows) {
+			if (!note.epic_id) continue;
+			const existing = notesByEpicId.get(note.epic_id) || [];
+			existing.push(note);
+			notesByEpicId.set(note.epic_id, existing);
+		}
+	}
 
 	return result.rows.map((row) => ({
 		...transformEpic(row),
 		taskStats: {
 			total: parseInt(row.task_count, 10),
 			done: parseInt(row.done_count, 10),
-			inProgress: 0, // Not fetched in list view for performance
-			blocked: 0,
+			inProgress: parseInt(row.in_progress_count, 10),
+			blocked: parseInt(row.blocked_count, 10),
 		},
+		tasks: (tasksByEpicId.get(row.id) || []).map(transformTask),
+		progressNotes: (notesByEpicId.get(row.id) || []).map(transformProgressNote),
 	}));
-}
-
-/**
- * Get ready epics (available for work), optionally filtered by type
- */
-export async function getReadyEpics(projectId: string, type?: EpicType): Promise<EpicSummary[]> {
-	let sql = `SELECT id, title, type, description, spec_doc_path, created_at
-		 FROM epics
-		 WHERE project_id = $1 AND status = 'ready'`;
-	const params: unknown[] = [projectId];
-
-	if (type) {
-		sql += ` AND type = $2`;
-		params.push(type);
-	}
-
-	sql += ` ORDER BY rank ASC`;
-
-	const result = await query<Epic>(sql, params);
-
-	return result.rows.map((epic) => ({
-		id: epic.id,
-		title: epic.title,
-		type: epic.type,
-		description: epic.description,
-		specDocPath: epic.spec_doc_path,
-		createdAt: epic.created_at,
-	}));
-}
-
-/**
- * Get a single epic by ID
- */
-export async function getEpic(projectId: string, epicId: string): Promise<EpicWithTasks | null> {
-	const epicResult = await query<Epic>(
-		'SELECT * FROM epics WHERE id = $1 AND project_id = $2',
-		[epicId, projectId]
-	);
-
-	if (epicResult.rows.length === 0) {
-		return null;
-	}
-
-	const epic = epicResult.rows[0]!;
-
-	const tasksResult = await query<Task>(
-		'SELECT * FROM tasks WHERE epic_id = $1 ORDER BY rank ASC',
-		[epicId]
-	);
-
-	const tasks = tasksResult.rows;
-
-	return {
-		...transformEpic(epic),
-		taskStats: calculateTaskStats(tasks),
-		tasks: tasks.map(transformTask),
-	};
-}
-
-/**
- * Get epic with full details including progress notes
- */
-export async function getEpicWithDetails(
-	projectId: string,
-	epicId: string
-): Promise<EpicWithDetails | null> {
-	const epic = await getEpic(projectId, epicId);
-	if (!epic) return null;
-
-	const notesResult = await query<ProgressNote>(
-		'SELECT * FROM progress_notes WHERE epic_id = $1 ORDER BY created_at DESC LIMIT 20',
-		[epicId]
-	);
-
-	return {
-		...epic,
-		progressNotes: notesResult.rows.map(transformProgressNote),
-	};
-}
-
-/**
- * Get current work - in-progress and in-review epics with context
- */
-export async function getCurrentWork(projectId: string): Promise<CurrentWorkResponse> {
-	// Get in-progress and in-review epics
-	const epicsResult = await query<Epic>(
-		`SELECT * FROM epics
-		 WHERE project_id = $1 AND status IN ('in_progress', 'in_review')
-		 ORDER BY updated_at DESC`,
-		[projectId]
-	);
-
-	// Get ready epics for context
-	const readyResult = await query<Epic>(
-		`SELECT id, title, type, description, spec_doc_path, created_at
-		 FROM epics
-		 WHERE project_id = $1 AND status = 'ready'
-		 ORDER BY rank ASC
-		 LIMIT 5`,
-		[projectId]
-	);
-
-	// Build response with task details for in-progress epics
-	const inProgressEpics = await Promise.all(
-		epicsResult.rows.map(async (epic) => {
-			const tasksResult = await query<Task>(
-				'SELECT * FROM tasks WHERE epic_id = $1 ORDER BY rank ASC',
-				[epic.id]
-			);
-
-			const notesResult = await query<ProgressNote>(
-				'SELECT note, created_at FROM progress_notes WHERE epic_id = $1 ORDER BY created_at DESC LIMIT 5',
-				[epic.id]
-			);
-
-			const tasks = tasksResult.rows;
-			const currentTask = tasks.find((t) => t.status === 'in_progress');
-
-			return {
-				id: epic.id,
-				title: epic.title,
-				type: epic.type,
-				status: epic.status,
-				subStatus: epic.sub_status,
-				specDocPath: epic.spec_doc_path,
-				prUrl: epic.pr_url,
-				branchName: epic.branch_name,
-				taskStats: calculateTaskStats(tasks),
-				currentTask: currentTask ? transformTask(currentTask) : null,
-				recentNotes: notesResult.rows.map((n) => ({
-					note: n.note,
-					createdAt: n.created_at,
-				})),
-			};
-		})
-	);
-
-	return {
-		inProgressEpics,
-		readyEpics: readyResult.rows.map((e) => ({
-			id: e.id,
-			title: e.title,
-			type: e.type,
-			description: e.description,
-			specDocPath: e.spec_doc_path,
-			createdAt: e.created_at,
-		})),
-	};
 }

@@ -2,19 +2,17 @@
  * Work item MCP tools (unified)
  *
  * These tools provide a unified interface for all work items:
- * - get_ready_epics: Find available work
- * - get_epic: Read full item details
- * - get_current_work: Get in-progress/in-review items
+ * - get_items: Query items with flexible filtering, search, and optional includes
  * - create_item: Create epic/chore/bug/task
  * - create_items: Bulk create tasks under a parent
  * - update_item: Update any item (status, sub_status, notes, etc.)
  * - delete_item: Delete any item
  */
 
-import { verifyProjectAccess, type EpicType } from '@specboard/db';
+import { verifyProjectAccess } from '@specboard/db';
 
 import { epicTools } from './definitions.ts';
-import { getReadyEpics, getEpic, getCurrentWork } from './reads.ts';
+import { getItems } from './reads.ts';
 import { createItem, createItems, updateItem, deleteItem } from './writes.ts';
 
 export type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
@@ -45,12 +43,8 @@ export async function handleEpicTool(
 
 	try {
 		switch (name) {
-			case 'get_ready_epics':
-				return await getReadyEpics(projectId, args?.item_type as EpicType | undefined);
-			case 'get_epic':
-				return await getEpic(projectId, args?.epic_id as string);
-			case 'get_current_work':
-				return await getCurrentWork(projectId);
+			case 'get_items':
+				return await getItems(projectId, args as Record<string, unknown>);
 			case 'create_item':
 				return await createItem(projectId, args);
 			case 'create_items':

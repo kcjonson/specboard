@@ -1,62 +1,35 @@
 /**
- * Read handlers for work item MCP tools.
+ * Read handler for work item MCP tools.
  *
- * Handles: get_ready_epics, get_epic, get_current_work
+ * Handles: get_items
  */
 
 import {
-	getReadyEpics as getReadyEpicsService,
-	getEpicWithDetails,
-	getCurrentWork as getCurrentWorkService,
+	getItems as getItemsService,
+	type EpicStatus,
 	type EpicType,
 } from '@specboard/db';
 
 import type { ToolResult } from './index.ts';
 
-export async function getReadyEpics(projectId: string, itemType?: EpicType): Promise<ToolResult> {
-	const epics = await getReadyEpicsService(projectId, itemType);
+export async function getItems(projectId: string, args: Record<string, unknown>): Promise<ToolResult> {
+	const items = await getItemsService({
+		projectId,
+		itemId: args.item_id as string | undefined,
+		status: args.status as EpicStatus | undefined,
+		type: args.type as EpicType | undefined,
+		search: args.search as string | undefined,
+		includeTasks: args.include_tasks as boolean | undefined,
+		includeNotes: args.include_notes as boolean | undefined,
+		limit: args.limit as number | undefined,
+	});
 
 	return {
 		content: [
 			{
 				type: 'text',
-				text: JSON.stringify({ epics, count: epics.length }, null, 2),
+				text: JSON.stringify({ items, count: items.length }, null, 2),
 			},
 		],
-	};
-}
-
-export async function getEpic(projectId: string, epicId: string): Promise<ToolResult> {
-	if (!epicId) {
-		return {
-			content: [{ type: 'text', text: 'epic_id is required' }],
-			isError: true,
-		};
-	}
-
-	const epic = await getEpicWithDetails(projectId, epicId);
-
-	if (!epic) {
-		return {
-			content: [{ type: 'text', text: 'Epic not found' }],
-			isError: true,
-		};
-	}
-
-	return {
-		content: [
-			{
-				type: 'text',
-				text: JSON.stringify(epic, null, 2),
-			},
-		],
-	};
-}
-
-export async function getCurrentWork(projectId: string): Promise<ToolResult> {
-	const result = await getCurrentWorkService(projectId);
-
-	return {
-		content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
 	};
 }

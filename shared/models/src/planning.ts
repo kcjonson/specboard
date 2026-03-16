@@ -14,6 +14,9 @@ import { SyncCollection } from './SyncCollection';
 /** Status type for items and tasks */
 export type Status = 'ready' | 'in_progress' | 'done';
 
+/** Sub-status for detailed work state tracking */
+export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
+
 /** Work item type */
 export type ItemType = 'epic' | 'chore' | 'bug';
 
@@ -50,10 +53,13 @@ export class ItemModel extends SyncModel {
 	@prop accessor type!: ItemType;
 	@prop accessor description!: string | undefined;
 	@prop accessor status!: Status;
+	@prop accessor subStatus!: SubStatus;
 	@prop accessor creator!: string | undefined;
 	@prop accessor assignee!: string | undefined;
 	@prop accessor rank!: number;
 	@prop accessor specDocPath!: string | undefined;
+	@prop accessor prUrl!: string | undefined;
+	@prop accessor branchName!: string | undefined;
 	@prop accessor createdAt!: string;
 	@prop accessor updatedAt!: string;
 

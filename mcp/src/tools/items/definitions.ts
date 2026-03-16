@@ -8,29 +8,9 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 export const epicTools: Tool[] = [
 	{
-		name: 'get_ready_epics',
+		name: 'get_items',
 		description:
-			'Get all work items in "ready" status that are available to work on. Returns items with their type, linked spec paths, and basic info. Use this to find new work to pick up.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				project_id: {
-					type: 'string',
-					description: 'The UUID of the project to query',
-				},
-				item_type: {
-					type: 'string',
-					enum: ['epic', 'chore', 'bug'],
-					description: 'Filter by type. If omitted, returns all types.',
-				},
-			},
-			required: ['project_id'],
-		},
-	},
-	{
-		name: 'get_epic',
-		description:
-			'Get full details of a work item (epic, chore, or bug) including its tasks, progress notes, and linked spec path. Use this after picking up an item to understand the requirements.',
+			'Query work items (epics, chores, bugs) with flexible filtering. Always returns task stats. Optionally include full task lists and progress notes. Use item_id for single-item lookup, or filter by status/type/search for lists.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -38,24 +18,35 @@ export const epicTools: Tool[] = [
 					type: 'string',
 					description: 'The UUID of the project',
 				},
-				epic_id: {
+				item_id: {
 					type: 'string',
-					description: 'The UUID of the work item to retrieve',
+					description: 'Get a single item by ID. When set, other filters are ignored.',
 				},
-			},
-			required: ['project_id', 'epic_id'],
-		},
-	},
-	{
-		name: 'get_current_work',
-		description:
-			'Get all in-progress and in-review work items with their tasks, sub-status, and branch info. Use this at the start of a session to understand what work is ongoing.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				project_id: {
+				status: {
 					type: 'string',
-					description: 'The UUID of the project to query',
+					enum: ['ready', 'in_progress', 'in_review', 'done'],
+					description: 'Filter by board status',
+				},
+				type: {
+					type: 'string',
+					enum: ['epic', 'chore', 'bug'],
+					description: 'Filter by item type',
+				},
+				search: {
+					type: 'string',
+					description: 'Search title and description (case-insensitive)',
+				},
+				include_tasks: {
+					type: 'boolean',
+					description: 'Include task details for each item (default: false)',
+				},
+				include_notes: {
+					type: 'boolean',
+					description: 'Include progress notes for each item (default: false)',
+				},
+				limit: {
+					type: 'number',
+					description: 'Max items to return (default: 25)',
 				},
 			},
 			required: ['project_id'],
@@ -133,7 +124,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'update_item',
 		description:
-			'Update any work item or task. For work items (epic/chore/bug): supports title, description, status, sub_status, branch_name, pr_url, notes. Setting sub_status auto-updates board status (scoping/in_development→in_progress, pr_open→in_review, complete→done). For tasks: supports title, details, status (ready/in_progress/blocked/done), note.',
+			'Update any work item or task. For work items (epic/chore/bug): supports title, description, status, sub_status, branch_name, pr_url, notes. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). For tasks: supports title, details, status (ready/in_progress/blocked/done), note.',
 		inputSchema: {
 			type: 'object',
 			properties: {

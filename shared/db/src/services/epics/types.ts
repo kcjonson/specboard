@@ -11,15 +11,6 @@ export interface TaskStats {
 	blocked: number;
 }
 
-export interface EpicSummary {
-	id: string;
-	title: string;
-	type: EpicType;
-	description: string | null;
-	specDocPath: string | null;
-	createdAt: Date;
-}
-
 export interface TaskSummary {
 	id: string;
 	title: string;
@@ -59,25 +50,6 @@ export interface EpicWithTasks extends EpicResponse {
 
 export interface EpicWithDetails extends EpicWithTasks {
 	progressNotes: ProgressNoteSummary[];
-}
-
-export interface CurrentWorkEpic {
-	id: string;
-	title: string;
-	type: EpicType;
-	status: EpicStatus;
-	subStatus: SubStatus;
-	specDocPath: string | null;
-	prUrl: string | null;
-	branchName: string | null;
-	taskStats: TaskStats;
-	currentTask: TaskSummary | null;
-	recentNotes: Array<{ note: string; createdAt: Date }>;
-}
-
-export interface CurrentWorkResponse {
-	inProgressEpics: CurrentWorkEpic[];
-	readyEpics: EpicSummary[];
 }
 
 export interface CreateEpicInput {

@@ -61,9 +61,7 @@ ln -sf "$(pwd)/tools/assess-git-state.sh" ~/.claude/scripts/assess-git-state.sh
       "Skill(whats-next)",
       "Bash(bash ~/.claude/scripts/assess-git-state.sh)",
       "mcp__specboard__list_projects",
-      "mcp__specboard__get_current_work",
-      "mcp__specboard__get_ready_epics",
-      "mcp__specboard__get_epic",
+      "mcp__specboard__get_items",
       "mcp__specboard__create_item",
       "mcp__specboard__create_items",
       "mcp__specboard__update_item",
@@ -94,9 +92,7 @@ During a session, Claude uses the Specboard MCP tools to track progress — star
 | Tool | Description |
 |------|-------------|
 | `list_projects` | Discover your projects and their IDs |
-| `get_current_work` | In-progress and in-review items with task stats |
-| `get_ready_epics` | Available work items to pick up |
-| `get_epic` | Full details of a work item including tasks |
+| `get_items` | Query items with filtering by status, type, search; optional task/note includes |
 | `create_item` | Create an epic, chore, bug, or task |
 | `create_items` | Bulk create tasks under a work item |
 | `update_item` | Update status, sub-status, branch, notes, etc. |

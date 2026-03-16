@@ -208,3 +208,15 @@
 .specLinkMissing:hover {
 	background: var(--color-surface-hover);
 }
+
+/* Pull request link */
+.prLink {
+	font-size: 13px;
+	color: var(--color-primary);
+	text-decoration: none;
+	word-break: break-all;
+}
+
+.prLink:hover {
+	text-decoration: underline;
+}

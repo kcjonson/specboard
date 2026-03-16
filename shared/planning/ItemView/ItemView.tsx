@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { navigate } from '@specboard/router';
-import { useModel, ItemModel, type TaskModel, type Status, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type TaskModel, type Status, type SubStatus, type ItemType } from '@specboard/models';
 import { fetchClient } from '@specboard/fetch';
 import { Button, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
@@ -40,6 +40,16 @@ const STATUS_OPTIONS: { value: Status; label: string }[] = [
 	{ value: 'ready', label: 'Ready' },
 	{ value: 'in_progress', label: 'In Progress' },
 	{ value: 'done', label: 'Done' },
+];
+
+const SUB_STATUS_OPTIONS: { value: SubStatus; label: string }[] = [
+	{ value: 'not_started', label: 'Not Started' },
+	{ value: 'scoping', label: 'Scoping' },
+	{ value: 'in_development', label: 'In Development' },
+	{ value: 'paused', label: 'Paused' },
+	{ value: 'needs_input', label: 'Needs Input' },
+	{ value: 'pr_open', label: 'PR Open' },
+	{ value: 'complete', label: 'Complete' },
 ];
 
 export function ItemView(props: ItemViewProps): JSX.Element {
@@ -207,6 +217,18 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		}
 	};
 
+	// Sub-status change
+	const handleSubStatusChange = (e: Event): void => {
+		if (!item || isNew) return;
+		const target = e.target as HTMLSelectElement;
+		const newSubStatus = target.value as SubStatus;
+		const previousSubStatus = item.subStatus;
+		item.subStatus = newSubStatus;
+		item.save().catch(() => {
+			item.subStatus = previousSubStatus;
+		});
+	};
+
 	// Create item
 	const handleCreate = (): void => {
 		if (!titleDraft.trim()) return;
@@ -265,8 +287,32 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 					</div>
 					{!isNew && (
 						<div class={styles.field}>
+							<Select
+								id="item-sub-status"
+								value={item?.subStatus || 'not_started'}
+								options={SUB_STATUS_OPTIONS}
+								onChange={handleSubStatusChange}
+								label="Sub-Status"
+							/>
+						</div>
+					)}
+					{!isNew && (
+						<div class={styles.field}>
 							<label class={styles.fieldLabel}>Assignee</label>
 							<span class={styles.fieldValue}>{item?.assignee || 'Unassigned'}</span>
+						</div>
+					)}
+					{!isNew && item?.prUrl && (
+						<div class={styles.field}>
+							<label class={styles.fieldLabel}>Pull Request</label>
+							<a
+								class={styles.prLink}
+								href={item.prUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								{item.prUrl.replace(/^https?:\/\/github\.com\//, '')}
+							</a>
 						</div>
 					)}
 				</div>

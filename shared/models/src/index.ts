@@ -29,7 +29,7 @@ export type { ModelConstructor } from './Collection';
 
 // Planning models
 export { TaskModel, ItemModel, ItemsCollection } from './planning';
-export type { Status, ItemType, TaskStats } from './planning';
+export type { Status, SubStatus, ItemType, TaskStats } from './planning';
 
 // Document models
 export { DocumentModel, EMPTY_DOCUMENT } from './DocumentModel';
