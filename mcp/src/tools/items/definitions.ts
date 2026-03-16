@@ -160,7 +160,7 @@ export const epicTools: Tool[] = [
 				},
 				spec_doc_path: {
 					type: 'string',
-					description: 'Path to the linked spec document (work items only, e.g., /docs/specs/feature.md)',
+					description: 'Path to the linked spec document (work items only). Must start with / (e.g., /docs/specs/feature.md). Send empty string to clear the link.',
 				},
 				branch_name: {
 					type: 'string',
