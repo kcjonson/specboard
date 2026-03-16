@@ -124,7 +124,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'update_item',
 		description:
-			'Update any work item or task. For work items (epic/chore/bug): supports title, description, status, sub_status, branch_name, pr_url, notes. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). For tasks: supports title, details, status (ready/in_progress/blocked/done), note.',
+			'Update any work item or task. For work items (epic/chore/bug): supports title, description, status, sub_status, spec_doc_path, branch_name, pr_url, notes. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). For tasks: supports title, details, status (ready/in_progress/blocked/done), note.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -157,6 +157,10 @@ export const epicTools: Tool[] = [
 					type: 'string',
 					enum: ['not_started', 'scoping', 'in_development', 'paused', 'needs_input', 'pr_open', 'complete'],
 					description: 'Detailed work state (work items only). Auto-updates board status at key transitions.',
+				},
+				spec_doc_path: {
+					type: 'string',
+					description: 'Path to the linked spec document (work items only). Must start with / (e.g., /docs/specs/feature.md). Send empty string to clear the link.',
 				},
 				branch_name: {
 					type: 'string',

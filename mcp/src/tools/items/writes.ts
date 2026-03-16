@@ -241,6 +241,22 @@ export async function updateItem(
 	if (args?.sub_status !== undefined) updateData.subStatus = args.sub_status as SubStatus;
 	if (args?.branch_name !== undefined) updateData.branchName = args.branch_name;
 	if (args?.pr_url !== undefined) updateData.prUrl = args.pr_url;
+	if (args?.spec_doc_path !== undefined) {
+		const rawPath = args.spec_doc_path as string;
+		if (rawPath === '' || rawPath === null) {
+			// Empty string or null clears the link
+			updateData.specDocPath = null;
+		} else {
+			// Validate: must start with /, no traversal
+			if (!rawPath.startsWith('/') || rawPath.includes('..')) {
+				return {
+					content: [{ type: 'text', text: 'Invalid spec_doc_path: must start with / and cannot contain ..' }],
+					isError: true,
+				};
+			}
+			updateData.specDocPath = rawPath;
+		}
+	}
 	if (args?.notes !== undefined) updateData.notes = args.notes;
 
 	const epic = await updateEpicService(projectId, itemId, updateData);
@@ -262,6 +278,7 @@ export async function updateItem(
 							title: epic.title,
 							status: epic.status,
 							subStatus: epic.subStatus,
+							specDocPath: epic.specDocPath,
 							branchName: epic.branchName,
 							prUrl: epic.prUrl,
 						},
