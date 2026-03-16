@@ -161,9 +161,9 @@ export const productionConfig: EnvironmentConfig = {
 	logInfix: '',
 	database: {
 		instanceClass: ec2.InstanceClass.T4G,
-		instanceSize: ec2.InstanceSize.MEDIUM,
-		multiAz: true,
-		backupRetentionDays: 14,
+		instanceSize: ec2.InstanceSize.MICRO,
+		multiAz: false,
+		backupRetentionDays: 3,
 		storageEncrypted: true,
 		deletionProtection: true,
 	},

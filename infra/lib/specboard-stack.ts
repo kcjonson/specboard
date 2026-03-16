@@ -298,7 +298,7 @@ export class SpecboardStack extends cdk.Stack {
 		const cluster = new ecs.Cluster(this, 'Cluster', {
 			vpc,
 			clusterName: config.resourcePrefix,
-			containerInsights: true,
+			containerInsights: false,
 		});
 
 		// ===========================================
@@ -557,9 +557,18 @@ export class SpecboardStack extends cdk.Stack {
 			cpu: config.ecs.cpu,
 		});
 
+		const frontendLogGroup = new logs.LogGroup(this, 'FrontendLogGroup', {
+			logGroupName: `/ecs/${config.logInfix}frontend`,
+			retention: logs.RetentionDays.ONE_MONTH,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+		});
+
 		frontendTaskDefinition.addContainer('frontend', {
 			image: ecs.ContainerImage.fromEcrRepository(frontendRepository, 'init'),
-			logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'frontend' }),
+			logging: ecs.LogDrivers.awsLogs({
+				logGroup: frontendLogGroup,
+				streamPrefix: 'frontend',
+			}),
 			environment: {
 				PORT: '3000',
 				NODE_ENV: 'production',
