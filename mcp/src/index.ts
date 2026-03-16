@@ -27,6 +27,17 @@ import {
 import { installErrorHandlers, logRequest } from '@specboard/core';
 import { mcpAuthMiddleware, type McpAuthVariables } from '@specboard/auth';
 
+/**
+ * Signal to @hono/node-server that the response was already written
+ * directly to the Node.js ServerResponse by the MCP transport.
+ * Without this, Hono's adapter tries to write headers again → ERR_HTTP_HEADERS_SENT.
+ */
+function transportHandledResponse(): Response {
+	return new Response(null, {
+		headers: { 'x-hono-already-sent': '1' },
+	});
+}
+
 import { epicTools, handleEpicTool } from './tools/items/index.ts';
 import { projectTools, handleProjectTool } from './tools/projects.ts';
 
@@ -175,8 +186,7 @@ app.post('/mcp', async (c) => {
 
 		// Existing session - route to existing transport
 		await session.transport.handleRequest(req, res);
-		// Response handled by transport, return empty response to Hono
-		return new Response(null);
+		return transportHandledResponse();
 	}
 
 	// New session - create transport and server
@@ -202,9 +212,7 @@ app.post('/mcp', async (c) => {
 
 	// Handle the request
 	await transport.handleRequest(req, res);
-
-	// Response handled by transport
-	return new Response(null);
+	return transportHandledResponse();
 });
 
 // MCP GET - existing session (SSE streaming)
@@ -229,9 +237,7 @@ app.get('/mcp', async (c) => {
 	const res = c.env.outgoing;
 
 	await session.transport.handleRequest(req, res);
-
-	// Response handled by transport
-	return new Response(null);
+	return transportHandledResponse();
 });
 
 // MCP DELETE - close session
