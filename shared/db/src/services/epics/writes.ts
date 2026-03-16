@@ -33,6 +33,7 @@ function deriveStatusFromSubStatus(subStatus: SubStatus): EpicStatus | undefined
 function deriveSubStatusFromStatus(status: EpicStatus): SubStatus {
 	switch (status) {
 		case 'in_progress': return 'in_development';
+		case 'in_review': return 'pr_open';
 		case 'done': return 'complete';
 		default: return 'not_started';
 	}

@@ -3,7 +3,7 @@
  */
 
 import type { Context } from 'hono';
-import { query, type Epic as DbEpic, type Task as DbTask, type ProgressNote as DbProgressNote } from '@specboard/db';
+import { query, signalReadyForReview, type Epic as DbEpic, type Task as DbTask, type ProgressNote as DbProgressNote } from '@specboard/db';
 import type { ApiEpic, TaskStats } from '../types.ts';
 import { dbEpicToApi, dbTaskToApi, dbProgressNoteToApi } from '../transform.ts';
 import {
@@ -467,21 +467,13 @@ export async function handleSignalReadyForReview(context: Context): Promise<Resp
 	}
 
 	try {
-		const result = await query<DbEpic>(
-			`UPDATE epics SET status = 'in_review', pr_url = $3 WHERE id = $1 AND project_id = $2 RETURNING *`,
-			[id, projectId, body.prUrl]
-		);
+		const result = await signalReadyForReview(projectId, id, body.prUrl);
 
-		if (result.rows.length === 0) {
+		if (!result) {
 			return context.json({ error: 'Epic not found' }, 404);
 		}
 
-		const epic = result.rows[0];
-		if (!epic) {
-			return context.json({ error: 'Failed to update epic' }, 500);
-		}
-
-		return context.json(dbEpicToApi(epic));
+		return context.json(result);
 	} catch (error) {
 		console.error('Failed to signal ready for review:', error);
 		return context.json({ error: 'Database error' }, 500);

@@ -45,27 +45,28 @@ export async function getItems(params: GetItemsParams): Promise<EpicWithDetails[
 	let paramIndex = 2;
 
 	if (itemId) {
+		// Single-item lookup — skip other filters and limit
 		sql += ` AND e.id = $${paramIndex}`;
 		queryParams.push(itemId);
 		paramIndex++;
-	}
+	} else {
+		if (status) {
+			sql += ` AND e.status = $${paramIndex}`;
+			queryParams.push(status);
+			paramIndex++;
+		}
 
-	if (status) {
-		sql += ` AND e.status = $${paramIndex}`;
-		queryParams.push(status);
-		paramIndex++;
-	}
+		if (type) {
+			sql += ` AND e.type = $${paramIndex}`;
+			queryParams.push(type);
+			paramIndex++;
+		}
 
-	if (type) {
-		sql += ` AND e.type = $${paramIndex}`;
-		queryParams.push(type);
-		paramIndex++;
-	}
-
-	if (search) {
-		sql += ` AND (e.title ILIKE $${paramIndex} OR e.description ILIKE $${paramIndex})`;
-		queryParams.push(`%${search}%`);
-		paramIndex++;
+		if (search) {
+			sql += ` AND (e.title ILIKE $${paramIndex} OR e.description ILIKE $${paramIndex})`;
+			queryParams.push(`%${search}%`);
+			paramIndex++;
+		}
 	}
 
 	sql += ` GROUP BY e.id ORDER BY e.rank ASC`;
