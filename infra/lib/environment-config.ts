@@ -168,11 +168,11 @@ export const productionConfig: EnvironmentConfig = {
 		deletionProtection: true,
 	},
 	ecs: {
-		desiredCount: 2,
+		desiredCount: 1,
 		cpu: 256,
 		memory: 512,
 	},
-	natGateways: 2,
+	natGateways: 1,
 	redisNodeType: 'cache.t4g.micro',
 	waf: true,
 	alarmEmail: '', // Set before first deploy
