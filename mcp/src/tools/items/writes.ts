@@ -241,6 +241,7 @@ export async function updateItem(
 	if (args?.sub_status !== undefined) updateData.subStatus = args.sub_status as SubStatus;
 	if (args?.branch_name !== undefined) updateData.branchName = args.branch_name;
 	if (args?.pr_url !== undefined) updateData.prUrl = args.pr_url;
+	if (args?.spec_doc_path !== undefined) updateData.specDocPath = args.spec_doc_path;
 	if (args?.notes !== undefined) updateData.notes = args.notes;
 
 	const epic = await updateEpicService(projectId, itemId, updateData);
@@ -262,6 +263,7 @@ export async function updateItem(
 							title: epic.title,
 							status: epic.status,
 							subStatus: epic.subStatus,
+							specDocPath: epic.specDocPath,
 							branchName: epic.branchName,
 							prUrl: epic.prUrl,
 						},
