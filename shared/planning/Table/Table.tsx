@@ -97,11 +97,11 @@ export function Table({
 
 			<div class={styles.table} role="table">
 				<div class={`${styles.row} ${styles.columnHeader}`} role="row">
-					<span class={styles.colTitle}>Title</span>
-					<span class={styles.colType}>Type</span>
-					<span class={styles.colStatus}>Status</span>
-					<span class={styles.colTasks}>Tasks</span>
-					<span class={styles.colAssignee}>Assignee</span>
+					<span class={styles.colTitle} role="columnheader">Title</span>
+					<span class={styles.colType} role="columnheader">Type</span>
+					<span class={styles.colStatus} role="columnheader">Status</span>
+					<span class={styles.colTasks} role="columnheader">Tasks</span>
+					<span class={styles.colAssignee} role="columnheader">Assignee</span>
 				</div>
 
 				{GROUPS.map(({ status, label }) => {
@@ -109,13 +109,17 @@ export function Table({
 					return (
 						<div key={status} class={styles.group} role="rowgroup">
 							<div class={styles.groupHeader} role="row">
-								<StatusDot status={status} />
-								<span class={styles.groupLabel}>{label}</span>
-								<span class={styles.groupCount}>{groupItems.length}</span>
+								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={5}>
+									<StatusDot status={status} />
+									<span class={styles.groupLabel}>{label}</span>
+									<span class={styles.groupCount}>{groupItems.length}</span>
+								</span>
 							</div>
 
 							{groupItems.length === 0 ? (
-								<div class={styles.empty}>No items</div>
+								<div class={styles.empty} role="row">
+									<span role="cell">No items</span>
+								</div>
 							) : (
 								groupItems.map((item) => (
 									<EpicRow

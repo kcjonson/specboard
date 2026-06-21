@@ -12,8 +12,11 @@ import type { Collection } from './Collection';
 import { SyncCollection } from './SyncCollection';
 import type { ModelData } from './types';
 
-/** Status type for items and tasks */
+/** Board status for work items */
 export type Status = 'ready' | 'in_progress' | 'done';
+
+/** Task status — like Status, but tasks can also be blocked */
+export type TaskStatus = 'ready' | 'in_progress' | 'blocked' | 'done';
 
 /** Sub-status for detailed work state tracking */
 export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
@@ -28,7 +31,7 @@ export class TaskModel extends Model {
 	@prop accessor id!: string;
 	@prop accessor epicId!: string;
 	@prop accessor title!: string;
-	@prop accessor status!: Status;
+	@prop accessor status!: TaskStatus;
 	@prop accessor assignee!: string | undefined;
 	@prop accessor dueDate!: string | undefined;
 	@prop accessor rank!: number;

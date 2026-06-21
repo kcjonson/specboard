@@ -60,7 +60,7 @@ export function EpicRow({
 					if (e.key === 'Enter') handleOpen();
 				}}
 			>
-				<span class={styles.colTitle}>
+				<span class={styles.colTitle} role="cell">
 					{hasTasks ? (
 						<button
 							type="button"
@@ -76,20 +76,20 @@ export function EpicRow({
 					)}
 					<span class={styles.title}>{item.title}</span>
 				</span>
-				<span class={styles.colType}>
+				<span class={styles.colType} role="cell">
 					<TypeBadge type={item.type} />
 				</span>
-				<span class={styles.colStatus}>
+				<span class={styles.colStatus} role="cell">
 					<StatusDot status={item.status} />
 					{STATUS_LABELS[item.status]}
 				</span>
-				<span class={styles.colTasks}>{hasTasks ? `${done}/${total}` : '—'}</span>
-				<span class={styles.colAssignee}>{item.assignee || '—'}</span>
+				<span class={styles.colTasks} role="cell">{hasTasks ? `${done}/${total}` : '—'}</span>
+				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>
 			</div>
 
 			{expanded && loadingTasks && (
 				<div class={`${styles.row} ${styles.taskRow}`} role="row">
-					<span class={`${styles.colTitle} ${styles.loadingTasks}`}>Loading tasks…</span>
+					<span class={`${styles.colTitle} ${styles.loadingTasks}`} role="cell">Loading tasks…</span>
 				</div>
 			)}
 

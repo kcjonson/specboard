@@ -72,6 +72,12 @@
 	border-top: none;
 }
 
+.groupHeaderCell {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
 .groupLabel {
 	color: var(--color-text);
 }

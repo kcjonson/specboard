@@ -65,6 +65,15 @@ export function Planning(props: RouteProps): JSX.Element {
 		}
 	}, []);
 
+	// Keep the active view in sync with the URL on browser back/forward — the
+	// router re-renders this same component on popstate without remounting it,
+	// so `view` would otherwise drift from `?view=`.
+	useEffect(() => {
+		const syncView = (): void => setView(readViewFromUrl());
+		window.addEventListener('popstate', syncView);
+		return () => window.removeEventListener('popstate', syncView);
+	}, []);
+
 	const handleChangeView = useCallback((next: PlanningView): void => {
 		setView(next);
 		// Persist in the URL so the view is shareable and survives reload.
