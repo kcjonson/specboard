@@ -61,8 +61,8 @@ export async function createEpic(
 	const initialSubStatus = deriveSubStatusFromStatus(initialStatus);
 
 	const result = await query<Epic>(
-		`INSERT INTO epics (project_id, title, type, description, status, sub_status, creator, rank, spec_doc_path)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`INSERT INTO epics (project_id, title, type, description, status, sub_status, creator, rank)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING *`,
 		[
 			projectId,
@@ -73,7 +73,6 @@ export async function createEpic(
 			initialSubStatus,
 			data.creator || null,
 			rank,
-			data.specDocPath || null,
 		]
 	);
 
@@ -123,10 +122,6 @@ export async function updateEpic(
 	if (data.rank !== undefined) {
 		updates.push(`rank = $${paramIndex++}`);
 		values.push(data.rank);
-	}
-	if (data.specDocPath !== undefined) {
-		updates.push(`spec_doc_path = $${paramIndex++}`);
-		values.push(data.specDocPath);
 	}
 	if (data.prUrl !== undefined) {
 		updates.push(`pr_url = $${paramIndex++}`);

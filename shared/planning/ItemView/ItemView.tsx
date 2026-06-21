@@ -1,12 +1,11 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'preact/hooks';
+import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { navigate } from '@specboard/router';
 import { useModel, ItemModel, type TaskModel, type Status, type SubStatus, type ItemType } from '@specboard/models';
-import { fetchClient } from '@specboard/fetch';
 import { Button, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
+import { SpecsSection } from '../SpecsSection/SpecsSection';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import styles from './ItemView.module.css';
 
@@ -78,9 +77,6 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// Track whether description has unsaved changes
 	const descriptionDirtyRef = useRef(false);
 
-	// Spec document existence check: null = checking, true = exists, false = missing
-	const [specDocExists, setSpecDocExists] = useState<boolean | null>(null);
-
 	const taskStats = item?.taskStats || { total: 0, done: 0 };
 
 	// Sync title draft when item data loads
@@ -95,56 +91,6 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		setDescriptionAst(initialDescriptionAst);
 		descriptionDirtyRef.current = false;
 	}, [initialDescriptionAst]);
-
-	// Check if spec document exists when item changes
-	useEffect(() => {
-		const specDocPath = item?.specDocPath;
-		const projectId = item?.projectId;
-		if (!specDocPath || !projectId) {
-			setSpecDocExists(null);
-			return;
-		}
-
-		let cancelled = false;
-		setSpecDocExists(null); // Reset to checking state
-
-		const checkExists = async (): Promise<void> => {
-			try {
-				await fetchClient.get(
-					`/api/projects/${projectId}/files?path=${encodeURIComponent(specDocPath)}`
-				);
-				if (!cancelled) {
-					setSpecDocExists(true);
-				}
-			} catch {
-				if (!cancelled) {
-					setSpecDocExists(false);
-				}
-			}
-		};
-
-		checkExists();
-		return () => {
-			cancelled = true;
-		};
-	}, [item?.specDocPath, item?.projectId]);
-
-	// Unlink spec document from item
-	const handleUnlinkSpec = useCallback(async (): Promise<void> => {
-		if (!item) return;
-
-		const previousSpecDocPath = item.specDocPath;
-		item.specDocPath = undefined;
-
-		try {
-			await item.save();
-			setSpecDocExists(null);
-		} catch (err) {
-			// Revert on failure
-			item.specDocPath = previousSpecDocPath;
-			console.error('Failed to unlink spec document:', err);
-		}
-	}, [item]);
 
 	// Task status toggle
 	const handleToggleTaskStatus = (task: TaskModel): void => {
@@ -360,36 +306,9 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 				</section>
 			)}
 
-			{/* Specification Document — only show for epics */}
+			{/* Specifications — only for existing epics */}
 			{!isNew && item?.type === 'epic' && (
-				<section class={styles.section}>
-					<h3 class={styles.sectionTitle}>Specification</h3>
-					{item?.specDocPath ? (
-						<div class={styles.specContainer}>
-							{specDocExists === false && (
-								<div class={styles.specWarning}>
-									Document not found - file may have been moved or deleted
-								</div>
-							)}
-							<div class={styles.specActions}>
-								<button
-									type="button"
-									class={specDocExists === false ? styles.specLinkMissing : styles.specLink}
-									disabled={specDocExists === false}
-									aria-label={specDocExists === false ? 'Specification document not found' : 'Open specification document'}
-									onClick={() => navigate(`/projects/${item.projectId}/pages?file=${encodeURIComponent(item.specDocPath!)}`)}
-								>
-									{item.specDocPath}
-								</button>
-								<Button class="text" onClick={handleUnlinkSpec}>
-									Unlink
-								</Button>
-							</div>
-						</div>
-					) : (
-						<p class={styles.placeholder}>No specification linked</p>
-					)}
-				</section>
+				<SpecsSection projectId={item.projectId} epicId={item.id} />
 			)}
 
 			{/* Footer */}

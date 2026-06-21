@@ -21,6 +21,7 @@ export async function getItems(projectId: string, args: Record<string, unknown>)
 		search: args.search as string | undefined,
 		includeTasks: args.include_tasks as boolean | undefined,
 		includeNotes: args.include_notes as boolean | undefined,
+		includeSpecs: true,
 		limit: args.limit as number | undefined,
 	});
 

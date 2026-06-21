@@ -3,9 +3,9 @@
  */
 
 import type { Context } from 'hono';
-import { query, signalReadyForReview, type Epic as DbEpic, type Task as DbTask, type ProgressNote as DbProgressNote } from '@specboard/db';
+import { query, signalReadyForReview, type Epic as DbEpic, type Task as DbTask, type ProgressNote as DbProgressNote, type EpicSpec as DbEpicSpec } from '@specboard/db';
 import type { ApiEpic, TaskStats } from '../types.ts';
-import { dbEpicToApi, dbTaskToApi, dbProgressNoteToApi } from '../transform.ts';
+import { dbEpicToApi, dbTaskToApi, dbProgressNoteToApi, dbSpecToApi } from '../transform.ts';
 import {
 	isValidUUID,
 	isValidOptionalUUID,
@@ -26,7 +26,7 @@ export async function handleListEpics(context: Context): Promise<Response> {
 	try {
 		const statusParam = context.req.query('status');
 		const typeParam = context.req.query('type');
-		const specDocPath = context.req.query('specDocPath');
+		const specPath = context.req.query('specPath');
 		const validStatuses = ['ready', 'in_progress', 'in_review', 'done'];
 		const validTypes = ['epic', 'chore', 'bug'];
 
@@ -35,9 +35,10 @@ export async function handleListEpics(context: Context): Promise<Response> {
 		const params: unknown[] = [projectId];
 		let paramIndex = 2;
 
-		if (specDocPath) {
-			sql += ` AND spec_doc_path = $${paramIndex++}`;
-			params.push(specDocPath);
+		// Reverse lookup: epics that link a given spec file path.
+		if (specPath) {
+			sql += ` AND id IN (SELECT epic_id FROM epic_specs WHERE project_id = $1 AND path = $${paramIndex++})`;
+			params.push(specPath);
 		}
 		if (statusParam && validStatuses.includes(statusParam)) {
 			sql += ` AND status = $${paramIndex++}`;
@@ -123,10 +124,16 @@ export async function handleGetEpic(context: Context): Promise<Response> {
 			done: tasks.filter((task) => task.status === 'done').length,
 		};
 
+		const specsResult = await query<DbEpicSpec>(
+			`SELECT * FROM epic_specs WHERE epic_id = $1 ORDER BY created_at ASC`,
+			[id]
+		);
+
 		return context.json({
 			...dbEpicToApi(epic),
 			tasks,
 			taskStats,
+			specs: specsResult.rows.map(dbSpecToApi),
 		});
 	} catch (error) {
 		console.error('Failed to fetch epic:', error);
@@ -178,8 +185,8 @@ export async function handleCreateEpic(context: Context): Promise<Response> {
 		const newRank = minRank - 1;
 
 		const result = await query<DbEpic>(
-			`INSERT INTO epics (project_id, title, type, description, status, creator, assignee, rank, spec_doc_path)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			`INSERT INTO epics (project_id, title, type, description, status, creator, assignee, rank)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			 RETURNING *`,
 			[
 				projectId,
@@ -190,7 +197,6 @@ export async function handleCreateEpic(context: Context): Promise<Response> {
 				normalizeOptionalString(body.creator) ?? null,
 				normalizeOptionalString(body.assignee) ?? null,
 				newRank,
-				normalizeOptionalString(body.specDocPath) ?? null,
 			]
 		);
 
@@ -267,11 +273,6 @@ export async function handleUpdateEpic(context: Context): Promise<Response> {
 		if (body.rank !== undefined) {
 			updates.push(`rank = $${paramIndex++}`);
 			values.push(body.rank);
-		}
-		if (body.specDocPath !== undefined) {
-			updates.push(`spec_doc_path = $${paramIndex++}`);
-			const normalized = normalizeOptionalString(body.specDocPath);
-			values.push(normalized === undefined ? null : normalized);
 		}
 
 		if (updates.length === 0) {
@@ -370,7 +371,6 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 					id: epic.id,
 					title: epic.title,
 					type: epic.type,
-					specDocPath: epic.spec_doc_path ?? undefined,
 					createdAt: epic.created_at.toISOString(),
 				})),
 			});
@@ -438,7 +438,6 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 				id: epic.id,
 				title: epic.title,
 				type: epic.type,
-				specDocPath: epic.spec_doc_path ?? undefined,
 				createdAt: epic.created_at.toISOString(),
 			})),
 		});

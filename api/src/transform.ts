@@ -2,8 +2,8 @@
  * Transform functions: snake_case DB → camelCase API
  */
 
-import type { Epic as DbEpic, Task as DbTask, ProgressNote as DbProgressNote, ProjectResponse } from '@specboard/db';
-import type { ApiEpic, ApiTask, ApiProgressNote, ApiProject } from './types.ts';
+import type { Epic as DbEpic, Task as DbTask, ProgressNote as DbProgressNote, EpicSpec as DbEpicSpec, ProjectResponse } from '@specboard/db';
+import type { ApiEpic, ApiTask, ApiProgressNote, ApiProject, ApiSpec } from './types.ts';
 
 export function dbEpicToApi(epic: DbEpic): ApiEpic {
 	return {
@@ -16,12 +16,22 @@ export function dbEpicToApi(epic: DbEpic): ApiEpic {
 		creator: epic.creator ?? undefined,
 		assignee: epic.assignee ?? undefined,
 		rank: epic.rank,
-		specDocPath: epic.spec_doc_path ?? undefined,
 		prUrl: epic.pr_url ?? undefined,
 		branchName: epic.branch_name ?? undefined,
 		notes: epic.notes ?? undefined,
 		createdAt: epic.created_at.toISOString(),
 		updatedAt: epic.updated_at.toISOString(),
+	};
+}
+
+export function dbSpecToApi(spec: DbEpicSpec): ApiSpec {
+	return {
+		id: spec.id,
+		epicId: spec.epic_id,
+		projectId: spec.project_id,
+		path: spec.path,
+		type: spec.spec_type,
+		createdAt: spec.created_at.toISOString(),
 	};
 }
 

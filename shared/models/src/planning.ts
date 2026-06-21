@@ -20,6 +20,9 @@ export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' 
 /** Work item type */
 export type ItemType = 'epic' | 'chore' | 'bug';
 
+/** Spec link type */
+export type SpecType = 'product' | 'technical';
+
 /**
  * Task model (non-syncing for now, nested within Item)
  */
@@ -57,7 +60,6 @@ export class ItemModel extends SyncModel {
 	@prop accessor creator!: string | undefined;
 	@prop accessor assignee!: string | undefined;
 	@prop accessor rank!: number;
-	@prop accessor specDocPath!: string | undefined;
 	@prop accessor prUrl!: string | undefined;
 	@prop accessor branchName!: string | undefined;
 	@prop accessor createdAt!: string;
@@ -112,4 +114,40 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	byType(type: ItemType): ItemModel[] {
 		return this.filter((e) => e.type === type);
 	}
+}
+
+/**
+ * Spec link model — a typed link from a work item to a markdown spec document.
+ * Syncs with /api/projects/:projectId/epics/:epicId/specs/:id
+ */
+export class SpecModel extends SyncModel {
+	static override url = '/api/projects/:projectId/epics/:epicId/specs/:id';
+
+	@prop accessor id!: string;
+	@prop accessor projectId!: string;
+	@prop accessor epicId!: string;
+	@prop accessor path!: string;
+	@prop accessor type!: SpecType;
+	@prop accessor createdAt!: string;
+}
+
+/**
+ * Collection of spec links for one work item.
+ * Syncs with /api/projects/:projectId/epics/:epicId/specs
+ *
+ * @example
+ * ```tsx
+ * const specs = new SpecsCollection({ projectId, epicId });
+ * useModel(specs);
+ * await specs.add({ path: '/docs/specs/x.md', type: 'product' }); // POSTs
+ * await specs.remove(spec); // DELETEs
+ * ```
+ */
+export class SpecsCollection extends SyncCollection<SpecModel> {
+	static url = '/api/projects/:projectId/epics/:epicId/specs';
+	static Model = SpecModel;
+
+	// Set dynamically via constructor initialProps — do NOT declare as class fields.
+	declare projectId: string;
+	declare epicId: string;
 }

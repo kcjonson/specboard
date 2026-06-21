@@ -4,7 +4,7 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { getProject, query } from '@specboard/db';
+import { getProject, renameSpecPath, deleteSpecsByPath } from '@specboard/db';
 import { isValidUUID } from '../../validation.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 import type { FileEntry } from '../../services/storage/types.ts';
@@ -367,13 +367,10 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 		// Rename file first
 		await provider.rename(oldPath, newPath);
 
-		// Update any epics that link to this file
+		// Repoint any spec links to this file
 		// If this fails, rollback the file rename to maintain consistency
 		try {
-			await query(
-				`UPDATE epics SET spec_doc_path = $1 WHERE project_id = $2 AND spec_doc_path = $3`,
-				[newPath, projectId, oldPath]
-			);
+			await renameSpecPath(projectId, oldPath, newPath);
 		} catch (dbError) {
 			// Rollback file rename
 			console.error('Epic update failed, rolling back file rename:', dbError);
@@ -458,11 +455,8 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 		// Delete the file/folder
 		await provider.deleteFile(filePath);
 
-		// Clear any epic references to deleted files
-		await query(
-			`UPDATE epics SET spec_doc_path = NULL WHERE project_id = $1 AND spec_doc_path = $2`,
-			[projectId, filePath]
-		);
+		// Clear any spec links to the deleted file
+		await deleteSpecsByPath(projectId, filePath);
 
 		// Invalidate convention file cache if a convention file was deleted
 		if (isConventionFile(filePath)) {
