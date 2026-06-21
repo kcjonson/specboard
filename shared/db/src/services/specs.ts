@@ -150,19 +150,22 @@ export async function getEpicIdsBySpecPath(projectId: string, path: string): Pro
  * link to respect the unique constraint.
  */
 export async function renameSpecPath(projectId: string, oldPath: string, newPath: string): Promise<void> {
-	await query(
-		`DELETE FROM epic_specs old
-		 WHERE old.project_id = $1 AND old.path = $2
-		   AND EXISTS (
-			 SELECT 1 FROM epic_specs dup
-			 WHERE dup.project_id = $1 AND dup.path = $3 AND dup.epic_id = old.epic_id
-		   )`,
-		[projectId, oldPath, newPath]
-	);
-	await query(
-		'UPDATE epic_specs SET path = $3 WHERE project_id = $1 AND path = $2',
-		[projectId, oldPath, newPath]
-	);
+	// Atomic so a failure between the collision-prune and the repoint can't lose links.
+	await transaction(async (client) => {
+		await client.query(
+			`DELETE FROM epic_specs old
+			 WHERE old.project_id = $1 AND old.path = $2
+			   AND EXISTS (
+				 SELECT 1 FROM epic_specs dup
+				 WHERE dup.project_id = $1 AND dup.path = $3 AND dup.epic_id = old.epic_id
+			   )`,
+			[projectId, oldPath, newPath]
+		);
+		await client.query(
+			'UPDATE epic_specs SET path = $3 WHERE project_id = $1 AND path = $2',
+			[projectId, oldPath, newPath]
+		);
+	});
 }
 
 /** Remove all spec links to a path when the file is deleted. */

@@ -14,7 +14,7 @@ import {
 	clearLocalStorage,
 	type DocumentComment,
 } from '@specboard/models';
-import { fetchClient } from '@specboard/fetch';
+import { fetchClient, FetchError } from '@specboard/fetch';
 import { captureError } from '@specboard/telemetry';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
 import { MarkdownEditor, fromMarkdown, toMarkdown, type MarkdownEditorHandle } from '../MarkdownEditor';
@@ -393,8 +393,8 @@ export function Editor(props: RouteProps): JSX.Element {
 			);
 		} catch (err) {
 			// A 409 means it's already linked — treat as success. Log others.
-			const error = err instanceof Error ? err : new Error(String(err));
-			if (!/409/.test(error.message)) {
+			if (!(err instanceof FetchError && err.status === 409)) {
+				const error = err instanceof Error ? err : new Error(String(err));
 				captureError(error, { type: 'epic_link_error', filePath, projectId });
 			}
 		}

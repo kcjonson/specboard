@@ -8,6 +8,7 @@ import {
 	addSpec,
 	removeSpec,
 	validateSpecInput,
+	verifyEpicOwnership,
 	SpecConflictError,
 	SpecValidationError,
 } from '@specboard/db';
@@ -35,6 +36,9 @@ export async function handleListSpecs(context: Context): Promise<Response> {
 	}
 
 	try {
+		if (!(await verifyEpicOwnership(projectId, epicId))) {
+			return context.json({ error: 'Epic not found' }, 404);
+		}
 		const specs = await listSpecsByEpic(projectId, epicId);
 		return context.json(specs.map((s) => toApi(s, epicId, projectId)));
 	} catch (error) {

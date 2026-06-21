@@ -306,8 +306,8 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 				</section>
 			)}
 
-			{/* Specifications — only for existing epics */}
-			{!isNew && item?.type === 'epic' && (
+			{/* Specifications — for any existing work item */}
+			{!isNew && item && (
 				<SpecsSection projectId={item.projectId} epicId={item.id} />
 			)}
 

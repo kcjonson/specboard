@@ -125,8 +125,8 @@ export async function handleGetEpic(context: Context): Promise<Response> {
 		};
 
 		const specsResult = await query<DbEpicSpec>(
-			`SELECT * FROM epic_specs WHERE epic_id = $1 ORDER BY created_at ASC`,
-			[id]
+			`SELECT * FROM epic_specs WHERE project_id = $1 AND epic_id = $2 ORDER BY created_at ASC`,
+			[projectId, id]
 		);
 
 		return context.json({

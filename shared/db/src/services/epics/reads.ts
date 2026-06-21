@@ -116,8 +116,8 @@ export async function getItems(params: GetItemsParams): Promise<EpicWithDetails[
 	const specsByEpicId = new Map<string, SpecSummary[]>();
 	if (includeSpecs && epicIds.length > 0) {
 		const specsResult = await query<EpicSpec>(
-			'SELECT * FROM epic_specs WHERE epic_id = ANY($1) ORDER BY created_at ASC',
-			[epicIds]
+			'SELECT * FROM epic_specs WHERE project_id = $1 AND epic_id = ANY($2) ORDER BY created_at ASC',
+			[projectId, epicIds]
 		);
 		for (const spec of specsResult.rows) {
 			const existing = specsByEpicId.get(spec.epic_id) || [];
