@@ -1,0 +1,138 @@
+import { useState, useMemo, useCallback } from 'preact/hooks';
+import type { JSX } from 'preact';
+import { ItemsCollection, type ItemModel, type Status } from '@specboard/models';
+import { StatusDot } from '@specboard/ui';
+import { EpicRow } from './EpicRow';
+import { matchesFilters, type PlanningFilters } from '../Planning/filters';
+import styles from './Table.module.css';
+
+/** Status sections, in display order (active work first). */
+const GROUPS: { status: Status; label: string }[] = [
+	{ status: 'in_progress', label: 'In Progress' },
+	{ status: 'ready', label: 'Ready' },
+	{ status: 'done', label: 'Done' },
+];
+
+export interface TableProps {
+	/** Shared collection owned by the Planning container. */
+	items: ItemsCollection;
+	/** Active toolbar filters (applied to the epics shown). */
+	filters: PlanningFilters;
+	selectedItemId?: string;
+	onSelectItem: (item: ItemModel | undefined) => void;
+	onOpenItem: (item: ItemModel) => void;
+}
+
+/** Lazily load an epic's tasks the first time it is expanded. */
+function ensureTasksLoaded(item: ItemModel): void {
+	if (item.$meta.lastFetched == null && !item.$meta.working && item.taskStats.total > 0) {
+		// Collection items are hydrated without their tasks; fetch the full epic.
+		void item.fetch();
+	}
+}
+
+/**
+ * Table view — epics grouped by status into divided sections, each epic an
+ * expandable tree row whose task children load lazily on first expand.
+ */
+export function Table({
+	items,
+	filters,
+	selectedItemId,
+	onSelectItem,
+	onOpenItem,
+}: TableProps): JSX.Element {
+	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+	const grouped = useMemo(
+		() => ({
+			in_progress: items.byStatus('in_progress').filter((i) => matchesFilters(i, filters)),
+			ready: items.byStatus('ready').filter((i) => matchesFilters(i, filters)),
+			done: items.byStatus('done').filter((i) => matchesFilters(i, filters)),
+		}),
+		[items, filters]
+	);
+
+	const toggleExpand = useCallback((item: ItemModel): void => {
+		const willExpand = !expanded.has(item.id);
+		if (willExpand) ensureTasksLoaded(item);
+		setExpanded((prev) => {
+			const next = new Set(prev);
+			if (next.has(item.id)) {
+				next.delete(item.id);
+			} else {
+				next.add(item.id);
+			}
+			return next;
+		});
+	}, [expanded]);
+
+	const expandAll = useCallback((): void => {
+		const ids = new Set<string>();
+		for (const group of GROUPS) {
+			for (const item of grouped[group.status]) {
+				if (item.taskStats.total > 0) {
+					ids.add(item.id);
+					ensureTasksLoaded(item);
+				}
+			}
+		}
+		setExpanded(ids);
+	}, [grouped]);
+
+	const collapseAll = useCallback((): void => {
+		setExpanded(new Set());
+	}, []);
+
+	return (
+		<div class={styles.wrapper}>
+			<div class={styles.actions}>
+				<button type="button" class={styles.actionButton} onClick={expandAll}>
+					Expand all
+				</button>
+				<button type="button" class={styles.actionButton} onClick={collapseAll}>
+					Collapse all
+				</button>
+			</div>
+
+			<div class={styles.table} role="table">
+				<div class={`${styles.row} ${styles.columnHeader}`} role="row">
+					<span class={styles.colTitle}>Title</span>
+					<span class={styles.colType}>Type</span>
+					<span class={styles.colStatus}>Status</span>
+					<span class={styles.colTasks}>Tasks</span>
+					<span class={styles.colAssignee}>Assignee</span>
+				</div>
+
+				{GROUPS.map(({ status, label }) => {
+					const groupItems = grouped[status];
+					return (
+						<div key={status} class={styles.group} role="rowgroup">
+							<div class={styles.groupHeader} role="row">
+								<StatusDot status={status} />
+								<span class={styles.groupLabel}>{label}</span>
+								<span class={styles.groupCount}>{groupItems.length}</span>
+							</div>
+
+							{groupItems.length === 0 ? (
+								<div class={styles.empty}>No items</div>
+							) : (
+								groupItems.map((item) => (
+									<EpicRow
+										key={item.id}
+										item={item}
+										expanded={expanded.has(item.id)}
+										selected={item.id === selectedItemId}
+										onToggle={toggleExpand}
+										onOpen={onOpenItem}
+										onSelect={onSelectItem}
+									/>
+								))
+							)}
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
