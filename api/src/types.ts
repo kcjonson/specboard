@@ -2,7 +2,7 @@
  * API types (camelCase for JSON responses)
  */
 
-import type { EpicStatus, EpicType, SubStatus, TaskStatus, StorageMode, RepositoryConfig } from '@specboard/db';
+import type { EpicStatus, EpicType, SubStatus, TaskStatus, SpecType, StorageMode, RepositoryConfig } from '@specboard/db';
 
 export interface ApiEpic {
 	id: string;
@@ -14,12 +14,20 @@ export interface ApiEpic {
 	creator?: string;
 	assignee?: string;
 	rank: number;
-	specDocPath?: string;
 	prUrl?: string;
 	branchName?: string;
 	notes?: string;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export interface ApiSpec {
+	id: string;
+	epicId: string;
+	projectId: string;
+	path: string;
+	type: SpecType;
+	createdAt: string;
 }
 
 export interface ApiTask {

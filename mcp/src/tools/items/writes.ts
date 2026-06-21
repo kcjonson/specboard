@@ -18,10 +18,13 @@ import {
 	unblockTask as unblockTaskService,
 	verifyEpicOwnership,
 	verifyTaskOwnership,
+	setSpecs as setSpecsService,
+	SpecValidationError,
 	type EpicType,
 	type EpicStatus,
 	type SubStatus,
 	type TaskStatus,
+	type SpecType,
 } from '@specboard/db';
 
 import type { ToolResult } from './index.ts';
@@ -87,6 +90,19 @@ export async function createItem(
 		description: args?.description as string | undefined,
 	});
 
+	// Optionally attach typed spec links.
+	let specs;
+	if (Array.isArray(args?.specs)) {
+		try {
+			specs = await setSpecsService(projectId, epic.id, args.specs as Array<{ path: string; type: SpecType }>);
+		} catch (error) {
+			if (error instanceof SpecValidationError) {
+				return { content: [{ type: 'text', text: error.message }], isError: true };
+			}
+			throw error;
+		}
+	}
+
 	return {
 		content: [
 			{
@@ -98,6 +114,7 @@ export async function createItem(
 							title: epic.title,
 							type: epic.type,
 							status: epic.status,
+							...(specs ? { specs } : {}),
 						},
 						message: `${type.charAt(0).toUpperCase() + type.slice(1)} created`,
 					},
@@ -241,22 +258,6 @@ export async function updateItem(
 	if (args?.sub_status !== undefined) updateData.subStatus = args.sub_status as SubStatus;
 	if (args?.branch_name !== undefined) updateData.branchName = args.branch_name;
 	if (args?.pr_url !== undefined) updateData.prUrl = args.pr_url;
-	if (args?.spec_doc_path !== undefined) {
-		const rawPath = args.spec_doc_path as string;
-		if (rawPath === '' || rawPath === null) {
-			// Empty string or null clears the link
-			updateData.specDocPath = null;
-		} else {
-			// Validate: must start with /, no traversal
-			if (!rawPath.startsWith('/') || rawPath.includes('..')) {
-				return {
-					content: [{ type: 'text', text: 'Invalid spec_doc_path: must start with / and cannot contain ..' }],
-					isError: true,
-				};
-			}
-			updateData.specDocPath = rawPath;
-		}
-	}
 	if (args?.notes !== undefined) updateData.notes = args.notes;
 
 	const epic = await updateEpicService(projectId, itemId, updateData);
@@ -265,6 +266,19 @@ export async function updateItem(
 			content: [{ type: 'text', text: 'Item not found' }],
 			isError: true,
 		};
+	}
+
+	// Replace the full set of typed spec links when provided.
+	let specs;
+	if (Array.isArray(args?.specs)) {
+		try {
+			specs = await setSpecsService(projectId, itemId, args.specs as Array<{ path: string; type: SpecType }>);
+		} catch (error) {
+			if (error instanceof SpecValidationError) {
+				return { content: [{ type: 'text', text: error.message }], isError: true };
+			}
+			throw error;
+		}
 	}
 
 	return {
@@ -278,9 +292,9 @@ export async function updateItem(
 							title: epic.title,
 							status: epic.status,
 							subStatus: epic.subStatus,
-							specDocPath: epic.specDocPath,
 							branchName: epic.branchName,
 							prUrl: epic.prUrl,
+							...(specs ? { specs } : {}),
 						},
 						message: 'Item updated',
 					},

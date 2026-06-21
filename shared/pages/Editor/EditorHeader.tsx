@@ -24,6 +24,8 @@ export interface EditorHeaderProps {
 	onCreateEpic?: () => void;
 	/** Callback to view the linked epic */
 	onViewEpic?: () => void;
+	/** Callback to link this document to an existing epic */
+	onLinkEpic?: () => void;
 }
 
 /** Check if file path is a markdown file */
@@ -43,6 +45,7 @@ export function EditorHeader({
 	creatingEpic,
 	onCreateEpic,
 	onViewEpic,
+	onLinkEpic,
 }: EditorHeaderProps): JSX.Element {
 	const [isEditing, setIsEditing] = useState(false);
 	const [editTitle, setEditTitle] = useState('');
@@ -137,6 +140,11 @@ export function EditorHeader({
 				{showEpicButton && linkedEpicId && onViewEpic && (
 					<Button onClick={onViewEpic} class="secondary">
 						View Epic
+					</Button>
+				)}
+				{showEpicButton && !linkedEpicId && onLinkEpic && (
+					<Button onClick={onLinkEpic} class="secondary">
+						Link to Epic
 					</Button>
 				)}
 				{showEpicButton && !linkedEpicId && onCreateEpic && (

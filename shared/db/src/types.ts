@@ -165,6 +165,7 @@ export type EpicStatus = 'ready' | 'in_progress' | 'in_review' | 'done';
 export type EpicType = 'epic' | 'chore' | 'bug';
 export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
 export type TaskStatus = 'ready' | 'in_progress' | 'blocked' | 'done';
+export type SpecType = 'product' | 'technical';
 
 export interface Epic {
 	id: string;
@@ -177,12 +178,20 @@ export interface Epic {
 	creator: string | null;
 	assignee: string | null;
 	rank: number;
-	spec_doc_path: string | null;
 	pr_url: string | null;
 	branch_name: string | null;
 	notes: string | null;
 	created_at: Date;
 	updated_at: Date;
+}
+
+export interface EpicSpec {
+	id: string;
+	epic_id: string;
+	project_id: string;
+	path: string;
+	spec_type: SpecType;
+	created_at: Date;
 }
 
 export interface Task {

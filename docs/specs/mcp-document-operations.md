@@ -86,7 +86,7 @@ Replace the content of an existing markdown document.
 
 ### delete_document
 
-Delete a markdown document. Also clears any epic `spec_doc_path` references to the deleted file.
+Delete a markdown document. Also removes any epic spec links (`epic_specs`) to the deleted file.
 
 **Input:**
 - `project_id` (string, required) -- project UUID
@@ -98,7 +98,7 @@ Delete a markdown document. Also clears any epic `spec_doc_path` references to t
 
 ### move_document
 
-Rename or move a document. Also updates any epic `spec_doc_path` references.
+Rename or move a document. Also updates any epic spec links (`epic_specs`) pointing at the old path.
 
 **Input:**
 - `project_id` (string, required) -- project UUID

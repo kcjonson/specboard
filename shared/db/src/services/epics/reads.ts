@@ -3,9 +3,10 @@
  */
 
 import { query } from '../../index.ts';
-import type { Epic, Task, ProgressNote, EpicStatus, EpicType } from '../../types.ts';
+import type { Epic, Task, ProgressNote, EpicSpec, EpicStatus, EpicType } from '../../types.ts';
 import type {
 	EpicWithDetails,
+	SpecSummary,
 } from './types.ts';
 import { transformEpic, transformTask, transformProgressNote } from './transforms.ts';
 
@@ -17,6 +18,7 @@ export interface GetItemsParams {
 	search?: string;
 	includeTasks?: boolean;
 	includeNotes?: boolean;
+	includeSpecs?: boolean;
 	limit?: number;
 }
 
@@ -28,7 +30,7 @@ export interface GetItemsParams {
  * Uses batch fetching (ANY) to avoid N+1 queries.
  */
 export async function getItems(params: GetItemsParams): Promise<EpicWithDetails[]> {
-	const { projectId, itemId, status, type, search, includeTasks, includeNotes, limit = 25 } = params;
+	const { projectId, itemId, status, type, search, includeTasks, includeNotes, includeSpecs, limit = 25 } = params;
 
 	// Build dynamic query with aggregated task stats
 	let sql = `
@@ -110,6 +112,20 @@ export async function getItems(params: GetItemsParams): Promise<EpicWithDetails[
 		}
 	}
 
+	// Batch fetch spec links if requested
+	const specsByEpicId = new Map<string, SpecSummary[]>();
+	if (includeSpecs && epicIds.length > 0) {
+		const specsResult = await query<EpicSpec>(
+			'SELECT * FROM epic_specs WHERE project_id = $1 AND epic_id = ANY($2) ORDER BY created_at ASC',
+			[projectId, epicIds]
+		);
+		for (const spec of specsResult.rows) {
+			const existing = specsByEpicId.get(spec.epic_id) || [];
+			existing.push({ id: spec.id, path: spec.path, type: spec.spec_type, createdAt: spec.created_at });
+			specsByEpicId.set(spec.epic_id, existing);
+		}
+	}
+
 	return result.rows.map((row) => ({
 		...transformEpic(row),
 		taskStats: {
@@ -120,5 +136,6 @@ export async function getItems(params: GetItemsParams): Promise<EpicWithDetails[
 		},
 		tasks: (tasksByEpicId.get(row.id) || []).map(transformTask),
 		progressNotes: (notesByEpicId.get(row.id) || []).map(transformProgressNote),
+		specs: specsByEpicId.get(row.id) || [],
 	}));
 }

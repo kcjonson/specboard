@@ -93,8 +93,8 @@ Output a structured summary:
 
 When the user selects an item:
 
-1. `get_items(project_id, { item_id: epic_id, include_tasks: true, include_notes: true })` — read full details + spec_doc_path
-2. If `spec_doc_path` is set, read the spec document from the filesystem
+1. `get_items(project_id, { item_id: epic_id, include_tasks: true, include_notes: true })` — read full details + linked `specs`
+2. For each entry in `specs` (each has `path` and `type`), read the spec document from the filesystem
 3. For epics: create a plan file at `.claude/plans/{description}.md`
 4. For chores/bugs: plan file optional (depends on complexity)
 5. Create feature branch

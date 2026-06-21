@@ -2,13 +2,20 @@
  * Epic service response types (camelCase for API/MCP responses)
  */
 
-import type { EpicType, EpicStatus, SubStatus } from '../../types.ts';
+import type { EpicType, EpicStatus, SubStatus, SpecType } from '../../types.ts';
 
 export interface TaskStats {
 	total: number;
 	done: number;
 	inProgress: number;
 	blocked: number;
+}
+
+export interface SpecSummary {
+	id: string;
+	path: string;
+	type: SpecType;
+	createdAt: Date;
 }
 
 export interface TaskSummary {
@@ -35,7 +42,6 @@ export interface EpicResponse {
 	subStatus: SubStatus;
 	creator: string | null;
 	rank: number;
-	specDocPath: string | null;
 	prUrl: string | null;
 	branchName: string | null;
 	notes: string | null;
@@ -50,6 +56,7 @@ export interface EpicWithTasks extends EpicResponse {
 
 export interface EpicWithDetails extends EpicWithTasks {
 	progressNotes: ProgressNoteSummary[];
+	specs: SpecSummary[];
 }
 
 export interface CreateEpicInput {
@@ -59,7 +66,6 @@ export interface CreateEpicInput {
 	status?: EpicStatus;
 	creator?: string;
 	rank?: number;
-	specDocPath?: string;
 }
 
 export interface UpdateEpicInput {
@@ -68,7 +74,6 @@ export interface UpdateEpicInput {
 	status?: EpicStatus;
 	subStatus?: SubStatus;
 	rank?: number;
-	specDocPath?: string;
 	prUrl?: string;
 	branchName?: string;
 	notes?: string;

@@ -175,7 +175,7 @@ The following tools are planned for a future version:
 | `get_spec` | Read linked spec document | epicId or docId |
 | `search_docs` | Find relevant documentation | query |
 
-In v1, Claude reads spec documents directly from the filesystem using the `spec_doc_path` field returned by epic tools.
+In v1, Claude reads spec documents directly from the filesystem using the `specs` array (each entry has a `path` and `type` of product/technical) returned by epic tools.
 
 ---
 

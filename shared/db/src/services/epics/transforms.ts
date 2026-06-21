@@ -15,7 +15,6 @@ export function transformEpic(epic: Epic): Omit<EpicResponse, 'taskStats'> {
 		subStatus: epic.sub_status,
 		creator: epic.creator,
 		rank: epic.rank,
-		specDocPath: epic.spec_doc_path,
 		prUrl: epic.pr_url,
 		branchName: epic.branch_name,
 		notes: epic.notes,

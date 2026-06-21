@@ -64,6 +64,11 @@ import {
 	handleSignalReadyForReview,
 } from './handlers/epics.ts';
 import {
+	handleListSpecs,
+	handleAddSpec,
+	handleDeleteSpec,
+} from './handlers/specs.ts';
+import {
 	handleListTasks,
 	handleCreateTask,
 	handleUpdateTask,
@@ -459,6 +464,11 @@ app.post('/api/projects/:projectId/epics', handleCreateEpic);
 app.put('/api/projects/:projectId/epics/:id', handleUpdateEpic);
 app.delete('/api/projects/:projectId/epics/:id', handleDeleteEpic);
 app.post('/api/projects/:projectId/epics/:id/ready-for-review', handleSignalReadyForReview);
+
+// Project-scoped spec link routes
+app.get('/api/projects/:projectId/epics/:epicId/specs', handleListSpecs);
+app.post('/api/projects/:projectId/epics/:epicId/specs', handleAddSpec);
+app.delete('/api/projects/:projectId/epics/:epicId/specs/:id', handleDeleteSpec);
 
 // Project-scoped task routes
 app.get('/api/projects/:projectId/epics/:epicId/tasks', handleListTasks);

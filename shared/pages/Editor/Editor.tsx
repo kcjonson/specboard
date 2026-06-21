@@ -14,12 +14,13 @@ import {
 	clearLocalStorage,
 	type DocumentComment,
 } from '@specboard/models';
-import { fetchClient } from '@specboard/fetch';
+import { fetchClient, FetchError } from '@specboard/fetch';
 import { captureError } from '@specboard/telemetry';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
 import { MarkdownEditor, fromMarkdown, toMarkdown, type MarkdownEditorHandle } from '../MarkdownEditor';
 import { ChatSidebar } from '../ChatSidebar';
 import { EditorHeader } from './EditorHeader';
+import { EpicPicker } from './EpicPicker';
 import { RecoveryDialog } from './RecoveryDialog';
 import { SaveErrorBanner } from './SaveErrorBanner';
 import styles from './Editor.module.css';
@@ -141,6 +142,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Epic linking state
 	const [linkedEpicId, setLinkedEpicId] = useState<string | undefined>();
 	const [creatingEpic, setCreatingEpic] = useState(false);
+	const [epicPickerOpen, setEpicPickerOpen] = useState(false);
 	const creatingEpicRef = useRef(false);
 
 	// Restore file state
@@ -157,7 +159,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 		try {
 			const epics = await fetchClient.get<Array<{ id: string }>>(
-				`/api/projects/${projectId}/epics?specDocPath=${encodeURIComponent(path)}`
+				`/api/projects/${projectId}/epics?specPath=${encodeURIComponent(path)}`
 			);
 			setLinkedEpicId(epics.length > 0 ? epics[0]?.id : undefined);
 		} catch (err) {
@@ -346,9 +348,13 @@ export function Editor(props: RouteProps): JSX.Element {
 				`/api/projects/${projectId}/epics`,
 				{
 					title,
-					specDocPath: filePath,
 					status: 'ready',
 				}
+			);
+			// Link the current document as a product spec.
+			await fetchClient.post(
+				`/api/projects/${projectId}/epics/${response.id}/specs`,
+				{ path: filePath, type: 'product' }
 			);
 			setLinkedEpicId(response.id);
 			// Navigate to Planning page with highlight param
@@ -374,6 +380,26 @@ export function Editor(props: RouteProps): JSX.Element {
 			navigate(`/projects/${projectId}/planning?highlight=${linkedEpicId}`);
 		}
 	}, [projectId, linkedEpicId]);
+
+	// Link the current document to an existing epic (as a product spec)
+	const handleLinkEpic = useCallback(async (epicId: string) => {
+		const filePath = documentModel.filePath;
+		setEpicPickerOpen(false);
+		if (!filePath) return;
+		try {
+			await fetchClient.post(
+				`/api/projects/${projectId}/epics/${epicId}/specs`,
+				{ path: filePath, type: 'product' }
+			);
+		} catch (err) {
+			// A 409 means it's already linked — treat as success. Log others.
+			if (!(err instanceof FetchError && err.status === 409)) {
+				const error = err instanceof Error ? err : new Error(String(err));
+				captureError(error, { type: 'epic_link_error', filePath, projectId });
+			}
+		}
+		setLinkedEpicId(epicId);
+	}, [projectId, documentModel.filePath]);
 
 	// Handle restoring a deleted file
 	const handleRestoreDeletedFile = useCallback(async () => {
@@ -693,6 +719,7 @@ export function Editor(props: RouteProps): JSX.Element {
 								creatingEpic={creatingEpic}
 								onCreateEpic={handleCreateEpic}
 								onViewEpic={handleViewEpic}
+								onLinkEpic={() => setEpicPickerOpen(true)}
 							/>
 							<div class={styles.mainContent}>
 								<div class={styles.editorArea}>
@@ -734,6 +761,13 @@ export function Editor(props: RouteProps): JSX.Element {
 					filePath={pendingRecovery}
 					onRestore={handleRestore}
 					onDiscard={handleDiscard}
+				/>
+			)}
+			{epicPickerOpen && (
+				<EpicPicker
+					projectId={projectId}
+					onSelect={handleLinkEpic}
+					onClose={() => setEpicPickerOpen(false)}
 				/>
 			)}
 		</Page>
