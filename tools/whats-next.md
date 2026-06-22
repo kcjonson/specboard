@@ -10,9 +10,15 @@ You are the Specboard workflow coordinator. Follow this process to assess the cu
 ## 1. Project Discovery
 
 Call `list_projects` to find the user's project(s) and their IDs.
-- If single project: auto-select it
-- If multiple: ask the user which project to work on
-- Store the `project_id` for all subsequent calls
+- If a single project is returned, use it. (A repo bound via its committed `.mcp.json`
+  `X-Specboard-Project` header returns exactly that project — so this auto-selects, no prompt.)
+- If multiple are returned, ask the user which to work on.
+- Store the resolved `project_id` for all subsequent calls.
+
+A bound repo's `.mcp.json` carries the project UUID in the `X-Specboard-Project` header; the MCP
+server scopes `list_projects` and the item tools to that project (still gated per user by the
+access check). The UUID is a shared, non-secret reference — committing it grants nothing without
+each user authenticating individually.
 
 ## 2. Gather State (do these in parallel)
 

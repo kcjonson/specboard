@@ -65,8 +65,10 @@ interface SessionBinding {
 }
 
 // Create MCP server factory - each session gets its own server instance
-// userId is passed from the auth middleware to ensure all operations are authorized
-function createMcpServer(userId: string): Server {
+// userId is passed from the auth middleware to ensure all operations are authorized.
+// boundProjectId, when present, is the project UUID from the X-Specboard-Project request header
+// (set by a repo's committed .mcp.json) and scopes the session to that one project.
+function createMcpServer(userId: string, boundProjectId?: string): Server {
 	const server = new Server(
 		{
 			name: 'specboard',
@@ -94,11 +96,11 @@ function createMcpServer(userId: string): Server {
 			// Route to appropriate handler using exact matching
 			// Each handler receives userId to verify project ownership
 			if (projectToolNames.has(name)) {
-				return await handleProjectTool(name, args, userId);
+				return await handleProjectTool(name, args, userId, boundProjectId);
 			}
 
 			if (epicToolNames.has(name)) {
-				return await handleEpicTool(name, args, userId);
+				return await handleEpicTool(name, args, userId, boundProjectId);
 			}
 
 			return {
@@ -204,8 +206,12 @@ app.post('/mcp', async (c) => {
 		}
 	};
 
-	// Create and connect MCP server with the authenticated userId
-	const server = createMcpServer(userId);
+	// Create and connect MCP server with the authenticated userId.
+	// A repo's committed .mcp.json carries the project UUID in this header; the server scopes
+	// tools to that project (access is still gated per user by verifyProjectAccess). Trim +
+	// lowercase to tolerate stray whitespace/casing; absent/blank means "unscoped".
+	const boundProjectId = c.req.header('x-specboard-project')?.trim().toLowerCase() || undefined;
+	const server = createMcpServer(userId, boundProjectId);
 	await server.connect(transport);
 
 	// Handle the request

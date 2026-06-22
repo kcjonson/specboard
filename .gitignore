@@ -43,8 +43,9 @@ cdk.context.json
 tmp/
 .vite/
 
-# Claude Code worktrees
+# Claude Code worktrees and local planning artifacts
 .claude/worktrees/
+.claude/plans/
 
 # Local dev scripts
 scripts/seed-dev.sql
