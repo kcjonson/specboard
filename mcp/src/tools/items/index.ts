@@ -22,9 +22,27 @@ export { epicTools };
 export async function handleEpicTool(
 	name: string,
 	args: Record<string, unknown> | undefined,
-	userId: string
+	userId: string,
+	boundProjectId?: string
 ): Promise<ToolResult> {
-	const projectId = args?.project_id as string;
+	const requestedProjectId = args?.project_id as string | undefined;
+
+	// When the repo is bound (committed .mcp.json X-Specboard-Project header), the binding is
+	// authoritative: reject an explicit project_id that targets a different board, and fall back
+	// to the binding when none is supplied so callers never have to repeat it.
+	if (boundProjectId && requestedProjectId && requestedProjectId !== boundProjectId) {
+		return {
+			content: [
+				{
+					type: 'text',
+					text: `This repo is bound to project ${boundProjectId} and cannot operate on project ${requestedProjectId}.`,
+				},
+			],
+			isError: true,
+		};
+	}
+
+	const projectId = requestedProjectId ?? boundProjectId;
 	if (!projectId) {
 		return {
 			content: [{ type: 'text', text: 'project_id is required' }],

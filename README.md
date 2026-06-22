@@ -43,6 +43,17 @@ claude mcp add specboard --url https://specboard.io/mcp
 
 The OAuth flow will handle authentication automatically.
 
+**Bind a repo to a project (optional):** to make `/whats-next` always target one project in a
+given repo, commit a project-scoped `.mcp.json` at the repo root carrying that project's UUID:
+
+```json
+{ "mcpServers": { "specboard": { "type": "http", "url": "https://specboard.io/mcp", "headers": { "X-Specboard-Project": "<project-uuid>" } } } }
+```
+
+This project-scoped entry overrides the user-scoped server above in that repo, so reconnect the
+MCP after adding it. The UUID is a shared reference, not a credential — each user still
+authenticates individually, and access is checked per user against that project.
+
 **2. Install the `/whats-next` command and helper script:**
 
 ```bash
