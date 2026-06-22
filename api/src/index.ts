@@ -17,6 +17,9 @@ import {
 } from '@specboard/auth';
 import { reportError, installErrorHandlers, logRequest } from '@specboard/core';
 import { getCookie } from 'hono/cookie';
+import type { Context } from 'hono';
+import { verifyProjectAccess } from '@specboard/db';
+import { isValidUUID } from './validation.ts';
 
 // Context variables for request tracking
 type AppVariables = {
@@ -456,36 +459,64 @@ app.post('/api/projects/:id/sync/initial', (context) => handleGitHubInitialSync(
 app.get('/api/projects/:id/sync/status', (context) => handleGitHubSyncStatus(context, redis));
 app.post('/api/projects/:id/github/commit', (context) => handleGitHubCommit(context, redis));
 
+// Authorization gate for project-scoped planning routes (epics, specs, tasks, progress).
+// These handlers query by the client-supplied :projectId alone, so without this wrapper they
+// are unauthenticated/IDOR-able. Require a valid session AND that the user owns the project
+// before the handler runs. 404 (not 403) on no-access so we don't disclose project existence.
+function requireProjectAccess(
+	handler: (context: Context) => Promise<Response>
+): (context: Context) => Promise<Response> {
+	return async (context) => {
+		const projectId = context.req.param('projectId');
+		if (!projectId || !isValidUUID(projectId)) {
+			return context.json({ error: 'Invalid project ID format' }, 400);
+		}
+
+		const sessionId = getCookie(context, SESSION_COOKIE_NAME);
+		const session = sessionId ? await getSession(redis, sessionId) : null;
+		const userId = session?.userId ?? null;
+		if (!userId) {
+			return context.json({ error: 'Unauthorized' }, 401);
+		}
+
+		if (!(await verifyProjectAccess(projectId, userId))) {
+			return context.json({ error: 'Project not found' }, 404);
+		}
+
+		return handler(context);
+	};
+}
+
 // Project-scoped epic routes
-app.get('/api/projects/:projectId/epics', handleListEpics);
-app.get('/api/projects/:projectId/epics/current', handleGetCurrentWork);
-app.get('/api/projects/:projectId/epics/:id', handleGetEpic);
-app.post('/api/projects/:projectId/epics', handleCreateEpic);
-app.put('/api/projects/:projectId/epics/:id', handleUpdateEpic);
-app.delete('/api/projects/:projectId/epics/:id', handleDeleteEpic);
-app.post('/api/projects/:projectId/epics/:id/ready-for-review', handleSignalReadyForReview);
+app.get('/api/projects/:projectId/epics', requireProjectAccess(handleListEpics));
+app.get('/api/projects/:projectId/epics/current', requireProjectAccess(handleGetCurrentWork));
+app.get('/api/projects/:projectId/epics/:id', requireProjectAccess(handleGetEpic));
+app.post('/api/projects/:projectId/epics', requireProjectAccess(handleCreateEpic));
+app.put('/api/projects/:projectId/epics/:id', requireProjectAccess(handleUpdateEpic));
+app.delete('/api/projects/:projectId/epics/:id', requireProjectAccess(handleDeleteEpic));
+app.post('/api/projects/:projectId/epics/:id/ready-for-review', requireProjectAccess(handleSignalReadyForReview));
 
 // Project-scoped spec link routes
-app.get('/api/projects/:projectId/epics/:epicId/specs', handleListSpecs);
-app.post('/api/projects/:projectId/epics/:epicId/specs', handleAddSpec);
-app.delete('/api/projects/:projectId/epics/:epicId/specs/:id', handleDeleteSpec);
+app.get('/api/projects/:projectId/epics/:epicId/specs', requireProjectAccess(handleListSpecs));
+app.post('/api/projects/:projectId/epics/:epicId/specs', requireProjectAccess(handleAddSpec));
+app.delete('/api/projects/:projectId/epics/:epicId/specs/:id', requireProjectAccess(handleDeleteSpec));
 
 // Project-scoped task routes
-app.get('/api/projects/:projectId/epics/:epicId/tasks', handleListTasks);
-app.post('/api/projects/:projectId/epics/:epicId/tasks', handleCreateTask);
-app.post('/api/projects/:projectId/epics/:epicId/tasks/bulk', handleBulkCreateTasks);
-app.put('/api/projects/:projectId/tasks/:id', handleUpdateTask);
-app.delete('/api/projects/:projectId/tasks/:id', handleDeleteTask);
-app.post('/api/projects/:projectId/tasks/:id/start', handleStartTask);
-app.post('/api/projects/:projectId/tasks/:id/complete', handleCompleteTask);
-app.post('/api/projects/:projectId/tasks/:id/block', handleBlockTask);
-app.post('/api/projects/:projectId/tasks/:id/unblock', handleUnblockTask);
+app.get('/api/projects/:projectId/epics/:epicId/tasks', requireProjectAccess(handleListTasks));
+app.post('/api/projects/:projectId/epics/:epicId/tasks', requireProjectAccess(handleCreateTask));
+app.post('/api/projects/:projectId/epics/:epicId/tasks/bulk', requireProjectAccess(handleBulkCreateTasks));
+app.put('/api/projects/:projectId/tasks/:id', requireProjectAccess(handleUpdateTask));
+app.delete('/api/projects/:projectId/tasks/:id', requireProjectAccess(handleDeleteTask));
+app.post('/api/projects/:projectId/tasks/:id/start', requireProjectAccess(handleStartTask));
+app.post('/api/projects/:projectId/tasks/:id/complete', requireProjectAccess(handleCompleteTask));
+app.post('/api/projects/:projectId/tasks/:id/block', requireProjectAccess(handleBlockTask));
+app.post('/api/projects/:projectId/tasks/:id/unblock', requireProjectAccess(handleUnblockTask));
 
 // Project-scoped progress notes routes
-app.get('/api/projects/:projectId/epics/:epicId/progress', handleListEpicProgress);
-app.post('/api/projects/:projectId/epics/:epicId/progress', handleCreateEpicProgress);
-app.get('/api/projects/:projectId/tasks/:taskId/progress', handleListTaskProgress);
-app.post('/api/projects/:projectId/tasks/:taskId/progress', handleCreateTaskProgress);
+app.get('/api/projects/:projectId/epics/:epicId/progress', requireProjectAccess(handleListEpicProgress));
+app.post('/api/projects/:projectId/epics/:epicId/progress', requireProjectAccess(handleCreateEpicProgress));
+app.get('/api/projects/:projectId/tasks/:taskId/progress', requireProjectAccess(handleListTaskProgress));
+app.post('/api/projects/:projectId/tasks/:taskId/progress', requireProjectAccess(handleCreateTaskProgress));
 
 // AI Chat
 app.get('/api/chat/models', (context) => handleGetChatModels(context, redis));
