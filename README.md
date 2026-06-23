@@ -116,6 +116,7 @@ During a session, Claude uses the Specboard MCP tools to track progress — star
 | [Architecture](docs/architecture.md) | System design, infrastructure, and monorepo structure |
 | [Setup Guide](docs/setup.md) | Local development environment setup |
 | [Tech Stack](docs/tech-stack.md) | Technology choices, coding standards, and conventions |
+| [Deployment](docs/deployment.md) | How to deploy to staging and production |
 
 Detailed feature specifications live in [`docs/specs/`](docs/specs/).
 
