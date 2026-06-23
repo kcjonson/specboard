@@ -51,8 +51,10 @@ given repo, commit a project-scoped `.mcp.json` at the repo root carrying that p
 ```
 
 This project-scoped entry overrides the user-scoped server above in that repo, so reconnect the
-MCP after adding it. The UUID is a shared reference, not a credential — each user still
-authenticates individually, and access is checked per user against that project.
+MCP after adding it. **On first connect it runs its own one-time OAuth** — the user-scoped
+server's token does not carry over to the project-scoped one, so expect a sign-in prompt (and a
+trust prompt for the new server). The UUID is a shared reference, not a credential — each user
+still authenticates individually, and access is checked per user against that project.
 
 **2. Install the `/whats-next` command and helper script:**
 
