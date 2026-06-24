@@ -2,7 +2,7 @@ import { useMemo, useEffect, useCallback, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { navigate, type RouteProps } from '@specboard/router';
-import { Page, Icon, ErrorBoundary } from '@specboard/ui';
+import { Page, Icon, ErrorBoundary, ResizablePanel } from '@specboard/ui';
 import {
 	DocumentModel,
 	UserModel,
@@ -29,6 +29,14 @@ import styles from './Editor.module.css';
 const AUTO_SAVE_DEBOUNCE_MS = 2500; // 2.5 seconds debounce for server save
 const SAVE_RETRY_DELAY_MS = 5000; // 5 seconds between retries
 const MAX_SAVE_RETRIES = 3;
+
+// Sidebar sizing. The center editor keeps at least CENTER_MIN px, so each
+// sidebar's max width is the container minus the other sidebar minus CENTER_MIN.
+const FILE_BROWSER_DEFAULT_WIDTH = 240;
+const FILE_BROWSER_MIN_WIDTH = 180;
+const CHAT_DEFAULT_WIDTH = 360;
+const CHAT_MIN_WIDTH = 280;
+const CENTER_MIN_WIDTH = 360;
 
 interface SaveError {
 	hasLocalChanges: boolean;
@@ -147,6 +155,26 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Restore file state
 	const [isRestoring, setIsRestoring] = useState(false);
+
+	// Resizable sidebars. We measure the flex container (`.body`) and feed each
+	// ResizablePanel a dynamic maxWidth so neither sidebar can crush the center
+	// editor below CENTER_MIN_WIDTH. The panels own their width + persistence;
+	// here we only track the live widths to compute the cross-panel limits.
+	const bodyRef = useRef<HTMLDivElement>(null);
+	const [containerWidth, setContainerWidth] = useState(0);
+	const [fileBrowserWidth, setFileBrowserWidth] = useState(FILE_BROWSER_DEFAULT_WIDTH);
+	const [chatWidth, setChatWidth] = useState(CHAT_DEFAULT_WIDTH);
+
+	useEffect(() => {
+		const el = bodyRef.current;
+		if (!el || typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver((entries) => {
+			const entry = entries[0];
+			if (entry) setContainerWidth(entry.contentRect.width);
+		});
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, []);
 
 
 	// Check if file has a linked epic
@@ -622,6 +650,19 @@ export function Editor(props: RouteProps): JSX.Element {
 		[documentModel.content, documentModel.comments]
 	);
 
+	// The chat sidebar only mounts while editing a file (see the render branches
+	// below), so it contributes width only then. Until the ResizeObserver reports
+	// a width, the maxes stay undefined and panels restore their stored widths.
+	const chatVisible = !loadError && !isCreatingFile && !isCurrentFileDeleted && !!documentModel.filePath;
+	const fileBrowserMaxWidth =
+		containerWidth > 0
+			? Math.max(FILE_BROWSER_MIN_WIDTH, containerWidth - (chatVisible ? chatWidth : 0) - CENTER_MIN_WIDTH)
+			: undefined;
+	const chatMaxWidth =
+		containerWidth > 0
+			? Math.max(CHAT_MIN_WIDTH, containerWidth - fileBrowserWidth - CENTER_MIN_WIDTH)
+			: undefined;
+
 	return (
 		<Page projectId={projectId} activeTab="Pages">
 			{saveError && (
@@ -632,23 +673,33 @@ export function Editor(props: RouteProps): JSX.Element {
 					onRetry={handleRetryManual}
 				/>
 			)}
-			<div class={styles.body}>
-				<FileBrowser
-					projectId={projectId}
-					selectedPath={documentModel.filePath || undefined}
-					gitStatus={gitStatusModel}
-					onFileSelect={handleFileSelect}
-					onFileCreated={handleFileCreated}
-					onCancelNewFile={handleCancelNewFile}
-					onFileRenamed={handleFileRenamed}
-					onFileDeleted={handleFileDeleted}
-					onStartNewFileRef={handleStartNewFileRef}
-					onRenameFileRef={handleRenameFileRef}
-					hasUnsavedChanges={documentModel.isDirty}
-					onBeforePull={handleBeforePull}
-					onPullComplete={handlePullComplete}
-					class={styles.sidebar}
-				/>
+			<div class={styles.body} ref={bodyRef}>
+				<ResizablePanel
+					storageKey="editor-file-browser"
+					handleSide="right"
+					defaultWidth={FILE_BROWSER_DEFAULT_WIDTH}
+					minWidth={FILE_BROWSER_MIN_WIDTH}
+					maxWidth={fileBrowserMaxWidth}
+					onResize={setFileBrowserWidth}
+					label="Resize file browser"
+				>
+					<FileBrowser
+						projectId={projectId}
+						selectedPath={documentModel.filePath || undefined}
+						gitStatus={gitStatusModel}
+						onFileSelect={handleFileSelect}
+						onFileCreated={handleFileCreated}
+						onCancelNewFile={handleCancelNewFile}
+						onFileRenamed={handleFileRenamed}
+						onFileDeleted={handleFileDeleted}
+						onStartNewFileRef={handleStartNewFileRef}
+						onRenameFileRef={handleRenameFileRef}
+						hasUnsavedChanges={documentModel.isDirty}
+						onBeforePull={handleBeforePull}
+						onPullComplete={handlePullComplete}
+						class={styles.sidebar}
+					/>
+				</ResizablePanel>
 				<main class={styles.main}>
 					{loadError ? (
 						<div class={styles.errorState}>
@@ -733,14 +784,24 @@ export function Editor(props: RouteProps): JSX.Element {
 										editorRef={editorRef}
 									/>
 								</div>
-								<ErrorBoundary>
-									<ChatSidebar
-										documentContent={documentContentForChat}
-										documentPath={documentModel.filePath}
-										projectId={projectId}
-										onApplyEdit={handleApplyEdit}
-									/>
-								</ErrorBoundary>
+								<ResizablePanel
+									storageKey="editor-chat"
+									handleSide="left"
+									defaultWidth={CHAT_DEFAULT_WIDTH}
+									minWidth={CHAT_MIN_WIDTH}
+									maxWidth={chatMaxWidth}
+									onResize={setChatWidth}
+									label="Resize chat sidebar"
+								>
+									<ErrorBoundary>
+										<ChatSidebar
+											documentContent={documentContentForChat}
+											documentPath={documentModel.filePath}
+											projectId={projectId}
+											onApplyEdit={handleApplyEdit}
+										/>
+									</ErrorBoundary>
+								</ResizablePanel>
 							</div>
 						</>
 					) : (
