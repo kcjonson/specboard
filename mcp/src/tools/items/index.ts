@@ -50,11 +50,19 @@ export async function handleEpicTool(
 		};
 	}
 
-	// Security: Verify the user has access to this project
+	// Security: Verify the user has access to this project. verifyProjectAccess returns false for
+	// both "project doesn't exist" and "no access" — keep the message ambiguous between the two so
+	// it can't be used to enumerate valid project IDs (no existence disclosure, no echoing the ID
+	// back). When the project came from the repo binding rather than an explicit project_id, point
+	// at .mcp.json so a stale committed UUID is self-diagnosing instead of an opaque "access denied".
+	const fromBinding = !requestedProjectId && Boolean(boundProjectId);
 	const hasAccess = await verifyProjectAccess(projectId, userId);
 	if (!hasAccess) {
+		const text = fromBinding
+			? "This repo's .mcp.json binding (X-Specboard-Project) points to a project that's unavailable — it may not exist, or your Specboard account may not have access to it. Verify the project UUID committed in .mcp.json and that your account has access to that project."
+			: "Access denied: that project doesn't exist, or your account doesn't have access to it.";
 		return {
-			content: [{ type: 'text', text: 'Access denied: You do not have permission to access this project' }],
+			content: [{ type: 'text', text }],
 			isError: true,
 		};
 	}
