@@ -89,3 +89,7 @@ export type { SplitButtonProps, SplitButtonOption } from './SplitButton/SplitBut
 
 // ErrorBoundary - catches JS errors in child components
 export { ErrorBoundary, withErrorBoundary } from './ErrorBoundary/ErrorBoundary';
+
+// ResizablePanel - drag-to-resize panel with persisted width (sidebars, drawers)
+export { ResizablePanel } from './ResizablePanel/ResizablePanel';
+export type { ResizablePanelProps } from './ResizablePanel/ResizablePanel';

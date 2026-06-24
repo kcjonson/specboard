@@ -17,8 +17,9 @@
 }
 
 .sidebar {
-	width: 240px;
-	flex-shrink: 0;
+	/* Fills its ResizablePanel (the panel owns the width); scrolls internally. */
+	flex: 1;
+	min-height: 0;
 	overflow-y: auto;
 	overflow-x: hidden;
 }

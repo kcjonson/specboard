@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'preact/hooks';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
@@ -6,13 +6,18 @@ import { useModel, ItemsCollection, type ItemModel, type Status, type ItemType }
 import { Page, SplitButton, Text, Select, type SplitButtonOption } from '@specboard/ui';
 import { Board } from '../Board/Board';
 import { Table } from '../Table/Table';
-import { ItemDialog } from '../ItemDialog/ItemDialog';
+import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
+import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
 import { CATEGORY_ALL, CATEGORY_OPTIONS, type PlanningFilters } from './filters';
 import styles from './Planning.module.css';
 
 /** Duration to highlight a newly created item (ms) */
 const HIGHLIGHT_DURATION = 2000;
+
+/** Drawer min width (matches ItemDrawer) and the board's reserved minimum. */
+const DRAWER_MIN_WIDTH = 320;
+const BOARD_MIN_WIDTH = 360;
 
 /** Read the active view from the URL (`?view=table`), defaulting to the board. */
 function readViewFromUrl(): PlanningView {
@@ -39,7 +44,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
 
 	const [selectedItemId, setSelectedItemId] = useState<string | undefined>();
-	const [dialogItem, setDialogItem] = useState<ItemModel | null>(null);
+	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
 	const [highlightedItemId, setHighlightedItemId] = useState<string | undefined>();
@@ -91,8 +96,11 @@ export function Planning(props: RouteProps): JSX.Element {
 		setSelectedItemId(item?.id);
 	}, []);
 
+	// Opening an item selects it and reveals the drawer; the drawer always renders
+	// the currently selected item, so keyboard navigation updates it live.
 	const handleOpenItem = useCallback((item: ItemModel): void => {
-		setDialogItem(item);
+		setSelectedItemId(item.id);
+		setDrawerOpen(true);
 	}, []);
 
 	const handleOpenNewItemDialog = useCallback((type: ItemType): void => {
@@ -112,13 +120,13 @@ export function Planning(props: RouteProps): JSX.Element {
 		setIsNewItemDialogOpen(false);
 	}, []);
 
-	const handleCloseDialog = useCallback((): void => {
-		setDialogItem(null);
+	const handleCloseDrawer = useCallback((): void => {
+		setDrawerOpen(false);
 	}, []);
 
 	const handleDeleteItem = useCallback((item: ItemModel): void => {
 		items.remove(item);
-		setDialogItem(null);
+		setDrawerOpen(false);
 	}, [items]);
 
 	const createOptions: SplitButtonOption[] = useMemo(() => [
@@ -136,6 +144,29 @@ export function Planning(props: RouteProps): JSX.Element {
 		const value = (e.target as HTMLSelectElement).value;
 		setFilters((prev) => ({ ...prev, category: value }));
 	}, []);
+
+	// The drawer renders whichever item is selected; if that item is removed
+	// (e.g. deleted), the lookup returns undefined and the drawer collapses.
+	const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) : undefined;
+
+	// Measure the workspace so the drawer can't widen past leaving the board a
+	// usable minimum. A callback ref (not useRef + mount effect) is required
+	// because the workspace mounts only after the loading/error early-returns
+	// below resolve — a one-shot effect would attach before the node exists.
+	const [workspaceWidth, setWorkspaceWidth] = useState(0);
+	const observerRef = useRef<ResizeObserver | null>(null);
+	const workspaceRefCallback = useCallback((node: HTMLDivElement | null): void => {
+		observerRef.current?.disconnect();
+		if (node && typeof ResizeObserver !== 'undefined') {
+			const observer = new ResizeObserver((entries) => {
+				const entry = entries[0];
+				if (entry) setWorkspaceWidth(entry.contentRect.width);
+			});
+			observer.observe(node);
+			observerRef.current = observer;
+		}
+	}, []);
+	const drawerMaxWidth = workspaceWidth > 0 ? Math.max(DRAWER_MIN_WIDTH, workspaceWidth - BOARD_MIN_WIDTH) : undefined;
 
 	// Loading state
 	if (items.$meta.working && items.length === 0) {
@@ -179,40 +210,44 @@ export function Planning(props: RouteProps): JSX.Element {
 				<SplitButton options={createOptions} prefix="+ New" />
 			</div>
 
-			{view === 'table' ? (
-				<Table
-					items={items}
-					filters={filters}
-					selectedItemId={selectedItemId}
-					onSelectItem={handleSelectItem}
-					onOpenItem={handleOpenItem}
-				/>
-			) : (
-				<Board
-					items={items}
-					projectId={projectId}
-					filters={filters}
-					selectedItemId={selectedItemId}
-					highlightedItemId={highlightedItemId}
-					dialogOpen={dialogItem !== null || isNewItemDialogOpen}
-					onSelectItem={handleSelectItem}
-					onOpenItem={handleOpenItem}
-					onCreateItem={() => handleOpenNewItemDialog('epic')}
-				/>
-			)}
+			<div class={styles.workspace} ref={workspaceRefCallback}>
+				<div class={styles.viewArea}>
+					{view === 'table' ? (
+						<Table
+							items={items}
+							filters={filters}
+							selectedItemId={selectedItemId}
+							onSelectItem={handleSelectItem}
+							onOpenItem={handleOpenItem}
+						/>
+					) : (
+						<Board
+							items={items}
+							projectId={projectId}
+							filters={filters}
+							selectedItemId={selectedItemId}
+							highlightedItemId={highlightedItemId}
+							dialogOpen={isNewItemDialogOpen}
+							onSelectItem={handleSelectItem}
+							onOpenItem={handleOpenItem}
+							onCreateItem={() => handleOpenNewItemDialog('epic')}
+						/>
+					)}
+				</div>
 
-			{dialogItem && (
-				<ItemDialog
-					item={dialogItem}
-					projectId={projectId}
-					onClose={handleCloseDialog}
-					onDelete={handleDeleteItem}
-				/>
-			)}
+				{drawerOpen && selectedItem && (
+					<ItemDrawer
+						item={selectedItem}
+						projectId={projectId}
+						maxWidth={drawerMaxWidth}
+						onClose={handleCloseDrawer}
+						onDelete={handleDeleteItem}
+					/>
+				)}
+			</div>
 
 			{isNewItemDialogOpen && (
-				<ItemDialog
-					isNew
+				<NewItemDialog
 					createType={createType}
 					onClose={handleCloseNewItemDialog}
 					onCreate={handleCreateItem}

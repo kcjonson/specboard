@@ -62,11 +62,9 @@ export function ItemCard({
 	const progressPercent = taskStats.total > 0 ? (taskStats.done / taskStats.total) * 100 : 0;
 	const subStatusLabel = SUB_STATUS_LABELS[item.subStatus];
 
+	// A single click selects the card and opens it in the detail drawer.
 	const handleClick = (): void => {
 		onSelect?.(item);
-	};
-
-	const handleDoubleClick = (): void => {
 		onOpen?.(item);
 	};
 
@@ -96,7 +94,6 @@ export function ItemCard({
 			class={cardClass}
 			data-item-card
 			onClick={handleClick}
-			onDblClick={handleDoubleClick}
 			onKeyDown={handleKeyDown}
 			onDragStart={handleDragStart}
 			onDragEnd={onDragEnd}
