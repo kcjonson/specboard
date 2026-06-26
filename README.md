@@ -31,74 +31,47 @@ For AI-assisted development workflows, the MCP server exposes planning data to t
 
 ## Claude Code Integration
 
-Specboard ships with a `/whats-next` command for [Claude Code](https://claude.ai/code) that connects your AI coding sessions to your planning board. It queries Specboard's MCP server to show current work, suggest what to pick up next, and manage the full development lifecycle — from scoping to PR.
+Specboard ships a plugin for [Claude Code](https://claude.ai/code) that connects your AI coding sessions to your planning board. It bundles a `/specboard:whats-next` skill — discover current work, scope it, keep board status accurate, and run the loop through PR and close-out — together with the MCP server connection, so one install wires up everything.
 
 ### Setup
 
-**1. Register the Specboard MCP server:**
+**Install the plugin:**
 
-```bash
-claude mcp add specboard --url https://specboard.io/mcp
+```
+/plugin marketplace add kcjonson/specboard
+/plugin install specboard@specboard
 ```
 
-The OAuth flow will handle authentication automatically.
+This registers the Specboard MCP server (`https://specboard.io/mcp`) and installs the workflow skill. On first connect, the OAuth flow handles authentication automatically.
 
-**Bind a repo to a project (optional):** to make `/whats-next` always target one project in a
-given repo, commit a project-scoped `.mcp.json` at the repo root carrying that project's UUID:
+**Bind a repo to a project (optional):** to make the skill always target one project in a given
+repo, commit a project-scoped `.mcp.json` at the repo root carrying that project's UUID:
 
 ```json
 { "mcpServers": { "specboard": { "type": "http", "url": "https://specboard.io/mcp", "headers": { "X-Specboard-Project": "<project-uuid>" } } } }
 ```
 
-This project-scoped entry overrides the user-scoped server above in that repo, so reconnect the
-MCP after adding it. **On first connect it runs its own one-time OAuth** — the user-scoped
-server's token does not carry over to the project-scoped one, so expect a sign-in prompt (and a
-trust prompt for the new server). The UUID is a shared reference, not a credential — each user
-still authenticates individually, and access is checked per user against that project.
-
-**2. Install the `/whats-next` command and helper script:**
-
-```bash
-# From the specboard repo root
-mkdir -p ~/.claude/commands ~/.claude/scripts
-ln -sf "$(pwd)/tools/whats-next.md" ~/.claude/commands/whats-next.md
-ln -sf "$(pwd)/tools/assess-git-state.sh" ~/.claude/scripts/assess-git-state.sh
-```
-
-**3. Add MCP tool permissions** to your Claude Code settings (global or per-project `.claude/settings.local.json`):
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Skill(whats-next)",
-      "Bash(bash ~/.claude/scripts/assess-git-state.sh)",
-      "mcp__specboard__list_projects",
-      "mcp__specboard__get_items",
-      "mcp__specboard__create_item",
-      "mcp__specboard__create_items",
-      "mcp__specboard__update_item",
-      "mcp__specboard__delete_item"
-    ]
-  }
-}
-```
+This project-scoped entry overrides the plugin's server in that repo, so reconnect the MCP after
+adding it. **On first connect it runs its own one-time OAuth** — the plugin server's token does not
+carry over to the project-scoped one, so expect a sign-in prompt (and a trust prompt for the new
+server). The UUID is a shared reference, not a credential — each user still authenticates
+individually, and access is checked per user against that project.
 
 ### Usage
 
 From any project directory in Claude Code:
 
 ```
-/whats-next
+/specboard:whats-next
 ```
 
-This will:
+The skill also activates automatically when you're doing Specboard work. It will:
 1. Query your Specboard projects via MCP
 2. Check local git state (branches, worktrees, PRs)
 3. Cross-reference to identify active, paused, and available work
 4. Recommend what to work on next
 
-During a session, Claude uses the Specboard MCP tools to track progress — starting tasks, adding notes on completion, linking branches, and signaling PRs for review.
+During a session, Claude uses the Specboard MCP tools to track progress — scoping work, breaking it into tasks, keeping status accurate, linking branches, and opening (and, when verified, merging) PRs.
 
 ### MCP Tools
 
