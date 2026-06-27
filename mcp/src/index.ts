@@ -66,7 +66,7 @@ Tools: list_projects finds the project (a repo bound via .mcp.json X-Specboard-P
 
 Role model: you can run the full loop (read or write specs, create epics, break work into tasks, build, verify, merge, and close). The human stays in control by choosing when to write a spec themselves and when to review a PR before it merges. One hard rule: verify the work (tests green, behavior confirmed) before you mark any task done or any epic complete. Keep status accurate in real time; never leave a stale in_progress item.
 
-For the full guided workflow (scoping, plan files, status hygiene, close-out), install the Specboard plugin: /plugin marketplace add kcjonson/specboard then /plugin install specboard@specboard`;
+For the full guided workflow (scoping, plan files, status hygiene, close-out), install the Specboard plugin: /plugin marketplace add https://specboard.io/claude then /plugin install claude@specboard`;
 
 // Session-to-user binding for security
 // Prevents session hijacking by ensuring a session can only be used by the user who created it

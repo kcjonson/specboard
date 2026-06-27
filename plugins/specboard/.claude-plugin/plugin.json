@@ -1,6 +1,6 @@
 {
-	"name": "specboard",
-	"description": "Connect Claude Code to your Specboard planning board: discover work, scope it, track status, and run the full dev loop from spec to merge.",
+	"name": "claude",
+	"description": "Connect Claude Code to your Specboard planning board: discover work, scope it, keep board status accurate, and run the dev loop from spec to merge.",
 	"version": "0.1.0",
 	"author": {
 		"name": "Specboard",

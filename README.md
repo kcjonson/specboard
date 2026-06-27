@@ -31,15 +31,15 @@ For AI-assisted development workflows, the MCP server exposes planning data to t
 
 ## Claude Code Integration
 
-Specboard ships a plugin for [Claude Code](https://claude.ai/code) that connects your AI coding sessions to your planning board. It bundles a `/specboard:whats-next` skill — discover current work, scope it, keep board status accurate, and run the loop through PR and close-out — together with the MCP server connection, so one install wires up everything.
+Specboard ships a plugin for [Claude Code](https://claude.ai/code) that connects your AI coding sessions to your planning board. It bundles a `/claude:whats-next` skill — discover current work, scope it, keep board status accurate, and run the loop through PR and close-out — together with the MCP server connection, so one install wires up everything.
 
 ### Setup
 
 **Install the plugin:**
 
 ```
-/plugin marketplace add kcjonson/specboard
-/plugin install specboard@specboard
+/plugin marketplace add https://specboard.io/claude
+/plugin install claude@specboard
 ```
 
 This registers the Specboard MCP server (`https://specboard.io/mcp`) and installs the workflow skill. On first connect, the OAuth flow handles authentication automatically.
@@ -62,7 +62,7 @@ individually, and access is checked per user against that project.
 From any project directory in Claude Code:
 
 ```
-/specboard:whats-next
+/claude:whats-next
 ```
 
 The skill also activates automatically when you're doing Specboard work. It will:
