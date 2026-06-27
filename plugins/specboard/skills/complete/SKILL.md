@@ -47,17 +47,39 @@ Every relevant PR must be merged before any Specboard item changes status. This 
 - Only once the PR(s) are actually merged do you move to step 6. An open or draft PR means the
   ticket stays open, no exceptions.
 
-## 6. Close the board
+## 6. Reconcile unfinished items
 
-With the PR(s) merged:
+An epic closes clean only when it has no dangling open work. Before marking it complete, settle
+every task that isn't `done`, and capture everything the session turned up. Lost followups and
+half-closed epics are the main thing this step exists to prevent.
+
+- **File the followups the session surfaced.** Anything you flagged for later (a discovered bug, a
+  "we should also..." note, a TODO you left in the chat) gets filed as its own item, not left in the
+  conversation: `create_item(project_id, title, 'bug' | 'chore' | 'epic', { description })`, or
+  `create_items(project_id, other_epic_id, [...])` for tasks under another epic. If it isn't on the
+  board, it's lost.
+- **Move deferred tasks out of this epic.** A task that was punted (out of scope, next phase, not
+  happening now) can't just sit open, it blocks the close and misrepresents the epic. Refile it
+  where it belongs (`create_item` / `create_items` under a followup or next-phase epic), then remove
+  it from this epic with `delete_item(project_id, task_id, 'task')`. The work survives in its new
+  home; this epic stops carrying it.
+- **Still-in-scope, unfinished work means the epic isn't done.** If a not-done task genuinely belongs
+  to this epic and is still needed, don't close, finish it first.
+
+After this, every task remaining on the epic is `done`, and every deferral and followup has a home on
+the board.
+
+## 7. Close the board
+
+With the PR(s) merged and the items reconciled:
 - `update_item(project_id, epic_id, 'epic', { sub_status: 'complete' })` sets the board to `done`.
-- Add a closing note summarizing what shipped:
-  `update_item(project_id, epic_id, 'epic', { notes: '<what shipped>' })`.
+- Add a closing note summarizing what shipped, plus what was deferred and where it went:
+  `update_item(project_id, epic_id, 'epic', { notes: '<what shipped; deferred X to #Y>' })`.
 - Every task `done`; nothing left `in_progress`.
 - If you kept a plan file, mark it complete (`# COMPLETE - {date}` on the first line), wherever it
   lives.
 
-## 7. Tear down the session
+## 8. Tear down the session
 
 Close-out includes cleaning up after yourself. Stop anything this session started and left running:
 - background shells and long-running commands (dev servers, watchers, tunnels, `npm`/docker
