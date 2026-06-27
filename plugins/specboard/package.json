@@ -1,5 +1,5 @@
 {
-	"name": "@specboard/claude",
+	"name": "@specboard/plugin-claude",
 	"version": "0.1.0",
 	"description": "Specboard workflow plugin for Claude Code: discover work, scope it, keep board status accurate, and run the dev loop from spec to merge.",
 	"keywords": ["claude", "claude-code", "claude-code-plugin", "specboard"],

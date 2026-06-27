@@ -9,10 +9,10 @@
 	},
 	"plugins": [
 		{
-			"name": "claude",
+			"name": "specboard",
 			"source": {
 				"source": "npm",
-				"package": "@specboard/claude"
+				"package": "@specboard/plugin-claude"
 			},
 			"description": "Connect Claude Code to your Specboard planning board: discover work, scope it, keep board status accurate, and run the dev loop from spec to merge."
 		}
