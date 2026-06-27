@@ -35,11 +35,11 @@ bash ${CLAUDE_SKILL_DIR}/assess-git-state.sh
 This returns JSON with:
 - `worktrees`: local git worktrees (path + branch)
 - `remoteBranches`: branches with recent activity (last 7 days)
-- `incompletePlans`: plan files in `.claude/plans/` without `# COMPLETE` header
+- `incompletePlans`: plan files the helper finds (it checks `.claude/plans/`) without a `# COMPLETE` header
 
 If the script is unavailable, gather this manually: `git worktree list`,
-`git branch -r --sort=-committerdate`, and glob `.claude/plans/*.md` checking first lines for
-`# COMPLETE`.
+`git branch -r --sort=-committerdate`, and check your plan files (wherever you keep them) for a
+`# COMPLETE` header on the first line.
 
 ### 2b. Git Status
 - Current branch, uncommitted changes, unpushed commits
@@ -104,17 +104,20 @@ Output a structured summary:
 
 When the user picks an item, this is the scoping phase. The epic's `sub_status` is `scoping` here.
 
-**Read what exists first.**
+**Read what the epic links.**
 `get_items(project_id, { item_id: epic_id, include_tasks: true, include_notes: true })` returns the
-epic plus its linked `specs` (each has `path` and `type`). Read every linked spec from the
-filesystem.
+epic plus its linked `specs` (each has `path` and `type`). Those links are how you find the relevant
+docs: read what's linked, and nothing more. Don't go searching the doc folder or assume a layout, a
+project organizes its docs however it likes (or keeps none). The epic's links are the source of
+truth for what to read.
 
 **Specs, flexible authorship.** A spec is the "why and what." Either party may write it:
 - If the human handed you a spec or one is already linked, read it and treat it as the source of
   intent.
-- If the work needs design and no spec exists, draft one yourself in `docs/specs/` using kebab-case
-  and the existing spec shape (title, overview, requirements, dependencies, status). Commit it on
-  the feature branch and let it ride the PR like any other change.
+- If the work needs design and no spec exists, draft one. Put it where the project already keeps
+  docs (match the paths of specs linked to other epics, or ask), there's no required `docs/` layout.
+  Follow the shape of the project's existing specs (title, overview, requirements, dependencies,
+  status). Commit it on the feature branch and let it ride the PR like any other change.
 - Link the spec to the epic with `create_item` / `update_item` `specs: [{ path, type }]`, `type`
   being `product` or `technical`. The path may point at a file that isn't merged yet (or never
   merges), a dead link is fine, the path is a stable reference, not a fetch.
@@ -123,14 +126,14 @@ When the work is small or self-evident (a chore, a one-line bug), skip the spec.
 one to satisfy process.
 
 **Plan mode and the plan file.** Plan mode *is* scoping. Use it to explore the code and design the
-approach before writing anything. Its output is a plan file in `.claude/plans/{description}.md`,
+approach before writing anything. Its output is a plan file (wherever your setup keeps plan files),
 your durable, private "how": architecture, files to touch, tradeoffs, and how you'll verify. The
 plan file is the source; the board is the projection. The steps in your plan become the MCP tasks
 the human sees.
 
 The three layers, so you don't duplicate:
-- **Spec** (`docs/specs/`), the why/what. Shared. Human or Claude authored.
-- **Plan file** (`.claude/plans/`), the detailed how. Private reasoning. Claude authored.
+- **Spec**, the why/what. Shared. Human or Claude authored. Lives wherever the project keeps docs; the epic links it.
+- **Plan file**, the detailed how. Private reasoning. Claude authored. Lives wherever your setup keeps plan files.
 - **MCP tasks**, the human-readable checklist, derived from the plan's steps. Shared, status-tracked.
 
 Keep detail and reasoning in the plan file; keep the trackable checklist in MCP. Don't pour fine
@@ -190,21 +193,9 @@ epic-level note at real decision points: `update_item(project_id, epic_id, 'epic
 
 ## 9. Finishing and Closing
 
-1. **Verify.** Tests green; run `/verify` (or exercise the change) to confirm it does what the spec
-   said. Verification is the gate for everything below.
-2. Open the PR: `gh pr create`.
-3. `update_item(project_id, epic_id, 'epic', { sub_status: 'pr_open', pr_url: '<url>' })`, moves
-   the board to in_review.
-4. **If the human wants to review**, stop here and stay on the feature branch, feedback may come
-   immediately. The human merges and the loop is theirs to close.
-5. **If you have merge authority and the work is verified**, you may merge it yourself
-   (`gh pr merge`). Having merged, close the ticket, don't leave a merged epic open:
-   `update_item(project_id, epic_id, 'epic', { sub_status: 'complete' })` sets board status `done`.
-   Add a closing note summarizing what shipped.
-6. Mark the plan file: add `# COMPLETE - {date}` on the first line.
-
-An unverified merge is never a close. If you can't verify, open the PR, set `pr_open`, and leave it
-for the human.
+When the work is built and ready to close out, run `/specboard:complete`, the close-out bookend to
+this skill. It verifies the work, opens or finalizes the PR, and (when verified) merges and marks
+the epic complete on the board.
 
 ## 10. How the roles split
 
