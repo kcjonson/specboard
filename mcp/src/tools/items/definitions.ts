@@ -10,7 +10,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'get_items',
 		description:
-			'Query work items (epics and bugs) with flexible filtering. Always returns task stats. Optionally include full task lists and progress notes. Use item_id for single-item lookup, or filter by status/type/search for lists.',
+			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats. Optionally include each item\'s children and progress notes. Use item_id for a single item, or filter by status/type/search for lists.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -36,9 +36,9 @@ export const epicTools: Tool[] = [
 					type: 'string',
 					description: 'Search title and description (case-insensitive)',
 				},
-				include_tasks: {
+				include_children: {
 					type: 'boolean',
-					description: 'Include task details for each item (default: false)',
+					description: 'Include child items for each item (default: false)',
 				},
 				include_notes: {
 					type: 'boolean',
@@ -55,7 +55,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'create_item',
 		description:
-			'Create a new work item. For epics/bugs: creates a top-level item. For tasks: creates under a parent work item (parent_id required).',
+			'Create an item. Epics are top-level containers; tasks and bugs can be top-level or nested under a parent (set parent_id).',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -74,7 +74,7 @@ export const epicTools: Tool[] = [
 				},
 				parent_id: {
 					type: 'string',
-					description: 'Parent work item ID (required when type=task, ignored otherwise)',
+					description: 'Parent item id to nest this item under. Omit for a top-level item.',
 				},
 				description: {
 					type: 'string',
@@ -136,7 +136,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'update_item',
 		description:
-			'Update any work item or task. For work items (epic/bug): supports title, description, status, sub_status, specs, branch_name, pr_url, notes. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). For tasks: supports title, details, status (ready/in_progress/blocked/done), note.',
+			'Update an item: title, description, status, sub_status, specs, branch_name, pr_url, notes, note. Set parent_id to move it under another item, or parent_id null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done).',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -151,7 +151,11 @@ export const epicTools: Tool[] = [
 				type: {
 					type: 'string',
 					enum: ['epic', 'bug', 'task'],
-					description: 'Type of item being updated — routes to correct table',
+					description: 'Item type (optional, informational).',
+				},
+				parent_id: {
+					type: 'string',
+					description: 'Move the item under this parent, or null to promote it to top-level.',
 				},
 				title: {
 					type: 'string',
@@ -199,7 +203,7 @@ export const epicTools: Tool[] = [
 					description: 'Set note on a task — context for any outcome (completion, blocked, cut, etc.)',
 				},
 			},
-			required: ['project_id', 'item_id', 'type'],
+			required: ['project_id', 'item_id'],
 		},
 	},
 	{
@@ -223,7 +227,7 @@ export const epicTools: Tool[] = [
 					description: 'Type of item being deleted',
 				},
 			},
-			required: ['project_id', 'item_id', 'type'],
+			required: ['project_id', 'item_id'],
 		},
 	},
 ];

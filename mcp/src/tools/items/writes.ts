@@ -1,92 +1,58 @@
 /**
  * Write handlers for work item MCP tools.
  *
- * Handles: create_item, create_items, update_item, delete_item
+ * Handles: create_item, create_items, update_item, delete_item.
+ * Everything is an item; tasks/bugs differ from epics only by type and by having a parent.
  */
 
 import {
-	createEpic as createEpicService,
-	updateEpic as updateEpicService,
-	deleteEpic as deleteEpicService,
-	createTask as createTaskService,
-	createTasks as createTasksService,
-	updateTask as updateTaskService,
-	deleteTask as deleteTaskService,
-	startTask as startTaskService,
-	completeTask as completeTaskService,
-	blockTask as blockTaskService,
-	unblockTask as unblockTaskService,
-	verifyEpicOwnership,
-	verifyTaskOwnership,
+	createItem as createItemService,
+	createItems as createItemsService,
+	updateItem as updateItemService,
+	moveItem as moveItemService,
+	deleteItem as deleteItemService,
+	startItem as startItemService,
+	completeItem as completeItemService,
+	blockItem as blockItemService,
+	unblockItem as unblockItemService,
+	verifyItemOwnership,
 	setSpecs as setSpecsService,
 	SpecValidationError,
-	type EpicType,
-	type EpicStatus,
+	type ItemType,
+	type ItemStatus,
 	type SubStatus,
-	type TaskStatus,
 	type SpecType,
+	type UpdateItemInput,
 } from '@specboard/db';
 
 import type { ToolResult } from './index.ts';
+
+function ok(payload: unknown): ToolResult {
+	return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+}
+
+function err(text: string): ToolResult {
+	return { content: [{ type: 'text', text }], isError: true };
+}
 
 export async function createItem(
 	projectId: string,
 	args: Record<string, unknown> | undefined,
 ): Promise<ToolResult> {
 	const title = args?.title as string;
-	if (!title) {
-		return {
-			content: [{ type: 'text', text: 'title is required' }],
-			isError: true,
-		};
-	}
+	if (!title) return err('title is required');
 
-	const type = (args?.type as string) || 'epic';
+	const type = ((args?.type as string) || 'epic') as ItemType;
+	const validTypes: ItemType[] = ['epic', 'task', 'bug'];
+	if (!validTypes.includes(type)) return err('Invalid type. Must be one of: epic, task, bug');
 
-	if (type === 'task') {
-		// Route to task creation
-		const parentId = args?.parent_id as string;
-		if (!parentId) {
-			return {
-				content: [{ type: 'text', text: 'parent_id is required when type=task' }],
-				isError: true,
-			};
-		}
+	const parentId = (args?.parent_id as string | undefined) ?? null;
+	if (parentId && !(await verifyItemOwnership(projectId, parentId))) return err('Parent item not found');
 
-		const task = await createTaskService(projectId, parentId, {
-			title,
-			details: args?.description as string | undefined,
-		});
-
-		return {
-			content: [
-				{
-					type: 'text',
-					text: JSON.stringify(
-						{
-							created: { id: task.id, title: task.title, type: 'task', status: task.status },
-							message: 'Task created',
-						},
-						null,
-						2
-					),
-				},
-			],
-		};
-	}
-
-	// Epic/bug creation
-	const validTypes: EpicType[] = ['epic', 'bug'];
-	if (!validTypes.includes(type as EpicType)) {
-		return {
-			content: [{ type: 'text', text: 'Invalid type. Must be one of: epic, bug, task' }],
-			isError: true,
-		};
-	}
-
-	const epic = await createEpicService(projectId, {
+	const item = await createItemService(projectId, {
 		title,
-		type: type as EpicType,
+		type,
+		parentId,
 		description: args?.description as string | undefined,
 	});
 
@@ -94,36 +60,17 @@ export async function createItem(
 	let specs;
 	if (Array.isArray(args?.specs)) {
 		try {
-			specs = await setSpecsService(projectId, epic.id, args.specs as Array<{ path: string; type: SpecType }>);
+			specs = await setSpecsService(projectId, item.id, args.specs as Array<{ path: string; type: SpecType }>);
 		} catch (error) {
-			if (error instanceof SpecValidationError) {
-				return { content: [{ type: 'text', text: error.message }], isError: true };
-			}
+			if (error instanceof SpecValidationError) return err(error.message);
 			throw error;
 		}
 	}
 
-	return {
-		content: [
-			{
-				type: 'text',
-				text: JSON.stringify(
-					{
-						created: {
-							id: epic.id,
-							title: epic.title,
-							type: epic.type,
-							status: epic.status,
-							...(specs ? { specs } : {}),
-						},
-						message: `${type.charAt(0).toUpperCase() + type.slice(1)} created`,
-					},
-					null,
-					2
-				),
-			},
-		],
-	};
+	return ok({
+		created: { id: item.id, title: item.title, type: item.type, status: item.status, parentId: item.parentId, ...(specs ? { specs } : {}) },
+		message: `${type.charAt(0).toUpperCase() + type.slice(1)} created`,
+	});
 }
 
 export async function createItems(
@@ -133,30 +80,16 @@ export async function createItems(
 	const parentId = args?.parent_id as string;
 	const items = args?.items as Array<{ title: string; details?: string }>;
 
-	if (!parentId || !items || items.length === 0) {
-		return {
-			content: [{ type: 'text', text: 'parent_id and items array are required' }],
-			isError: true,
-		};
-	}
+	if (!parentId || !items || items.length === 0) return err('parent_id and items array are required');
+	if (!(await verifyItemOwnership(projectId, parentId))) return err('Parent item not found');
 
-	const created = await createTasksService(projectId, parentId, items);
+	const created = await createItemsService(
+		projectId,
+		parentId,
+		items.map((it) => ({ title: it.title, description: it.details })),
+	);
 
-	return {
-		content: [
-			{
-				type: 'text',
-				text: JSON.stringify(
-					{
-						created: created.map((t) => ({ id: t.id, title: t.title, status: t.status })),
-						count: created.length,
-					},
-					null,
-					2
-				),
-			},
-		],
-	};
+	return ok({ created: created.map((t) => ({ id: t.id, title: t.title, status: t.status })), count: created.length });
 }
 
 export async function updateItem(
@@ -164,109 +97,61 @@ export async function updateItem(
 	args: Record<string, unknown> | undefined,
 ): Promise<ToolResult> {
 	const itemId = args?.item_id as string;
-	const type = args?.type as string;
+	if (!itemId) return err('item_id is required');
 
-	if (!itemId || !type) {
-		return {
-			content: [{ type: 'text', text: 'item_id and type are required' }],
-			isError: true,
-		};
+	if (!(await verifyItemOwnership(projectId, itemId))) {
+		return err('Access denied: item does not belong to this project');
 	}
 
-	if (type === 'task') {
-		// Verify task belongs to project
-		const taskBelongs = await verifyTaskOwnership(projectId, itemId);
-		if (!taskBelongs) {
-			return {
-				content: [{ type: 'text', text: 'Access denied: Task does not belong to this project' }],
-				isError: true,
-			};
-		}
-
-		// Handle task-specific status transitions via dedicated service functions
-		const status = args?.status as TaskStatus | undefined;
-		const note = args?.note as string | undefined;
-
-		if (status === 'in_progress') {
-			const task = await startTaskService(itemId);
-			if (!task) return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
-			// If note was also provided, update it separately
-			if (note !== undefined) {
-				await updateTaskService(itemId, { note });
-			}
-			return {
-				content: [{ type: 'text', text: JSON.stringify({ updated: { id: task.id, status: task.status }, message: 'Task started' }, null, 2) }],
-			};
-		}
-
-		if (status === 'done') {
-			const task = await completeTaskService(itemId, note);
-			if (!task) return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
-			return {
-				content: [{ type: 'text', text: JSON.stringify({ updated: { id: task.id, status: task.status, note: task.note }, message: 'Task completed' }, null, 2) }],
-			};
-		}
-
-		if (status === 'blocked') {
-			if (!note) {
-				return { content: [{ type: 'text', text: 'note is required when blocking a task' }], isError: true };
-			}
-			const task = await blockTaskService(itemId, note);
-			if (!task) return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
-			return {
-				content: [{ type: 'text', text: JSON.stringify({ updated: { id: task.id, status: task.status, note: task.note }, message: 'Task blocked' }, null, 2) }],
-			};
-		}
-
-		if (status === 'ready' && !args?.title && !args?.description && note === undefined) {
-			// Unblock shorthand (only when no other fields provided)
-			const task = await unblockTaskService(itemId);
-			if (!task) return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
-			return {
-				content: [{ type: 'text', text: JSON.stringify({ updated: { id: task.id, status: task.status }, message: 'Task unblocked' }, null, 2) }],
-			};
-		}
-
-		// General task update (title, details, note without status change)
-		const updateData: Record<string, unknown> = {};
-		if (args?.title !== undefined) updateData.title = args.title;
-		if (args?.description !== undefined) updateData.details = args.description;
-		if (note !== undefined) updateData.note = note;
-		if (status !== undefined) updateData.status = status;
-
-		const task = await updateTaskService(itemId, updateData);
-		if (!task) return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
-
-		return {
-			content: [{ type: 'text', text: JSON.stringify({ updated: { id: task.id, title: task.title, status: task.status, note: task.note }, message: 'Task updated' }, null, 2) }],
-		};
+	// Reparent (move under another item) or promote to top-level (parent_id null).
+	if (args?.parent_id !== undefined) {
+		const newParentId = args.parent_id === null ? null : (args.parent_id as string);
+		if (newParentId && !(await verifyItemOwnership(projectId, newParentId))) return err('Parent item not found');
+		const moved = await moveItemService(projectId, itemId, newParentId);
+		if (!moved) return err('Item not found');
+		return ok({ updated: { id: moved.id, parentId: moved.parentId }, message: newParentId ? 'Item moved' : 'Item promoted to top-level' });
 	}
 
-	// Work item (epic/bug) update
-	const epicBelongs = await verifyEpicOwnership(projectId, itemId);
-	if (!epicBelongs) {
-		return {
-			content: [{ type: 'text', text: 'Access denied: Item does not belong to this project' }],
-			isError: true,
-		};
+	const status = args?.status as ItemStatus | undefined;
+	const note = args?.note as string | undefined;
+
+	// Status-transition shortcuts.
+	if (status === 'in_progress') {
+		const item = await startItemService(projectId, itemId);
+		if (note !== undefined) await updateItemService(projectId, itemId, { note });
+		if (!item) return err('Item not found');
+		return ok({ updated: { id: item.id, status: item.status }, message: 'Item started' });
+	}
+	if (status === 'done') {
+		const item = await completeItemService(projectId, itemId, note);
+		if (!item) return err('Item not found');
+		return ok({ updated: { id: item.id, status: item.status, note: item.note }, message: 'Item completed' });
+	}
+	if (status === 'blocked') {
+		if (!note) return err('note is required when blocking an item');
+		const item = await blockItemService(projectId, itemId, note);
+		if (!item) return err('Item not found');
+		return ok({ updated: { id: item.id, status: item.status, note: item.note }, message: 'Item blocked' });
+	}
+	if (status === 'ready' && args?.title === undefined && args?.description === undefined && note === undefined) {
+		const item = await unblockItemService(projectId, itemId);
+		if (!item) return err('Item not found');
+		return ok({ updated: { id: item.id, status: item.status }, message: 'Item unblocked' });
 	}
 
-	const updateData: Record<string, unknown> = {};
-	if (args?.title !== undefined) updateData.title = args.title;
-	if (args?.description !== undefined) updateData.description = args.description;
-	if (args?.status !== undefined) updateData.status = args.status as EpicStatus;
+	// General field update.
+	const updateData: UpdateItemInput = {};
+	if (args?.title !== undefined) updateData.title = args.title as string;
+	if (args?.description !== undefined) updateData.description = args.description as string;
+	if (status !== undefined) updateData.status = status;
 	if (args?.sub_status !== undefined) updateData.subStatus = args.sub_status as SubStatus;
-	if (args?.branch_name !== undefined) updateData.branchName = args.branch_name;
-	if (args?.pr_url !== undefined) updateData.prUrl = args.pr_url;
-	if (args?.notes !== undefined) updateData.notes = args.notes;
+	if (args?.branch_name !== undefined) updateData.branchName = args.branch_name as string;
+	if (args?.pr_url !== undefined) updateData.prUrl = args.pr_url as string;
+	if (args?.notes !== undefined) updateData.notes = args.notes as string;
+	if (note !== undefined) updateData.note = note;
 
-	const epic = await updateEpicService(projectId, itemId, updateData);
-	if (!epic) {
-		return {
-			content: [{ type: 'text', text: 'Item not found' }],
-			isError: true,
-		};
-	}
+	const item = await updateItemService(projectId, itemId, updateData);
+	if (!item) return err('Item not found');
 
 	// Replace the full set of typed spec links when provided.
 	let specs;
@@ -274,36 +159,23 @@ export async function updateItem(
 		try {
 			specs = await setSpecsService(projectId, itemId, args.specs as Array<{ path: string; type: SpecType }>);
 		} catch (error) {
-			if (error instanceof SpecValidationError) {
-				return { content: [{ type: 'text', text: error.message }], isError: true };
-			}
+			if (error instanceof SpecValidationError) return err(error.message);
 			throw error;
 		}
 	}
 
-	return {
-		content: [
-			{
-				type: 'text',
-				text: JSON.stringify(
-					{
-						updated: {
-							id: epic.id,
-							title: epic.title,
-							status: epic.status,
-							subStatus: epic.subStatus,
-							branchName: epic.branchName,
-							prUrl: epic.prUrl,
-							...(specs ? { specs } : {}),
-						},
-						message: 'Item updated',
-					},
-					null,
-					2
-				),
-			},
-		],
-	};
+	return ok({
+		updated: {
+			id: item.id,
+			title: item.title,
+			status: item.status,
+			subStatus: item.subStatus,
+			branchName: item.branchName,
+			prUrl: item.prUrl,
+			...(specs ? { specs } : {}),
+		},
+		message: 'Item updated',
+	});
 }
 
 export async function deleteItem(
@@ -311,41 +183,13 @@ export async function deleteItem(
 	args: Record<string, unknown> | undefined,
 ): Promise<ToolResult> {
 	const itemId = args?.item_id as string;
-	const type = args?.type as string;
+	if (!itemId) return err('item_id is required');
 
-	if (!itemId || !type) {
-		return {
-			content: [{ type: 'text', text: 'item_id and type are required' }],
-			isError: true,
-		};
+	if (!(await verifyItemOwnership(projectId, itemId))) {
+		return err('Access denied: item does not belong to this project');
 	}
 
-	if (type === 'task') {
-		const taskBelongs = await verifyTaskOwnership(projectId, itemId);
-		if (!taskBelongs) {
-			return {
-				content: [{ type: 'text', text: 'Access denied: Task does not belong to this project' }],
-				isError: true,
-			};
-		}
-
-		const deleted = await deleteTaskService(itemId);
-		return {
-			content: [{ type: 'text', text: JSON.stringify({ deleted, message: deleted ? 'Task deleted' : 'Task not found' }, null, 2) }],
-			isError: !deleted,
-		};
-	}
-
-	// Work item delete
-	const epicBelongs = await verifyEpicOwnership(projectId, itemId);
-	if (!epicBelongs) {
-		return {
-			content: [{ type: 'text', text: 'Access denied: Item does not belong to this project' }],
-			isError: true,
-		};
-	}
-
-	const deleted = await deleteEpicService(projectId, itemId);
+	const deleted = await deleteItemService(projectId, itemId);
 	return {
 		content: [{ type: 'text', text: JSON.stringify({ deleted, message: deleted ? 'Item deleted' : 'Item not found' }, null, 2) }],
 		isError: !deleted,

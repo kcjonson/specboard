@@ -58,35 +58,27 @@ import {
 	handleDeleteAuthorization,
 } from './handlers/oauth.ts';
 import {
-	handleListEpics,
-	handleGetEpic,
-	handleCreateEpic,
-	handleUpdateEpic,
-	handleDeleteEpic,
+	handleListItems,
+	handleGetItem,
 	handleGetCurrentWork,
-	handleSignalReadyForReview,
-} from './handlers/epics.ts';
+	handleCreateItem,
+	handleCreateChildren,
+	handleUpdateItem,
+	handleMoveItem,
+	handleDeleteItem,
+	handleStartItem,
+	handleCompleteItem,
+	handleBlockItem,
+	handleUnblockItem,
+} from './handlers/items.ts';
 import {
 	handleListSpecs,
 	handleAddSpec,
 	handleDeleteSpec,
 } from './handlers/specs.ts';
 import {
-	handleListTasks,
-	handleCreateTask,
-	handleUpdateTask,
-	handleDeleteTask,
-	handleBulkCreateTasks,
-	handleStartTask,
-	handleCompleteTask,
-	handleBlockTask,
-	handleUnblockTask,
-} from './handlers/tasks.ts';
-import {
-	handleListEpicProgress,
-	handleCreateEpicProgress,
-	handleListTaskProgress,
-	handleCreateTaskProgress,
+	handleListItemProgress,
+	handleCreateItemProgress,
 } from './handlers/progress.ts';
 import {
 	handleListProjects,
@@ -487,36 +479,28 @@ function requireProjectAccess(
 	};
 }
 
-// Project-scoped epic routes
-app.get('/api/projects/:projectId/epics', requireProjectAccess(handleListEpics));
-app.get('/api/projects/:projectId/epics/current', requireProjectAccess(handleGetCurrentWork));
-app.get('/api/projects/:projectId/epics/:id', requireProjectAccess(handleGetEpic));
-app.post('/api/projects/:projectId/epics', requireProjectAccess(handleCreateEpic));
-app.put('/api/projects/:projectId/epics/:id', requireProjectAccess(handleUpdateEpic));
-app.delete('/api/projects/:projectId/epics/:id', requireProjectAccess(handleDeleteEpic));
-app.post('/api/projects/:projectId/epics/:id/ready-for-review', requireProjectAccess(handleSignalReadyForReview));
+// Project-scoped item routes (/current before /:id so it isn't captured as an id)
+app.get('/api/projects/:projectId/items', requireProjectAccess(handleListItems));
+app.get('/api/projects/:projectId/items/current', requireProjectAccess(handleGetCurrentWork));
+app.get('/api/projects/:projectId/items/:id', requireProjectAccess(handleGetItem));
+app.post('/api/projects/:projectId/items', requireProjectAccess(handleCreateItem));
+app.post('/api/projects/:projectId/items/:id/children', requireProjectAccess(handleCreateChildren));
+app.put('/api/projects/:projectId/items/:id', requireProjectAccess(handleUpdateItem));
+app.delete('/api/projects/:projectId/items/:id', requireProjectAccess(handleDeleteItem));
+app.post('/api/projects/:projectId/items/:id/move', requireProjectAccess(handleMoveItem));
+app.post('/api/projects/:projectId/items/:id/start', requireProjectAccess(handleStartItem));
+app.post('/api/projects/:projectId/items/:id/complete', requireProjectAccess(handleCompleteItem));
+app.post('/api/projects/:projectId/items/:id/block', requireProjectAccess(handleBlockItem));
+app.post('/api/projects/:projectId/items/:id/unblock', requireProjectAccess(handleUnblockItem));
 
 // Project-scoped spec link routes
-app.get('/api/projects/:projectId/epics/:epicId/specs', requireProjectAccess(handleListSpecs));
-app.post('/api/projects/:projectId/epics/:epicId/specs', requireProjectAccess(handleAddSpec));
-app.delete('/api/projects/:projectId/epics/:epicId/specs/:id', requireProjectAccess(handleDeleteSpec));
-
-// Project-scoped task routes
-app.get('/api/projects/:projectId/epics/:epicId/tasks', requireProjectAccess(handleListTasks));
-app.post('/api/projects/:projectId/epics/:epicId/tasks', requireProjectAccess(handleCreateTask));
-app.post('/api/projects/:projectId/epics/:epicId/tasks/bulk', requireProjectAccess(handleBulkCreateTasks));
-app.put('/api/projects/:projectId/tasks/:id', requireProjectAccess(handleUpdateTask));
-app.delete('/api/projects/:projectId/tasks/:id', requireProjectAccess(handleDeleteTask));
-app.post('/api/projects/:projectId/tasks/:id/start', requireProjectAccess(handleStartTask));
-app.post('/api/projects/:projectId/tasks/:id/complete', requireProjectAccess(handleCompleteTask));
-app.post('/api/projects/:projectId/tasks/:id/block', requireProjectAccess(handleBlockTask));
-app.post('/api/projects/:projectId/tasks/:id/unblock', requireProjectAccess(handleUnblockTask));
+app.get('/api/projects/:projectId/items/:itemId/specs', requireProjectAccess(handleListSpecs));
+app.post('/api/projects/:projectId/items/:itemId/specs', requireProjectAccess(handleAddSpec));
+app.delete('/api/projects/:projectId/items/:itemId/specs/:id', requireProjectAccess(handleDeleteSpec));
 
 // Project-scoped progress notes routes
-app.get('/api/projects/:projectId/epics/:epicId/progress', requireProjectAccess(handleListEpicProgress));
-app.post('/api/projects/:projectId/epics/:epicId/progress', requireProjectAccess(handleCreateEpicProgress));
-app.get('/api/projects/:projectId/tasks/:taskId/progress', requireProjectAccess(handleListTaskProgress));
-app.post('/api/projects/:projectId/tasks/:taskId/progress', requireProjectAccess(handleCreateTaskProgress));
+app.get('/api/projects/:projectId/items/:itemId/progress', requireProjectAccess(handleListItemProgress));
+app.post('/api/projects/:projectId/items/:itemId/progress', requireProjectAccess(handleCreateItemProgress));
 
 // AI Chat
 app.get('/api/chat/models', (context) => handleGetChatModels(context, redis));

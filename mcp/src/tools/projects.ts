@@ -78,7 +78,7 @@ async function listProjects(userId: string, boundProjectId?: string): Promise<To
 							id: p.id,
 							name: p.name,
 							description: p.description,
-							epicCounts: p.epicCounts,
+							itemCounts: p.itemCounts,
 						})),
 						count: projects.length,
 					},
