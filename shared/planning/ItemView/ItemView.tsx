@@ -62,6 +62,14 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// Always call hook unconditionally (hook now handles undefined)
 	useModel(item);
 
+	// Load the full detail (children) for an existing item that only has the list
+	// summary so far. The table fetches on expand; opening the drawer needs them too.
+	useEffect(() => {
+		if (item && item.$meta.lastFetched == null && !item.$meta.working) {
+			void item.fetch();
+		}
+	}, [item]);
+
 	// Initialize description AST from plain text (recomputed when item description changes)
 	const initialDescriptionAst = useMemo(
 		() => deserializeFromText(item?.description || ''),
