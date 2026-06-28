@@ -98,7 +98,6 @@ export function UIDemo(): JSX.Element {
 								prefix="+ New"
 								options={[
 									{ label: 'Epic', value: 'epic', icon: 'file', onClick: () => setSplitButtonValue('New Epic!') },
-									{ label: 'Chore', value: 'chore', icon: 'wrench', onClick: () => setSplitButtonValue('New Chore!') },
 									{ label: 'Bug', value: 'bug', icon: 'bug', onClick: () => setSplitButtonValue('New Bug!') },
 								]}
 							/>

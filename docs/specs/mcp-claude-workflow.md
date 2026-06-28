@@ -93,7 +93,7 @@ user (OAuth 2.1 Bearer token).
 |------|---------|
 | `list_projects` | Discover projects (a bound repo returns just its one) |
 | `get_items` | Read items by status/type/search, or one by `item_id`, with optional tasks and notes |
-| `create_item` | Create an epic/chore/bug, or a task under `parent_id`; epics may link `specs: [{ path, type }]` |
+| `create_item` | Create an epic, task, or bug (optionally under a `parent_id`); epics may link `specs: [{ path, type }]` |
 | `create_items` | Bulk-create tasks under a parent |
 | `update_item` | Update title/description/status/sub_status/notes/branch_name/pr_url (items) or status/details/note (tasks) |
 | `delete_item` | Delete an item or task |

@@ -60,7 +60,7 @@ async function listProjects(userId: string, boundProjectId?: string): Promise<To
 				content: [
 					{
 						type: 'text',
-						text: `This repo's .mcp.json is bound to project ${boundProjectId}, but it doesn't exist or you don't have access to it.`,
+						text: "This repo's .mcp.json binding (X-Specboard-Project) points to a project that's unavailable — it may not exist, or your Specboard account may not have access to it. Verify the project UUID committed in .mcp.json and that your account has access to that project.",
 					},
 				],
 				isError: true,
@@ -78,7 +78,7 @@ async function listProjects(userId: string, boundProjectId?: string): Promise<To
 							id: p.id,
 							name: p.name,
 							description: p.description,
-							epicCounts: p.epicCounts,
+							itemCounts: p.itemCounts,
 						})),
 						count: projects.length,
 					},

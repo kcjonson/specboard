@@ -161,57 +161,48 @@ export interface Project {
 	updated_at: Date;
 }
 
-export type EpicStatus = 'ready' | 'in_progress' | 'in_review' | 'done';
-export type EpicType = 'epic' | 'chore' | 'bug';
+// A single status enum across all item types. Tasks/bugs use ready/in_progress/blocked/done;
+// epics additionally use in_review. The service layer validates which values apply per type.
+export type ItemStatus = 'ready' | 'in_progress' | 'blocked' | 'in_review' | 'done';
+export type ItemType = 'epic' | 'task' | 'bug';
 export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
-export type TaskStatus = 'ready' | 'in_progress' | 'blocked' | 'done';
 export type SpecType = 'product' | 'technical';
 
-export interface Epic {
+// One unified item. `parent_id` is null for top-level items; an epic is an optional container,
+// and tasks/bugs may be nested under a parent or stand alone.
+export interface Item {
 	id: string;
 	project_id: string | null;
+	parent_id: string | null;
+	type: ItemType;
 	title: string;
 	description: string | null;
-	status: EpicStatus;
-	sub_status: SubStatus;
-	type: EpicType;
+	status: ItemStatus;
+	sub_status: SubStatus | null;
 	creator: string | null;
 	assignee: string | null;
 	rank: number;
+	due_date: Date | null;
 	pr_url: string | null;
 	branch_name: string | null;
 	notes: string | null;
+	note: string | null;
 	created_at: Date;
 	updated_at: Date;
 }
 
-export interface EpicSpec {
+export interface ItemSpec {
 	id: string;
-	epic_id: string;
+	item_id: string;
 	project_id: string;
 	path: string;
 	spec_type: SpecType;
 	created_at: Date;
 }
 
-export interface Task {
-	id: string;
-	epic_id: string;
-	title: string;
-	status: TaskStatus;
-	assignee: string | null;
-	due_date: Date | null;
-	rank: number;
-	details: string | null;
-	note: string | null;
-	created_at: Date;
-	updated_at: Date;
-}
-
 export interface ProgressNote {
 	id: string;
-	epic_id: string | null;
-	task_id: string | null;
+	item_id: string;
 	note: string;
 	created_by: string;
 	created_at: Date;

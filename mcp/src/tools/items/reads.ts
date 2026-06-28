@@ -6,8 +6,8 @@
 
 import {
 	getItems as getItemsService,
-	type EpicStatus,
-	type EpicType,
+	type ItemStatus,
+	type ItemType,
 } from '@specboard/db';
 
 import type { ToolResult } from './index.ts';
@@ -16,10 +16,10 @@ export async function getItems(projectId: string, args: Record<string, unknown>)
 	const items = await getItemsService({
 		projectId,
 		itemId: args.item_id as string | undefined,
-		status: args.status as EpicStatus | undefined,
-		type: args.type as EpicType | undefined,
+		status: args.status as ItemStatus | undefined,
+		type: args.type as ItemType | undefined,
 		search: args.search as string | undefined,
-		includeTasks: args.include_tasks as boolean | undefined,
+		includeChildren: args.include_children as boolean | undefined,
 		includeNotes: args.include_notes as boolean | undefined,
 		includeSpecs: true,
 		limit: args.limit as number | undefined,

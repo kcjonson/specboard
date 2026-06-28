@@ -1,5 +1,5 @@
 /**
- * Planning models - Item and Task
+ * Planning models - Item and its child summaries
  *
  * These models are used by the planning-web app for the kanban board.
  */
@@ -12,75 +12,77 @@ import type { Collection } from './Collection';
 import { SyncCollection } from './SyncCollection';
 import type { ModelData } from './types';
 
-/** Board status for work items */
+/** Board status columns */
 export type Status = 'ready' | 'in_progress' | 'done';
 
-/** Task status — like Status, but tasks can also be blocked */
-export type TaskStatus = 'ready' | 'in_progress' | 'blocked' | 'done';
+/** Full item status (children may be blocked; epics may be in_review) */
+export type ItemStatus = 'ready' | 'in_progress' | 'blocked' | 'in_review' | 'done';
 
 /** Sub-status for detailed work state tracking */
 export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
 
-/** Work item type */
-export type ItemType = 'epic' | 'chore' | 'bug';
+/** Item type */
+export type ItemType = 'epic' | 'task' | 'bug';
 
 /** Spec link type */
 export type SpecType = 'product' | 'technical';
 
 /**
- * Task model (non-syncing for now, nested within Item)
+ * Child summary — a nested item as returned in an item's `children` array.
+ * Display-only; edit a child by loading it as a full ItemModel.
  */
-export class TaskModel extends Model {
+export class ChildModel extends Model {
 	@prop accessor id!: string;
-	@prop accessor epicId!: string;
+	@prop accessor type!: ItemType;
 	@prop accessor title!: string;
-	@prop accessor status!: TaskStatus;
-	@prop accessor assignee!: string | undefined;
-	@prop accessor dueDate!: string | undefined;
-	@prop accessor rank!: number;
+	@prop accessor status!: ItemStatus;
+	@prop accessor description!: string | undefined;
+	@prop accessor note!: string | undefined;
 }
 
 /**
- * TaskStats for item progress tracking
+ * Child-count stats for an item.
  */
-export interface TaskStats {
+export interface ChildStats {
 	total: number;
 	done: number;
 }
 
 /**
- * Item model - syncs with /api/projects/:projectId/epics/:id
+ * Item model - syncs with /api/projects/:projectId/items/:id
  */
 export class ItemModel extends SyncModel {
-	static override url = '/api/projects/:projectId/epics/:id';
+	static override url = '/api/projects/:projectId/items/:id';
 
 	@prop accessor id!: string;
 	@prop accessor projectId!: string;
+	@prop accessor parentId!: string | undefined;
 	@prop accessor title!: string;
 	@prop accessor type!: ItemType;
 	@prop accessor description!: string | undefined;
-	@prop accessor status!: Status;
-	@prop accessor subStatus!: SubStatus;
+	@prop accessor status!: ItemStatus;
+	@prop accessor subStatus!: SubStatus | undefined;
 	@prop accessor creator!: string | undefined;
 	@prop accessor assignee!: string | undefined;
 	@prop accessor rank!: number;
 	@prop accessor prUrl!: string | undefined;
 	@prop accessor branchName!: string | undefined;
+	@prop accessor note!: string | undefined;
 	@prop accessor createdAt!: string;
 	@prop accessor updatedAt!: string;
 
 	/**
-	 * Task counts from the server (list + detail endpoints) under the API key
-	 * `taskStats`. Used to show progress and decide expandability before an
-	 * item's tasks are individually loaded. Remapped from `taskStats` on input
-	 * (see remapTaskStats) so it doesn't collide with the taskStats getter.
+	 * Child counts from the server (list + detail endpoints) under the API key
+	 * `childStats`. Used to show progress and decide expandability before an
+	 * item's children are individually loaded. Remapped from `childStats` on
+	 * input (see remapChildStats) so it doesn't collide with the childStats getter.
 	 */
-	@prop accessor taskStatsSummary!: TaskStats | undefined;
+	@prop accessor childStatsSummary!: ChildStats | undefined;
 
-	@collection(TaskModel) accessor tasks!: Collection<TaskModel>;
+	@collection(ChildModel) accessor children!: Collection<ChildModel>;
 
 	constructor(initialData?: Record<string, unknown>) {
-		super(ItemModel.remapTaskStats(initialData));
+		super(ItemModel.remapChildStats(initialData));
 	}
 
 	override set(data: Partial<ModelData<this>>): void;
@@ -90,44 +92,44 @@ export class ItemModel extends SyncModel {
 		value?: unknown
 	): void {
 		if (typeof dataOrProperty === 'object' && dataOrProperty !== null) {
-			super.set(ItemModel.remapTaskStats(dataOrProperty as Record<string, unknown>) as Partial<ModelData<this>>);
+			super.set(ItemModel.remapChildStats(dataOrProperty as Record<string, unknown>) as Partial<ModelData<this>>);
 		} else {
 			super.set(dataOrProperty as keyof ModelData<this>, value as ModelData<this>[keyof ModelData<this>]);
 		}
 	}
 
 	/**
-	 * Move the server `taskStats` payload key onto `taskStatsSummary`. The model
-	 * exposes `taskStats` as a computed getter, so the raw server counts need a
+	 * Move the server `childStats` payload key onto `childStatsSummary`. The model
+	 * exposes `childStats` as a computed getter, so the raw server counts need a
 	 * separate backing field to survive ingestion.
 	 */
-	private static remapTaskStats(
+	private static remapChildStats(
 		data?: Record<string, unknown>
 	): Record<string, unknown> | undefined {
-		if (!data || typeof data !== 'object' || !('taskStats' in data)) {
+		if (!data || typeof data !== 'object' || !('childStats' in data)) {
 			return data;
 		}
-		const { taskStats, ...rest } = data;
-		return { ...rest, taskStatsSummary: taskStats };
+		const { childStats, ...rest } = data;
+		return { ...rest, childStatsSummary: childStats };
 	}
 
 	/**
-	 * Task statistics for this item. Prefers live counts when tasks are loaded
-	 * (so in-session edits are reflected immediately); otherwise falls back to
-	 * the server-provided summary from the list endpoint.
+	 * Child statistics for this item. Prefers live counts when children are loaded
+	 * (so in-session edits are reflected immediately); otherwise falls back to the
+	 * server-provided summary from the list endpoint.
 	 */
-	get taskStats(): TaskStats {
-		if (this.tasks.length > 0) {
-			const total = this.tasks.length;
-			const done = this.tasks.filter((t) => t.status === 'done').length;
+	get childStats(): ChildStats {
+		if (this.children.length > 0) {
+			const total = this.children.length;
+			const done = this.children.filter((c) => c.status === 'done').length;
 			return { total, done };
 		}
-		return this.taskStatsSummary ?? { total: 0, done: 0 };
+		return this.childStatsSummary ?? { total: 0, done: 0 };
 	}
 }
 
 /**
- * Collection of items - syncs with /api/projects/:projectId/epics
+ * Collection of top-level items - syncs with /api/projects/:projectId/items
  *
  * @example
  * ```tsx
@@ -143,7 +145,7 @@ export class ItemModel extends SyncModel {
  * ```
  */
 export class ItemsCollection extends SyncCollection<ItemModel> {
-	static url = '/api/projects/:projectId/epics';
+	static url = '/api/projects/:projectId/items';
 	static Model = ItemModel;
 
 	// Note: projectId is set dynamically via constructor initialProps
@@ -166,37 +168,37 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 }
 
 /**
- * Spec link model — a typed link from a work item to a markdown spec document.
- * Syncs with /api/projects/:projectId/epics/:epicId/specs/:id
+ * Spec link model — a typed link from an item to a markdown spec document.
+ * Syncs with /api/projects/:projectId/items/:itemId/specs/:id
  */
 export class SpecModel extends SyncModel {
-	static override url = '/api/projects/:projectId/epics/:epicId/specs/:id';
+	static override url = '/api/projects/:projectId/items/:itemId/specs/:id';
 
 	@prop accessor id!: string;
 	@prop accessor projectId!: string;
-	@prop accessor epicId!: string;
+	@prop accessor itemId!: string;
 	@prop accessor path!: string;
 	@prop accessor type!: SpecType;
 	@prop accessor createdAt!: string;
 }
 
 /**
- * Collection of spec links for one work item.
- * Syncs with /api/projects/:projectId/epics/:epicId/specs
+ * Collection of spec links for one item.
+ * Syncs with /api/projects/:projectId/items/:itemId/specs
  *
  * @example
  * ```tsx
- * const specs = new SpecsCollection({ projectId, epicId });
+ * const specs = new SpecsCollection({ projectId, itemId });
  * useModel(specs);
  * await specs.add({ path: '/docs/specs/x.md', type: 'product' }); // POSTs
  * await specs.remove(spec); // DELETEs
  * ```
  */
 export class SpecsCollection extends SyncCollection<SpecModel> {
-	static url = '/api/projects/:projectId/epics/:epicId/specs';
+	static url = '/api/projects/:projectId/items/:itemId/specs';
 	static Model = SpecModel;
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
 	declare projectId: string;
-	declare epicId: string;
+	declare itemId: string;
 }

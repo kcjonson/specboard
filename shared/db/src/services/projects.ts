@@ -27,7 +27,7 @@ export interface ProjectResponse {
 	updatedAt: Date;
 }
 
-export interface EpicCounts {
+export interface ItemCounts {
 	ready: number;
 	in_progress: number;
 	in_review: number;
@@ -35,8 +35,8 @@ export interface EpicCounts {
 }
 
 export interface ProjectWithStats extends ProjectResponse {
-	epicCount: number;
-	epicCounts: EpicCounts;
+	itemCount: number;
+	itemCounts: ItemCounts;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ export async function verifyProjectAccess(projectId: string, userId: string): Pr
  * Get all projects for a user
  */
 interface ProjectQueryRow extends Project {
-	epic_count: string;
+	item_count: string;
 	ready_count: string;
 	in_progress_count: string;
 	in_review_count: string;
@@ -88,15 +88,16 @@ interface ProjectQueryRow extends Project {
 }
 
 export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
+	// Count top-level items (parent_id IS NULL) per project, by status.
 	const result = await query<ProjectQueryRow>(
 		`SELECT p.*,
-			COUNT(e.id)::text as epic_count,
-			COUNT(CASE WHEN e.status = 'ready' THEN 1 END)::text as ready_count,
-			COUNT(CASE WHEN e.status = 'in_progress' THEN 1 END)::text as in_progress_count,
-			COUNT(CASE WHEN e.status = 'in_review' THEN 1 END)::text as in_review_count,
-			COUNT(CASE WHEN e.status = 'done' THEN 1 END)::text as done_count
+			COUNT(i.id)::text as item_count,
+			COUNT(CASE WHEN i.status = 'ready' THEN 1 END)::text as ready_count,
+			COUNT(CASE WHEN i.status = 'in_progress' THEN 1 END)::text as in_progress_count,
+			COUNT(CASE WHEN i.status = 'in_review' THEN 1 END)::text as in_review_count,
+			COUNT(CASE WHEN i.status = 'done' THEN 1 END)::text as done_count
 		FROM projects p
-		LEFT JOIN epics e ON e.project_id = p.id
+		LEFT JOIN items i ON i.project_id = p.id AND i.parent_id IS NULL
 		WHERE p.owner_id = $1
 		GROUP BY p.id
 		ORDER BY p.updated_at DESC`,
@@ -105,8 +106,8 @@ export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
 
 	return result.rows.map((row) => ({
 		...transformProject(row),
-		epicCount: parseInt(row.epic_count, 10),
-		epicCounts: {
+		itemCount: parseInt(row.item_count, 10),
+		itemCounts: {
 			ready: parseInt(row.ready_count, 10),
 			in_progress: parseInt(row.in_progress_count, 10),
 			in_review: parseInt(row.in_review_count, 10),

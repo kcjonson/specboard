@@ -1,58 +1,18 @@
 /**
  * API types (camelCase for JSON responses)
+ *
+ * Item responses are returned directly from the item service (already camelCase),
+ * so there's no Api* shape for them here.
  */
 
-import type { EpicStatus, EpicType, SubStatus, TaskStatus, SpecType, StorageMode, RepositoryConfig } from '@specboard/db';
-
-export interface ApiEpic {
-	id: string;
-	title: string;
-	type: EpicType;
-	description?: string;
-	status: EpicStatus;
-	subStatus: SubStatus;
-	creator?: string;
-	assignee?: string;
-	rank: number;
-	prUrl?: string;
-	branchName?: string;
-	notes?: string;
-	createdAt: string;
-	updatedAt: string;
-}
+import type { SpecType, StorageMode, RepositoryConfig } from '@specboard/db';
 
 export interface ApiSpec {
 	id: string;
-	epicId: string;
+	itemId: string;
 	projectId: string;
 	path: string;
 	type: SpecType;
-	createdAt: string;
-}
-
-export interface ApiTask {
-	id: string;
-	epicId: string;
-	title: string;
-	status: TaskStatus;
-	assignee?: string;
-	dueDate?: string;
-	rank: number;
-	details?: string;
-	note?: string;
-}
-
-export interface TaskStats {
-	total: number;
-	done: number;
-}
-
-export interface ApiProgressNote {
-	id: string;
-	epicId?: string;
-	taskId?: string;
-	note: string;
-	createdBy?: string;
 	createdAt: string;
 }
 
@@ -74,5 +34,5 @@ export interface ApiProject {
 }
 
 export interface ApiProjectWithStats extends ApiProject {
-	epicCount: number;
+	itemCount: number;
 }

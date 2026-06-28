@@ -1,0 +1,64 @@
+.panel {
+	position: relative;
+	flex-shrink: 0;
+	/* Stretch to the flex row's height rather than height:100% — the latter
+	   collapses to content height when an ancestor lacks a definite height
+	   (e.g. a min-height:100vh page shell), leaving a short panel. */
+	align-self: stretch;
+	min-height: 0;
+	/* Width is set inline; children fill the panel. */
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/*
+ * The handle is a wide, invisible hit-area sitting flush against the panel's
+ * inner edge. A 1px divider line is drawn with the ::after pseudo-element so the
+ * grab target stays comfortably large without a thick visible border.
+ */
+.handle {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 8px;
+	z-index: var(--z-resize-handle);
+	cursor: col-resize;
+	touch-action: none;
+}
+
+.handleRight {
+	right: 0;
+}
+
+.handleLeft {
+	left: 0;
+}
+
+.handle::after {
+	content: '';
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 1px;
+	background: var(--color-border);
+	transition: background var(--transition-fast), width var(--transition-fast);
+}
+
+.handleRight::after {
+	right: 0;
+}
+
+.handleLeft::after {
+	left: 0;
+}
+
+.handle:hover::after,
+.handle:focus-visible::after {
+	background: var(--color-primary);
+	width: 2px;
+}
+
+.handle:focus-visible {
+	outline: none;
+}

@@ -1,107 +1,53 @@
 /**
- * Progress notes service - shared business logic for progress notes
+ * Progress notes service — shared business logic for progress notes on items.
  */
 
 import { query } from '../index.ts';
 import type { ProgressNote } from '../types.ts';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Response types (camelCase for API/MCP responses)
-// ─────────────────────────────────────────────────────────────────────────────
-
 export interface ProgressNoteResponse {
 	id: string;
-	epicId: string | null;
-	taskId: string | null;
+	itemId: string;
 	note: string;
 	createdBy: string;
 	createdAt: Date;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper functions
-// ─────────────────────────────────────────────────────────────────────────────
-
 function transformProgressNote(note: ProgressNote): ProgressNoteResponse {
 	return {
 		id: note.id,
-		epicId: note.epic_id,
-		taskId: note.task_id,
+		itemId: note.item_id,
 		note: note.note,
 		createdBy: note.created_by,
 		createdAt: note.created_at,
 	};
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Service functions
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Get progress notes for an epic
- */
-export async function getEpicProgressNotes(epicId: string): Promise<ProgressNoteResponse[]> {
+/** Get progress notes for an item, newest first. */
+export async function getItemProgressNotes(itemId: string): Promise<ProgressNoteResponse[]> {
 	const result = await query<ProgressNote>(
-		'SELECT * FROM progress_notes WHERE epic_id = $1 ORDER BY created_at DESC',
-		[epicId]
+		'SELECT * FROM progress_notes WHERE item_id = $1 ORDER BY created_at DESC',
+		[itemId]
 	);
 	return result.rows.map(transformProgressNote);
 }
 
-/**
- * Get progress notes for a task
- */
-export async function getTaskProgressNotes(taskId: string): Promise<ProgressNoteResponse[]> {
-	const result = await query<ProgressNote>(
-		'SELECT * FROM progress_notes WHERE task_id = $1 ORDER BY created_at DESC',
-		[taskId]
-	);
-	return result.rows.map(transformProgressNote);
-}
-
-/**
- * Add a progress note to an epic
- */
-export async function addEpicProgressNote(
-	epicId: string,
+/** Add a progress note to an item. Throws if the item doesn't exist. */
+export async function addItemProgressNote(
+	itemId: string,
 	note: string,
 	createdBy: string = 'system'
 ): Promise<ProgressNoteResponse> {
-	// Verify epic exists
-	const epicCheck = await query('SELECT id FROM epics WHERE id = $1', [epicId]);
-	if (epicCheck.rows.length === 0) {
-		throw new Error('Epic not found');
+	const itemCheck = await query('SELECT id FROM items WHERE id = $1', [itemId]);
+	if (itemCheck.rows.length === 0) {
+		throw new Error('Item not found');
 	}
 
 	const result = await query<ProgressNote>(
-		`INSERT INTO progress_notes (epic_id, note, created_by)
+		`INSERT INTO progress_notes (item_id, note, created_by)
 		 VALUES ($1, $2, $3)
 		 RETURNING *`,
-		[epicId, note, createdBy]
-	);
-
-	return transformProgressNote(result.rows[0]!);
-}
-
-/**
- * Add a progress note to a task
- */
-export async function addTaskProgressNote(
-	taskId: string,
-	note: string,
-	createdBy: string = 'system'
-): Promise<ProgressNoteResponse> {
-	// Verify task exists
-	const taskCheck = await query('SELECT id FROM tasks WHERE id = $1', [taskId]);
-	if (taskCheck.rows.length === 0) {
-		throw new Error('Task not found');
-	}
-
-	const result = await query<ProgressNote>(
-		`INSERT INTO progress_notes (task_id, note, created_by)
-		 VALUES ($1, $2, $3)
-		 RETURNING *`,
-		[taskId, note, createdBy]
+		[itemId, note, createdBy]
 	);
 
 	return transformProgressNote(result.rows[0]!);

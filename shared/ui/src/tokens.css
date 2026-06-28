@@ -95,6 +95,7 @@
 	--transition-normal: 250ms ease;
 
 	/* Z-Index */
+	--z-resize-handle: 40;
 	--z-dropdown: 50;
 	--z-modal: 100;
 	--z-tooltip: 150;

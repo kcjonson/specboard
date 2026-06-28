@@ -56,6 +56,8 @@ export default [
 				requestAnimationFrame: 'readonly',
 				cancelAnimationFrame: 'readonly',
 				MutationObserver: 'readonly',
+				ResizeObserver: 'readonly',
+				PointerEvent: 'readonly',
 			},
 		},
 		plugins: {

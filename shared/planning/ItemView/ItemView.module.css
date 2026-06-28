@@ -47,10 +47,12 @@
 	flex-direction: column;
 }
 
-/* Metadata fields — compact row below title */
+/* Metadata fields — compact row below title. Wraps so the same component stays
+   legible from the ~320px drawer up to the 640px full-screen view. */
 .fields {
 	display: flex;
-	gap: 20px;
+	flex-wrap: wrap;
+	gap: 8px 16px;
 	align-items: center;
 	padding-bottom: 16px;
 	border-bottom: 1px solid var(--color-border);

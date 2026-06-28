@@ -79,7 +79,7 @@ During a session, Claude uses the Specboard MCP tools to track progress — scop
 |------|-------------|
 | `list_projects` | Discover your projects and their IDs |
 | `get_items` | Query items with filtering by status, type, search; optional task/note includes |
-| `create_item` | Create an epic, chore, bug, or task |
+| `create_item` | Create an epic, bug, or task |
 | `create_items` | Bulk create tasks under a work item |
 | `update_item` | Update status, sub-status, branch, notes, etc. |
 | `delete_item` | Delete a work item or task |

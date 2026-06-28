@@ -107,6 +107,16 @@
 	background: var(--color-surface);
 }
 
+/* A row that opens its item's detail on click (child rows are first-class items). */
+.clickable {
+	cursor: pointer;
+	transition: background var(--transition-fast);
+}
+
+.clickable:hover {
+	background: var(--color-surface-hover);
+}
+
 /* Title cell: chevron + label, shared by epic and (indented) task rows. */
 .colTitle {
 	display: flex;
