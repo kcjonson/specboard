@@ -22,6 +22,8 @@ interface ItemViewExistingProps {
 	createType?: never;
 	onDelete?: (item: ItemModel) => void;
 	onCreate?: never;
+	/** Open a child's detail by id (clicking a child card). */
+	onOpenChild?: (itemId: string) => void;
 }
 
 /** Props for creating a new item */
@@ -31,6 +33,7 @@ interface ItemViewCreateProps {
 	createType?: ItemType;
 	onDelete?: never;
 	onCreate: (data: { title: string; description?: string; status: Status; type?: ItemType }) => void;
+	onOpenChild?: never;
 }
 
 export type ItemViewProps = ItemViewExistingProps | ItemViewCreateProps;
@@ -55,6 +58,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	const { isNew = false } = props;
 	const item = isNew ? undefined : props.item;
 	const onDelete = isNew ? undefined : props.onDelete;
+	const onOpenChild = isNew ? undefined : props.onOpenChild;
 	const onCreate = isNew ? props.onCreate : undefined;
 	const itemType: ItemType = isNew ? (props.createType || 'epic') : (item?.type || 'epic');
 	const typeLabel = TYPE_LABELS[itemType];
@@ -304,7 +308,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 					</h3>
 					<div class={styles.taskList} role="list">
 						{item.children.map((task) => (
-							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} />
+							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} onOpen={(child) => onOpenChild?.(child.id)} />
 						))}
 					</div>
 					<div class={styles.addTask}>

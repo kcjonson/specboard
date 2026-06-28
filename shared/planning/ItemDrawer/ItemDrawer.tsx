@@ -18,6 +18,8 @@ export interface ItemDrawerProps {
 	maxWidth?: number;
 	onClose: () => void;
 	onDelete?: (item: ItemModel) => void;
+	/** Open a child's detail by id (children are first-class items). */
+	onOpenItem?: (itemId: string) => void;
 }
 
 /**
@@ -29,7 +31,7 @@ export interface ItemDrawerProps {
  * full-screen item route; only the surrounding chrome (resize handle, header)
  * differs.
  */
-export function ItemDrawer({ item, projectId, maxWidth, onClose, onDelete }: ItemDrawerProps): JSX.Element {
+export function ItemDrawer({ item, projectId, maxWidth, onClose, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
 	// Subscribe so the header title updates once a lazily-opened item finishes loading.
 	useModel(item);
 	const title = `Edit ${TYPE_LABELS[item.type || 'epic']}`;
@@ -85,7 +87,7 @@ export function ItemDrawer({ item, projectId, maxWidth, onClose, onDelete }: Ite
 					</div>
 				</div>
 				<div class={styles.content}>
-					<ItemView item={item} onDelete={onDelete} />
+					<ItemView item={item} onDelete={onDelete} onOpenChild={onOpenItem} />
 				</div>
 			</div>
 		</ResizablePanel>

@@ -8,8 +8,8 @@
 	border-radius: var(--card-radius);
 	padding: 12px;
 	transition: background var(--transition-fast);
-	/* Not text-editable or clickable (only the checkbox is) — show a normal cursor. */
-	cursor: default;
+	/* Card body opens the child's detail; the checkbox toggles done. */
+	cursor: pointer;
 }
 
 .card:hover {

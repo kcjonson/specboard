@@ -264,6 +264,7 @@ export function Planning(props: RouteProps): JSX.Element {
 						maxWidth={drawerMaxWidth}
 						onClose={handleCloseDrawer}
 						onDelete={handleDeleteItem}
+						onOpenItem={handleOpenItemById}
 					/>
 				)}
 			</div>
