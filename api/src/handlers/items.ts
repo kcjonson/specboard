@@ -10,6 +10,7 @@ import {
 	createItems,
 	updateItem,
 	moveItem,
+	wouldCreateCycle,
 	deleteItem,
 	startItem,
 	completeItem,
@@ -189,6 +190,9 @@ export async function handleMoveItem(context: Context): Promise<Response> {
 	try {
 		if (!(await verifyItemOwnership(projectId, id))) return context.json({ error: 'Item not found' }, 404);
 		if (newParentId && !(await verifyItemOwnership(projectId, newParentId))) return context.json({ error: 'Parent item not found' }, 404);
+		if (newParentId && (await wouldCreateCycle(projectId, id, newParentId))) {
+			return context.json({ error: 'Cannot move an item under itself or one of its descendants' }, 400);
+		}
 		const item = await moveItem(projectId, id, newParentId);
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(item);

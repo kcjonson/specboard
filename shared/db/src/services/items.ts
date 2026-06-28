@@ -394,6 +394,23 @@ export async function updateItem(projectId: string, itemId: string, data: Update
 }
 
 /**
+ * True if making `newParentId` the parent of `itemId` would create a cycle — i.e.
+ * newParentId is itemId itself or one of its descendants. Walks down from itemId.
+ */
+export async function wouldCreateCycle(projectId: string, itemId: string, newParentId: string): Promise<boolean> {
+	const result = await query(
+		`WITH RECURSIVE descendants AS (
+			SELECT id FROM items WHERE id = $1 AND project_id = $2
+			UNION ALL
+			SELECT i.id FROM items i JOIN descendants d ON i.parent_id = d.id
+		)
+		SELECT 1 FROM descendants WHERE id = $3 LIMIT 1`,
+		[itemId, projectId, newParentId]
+	);
+	return result.rows.length > 0;
+}
+
+/**
  * Move an item to a new parent (reparent), or to top-level when newParentId is null
  * (promote to standalone). Re-ranks at the bottom of the destination sibling group.
  */

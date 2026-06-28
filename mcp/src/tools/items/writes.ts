@@ -10,6 +10,7 @@ import {
 	createItems as createItemsService,
 	updateItem as updateItemService,
 	moveItem as moveItemService,
+	wouldCreateCycle,
 	deleteItem as deleteItemService,
 	startItem as startItemService,
 	completeItem as completeItemService,
@@ -107,6 +108,9 @@ export async function updateItem(
 	if (args?.parent_id !== undefined) {
 		const newParentId = args.parent_id === null ? null : (args.parent_id as string);
 		if (newParentId && !(await verifyItemOwnership(projectId, newParentId))) return err('Parent item not found');
+		if (newParentId && (await wouldCreateCycle(projectId, itemId, newParentId))) {
+			return err('Cannot move an item under itself or one of its descendants');
+		}
 		const moved = await moveItemService(projectId, itemId, newParentId);
 		if (!moved) return err('Item not found');
 		return ok({ updated: { id: moved.id, parentId: moved.parentId }, message: newParentId ? 'Item moved' : 'Item promoted to top-level' });
