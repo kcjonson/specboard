@@ -46,8 +46,8 @@ If the script is unavailable, gather this manually: `git worktree list`,
 - `gh pr list --author=@me`, open PRs (feedback takes highest priority)
 
 ### 2c. MCP State
-- `get_items(project_id, { status: 'in_progress', include_tasks: true, include_notes: true })`
-- `get_items(project_id, { status: 'in_review', include_tasks: true })`
+- `get_items(project_id, { status: 'in_progress', include_children: true, include_notes: true })`
+- `get_items(project_id, { status: 'in_review', include_children: true })`
 - `get_items(project_id, { status: 'ready' })`
 
 ## 3. Cross-Reference & Classify
@@ -105,7 +105,7 @@ Output a structured summary:
 When the user picks an item, this is the scoping phase. The epic's `sub_status` is `scoping` here.
 
 **Read what the epic links.**
-`get_items(project_id, { item_id: epic_id, include_tasks: true, include_notes: true })` returns the
+`get_items(project_id, { item_id: epic_id, include_children: true, include_notes: true })` returns the
 epic plus its linked `specs` (each has `path` and `type`). Those links are how you find the relevant
 docs: read what's linked, and nothing more. Don't go searching the doc folder or assume a layout, a
 project organizes its docs however it likes (or keeps none). The epic's links are the source of
@@ -122,7 +122,7 @@ truth for what to read.
   being `product` or `technical`. The path may point at a file that isn't merged yet (or never
   merges), a dead link is fine, the path is a stable reference, not a fetch.
 
-When the work is small or self-evident (a chore, a one-line bug), skip the spec. Don't manufacture
+When the work is small or self-evident (a small task, a one-line bug), skip the spec. Don't manufacture
 one to satisfy process.
 
 **Plan mode and the plan file.** Plan mode *is* scoping. Use it to explore the code and design the
@@ -149,8 +149,8 @@ Once the plan is set:
 5. Start the first task: `update_item(project_id, task_id, 'task', { status: 'in_progress' })`.
 
 You may also create the epic itself when one doesn't exist for work you're about to do:
-`create_item(project_id, title, 'epic', { specs: [...] })`. Create chores and bugs the same way for
-side-work (`create_item(..., 'chore')` / `'bug'`).
+`create_item(project_id, title, 'epic', { specs: [...] })`. Create standalone tasks and bugs the same
+way for side-work (`create_item(..., 'task')` / `'bug'`); they can stand alone or take a `parent_id`.
 
 ## 8. Status Hygiene
 
@@ -200,7 +200,7 @@ the epic complete on the board.
 ## 10. How the roles split
 
 Not a list of things you can't do, a description of who steers what:
-- **You can run the full loop:** write or read specs, create epics/chores/bugs, break down tasks,
+- **You can run the full loop:** write or read specs, create epics/tasks/bugs, break down tasks,
   build, verify, merge, and close.
 - **The human stays in control by choosing when to step in:** they may write the spec themselves,
   and they may hold a PR for review instead of letting you merge. Honor those choices when they're

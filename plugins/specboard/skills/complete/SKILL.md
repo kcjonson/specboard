@@ -13,7 +13,7 @@ never a close, and an open PR is never a closed ticket.
 
 ## 1. Find the items and the PR(s)
 
-- `list_projects`, then `get_items(project_id, { item_id: epic_id, include_tasks: true })` to load
+- `list_projects`, then `get_items(project_id, { item_id: epic_id, include_children: true })` to load
   the epic(s) you're closing and their tasks.
 - Find every PR for this work, there may be more than one: `gh pr list --head <branch>`, plus any
   `pr_url` recorded on the epic, plus PRs that reference it. A feature can span several PRs, and you
@@ -55,7 +55,7 @@ half-closed epics are the main thing this step exists to prevent.
 
 - **File the followups the session surfaced.** Anything you flagged for later (a discovered bug, a
   "we should also..." note, a TODO you left in the chat) gets filed as its own item, not left in the
-  conversation: `create_item(project_id, title, 'bug' | 'chore' | 'epic', { description })`, or
+  conversation: `create_item(project_id, title, 'bug' | 'task' | 'epic', { description })`, or
   `create_items(project_id, other_epic_id, [...])` for tasks under another epic. If it isn't on the
   board, it's lost.
 - **Move deferred tasks out of this epic.** A task that was punted (out of scope, next phase, not
