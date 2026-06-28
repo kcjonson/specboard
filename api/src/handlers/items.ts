@@ -244,7 +244,7 @@ async function lifecycle(
 	}
 }
 
-export const handleStartItem = (c: Context) => lifecycle(c, (p, id) => startItem(p, id));
-export const handleCompleteItem = (c: Context) => lifecycle(c, (p, id, note) => completeItem(p, id, note));
-export const handleBlockItem = (c: Context) => lifecycle(c, (p, id, note) => blockItem(p, id, note!), true);
-export const handleUnblockItem = (c: Context) => lifecycle(c, (p, id) => unblockItem(p, id));
+export const handleStartItem = (c: Context): Promise<Response> => lifecycle(c, (p, id) => startItem(p, id));
+export const handleCompleteItem = (c: Context): Promise<Response> => lifecycle(c, (p, id, note) => completeItem(p, id, note));
+export const handleBlockItem = (c: Context): Promise<Response> => lifecycle(c, (p, id, note) => blockItem(p, id, note!), true);
+export const handleUnblockItem = (c: Context): Promise<Response> => lifecycle(c, (p, id) => unblockItem(p, id));

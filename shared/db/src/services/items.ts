@@ -358,7 +358,7 @@ export async function updateItem(projectId: string, itemId: string, data: Update
 	const updates: string[] = [];
 	const values: unknown[] = [];
 	let i = 1;
-	const set = (col: string, val: unknown) => { updates.push(`${col} = $${i++}`); values.push(val); };
+	const set = (col: string, val: unknown): void => { updates.push(`${col} = $${i++}`); values.push(val); };
 
 	if (data.title !== undefined) set('title', data.title);
 	if (data.description !== undefined) set('description', data.description);
