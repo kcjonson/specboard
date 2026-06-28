@@ -10,7 +10,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'get_items',
 		description:
-			'Query work items (epics, chores, bugs) with flexible filtering. Always returns task stats. Optionally include full task lists and progress notes. Use item_id for single-item lookup, or filter by status/type/search for lists.',
+			'Query work items (epics and bugs) with flexible filtering. Always returns task stats. Optionally include full task lists and progress notes. Use item_id for single-item lookup, or filter by status/type/search for lists.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -29,7 +29,7 @@ export const epicTools: Tool[] = [
 				},
 				type: {
 					type: 'string',
-					enum: ['epic', 'chore', 'bug'],
+					enum: ['epic', 'bug'],
 					description: 'Filter by item type',
 				},
 				search: {
@@ -55,7 +55,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'create_item',
 		description:
-			'Create a new work item. For epics/chores/bugs: creates a top-level item. For tasks: creates under a parent work item (parent_id required).',
+			'Create a new work item. For epics/bugs: creates a top-level item. For tasks: creates under a parent work item (parent_id required).',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -69,7 +69,7 @@ export const epicTools: Tool[] = [
 				},
 				type: {
 					type: 'string',
-					enum: ['epic', 'chore', 'bug', 'task'],
+					enum: ['epic', 'bug', 'task'],
 					description: 'Type of item. Defaults to "epic".',
 				},
 				parent_id: {
@@ -78,7 +78,7 @@ export const epicTools: Tool[] = [
 				},
 				description: {
 					type: 'string',
-					description: 'Description (for epics/chores/bugs) or details (for tasks)',
+					description: 'Description (for epics/bugs) or details (for tasks)',
 				},
 				specs: {
 					type: 'array',
@@ -109,7 +109,7 @@ export const epicTools: Tool[] = [
 				},
 				parent_id: {
 					type: 'string',
-					description: 'The UUID of the parent work item (epic, chore, or bug)',
+					description: 'The UUID of the parent work item (epic or bug)',
 				},
 				items: {
 					type: 'array',
@@ -136,7 +136,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'update_item',
 		description:
-			'Update any work item or task. For work items (epic/chore/bug): supports title, description, status, sub_status, specs, branch_name, pr_url, notes. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). For tasks: supports title, details, status (ready/in_progress/blocked/done), note.',
+			'Update any work item or task. For work items (epic/bug): supports title, description, status, sub_status, specs, branch_name, pr_url, notes. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). For tasks: supports title, details, status (ready/in_progress/blocked/done), note.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -150,7 +150,7 @@ export const epicTools: Tool[] = [
 				},
 				type: {
 					type: 'string',
-					enum: ['epic', 'chore', 'bug', 'task'],
+					enum: ['epic', 'bug', 'task'],
 					description: 'Type of item being updated — routes to correct table',
 				},
 				title: {
@@ -219,7 +219,7 @@ export const epicTools: Tool[] = [
 				},
 				type: {
 					type: 'string',
-					enum: ['epic', 'chore', 'bug', 'task'],
+					enum: ['epic', 'bug', 'task'],
 					description: 'Type of item being deleted',
 				},
 			},

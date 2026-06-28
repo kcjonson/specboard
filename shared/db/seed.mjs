@@ -121,7 +121,7 @@ const SAMPLE_EPICS = [
 	},
 	{
 		title: 'Upgrade dependencies',
-		type: 'chore',
+		type: 'epic',
 		status: 'ready',
 		description: 'Bump Preact, Vite, and TypeScript.',
 		tasks: [
@@ -131,7 +131,7 @@ const SAMPLE_EPICS = [
 	},
 	{
 		title: 'Project scaffolding',
-		type: 'chore',
+		type: 'epic',
 		status: 'done',
 		description: 'Monorepo, tooling, and CI setup.',
 		tasks: [

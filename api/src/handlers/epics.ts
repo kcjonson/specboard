@@ -28,7 +28,7 @@ export async function handleListEpics(context: Context): Promise<Response> {
 		const typeParam = context.req.query('type');
 		const specPath = context.req.query('specPath');
 		const validStatuses = ['ready', 'in_progress', 'in_review', 'done'];
-		const validTypes = ['epic', 'chore', 'bug'];
+		const validTypes = ['epic', 'bug'];
 
 		// Build query with optional filters
 		let sql = `SELECT * FROM epics WHERE project_id = $1`;
@@ -158,7 +158,7 @@ export async function handleCreateEpic(context: Context): Promise<Response> {
 	}
 
 	if (body.type !== undefined && !isValidType(body.type)) {
-		return context.json({ error: 'Invalid type. Must be one of: epic, chore, bug' }, 400);
+		return context.json({ error: 'Invalid type. Must be one of: epic, bug' }, 400);
 	}
 
 	if (!isValidTitle(title)) {

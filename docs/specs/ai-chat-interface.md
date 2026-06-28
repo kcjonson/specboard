@@ -6,7 +6,7 @@ This specification defines a chat interface as a top-level feature alongside Pla
 
 ## Overview
 
-A conversational AI interface for dumping thoughts, creating docs/epics, and managing work from natural language. Useful for rapid capture of ideas that the system internally routes to the right place (chore, doc, epic, task).
+A conversational AI interface for dumping thoughts, creating docs/epics, and managing work from natural language. Useful for rapid capture of ideas that the system internally routes to the right place (doc, epic, task).
 
 ---
 
@@ -15,7 +15,7 @@ A conversational AI interface for dumping thoughts, creating docs/epics, and man
 ### Chat Tab
 - Top-level navigation item alongside Planning and Pages
 - Conversational interface with an AI agent
-- Agent can create documents, epics, tasks, and chores from conversation
+- Agent can create documents, epics, tasks, and bugs from conversation
 - Agent can read and reference existing project data
 
 ### Session Management

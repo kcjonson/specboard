@@ -102,7 +102,7 @@ When the user selects an item:
 1. `get_items(project_id, { item_id: epic_id, include_tasks: true, include_notes: true })` — read full details + linked `specs`
 2. For each entry in `specs` (each has `path` and `type`), read the spec document from the filesystem
 3. For epics: create a plan file at `.claude/plans/{description}.md`
-4. For chores/bugs: plan file optional (depends on complexity)
+4. For bugs: plan file optional (depends on complexity)
 5. Create feature branch
 6. `update_item(project_id, epic_id, 'epic', { branch_name: '<branch>', sub_status: 'scoping' })`
 7. `create_items(project_id, epic_id, items)` — create task breakdown
@@ -124,7 +124,7 @@ All updates go through `update_item`:
 - Pausing session: `update_item(project_id, epic_id, 'epic', { sub_status: 'paused' })`
 - Add decision note: `update_item(project_id, epic_id, 'epic', { notes: 'Decided to use Redis over Memcached' })`
 
-**Side-fixes:** `create_item(project_id, title, 'chore')` or `create_item(project_id, title, 'bug')`
+**Side-fixes:** `create_item(project_id, title, 'bug')`
 
 **Key principle:**
 - Task completions with notes ARE the progress log
@@ -142,13 +142,12 @@ All updates go through `update_item`:
 ## 9. Work Item Types
 
 - **Epic**: Large feature with linked spec. Human-created only. Full task/progress/PR lifecycle.
-- **Chore**: Small non-feature work (cleanup, config, refactoring). Claude can create.
 - **Bug**: Defect fix. Claude can create.
-- All three types live on the same board and support tasks and notes.
+- Both types live on the same board and support tasks and notes.
 
 ## 10. Role Boundaries
 
 - Claude CANNOT create epics or mark them done
-- Claude CAN create chores and bugs
+- Claude CAN create bugs
 - Claude CAN create/manage tasks under any item type
 - Spec documents are human-owned (read, don't write)
