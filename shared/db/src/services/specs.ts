@@ -1,18 +1,17 @@
 /**
- * Spec link service — shared business logic for typed spec links on work items.
+ * Spec link service — typed spec links on items.
  *
- * A spec link associates a work item (epic) with a markdown file path in the
- * project's docs, plus a type (product | technical). Used by both API handlers
- * and MCP tools.
+ * A spec link associates an item with a markdown file path in the project's docs,
+ * plus a type (product | technical). Used by both API handlers and MCP tools.
  */
 
 import { query, transaction } from '../index.ts';
-import type { EpicSpec, SpecType } from '../types.ts';
-import type { SpecSummary } from './epics/types.ts';
+import type { ItemSpec, SpecType } from '../types.ts';
+import type { SpecSummary } from './items.ts';
 
 const SPEC_TYPES: SpecType[] = ['product', 'technical'];
 
-/** Thrown when adding a spec link that already exists for the epic (path unique per epic). */
+/** Thrown when adding a spec link that already exists for the item (path unique per item). */
 export class SpecConflictError extends Error {
 	constructor(message = 'Spec is already linked to this item') {
 		super(message);
@@ -42,42 +41,40 @@ export function validateSpecInput(path: unknown, type: unknown): { path: string;
 	return { path, type: type as SpecType };
 }
 
-function toSummary(spec: EpicSpec): SpecSummary {
+function toSummary(spec: ItemSpec): SpecSummary {
 	return { id: spec.id, path: spec.path, type: spec.spec_type, createdAt: spec.created_at };
 }
 
-/** List an epic's spec links, oldest first. */
-export async function listSpecsByEpic(projectId: string, epicId: string): Promise<SpecSummary[]> {
-	const result = await query<EpicSpec>(
-		'SELECT * FROM epic_specs WHERE project_id = $1 AND epic_id = $2 ORDER BY created_at ASC',
-		[projectId, epicId]
+/** List an item's spec links, oldest first. */
+export async function listSpecsByItem(projectId: string, itemId: string): Promise<SpecSummary[]> {
+	const result = await query<ItemSpec>(
+		'SELECT * FROM epic_specs WHERE project_id = $1 AND item_id = $2 ORDER BY created_at ASC',
+		[projectId, itemId]
 	);
 	return result.rows.map(toSummary);
 }
 
 /**
- * Add a spec link to an epic. Validates input; throws SpecConflictError if the
- * path is already linked to the epic. Returns null if the epic doesn't exist in
- * the project.
+ * Add a spec link to an item. Validates input; throws SpecConflictError if the
+ * path is already linked. Returns null if the item doesn't exist in the project.
  */
 export async function addSpec(
 	projectId: string,
-	epicId: string,
+	itemId: string,
 	path: string,
 	type: SpecType
 ): Promise<SpecSummary | null> {
-	// Ensure the epic belongs to the project (also gives a clean 404 path).
-	const epic = await query<{ id: string }>(
-		'SELECT id FROM epics WHERE id = $1 AND project_id = $2',
-		[epicId, projectId]
+	const item = await query<{ id: string }>(
+		'SELECT id FROM items WHERE id = $1 AND project_id = $2',
+		[itemId, projectId]
 	);
-	if (epic.rows.length === 0) return null;
+	if (item.rows.length === 0) return null;
 
 	try {
-		const result = await query<EpicSpec>(
-			`INSERT INTO epic_specs (epic_id, project_id, path, spec_type)
+		const result = await query<ItemSpec>(
+			`INSERT INTO epic_specs (item_id, project_id, path, spec_type)
 			 VALUES ($1, $2, $3, $4) RETURNING *`,
-			[epicId, projectId, path, type]
+			[itemId, projectId, path, type]
 		);
 		return toSummary(result.rows[0]!);
 	} catch (err) {
@@ -89,22 +86,21 @@ export async function addSpec(
 }
 
 /**
- * Replace an epic's entire set of spec links with the given list (used by MCP
- * create/update where `specs` is supplied as a full array). Validates and
- * de-duplicates by path. Returns the new list, or null if the epic doesn't exist.
+ * Replace an item's entire set of spec links with the given list (used by MCP
+ * create/update where `specs` is a full array). Validates and de-duplicates by
+ * path. Returns the new list, or null if the item doesn't exist.
  */
 export async function setSpecs(
 	projectId: string,
-	epicId: string,
+	itemId: string,
 	specs: Array<{ path: string; type: SpecType }>
 ): Promise<SpecSummary[] | null> {
-	const epic = await query<{ id: string }>(
-		'SELECT id FROM epics WHERE id = $1 AND project_id = $2',
-		[epicId, projectId]
+	const item = await query<{ id: string }>(
+		'SELECT id FROM items WHERE id = $1 AND project_id = $2',
+		[itemId, projectId]
 	);
-	if (epic.rows.length === 0) return null;
+	if (item.rows.length === 0) return null;
 
-	// De-duplicate by path (the table enforces unique(epic_id, path)).
 	const byPath = new Map<string, SpecType>();
 	for (const s of specs) {
 		const { path, type } = validateSpecInput(s.path, s.type);
@@ -112,13 +108,13 @@ export async function setSpecs(
 	}
 
 	return transaction(async (client) => {
-		await client.query('DELETE FROM epic_specs WHERE project_id = $1 AND epic_id = $2', [projectId, epicId]);
+		await client.query('DELETE FROM epic_specs WHERE project_id = $1 AND item_id = $2', [projectId, itemId]);
 		const out: SpecSummary[] = [];
 		for (const [path, type] of byPath) {
-			const result = await client.query<EpicSpec>(
-				`INSERT INTO epic_specs (epic_id, project_id, path, spec_type)
+			const result = await client.query<ItemSpec>(
+				`INSERT INTO epic_specs (item_id, project_id, path, spec_type)
 				 VALUES ($1, $2, $3, $4) RETURNING *`,
-				[epicId, projectId, path, type]
+				[itemId, projectId, path, type]
 			);
 			out.push(toSummary(result.rows[0]!));
 		}
@@ -127,37 +123,36 @@ export async function setSpecs(
 }
 
 /** Remove a spec link by id. Returns true if a row was deleted. */
-export async function removeSpec(projectId: string, epicId: string, specId: string): Promise<boolean> {
+export async function removeSpec(projectId: string, itemId: string, specId: string): Promise<boolean> {
 	const result = await query(
-		'DELETE FROM epic_specs WHERE id = $1 AND epic_id = $2 AND project_id = $3',
-		[specId, epicId, projectId]
+		'DELETE FROM epic_specs WHERE id = $1 AND item_id = $2 AND project_id = $3',
+		[specId, itemId, projectId]
 	);
 	return (result.rowCount ?? 0) > 0;
 }
 
-/** Epic ids in a project that link the given spec path (reverse lookup for the editor). */
-export async function getEpicIdsBySpecPath(projectId: string, path: string): Promise<string[]> {
-	const result = await query<{ epic_id: string }>(
-		'SELECT epic_id FROM epic_specs WHERE project_id = $1 AND path = $2',
+/** Item ids in a project that link the given spec path (reverse lookup for the editor). */
+export async function getItemIdsBySpecPath(projectId: string, path: string): Promise<string[]> {
+	const result = await query<{ item_id: string }>(
+		'SELECT item_id FROM epic_specs WHERE project_id = $1 AND path = $2',
 		[projectId, path]
 	);
-	return result.rows.map((r) => r.epic_id);
+	return result.rows.map((r) => r.item_id);
 }
 
 /**
  * Repoint spec links from oldPath to newPath when a file is renamed/moved.
- * Drops any source row that would collide with an existing (epic_id, newPath)
+ * Drops any source row that would collide with an existing (item_id, newPath)
  * link to respect the unique constraint.
  */
 export async function renameSpecPath(projectId: string, oldPath: string, newPath: string): Promise<void> {
-	// Atomic so a failure between the collision-prune and the repoint can't lose links.
 	await transaction(async (client) => {
 		await client.query(
 			`DELETE FROM epic_specs old
 			 WHERE old.project_id = $1 AND old.path = $2
 			   AND EXISTS (
 				 SELECT 1 FROM epic_specs dup
-				 WHERE dup.project_id = $1 AND dup.path = $3 AND dup.epic_id = old.epic_id
+				 WHERE dup.project_id = $1 AND dup.path = $3 AND dup.item_id = old.item_id
 			   )`,
 			[projectId, oldPath, newPath]
 		);
