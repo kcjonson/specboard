@@ -440,6 +440,12 @@ app.get('/favicon.svg', serveStatic({ root: './static', path: 'favicon.svg' }));
 app.get('/robots.txt', serveStatic({ root: './static', path: 'robots.txt' }));
 app.get('/version.txt', serveStatic({ root: './static', path: 'version.txt' }));
 
+// Claude Code plugin marketplace manifest (public, no auth). Lets users run
+// `/plugin marketplace add https://specboard.io/claude`. Both paths return the same
+// file so the command works whether the client fetches the URL verbatim or appends a filename.
+app.get('/claude', serveStatic({ root: './static', path: 'marketplace.json' }));
+app.get('/claude/marketplace.json', serveStatic({ root: './static', path: 'marketplace.json' }));
+
 // Auth middleware for all other routes
 // Unauthenticated users see 404 for any non-public path
 // They can find login from the 404 page or by going to /

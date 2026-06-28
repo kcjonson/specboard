@@ -1,0 +1,42 @@
+name: Publish Claude Code Plugin
+
+# Publishes the @specboard/plugin-claude npm package (the Claude Code plugin payload)
+# on each production release. Idempotent: skips when package.json's version is already
+# on npm, so only an actual plugin version bump triggers a publish.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-plugin
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish @specboard/plugin-claude
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish if version is new
+        working-directory: plugins/specboard
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION already published, skipping."
+          else
+            echo "Publishing $NAME@$VERSION"
+            npm publish
+          fi

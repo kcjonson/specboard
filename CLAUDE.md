@@ -47,7 +47,7 @@ docker compose build && docker compose up
    - Are you on the correct branch? You most likely need to be on main
 
 1. **Check current work**
-   - Run `/whats-next` to check Specboard for current work items and priorities
+   - Run `/specboard:whats-next` to check Specboard for current work items and priorities
    - Relevant specs in `/docs/specs/`
    - Tech stack decisions in `/docs/tech-stack.md`
 
@@ -229,7 +229,7 @@ infra/                     # AWS CDK infrastructure
 ## Documentation System
 
 ### When Asked "What are we working on?" or "Where are we?"
-→ Run `/whats-next` — it queries Specboard MCP for live project data
+→ Run `/specboard:whats-next` — it queries Specboard MCP for live project data
 
 ### For Technical Specifications
 → Check `/docs/specs/` for feature specifications
@@ -244,7 +244,7 @@ infra/                     # AWS CDK infrastructure
 
 | When You Need... | Check... |
 |------------------|----------|
-| Current work / project status | `/whats-next` |
+| Current work / project status | `/specboard:whats-next` |
 | Tech stack decisions | `/docs/tech-stack.md` |
 | Feature specifications | `/docs/specs/` |
 | Product requirements | `/docs/initial-requirements.md` |

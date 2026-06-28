@@ -57,6 +57,17 @@ const epicToolNames = new Set([
 ]);
 const projectToolNames = new Set(['list_projects']);
 
+// Server-level instructions returned at MCP initialize. Reaches every connected client (no plugin
+// required). Kept under the ~2000-char client cap; critical content first. The Specboard plugin
+// carries the full guided workflow; this is the always-on summary that points users to it.
+const SERVER_INSTRUCTIONS = `You are connected to Specboard, the user's planning board: epics, tasks, and bugs (an epic is an optional container; tasks and bugs can nest under one or stand alone). Use these tools whenever the user is planning, picking up work, or tracking development status.
+
+Tools: list_projects finds the project (a repo bound via .mcp.json X-Specboard-Project auto-selects one). get_items reads work by status (ready/in_progress/in_review/done), by type, by search, or one item by item_id with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_id); create_items bulk-creates children under a parent. update_item changes title/description/status/sub_status/notes/branch_name/pr_url. Setting an epic's sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
+
+Role model: you can run the full loop (read or write specs, create epics, break work into tasks, build, verify, merge, and close). The human stays in control by choosing when to write a spec themselves and when to review a PR before it merges. One hard rule: verify the work (tests green, behavior confirmed) before you mark any task done or any epic complete. Keep status accurate in real time; never leave a stale in_progress item.
+
+For the full guided workflow (scoping, plan files, status hygiene, close-out), install the Specboard plugin: /plugin marketplace add https://specboard.io/claude then /plugin install specboard@specboard`;
+
 // Session-to-user binding for security
 // Prevents session hijacking by ensuring a session can only be used by the user who created it
 interface SessionBinding {
@@ -78,6 +89,7 @@ function createMcpServer(userId: string, boundProjectId?: string): Server {
 			capabilities: {
 				tools: {},
 			},
+			instructions: SERVER_INSTRUCTIONS,
 		}
 	);
 

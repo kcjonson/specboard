@@ -1,0 +1,20 @@
+{
+	"name": "specboard",
+	"owner": {
+		"name": "Specboard",
+		"url": "https://specboard.io"
+	},
+	"metadata": {
+		"description": "Specboard plugins for Claude Code. Served at https://specboard.io/claude."
+	},
+	"plugins": [
+		{
+			"name": "specboard",
+			"source": {
+				"source": "npm",
+				"package": "@specboard/plugin-claude"
+			},
+			"description": "Connect Claude Code to your Specboard planning board: discover work, scope it, keep board status accurate, and run the dev loop from spec to merge."
+		}
+	]
+}
