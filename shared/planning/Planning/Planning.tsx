@@ -131,7 +131,13 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, []);
 
 	const handleDeleteItem = useCallback((item: ItemModel): void => {
-		items.remove(item);
+		const inCollection = items.find((i) => i.id === item.id);
+		if (inCollection) {
+			items.remove(inCollection);
+		} else {
+			// A child opened standalone isn't in the top-level collection — delete it by id.
+			void item.delete();
+		}
 		setDrawerOpen(false);
 	}, [items]);
 

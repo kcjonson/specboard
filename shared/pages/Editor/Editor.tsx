@@ -187,7 +187,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 		try {
 			const epics = await fetchClient.get<Array<{ id: string }>>(
-				`/api/projects/${projectId}/epics?specPath=${encodeURIComponent(path)}`
+				`/api/projects/${projectId}/items?specPath=${encodeURIComponent(path)}`
 			);
 			setLinkedEpicId(epics.length > 0 ? epics[0]?.id : undefined);
 		} catch (err) {
@@ -373,7 +373,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		setCreatingEpic(true);
 		try {
 			const response = await fetchClient.post<{ id: string }>(
-				`/api/projects/${projectId}/epics`,
+				`/api/projects/${projectId}/items`,
 				{
 					title,
 					status: 'ready',
@@ -381,7 +381,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			);
 			// Link the current document as a product spec.
 			await fetchClient.post(
-				`/api/projects/${projectId}/epics/${response.id}/specs`,
+				`/api/projects/${projectId}/items/${response.id}/specs`,
 				{ path: filePath, type: 'product' }
 			);
 			setLinkedEpicId(response.id);
@@ -416,7 +416,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		if (!filePath) return;
 		try {
 			await fetchClient.post(
-				`/api/projects/${projectId}/epics/${epicId}/specs`,
+				`/api/projects/${projectId}/items/${epicId}/specs`,
 				{ path: filePath, type: 'product' }
 			);
 		} catch (err) {

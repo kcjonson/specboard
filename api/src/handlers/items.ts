@@ -16,6 +16,7 @@ import {
 	blockItem,
 	unblockItem,
 	verifyItemOwnership,
+	getItemIdsBySpecPath,
 	type ItemStatus,
 	type ItemType,
 	type SubStatus,
@@ -30,8 +31,14 @@ export async function handleListItems(context: Context): Promise<Response> {
 	const status = context.req.query('status');
 	const type = context.req.query('type');
 	const search = context.req.query('search');
+	const specPath = context.req.query('specPath');
 
 	try {
+		// Reverse lookup: items linking a given spec path (used by the doc editor).
+		if (specPath) {
+			const ids = await getItemIdsBySpecPath(projectId, specPath);
+			return context.json(ids.map((id) => ({ id })));
+		}
 		const items = await getItems({
 			projectId,
 			status: isValidStatus(status) ? status : undefined,

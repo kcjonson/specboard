@@ -98,7 +98,14 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 	// Task status toggle
 	const handleToggleTaskStatus = (task: ChildModel): void => {
-		task.status = task.status === 'done' ? 'ready' : 'done';
+		if (!item) return;
+		const prev = task.status;
+		const next = prev === 'done' ? 'ready' : 'done';
+		task.status = next; // optimistic; childStats reflects it immediately
+		const target = new ItemModel({ id: task.id, projectId: item.projectId, status: next });
+		target.save().catch(() => {
+			task.status = prev;
+		});
 	};
 
 	// Title — save on blur
@@ -140,8 +147,12 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 	// Add task
 	const handleAddTask = (): void => {
-		if (!newTaskTitle.trim()) return;
+		if (!item || !newTaskTitle.trim()) return;
+		const title = newTaskTitle.trim();
 		setNewTaskTitle('');
+		// Create a child task under this item, then reload so it appears in the list.
+		const child = new ItemModel({ projectId: item.projectId, parentId: item.id, title, type: 'task' });
+		child.save().then(() => item.fetch()).catch(() => {});
 	};
 
 	const handleAddTaskKeyDown = (e: KeyboardEvent): void => {
