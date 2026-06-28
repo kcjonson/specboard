@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type Status } from '@specboard/models';
 import { StatusDot } from '@specboard/ui';
-import { EpicRow } from './EpicRow';
+import { ItemRow } from './ItemRow';
 import { matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Table.module.css';
 
@@ -21,11 +21,13 @@ export interface TableProps {
 	selectedItemId?: string;
 	onSelectItem: (item: ItemModel | undefined) => void;
 	onOpenItem: (item: ItemModel) => void;
+	/** Open a child's detail by id (children are first-class items). */
+	onOpenChild?: (itemId: string) => void;
 }
 
 /** Lazily load an epic's tasks the first time it is expanded. */
 function ensureTasksLoaded(item: ItemModel): void {
-	if (item.$meta.lastFetched == null && !item.$meta.working && item.taskStats.total > 0) {
+	if (item.$meta.lastFetched == null && !item.$meta.working && item.childStats.total > 0) {
 		// Collection items are hydrated without their tasks; fetch the full epic.
 		void item.fetch();
 	}
@@ -41,6 +43,7 @@ export function Table({
 	selectedItemId,
 	onSelectItem,
 	onOpenItem,
+	onOpenChild,
 }: TableProps): JSX.Element {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -71,7 +74,7 @@ export function Table({
 		const ids = new Set<string>();
 		for (const group of GROUPS) {
 			for (const item of grouped[group.status]) {
-				if (item.taskStats.total > 0) {
+				if (item.childStats.total > 0) {
 					ids.add(item.id);
 					ensureTasksLoaded(item);
 				}
@@ -122,7 +125,7 @@ export function Table({
 								</div>
 							) : (
 								groupItems.map((item) => (
-									<EpicRow
+									<ItemRow
 										key={item.id}
 										item={item}
 										expanded={expanded.has(item.id)}
@@ -130,6 +133,7 @@ export function Table({
 										onToggle={toggleExpand}
 										onOpen={onOpenItem}
 										onSelect={onSelectItem}
+										onOpenChild={onOpenChild}
 									/>
 								))
 							)}

@@ -1,68 +1,14 @@
 /**
- * Transform functions: snake_case DB → camelCase API
+ * Transform functions: service responses → API JSON (ISO date strings).
+ *
+ * Item/spec/progress responses already come back camelCase from the item service
+ * and are returned directly by their handlers; only projects need a transform here.
  */
 
-import type { Epic as DbEpic, Task as DbTask, ProgressNote as DbProgressNote, EpicSpec as DbEpicSpec, ProjectResponse } from '@specboard/db';
-import type { ApiEpic, ApiTask, ApiProgressNote, ApiProject, ApiSpec } from './types.ts';
+import type { ProjectResponse } from '@specboard/db';
+import type { ApiProject } from './types.ts';
 
-export function dbEpicToApi(epic: DbEpic): ApiEpic {
-	return {
-		id: epic.id,
-		title: epic.title,
-		type: epic.type,
-		description: epic.description ?? undefined,
-		status: epic.status,
-		subStatus: epic.sub_status,
-		creator: epic.creator ?? undefined,
-		assignee: epic.assignee ?? undefined,
-		rank: epic.rank,
-		prUrl: epic.pr_url ?? undefined,
-		branchName: epic.branch_name ?? undefined,
-		notes: epic.notes ?? undefined,
-		createdAt: epic.created_at.toISOString(),
-		updatedAt: epic.updated_at.toISOString(),
-	};
-}
-
-export function dbSpecToApi(spec: DbEpicSpec): ApiSpec {
-	return {
-		id: spec.id,
-		epicId: spec.epic_id,
-		projectId: spec.project_id,
-		path: spec.path,
-		type: spec.spec_type,
-		createdAt: spec.created_at.toISOString(),
-	};
-}
-
-export function dbTaskToApi(task: DbTask): ApiTask {
-	return {
-		id: task.id,
-		epicId: task.epic_id,
-		title: task.title,
-		status: task.status,
-		assignee: task.assignee ?? undefined,
-		dueDate: task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : undefined,
-		rank: task.rank,
-		details: task.details ?? undefined,
-		note: task.note ?? undefined,
-	};
-}
-
-export function dbProgressNoteToApi(note: DbProgressNote): ApiProgressNote {
-	return {
-		id: note.id,
-		epicId: note.epic_id ?? undefined,
-		taskId: note.task_id ?? undefined,
-		note: note.note,
-		createdBy: note.created_by ?? undefined,
-		createdAt: note.created_at.toISOString(),
-	};
-}
-
-/**
- * Transform ProjectResponse (already camelCase from service) to ApiProject (with ISO strings)
- */
+/** Transform ProjectResponse (camelCase from the service) to ApiProject (ISO strings). */
 export function projectResponseToApi(project: ProjectResponse): ApiProject {
 	return {
 		id: project.id,

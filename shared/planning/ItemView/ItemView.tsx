@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { useModel, ItemModel, type TaskModel, type Status, type SubStatus, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type ChildModel, type Status, type SubStatus, type ItemType } from '@specboard/models';
 import { Button, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
@@ -11,6 +11,7 @@ import styles from './ItemView.module.css';
 
 const TYPE_LABELS: Record<ItemType, string> = {
 	epic: 'Epic',
+	task: 'Task',
 	bug: 'Bug',
 };
 
@@ -21,6 +22,8 @@ interface ItemViewExistingProps {
 	createType?: never;
 	onDelete?: (item: ItemModel) => void;
 	onCreate?: never;
+	/** Open a child's detail by id (clicking a child card). */
+	onOpenChild?: (itemId: string) => void;
 }
 
 /** Props for creating a new item */
@@ -30,6 +33,7 @@ interface ItemViewCreateProps {
 	createType?: ItemType;
 	onDelete?: never;
 	onCreate: (data: { title: string; description?: string; status: Status; type?: ItemType }) => void;
+	onOpenChild?: never;
 }
 
 export type ItemViewProps = ItemViewExistingProps | ItemViewCreateProps;
@@ -54,12 +58,21 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	const { isNew = false } = props;
 	const item = isNew ? undefined : props.item;
 	const onDelete = isNew ? undefined : props.onDelete;
+	const onOpenChild = isNew ? undefined : props.onOpenChild;
 	const onCreate = isNew ? props.onCreate : undefined;
 	const itemType: ItemType = isNew ? (props.createType || 'epic') : (item?.type || 'epic');
 	const typeLabel = TYPE_LABELS[itemType];
 
 	// Always call hook unconditionally (hook now handles undefined)
 	useModel(item);
+
+	// Load the full detail (children) for an existing item that only has the list
+	// summary so far. The table fetches on expand; opening the drawer needs them too.
+	useEffect(() => {
+		if (item && item.$meta.lastFetched == null && !item.$meta.working) {
+			void item.fetch();
+		}
+	}, [item]);
 
 	// Initialize description AST from plain text (recomputed when item description changes)
 	const initialDescriptionAst = useMemo(
@@ -70,13 +83,13 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// State
 	const [titleDraft, setTitleDraft] = useState(item?.title || '');
 	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
-	const [statusDraft, setStatusDraft] = useState<Status>(item?.status || 'ready');
+	const [statusDraft, setStatusDraft] = useState<Status>((item?.status as Status) || 'ready');
 	const [newTaskTitle, setNewTaskTitle] = useState('');
 
 	// Track whether description has unsaved changes
 	const descriptionDirtyRef = useRef(false);
 
-	const taskStats = item?.taskStats || { total: 0, done: 0 };
+	const taskStats = item?.childStats || { total: 0, done: 0 };
 
 	// Sync title draft when item data loads
 	useEffect(() => {
@@ -92,8 +105,15 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	}, [initialDescriptionAst]);
 
 	// Task status toggle
-	const handleToggleTaskStatus = (task: TaskModel): void => {
-		task.status = task.status === 'done' ? 'ready' : 'done';
+	const handleToggleTaskStatus = (task: ChildModel): void => {
+		if (!item) return;
+		const prev = task.status;
+		const next = prev === 'done' ? 'ready' : 'done';
+		task.status = next; // optimistic; childStats reflects it immediately
+		const target = new ItemModel({ id: task.id, projectId: item.projectId, status: next });
+		target.save().catch(() => {
+			task.status = prev;
+		});
 	};
 
 	// Title — save on blur
@@ -135,8 +155,12 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 	// Add task
 	const handleAddTask = (): void => {
-		if (!newTaskTitle.trim()) return;
+		if (!item || !newTaskTitle.trim()) return;
+		const title = newTaskTitle.trim();
 		setNewTaskTitle('');
+		// Create a child task under this item, then reload so it appears in the list.
+		const child = new ItemModel({ projectId: item.projectId, parentId: item.id, title, type: 'task' });
+		child.save().then(() => item.fetch()).catch(() => {});
 	};
 
 	const handleAddTaskKeyDown = (e: KeyboardEvent): void => {
@@ -277,14 +301,14 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 			</section>
 
 			{/* Tasks — only show for existing items */}
-			{!isNew && item && (
+			{!isNew && item && item.type === 'epic' && (
 				<section class={styles.section}>
 					<h3 class={styles.sectionTitle}>
 						Tasks ({taskStats.done}/{taskStats.total})
 					</h3>
 					<div class={styles.taskList} role="list">
-						{item.tasks.map((task) => (
-							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} />
+						{item.children.map((task) => (
+							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} onOpen={(child) => onOpenChild?.(child.id)} />
 						))}
 					</div>
 					<div class={styles.addTask}>
@@ -307,7 +331,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 			{/* Specifications — for any existing work item */}
 			{!isNew && item && (
-				<SpecsSection projectId={item.projectId} epicId={item.id} />
+				<SpecsSection projectId={item.projectId} itemId={item.id} />
 			)}
 
 			{/* Footer */}

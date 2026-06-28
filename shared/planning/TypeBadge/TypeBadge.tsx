@@ -5,6 +5,7 @@ import styles from './TypeBadge.module.css';
 
 const TYPE_CONFIG: Record<ItemType, { icon: IconName; label: string }> = {
 	epic: { icon: 'file', label: 'Epic' },
+	task: { icon: 'checkbox-unchecked', label: 'Task' },
 	bug: { icon: 'bug', label: 'Bug' },
 };
 

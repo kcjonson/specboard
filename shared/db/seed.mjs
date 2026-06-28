@@ -180,21 +180,21 @@ async function seedSampleProject(pool, ownerId) {
 		for (let i = 0; i < SAMPLE_EPICS.length; i++) {
 			const epic = SAMPLE_EPICS[i];
 			const epicResult = await client.query(
-				`INSERT INTO epics (project_id, title, description, status, type, rank, creator)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+				`INSERT INTO items (project_id, parent_id, title, description, status, type, rank, creator)
+				 VALUES ($1, NULL, $2, $3, $4, $5, $6, $7) RETURNING id`,
 				[projectId, epic.title, epic.description, epic.status, epic.type, i + 1, ownerId]
 			);
 			const epicId = epicResult.rows[0]?.id;
 			if (!epicId) {
-				throw new Error('Failed to create sample epic');
+				throw new Error('Failed to create sample item');
 			}
 
 			for (let j = 0; j < epic.tasks.length; j++) {
 				const task = epic.tasks[j];
 				await client.query(
-					`INSERT INTO tasks (epic_id, title, status, rank)
-					 VALUES ($1, $2, $3, $4)`,
-					[epicId, task.title, task.status, j + 1]
+					`INSERT INTO items (project_id, parent_id, title, status, type, rank)
+					 VALUES ($1, $2, $3, $4, 'task', $5)`,
+					[projectId, epicId, task.title, task.status, j + 1]
 				);
 			}
 		}

@@ -1,7 +1,10 @@
 .panel {
 	position: relative;
 	flex-shrink: 0;
-	height: 100%;
+	/* Stretch to the flex row's height rather than height:100% — the latter
+	   collapses to content height when an ancestor lacks a definite height
+	   (e.g. a min-height:100vh page shell), leaving a short panel. */
+	align-self: stretch;
 	min-height: 0;
 	/* Width is set inline; children fill the panel. */
 	display: flex;

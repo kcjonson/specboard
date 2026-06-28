@@ -36,8 +36,8 @@ export async function handleListProjects(context: Context, redis: Redis): Promis
 
 		const apiProjects = projects.map((project) => ({
 			...projectResponseToApi(project),
-			epicCount: project.epicCount,
-			epicCounts: project.epicCounts,
+			itemCount: project.itemCount,
+			itemCounts: project.itemCounts,
 		}));
 
 		return context.json(apiProjects);

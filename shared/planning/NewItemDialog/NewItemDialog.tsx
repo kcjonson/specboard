@@ -5,6 +5,7 @@ import { ItemView } from '../ItemView/ItemView';
 
 const TYPE_LABELS: Record<ItemType, string> = {
 	epic: 'Epic',
+	task: 'Task',
 	bug: 'Bug',
 };
 

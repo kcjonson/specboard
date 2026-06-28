@@ -2,12 +2,12 @@
  * Validation utilities
  */
 
-import type { EpicStatus, EpicType } from '@specboard/db';
+import type { ItemStatus, ItemType } from '@specboard/db';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-const VALID_STATUSES: EpicStatus[] = ['ready', 'in_progress', 'done'];
-const VALID_TYPES: EpicType[] = ['epic', 'bug'];
+const VALID_STATUSES: ItemStatus[] = ['ready', 'in_progress', 'blocked', 'in_review', 'done'];
+const VALID_TYPES: ItemType[] = ['epic', 'task', 'bug'];
 
 export const MAX_TITLE_LENGTH = 255;
 export const MAX_DESCRIPTION_LENGTH = 2000;
@@ -21,12 +21,12 @@ export function isValidOptionalUUID(value: string | undefined): boolean {
 	return isValidUUID(value);
 }
 
-export function isValidStatus(status: unknown): status is EpicStatus {
-	return typeof status === 'string' && VALID_STATUSES.includes(status as EpicStatus);
+export function isValidStatus(status: unknown): status is ItemStatus {
+	return typeof status === 'string' && VALID_STATUSES.includes(status as ItemStatus);
 }
 
-export function isValidType(type: unknown): type is EpicType {
-	return typeof type === 'string' && VALID_TYPES.includes(type as EpicType);
+export function isValidType(type: unknown): type is ItemType {
+	return typeof type === 'string' && VALID_TYPES.includes(type as ItemType);
 }
 
 export function isValidTitle(title: string): boolean {

@@ -13,7 +13,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 export interface SpecsSectionProps {
 	projectId: string;
-	epicId: string;
+	itemId: string;
 }
 
 /**
@@ -21,8 +21,8 @@ export interface SpecsSectionProps {
  * lets the user add a link via the file picker, and remove links. Backed by a
  * SpecsCollection whose add()/remove() persist to the API.
  */
-export function SpecsSection({ projectId, epicId }: SpecsSectionProps): JSX.Element {
-	const specs = useMemo(() => new SpecsCollection({ projectId, epicId }), [projectId, epicId]);
+export function SpecsSection({ projectId, itemId }: SpecsSectionProps): JSX.Element {
+	const specs = useMemo(() => new SpecsCollection({ projectId, itemId }), [projectId, itemId]);
 	useModel(specs);
 
 	const [pickerOpen, setPickerOpen] = useState(false);
