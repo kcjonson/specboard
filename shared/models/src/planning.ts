@@ -22,7 +22,7 @@ export type TaskStatus = 'ready' | 'in_progress' | 'blocked' | 'done';
 export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
 
 /** Work item type */
-export type ItemType = 'epic' | 'chore' | 'bug';
+export type ItemType = 'epic' | 'bug';
 
 /** Spec link type */
 export type SpecType = 'product' | 'technical';

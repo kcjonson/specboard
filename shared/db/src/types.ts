@@ -162,7 +162,7 @@ export interface Project {
 }
 
 export type EpicStatus = 'ready' | 'in_progress' | 'in_review' | 'done';
-export type EpicType = 'epic' | 'chore' | 'bug';
+export type EpicType = 'epic' | 'bug';
 export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
 export type TaskStatus = 'ready' | 'in_progress' | 'blocked' | 'done';
 export type SpecType = 'product' | 'technical';

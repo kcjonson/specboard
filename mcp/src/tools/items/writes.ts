@@ -75,11 +75,11 @@ export async function createItem(
 		};
 	}
 
-	// Epic/chore/bug creation
-	const validTypes: EpicType[] = ['epic', 'chore', 'bug'];
+	// Epic/bug creation
+	const validTypes: EpicType[] = ['epic', 'bug'];
 	if (!validTypes.includes(type as EpicType)) {
 		return {
-			content: [{ type: 'text', text: 'Invalid type. Must be one of: epic, chore, bug, task' }],
+			content: [{ type: 'text', text: 'Invalid type. Must be one of: epic, bug, task' }],
 			isError: true,
 		};
 	}
@@ -242,7 +242,7 @@ export async function updateItem(
 		};
 	}
 
-	// Work item (epic/chore/bug) update
+	// Work item (epic/bug) update
 	const epicBelongs = await verifyEpicOwnership(projectId, itemId);
 	if (!epicBelongs) {
 		return {

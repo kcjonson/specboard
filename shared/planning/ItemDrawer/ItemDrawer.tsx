@@ -7,7 +7,6 @@ import styles from './ItemDrawer.module.css';
 
 const TYPE_LABELS: Record<ItemType, string> = {
 	epic: 'Epic',
-	chore: 'Chore',
 	bug: 'Bug',
 };
 
