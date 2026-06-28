@@ -29,6 +29,8 @@ export interface ItemRowProps {
 	onToggle: (item: ItemModel) => void;
 	onOpen: (item: ItemModel) => void;
 	onSelect: (item: ItemModel | undefined) => void;
+	/** Open a child's detail by id (children are first-class items). */
+	onOpenChild?: (itemId: string) => void;
 }
 
 /**
@@ -42,6 +44,7 @@ export function ItemRow({
 	onToggle,
 	onOpen,
 	onSelect,
+	onOpenChild,
 }: ItemRowProps): JSX.Element {
 	// Subscribe so the row re-renders when fetch() populates children / flips $meta.
 	useModel(item);
@@ -106,7 +109,7 @@ export function ItemRow({
 
 			{expanded &&
 				!loadingChildren &&
-				item.children.map((child) => <ChildRow key={child.id} child={child} />)}
+				item.children.map((child) => <ChildRow key={child.id} child={child} onOpen={onOpenChild} />)}
 		</>
 	);
 }

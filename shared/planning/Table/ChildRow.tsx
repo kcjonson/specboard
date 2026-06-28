@@ -22,12 +22,23 @@ const DOT_STATUS: Record<ItemStatus, StatusType> = {
 
 export interface ChildRowProps {
 	child: ChildModel;
+	/** Open this child's detail (children are first-class items). */
+	onOpen?: (itemId: string) => void;
 }
 
-/** A child item row, indented one level under its parent. Read-only in v1. */
-export function ChildRow({ child }: ChildRowProps): JSX.Element {
+/** A child item row, indented one level under its parent. Clickable to open its detail. */
+export function ChildRow({ child, onOpen }: ChildRowProps): JSX.Element {
+	const handleOpen = (): void => onOpen?.(child.id);
 	return (
-		<div class={`${styles.row} ${styles.taskRow}`} role="row">
+		<div
+			class={`${styles.row} ${styles.taskRow} ${styles.clickable}`}
+			role="row"
+			tabIndex={0}
+			onClick={handleOpen}
+			onKeyDown={(e) => {
+				if (e.key === 'Enter') handleOpen();
+			}}
+		>
 			<span class={styles.colTitle} role="cell">
 				<span class={styles.chevronSpacer} />
 				<span class={styles.taskTitle}>{child.title}</span>

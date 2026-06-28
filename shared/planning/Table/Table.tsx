@@ -21,6 +21,8 @@ export interface TableProps {
 	selectedItemId?: string;
 	onSelectItem: (item: ItemModel | undefined) => void;
 	onOpenItem: (item: ItemModel) => void;
+	/** Open a child's detail by id (children are first-class items). */
+	onOpenChild?: (itemId: string) => void;
 }
 
 /** Lazily load an epic's tasks the first time it is expanded. */
@@ -41,6 +43,7 @@ export function Table({
 	selectedItemId,
 	onSelectItem,
 	onOpenItem,
+	onOpenChild,
 }: TableProps): JSX.Element {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -130,6 +133,7 @@ export function Table({
 										onToggle={toggleExpand}
 										onOpen={onOpenItem}
 										onSelect={onSelectItem}
+										onOpenChild={onOpenChild}
 									/>
 								))
 							)}

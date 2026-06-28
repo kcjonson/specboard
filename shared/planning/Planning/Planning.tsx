@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
-import { useModel, ItemsCollection, type ItemModel, type Status, type ItemType } from '@specboard/models';
+import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
 import { Page, SplitButton, Text, Select, type SplitButtonOption } from '@specboard/ui';
 import { Board } from '../Board/Board';
 import { Table } from '../Table/Table';
@@ -103,6 +103,12 @@ export function Planning(props: RouteProps): JSX.Element {
 		setDrawerOpen(true);
 	}, []);
 
+	// Open any item by id (used for children, which aren't in the top-level collection).
+	const handleOpenItemById = useCallback((itemId: string): void => {
+		setSelectedItemId(itemId);
+		setDrawerOpen(true);
+	}, []);
+
 	const handleOpenNewItemDialog = useCallback((type: ItemType): void => {
 		setCreateType(type);
 		setIsNewItemDialogOpen(true);
@@ -147,7 +153,16 @@ export function Planning(props: RouteProps): JSX.Element {
 
 	// The drawer renders whichever item is selected; if that item is removed
 	// (e.g. deleted), the lookup returns undefined and the drawer collapses.
-	const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) : undefined;
+	// A child (or any item not in the top-level collection) is opened by id via a
+	// standalone model that fetches its own detail; memoized so it isn't refetched on
+	// every render. Top-level items use the live collection model so edits reflect on the board.
+	const standaloneItem = useMemo(() => {
+		if (!selectedItemId || items.find((i) => i.id === selectedItemId)) return undefined;
+		return new ItemModel({ id: selectedItemId, projectId });
+	}, [selectedItemId, projectId, items]);
+	const selectedItem = selectedItemId
+		? (items.find((i) => i.id === selectedItemId) ?? standaloneItem)
+		: undefined;
 
 	// Measure the workspace so the drawer can't widen past leaving the board a
 	// usable minimum. A callback ref (not useRef + mount effect) is required
@@ -219,6 +234,7 @@ export function Planning(props: RouteProps): JSX.Element {
 							selectedItemId={selectedItemId}
 							onSelectItem={handleSelectItem}
 							onOpenItem={handleOpenItem}
+							onOpenChild={handleOpenItemById}
 						/>
 					) : (
 						<Board
@@ -242,6 +258,7 @@ export function Planning(props: RouteProps): JSX.Element {
 						maxWidth={drawerMaxWidth}
 						onClose={handleCloseDrawer}
 						onDelete={handleDeleteItem}
+						onOpenItem={handleOpenItemById}
 					/>
 				)}
 			</div>
