@@ -131,6 +131,7 @@ export function Planning(props: RouteProps): JSX.Element {
 
 	const createOptions: SplitButtonOption[] = useMemo(() => [
 		{ label: 'Epic', value: 'epic', icon: 'file' as const, onClick: () => handleOpenNewItemDialog('epic') },
+		{ label: 'Task', value: 'task', icon: 'check' as const, onClick: () => handleOpenNewItemDialog('task') },
 		{ label: 'Bug', value: 'bug', icon: 'bug' as const, onClick: () => handleOpenNewItemDialog('bug') },
 	], [handleOpenNewItemDialog]);
 

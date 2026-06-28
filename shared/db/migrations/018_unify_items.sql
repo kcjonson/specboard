@@ -76,8 +76,7 @@ ALTER TABLE progress_notes ALTER COLUMN item_id SET NOT NULL;
 ALTER TABLE progress_notes ADD CONSTRAINT progress_notes_item_id_fkey FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE;
 CREATE INDEX idx_progress_notes_item_id ON progress_notes(item_id);
 
--- Drop the old tables and their now-unused trigger functions.
+-- Drop the old tables. The shared update_epic_timestamp() trigger function stays
+-- (other tables still use it); items has its own update_item_timestamp().
 DROP TABLE tasks;
 DROP TABLE epics;
-DROP FUNCTION IF EXISTS update_epic_timestamp();
-DROP FUNCTION IF EXISTS update_task_timestamp();

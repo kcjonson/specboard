@@ -1,17 +1,28 @@
 import type { JSX } from 'preact';
-import { useModel, type ItemModel, type Status } from '@specboard/models';
-import { Icon, StatusDot } from '@specboard/ui';
+import { useModel, type ItemModel, type ItemStatus } from '@specboard/models';
+import { Icon, StatusDot, type StatusType } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
-import { TaskRow } from './TaskRow';
+import { ChildRow } from './ChildRow';
 import styles from './Table.module.css';
 
-const STATUS_LABELS: Record<Status, string> = {
+const STATUS_LABELS: Record<ItemStatus, string> = {
 	ready: 'Ready',
 	in_progress: 'In Progress',
+	blocked: 'Blocked',
+	in_review: 'In Review',
 	done: 'Done',
 };
 
-export interface EpicRowProps {
+// 'blocked'/'in_review' have no dedicated StatusDot color — fall back to the neutral dot.
+const DOT_STATUS: Record<ItemStatus, StatusType> = {
+	ready: 'ready',
+	in_progress: 'in_progress',
+	blocked: 'default',
+	in_review: 'default',
+	done: 'done',
+};
+
+export interface ItemRowProps {
 	item: ItemModel;
 	expanded: boolean;
 	selected: boolean;
@@ -21,23 +32,23 @@ export interface EpicRowProps {
 }
 
 /**
- * A single epic row in the table. Expands to reveal its task children, which are
- * lazily fetched on first expand — `useModel` re-renders this row when they land.
+ * A single item row in the table. Expands to reveal its children, which are lazily
+ * fetched on first expand — `useModel` re-renders this row when they land.
  */
-export function EpicRow({
+export function ItemRow({
 	item,
 	expanded,
 	selected,
 	onToggle,
 	onOpen,
 	onSelect,
-}: EpicRowProps): JSX.Element {
-	// Subscribe so the row re-renders when fetch() populates tasks / flips $meta.
+}: ItemRowProps): JSX.Element {
+	// Subscribe so the row re-renders when fetch() populates children / flips $meta.
 	useModel(item);
 
-	const { total, done } = item.taskStats;
-	const hasTasks = total > 0;
-	const loadingTasks = item.$meta.working && item.tasks.length === 0;
+	const { total, done } = item.childStats;
+	const hasChildren = total > 0;
+	const loadingChildren = item.$meta.working && item.children.length === 0;
 
 	const handleToggle = (e: MouseEvent): void => {
 		e.stopPropagation();
@@ -61,7 +72,7 @@ export function EpicRow({
 				}}
 			>
 				<span class={styles.colTitle} role="cell">
-					{hasTasks ? (
+					{hasChildren ? (
 						<button
 							type="button"
 							class={styles.chevron}
@@ -80,22 +91,22 @@ export function EpicRow({
 					<TypeBadge type={item.type} />
 				</span>
 				<span class={styles.colStatus} role="cell">
-					<StatusDot status={item.status} />
+					<StatusDot status={DOT_STATUS[item.status]} />
 					{STATUS_LABELS[item.status]}
 				</span>
-				<span class={styles.colTasks} role="cell">{hasTasks ? `${done}/${total}` : '—'}</span>
+				<span class={styles.colTasks} role="cell">{hasChildren ? `${done}/${total}` : '—'}</span>
 				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>
 			</div>
 
-			{expanded && loadingTasks && (
+			{expanded && loadingChildren && (
 				<div class={`${styles.row} ${styles.taskRow}`} role="row">
-					<span class={`${styles.colTitle} ${styles.loadingTasks}`} role="cell">Loading tasks…</span>
+					<span class={`${styles.colTitle} ${styles.loadingTasks}`} role="cell">Loading…</span>
 				</div>
 			)}
 
 			{expanded &&
-				!loadingTasks &&
-				item.tasks.map((task) => <TaskRow key={task.id} task={task} />)}
+				!loadingChildren &&
+				item.children.map((child) => <ChildRow key={child.id} child={child} />)}
 		</>
 	);
 }

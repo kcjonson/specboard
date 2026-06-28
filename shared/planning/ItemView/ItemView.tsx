@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { useModel, ItemModel, type TaskModel, type Status, type SubStatus, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type ChildModel, type Status, type SubStatus, type ItemType } from '@specboard/models';
 import { Button, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
@@ -11,6 +11,7 @@ import styles from './ItemView.module.css';
 
 const TYPE_LABELS: Record<ItemType, string> = {
 	epic: 'Epic',
+	task: 'Task',
 	bug: 'Bug',
 };
 
@@ -70,13 +71,13 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// State
 	const [titleDraft, setTitleDraft] = useState(item?.title || '');
 	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
-	const [statusDraft, setStatusDraft] = useState<Status>(item?.status || 'ready');
+	const [statusDraft, setStatusDraft] = useState<Status>((item?.status as Status) || 'ready');
 	const [newTaskTitle, setNewTaskTitle] = useState('');
 
 	// Track whether description has unsaved changes
 	const descriptionDirtyRef = useRef(false);
 
-	const taskStats = item?.taskStats || { total: 0, done: 0 };
+	const taskStats = item?.childStats || { total: 0, done: 0 };
 
 	// Sync title draft when item data loads
 	useEffect(() => {
@@ -92,7 +93,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	}, [initialDescriptionAst]);
 
 	// Task status toggle
-	const handleToggleTaskStatus = (task: TaskModel): void => {
+	const handleToggleTaskStatus = (task: ChildModel): void => {
 		task.status = task.status === 'done' ? 'ready' : 'done';
 	};
 
@@ -283,7 +284,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 						Tasks ({taskStats.done}/{taskStats.total})
 					</h3>
 					<div class={styles.taskList} role="list">
-						{item.tasks.map((task) => (
+						{item.children.map((task) => (
 							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} />
 						))}
 					</div>
@@ -307,7 +308,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 			{/* Specifications — for any existing work item */}
 			{!isNew && item && (
-				<SpecsSection projectId={item.projectId} epicId={item.id} />
+				<SpecsSection projectId={item.projectId} itemId={item.id} />
 			)}
 
 			{/* Footer */}

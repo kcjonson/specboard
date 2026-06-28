@@ -17,6 +17,7 @@ export const CATEGORY_ALL = 'all';
 export const CATEGORY_OPTIONS: SelectOption[] = [
 	{ value: CATEGORY_ALL, label: 'All types' },
 	{ value: 'epic', label: 'Epic' },
+	{ value: 'task', label: 'Task' },
 	{ value: 'bug', label: 'Bug' },
 ];
 
