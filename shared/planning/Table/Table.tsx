@@ -53,7 +53,9 @@ export function Table({
 			ready: items.byStatus('ready').filter((i) => matchesFilters(i, filters)),
 			done: items.byStatus('done').filter((i) => matchesFilters(i, filters)),
 		}),
-		[items, filters]
+		// items.version changes on add/remove/status change so the grouping recomputes
+		// even though the collection reference is stable.
+		[items, items.version, filters]
 	);
 
 	const toggleExpand = useCallback((item: ItemModel): void => {
