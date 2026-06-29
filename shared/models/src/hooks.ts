@@ -4,7 +4,7 @@
  * Hooks for subscribing to Model and Collection changes in Preact components.
  */
 
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Observable } from './types';
 
 /**
@@ -54,6 +54,16 @@ import type { Observable } from './types';
 export function useModel<T extends Observable>(observable: T | null | undefined): T | null | undefined {
 	const [, forceUpdate] = useState(0);
 
+	// Snapshot whether the observable was mid-fetch at render time. A SyncModel/
+	// SyncCollection starts an auto-fetch in its constructor, which runs during render;
+	// it can resolve before our effect subscribes, so the resulting change fires with no
+	// listener and is lost — leaving the component stuck mid-fetch (a permanent
+	// "Loading…"). We re-check this in the effect to recover, without an unconditional
+	// extra render on every mount.
+	const wasWorking = (observable as { $meta?: { working?: boolean } } | null | undefined)?.$meta?.working ?? false;
+	const wasWorkingRef = useRef(wasWorking);
+	wasWorkingRef.current = wasWorking;
+
 	useEffect(() => {
 		if (!observable) return;
 
@@ -62,6 +72,14 @@ export function useModel<T extends Observable>(observable: T | null | undefined)
 		};
 
 		observable.on('change', handleChange);
+
+		// If a fetch in flight at render finished before we subscribed, we missed its
+		// change — re-render once to pick it up. Only when the fetch state actually
+		// flipped, so there's no extra render when nothing changed in the gap.
+		const nowWorking = (observable as { $meta?: { working?: boolean } }).$meta?.working ?? false;
+		if (nowWorking !== wasWorkingRef.current) {
+			forceUpdate((n) => n + 1);
+		}
 
 		return () => {
 			observable.off('change', handleChange);
