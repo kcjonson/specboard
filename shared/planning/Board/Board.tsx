@@ -49,7 +49,9 @@ export function Board({
 			in_progress: items.byStatus('in_progress').filter((i) => matchesFilters(i, filters)),
 			done: items.byStatus('done').filter((i) => matchesFilters(i, filters)),
 		}),
-		[items, filters]
+		// items.version changes on add/remove/status change so the grouping recomputes
+		// even though the collection reference is stable.
+		[items, items.version, filters]
 	);
 
 	// Wrapper for Column (which only emits ItemModel, never undefined).

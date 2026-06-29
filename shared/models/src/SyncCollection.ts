@@ -59,6 +59,13 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	/** Event listeners */
 	private __listeners: Record<string, ChangeCallback[]> = {};
 
+	/**
+	 * Bumped on every change emit (add/remove/item mutation). Lets memoized derived
+	 * state (e.g. status grouping) recompute on in-place mutations even though the
+	 * collection reference is stable — include `version` in the memo deps.
+	 */
+	private __version = 0;
+
 	/** Collection metadata */
 	readonly $meta: CollectionMeta = {
 		working: false,
@@ -149,8 +156,14 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 		this.__emitChange();
 	};
 
+	/** Monotonic change counter; changes whenever the collection's contents do. */
+	get version(): number {
+		return this.__version;
+	}
+
 	/** Emit change event */
 	private __emitChange(): void {
+		this.__version++;
 		const listeners = this.__listeners['change'];
 		if (listeners) {
 			for (const listener of listeners) {
