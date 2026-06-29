@@ -114,4 +114,39 @@ describe('useModel', () => {
 
 		expect(result.current.count).toBe(20);
 	});
+
+	it('does not force an extra render on mount when not mid-fetch', () => {
+		// Guards against a needless second render: a plain model isn't fetching, so the
+		// working state is unchanged across the render->subscribe gap and the resync must
+		// not fire.
+		const counter = new Counter({ count: 0 });
+		let renders = 0;
+		renderHook(() => {
+			renders++;
+			return useModel(counter);
+		});
+		expect(renders).toBe(1);
+	});
+
+	it('re-syncs when a fetch in flight finishes between render and subscribe (race)', () => {
+		// SyncModel/SyncCollection start an auto-fetch in their constructor (during
+		// render); useModel subscribes in an effect (after commit). If the fetch resolves
+		// in that gap the change fires with no listener and is lost — the board got stuck
+		// on "Loading…". Simulate it: working is true at render, then flips to false (fetch
+		// done) before the effect, with no listener yet. The effect must re-render once.
+		const counter = new Counter({ count: 0 });
+		(counter.$meta as Record<string, unknown>).working = true;
+		let renders = 0;
+		let resolved = false;
+		renderHook(() => {
+			renders++;
+			const m = useModel(counter);
+			if (!resolved) {
+				resolved = true;
+				(counter.$meta as Record<string, unknown>).working = false;
+			}
+			return m;
+		});
+		expect(renders).toBe(2);
+	});
 });
