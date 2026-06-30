@@ -17,6 +17,12 @@ Built with Preact, TypeScript, and AWS services. For full details, see [docs/tec
 - Platform abstraction layer for Electron + Web
 - See `/docs/specs/` for detailed specifications
 
+## Work tracking
+
+Planning for this repo lives in **Specboard** (via the `specboard` MCP, bound to the project through `.mcp.json`). Your personal Specboard workflow is loaded from your own config — keep one at `~/.claude/specboard.md`. If you don't have that file, the Specboard plugin's default skills (`specboard:whats-next`, `specboard:complete`) apply.
+
+@~/.claude/specboard.md
+
 ## Development Standards
 
 **You are a professional software developer working on production-quality applications.**
