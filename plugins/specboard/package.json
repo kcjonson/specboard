@@ -4,6 +4,11 @@
 	"description": "Specboard workflow plugin for Claude Code: discover work, scope it, keep board status accurate, and run the dev loop from spec to merge.",
 	"keywords": ["claude", "claude-code", "claude-code-plugin", "specboard"],
 	"homepage": "https://specboard.io",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kcjonson/specboard.git",
+		"directory": "plugins/specboard"
+	},
 	"license": "UNLICENSED",
 	"files": [
 		".claude-plugin",
