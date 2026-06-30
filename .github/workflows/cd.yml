@@ -24,6 +24,8 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # read main's head SHA to confirm this run is still the latest
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
@@ -51,13 +53,17 @@ jobs:
           echo "This commit: $SHA"
           echo "Latest:      ${LATEST:-<unknown>}"
 
-          # Skip only when we can confirm a strictly newer commit exists. If the lookup
-          # fails (empty LATEST), fail open and deploy — silently skipping on a transient
-          # API hiccup leaves freshly-merged commits undeployed.
-          if [ -z "$LATEST" ] || [ "$SHA" = "$LATEST" ]; then
+          # Strict "only the latest commit deploys". With contents:read (granted on the
+          # job) the lookup is reliable, so skip when a strictly newer commit exists. If
+          # the lookup still comes back empty (a real API outage), fail loudly rather than
+          # deploy a possibly-stale commit or silently skip a fresh one.
+          if [ -z "$LATEST" ]; then
+            echo "::error::Could not determine main's latest commit (empty API response); not deploying. Re-run once the lookup succeeds."
+            exit 1
+          elif [ "$SHA" = "$LATEST" ]; then
             echo "should_deploy=true" >> $GITHUB_OUTPUT
           else
-            echo "Newer commits exist, skipping"
+            echo "Newer commits exist; a later commit's run will deploy. Skipping."
             echo "should_deploy=false" >> $GITHUB_OUTPUT
           fi
 
