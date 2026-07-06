@@ -102,6 +102,22 @@
 	background: var(--color-accent-soft);
 }
 
+/* Brief pulse when a row is created or changed by a background refresh. */
+.epicRow.highlighted {
+	animation: row-highlight-pulse 2s ease-out;
+}
+
+@keyframes row-highlight-pulse {
+	0% {
+		background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+		box-shadow: inset 3px 0 0 var(--color-primary);
+	}
+	100% {
+		background: transparent;
+		box-shadow: inset 3px 0 0 transparent;
+	}
+}
+
 .taskRow {
 	border-top: 1px solid var(--color-border);
 	background: var(--color-surface);

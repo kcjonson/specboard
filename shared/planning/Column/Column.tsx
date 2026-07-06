@@ -11,7 +11,7 @@ interface ColumnProps {
 	items: ItemModel[];
 	projectId: string;
 	selectedItemId?: string;
-	highlightedItemId?: string;
+	flashingIds: Set<string>;
 	onSelectItem?: (item: ItemModel) => void;
 	onOpenItem?: (item: ItemModel) => void;
 	onDropItem?: (itemId: string, status: Status, index: number) => void;
@@ -31,7 +31,7 @@ export function Column({
 	items,
 	projectId,
 	selectedItemId,
-	highlightedItemId,
+	flashingIds,
 	onSelectItem,
 	onOpenItem,
 	onDropItem,
@@ -127,7 +127,7 @@ export function Column({
 									item={item}
 									projectId={projectId}
 									isSelected={item.id === selectedItemId}
-									isHighlighted={item.id === highlightedItemId}
+									isHighlighted={flashingIds.has(item.id)}
 									onSelect={onSelectItem}
 									onOpen={onOpenItem}
 									onDragStart={onDragStart}

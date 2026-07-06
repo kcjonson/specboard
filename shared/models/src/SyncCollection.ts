@@ -53,11 +53,22 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	/** The SyncModel class for items */
 	static Model: SyncModelConstructor<SyncModel>;
 
+	/**
+	 * Field used to detect that the server changed an item during a reconciling
+	 * fetch. When present on both the existing model and the incoming payload, a
+	 * differing value marks the item as changed (drives the `itemsChanged` event).
+	 * Models without this field are always re-applied but never reported as changed.
+	 */
+	static changeKey: string = 'updatedAt';
+
 	/** Internal storage */
 	private __items: T[] = [];
 
 	/** Event listeners */
 	private __listeners: Record<string, ChangeCallback[]> = {};
+
+	/** Listeners for the ids reported changed by a (non-initial) reconciling fetch. */
+	private __itemsChangedListeners: Array<(ids: string[]) => void> = [];
 
 	/**
 	 * Bumped on every change emit (add/remove/item mutation). Lets memoized derived
@@ -238,35 +249,97 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Fetch all items from the API.
+	 * Fetch all items from the API and reconcile them into the collection in place.
+	 *
+	 * Existing models are preserved by id and updated only when the server reports a
+	 * change (see `changeKey`); missing ones are removed and new ones constructed. This
+	 * keeps model identity stable across refetches — an open detail view, expanded rows,
+	 * and lazily-loaded children survive a poll — and lets the collection report exactly
+	 * which items changed. On any fetch after the first, the changed/added ids are
+	 * emitted via `itemsChanged` so callers can flash them.
 	 */
 	async fetch(): Promise<void> {
+		const isInitial = this.$meta.lastFetched == null;
 		this.setMeta({ working: true, error: null });
 
 		try {
 			const data = await fetchClient.get<Array<Record<string, unknown>>>(this.getUrl());
 			const ModelClass = this.getModelClass();
+			const idField = (this.constructor as typeof SyncCollection).Model.idField || 'id';
+			const changeKey = (this.constructor as typeof SyncCollection).changeKey;
 
-			// Clear existing items
+			// Index the current items by id so we can reuse instances across the refetch.
+			const existingById = new Map<unknown, T>();
 			for (const item of this.__items) {
-				this.__unsubscribeFromChild(item);
+				existingById.set((item as unknown as Record<string, unknown>)[idField], item);
 			}
 
-			// Create new model instances from data, merging collection's URL params
+			const changedIds: string[] = [];
+			const seen = new Set<unknown>();
+
 			this.__items = data.map((itemData) => {
-				// Merge URL params (e.g., projectId) into item data before construction
+				// Merge URL params (e.g., projectId) into item data before construction/update.
 				const mergedData = { ...this.__getUrlParams(), ...itemData };
-				const item = new ModelClass(mergedData);
-				this.__subscribeToChild(item);
-				return item;
+				const id = itemData[idField];
+				seen.add(id);
+				const existing = existingById.get(id);
+
+				if (!existing) {
+					const item = new ModelClass(mergedData);
+					this.__subscribeToChild(item);
+					if (!isInitial) changedIds.push(String(id));
+					return item;
+				}
+
+				// Reuse the existing instance. When the model carries a change key, only
+				// re-apply (and flag) when it actually moved; otherwise always re-apply.
+				const prev = (existing as unknown as Record<string, unknown>)[changeKey];
+				const next = itemData[changeKey];
+				const hasChangeKey = changeKey in itemData;
+				const changed = !hasChangeKey || prev !== next;
+				if (changed) {
+					existing.set(mergedData as Partial<ModelData<T>>);
+					if (!isInitial && hasChangeKey && prev !== undefined && prev !== next) {
+						changedIds.push(String(id));
+					}
+				}
+				return existing;
 			});
 
+			// Drop items the server no longer returns.
+			for (const [id, item] of existingById) {
+				if (!seen.has(id)) {
+					this.__unsubscribeFromChild(item);
+				}
+			}
+
 			this.setMeta({ working: false, lastFetched: Date.now() });
+
+			if (changedIds.length > 0) {
+				for (const listener of this.__itemsChangedListeners) {
+					listener(changedIds);
+				}
+			}
 		} catch (error) {
 			this.setMeta({
 				working: false,
 				error: error instanceof Error ? error : new Error(String(error)),
 			});
+		}
+	}
+
+	/**
+	 * Subscribe to the ids changed or added by a reconciling fetch. Fired only for
+	 * fetches after the first successful load (the initial load isn't a "change").
+	 */
+	onItemsChanged(callback: (ids: string[]) => void): void {
+		this.__itemsChangedListeners.push(callback);
+	}
+
+	offItemsChanged(callback: (ids: string[]) => void): void {
+		const index = this.__itemsChangedListeners.indexOf(callback);
+		if (index !== -1) {
+			this.__itemsChangedListeners.splice(index, 1);
 		}
 	}
 

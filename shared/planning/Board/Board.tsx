@@ -19,7 +19,8 @@ export interface BoardProps {
 	/** Active toolbar filters (applied to the cards shown in each column). */
 	filters: PlanningFilters;
 	selectedItemId?: string;
-	highlightedItemId?: string;
+	/** Ids to briefly flash (newly created, or changed by a background refresh). */
+	flashingIds: Set<string>;
 	/** Disables keyboard shortcuts while a dialog is open. */
 	dialogOpen: boolean;
 	onSelectItem: (item: ItemModel | undefined) => void;
@@ -36,7 +37,7 @@ export function Board({
 	projectId,
 	filters,
 	selectedItemId,
-	highlightedItemId,
+	flashingIds,
 	dialogOpen,
 	onSelectItem,
 	onOpenItem,
@@ -163,7 +164,7 @@ export function Board({
 					items={itemsByStatus[status]}
 					projectId={projectId}
 					selectedItemId={selectedItemId}
-					highlightedItemId={highlightedItemId}
+					flashingIds={flashingIds}
 					onSelectItem={handleColumnSelectItem}
 					onOpenItem={onOpenItem}
 					onDropItem={handleDropItem}
