@@ -131,6 +131,11 @@ export class GitHubBranchModel extends SyncModel {
 	// No URL - these are read-only, fetched via collection
 	static override url = '';
 
+	// Branches have no numeric id; the name is the stable identity the collection
+	// reconciles refetches by (a "Refresh branches" refetch would otherwise collapse
+	// every branch onto a single undefined-keyed slot).
+	static override idField = 'name';
+
 	@prop accessor name!: string;
 }
 

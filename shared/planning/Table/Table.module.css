@@ -102,19 +102,30 @@
 	background: var(--color-accent-soft);
 }
 
-/* Brief pulse when a row is created or changed by a background refresh. */
+/* Brief pulse when a row is created or changed by a background refresh. The tint is
+   an inset box-shadow (composited over the row's real background) rather than an
+   animated `background`, so a selected or hovered row keeps its own background and
+   doesn't snap back to it when the pulse ends. */
 .epicRow.highlighted {
 	animation: row-highlight-pulse 2s ease-out;
 }
 
 @keyframes row-highlight-pulse {
 	0% {
-		background: color-mix(in srgb, var(--color-primary) 20%, transparent);
-		box-shadow: inset 3px 0 0 var(--color-primary);
+		box-shadow:
+			inset 3px 0 0 var(--color-primary),
+			inset 0 0 0 999px color-mix(in srgb, var(--color-primary) 16%, transparent);
 	}
 	100% {
-		background: transparent;
-		box-shadow: inset 3px 0 0 transparent;
+		box-shadow:
+			inset 0 0 0 transparent,
+			inset 0 0 0 999px transparent;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.epicRow.highlighted {
+		animation: none;
 	}
 }
 

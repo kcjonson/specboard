@@ -69,6 +69,7 @@ export function Planning(props: RouteProps): JSX.Element {
 				for (const id of ids) next.delete(id);
 				return next;
 			});
+			flashTimers.current = flashTimers.current.filter((t) => t !== timer);
 		}, HIGHLIGHT_DURATION);
 		flashTimers.current.push(timer);
 	}, []);
