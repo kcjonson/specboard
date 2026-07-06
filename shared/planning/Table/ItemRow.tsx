@@ -26,6 +26,8 @@ export interface ItemRowProps {
 	item: ItemModel;
 	expanded: boolean;
 	selected: boolean;
+	/** Briefly pulse the row (newly created, or changed by a background refresh). */
+	flashing: boolean;
 	onToggle: (item: ItemModel) => void;
 	onOpen: (item: ItemModel) => void;
 	onSelect: (item: ItemModel | undefined) => void;
@@ -41,6 +43,7 @@ export function ItemRow({
 	item,
 	expanded,
 	selected,
+	flashing,
 	onToggle,
 	onOpen,
 	onSelect,
@@ -66,7 +69,7 @@ export function ItemRow({
 	return (
 		<>
 			<div
-				class={`${styles.row} ${styles.epicRow} ${selected ? styles.selected : ''}`}
+				class={`${styles.row} ${styles.epicRow} ${selected ? styles.selected : ''} ${flashing ? styles.highlighted : ''}`}
 				role="row"
 				tabIndex={0}
 				onClick={handleOpen}

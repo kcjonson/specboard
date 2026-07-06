@@ -12,8 +12,11 @@ import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
 import { CATEGORY_ALL, CATEGORY_OPTIONS, type PlanningFilters } from './filters';
 import styles from './Planning.module.css';
 
-/** Duration to highlight a newly created item (ms) */
+/** Duration to flash an item that was just created or changed by a refresh (ms) */
 const HIGHLIGHT_DURATION = 2000;
+
+/** How often to poll the server for item changes while the page is visible (ms) */
+const POLL_INTERVAL = 10000;
 
 /** Drawer min width (matches ItemDrawer) and the board's reserved minimum. */
 const DRAWER_MIN_WIDTH = 320;
@@ -47,14 +50,37 @@ export function Planning(props: RouteProps): JSX.Element {
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
-	const [highlightedItemId, setHighlightedItemId] = useState<string | undefined>();
 
-	// Read highlight param from URL and clear after timeout
+	// Ids currently flashing — driven both by the `?highlight=` param (new items) and
+	// by the background poll (items the server changed). Each flash self-clears after
+	// HIGHLIGHT_DURATION; timers are tracked so they can be cancelled on unmount.
+	const [flashingIds, setFlashingIds] = useState<Set<string>>(() => new Set());
+	const flashTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+	const flashItems = useCallback((ids: string[]): void => {
+		if (ids.length === 0) return;
+		setFlashingIds((prev) => {
+			const next = new Set(prev);
+			for (const id of ids) next.add(id);
+			return next;
+		});
+		const timer = setTimeout(() => {
+			setFlashingIds((prev) => {
+				const next = new Set(prev);
+				for (const id of ids) next.delete(id);
+				return next;
+			});
+			flashTimers.current = flashTimers.current.filter((t) => t !== timer);
+		}, HIGHLIGHT_DURATION);
+		flashTimers.current.push(timer);
+	}, []);
+	useEffect(() => () => flashTimers.current.forEach(clearTimeout), []);
+
+	// Read highlight param from URL and flash that item once
 	useEffect(() => {
 		const params = new URLSearchParams(window.location.search);
 		const highlightId = params.get('highlight');
 		if (highlightId) {
-			setHighlightedItemId(highlightId);
+			flashItems([highlightId]);
 			// Clear only the highlight URL param, preserving other params and hash
 			params.delete('highlight');
 			const search = params.toString();
@@ -63,12 +89,45 @@ export function Planning(props: RouteProps): JSX.Element {
 				(search ? `?${search}` : '') +
 				window.location.hash;
 			window.history.replaceState(window.history.state, '', newUrl);
-			const timer = setTimeout(() => {
-				setHighlightedItemId(undefined);
-			}, HIGHLIGHT_DURATION);
-			return () => clearTimeout(timer);
 		}
-	}, []);
+	}, [flashItems]);
+
+	// Poll the server for changes, but only while the window has focus — a
+	// backgrounded board shouldn't keep hitting the server forever. Losing focus
+	// stops the interval; regaining it fetches immediately (so a refocus after the
+	// interval elapsed catches up at once) and restarts the timer. Changed items flash.
+	useEffect(() => {
+		const handleItemsChanged = (ids: string[]): void => flashItems(ids);
+		items.onItemsChanged(handleItemsChanged);
+
+		let interval: ReturnType<typeof setInterval> | undefined;
+		const start = (): void => {
+			if (interval === undefined) {
+				interval = setInterval(() => void items.fetch(), POLL_INTERVAL);
+			}
+		};
+		const stop = (): void => {
+			if (interval !== undefined) {
+				clearInterval(interval);
+				interval = undefined;
+			}
+		};
+		const onFocus = (): void => {
+			void items.fetch();
+			start();
+		};
+
+		if (document.hasFocus()) start();
+		window.addEventListener('focus', onFocus);
+		window.addEventListener('blur', stop);
+
+		return () => {
+			items.offItemsChanged(handleItemsChanged);
+			stop();
+			window.removeEventListener('focus', onFocus);
+			window.removeEventListener('blur', stop);
+		};
+	}, [items, flashItems]);
 
 	// Keep the active view in sync with the URL on browser back/forward — the
 	// router re-renders this same component on popstate without remounting it,
@@ -238,6 +297,7 @@ export function Planning(props: RouteProps): JSX.Element {
 							items={items}
 							filters={filters}
 							selectedItemId={selectedItemId}
+							flashingIds={flashingIds}
 							onSelectItem={handleSelectItem}
 							onOpenItem={handleOpenItem}
 							onOpenChild={handleOpenItemById}
@@ -248,7 +308,7 @@ export function Planning(props: RouteProps): JSX.Element {
 							projectId={projectId}
 							filters={filters}
 							selectedItemId={selectedItemId}
-							highlightedItemId={highlightedItemId}
+							flashingIds={flashingIds}
 							dialogOpen={isNewItemDialogOpen}
 							onSelectItem={handleSelectItem}
 							onOpenItem={handleOpenItem}
