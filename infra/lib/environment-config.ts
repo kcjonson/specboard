@@ -135,6 +135,7 @@ export const stagingConfig: EnvironmentConfig = {
 	natGateways: 1,
 	redisNodeType: 'cache.t4g.micro',
 	waf: false,
+	alarmEmail: 'admin@specboard.io',
 };
 
 /**
@@ -175,7 +176,7 @@ export const productionConfig: EnvironmentConfig = {
 	natGateways: 1,
 	redisNodeType: 'cache.t4g.micro',
 	waf: true,
-	alarmEmail: '', // Set before first deploy
+	alarmEmail: 'admin@specboard.io',
 };
 
 /** Resolve environment config from CDK context. Returns a fresh copy — never mutates the exported defaults. */
