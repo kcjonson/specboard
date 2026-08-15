@@ -27,11 +27,16 @@ export {
 // Rate limiting middleware
 export {
 	rateLimitMiddleware,
-	clearRateLimit,
+	failureLimitKey,
+	isFailureLimited,
+	recordFailure,
+	clearFailures,
 	RATE_LIMIT_CONFIGS,
+	LOGIN_FAILURE_LIMIT,
 	type RateLimitConfig,
 	type RateLimitRule,
 	type RateLimitMiddlewareOptions,
+	type FailureLimitConfig,
 } from './rate-limit.ts';
 
 // Password utilities

@@ -1,15 +1,23 @@
 /**
- * Rate limit middleware + clearRateLimit tests
+ * Rate limit middleware + failure limit tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 
-import { rateLimitMiddleware, clearRateLimit } from './rate-limit.ts';
+import {
+	rateLimitMiddleware,
+	failureLimitKey,
+	isFailureLimited,
+	recordFailure,
+	clearFailures,
+	type FailureLimitConfig,
+} from './rate-limit.ts';
 
 // Minimal in-memory stand-in for the Redis sorted-set commands the
-// middleware uses (zremrangebyscore, zcard, zadd, expire via pipeline; del)
+// limiters use (zremrangebyscore, zcard, zadd, expire via pipeline; del)
 function createFakeRedis() {
 	const sets = new Map<string, Map<string, number>>();
 
@@ -66,82 +74,117 @@ function createFakeRedis() {
 	return fake as typeof fake & Redis;
 }
 
-const LIMIT = 3;
+const FAILURE_LIMIT: FailureLimitConfig = {
+	maxFailures: 3,
+	windowSeconds: 900,
+	message: 'Too many failed attempts',
+};
 
-function createApp(redis: Redis) {
+// Builds a Hono context for a given client IP without running a server
+async function contextFor(ip: string): Promise<Context> {
+	let captured: Context | undefined;
 	const app = new Hono();
-	app.use(
-		'*',
-		rateLimitMiddleware(redis, {
-			rules: [
-				{
-					path: '/api/auth/login',
-					config: { maxRequests: LIMIT, windowSeconds: 900, message: 'Too many' },
-				},
-			],
-		})
-	);
-	// Simulates the login handler: clears the counter on success only
-	app.post('/api/auth/login', async (c) => {
-		const { success } = await c.req.json<{ success: boolean }>();
-		if (success) {
-			await clearRateLimit(redis, c);
-			return c.json({ ok: true });
-		}
-		return c.json({ error: 'Invalid credentials' }, 401);
+	app.get('/api/auth/login', (c) => {
+		captured = c;
+		return c.body(null, 204);
 	});
-	return app;
+	await app.request('/api/auth/login', { headers: { 'X-Forwarded-For': `1.2.3.4, ${ip}` } });
+	if (!captured) throw new Error('handler did not run');
+	return captured;
 }
 
-function login(app: Hono, ip: string, success: boolean) {
-	return app.request('/api/auth/login', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			'X-Forwarded-For': `1.2.3.4, ${ip}`,
-		},
-		body: JSON.stringify({ success }),
-	});
-}
-
-describe('login rate limiting', () => {
+describe('failure limit', () => {
 	let redis: Redis;
-	let app: Hono;
 
 	beforeEach(() => {
 		redis = createFakeRedis();
-		app = createApp(redis);
 	});
 
-	it('blocks after maxRequests failed attempts', async () => {
-		for (let i = 0; i < LIMIT; i++) {
-			expect((await login(app, '10.0.0.1', false)).status).toBe(401);
-		}
-		expect((await login(app, '10.0.0.1', false)).status).toBe(429);
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
-	it('does not count successful logins toward the limit', async () => {
-		for (let i = 0; i < LIMIT * 2; i++) {
-			expect((await login(app, '10.0.0.1', true)).status).toBe(200);
+	async function key(identifier: string, ip: string): Promise<string> {
+		return failureLimitKey(await contextFor(ip), identifier);
+	}
+
+	it('is not limited until maxFailures failures are recorded', async () => {
+		const k = await key('alice', '10.0.0.1');
+		for (let i = 0; i < FAILURE_LIMIT.maxFailures; i++) {
+			expect(await isFailureLimited(redis, k, FAILURE_LIMIT)).toBe(false);
+			await recordFailure(redis, k, FAILURE_LIMIT);
 		}
+		expect(await isFailureLimited(redis, k, FAILURE_LIMIT)).toBe(true);
 	});
 
-	it('resets accumulated failures on successful login', async () => {
-		await login(app, '10.0.0.1', false);
-		await login(app, '10.0.0.1', false);
-		expect((await login(app, '10.0.0.1', true)).status).toBe(200);
-		// Full budget available again after the success
-		for (let i = 0; i < LIMIT; i++) {
-			expect((await login(app, '10.0.0.1', false)).status).toBe(401);
+	it('clearFailures resets the counter for that key only', async () => {
+		const victim = await key('victim', '10.0.0.1');
+		const burner = await key('burner', '10.0.0.1');
+		for (let i = 0; i < FAILURE_LIMIT.maxFailures; i++) {
+			await recordFailure(redis, victim, FAILURE_LIMIT);
+			await recordFailure(redis, burner, FAILURE_LIMIT);
 		}
-		expect((await login(app, '10.0.0.1', false)).status).toBe(429);
+		// Successful burner login clears only the burner's key
+		await clearFailures(redis, burner);
+		expect(await isFailureLimited(redis, burner, FAILURE_LIMIT)).toBe(false);
+		expect(await isFailureLimited(redis, victim, FAILURE_LIMIT)).toBe(true);
 	});
 
-	it('only clears the counter for the succeeding IP', async () => {
-		for (let i = 0; i < LIMIT; i++) {
-			await login(app, '10.0.0.2', false);
+	it('scopes the counter per IP', async () => {
+		const homeIp = await key('alice', '10.0.0.1');
+		const otherIp = await key('alice', '10.0.0.2');
+		for (let i = 0; i < FAILURE_LIMIT.maxFailures; i++) {
+			await recordFailure(redis, homeIp, FAILURE_LIMIT);
 		}
-		expect((await login(app, '10.0.0.1', true)).status).toBe(200);
-		expect((await login(app, '10.0.0.2', false)).status).toBe(429);
+		expect(await isFailureLimited(redis, homeIp, FAILURE_LIMIT)).toBe(true);
+		expect(await isFailureLimited(redis, otherIp, FAILURE_LIMIT)).toBe(false);
+	});
+
+	it('normalizes the identifier in the key', async () => {
+		expect(await key('  Alice@Example.COM ', '10.0.0.1')).toBe(
+			await key('alice@example.com', '10.0.0.1')
+		);
+	});
+
+	it('forgets failures older than the window', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-08-15T12:00:00Z'));
+		const k = await key('alice', '10.0.0.1');
+		for (let i = 0; i < FAILURE_LIMIT.maxFailures; i++) {
+			await recordFailure(redis, k, FAILURE_LIMIT);
+		}
+		expect(await isFailureLimited(redis, k, FAILURE_LIMIT)).toBe(true);
+		vi.setSystemTime(new Date('2026-08-15T12:16:00Z'));
+		expect(await isFailureLimited(redis, k, FAILURE_LIMIT)).toBe(false);
+	});
+});
+
+describe('rate limit middleware (coarse cap)', () => {
+	it('counts all requests toward the cap regardless of outcome', async () => {
+		const redis = createFakeRedis();
+		const app = new Hono();
+		app.use(
+			'*',
+			rateLimitMiddleware(redis, {
+				rules: [
+					{
+						path: '/api/auth/login',
+						config: { maxRequests: 5, windowSeconds: 900, message: 'Too many' },
+					},
+				],
+			})
+		);
+		app.post('/api/auth/login', (c) => c.json({ ok: true }));
+
+		const request = () =>
+			app.request('/api/auth/login', {
+				method: 'POST',
+				headers: { 'X-Forwarded-For': '1.2.3.4, 10.0.0.1' },
+			});
+
+		for (let i = 0; i < 5; i++) {
+			expect((await request()).status).toBe(200);
+		}
+		expect((await request()).status).toBe(429);
 	});
 });

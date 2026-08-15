@@ -733,7 +733,7 @@ app.use('*', authMiddleware({
 
 | Endpoint | Limit |
 |----------|-------|
-| /api/auth/login | 5 attempts per 15 minutes |
+| /api/auth/login | 5 failed attempts per 15 minutes per identifier+IP; 100 total requests per 15 minutes per IP |
 | /api/auth/signup | 3 per hour per IP |
 | /api/auth/forgot | 3 per hour per email |
 | General API | 100 requests per minute |

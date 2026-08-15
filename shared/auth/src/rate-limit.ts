@@ -1,11 +1,13 @@
 /**
  * Rate limiting middleware using Redis
  *
- * Provides configurable rate limits for different endpoints:
- * - /api/auth/login: 5 attempts per 15 minutes
- * - /api/auth/signup: 3 per hour per IP
- * - /api/auth/forgot: 3 per hour per email
- * - General API: 100 requests per minute
+ * Two layers:
+ * - Path-level middleware: outcome-blind request caps per IP
+ *   (/api/auth/login: 100 per 15 min, /api/auth/signup: 3 per hour,
+ *   general API: 100 per minute)
+ * - Failure limit for credential endpoints: 5 failed attempts per 15 min,
+ *   keyed identifier+IP, enforced in the handler where the auth outcome
+ *   is known (isFailureLimited/recordFailure/clearFailures)
  */
 
 import type { Context, MiddlewareHandler } from 'hono';
@@ -225,20 +227,81 @@ export function rateLimitMiddleware(
 }
 
 /**
- * Clear the rate limit counter for the current request's default (IP-based) key.
+ * Failure-based limit for credential endpoints.
  *
- * Call from a handler's success path when successful requests shouldn't count
- * toward the limit (e.g. successful logins). Only applies to rules using the
- * default IP key, not a custom keyGenerator. Best-effort: Redis errors are
- * logged, not thrown.
+ * Counts only failed attempts, keyed per identifier+IP. Check with
+ * isFailureLimited before verifying credentials, recordFailure on a failed
+ * attempt, clearFailures on success. Clearing on success is safe at this
+ * keying: a success on one account can't reset another account's counter,
+ * and can't reset this account's counter for other IPs.
+ * All operations fail open on Redis errors, matching the middleware.
  */
-export async function clearRateLimit(redis: Redis, c: Context): Promise<void> {
-	const path = new URL(c.req.url).pathname;
-	const ip = getClientIp(c);
+export interface FailureLimitConfig {
+	/** Maximum failed attempts allowed in the window */
+	maxFailures: number;
+	/** Time window in seconds */
+	windowSeconds: number;
+	/** Message returned when the limit is hit */
+	message: string;
+}
+
+/** Login: 5 failed attempts per 15 minutes per identifier+IP */
+export const LOGIN_FAILURE_LIMIT = {
+	maxFailures: 5,
+	windowSeconds: 15 * 60,
+	message: 'Too many failed login attempts, please try again in 15 minutes',
+} as const satisfies FailureLimitConfig;
+
+/**
+ * Build the failure counter key for an identifier (username/email) and the
+ * request's client IP
+ */
+export function failureLimitKey(c: Context, identifier: string): string {
+	return `authfail:${identifier.trim().toLowerCase()}|${getClientIp(c)}`;
+}
+
+export async function isFailureLimited(
+	redis: Redis,
+	key: string,
+	config: FailureLimitConfig
+): Promise<boolean> {
+	const now = Math.floor(Date.now() / 1000);
 	try {
-		await redis.del(`ratelimit:${path}:${ip}`);
+		const results = await redis.pipeline()
+			.zremrangebyscore(key, 0, now - config.windowSeconds)
+			.zcard(key)
+			.exec();
+		if (!results) return false;
+		const count = (results[1] && results[1][1] as number) || 0;
+		return count >= config.maxFailures;
 	} catch (error) {
-		console.error('Rate limit clear error:', error instanceof Error ? error.message : error);
+		console.error('Failure limit check error:', error instanceof Error ? error.message : error);
+		return false;
+	}
+}
+
+export async function recordFailure(
+	redis: Redis,
+	key: string,
+	config: FailureLimitConfig
+): Promise<void> {
+	const now = Math.floor(Date.now() / 1000);
+	const uniqueId = crypto.randomBytes(8).toString('hex');
+	try {
+		await redis.pipeline()
+			.zadd(key, now.toString(), `${now}-${uniqueId}`)
+			.expire(key, config.windowSeconds)
+			.exec();
+	} catch (error) {
+		console.error('Failure limit record error:', error instanceof Error ? error.message : error);
+	}
+}
+
+export async function clearFailures(redis: Redis, key: string): Promise<void> {
+	try {
+		await redis.del(key);
+	} catch (error) {
+		console.error('Failure limit clear error:', error instanceof Error ? error.message : error);
 	}
 }
 
@@ -246,11 +309,15 @@ export async function clearRateLimit(redis: Redis, c: Context): Promise<void> {
  * Pre-configured rate limit configs per spec
  */
 export const RATE_LIMIT_CONFIGS = {
-	/** /api/auth/login: 5 attempts per 15 minutes */
+	/**
+	 * /api/auth/login: coarse per-IP cap on all requests. Failed attempts
+	 * have a stricter per-identifier+IP limit enforced in the login handler
+	 * (LOGIN_FAILURE_LIMIT).
+	 */
 	login: {
-		maxRequests: 5,
+		maxRequests: 100,
 		windowSeconds: 15 * 60,
-		message: 'Too many login attempts, please try again in 15 minutes',
+		message: 'Too many requests, please try again in 15 minutes',
 	} satisfies RateLimitConfig,
 
 	/** /api/auth/signup: 3 per hour per IP */
