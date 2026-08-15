@@ -89,20 +89,6 @@ export class SpecboardStack extends cdk.Stack {
 			// ===========================================
 			// Defined in CDK so a zone recreation restores them; hand-added
 			// records were lost when the zone was recreated on 2026-02-24.
-			// SES DKIM tokens belong to the console-created identity in
-			// us-west-2 and only change if that identity is recreated.
-			const sesDkimTokens = [
-				'2svotjz2w3tb7hw3ujwxqgu6wbaixyc5',
-				'24jodyhtgm4iri7cz5kxsyj2la57ms3d',
-				'jyq3vvx5xqj66kfbzswn7whourynd6cj',
-			];
-			sesDkimTokens.forEach((token, i) => {
-				new route53.CnameRecord(this, `SesDkimRecord${i + 1}`, {
-					zone,
-					recordName: `${token}._domainkey`,
-					domainName: `${token}.dkim.amazonses.com`,
-				});
-			});
 
 			new route53.MxRecord(this, 'StartmailMxRecord', {
 				zone,
@@ -138,28 +124,36 @@ export class SpecboardStack extends cdk.Stack {
 				deleteExisting: true,
 			});
 
-			// Staging sends from its own subdomain identity so its DKIM
-			// reputation is isolated from the production domain.
-			const stagingEmailIdentity = new ses.EmailIdentity(this, 'StagingEmailIdentity', {
-				identity: ses.Identity.domain(`staging.${config.domain}`),
-			});
-			const stagingDkimTokens: Array<[string, string]> = [
-				[stagingEmailIdentity.dkimDnsTokenName1, stagingEmailIdentity.dkimDnsTokenValue1],
-				[stagingEmailIdentity.dkimDnsTokenName2, stagingEmailIdentity.dkimDnsTokenValue2],
-				[stagingEmailIdentity.dkimDnsTokenName3, stagingEmailIdentity.dkimDnsTokenValue3],
+			// Two SES identities: the apex for production sends, a staging
+			// subdomain for staging sends so staging's DKIM reputation is
+			// isolated from the production domain. Easy DKIM records are
+			// wired from each identity's token attributes.
+			const emailIdentityDomains: Array<[string, string]> = [
+				['Apex', config.domain],
+				['Staging', `staging.${config.domain}`],
 			];
-			stagingDkimTokens.forEach(([recordName, target], i) => {
-				// CfnRecordSet, not CnameRecord: the token name is already a
-				// FQDN, and CnameRecord would append the zone name to it
-				// (route53 util can't inspect unresolved tokens).
-				new route53.CfnRecordSet(this, `StagingSesDkimRecord${i + 1}`, {
-					hostedZoneId: zone.hostedZoneId,
-					name: recordName,
-					type: 'CNAME',
-					resourceRecords: [target],
-					ttl: '1800',
+			for (const [label, domain] of emailIdentityDomains) {
+				const emailIdentity = new ses.EmailIdentity(this, `${label}EmailIdentity`, {
+					identity: ses.Identity.domain(domain),
 				});
-			});
+				const dkimRecords: Array<[string, string]> = [
+					[emailIdentity.dkimDnsTokenName1, emailIdentity.dkimDnsTokenValue1],
+					[emailIdentity.dkimDnsTokenName2, emailIdentity.dkimDnsTokenValue2],
+					[emailIdentity.dkimDnsTokenName3, emailIdentity.dkimDnsTokenValue3],
+				];
+				dkimRecords.forEach(([recordName, target], i) => {
+					// CfnRecordSet, not CnameRecord: the token name is already a
+					// FQDN, and CnameRecord would append the zone name to it
+					// (route53 util can't inspect unresolved tokens).
+					new route53.CfnRecordSet(this, `${label}SesDkimRecord${i + 1}`, {
+						hostedZoneId: zone.hostedZoneId,
+						name: recordName,
+						type: 'CNAME',
+						resourceRecords: [target],
+						ttl: '1800',
+					});
+				});
+			}
 		} else {
 			// Production imports shared resources by ID/ARN (no cross-stack refs)
 			hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'HostedZone', {
