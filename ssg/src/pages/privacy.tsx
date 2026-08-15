@@ -63,10 +63,10 @@ export function PrivacyContent(): JSX.Element {
 
 			<h2>How long we keep it</h2>
 			<p>
-				Account data and content are kept until you delete your account. Standard server
-				logs are deleted after 30 days; error logs are kept for up to one year for
-				security and debugging. Database backups are retained for a few days and then
-				expire automatically.
+				Account data and content are kept while your account exists, and deleted when
+				your account is deleted. Standard server logs are deleted after 30 days; error
+				logs are kept for up to one year for security and debugging. Database backups
+				are retained for a few days and then expire automatically.
 			</p>
 
 			<h2>Your rights</h2>
@@ -89,9 +89,10 @@ export function PrivacyContent(): JSX.Element {
 
 			<h2>Deleting your account</h2>
 			<p>
-				Deleting your account stops all email and removes your access, and your data is
-				removed on the schedule above. You can also request deletion by emailing{' '}
-				<a href="mailto:admin@specboard.io">admin@specboard.io</a>.
+				To delete your account, email{' '}
+				<a href="mailto:admin@specboard.io">admin@specboard.io</a> from your account
+				address. We will deactivate the account immediately, which stops all email, and
+				delete your data within 30 days.
 			</p>
 
 			<h2>Changes</h2>
