@@ -134,7 +134,11 @@ export class SpecboardStack extends cdk.Stack {
 				new snsSubscriptions.EmailSubscription(`admin@${config.domain}`)
 			);
 
-			const emailConfigSet = new ses.ConfigurationSet(this, 'EmailConfigurationSet', {});
+			// Explicitly named so the production stack can grant IAM on its
+			// ARN without a cross-stack reference.
+			const emailConfigSet = new ses.ConfigurationSet(this, 'EmailConfigurationSet', {
+				configurationSetName: 'specboard-email',
+			});
 			emailConfigSet.addEventDestination('SnsEvents', {
 				destination: ses.EventDestination.snsTopic(emailEventsTopic),
 				events: [
@@ -637,7 +641,16 @@ export class SpecboardStack extends cdk.Stack {
 			region: this.region,
 			account: this.account,
 		}, this);
-		const sesResources = [sesDomainArn, sesEmailWildcardArn];
+		// SendEmail is authorized against the identity AND, because the
+		// identities carry a default configuration set, the set itself.
+		const sesConfigSetArn = cdk.Arn.format({
+			service: 'ses',
+			resource: 'configuration-set',
+			resourceName: 'specboard-email',
+			region: this.region,
+			account: this.account,
+		}, this);
+		const sesResources = [sesDomainArn, sesEmailWildcardArn, sesConfigSetArn];
 		if (config.subdomain) {
 			// Sends from the subdomain attribute to its own SES identity
 			sesResources.push(cdk.Arn.format({
