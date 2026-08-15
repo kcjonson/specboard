@@ -27,6 +27,7 @@ export {
 // Rate limiting middleware
 export {
 	rateLimitMiddleware,
+	clearRateLimit,
 	RATE_LIMIT_CONFIGS,
 	type RateLimitConfig,
 	type RateLimitRule,

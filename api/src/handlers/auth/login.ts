@@ -9,6 +9,7 @@ import {
 	generateSessionId,
 	createSession,
 	verifyPassword,
+	clearRateLimit,
 	SESSION_COOKIE_NAME,
 	CSRF_COOKIE_NAME,
 	SESSION_TTL_SECONDS,
@@ -101,6 +102,9 @@ export async function handleLogin(
 		});
 
 		logAuthEvent('login_success', { userId: user.id, username: user.username });
+
+		// Successful logins shouldn't count toward the login rate limit
+		await clearRateLimit(redis, context);
 
 		return context.json({
 			user: {

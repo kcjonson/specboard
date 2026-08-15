@@ -225,6 +225,24 @@ export function rateLimitMiddleware(
 }
 
 /**
+ * Clear the rate limit counter for the current request's default (IP-based) key.
+ *
+ * Call from a handler's success path when successful requests shouldn't count
+ * toward the limit (e.g. successful logins). Only applies to rules using the
+ * default IP key, not a custom keyGenerator. Best-effort: Redis errors are
+ * logged, not thrown.
+ */
+export async function clearRateLimit(redis: Redis, c: Context): Promise<void> {
+	const path = new URL(c.req.url).pathname;
+	const ip = getClientIp(c);
+	try {
+		await redis.del(`ratelimit:${path}:${ip}`);
+	} catch (error) {
+		console.error('Rate limit clear error:', error instanceof Error ? error.message : error);
+	}
+}
+
+/**
  * Pre-configured rate limit configs per spec
  */
 export const RATE_LIMIT_CONFIGS = {
