@@ -82,6 +82,60 @@ export class SpecboardStack extends cdk.Stack {
 				subjectAlternativeNames: [`*.${config.domain}`],
 				validation: acm.CertificateValidation.fromDns(zone),
 			});
+
+			// ===========================================
+			// Email DNS (SES sending + StartMail receiving)
+			// ===========================================
+			// Defined in CDK so a zone recreation restores them; hand-added
+			// records were lost when the zone was recreated on 2026-02-24.
+			// SES DKIM tokens belong to the console-created identity in
+			// us-west-2 and only change if that identity is recreated.
+			const sesDkimTokens = [
+				'2svotjz2w3tb7hw3ujwxqgu6wbaixyc5',
+				'24jodyhtgm4iri7cz5kxsyj2la57ms3d',
+				'jyq3vvx5xqj66kfbzswn7whourynd6cj',
+			];
+			sesDkimTokens.forEach((token, i) => {
+				new route53.CnameRecord(this, `SesDkimRecord${i + 1}`, {
+					zone,
+					recordName: `${token}._domainkey`,
+					domainName: `${token}.dkim.amazonses.com`,
+				});
+			});
+
+			new route53.MxRecord(this, 'StartmailMxRecord', {
+				zone,
+				values: [
+					{ priority: 10, hostName: 'mx1.startmail.com' },
+					{ priority: 10, hostName: 'mx2.startmail.com' },
+				],
+			});
+
+			['startmail1', 'startmail2'].forEach((selector) => {
+				new route53.CnameRecord(this, `StartmailDkim-${selector}`, {
+					zone,
+					recordName: `${selector}._domainkey`,
+					domainName: `${selector}._domainkey.startmail.com`,
+				});
+			});
+
+			// SPF must be a single TXT record set; StartMail's domain
+			// verification token shares it as a second value.
+			new route53.TxtRecord(this, 'SpfRecord', {
+				zone,
+				values: [
+					'v=spf1 include:spf.startmail.com include:amazonses.com ~all',
+					'startmail-verification=438a9cc70d6dce4012d8b9a20a5c329d',
+				],
+				deleteExisting: true,
+			});
+
+			new route53.TxtRecord(this, 'DmarcRecord', {
+				zone,
+				recordName: '_dmarc',
+				values: ['v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@specboard.io; pct=100'],
+				deleteExisting: true,
+			});
 		} else {
 			// Production imports shared resources by ID/ARN (no cross-stack refs)
 			hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'HostedZone', {
