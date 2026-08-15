@@ -19,14 +19,14 @@
 		"@specboard/auth": "*",
 		"@specboard/core": "*",
 		"@specboard/db": "*",
-		"@hono/node-server": "^1.19.7",
+		"@hono/node-server": "^2.1.1",
 		"hono": "^4.11.1",
-		"@modelcontextprotocol/sdk": "^1.0.0",
+		"@modelcontextprotocol/sdk": "^1.30.0",
 		"zod": "^3.24.0"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.2",
-		"tsx": "^4.19.2",
+		"tsx": "^4.23.12",
 		"typescript": "^5.7.2"
 	}
 }
