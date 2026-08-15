@@ -24,7 +24,8 @@ export function PrivacyContent(): JSX.Element {
 				a salted hash. Content: the documents, projects, and planning items you create.
 				If you connect a GitHub account, the authorization token needed to sync your
 				repositories. Server logs: IP address, browser user agent, and request paths.
-				One session cookie to keep you signed in.
+				Two cookies: a session cookie that keeps you signed in and a security (CSRF)
+				cookie that protects your account against forged requests.
 			</p>
 
 			<h2>Why we process it, and on what legal basis</h2>
@@ -82,9 +83,10 @@ export function PrivacyContent(): JSX.Element {
 
 			<h2>Cookies</h2>
 			<p>
-				We set one strictly necessary session cookie so you stay signed in. There are no
-				advertising, analytics, or cross-site tracking cookies, which is why you don't
-				see a cookie banner.
+				We set two strictly necessary cookies: a session cookie so you stay signed in,
+				and a CSRF cookie that protects your account against forged requests. There are
+				no advertising, analytics, or cross-site tracking cookies, which is why you
+				don't see a cookie banner.
 			</p>
 
 			<h2>Deleting your account</h2>
