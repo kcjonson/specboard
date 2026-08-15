@@ -1,0 +1,46 @@
+/**
+ * Privacy policy page styles
+ */
+
+body {
+	padding: 1rem;
+}
+
+.privacy-container {
+	max-width: 640px;
+	margin: 0 auto;
+	padding: 3rem 1rem 4rem;
+}
+
+.privacy-container h1 {
+	font-size: 2rem;
+	font-weight: 600;
+	margin-bottom: 0.5rem;
+	color: var(--color-text);
+}
+
+.privacy-updated {
+	color: var(--color-text-muted);
+	margin-bottom: 2rem;
+}
+
+.privacy-container h2 {
+	font-size: 1.25rem;
+	font-weight: 600;
+	margin: 2rem 0 0.75rem;
+	color: var(--color-text);
+}
+
+.privacy-container p {
+	color: var(--color-text-muted);
+	line-height: 1.6;
+	margin-bottom: 1rem;
+}
+
+.privacy-container a {
+	color: var(--color-primary);
+}
+
+.privacy-home-link {
+	margin-top: 3rem;
+}
