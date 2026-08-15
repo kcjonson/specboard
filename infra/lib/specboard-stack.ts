@@ -124,6 +124,26 @@ export class SpecboardStack extends cdk.Stack {
 				deleteExisting: true,
 			});
 
+			// Bounce/complaint/reject events from every send are published
+			// here; a human subscription keeps them monitored (an SES
+			// production access prerequisite).
+			const emailEventsTopic = new sns.Topic(this, 'EmailEventsTopic', {
+				topicName: `${config.resourcePrefix}-email-events`,
+			});
+			emailEventsTopic.addSubscription(
+				new snsSubscriptions.EmailSubscription(`admin@${config.domain}`)
+			);
+
+			const emailConfigSet = new ses.ConfigurationSet(this, 'EmailConfigurationSet', {});
+			emailConfigSet.addEventDestination('SnsEvents', {
+				destination: ses.EventDestination.snsTopic(emailEventsTopic),
+				events: [
+					ses.EmailSendingEvent.BOUNCE,
+					ses.EmailSendingEvent.COMPLAINT,
+					ses.EmailSendingEvent.REJECT,
+				],
+			});
+
 			// Two SES identities: the apex for production sends, a staging
 			// subdomain for staging sends so staging's DKIM reputation is
 			// isolated from the production domain. Easy DKIM records are
@@ -135,6 +155,7 @@ export class SpecboardStack extends cdk.Stack {
 			for (const [label, domain] of emailIdentityDomains) {
 				const emailIdentity = new ses.EmailIdentity(this, `${label}EmailIdentity`, {
 					identity: ses.Identity.domain(domain),
+					configurationSet: emailConfigSet,
 				});
 				const dkimRecords: Array<[string, string]> = [
 					[emailIdentity.dkimDnsTokenName1, emailIdentity.dkimDnsTokenValue1],
@@ -886,6 +907,43 @@ export class SpecboardStack extends cdk.Stack {
 			comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
 		});
 		dlqAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmTopic));
+
+		// SES reputation metrics are account-level, so alarm on them from
+		// the shared (staging) stack only. Thresholds sit well under AWS's
+		// enforcement levels (bounce 10%, complaint 0.5%).
+		if (config.createSharedResources) {
+			const bounceRateAlarm = new cloudwatch.Alarm(this, 'SesBounceRateAlarm', {
+				alarmName: `${config.resourcePrefix}-ses-bounce-rate`,
+				alarmDescription: 'SES account bounce rate above 5%',
+				metric: new cloudwatch.Metric({
+					namespace: 'AWS/SES',
+					metricName: 'Reputation.BounceRate',
+					statistic: 'Average',
+					period: cdk.Duration.hours(1),
+				}),
+				threshold: 0.05,
+				evaluationPeriods: 1,
+				comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+				treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+			});
+			bounceRateAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmTopic));
+
+			const complaintRateAlarm = new cloudwatch.Alarm(this, 'SesComplaintRateAlarm', {
+				alarmName: `${config.resourcePrefix}-ses-complaint-rate`,
+				alarmDescription: 'SES account complaint rate above 0.1%',
+				metric: new cloudwatch.Metric({
+					namespace: 'AWS/SES',
+					metricName: 'Reputation.ComplaintRate',
+					statistic: 'Average',
+					period: cdk.Duration.hours(1),
+				}),
+				threshold: 0.001,
+				evaluationPeriods: 1,
+				comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+				treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+			});
+			complaintRateAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmTopic));
+		}
 
 		const syncLambda = new lambda.Function(this, 'GitHubSyncLambda', {
 			functionName: githubSyncLambdaName,
