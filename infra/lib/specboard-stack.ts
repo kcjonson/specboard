@@ -134,7 +134,7 @@ export class SpecboardStack extends cdk.Stack {
 			new route53.TxtRecord(this, 'DmarcRecord', {
 				zone,
 				recordName: '_dmarc',
-				values: ['v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@specboard.io; pct=100'],
+				values: [`v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@${config.domain}; pct=100`],
 				deleteExisting: true,
 			});
 
