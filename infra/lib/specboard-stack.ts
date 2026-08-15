@@ -11,6 +11,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as ses from 'aws-cdk-lib/aws-ses';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -133,8 +134,31 @@ export class SpecboardStack extends cdk.Stack {
 			new route53.TxtRecord(this, 'DmarcRecord', {
 				zone,
 				recordName: '_dmarc',
-				values: ['v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@specboard.io; pct=100'],
+				values: [`v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@${config.domain}; pct=100`],
 				deleteExisting: true,
+			});
+
+			// Staging sends from its own subdomain identity so its DKIM
+			// reputation is isolated from the production domain.
+			const stagingEmailIdentity = new ses.EmailIdentity(this, 'StagingEmailIdentity', {
+				identity: ses.Identity.domain(`staging.${config.domain}`),
+			});
+			const stagingDkimTokens: Array<[string, string]> = [
+				[stagingEmailIdentity.dkimDnsTokenName1, stagingEmailIdentity.dkimDnsTokenValue1],
+				[stagingEmailIdentity.dkimDnsTokenName2, stagingEmailIdentity.dkimDnsTokenValue2],
+				[stagingEmailIdentity.dkimDnsTokenName3, stagingEmailIdentity.dkimDnsTokenValue3],
+			];
+			stagingDkimTokens.forEach(([recordName, target], i) => {
+				// CfnRecordSet, not CnameRecord: the token name is already a
+				// FQDN, and CnameRecord would append the zone name to it
+				// (route53 util can't inspect unresolved tokens).
+				new route53.CfnRecordSet(this, `StagingSesDkimRecord${i + 1}`, {
+					hostedZoneId: zone.hostedZoneId,
+					name: recordName,
+					type: 'CNAME',
+					resourceRecords: [target],
+					ttl: '1800',
+				});
 			});
 		} else {
 			// Production imports shared resources by ID/ARN (no cross-stack refs)
@@ -534,7 +558,7 @@ export class SpecboardStack extends cdk.Stack {
 				DB_USER: 'postgres',
 				ERROR_LOG_GROUP: errorLogGroup.logGroupName,
 				SES_REGION: 'us-west-2',
-				EMAIL_FROM: `noreply@${config.domain}`,
+				EMAIL_FROM: `noreply@${fullDomain}`,
 				APP_URL: `https://${fullDomain}`,
 				EMAIL_ALLOWLIST: isProduction ? '' : 'specboard.io',
 				STORAGE_SERVICE_URL: 'http://storage.internal:3003',
@@ -598,9 +622,20 @@ export class SpecboardStack extends cdk.Stack {
 			region: this.region,
 			account: this.account,
 		}, this);
+		const sesResources = [sesDomainArn, sesEmailWildcardArn];
+		if (config.subdomain) {
+			// Sends from the subdomain attribute to its own SES identity
+			sesResources.push(cdk.Arn.format({
+				service: 'ses',
+				resource: 'identity',
+				resourceName: fullDomain,
+				region: this.region,
+				account: this.account,
+			}, this));
+		}
 		apiTaskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
 			actions: ['ses:SendEmail', 'ses:SendRawEmail'],
-			resources: [sesDomainArn, sesEmailWildcardArn],
+			resources: sesResources,
 		}));
 
 		// ===========================================
