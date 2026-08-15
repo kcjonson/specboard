@@ -11,11 +11,11 @@ export function PrivacyContent(): JSX.Element {
 
 			<p>
 				Specboard is a documentation and project planning service operated at{' '}
-				<a href="https://specboard.io">specboard.io</a>. Specboard is the data
-				controller for the personal data described here; you can reach us at{' '}
-				<a href="mailto:admin@specboard.io">admin@specboard.io</a>. Wherever you are
-				located, we apply the standards of the EU General Data Protection Regulation
-				(GDPR) to your personal data.
+				<a href="https://specboard.io">specboard.io</a>. The data controller for the
+				personal data described here is Kevin Jonson, operating as Specboard; you can
+				reach him at <a href="mailto:admin@specboard.io">admin@specboard.io</a>.
+				Wherever you are located, we apply the standards of the EU General Data
+				Protection Regulation (GDPR) to your personal data.
 			</p>
 
 			<h2>What we collect</h2>
