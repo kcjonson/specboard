@@ -149,10 +149,15 @@ export class SpecboardStack extends cdk.Stack {
 				[stagingEmailIdentity.dkimDnsTokenName3, stagingEmailIdentity.dkimDnsTokenValue3],
 			];
 			stagingDkimTokens.forEach(([recordName, target], i) => {
-				new route53.CnameRecord(this, `StagingSesDkimRecord${i + 1}`, {
-					zone,
-					recordName,
-					domainName: target,
+				// CfnRecordSet, not CnameRecord: the token name is already a
+				// FQDN, and CnameRecord would append the zone name to it
+				// (route53 util can't inspect unresolved tokens).
+				new route53.CfnRecordSet(this, `StagingSesDkimRecord${i + 1}`, {
+					hostedZoneId: zone.hostedZoneId,
+					name: recordName,
+					type: 'CNAME',
+					resourceRecords: [target],
+					ttl: '1800',
 				});
 			});
 		} else {
