@@ -18,7 +18,7 @@ import {
 
 // Minimal in-memory stand-in for the Redis sorted-set commands the
 // limiters use (zremrangebyscore, zcard, zadd, expire via pipeline; del)
-function createFakeRedis() {
+function createFakeRedis(): Redis {
 	const sets = new Map<string, Map<string, number>>();
 
 	const zremrangebyscore = (key: string, min: number, max: number): number => {
@@ -71,7 +71,7 @@ function createFakeRedis() {
 		},
 	};
 
-	return fake as typeof fake & Redis;
+	return fake as unknown as Redis;
 }
 
 const FAILURE_LIMIT: FailureLimitConfig = {
@@ -176,7 +176,7 @@ describe('rate limit middleware (coarse cap)', () => {
 		);
 		app.post('/api/auth/login', (c) => c.json({ ok: true }));
 
-		const request = () =>
+		const request = (): Promise<Response> =>
 			app.request('/api/auth/login', {
 				method: 'POST',
 				headers: { 'X-Forwarded-For': '1.2.3.4, 10.0.0.1' },

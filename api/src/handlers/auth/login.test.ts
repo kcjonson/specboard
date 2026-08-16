@@ -47,7 +47,7 @@ const mockUser = {
 	password_hash: 'hashed',
 };
 
-function login() {
+function login(): Promise<Response> {
 	const app = new Hono();
 	app.post('/api/auth/login', (c) => handleLogin(c, redis));
 	return app.request('/api/auth/login', {
