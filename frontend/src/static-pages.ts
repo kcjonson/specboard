@@ -94,6 +94,7 @@ export const pages = {
 	verifyEmailConfirm: loadPage(`${ssgBase}/verify-email/confirm.html`),
 	forgotPassword: loadPage(`${ssgBase}/forgot-password.html`),
 	resetPassword: loadPage(`${ssgBase}/reset-password.html`),
+	privacy: loadPage(`${ssgBase}/privacy.html`),
 };
 
 /**
