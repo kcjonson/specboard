@@ -254,10 +254,17 @@ export const LOGIN_FAILURE_LIMIT = {
 
 /**
  * Build the failure counter key for an identifier (username/email) and the
- * request's client IP
+ * request's client IP.
+ *
+ * The key material is hashed: identifiers can be emails (including ones
+ * belonging to no account), and the privacy policy doesn't disclose storing
+ * email+IP pairs. Only exact-match lookups are ever needed, so a digest
+ * loses nothing.
  */
 export function failureLimitKey(c: Context, identifier: string): string {
-	return `authfail:${identifier.trim().toLowerCase()}|${getClientIp(c)}`;
+	const material = `${identifier.trim().toLowerCase()}|${getClientIp(c)}`;
+	const digest = crypto.createHash('sha256').update(material).digest('hex').slice(0, 32);
+	return `authfail:${digest}`;
 }
 
 export async function isFailureLimited(
