@@ -733,10 +733,25 @@ app.use('*', authMiddleware({
 
 | Endpoint | Limit |
 |----------|-------|
-| /api/auth/login | 5 attempts per 15 minutes |
+| /api/auth/login | 5 failed attempts per 15 minutes per identifier+IP; 100 total requests per 15 minutes per IP |
 | /api/auth/signup | 3 per hour per IP |
 | /api/auth/forgot | 3 per hour per email |
 | General API | 100 requests per minute |
+
+Limits are identical in every environment, deliberately: staging parity is
+what surfaced the original successful-logins-counted lockout bug. Do not
+loosen staging.
+
+Testing notes:
+- Successful logins are never counted; cycling through accounts at any pace
+  is safe.
+- Tests that deliberately submit wrong passwords >5 times must use a
+  distinct identifier per case or flush Redis in setup.
+- An automated suite doing >100 login requests per 15 min from one IP will
+  trip the coarse cap. If that happens, add an env-var override for the
+  numbers; no staging fork, no bypass headers.
+- If separate clients seem to share one limit bucket, the proxy isn't
+  setting X-Forwarded-For (getClientIp falls back to a shared "unknown").
 
 ---
 

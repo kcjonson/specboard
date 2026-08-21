@@ -19,6 +19,7 @@ import { VerifyEmailContent, verifyEmailScript } from './pages/verify-email.js';
 import { VerifyEmailConfirmContent, verifyEmailConfirmScript } from './pages/verify-email-confirm.js';
 import { ForgotPasswordContent, forgotPasswordScript } from './pages/forgot-password.js';
 import { ResetPasswordContent, resetPasswordScript } from './pages/reset-password.js';
+import { PrivacyContent } from './pages/privacy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -84,6 +85,7 @@ function build(): void {
 	const notFoundCss = getCssPath(manifest, '../ssg/src/styles/not-found.css');
 	const homeCss = getCssPath(manifest, '../ssg/src/styles/home.css');
 	const authCss = getCssPath(manifest, '../ssg/src/styles/auth.css');
+	const privacyCss = getCssPath(manifest, '../ssg/src/styles/privacy.css');
 
 	// Render login page
 	writePage('login.html', renderDocument({
@@ -99,6 +101,13 @@ function build(): void {
 		cssFiles: [commonCss, signupCss],
 		body: render(SignupContent()),
 		scripts: signupScript,
+	}));
+
+	// Render privacy policy page
+	writePage('privacy.html', renderDocument({
+		title: 'Privacy Policy - Specboard',
+		cssFiles: [commonCss, privacyCss],
+		body: render(PrivacyContent()),
 	}));
 
 	// Render not found page
