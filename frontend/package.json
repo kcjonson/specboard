@@ -16,13 +16,13 @@
 		"@specboard/auth": "*",
 		"@specboard/core": "*",
 		"@hono/node-server": "^1.19.7",
-		"hono": "^4.11.1",
+		"hono": "~4.11.1",
 		"ioredis": "^5.6.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.2",
-		"esbuild": "^0.24.2",
-		"tsx": "^4.19.2",
+		"esbuild": "^0.28.2",
+		"tsx": "^4.23.12",
 		"typescript": "^5.7.2"
 	}
 }
