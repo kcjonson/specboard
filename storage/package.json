@@ -10,14 +10,14 @@
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.699.0",
-		"@hono/node-server": "^1.19.7",
+		"@hono/node-server": "^2.1.1",
 		"hono": "^4.11.1",
 		"pg": "^8.13.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.2",
 		"@types/pg": "^8.11.10",
-		"tsx": "^4.19.2",
+		"tsx": "^4.23.12",
 		"typescript": "^5.7.2"
 	}
 }
