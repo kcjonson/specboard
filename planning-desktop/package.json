@@ -16,7 +16,7 @@
 		"@specboard/platform-electron": "*"
 	},
 	"devDependencies": {
-		"electron": "^33.2.1",
+		"electron": "^43.4.1",
 		"typescript": "^5.7.2"
 	}
 }

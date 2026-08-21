@@ -14,7 +14,7 @@
 		"clean": "rm -rf cdk.out"
 	},
 	"dependencies": {
-		"aws-cdk-lib": "^2.173.2",
+		"aws-cdk-lib": "^2.266.0",
 		"constructs": "^10.4.2"
 	},
 	"devDependencies": {
