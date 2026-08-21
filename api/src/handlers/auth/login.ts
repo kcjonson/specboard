@@ -9,6 +9,11 @@ import {
 	generateSessionId,
 	createSession,
 	verifyPassword,
+	failureLimitKey,
+	isFailureLimited,
+	recordFailure,
+	clearFailures,
+	LOGIN_FAILURE_LIMIT,
 	SESSION_COOKIE_NAME,
 	CSRF_COOKIE_NAME,
 	SESSION_TTL_SECONDS,
@@ -43,6 +48,14 @@ export async function handleLogin(
 	}
 
 	try {
+		// Strict failure limit, keyed identifier+IP; the path middleware only
+		// applies a coarse per-IP cap
+		const failureKey = failureLimitKey(context, identifier);
+		if (await isFailureLimited(redis, failureKey, LOGIN_FAILURE_LIMIT)) {
+			logAuthEvent('login_failure', { identifier, reason: 'rate_limited' });
+			return context.json({ error: LOGIN_FAILURE_LIMIT.message }, 429);
+		}
+
 		// Find user by username or email (case-insensitive)
 		const userResult = await query<User & { password_hash: string }>(`
 			SELECT u.*, up.password_hash
@@ -61,6 +74,7 @@ export async function handleLogin(
 		const isValid = await verifyPassword(password, hashToVerify);
 
 		if (!user || !isValid) {
+			await recordFailure(redis, failureKey, LOGIN_FAILURE_LIMIT);
 			logAuthEvent('login_failure', { identifier, reason: 'invalid_credentials' });
 			return context.json({ error: 'Invalid credentials' }, 401);
 		}
@@ -101,6 +115,10 @@ export async function handleLogin(
 		});
 
 		logAuthEvent('login_success', { userId: user.id, username: user.username });
+
+		// Correct password proven: forgive earlier failures for this
+		// identifier+IP pair only
+		await clearFailures(redis, failureKey);
 
 		return context.json({
 			user: {
