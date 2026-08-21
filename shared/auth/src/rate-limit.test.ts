@@ -177,10 +177,12 @@ describe('rate limit middleware (coarse cap)', () => {
 		app.post('/api/auth/login', (c) => c.json({ ok: true }));
 
 		const request = (): Promise<Response> =>
-			app.request('/api/auth/login', {
-				method: 'POST',
-				headers: { 'X-Forwarded-For': '1.2.3.4, 10.0.0.1' },
-			});
+			Promise.resolve(
+				app.request('/api/auth/login', {
+					method: 'POST',
+					headers: { 'X-Forwarded-For': '1.2.3.4, 10.0.0.1' },
+				})
+			);
 
 		for (let i = 0; i < 5; i++) {
 			expect((await request()).status).toBe(200);

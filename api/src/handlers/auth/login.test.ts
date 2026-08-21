@@ -50,11 +50,13 @@ const mockUser = {
 function login(): Promise<Response> {
 	const app = new Hono();
 	app.post('/api/auth/login', (c) => handleLogin(c, redis));
-	return app.request('/api/auth/login', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ identifier: 'alice', password: 'pw' }),
-	});
+	return Promise.resolve(
+		app.request('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ identifier: 'alice', password: 'pw' }),
+		})
+	);
 }
 
 describe('handleLogin failure limiting', () => {
