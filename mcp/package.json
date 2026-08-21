@@ -20,7 +20,7 @@
 		"@specboard/core": "*",
 		"@specboard/db": "*",
 		"@hono/node-server": "^1.19.7",
-		"hono": "~4.11.1",
+		"hono": "~4.13.3",
 		"@modelcontextprotocol/sdk": "^1.30.0",
 		"zod": "^3.24.0"
 	},
