@@ -22,7 +22,10 @@ const { mockQuery, mockConnect, mockEnd, mockOn, mockPoolInstance, MockPool } = 
 		end: mockEnd,
 		on: mockOn,
 	};
-	const MockPool = vi.fn(() => mockPoolInstance);
+	// Function expression (not arrow) so `new Pool()` works under vitest 4
+	const MockPool = vi.fn(function () {
+		return mockPoolInstance;
+	});
 	return { mockQuery, mockConnect, mockEnd, mockOn, mockPoolInstance, MockPool };
 });
 

@@ -80,7 +80,7 @@ export class StorageClient {
 			return response.json() as Promise<T>;
 		} catch (err) {
 			if (err instanceof Error && err.name === 'AbortError') {
-				throw new Error(`Storage service timeout after ${timeoutMs}ms`);
+				throw new Error(`Storage service timeout after ${timeoutMs}ms`, { cause: err });
 			}
 			throw err;
 		} finally {

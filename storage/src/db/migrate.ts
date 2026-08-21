@@ -42,7 +42,7 @@ export async function runMigrations(): Promise<void> {
 			ca = fs.readFileSync(caPath, 'utf8');
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			throw new Error(`Failed to read RDS CA bundle: ${message}`);
+			throw new Error(`Failed to read RDS CA bundle: ${message}`, { cause: err });
 		}
 
 		config.ssl = {
