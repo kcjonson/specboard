@@ -40,8 +40,8 @@ export function getProvider(name: ProviderName): ChatProvider {
 /**
  * Check if a string is a valid provider name
  */
-export function isValidProvider(name: string): name is ProviderName {
-	return name in providers;
+export function isValidProvider(name: string | undefined): name is ProviderName {
+	return name !== undefined && name in providers;
 }
 
 /**
