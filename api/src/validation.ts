@@ -12,8 +12,8 @@ const VALID_TYPES: ItemType[] = ['epic', 'task', 'bug'];
 export const MAX_TITLE_LENGTH = 255;
 export const MAX_DESCRIPTION_LENGTH = 2000;
 
-export function isValidUUID(id: string): boolean {
-	return UUID_REGEX.test(id);
+export function isValidUUID(id: string | undefined): id is string {
+	return id !== undefined && UUID_REGEX.test(id);
 }
 
 export function isValidOptionalUUID(value: string | undefined): boolean {
