@@ -51,6 +51,11 @@ export const magicLinkScript = `(function() {
 			if (url.origin !== window.location.origin) {
 				return '/';
 			}
+			// Scheme-relative pathname ('//host') passes the origin check but
+			// navigates off-site; reject it.
+			if (url.pathname.indexOf('//') === 0) {
+				return '/';
+			}
 			return url.pathname + url.search + url.hash;
 		} catch (e) {
 			return '/';

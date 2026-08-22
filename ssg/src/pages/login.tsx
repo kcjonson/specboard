@@ -117,6 +117,12 @@ export const loginScript = `(function() {
 			if (url.origin !== window.location.origin) {
 				return '/';
 			}
+			// A scheme-relative pathname ('//host' or '/\\host', which URL
+			// normalizes to '//host') passes the origin check but navigates
+			// off-site when assigned to location.href.
+			if (url.pathname.indexOf('//') === 0) {
+				return '/';
+			}
 			return url.pathname + url.search + url.hash;
 		} catch (e) {
 			return '/';

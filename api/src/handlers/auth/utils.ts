@@ -47,6 +47,27 @@ export function logAuthEvent(
 }
 
 /**
+ * Reject cross-site browser requests to a CSRF-exempt endpoint.
+ *
+ * The magic-link/verify endpoint can't use the double-submit CSRF token (no
+ * session exists yet), so without this a cross-site auto-POST could log a
+ * victim into the attacker's account (login CSRF). Browsers always send Origin
+ * on POST, so an Origin present and cross-host is the forgery signal; a missing
+ * Origin (server-to-server, tests) is allowed, matching the /api/metrics check.
+ * Returns true if the request should be blocked.
+ */
+export function isCrossOriginRequest(context: Context): boolean {
+	const origin = context.req.header('Origin');
+	if (!origin) return false;
+	const host = context.req.header('Host');
+	try {
+		return new URL(origin).host !== host;
+	} catch {
+		return true;
+	}
+}
+
+/**
  * Check if request is over HTTPS (directly or via ALB/proxy)
  */
 export function isSecureRequest(context: Context): boolean {

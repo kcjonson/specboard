@@ -159,10 +159,11 @@ describe('handleMagicLinkRequest', () => {
 		expect(data.message).toContain('If that email has an account');
 
 		const calls = vi.mocked(query).mock.calls;
-		const deleteCall = calls.find((call) => (call[0] as string).includes('DELETE FROM magic_link_tokens WHERE user_id'));
-		expect(deleteCall).toBeDefined();
+		// Atomic upsert (one row per user), not DELETE-then-INSERT
 		const insertCall = calls.find((call) => (call[0] as string).includes('INSERT INTO magic_link_tokens'));
 		expect(insertCall).toBeDefined();
+		expect(insertCall?.[0]).toContain('ON CONFLICT (user_id)');
+		expect(calls.some((call) => (call[0] as string).includes('DELETE FROM magic_link_tokens'))).toBe(false);
 		// Stored values are hashes, never the raw token or code
 		expect(insertCall?.[1]).toContain(sha256(TOKEN));
 		expect(insertCall?.[1]).toContain(sha256(CODE));
@@ -262,9 +263,51 @@ describe('handleMagicLinkVerify', () => {
 			authMethod: 'magic_link',
 		});
 
+		// Lookup must be by the token HASH, not the raw token
+		const lookupCall = vi.mocked(query).mock.calls.find((call) => (call[0] as string).includes('WHERE token_hash'));
+		expect(lookupCall?.[1]).toEqual([sha256(TOKEN)]);
+
 		const sqls = vi.mocked(query).mock.calls.map((call) => call[0] as string);
 		expect(sqls.some((sql) => sql.includes('RETURNING id'))).toBe(true);
 		expect(sqls.some((sql) => sql.includes('SET email_verified = true'))).toBe(true);
+	});
+
+	it('rejects a cross-origin verify (login-CSRF guard)', async () => {
+		mockVerifyQueries(mockTokenRow());
+		const res = await Promise.resolve(
+			createApp().request('http://localhost/api/auth/magic-link/verify', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Host: 'localhost', Origin: 'https://evil.example.com' },
+				body: JSON.stringify({ token: TOKEN }),
+			})
+		);
+		expect(res.status).toBe(403);
+		expect(createSession).not.toHaveBeenCalled();
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it('accepts a same-origin verify', async () => {
+		mockVerifyQueries(mockTokenRow());
+		const res = await Promise.resolve(
+			createApp().request('http://localhost/api/auth/magic-link/verify', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Host: 'localhost', Origin: 'http://localhost' },
+				body: JSON.stringify({ token: TOKEN }),
+			})
+		);
+		expect(res.status).toBe(200);
+	});
+
+	it('accepts the correct code on the 5th (final) attempt', async () => {
+		// code_attempts already 4; this attempt increments to 5 (== cap), so
+		// the correct code must still succeed (guards against > vs >=)
+		mockVerifyQueries(mockTokenRow({ code_attempts: 4 }));
+		const res = await post(createApp(), '/api/auth/magic-link/verify', {
+			email: 'alice@example.com',
+			code: CODE,
+		});
+		expect(res.status).toBe(200);
+		expect(createSession).toHaveBeenCalledOnce();
 	});
 
 	it('rejects malformed tokens without querying', async () => {

@@ -15,5 +15,7 @@ CREATE TABLE magic_link_tokens (
 );
 
 CREATE UNIQUE INDEX idx_magic_link_tokens_token_hash ON magic_link_tokens(token_hash);
-CREATE INDEX idx_magic_link_tokens_user_id ON magic_link_tokens(user_id);
+-- One pending sign-in per user, enforced so issuing can UPSERT atomically
+-- rather than DELETE-then-INSERT (which races into duplicate live rows).
+CREATE UNIQUE INDEX idx_magic_link_tokens_user_id ON magic_link_tokens(user_id);
 CREATE INDEX idx_magic_link_tokens_expires_at ON magic_link_tokens(expires_at);

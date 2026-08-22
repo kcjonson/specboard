@@ -24,7 +24,7 @@ import { query, type User } from '@specboard/db';
 import { sendEmail, getMagicLinkEmailContent } from '@specboard/email';
 
 import { isValidEmail } from '../../validation.ts';
-import { logAuthEvent, establishSession, APP_URL } from './utils.ts';
+import { logAuthEvent, establishSession, isCrossOriginRequest, APP_URL } from './utils.ts';
 
 const MAX_CODE_ATTEMPTS = 5;
 
@@ -48,27 +48,40 @@ interface MagicLinkTokenRow {
 function sanitizeNextPath(next: unknown): string | null {
 	if (typeof next !== 'string') return null;
 	if (!next.startsWith('/') || next.startsWith('//') || next.length > 2048) return null;
+	// Backslashes normalize to '//' in the browser (off-site redirect); control
+	// chars (esp. NUL) would also make the row INSERT throw and get masked as a
+	// fake "code sent". Drop the path rather than fail the whole request.
+	// eslint-disable-next-line no-control-regex
+	if (/[\x00-\x1f\\]/.test(next)) return null;
 	return next;
 }
 
 /**
- * Issue a fresh magic link for a user: replaces any pending one, stores
- * hashes, and sends the email (fire-and-forget; the user can re-request).
- * Also used by signup once it becomes email-only.
+ * Issue a fresh magic link for a user: replaces any pending one (atomically,
+ * via the one-row-per-user unique index), stores hashes, and sends the email
+ * (fire-and-forget; the user can re-request). Also used by email-only signup.
  */
 export async function issueMagicLink(
 	user: Pick<User, 'id' | 'email'>,
 	nextPath: string | null
 ): Promise<void> {
-	await query('DELETE FROM magic_link_tokens WHERE user_id = $1', [user.id]);
-
 	const token = generateToken();
 	const code = generateLoginCode();
 	const expiresAt = new Date(Date.now() + MAGIC_LINK_EXPIRY_MS);
 
+	// Upsert rather than DELETE-then-INSERT: two concurrent requests would
+	// otherwise interleave into two live rows and let the newest code get
+	// checked against a stale row. ON CONFLICT also resets code_attempts.
 	await query(
 		`INSERT INTO magic_link_tokens (user_id, token_hash, code_hash, next_path, expires_at)
-		 VALUES ($1, $2, $3, $4, $5)`,
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (user_id) DO UPDATE SET
+			token_hash = EXCLUDED.token_hash,
+			code_hash = EXCLUDED.code_hash,
+			code_attempts = 0,
+			next_path = EXCLUDED.next_path,
+			expires_at = EXCLUDED.expires_at,
+			created_at = NOW()`,
 		[user.id, hashToken(token), hashToken(code), nextPath, expiresAt]
 	);
 
@@ -102,6 +115,10 @@ export async function handleMagicLinkRequest(
 	try {
 		body = await context.req.json<MagicLinkRequestBody>();
 	} catch {
+		return context.json({ error: 'Invalid JSON' }, 400);
+	}
+	// json() resolves null/scalars without throwing; guard before member access
+	if (!body || typeof body !== 'object') {
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
@@ -162,10 +179,19 @@ export async function handleMagicLinkVerify(
 	context: Context,
 	redis: Redis
 ): Promise<Response> {
+	// This endpoint creates a session and is CSRF-exempt, so guard against
+	// cross-site login-CSRF via the Origin header.
+	if (isCrossOriginRequest(context)) {
+		return context.json({ error: 'Cross-origin request rejected' }, 403);
+	}
+
 	let body: MagicLinkVerifyBody;
 	try {
 		body = await context.req.json<MagicLinkVerifyBody>();
 	} catch {
+		return context.json({ error: 'Invalid JSON' }, 400);
+	}
+	if (!body || typeof body !== 'object') {
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
