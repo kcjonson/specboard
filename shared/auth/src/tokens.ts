@@ -20,6 +20,9 @@ export const MAGIC_LINK_EXPIRY_MS = 15 * 60 * 1000;
  * safe combined with a per-token attempt cap and short expiry.
  */
 export const LOGIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
+// NOTE: the sign-in code UI is hand-written and does not import this value.
+// If LOGIN_CODE_LENGTH changes, update the code input's `maxlength` and the
+// "XXXX-XXXX" placeholder in ssg/src/pages/login.tsx and signup.tsx to match.
 export const LOGIN_CODE_LENGTH = 8;
 
 const LOGIN_CODE_PATTERN = new RegExp(`^[${LOGIN_CODE_ALPHABET}]{${LOGIN_CODE_LENGTH}}$`);

@@ -298,6 +298,23 @@ describe('handleMagicLinkVerify', () => {
 		expect(res.status).toBe(200);
 	});
 
+	it('accepts a same-origin verify behind a proxy (X-Forwarded-Host, non-default Host port)', async () => {
+		mockVerifyQueries(mockTokenRow());
+		const res = await Promise.resolve(
+			createApp().request('http://localhost/api/auth/magic-link/verify', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Host: 'api-internal:3001',
+					'X-Forwarded-Host': 'specboard.io',
+					Origin: 'https://specboard.io',
+				},
+				body: JSON.stringify({ token: TOKEN }),
+			})
+		);
+		expect(res.status).toBe(200);
+	});
+
 	it('accepts the correct code on the 5th (final) attempt', async () => {
 		// code_attempts already 4; this attempt increments to 5 (== cap), so
 		// the correct code must still succeed (guards against > vs >=)

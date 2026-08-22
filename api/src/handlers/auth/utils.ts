@@ -55,13 +55,24 @@ export function logAuthEvent(
  * on POST, so an Origin present and cross-host is the forgery signal; a missing
  * Origin (server-to-server, tests) is allowed, matching the /api/metrics check.
  * Returns true if the request should be blocked.
+ *
+ * Compares hostnames, not host:port, and prefers X-Forwarded-Host: behind the
+ * ALB the request Host can carry a default port or the internal host, which
+ * would falsely reject a legitimate same-site login. X-Forwarded-Host is set
+ * by the trusted proxy, consistent with isSecureRequest trusting
+ * X-Forwarded-Proto.
  */
 export function isCrossOriginRequest(context: Context): boolean {
 	const origin = context.req.header('Origin');
 	if (!origin) return false;
-	const host = context.req.header('Host');
+	// X-Forwarded-Host may be a comma-separated list; the first entry is the
+	// original client-facing host.
+	const forwardedHost = context.req.header('X-Forwarded-Host')?.split(',')[0]?.trim();
+	const rawHost = forwardedHost || context.req.header('Host');
+	if (!rawHost) return true;
+	const expectedHostname = (rawHost.split(':')[0] ?? '').toLowerCase();
 	try {
-		return new URL(origin).host !== host;
+		return new URL(origin).hostname.toLowerCase() !== expectedHostname;
 	} catch {
 		return true;
 	}
