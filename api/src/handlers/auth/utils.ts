@@ -65,13 +65,16 @@ export function logAuthEvent(
 export function isCrossOriginRequest(context: Context): boolean {
 	const origin = context.req.header('Origin');
 	if (!origin) return false;
-	// X-Forwarded-Host may be a comma-separated list; the first entry is the
-	// original client-facing host.
-	const forwardedHost = context.req.header('X-Forwarded-Host')?.split(',')[0]?.trim();
+	// Prefer the RIGHTMOST X-Forwarded-Host: each proxy appends, so the last
+	// entry is the one our trusted proxy set, while a leading value could be
+	// client-supplied. Matches getClientIp's use of the last X-Forwarded-For.
+	const forwardedList = context.req.header('X-Forwarded-Host')?.split(',');
+	const forwardedHost = forwardedList?.[forwardedList.length - 1]?.trim();
 	const rawHost = forwardedHost || context.req.header('Host');
 	if (!rawHost) return true;
-	const expectedHostname = (rawHost.split(':')[0] ?? '').toLowerCase();
 	try {
+		// Parse via URL so IPv6 literals ([::1]:3000) and ports are handled.
+		const expectedHostname = new URL(`http://${rawHost}`).hostname.toLowerCase();
 		return new URL(origin).hostname.toLowerCase() !== expectedHostname;
 	} catch {
 		return true;
