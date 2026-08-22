@@ -6,5 +6,6 @@ export { sendEmail, type SendEmailOptions } from './client.ts';
 export {
 	getVerificationEmailContent,
 	getPasswordResetEmailContent,
+	getMagicLinkEmailContent,
 	type EmailContent,
 } from './templates.ts';

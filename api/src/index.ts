@@ -37,6 +37,8 @@ import {
 	handleForgotPassword,
 	handleResetPassword,
 	handleChangePassword,
+	handleMagicLinkRequest,
+	handleMagicLinkVerify,
 } from './handlers/auth/index.ts';
 import {
 	handleListUsers,
@@ -225,6 +227,8 @@ app.use(
 		rules: [
 			{ path: '/api/auth/login', config: RATE_LIMIT_CONFIGS.login },
 			{ path: '/api/auth/signup', config: RATE_LIMIT_CONFIGS.signup },
+			{ path: '/api/auth/magic-link/request', config: RATE_LIMIT_CONFIGS.magicLinkRequest },
+			{ path: '/api/auth/magic-link/verify', config: RATE_LIMIT_CONFIGS.magicLinkVerify },
 			{ path: '/api/auth/forgot-password', config: RATE_LIMIT_CONFIGS.forgot },
 			{ path: '/api/auth/resend-verification', config: RATE_LIMIT_CONFIGS.resendVerification },
 			{ path: '/api/auth/github', config: RATE_LIMIT_CONFIGS.login }, // OAuth start - same limit as login
@@ -254,6 +258,8 @@ app.use(
 			'/api/auth/resend-verification',
 			'/api/auth/forgot-password',
 			'/api/auth/reset-password',
+			'/api/auth/magic-link/request',
+			'/api/auth/magic-link/verify',
 			'/api/auth/github/callback', // GitHub OAuth callback (comes from redirect)
 			'/api/waitlist', // Public signup form
 			'/api/metrics',
@@ -377,6 +383,10 @@ app.post('/api/auth/signup', handleSignup);
 app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
 app.put('/api/auth/me', (context) => handleUpdateMe(context, redis));
+
+// Magic link login routes (unauthenticated)
+app.post('/api/auth/magic-link/request', (context) => handleMagicLinkRequest(context, redis));
+app.post('/api/auth/magic-link/verify', (context) => handleMagicLinkVerify(context, redis));
 
 // Email verification and password reset routes (unauthenticated)
 app.post('/api/auth/verify-email', handleVerifyEmail);

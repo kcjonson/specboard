@@ -17,6 +17,7 @@ import { NotFoundContent } from './pages/not-found.js';
 import { HomeContent, homeScript } from './pages/home.js';
 import { VerifyEmailContent, verifyEmailScript } from './pages/verify-email.js';
 import { VerifyEmailConfirmContent, verifyEmailConfirmScript } from './pages/verify-email-confirm.js';
+import { MagicLinkContent, magicLinkScript } from './pages/magic-link.js';
 import { ForgotPasswordContent, forgotPasswordScript } from './pages/forgot-password.js';
 import { ResetPasswordContent, resetPasswordScript } from './pages/reset-password.js';
 import { PrivacyContent } from './pages/privacy.js';
@@ -140,6 +141,14 @@ function build(): void {
 		cssFiles: [commonCss, authCss],
 		body: render(VerifyEmailConfirmContent()),
 		scripts: verifyEmailConfirmScript,
+	}));
+
+	// Render magic link landing page (processes token from sign-in email)
+	writePage('magic-link.html', renderDocument({
+		title: 'Signing In - Specboard',
+		cssFiles: [commonCss, authCss],
+		body: render(MagicLinkContent()),
+		scripts: magicLinkScript,
 	}));
 
 	// Render forgot password page

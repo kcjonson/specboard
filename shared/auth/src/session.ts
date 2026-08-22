@@ -40,6 +40,7 @@ export async function createSession(
 		csrfToken,
 		createdAt: now,
 		lastAccessedAt: now,
+		authMethod: data.authMethod,
 	};
 
 	await redis.setex(

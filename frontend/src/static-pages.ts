@@ -92,6 +92,7 @@ export const pages = {
 	notFound: loadPage(`${ssgBase}/not-found.html`),
 	verifyEmail: loadPage(`${ssgBase}/verify-email.html`),
 	verifyEmailConfirm: loadPage(`${ssgBase}/verify-email/confirm.html`),
+	magicLink: loadPage(`${ssgBase}/magic-link.html`),
 	forgotPassword: loadPage(`${ssgBase}/forgot-password.html`),
 	resetPassword: loadPage(`${ssgBase}/reset-password.html`),
 	privacy: loadPage(`${ssgBase}/privacy.html`),

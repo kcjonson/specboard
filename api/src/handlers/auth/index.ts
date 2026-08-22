@@ -7,6 +7,9 @@
 // Login
 export { handleLogin } from './login.ts';
 
+// Magic link login
+export { handleMagicLinkRequest, handleMagicLinkVerify, issueMagicLink } from './magic-link.ts';
+
 // Signup
 export { handleSignup } from './signup.ts';
 

@@ -137,6 +137,9 @@ app.get('/signup', (c) => servePage(c, pages.signup));
 app.get('/verify-email', (c) => servePage(c, pages.verifyEmail));
 app.get('/verify-email/confirm', (c) => servePage(c, pages.verifyEmailConfirm));
 
+// Magic link landing page (no auth required)
+app.get('/magic-link', (c) => servePage(c, pages.magicLink));
+
 // Password reset pages (no auth required)
 app.get('/forgot-password', (c) => servePage(c, pages.forgotPassword));
 app.get('/reset-password', (c) => servePage(c, pages.resetPassword));

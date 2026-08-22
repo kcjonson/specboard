@@ -73,3 +73,54 @@ body {
 .login-container .forgot-password a:hover {
 	text-decoration: underline;
 }
+
+.login-container .hidden {
+	display: none;
+}
+
+.login-container .method-divider {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	margin: 1.25rem 0;
+	color: var(--color-text-muted);
+	font-size: 0.875rem;
+}
+
+.login-container .method-divider::before,
+.login-container .method-divider::after {
+	content: '';
+	flex: 1;
+	border-top: 1px solid var(--color-border);
+}
+
+.login-container .code-intro {
+	font-size: 0.875rem;
+	color: var(--color-text-muted);
+	margin-bottom: 1.25rem;
+	overflow-wrap: break-word;
+}
+
+.login-container #code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 1.25rem;
+	letter-spacing: 0.25em;
+	text-align: center;
+	text-transform: uppercase;
+}
+
+.login-container .code-links {
+	display: flex;
+	justify-content: space-between;
+	margin-top: 1rem;
+	font-size: 0.875rem;
+}
+
+.login-container .code-links a {
+	color: var(--color-primary);
+	text-decoration: none;
+}
+
+.login-container .code-links a:hover {
+	text-decoration: underline;
+}

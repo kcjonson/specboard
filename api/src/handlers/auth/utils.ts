@@ -3,6 +3,16 @@
  */
 
 import type { Context } from 'hono';
+import { setCookie } from 'hono/cookie';
+import type { Redis } from 'ioredis';
+import {
+	generateSessionId,
+	createSession,
+	SESSION_COOKIE_NAME,
+	CSRF_COOKIE_NAME,
+	SESSION_TTL_SECONDS,
+	type AuthMethod,
+} from '@specboard/auth';
 
 /**
  * Auth event types for logging
@@ -14,7 +24,10 @@ export type AuthEvent =
 	| 'signup_success'
 	| 'email_verified'
 	| 'password_reset'
-	| 'password_changed';
+	| 'password_changed'
+	| 'magic_link_requested'
+	| 'magic_link_login'
+	| 'magic_link_failure';
 
 /**
  * Structured auth event logging for CloudWatch Logs Insights
@@ -68,6 +81,38 @@ export function isValidInviteKey(key: string): boolean {
 	}
 
 	return validKeys.has(key.trim());
+}
+
+/**
+ * Create a Redis session and set the auth cookies on the response.
+ * Shared by every successful-auth path (password, magic link, passkey).
+ */
+export async function establishSession(
+	context: Context,
+	redis: Redis,
+	userId: string,
+	authMethod: AuthMethod
+): Promise<void> {
+	const sessionId = generateSessionId();
+	const csrfToken = await createSession(redis, sessionId, { userId, authMethod });
+	const secure = isSecureRequest(context);
+
+	// Session cookie is HttpOnly; CSRF cookie is readable by JS for the
+	// double-submit pattern
+	setCookie(context, SESSION_COOKIE_NAME, sessionId, {
+		httpOnly: true,
+		secure,
+		sameSite: 'Lax',
+		path: '/',
+		maxAge: SESSION_TTL_SECONDS,
+	});
+	setCookie(context, CSRF_COOKIE_NAME, csrfToken, {
+		httpOnly: false,
+		secure,
+		sameSite: 'Lax',
+		path: '/',
+		maxAge: SESSION_TTL_SECONDS,
+	});
 }
 
 /**

@@ -3,24 +3,18 @@
  */
 
 import type { Context } from 'hono';
-import { setCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import {
-	generateSessionId,
-	createSession,
 	verifyPassword,
 	failureLimitKey,
 	isFailureLimited,
 	recordFailure,
 	clearFailures,
 	LOGIN_FAILURE_LIMIT,
-	SESSION_COOKIE_NAME,
-	CSRF_COOKIE_NAME,
-	SESSION_TTL_SECONDS,
 } from '@specboard/auth';
 import { query, type User } from '@specboard/db';
 
-import { logAuthEvent, isSecureRequest } from './utils.ts';
+import { logAuthEvent, establishSession } from './utils.ts';
 
 interface LoginRequest {
 	identifier: string; // username or email
@@ -90,29 +84,7 @@ export async function handleLogin(
 			}, 403);
 		}
 
-		// Create session (returns CSRF token)
-		const sessionId = generateSessionId();
-		const csrfToken = await createSession(redis, sessionId, {
-			userId: user.id,
-		});
-
-		// Set session cookie (HttpOnly - not accessible to JS)
-		setCookie(context, SESSION_COOKIE_NAME, sessionId, {
-			httpOnly: true,
-			secure: isSecureRequest(context),
-			sameSite: 'Lax',
-			path: '/',
-			maxAge: SESSION_TTL_SECONDS,
-		});
-
-		// Set CSRF cookie (NOT HttpOnly - JS reads it for double-submit pattern)
-		setCookie(context, CSRF_COOKIE_NAME, csrfToken, {
-			httpOnly: false,
-			secure: isSecureRequest(context),
-			sameSite: 'Lax',
-			path: '/',
-			maxAge: SESSION_TTL_SECONDS,
-		});
+		await establishSession(context, redis, user.id, 'password');
 
 		logAuthEvent('login_success', { userId: user.id, username: user.username });
 
