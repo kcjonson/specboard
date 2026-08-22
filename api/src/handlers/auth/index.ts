@@ -10,6 +10,17 @@ export { handleLogin } from './login.ts';
 // Magic link login
 export { handleMagicLinkRequest, handleMagicLinkVerify, issueMagicLink } from './magic-link.ts';
 
+// Passkeys (WebAuthn)
+export {
+	handleWebauthnLoginOptions,
+	handleWebauthnLoginVerify,
+	handleWebauthnRegisterOptions,
+	handleWebauthnRegisterVerify,
+	handleListPasskeys,
+	handleRenamePasskey,
+	handleDeletePasskey,
+} from './webauthn.ts';
+
 // Signup
 export { handleSignup } from './signup.ts';
 
