@@ -297,8 +297,12 @@ concurrent double-submit can win at most once. A code attempt increments
 fresh email (itself rate limited).
 
 **Uniform responses**: the request endpoint returns the same 200 whether or
-not the email has an account; every verify failure (unknown, expired,
-consumed, wrong code, exhausted, deactivated) returns the same generic 401.
+not the email has an account; every *authentication* failure at verify
+(unknown, expired, consumed, wrong code, exhausted, deactivated) returns the
+same generic 401, so the response never distinguishes the cause. Outcome-
+independent errors are separate and don't leak account state: 400 for
+malformed/missing JSON, 403 for a cross-origin request (login-CSRF guard),
+503 on a service error.
 
 **Side effects**: consuming a magic link proves control of the mailbox, so it
 sets `email_verified = true`. The session records `authMethod: 'magic_link'`.
