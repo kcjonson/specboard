@@ -91,6 +91,24 @@ export {
 	type EncryptedData,
 } from './encryption.ts';
 
+// WebAuthn / passkeys (hand-rolled verification)
+export {
+	verifyRegistration,
+	verifyAuthentication,
+	importCoseKey,
+	fromBase64url,
+	toBase64url,
+	ALG_ES256,
+	ALG_RS256,
+	SUPPORTED_ALGS,
+	type RegistrationResponse,
+	type VerifyRegistrationOptions,
+	type VerifiedRegistration,
+	type AuthenticationResponse,
+	type VerifyAuthenticationOptions,
+	type VerifiedAuthentication,
+} from './webauthn/index.ts';
+
 // Types
 export {
 	type Session,
