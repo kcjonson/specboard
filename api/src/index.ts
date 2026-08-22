@@ -379,7 +379,7 @@ app.post('/api/metrics', async (context) => {
 
 // Auth routes
 app.post('/api/auth/login', (context) => handleLogin(context, redis));
-app.post('/api/auth/signup', handleSignup);
+app.post('/api/auth/signup', (context) => handleSignup(context, redis));
 app.post('/api/auth/logout', (context) => handleLogout(context, redis));
 app.get('/api/auth/me', (context) => handleGetMe(context, redis));
 app.put('/api/auth/me', (context) => handleUpdateMe(context, redis));

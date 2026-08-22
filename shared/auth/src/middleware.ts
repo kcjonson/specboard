@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession } from './session.ts';
-import type { AuthMiddlewareOptions, AuthUser } from './types.ts';
+import type { AuthMiddlewareOptions, AuthUser, Session } from './types.ts';
 import { SESSION_COOKIE_NAME } from './types.ts';
 
 /**
@@ -11,6 +11,7 @@ import { SESSION_COOKIE_NAME } from './types.ts';
 export interface AuthVariables {
 	user: AuthUser;
 	sessionId: string;
+	session: Session;
 }
 
 /**
@@ -94,6 +95,7 @@ export function authMiddleware(
 			id: session.userId,
 		});
 		c.set('sessionId', sessionId);
+		c.set('session', session);
 
 		return next();
 	};
@@ -124,3 +126,4 @@ export function getSessionId(
 	}
 	return sessionId;
 }
+

@@ -9,7 +9,7 @@ import { Hono, type Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Redis } from 'ioredis';
-import { authMiddleware, sessionExists, SESSION_COOKIE_NAME, type AuthVariables } from '@specboard/auth';
+import { authMiddleware, getSession, SESSION_COOKIE_NAME, type AuthVariables } from '@specboard/auth';
 import { reportError, captureException, installErrorHandlers, logRequest } from '@specboard/core';
 import { pages, spaIndex, type CachedPage } from './static-pages.ts';
 
@@ -158,8 +158,13 @@ app.get('/', async (c) => {
 
 	if (sessionId) {
 		try {
-			const hasSession = await sessionExists(redis, sessionId);
-			if (hasSession) {
+			const session = await getSession(redis, sessionId);
+			if (session) {
+				// Onboarding not finished: the SPA document is not served
+				// anywhere but /onboarding until the username is claimed
+				if (session.profileComplete === false) {
+					return c.redirect('/onboarding');
+				}
 				// Authenticated - serve SPA
 				if (VITE_DEV_SERVER) {
 					return proxyToVite(c, '/');
@@ -497,6 +502,17 @@ app.get('*', async (c) => {
 	// If it looks like a file request, return 404
 	if (path.includes('.')) {
 		return c.notFound();
+	}
+
+	// Onboarding not finished: redirect document loads (typed URLs, reloads,
+	// new tabs, the magic-link landing) to /onboarding. This does NOT catch
+	// in-app client-side navigation or direct API calls — those are gated by
+	// the account only being useful once onboarding completes, not by this.
+	// Read the session defensively: authMiddleware-excluded paths (e.g. a GET
+	// to a POST-only /api/auth/* route) reach here without one set.
+	const session = c.get('session');
+	if (session?.profileComplete === false && path !== '/onboarding') {
+		return c.redirect('/onboarding');
 	}
 
 	// Dev mode: proxy to Vite for HMR

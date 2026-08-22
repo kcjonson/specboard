@@ -1,5 +1,9 @@
 /**
  * Signup page content component
+ *
+ * Email-only: collects an email and invite key, then swaps inline to a
+ * check-your-email state with a code input. First sign-in happens via the
+ * emailed magic link or code; profile details are collected in onboarding.
  */
 import type { JSX } from 'preact';
 
@@ -10,86 +14,59 @@ export function SignupContent(): JSX.Element {
 
 			<div id="error" class="error-message hidden" />
 
-			<form id="signup-form">
-				<div class="form-row">
+			<div id="signup-section">
+				<form id="signup-form">
 					<div class="form-group">
-						<label for="first_name">First Name</label>
+						<label for="email">Email</label>
 						<input
-							type="text"
-							id="first_name"
-							name="first_name"
+							type="email"
+							id="email"
+							name="email"
 							required
-							autocomplete="given-name"
+							autocomplete="email"
 						/>
 					</div>
 
 					<div class="form-group">
-						<label for="last_name">Last Name</label>
+						<label for="invite_key">Invite Key</label>
 						<input
 							type="text"
-							id="last_name"
-							name="last_name"
+							id="invite_key"
+							name="invite_key"
 							required
-							autocomplete="family-name"
+							autocomplete="off"
+						/>
+						<div class="invite-hint">
+							Required for early access
+						</div>
+					</div>
+
+					<button type="submit" id="submit-btn">Create Account</button>
+				</form>
+			</div>
+
+			<div id="code-section" class="hidden">
+				<p class="code-intro">
+					We sent a sign-in code to <strong id="code-email" />.
+					Click the link in the email, or enter the code here.
+				</p>
+
+				<form id="code-form">
+					<div class="form-group">
+						<label for="code">Sign-in code</label>
+						<input
+							type="text"
+							id="code"
+							name="code"
+							autocomplete="one-time-code"
+							maxlength={9}
+							placeholder="XXXX-XXXX"
 						/>
 					</div>
-				</div>
 
-				<div class="form-group">
-					<label for="username">Username</label>
-					<input
-						type="text"
-						id="username"
-						name="username"
-						required
-						autocomplete="username"
-						pattern="[a-zA-Z0-9_]{3,30}"
-						title="3-30 characters, letters, numbers, and underscores only"
-					/>
-				</div>
-
-				<div class="form-group">
-					<label for="email">Email</label>
-					<input
-						type="email"
-						id="email"
-						name="email"
-						required
-						autocomplete="email"
-					/>
-				</div>
-
-				<div class="form-group">
-					<label for="invite_key">Invite Key</label>
-					<input
-						type="text"
-						id="invite_key"
-						name="invite_key"
-						required
-						autocomplete="off"
-					/>
-					<div class="invite-hint">
-						Required for early access
-					</div>
-				</div>
-
-				<div class="form-group">
-					<label for="password">Password</label>
-					<input
-						type="password"
-						id="password"
-						name="password"
-						required
-						autocomplete="new-password"
-						minlength={12}
-					/>
-					<div class="password-hint">
-						At least 12 characters
-					</div>
-				</div>
-
-				<button type="submit" id="submit-btn">Create Account</button>
-			</form>
+					<button type="submit" id="code-verify-btn">Verify Code</button>
+				</form>
+			</div>
 
 			<div class="login-link">
 				Already have an account? <a href="/login">Sign in</a>
@@ -102,6 +79,13 @@ export const signupScript = `(function() {
 	var form = document.getElementById('signup-form');
 	var errorEl = document.getElementById('error');
 	var submitBtn = document.getElementById('submit-btn');
+	var signupSection = document.getElementById('signup-section');
+	var codeSection = document.getElementById('code-section');
+	var codeForm = document.getElementById('code-form');
+	var codeInput = document.getElementById('code');
+	var codeVerifyBtn = document.getElementById('code-verify-btn');
+	var codeEmailEl = document.getElementById('code-email');
+	var pendingEmail = null;
 
 	// Capture UTM and referral parameters from the URL for acquisition tracking
 	var params = new URLSearchParams(window.location.search);
@@ -121,27 +105,25 @@ export const signupScript = `(function() {
 		errorEl.classList.add('hidden');
 	}
 
+	function parseJson(res) {
+		return res.json().then(function(data) {
+			return { ok: res.ok, data: data };
+		});
+	}
+
 	form.addEventListener('submit', function(e) {
 		e.preventDefault();
 		hideError();
 
-		var first_name = document.getElementById('first_name').value;
-		var last_name = document.getElementById('last_name').value;
-		var username = document.getElementById('username').value;
-		var email = document.getElementById('email').value;
+		var email = document.getElementById('email').value.trim();
 		var invite_key = document.getElementById('invite_key').value;
-		var password = document.getElementById('password').value;
 
 		submitBtn.disabled = true;
 		submitBtn.textContent = 'Creating account...';
 
 		// Merge whitelisted UTM/referral data with form fields (form values take precedence for overlapping keys)
 		var body = Object.assign({}, utmData, {
-			username: username,
 			email: email,
-			password: password,
-			first_name: first_name,
-			last_name: last_name,
 			invite_key: invite_key
 		});
 
@@ -151,25 +133,54 @@ export const signupScript = `(function() {
 			body: JSON.stringify(body),
 			credentials: 'same-origin'
 		})
-		.then(function(res) {
-			return res.json().then(function(data) {
-				return { ok: res.ok, data: data };
-			});
-		})
+		.then(parseJson)
 		.then(function(result) {
+			submitBtn.disabled = false;
+			submitBtn.textContent = 'Create Account';
 			if (result.ok) {
-				// Redirect to verify email page with email pre-filled
-				window.location.href = '/verify-email?email=' + encodeURIComponent(email);
+				pendingEmail = email;
+				codeEmailEl.textContent = email;
+				signupSection.classList.add('hidden');
+				codeSection.classList.remove('hidden');
+				codeInput.focus();
 			} else {
 				showError(result.data.error || 'Signup failed');
-				submitBtn.disabled = false;
-				submitBtn.textContent = 'Create Account';
 			}
 		})
 		.catch(function() {
 			showError('Network error. Please try again.');
 			submitBtn.disabled = false;
 			submitBtn.textContent = 'Create Account';
+		});
+	});
+
+	codeForm.addEventListener('submit', function(e) {
+		e.preventDefault();
+		hideError();
+
+		codeVerifyBtn.disabled = true;
+		codeVerifyBtn.textContent = 'Verifying...';
+
+		fetch('/api/auth/magic-link/verify', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ email: pendingEmail, code: codeInput.value }),
+			credentials: 'same-origin'
+		})
+		.then(parseJson)
+		.then(function(result) {
+			if (result.ok) {
+				window.location.href = '/';
+			} else {
+				showError(result.data.error || 'Verification failed');
+				codeVerifyBtn.disabled = false;
+				codeVerifyBtn.textContent = 'Verify Code';
+			}
+		})
+		.catch(function() {
+			showError('Network error. Please try again.');
+			codeVerifyBtn.disabled = false;
+			codeVerifyBtn.textContent = 'Verify Code';
 		});
 	});
 })();`;

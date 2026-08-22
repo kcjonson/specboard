@@ -287,7 +287,7 @@ export async function handleMagicLinkVerify(
 			logAuthEvent('email_verified', { userId: user.id });
 		}
 
-		await establishSession(context, redis, user.id, 'magic_link');
+		await establishSession(context, redis, user.id, 'magic_link', user.username !== null);
 		logAuthEvent('magic_link_login', { userId: user.id, method: hasToken ? 'link' : 'code' });
 
 		return context.json({

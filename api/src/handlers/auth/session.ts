@@ -7,12 +7,14 @@ import { deleteCookie, getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import {
 	getSession,
+	updateSession,
 	deleteSession,
 	SESSION_COOKIE_NAME,
 	CSRF_COOKIE_NAME,
 } from '@specboard/auth';
 import { query, type User } from '@specboard/db';
 
+import { isValidUsername } from '../../validation.ts';
 import { logAuthEvent } from './utils.ts';
 
 /**
@@ -63,9 +65,12 @@ export async function handleGetMe(
 			return context.json({ error: 'Session expired' }, 401);
 		}
 
-		// Fetch user from database
-		const userResult = await query<User>(
-			'SELECT * FROM users WHERE id = $1',
+		// Fetch user plus password presence (onboarding needs it)
+		const userResult = await query<User & { has_password: boolean }>(
+			`SELECT u.*, (up.user_id IS NOT NULL) AS has_password
+			 FROM users u
+			 LEFT JOIN user_passwords up ON up.user_id = u.id
+			 WHERE u.id = $1`,
 			[session.userId]
 		);
 
@@ -84,6 +89,15 @@ export async function handleGetMe(
 			return context.json({ error: 'Account is deactivated' }, 403);
 		}
 
+		// Heal a stale onboarding flag: a session created before the profile
+		// was completed (e.g. a second device signed in mid-onboarding, or an
+		// admin set the username) keeps profileComplete=false and would be
+		// bounced to /onboarding on every document load until this refresh.
+		const profileComplete = user.username !== null;
+		if (profileComplete && session.profileComplete === false) {
+			await updateSession(redis, sessionId, { profileComplete: true });
+		}
+
 		return context.json({
 			user: {
 				id: user.id,
@@ -96,6 +110,9 @@ export async function handleGetMe(
 				avatar_url: user.avatar_url,
 				roles: user.roles,
 				is_active: user.is_active,
+				has_password: user.has_password,
+				passkey_count: 0,
+				profile_complete: profileComplete,
 			},
 		});
 	} catch (error) {
@@ -107,6 +124,8 @@ export async function handleGetMe(
 interface UpdateMeRequest {
 	first_name?: string;
 	last_name?: string;
+	/** Claimable exactly once, while still NULL from email-only signup */
+	username?: string;
 }
 
 /**
@@ -136,7 +155,16 @@ export async function handleUpdateMe(
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	const { first_name, last_name } = body;
+	const { first_name, last_name, username } = body;
+
+	// typeof guard first: isValidUsername coerces non-strings, and a later
+	// .toLowerCase() on a non-string would throw a 500
+	if (username !== undefined && (typeof username !== 'string' || !isValidUsername(username))) {
+		return context.json(
+			{ error: 'Username must be 3-30 characters, alphanumeric and underscores only' },
+			400
+		);
+	}
 
 	// Validate names if provided
 	if (first_name !== undefined) {
@@ -175,6 +203,51 @@ export async function handleUpdateMe(
 			await deleteSession(redis, sessionId);
 			deleteCookie(context, SESSION_COOKIE_NAME, { path: '/' });
 			return context.json({ error: 'Account is deactivated' }, 403);
+		}
+
+		// Onboarding username claim: set username AND names in one atomic
+		// statement, guarded by `username IS NULL` so it's settable exactly
+		// once. Doing it as a single UPDATE (rather than claim-then-names)
+		// means a failure can't leave a claimed username with unsaved names,
+		// which would trap a resubmit on the "already set" 409. The session
+		// flag is flipped only after the write commits.
+		if (username !== undefined) {
+			const firstTrimmed = typeof first_name === 'string' ? first_name.trim() : '';
+			const lastTrimmed = typeof last_name === 'string' ? last_name.trim() : '';
+			if (!firstTrimmed || !lastTrimmed) {
+				return context.json({ error: 'First name and last name are required' }, 400);
+			}
+			try {
+				const claim = await query<User>(
+					`UPDATE users SET username = $1, first_name = $2, last_name = $3
+					 WHERE id = $4 AND username IS NULL
+					 RETURNING *`,
+					[username.toLowerCase(), firstTrimmed, lastTrimmed, session.userId]
+				);
+				if ((claim.rowCount ?? 0) === 0) {
+					return context.json({ error: 'Username is already set and cannot be changed' }, 409);
+				}
+				// Unblock the frontend onboarding redirect for this session.
+				await updateSession(redis, sessionId, { profileComplete: true });
+				const user = claim.rows[0]!;
+				return context.json({
+					user: {
+						id: user.id,
+						username: user.username,
+						email: user.email,
+						first_name: user.first_name,
+						last_name: user.last_name,
+						email_verified: user.email_verified,
+						phone_number: user.phone_number,
+						avatar_url: user.avatar_url,
+					},
+				});
+			} catch (claimError) {
+				if (claimError instanceof Error && 'code' in claimError && claimError.code === '23505') {
+					return context.json({ error: 'Username already taken' }, 409);
+				}
+				throw claimError;
+			}
 		}
 
 		// Build update query from allowlisted fields only

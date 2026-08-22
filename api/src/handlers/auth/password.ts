@@ -210,7 +210,8 @@ export async function handleResetPassword(
 }
 
 interface ChangePasswordRequest {
-	current_password: string;
+	/** Omittable only when the account has no password yet (email-only signup) */
+	current_password?: string;
 	new_password: string;
 }
 
@@ -235,8 +236,8 @@ export async function handleChangePassword(
 	}
 
 	const { current_password, new_password } = body;
-	if (!current_password || !new_password) {
-		return context.json({ error: 'Current password and new password are required' }, 400);
+	if (!new_password) {
+		return context.json({ error: 'New password is required' }, 400);
 	}
 
 	// Validate new password
@@ -261,26 +262,29 @@ export async function handleChangePassword(
 		);
 
 		const passwordRecord = passwordResult.rows[0];
-		if (!passwordRecord) {
-			return context.json({ error: 'User not found' }, 404);
+
+		if (passwordRecord) {
+			// Changing an existing password requires proving the current one
+			if (!current_password) {
+				return context.json({ error: 'Current password is required' }, 400);
+			}
+			const isCurrentValid = await verifyPassword(current_password, passwordRecord.password_hash);
+			if (!isCurrentValid) {
+				return context.json({ error: 'Current password is incorrect' }, 401);
+			}
 		}
 
-		// Verify current password
-		const isCurrentValid = await verifyPassword(current_password, passwordRecord.password_hash);
-		if (!isCurrentValid) {
-			return context.json({ error: 'Current password is incorrect' }, 401);
-		}
-
-		// Hash new password
 		const newPasswordHash = await hashPassword(new_password);
 
-		// Update password
+		// First password (email-only signup) inserts; otherwise update.
+		// ON CONFLICT covers a concurrent first-set racing this request.
 		await query(
-			'UPDATE user_passwords SET password_hash = $1 WHERE user_id = $2',
+			`INSERT INTO user_passwords (user_id, password_hash) VALUES ($1, $2)
+			 ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
 			[newPasswordHash, session.userId]
 		);
 
-		logAuthEvent('password_changed', { userId: session.userId });
+		logAuthEvent('password_changed', { userId: session.userId, first_password: !passwordRecord });
 
 		return context.json({ message: 'Password changed successfully' });
 	} catch (error) {

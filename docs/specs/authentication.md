@@ -74,9 +74,9 @@ Both containers share authentication state via Redis sessions:
 -- Users table (primary identity)
 CREATE TABLE users (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	username VARCHAR(255) NOT NULL UNIQUE,  -- Immutable after creation
-	first_name VARCHAR(255) NOT NULL,
-	last_name VARCHAR(255) NOT NULL,
+	username VARCHAR(255) UNIQUE,           -- NULL until claimed in onboarding; immutable once set
+	first_name VARCHAR(255),                -- NULL until onboarding
+	last_name VARCHAR(255),                 -- NULL until onboarding
 	email VARCHAR(255) NOT NULL UNIQUE,     -- Current email, can be changed
 	email_verified BOOLEAN DEFAULT FALSE,
 	email_verified_at TIMESTAMP WITH TIME ZONE,
@@ -165,6 +165,7 @@ session:{session_id}:
   created_at: timestamp
   last_accessed: timestamp
   auth_method: password | magic_link | passkey (optional)
+  profile_complete: boolean (optional; false gates SPA loads to /onboarding)
 
 TTL: 30 days (sliding expiration)
 ```
@@ -175,43 +176,56 @@ Sessions are auth-only. User details (username, first_name, last_name, avatar, e
 
 ## Authentication Flows
 
-### 1. User Registration
+### 1. User Registration (email-only)
 
 **Invite Key Requirement**: Signup currently requires a valid invite key for early access control. See [Invite Keys Setup](#invite-keys-setup) for configuration.
+
+Signup collects only an email address and invite key. The account is created
+immediately with no username, names, or password (those columns are nullable);
+the first login happens through the magic link flow, which doubles as email
+verification. If the email is already registered, a sign-in link is sent to it
+instead and the response body is identical, so signup cannot be used to
+enumerate accounts.
 
 ```
 Browser                        API                      PostgreSQL
    │                            │                            │
    │ POST /api/auth/signup      │                            │
-   │ {username, email, password,│                            │
-   │  first_name, last_name,    │                            │
-   │  invite_key}               │                            │
+   │ {email, invite_key,        │                            │
+   │  utm_* (optional)}         │                            │
    │───────────────────────────►│                            │
-   │                            │                            │
-   │                            │ Check username not taken   │
-   │                            │ Check email not taken      │
+   │                            │ Per-email rate check       │
+   │                            │ Email already registered?  │
    │                            │───────────────────────────►│
    │                            │                            │
-   │                            │ Hash password (bcrypt)     │
-   │                            │ Create user                │
+   │                            │ New: create user (no       │
+   │                            │ username/names/password)   │
+   │                            │ Existing: skip creation    │
    │                            │───────────────────────────►│
    │                            │                            │
-   │                            │ Generate verification token│
+   │                            │ Issue magic link + code    │
    │                            │ Send email via SES         │
-   │                            │                            │
    │◄───────────────────────────│                            │
-   │ {message: "Check email"}   │                            │
+   │ {message: "Check your      │                            │
+   │  email for a sign-in code"}│ (same body either way)     │
    │                            │                            │
-   │ User clicks email link     │                            │
-   │                            │                            │
-   │ GET /api/auth/verify?t=xxx │                            │
-   │───────────────────────────►│                            │
-   │                            │ Verify token               │
-   │                            │ Mark email_verified=true   │
-   │                            │───────────────────────────►│
-   │◄───────────────────────────│                            │
-   │ Redirect to login          │                            │
+   │ Signup page swaps inline   │                            │
+   │ to a code-entry state;     │                            │
+   │ link or code signs in via  │                            │
+   │ the magic link flow (§3)   │                            │
 ```
+
+**Onboarding**: the first magic-link login creates a session with
+`profile_complete: false` (username still NULL). The frontend service
+redirects every SPA document load to `/onboarding` while that session flag is
+false — enforcement is server-side; the SPA has no route guards. Onboarding
+requires claiming a username (`PUT /api/auth/me`, settable only while NULL,
+409 on conflict) and first/last name, then offers an optional password
+(`PUT /api/auth/change-password` accepts a missing `current_password` only
+when the account has no password row) — and, later, passkey setup. Claiming
+the username flips the session flag via `updateSession`; other live sessions
+self-heal on their next visit to `/onboarding`. `GET /api/auth/me` exposes
+`has_password`, `passkey_count`, and `profile_complete` for the UI.
 
 ### 2. User Login (Username or Email)
 

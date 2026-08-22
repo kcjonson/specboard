@@ -12,9 +12,10 @@ export type UserRole = 'admin';
 
 export interface User {
 	id: string;
-	username: string;
-	first_name: string;
-	last_name: string;
+	/** NULL until claimed during onboarding (email-only signup) */
+	username: string | null;
+	first_name: string | null;
+	last_name: string | null;
 	email: string;
 	email_verified: boolean;
 	email_verified_at: Date | null;

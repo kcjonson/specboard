@@ -1,30 +1,23 @@
 /**
  * Signup handler
+ *
+ * Email-only: an account is created from just an email address (plus the
+ * invite key gate), and the first login happens via magic link, which also
+ * verifies the email. Username, names, and an optional password are collected
+ * by the post-first-login onboarding flow.
  */
 
 import type { Context } from 'hono';
-import {
-	validatePassword,
-	hashPassword,
-	generateToken,
-	hashToken,
-	getTokenExpiry,
-} from '@specboard/auth';
+import type { Redis } from 'ioredis';
+import { checkRateLimitKey, hashToken, RATE_LIMIT_CONFIGS } from '@specboard/auth';
 import { query, type User, type SignupMetadata } from '@specboard/db';
-import {
-	sendEmail,
-	getVerificationEmailContent,
-} from '@specboard/email';
 
-import { isValidEmail, isValidUsername } from '../../validation.ts';
-import { logAuthEvent, isValidInviteKey, APP_URL } from './utils.ts';
+import { isValidEmail } from '../../validation.ts';
+import { logAuthEvent, isValidInviteKey } from './utils.ts';
+import { issueMagicLink } from './magic-link.ts';
 
 interface SignupRequest {
-	username: string;
 	email: string;
-	password: string;
-	first_name: string;
-	last_name: string;
 	invite_key: string;
 	// Optional acquisition tracking
 	utm_source?: string;
@@ -38,7 +31,7 @@ interface SignupRequest {
 /**
  * Handle user signup
  */
-export async function handleSignup(context: Context): Promise<Response> {
+export async function handleSignup(context: Context, redis: Redis): Promise<Response> {
 	let body: SignupRequest;
 	try {
 		body = await context.req.json<SignupRequest>();
@@ -47,77 +40,50 @@ export async function handleSignup(context: Context): Promise<Response> {
 	}
 
 	const {
-		username, email, password, first_name, last_name, invite_key,
+		email, invite_key,
 		utm_source, utm_medium, utm_campaign, utm_term, utm_content, referral_source,
 	} = body;
 
-	// Validate required fields
-	if (!username || !email || !password || !first_name || !last_name || !invite_key) {
-		return context.json(
-			{ error: 'All fields are required: username, email, password, first_name, last_name, invite_key' },
-			400
-		);
+	if (!email || !invite_key) {
+		return context.json({ error: 'Email and invite key are required' }, 400);
 	}
 
-	// Validate invite key
 	if (!isValidInviteKey(invite_key)) {
 		return context.json({ error: 'Invalid invite key' }, 403);
 	}
 
-	// Validate username
-	if (!isValidUsername(username)) {
-		return context.json(
-			{ error: 'Username must be 3-30 characters, alphanumeric and underscores only' },
-			400
-		);
-	}
-
-	// Validate email
 	if (!isValidEmail(email)) {
 		return context.json({ error: 'Invalid email format' }, 400);
 	}
 
-	// Validate password
-	// Use generic error message to avoid revealing password requirements to attackers
-	const passwordValidation = validatePassword(password);
-	if (!passwordValidation.valid) {
-		return context.json(
-			{ error: 'Password does not meet the required complexity. Must be 12+ characters with uppercase, lowercase, digit, and special character.' },
-			400
-		);
-	}
-
-	// Validate names (check trimmed length to catch whitespace-only input)
-	const trimmedFirstName = first_name.trim();
-	const trimmedLastName = last_name.trim();
-	if (!trimmedFirstName || !trimmedLastName) {
-		return context.json({ error: 'First name and last name are required' }, 400);
-	}
-	if (trimmedFirstName.length > 255 || trimmedLastName.length > 255) {
-		return context.json({ error: 'Name is too long' }, 400);
-	}
+	// Identical body whether the email is new or already registered
+	const successResponse = {
+		message: 'Check your email for a sign-in code.',
+		email: email.toLowerCase(),
+	};
 
 	try {
-		// Check if username exists
-		const usernameCheck = await query<{ id: string }>(
-			'SELECT id FROM users WHERE username = $1',
-			[username.toLowerCase()]
-		);
-		if (usernameCheck.rows.length > 0) {
-			return context.json({ error: 'Username already taken' }, 409);
+		// Same per-email bucket as the login-side request endpoint, so signup
+		// can't be used to multiply sign-in emails past the cap
+		const emailKey = `ratelimit:magic-link-email:${hashToken(email.toLowerCase()).slice(0, 32)}`;
+		const allowed = await checkRateLimitKey(redis, emailKey, RATE_LIMIT_CONFIGS.magicLinkEmail);
+		if (!allowed) {
+			return context.json({ error: RATE_LIMIT_CONFIGS.magicLinkEmail.message }, 429);
 		}
 
-		// Check if email exists (case-insensitive)
-		const emailCheck = await query<{ id: string }>(
-			'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
+		// Existing email: send a login link instead of erroring, with the same
+		// response body, so signup can't be used to enumerate accounts
+		const existing = await query<User>(
+			'SELECT * FROM users WHERE LOWER(email) = LOWER($1)',
 			[email]
 		);
-		if (emailCheck.rows.length > 0) {
-			return context.json({ error: 'Email already registered' }, 409);
+		const existingUser = existing.rows[0];
+		if (existingUser) {
+			if (existingUser.is_active) {
+				await issueMagicLink(existingUser, null);
+			}
+			return context.json(successResponse, 201);
 		}
-
-		// Hash password
-		const passwordHash = await hashPassword(password);
 
 		// Build signup metadata (only accept strings, truncate to prevent storage abuse)
 		const MAX_UTM_LENGTH = 500;
@@ -132,74 +98,28 @@ export async function handleSignup(context: Context): Promise<Response> {
 		if (utm_content) signupMetadata.utm_content = sanitize(utm_content);
 		if (referral_source) signupMetadata.referral_source = sanitize(referral_source);
 
-		// Create user
 		const userResult = await query<User>(
-			`INSERT INTO users (username, first_name, last_name, email, email_verified, signup_metadata)
-			 VALUES ($1, $2, $3, $4, false, $5)
+			`INSERT INTO users (email, email_verified, signup_metadata)
+			 VALUES ($1, false, $2)
 			 RETURNING *`,
-			[username.toLowerCase(), trimmedFirstName, trimmedLastName, email.toLowerCase(), JSON.stringify(signupMetadata)]
+			[email.toLowerCase(), JSON.stringify(signupMetadata)]
 		);
 
 		const user = userResult.rows[0];
 		if (!user) {
-			return context.json({ error: 'Failed to create user' }, 500);
+			return context.json({ error: 'Failed to create account' }, 500);
 		}
 
-		// Create password record
-		await query(
-			'INSERT INTO user_passwords (user_id, password_hash) VALUES ($1, $2)',
-			[user.id, passwordHash]
-		);
+		await issueMagicLink(user, null);
+		logAuthEvent('signup_success', { userId: user.id });
 
-		// Generate verification token
-		const token = generateToken();
-		const tokenHash = hashToken(token);
-		const expiresAt = getTokenExpiry();
-
-		// Store verification token
-		await query(
-			'INSERT INTO email_verification_tokens (user_id, email, token_hash, expires_at) VALUES ($1, $2, $3, $4)',
-			[user.id, user.email, tokenHash, expiresAt]
-		);
-
-		// Build verification URL
-		const verifyUrl = `${APP_URL}/verify-email/confirm?token=${token}`;
-
-		// Send verification email
-		// If this fails, the user can use the resend verification flow
-		try {
-			const emailContent = getVerificationEmailContent(verifyUrl);
-			await sendEmail({
-				to: user.email,
-				subject: emailContent.subject,
-				textBody: emailContent.textBody,
-				htmlBody: emailContent.htmlBody,
-			});
-		} catch (emailError) {
-			console.error('Failed to send verification email:', emailError instanceof Error ? emailError.message : 'Unknown error');
-			// Still return success - user can resend verification email
-		}
-
-		logAuthEvent('signup_success', { userId: user.id, username: user.username });
-
-		// Do NOT log user in - they must verify email first
-		return context.json({
-			message: 'Account created! Please check your email to verify your account before logging in.',
-			email: user.email,
-		}, 201);
+		return context.json(successResponse, 201);
 	} catch (error) {
-		// Handle unique constraint violations (race condition between check and insert)
+		// Unique-violation race between the existence check and insert: the
+		// email got registered concurrently, which lands in the same
+		// existing-email semantics
 		if (error instanceof Error && 'code' in error && error.code === '23505') {
-			// PostgreSQL unique_violation error
-			const detail = 'detail' in error ? String(error.detail) : '';
-			if (detail.includes('username')) {
-				return context.json({ error: 'Username already taken' }, 409);
-			}
-			if (detail.includes('email')) {
-				return context.json({ error: 'Email already registered' }, 409);
-			}
-			// Generic fallback for other unique constraint violations
-			return context.json({ error: 'Account already exists' }, 409);
+			return context.json(successResponse, 201);
 		}
 		console.error('Signup failed:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Failed to create account' }, 500);
