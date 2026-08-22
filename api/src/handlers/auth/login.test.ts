@@ -110,3 +110,35 @@ describe('handleLogin failure limiting', () => {
 		expect(clearFailures).not.toHaveBeenCalled();
 	});
 });
+
+describe('handleLogin CSRF origin guard', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(isFailureLimited).mockResolvedValue(false);
+	});
+
+	function loginWithHeaders(headers: Record<string, string>): Promise<Response> {
+		const app = new Hono();
+		app.post('/api/auth/login', (c) => handleLogin(c, redis));
+		return Promise.resolve(
+			app.request('http://localhost/api/auth/login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', ...headers },
+				body: JSON.stringify({ identifier: 'alice', password: 'pw' }),
+			})
+		);
+	}
+
+	it('rejects a cross-origin login before touching the database', async () => {
+		const res = await loginWithHeaders({ Host: 'localhost', Origin: 'https://evil.example.com' });
+		expect(res.status).toBe(403);
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it('allows a same-origin login', async () => {
+		vi.mocked(query).mockResolvedValue({ rows: [mockUser] } as never);
+		vi.mocked(verifyPassword).mockResolvedValue(true);
+		const res = await loginWithHeaders({ Host: 'localhost', Origin: 'http://localhost' });
+		expect(res.status).toBe(200);
+	});
+});

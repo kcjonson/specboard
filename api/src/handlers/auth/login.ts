@@ -14,7 +14,7 @@ import {
 } from '@specboard/auth';
 import { query, type User } from '@specboard/db';
 
-import { logAuthEvent, establishSession } from './utils.ts';
+import { logAuthEvent, establishSession, isCrossOriginRequest } from './utils.ts';
 
 interface LoginRequest {
 	identifier: string; // username or email
@@ -28,6 +28,12 @@ export async function handleLogin(
 	context: Context,
 	redis: Redis
 ): Promise<Response> {
+	// Session-creating and CSRF-exempt, so guard against cross-site login-CSRF
+	// (a forged POST would log the victim into the attacker's account).
+	if (isCrossOriginRequest(context)) {
+		return context.json({ error: 'Cross-origin request rejected' }, 403);
+	}
+
 	let body: LoginRequest;
 	try {
 		body = await context.req.json<LoginRequest>();
