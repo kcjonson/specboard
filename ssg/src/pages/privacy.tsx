@@ -6,8 +6,8 @@ import type { JSX } from 'preact';
 export function PrivacyContent(): JSX.Element {
 	return (
 		<div class="privacy-container">
-			<h1>Privacy Policy</h1>
-			<p class="privacy-updated">Last updated: August 15, 2026</p>
+			<h1>Privacy &amp; Security</h1>
+			<p class="privacy-updated">Last updated: August 22, 2026</p>
 
 			<p>
 				Specboard is a documentation and project planning service operated at{' '}
@@ -68,6 +68,22 @@ export function PrivacyContent(): JSX.Element {
 				your account is deleted. Standard server logs are deleted after 30 days; error
 				logs are kept for up to one year for security and debugging. Database backups
 				are retained for a few days and then expire automatically.
+			</p>
+
+			<h2>Security</h2>
+			<p>
+				Traffic to Specboard is encrypted in transit, and stored data is encrypted at
+				rest. Passwords are stored only as salted bcrypt hashes; we never see or log
+				the plaintext. Email sign-in codes and links, password reset tokens, and
+				email verification tokens are likewise stored only as one-way hashes, expire
+				quickly, and work exactly once. Signing in creates a session held on our
+				servers, not in the cookie, and the session cookie itself is not readable by
+				scripts. Tokens for connected services, like GitHub, are encrypted at rest
+				with keys held outside the database. Sign-in endpoints are rate limited, and
+				repeated failures are counted against a hashed key, so the limiter never
+				stores your email address alongside your IP. If you believe you've found a
+				security issue, email{' '}
+				<a href="mailto:admin@specboard.io">admin@specboard.io</a>.
 			</p>
 
 			<h2>Your rights</h2>

@@ -703,7 +703,7 @@ export function HomeContent(): JSX.Element {
 
 			{/* Footer */}
 			<footer class="home-footer">
-				<p>&copy; {new Date().getFullYear()} Specboard. All rights reserved. <a href="/privacy">Privacy</a></p>
+				<p>&copy; {new Date().getFullYear()} Specboard. All rights reserved. <a href="/privacy">Privacy &amp; Security</a></p>
 			</footer>
 		</div>
 	);

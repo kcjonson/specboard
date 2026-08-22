@@ -106,7 +106,7 @@ function build(): void {
 
 	// Render privacy policy page
 	writePage('privacy.html', renderDocument({
-		title: 'Privacy Policy - Specboard',
+		title: 'Privacy & Security - Specboard',
 		cssFiles: [commonCss, privacyCss],
 		body: render(PrivacyContent()),
 	}));
