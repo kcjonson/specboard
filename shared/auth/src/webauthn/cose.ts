@@ -50,6 +50,13 @@ function requireInt(value: CborValue | undefined, label: string): number {
 	return value;
 }
 
+/** Big-endian bytes → BigInt (0 for empty). */
+function bytesToBigInt(bytes: Uint8Array): bigint {
+	let value = 0n;
+	for (const byte of bytes) value = (value << 8n) | BigInt(byte);
+	return value;
+}
+
 /**
  * Parse raw COSE_Key bytes into a verify-ready Node key.
  * Enforces alg ∈ {ES256, RS256} and that the key type matches the algorithm.
@@ -77,8 +84,16 @@ export function importCoseKey(coseBytes: Uint8Array): CoseKey {
 		if (kty !== KTY_RSA) throw new Error('COSE: RS256 requires an RSA key');
 		const n = requireBytes(map.get(RSA_N), 'n');
 		const e = requireBytes(map.get(RSA_E), 'e');
-		// Reject weak RSA moduli; a 2048-bit modulus is 256 bytes.
+		// Reject weak RSA moduli (2048-bit = 256 bytes) and absurdly large ones.
 		if (n.length < 256) throw new Error('COSE: RSA modulus too small (<2048 bits)');
+		if (n.length > 512) throw new Error('COSE: RSA modulus too large (>4096 bits)');
+		// Reject degenerate public exponents. e=1 makes RSA verification the
+		// identity (sig^1 mod n == padded hash), forgeable with no private key;
+		// e must be an odd integer >= 3. Real authenticators use 65537.
+		const eValue = bytesToBigInt(e);
+		if (eValue < 3n || (eValue & 1n) === 0n) {
+			throw new Error('COSE: invalid RSA public exponent');
+		}
 		const key = createPublicKey({
 			key: { kty: 'RSA', n: toBase64url(n), e: toBase64url(e) },
 			format: 'jwk',
@@ -101,7 +116,10 @@ export function verifyCoseSignature(
 	signedData: Uint8Array,
 	signature: Uint8Array
 ): boolean {
-	const { key } = importCoseKey(coseBytes);
-	// Both supported algs hash with SHA-256.
-	return cryptoVerify('sha256', signedData, key, signature);
+	const { alg, key } = importCoseKey(coseBytes);
+	// Derive the digest from alg explicitly rather than inferring from the key
+	// type, so adding an alg later can't silently reuse the wrong hash.
+	const digest = alg === ALG_ES256 || alg === ALG_RS256 ? 'sha256' : null;
+	if (!digest) throw new Error(`COSE: no digest for algorithm ${alg}`);
+	return cryptoVerify(digest, signedData, key, signature);
 }

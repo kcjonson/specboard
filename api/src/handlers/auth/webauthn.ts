@@ -32,6 +32,7 @@ const RP_NAME = 'Specboard';
 
 const CHALLENGE_TTL_SECONDS = 300;
 const REQUIRE_UV = true;
+const MAX_PASSKEYS_PER_USER = 20;
 
 type ChallengeType = 'registration' | 'authentication';
 interface StoredChallenge {
@@ -97,6 +98,10 @@ interface CredentialRow {
 // ---- Authentication (login) ----
 
 export async function handleWebauthnLoginOptions(context: Context, redis: Redis): Promise<Response> {
+	// CSRF-exempt like verify; guard against cross-site pages minting challenges.
+	if (isCrossOriginRequest(context)) {
+		return context.json({ error: 'Cross-origin request rejected' }, 403);
+	}
 	const { challengeId, challenge } = await storeChallenge(redis, { type: 'authentication' });
 	return context.json({
 		challengeId,
@@ -192,11 +197,21 @@ export async function handleWebauthnLoginVerify(context: Context, redis: Redis):
 		const user = userResult.rows[0];
 		if (!user || !user.is_active) return fail('account_inactive');
 
-		// Write the counter back — clone detection is inert without this.
-		await query(
-			'UPDATE webauthn_credentials SET counter = $1, last_used_at = NOW() WHERE id = $2',
+		// Write the counter back atomically — clone detection is inert without
+		// the write, and a bare UPDATE has a read-verify-write race where two
+		// concurrent assertions off a cloned authenticator both pass. The guard
+		// only advances the counter (allowing the both-zero synced-passkey case),
+		// and a no-op update means another request already advanced it: a clone
+		// signal, so fail rather than issue a session.
+		const upd = await query(
+			`UPDATE webauthn_credentials SET counter = $1, last_used_at = NOW()
+			 WHERE id = $2 AND (counter < $1 OR counter = 0)`,
 			[verified.newCounter, cred.id]
 		);
+		if ((upd.rowCount ?? 0) === 0) {
+			logAuthEvent('passkey_counter_anomaly', { credentialId: cred.id });
+			return fail('counter_race');
+		}
 
 		await establishSession(context, redis, user.id, 'passkey', user.username !== null);
 		logAuthEvent('passkey_login', { userId: user.id, result: 'success' });
@@ -288,6 +303,16 @@ export async function handleWebauthnRegisterVerify(context: Context, redis: Redi
 		// The registration challenge is bound to the user who requested it.
 		if (!stored || stored.type !== 'registration' || stored.userId !== userId) {
 			return context.json({ error: 'Invalid or expired challenge' }, 400);
+		}
+
+		// Cap credentials per user — bounds the table and the excludeCredentials
+		// payload returned on every register/options call.
+		const countResult = await query<{ count: string }>(
+			'SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $1',
+			[userId]
+		);
+		if (Number(countResult.rows[0]?.count ?? 0) >= MAX_PASSKEYS_PER_USER) {
+			return context.json({ error: `You can register at most ${MAX_PASSKEYS_PER_USER} passkeys` }, 409);
 		}
 
 		let verified;

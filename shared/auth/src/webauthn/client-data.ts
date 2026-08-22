@@ -45,6 +45,11 @@ export function verifyClientData(
 	if (data.type !== expectedType) {
 		throw new Error(`clientData type mismatch: expected ${expectedType}`);
 	}
+	// Defense-in-depth: never accept an empty expected challenge, so a bug that
+	// dropped the challenge can't turn into "any assertion matches".
+	if (!expectedChallenge) {
+		throw new Error('empty expected challenge');
+	}
 	// challenge is the base64url of the challenge bytes; compare constant-time
 	if (typeof data.challenge !== 'string' || !safeStringEqual(data.challenge, expectedChallenge)) {
 		throw new Error('clientData challenge mismatch');
@@ -53,9 +58,9 @@ export function verifyClientData(
 		throw new Error('clientData origin mismatch');
 	}
 	// Reject ceremonies performed in a cross-origin (embedded/iframe) context;
-	// we never initiate them, so crossOrigin:true is a clickjacking signal.
-	// (go-webauthn CollectedClientData.Verify does the same.)
-	if (data.crossOrigin === true) {
+	// we never initiate them, so a crossOrigin that isn't explicitly false is a
+	// clickjacking signal. (go-webauthn CollectedClientData.Verify does the same.)
+	if (data.crossOrigin !== undefined && data.crossOrigin !== false) {
 		throw new Error('clientData crossOrigin not allowed');
 	}
 	return raw;

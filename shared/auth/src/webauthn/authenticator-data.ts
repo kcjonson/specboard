@@ -60,8 +60,11 @@ export function parseAuthenticatorData(authData: Uint8Array): ParsedAuthenticato
 		if (offset + n > authData.length) throw new Error('authData: truncated');
 	};
 
+	// Return copies (.slice), never subarray views: parsed fields — especially
+	// credentialPublicKey, which gets stored — must not alias the input buffer,
+	// so a later reuse/mutation of that buffer can't change a stored value.
 	need(RP_ID_HASH_LEN + FLAGS_LEN + SIGN_COUNT_LEN);
-	const rpIdHash = authData.subarray(0, RP_ID_HASH_LEN);
+	const rpIdHash = authData.slice(0, RP_ID_HASH_LEN);
 	offset += RP_ID_HASH_LEN;
 
 	const flags = parseFlags(authData[offset]!);
@@ -75,20 +78,20 @@ export function parseAuthenticatorData(authData: Uint8Array): ParsedAuthenticato
 
 	if (flags.attestedCredentialData) {
 		need(AAGUID_LEN + CRED_ID_LEN_BYTES);
-		result.aaguid = authData.subarray(offset, offset + AAGUID_LEN);
+		result.aaguid = authData.slice(offset, offset + AAGUID_LEN);
 		offset += AAGUID_LEN;
 
 		const credIdLen = view.getUint16(offset);
 		offset += CRED_ID_LEN_BYTES;
 		if (credIdLen > MAX_CRED_ID_LEN) throw new Error('authData: credentialId too long');
 		need(credIdLen);
-		result.credentialId = authData.subarray(offset, offset + credIdLen);
+		result.credentialId = authData.slice(offset, offset + credIdLen);
 		offset += credIdLen;
 
 		// The COSE key is variable-length; decode it to learn where it ends,
-		// then keep its raw bytes for storage.
+		// then keep a copy of its raw bytes for storage.
 		const { offset: afterKey } = decodeFirst(authData, offset);
-		result.credentialPublicKey = authData.subarray(offset, afterKey);
+		result.credentialPublicKey = authData.slice(offset, afterKey);
 		offset = afterKey;
 	}
 

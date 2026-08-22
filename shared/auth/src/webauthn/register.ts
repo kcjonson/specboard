@@ -52,6 +52,15 @@ export function verifyRegistration(opts: VerifyRegistrationOptions): VerifiedReg
 	// verified from authData regardless of fmt, so ignoring attStmt is not a
 	// downgrade — nothing we act on ever comes from it.
 	const attestation = asMap(decode(fromBase64url(response.attestationObject)));
+	// We accept any fmt, but if it declares 'none' the statement must be empty
+	// (per spec, and a FIDO conformance none-group negative). Non-'none' fmts
+	// carry a real attStmt we intentionally don't inspect.
+	if (attestation.get('fmt') === 'none') {
+		const attStmt = attestation.get('attStmt');
+		if (!(attStmt instanceof Map) || attStmt.size !== 0) {
+			throw new Error('none attestation statement must be empty');
+		}
+	}
 	const authDataValue: CborValue | undefined = attestation.get('authData');
 	if (!(authDataValue instanceof Uint8Array)) {
 		throw new Error('attestationObject missing authData');

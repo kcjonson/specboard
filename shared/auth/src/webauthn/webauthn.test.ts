@@ -261,3 +261,66 @@ describe('COSE — key/alg validation', () => {
 		expect(() => importCoseKey(badKey)).toThrow(/RS256 requires an RSA key/);
 	});
 });
+
+describe('COSE — adversarial key hardening', () => {
+	function rsaKey(n: Uint8Array, e: Uint8Array): Uint8Array {
+		return encodeCbor({ map: [[1, 3], [3, -257], [-1, n], [-2, e]] });
+	}
+
+	it('rejects a degenerate RSA exponent e=1 (identity, forgeable with no private key)', () => {
+		// The confirmed adversarial finding: e=1 makes RSA verify the identity.
+		expect(() => importCoseKey(rsaKey(new Uint8Array(256), Uint8Array.from([1])))).toThrow(/exponent/);
+	});
+
+	it('rejects an even RSA exponent', () => {
+		expect(() => importCoseKey(rsaKey(new Uint8Array(256), Uint8Array.from([0, 4])))).toThrow(/exponent/);
+	});
+
+	it('accepts the standard exponent 65537', () => {
+		// 65537 = 0x010001; a real 2048-bit key is needed for createPublicKey to accept it,
+		// so just assert the exponent gate passes and it fails later on the modulus, not on e.
+		expect(() => importCoseKey(rsaKey(new Uint8Array(256), Uint8Array.from([1, 0, 1])))).not.toThrow(/exponent/);
+	});
+
+	it('rejects an RSA modulus below 2048 bits', () => {
+		expect(() => importCoseKey(rsaKey(new Uint8Array(128), Uint8Array.from([1, 0, 1])))).toThrow(/too small/);
+	});
+
+	it('rejects an absurdly large RSA modulus', () => {
+		expect(() => importCoseKey(rsaKey(new Uint8Array(600), Uint8Array.from([1, 0, 1])))).toThrow(/too large/);
+	});
+
+	it('rejects an EC2 key with a wrong-length coordinate', () => {
+		const bad = encodeCbor({ map: [[1, 2], [3, -7], [-1, 1], [-2, new Uint8Array(31)], [-3, new Uint8Array(32)]] });
+		expect(() => importCoseKey(bad)).toThrow(/coordinate length/);
+	});
+});
+
+describe('CBOR — duplicate map key', () => {
+	it('rejects a map with a duplicate key', () => {
+		// a2 (map, 2 pairs) 01 01 (1:1) 01 02 (1:2) — key 1 repeated
+		expect(() => decode(Uint8Array.from([0xa2, 0x01, 0x01, 0x01, 0x02]))).toThrow(/duplicate/);
+	});
+});
+
+describe('registration — accepts non-none attestation formats', () => {
+	it('accepts fmt=packed and still extracts the key', () => {
+		const auth = new TestAuthenticator();
+		const challenge = randomChallenge();
+		const result = register(auth, challenge, { fmt: 'packed' });
+		expect(result.credentialId).toBe(Buffer.from(auth.credentialId).toString('base64url'));
+	});
+});
+
+describe('authentication — illegal backup flags', () => {
+	it('rejects BS set without BE on the authentication path', () => {
+		const auth = new TestAuthenticator();
+		const reg = register(auth, randomChallenge());
+		const c = randomChallenge();
+		expect(() => verifyAuthentication({
+			response: auth.authenticate(c, { flags: { be: false, bs: true } }),
+			expectedChallenge: c, expectedOrigin: ORIGIN, rpId: RP_ID,
+			storedPublicKeyCose: reg.publicKeyCose, storedCounter: 0, requireUserVerification: true,
+		})).toThrow(/backup flags/);
+	});
+});
