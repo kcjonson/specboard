@@ -13,10 +13,10 @@ import styles from './UserSettings.module.css';
 
 interface User {
 	id: string;
-	username: string;
+	username: string | null;
 	email: string;
-	first_name: string;
-	last_name: string;
+	first_name: string | null;
+	last_name: string | null;
 	email_verified: boolean;
 	roles: string[];
 	is_active: boolean;
@@ -134,10 +134,10 @@ export function UserSettings(props: RouteProps): JSX.Element {
 
 	// Change detection
 	const hasChanges = initialized && user && (
-		trimmedFirstName !== user.first_name ||
-		trimmedLastName !== user.last_name ||
+		trimmedFirstName !== (user.first_name || '') ||
+		trimmedLastName !== (user.last_name || '') ||
 		(isCurrentUserAdmin && (
-			trimmedUsername !== user.username ||
+			trimmedUsername !== (user.username || '') ||
 			trimmedEmail !== user.email ||
 			isAdmin !== user.roles?.includes('admin') ||
 			isActive !== user.is_active ||
@@ -265,7 +265,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	}
 
 	const pageTitle = isViewingOther
-		? `${user.first_name} ${user.last_name}`
+		? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || user.email
 		: 'Settings';
 
 	return (
@@ -454,7 +454,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 							open={showSetPasswordDialog}
 							onClose={() => setShowSetPasswordDialog(false)}
 							userId={user.id}
-							userName={`${user.first_name} ${user.last_name}`.trim() || user.username}
+							userName={[user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || user.email}
 						/>
 					)}
 				</div>

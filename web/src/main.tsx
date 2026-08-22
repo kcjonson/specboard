@@ -19,6 +19,7 @@ import { Editor } from '@specboard/pages';
 import { ProjectsList, type Project } from '@shared/projects';
 
 // App-specific routes
+import { Onboarding } from './routes/onboarding/Onboarding';
 import { UserSettings } from './routes/settings/UserSettings';
 import { UIDemo } from './routes/ui-demo/UIDemo';
 import { OAuthConsent } from './routes/oauth/OAuthConsent';
@@ -107,6 +108,9 @@ const routes = [
 	{ route: '/projects/:projectId/pages', entry: Editor },
 
 	// App routes (not project-scoped)
+	// Onboarding gating is server-side: the frontend service redirects SPA
+	// document loads here while the session's profileComplete flag is false
+	{ route: '/onboarding', entry: Onboarding },
 	{ route: '/settings', entry: UserSettings },
 	{ route: '/oauth/consent', entry: OAuthConsent },
 

@@ -261,6 +261,7 @@ describe('handleMagicLinkVerify', () => {
 		expect(createSession).toHaveBeenCalledWith(redis, 'session-id', {
 			userId: mockUser.id,
 			authMethod: 'magic_link',
+			profileComplete: true,
 		});
 
 		// Lookup must be by the token HASH, not the raw token

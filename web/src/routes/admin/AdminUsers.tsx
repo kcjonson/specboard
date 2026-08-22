@@ -8,10 +8,10 @@ import styles from './AdminUsers.module.css';
 
 interface User {
 	id: string;
-	username: string;
+	username: string | null;
 	email: string;
-	first_name: string;
-	last_name: string;
+	first_name: string | null;
+	last_name: string | null;
 	email_verified: boolean;
 	roles: string[];
 	is_active: boolean;
@@ -144,15 +144,15 @@ export function AdminUsers(_props: RouteProps): JSX.Element {
 										onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleUserClick(user); } }}
 										tabIndex={0}
 										role="button"
-										aria-label={`View ${user.first_name} ${user.last_name}`}
+										aria-label={`View ${[user.first_name, user.last_name].filter(Boolean).join(' ') || user.email}`}
 									>
 										<td>
 											<div class={styles.userInfo}>
 												<span class={styles.userName}>
-													{user.first_name} {user.last_name}
+													{[user.first_name, user.last_name].filter(Boolean).join(' ') || user.email.split('@')[0] || user.email}
 												</span>
 												<span class={styles.userEmail}>
-													@{user.username} · {user.email}
+													{user.username ? `@${user.username}` : 'no username yet'} · {user.email}
 												</span>
 											</div>
 										</td>

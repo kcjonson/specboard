@@ -20,10 +20,10 @@ import { getCurrentUser, isAdmin } from './auth-utils.ts';
  */
 interface UserApiResponse {
 	id: string;
-	username: string;
+	username: string | null;
 	email: string;
-	first_name: string;
-	last_name: string;
+	first_name: string | null;
+	last_name: string | null;
 	email_verified: boolean;
 	roles: string[];
 	is_active: boolean;

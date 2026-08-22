@@ -24,14 +24,19 @@ export class UserModel extends SyncModel {
 
 	@prop accessor id!: string;
 	@prop accessor email!: string;
-	@prop accessor username!: string;
-	@prop accessor first_name!: string;
-	@prop accessor last_name!: string;
+	// NULL until claimed during onboarding (email-only signup)
+	@prop accessor username!: string | null;
+	@prop accessor first_name!: string | null;
+	@prop accessor last_name!: string | null;
 	@prop accessor email_verified!: boolean;
 	@prop accessor phone_number!: string | null;
 	@prop accessor avatar_url!: string | null;
 	@prop accessor roles!: string[];
 	@prop accessor is_active!: boolean;
+	// Onboarding state, present on /api/auth/me responses
+	@prop accessor has_password!: boolean;
+	@prop accessor passkey_count!: number;
+	@prop accessor profile_complete!: boolean;
 	@prop accessor created_at!: string;
 	@prop accessor updated_at!: string;
 	@prop accessor deactivated_at!: string | null;

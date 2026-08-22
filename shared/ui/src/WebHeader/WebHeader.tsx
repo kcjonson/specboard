@@ -112,9 +112,9 @@ export function WebHeader({
 			</div>
 			<div class={styles.actions}>
 				{actions}
-				{user.first_name && (
+				{user.email && (
 					<UserMenu
-						displayName={`${user.first_name} ${user.last_name}`.trim()}
+						displayName={[user.first_name, user.last_name].filter(Boolean).join(' ') || user.email.split('@')[0] || user.email}
 						email={user.email}
 						isAdmin={isAdmin}
 					/>

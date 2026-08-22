@@ -121,15 +121,18 @@ export function isValidInviteKey(key: string): boolean {
 /**
  * Create a Redis session and set the auth cookies on the response.
  * Shared by every successful-auth path (password, magic link, passkey).
+ * profileComplete gates SPA document loads server-side (frontend service)
+ * until onboarding claims a username.
  */
 export async function establishSession(
 	context: Context,
 	redis: Redis,
 	userId: string,
-	authMethod: AuthMethod
+	authMethod: AuthMethod,
+	profileComplete: boolean
 ): Promise<void> {
 	const sessionId = generateSessionId();
-	const csrfToken = await createSession(redis, sessionId, { userId, authMethod });
+	const csrfToken = await createSession(redis, sessionId, { userId, authMethod, profileComplete });
 	const secure = isSecureRequest(context);
 
 	// Session cookie is HttpOnly; CSRF cookie is readable by JS for the

@@ -41,6 +41,7 @@ export async function createSession(
 		createdAt: now,
 		lastAccessedAt: now,
 		authMethod: data.authMethod,
+		profileComplete: data.profileComplete,
 	};
 
 	await redis.setex(

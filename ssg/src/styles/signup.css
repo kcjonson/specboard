@@ -29,20 +29,29 @@ body {
 	width: 100%;
 }
 
-.signup-container .form-row {
-	display: flex;
-	gap: 1rem;
-}
-
-.signup-container .form-row .form-group {
-	flex: 1;
-}
-
-.signup-container .password-hint,
 .signup-container .invite-hint {
 	font-size: 0.75rem;
 	color: var(--color-text-muted);
 	margin-top: 0.25rem;
+}
+
+.signup-container .hidden {
+	display: none;
+}
+
+.signup-container .code-intro {
+	font-size: 0.875rem;
+	color: var(--color-text-muted);
+	margin-bottom: 1.25rem;
+	overflow-wrap: break-word;
+}
+
+.signup-container #code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 1.25rem;
+	letter-spacing: 0.25em;
+	text-align: center;
+	text-transform: uppercase;
 }
 
 .signup-container .error-message {

@@ -13,6 +13,12 @@ export interface Session {
 	lastAccessedAt: number;
 	/** Absent on sessions created before auth methods were recorded */
 	authMethod?: AuthMethod;
+	/**
+	 * False while the user still needs onboarding (no username yet from
+	 * email-only signup); the frontend server redirects SPA document loads
+	 * to /onboarding while false. Absent on pre-feature sessions = complete.
+	 */
+	profileComplete?: boolean;
 }
 
 /**
