@@ -95,6 +95,16 @@ describe('verifyRegistration — §7.1 conformance checks (each rejects one viol
 		const badKey = auth.coseKey(-8);
 		expect(() => register(auth, challenge, { coseKeyOverride: badKey })).toThrow(/unsupported algorithm|EC2/);
 	});
+
+	it('rejects a cross-origin ceremony', () => {
+		const challenge = randomChallenge();
+		expect(() => register(auth, challenge, { crossOrigin: true })).toThrow(/crossOrigin/);
+	});
+
+	it('rejects illegal backup flags (BS set without BE)', () => {
+		const challenge = randomChallenge();
+		expect(() => register(auth, challenge, { flags: { be: false, bs: true } })).toThrow(/backup flags/);
+	});
 });
 
 describe('verifyAuthentication — happy paths', () => {

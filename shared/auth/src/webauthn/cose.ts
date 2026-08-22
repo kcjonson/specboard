@@ -77,6 +77,8 @@ export function importCoseKey(coseBytes: Uint8Array): CoseKey {
 		if (kty !== KTY_RSA) throw new Error('COSE: RS256 requires an RSA key');
 		const n = requireBytes(map.get(RSA_N), 'n');
 		const e = requireBytes(map.get(RSA_E), 'e');
+		// Reject weak RSA moduli; a 2048-bit modulus is 256 bytes.
+		if (n.length < 256) throw new Error('COSE: RSA modulus too small (<2048 bits)');
 		const key = createPublicKey({
 			key: { kty: 'RSA', n: toBase64url(n), e: toBase64url(e) },
 			format: 'jwk',

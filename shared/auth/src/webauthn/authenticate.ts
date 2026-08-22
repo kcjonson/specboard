@@ -55,6 +55,10 @@ export function verifyAuthentication(opts: VerifyAuthenticationOptions): Verifie
 	if (requireUserVerification && !parsed.flags.userVerified) {
 		throw new Error('user verification required but flag not set');
 	}
+	// Illegal flag combination (WebAuthn L3 §6.1); matches go-webauthn.
+	if (parsed.flags.backupState && !parsed.flags.backupEligible) {
+		throw new Error('invalid backup flags: BS set without BE');
+	}
 
 	// §7.2 step 23: signature over authenticatorData ‖ SHA-256(clientDataJSON).
 	const clientDataHash = createHash('sha256').update(clientDataBytes).digest();

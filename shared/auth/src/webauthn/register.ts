@@ -42,7 +42,15 @@ export function verifyRegistration(opts: VerifyRegistrationOptions): VerifiedReg
 	// §7.1 steps 5-11: clientDataJSON type/challenge/origin.
 	verifyClientData(response.clientDataJSON, 'webauthn.create', expectedChallenge, expectedOrigin);
 
-	// Decode the attestation object; we only need authData from it.
+	// Decode the attestation object; we only need authData from it. We
+	// deliberately accept ANY fmt and never verify the attestation statement
+	// (attestation 'none' policy — no device provenance). Requiring fmt==='none'
+	// would reject legitimate registrations: real authenticators return packed,
+	// fido-u2f, tpm, and android-key formats even under a 'none' request
+	// (confirmed against SimpleWebAuthn's real-device fixtures), and browsers
+	// don't reliably anonymize. The credential key and the full ceremony are
+	// verified from authData regardless of fmt, so ignoring attStmt is not a
+	// downgrade — nothing we act on ever comes from it.
 	const attestation = asMap(decode(fromBase64url(response.attestationObject)));
 	const authDataValue: CborValue | undefined = attestation.get('authData');
 	if (!(authDataValue instanceof Uint8Array)) {
@@ -60,6 +68,11 @@ export function verifyRegistration(opts: VerifyRegistrationOptions): VerifiedReg
 	if (!parsed.flags.userPresent) throw new Error('user not present');
 	if (requireUserVerification && !parsed.flags.userVerified) {
 		throw new Error('user verification required but flag not set');
+	}
+	// Backup state set without backup eligibility is an illegal flag
+	// combination (WebAuthn L3 §6.1). Matches go-webauthn.
+	if (parsed.flags.backupState && !parsed.flags.backupEligible) {
+		throw new Error('invalid backup flags: BS set without BE');
 	}
 
 	if (!parsed.flags.attestedCredentialData || !parsed.credentialId || !parsed.credentialPublicKey) {

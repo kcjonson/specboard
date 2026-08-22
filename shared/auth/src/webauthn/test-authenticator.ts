@@ -154,22 +154,24 @@ export class TestAuthenticator {
 		return Buffer.concat(parts);
 	}
 
-	private clientDataJSON(type: string, challenge: string, origin?: string): string {
-		const json = JSON.stringify({ type, challenge, origin: origin ?? this.origin });
-		return b64u(Buffer.from(json, 'utf-8'));
+	private clientDataJSON(type: string, challenge: string, origin?: string, crossOrigin?: boolean): string {
+		const data: Record<string, unknown> = { type, challenge, origin: origin ?? this.origin };
+		if (crossOrigin !== undefined) data.crossOrigin = crossOrigin;
+		return b64u(Buffer.from(JSON.stringify(data), 'utf-8'));
 	}
 
 	/** Build a registration response. Overrides let tests corrupt one field. */
 	register(challenge: string, over: {
 		type?: string;
 		origin?: string;
+		crossOrigin?: boolean;
 		rpId?: string;
 		flags?: FlagOverrides;
 		includeAttestedData?: boolean;
 		coseKeyOverride?: Uint8Array;
 		fmt?: string;
 	} = {}): { clientDataJSON: string; attestationObject: string } {
-		const clientDataJSON = this.clientDataJSON(over.type ?? 'webauthn.create', challenge, over.origin);
+		const clientDataJSON = this.clientDataJSON(over.type ?? 'webauthn.create', challenge, over.origin, over.crossOrigin);
 		const authData = this.authData({
 			rpId: over.rpId,
 			flags: over.flags ?? {},

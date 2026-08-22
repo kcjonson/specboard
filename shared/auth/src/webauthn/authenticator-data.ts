@@ -93,8 +93,12 @@ export function parseAuthenticatorData(authData: Uint8Array): ParsedAuthenticato
 	}
 
 	if (flags.extensionData) {
-		// Present but ignored (we request no extensions). Validate it parses.
-		const { offset: afterExt } = decodeFirst(authData, offset);
+		// Present but ignored (we request no extensions). Per §6.1 it must be a
+		// CBOR map; validate the type, not merely that it parses.
+		const { value: extensions, offset: afterExt } = decodeFirst(authData, offset);
+		if (!(extensions instanceof Map)) {
+			throw new Error('authData: extensions must be a CBOR map');
+		}
 		offset = afterExt;
 	}
 

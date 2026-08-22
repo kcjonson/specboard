@@ -12,6 +12,7 @@ interface ClientData {
 	type: string;
 	challenge: string;
 	origin: string;
+	crossOrigin?: boolean;
 }
 
 function safeStringEqual(a: string, b: string): boolean {
@@ -50,6 +51,12 @@ export function verifyClientData(
 	}
 	if (data.origin !== expectedOrigin) {
 		throw new Error('clientData origin mismatch');
+	}
+	// Reject ceremonies performed in a cross-origin (embedded/iframe) context;
+	// we never initiate them, so crossOrigin:true is a clickjacking signal.
+	// (go-webauthn CollectedClientData.Verify does the same.)
+	if (data.crossOrigin === true) {
+		throw new Error('clientData crossOrigin not allowed');
 	}
 	return raw;
 }
