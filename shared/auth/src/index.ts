@@ -27,6 +27,7 @@ export {
 // Rate limiting middleware
 export {
 	rateLimitMiddleware,
+	checkRateLimitKey,
 	failureLimitKey,
 	isFailureLimited,
 	recordFailure,
@@ -75,7 +76,11 @@ export {
 	verifyToken,
 	getTokenExpiry,
 	isTokenExpired,
+	generateLoginCode,
+	normalizeLoginCode,
 	TOKEN_EXPIRY_MS,
+	MAGIC_LINK_EXPIRY_MS,
+	LOGIN_CODE_LENGTH,
 } from './tokens.ts';
 
 // Encryption utilities
@@ -89,6 +94,7 @@ export {
 // Types
 export {
 	type Session,
+	type AuthMethod,
 	type AuthUser,
 	type AuthMiddlewareOptions,
 	SESSION_COOKIE_NAME,

@@ -2,12 +2,50 @@
  * Token utilities for email verification and password reset
  */
 
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomInt, createHash, timingSafeEqual } from 'node:crypto';
 
 /**
  * Token expiry duration (1 hour in milliseconds)
  */
 export const TOKEN_EXPIRY_MS = 60 * 60 * 1000;
+
+/**
+ * Magic link / sign-in code expiry (15 minutes in milliseconds)
+ */
+export const MAGIC_LINK_EXPIRY_MS = 15 * 60 * 1000;
+
+/**
+ * Sign-in code alphabet: Crockford-style base32 without 0/O/1/I/L/U to avoid
+ * transcription mistakes. 8 chars over 30 symbols is ~39 bits, which is only
+ * safe combined with a per-token attempt cap and short expiry.
+ */
+export const LOGIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
+// NOTE: the sign-in code UI is hand-written and does not import this value.
+// If LOGIN_CODE_LENGTH changes, update the code input's `maxlength` and the
+// "XXXX-XXXX" placeholder in ssg/src/pages/login.tsx and signup.tsx to match.
+export const LOGIN_CODE_LENGTH = 8;
+
+const LOGIN_CODE_PATTERN = new RegExp(`^[${LOGIN_CODE_ALPHABET}]{${LOGIN_CODE_LENGTH}}$`);
+
+/**
+ * Generate a sign-in code (e.g. "KDWQ7R2M")
+ */
+export function generateLoginCode(): string {
+	let code = '';
+	for (let index = 0; index < LOGIN_CODE_LENGTH; index++) {
+		code += LOGIN_CODE_ALPHABET[randomInt(LOGIN_CODE_ALPHABET.length)];
+	}
+	return code;
+}
+
+/**
+ * Normalize user-typed code input: uppercase, strip separators/whitespace.
+ * Returns null if the result is not a valid code shape.
+ */
+export function normalizeLoginCode(input: string): string | null {
+	const normalized = input.toUpperCase().replace(/[^A-Z0-9]/g, '');
+	return LOGIN_CODE_PATTERN.test(normalized) ? normalized : null;
+}
 
 /**
  * Generate a secure random token

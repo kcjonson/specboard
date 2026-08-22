@@ -227,6 +227,25 @@ export function rateLimitMiddleware(
 }
 
 /**
+ * Sliding-window check for a caller-built key, for limits the middleware
+ * can't express (e.g. per-email buckets that need the request body).
+ * Records the request when allowed. Fails open on Redis errors.
+ */
+export async function checkRateLimitKey(
+	redis: Redis,
+	key: string,
+	config: Pick<RateLimitConfig, 'maxRequests' | 'windowSeconds'>
+): Promise<boolean> {
+	try {
+		const { allowed } = await checkRateLimit(redis, key, config.maxRequests, config.windowSeconds);
+		return allowed;
+	} catch (error) {
+		console.error('Rate limit key check error:', error instanceof Error ? error.message : error);
+		return true;
+	}
+}
+
+/**
  * Failure-based limit for credential endpoints.
  *
  * Counts only failed attempts, keyed per identifier+IP. Check with
@@ -339,6 +358,33 @@ export const RATE_LIMIT_CONFIGS = {
 		maxRequests: 3,
 		windowSeconds: 60 * 60,
 		message: 'Too many password reset requests, please try again in an hour',
+	} satisfies RateLimitConfig,
+
+	/**
+	 * /api/auth/magic-link/request: coarse per-IP cap. A stricter per-email
+	 * cap (magicLinkEmail) runs inside the handler, where the body is readable.
+	 */
+	magicLinkRequest: {
+		maxRequests: 5,
+		windowSeconds: 15 * 60,
+		message: 'Too many sign-in code requests, please try again later',
+	} satisfies RateLimitConfig,
+
+	/** Per-email cap for magic link requests; enforced in-handler via checkRateLimitKey */
+	magicLinkEmail: {
+		maxRequests: 3,
+		windowSeconds: 60 * 60,
+		message: 'Too many sign-in code requests for this email, please try again in an hour',
+	} satisfies RateLimitConfig,
+
+	/**
+	 * /api/auth/magic-link/verify: per-IP cap on guesses. Each token also
+	 * carries its own attempt counter, enforced in the handler.
+	 */
+	magicLinkVerify: {
+		maxRequests: 10,
+		windowSeconds: 15 * 60,
+		message: 'Too many attempts, please try again later',
 	} satisfies RateLimitConfig,
 
 	/** /api/auth/resend-verification: 3 per hour per IP */

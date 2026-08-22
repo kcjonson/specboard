@@ -164,6 +164,7 @@ session:{session_id}:
   user_id: UUID
   created_at: timestamp
   last_accessed: timestamp
+  auth_method: password | magic_link | passkey (optional)
 
 TTL: 30 days (sliding expiration)
 ```
@@ -239,7 +240,74 @@ Browser                        API                    PostgreSQL    Redis
    │ {user}                     │                        │           │
 ```
 
-### 3. Authenticated Request (Frontend or API)
+### 3. Magic Link Login
+
+Any active account can sign in by email instead of password. The login page's
+"Email me a sign-in code" button (and, later, email-only signup) triggers it.
+One email carries two credentials for the same sign-in:
+
+- **Link**: `{APP_URL}/magic-link?token=<256-bit hex>` — the landing page
+  submits the token via `fetch` (never a GET side effect, so mail scanners
+  that prefetch URLs don't consume it) and redirects to the validated `next`.
+- **Code**: 8 characters from a 30-symbol alphabet (`ABCDEFGHJKMNPQRSTVWXYZ23456789`,
+  no 0/O/1/I/L/U), shown as `XXXX-XXXX`, typed into the waiting login page.
+  ~39 bits of entropy, safe only in combination with the attempt cap below.
+
+```
+Browser                        API                      PostgreSQL
+   │                            │                            │
+   │ POST /api/auth/magic-link/ │                            │
+   │ request {email, next?}     │                            │
+   │───────────────────────────►│                            │
+   │                            │ Per-email rate check       │
+   │                            │ Find active user by email  │
+   │                            │───────────────────────────►│
+   │                            │ Delete prior tokens,       │
+   │                            │ insert token+code hashes   │
+   │                            │───────────────────────────►│
+   │                            │ Send email via SES         │
+   │◄───────────────────────────│ (fire-and-forget)          │
+   │ 200 (same response whether │                            │
+   │ or not the account exists) │                            │
+   │                            │                            │
+   │ POST /api/auth/magic-link/ │                            │
+   │ verify {token} OR          │                            │
+   │ {email, code}              │                            │
+   │───────────────────────────►│                            │
+   │                            │ Lookup by hash; for codes, │
+   │                            │ count attempt BEFORE       │
+   │                            │ compare, cap at 5          │
+   │                            │ Expiry check (15 min)      │
+   │                            │ DELETE ... RETURNING       │
+   │                            │ (atomic single use)        │
+   │                            │───────────────────────────►│
+   │                            │ Set email_verified=true    │
+   │                            │ Create session             │
+   │◄───────────────────────────│                            │
+   │ Set-Cookie: session_id     │                            │
+   │ {user, next}               │                            │
+```
+
+**Token model** (`magic_link_tokens`): one row per pending sign-in — `user_id`,
+`token_hash` (SHA-256, unique index), `code_hash` (SHA-256), `code_attempts`,
+`next_path`, `expires_at`. Raw values are never stored. Issuing a new token
+deletes the user's prior rows; consumption is `DELETE ... RETURNING`, so a
+concurrent double-submit can win at most once. A code attempt increments
+`code_attempts` before comparison; exceeding 5 deletes the row, forcing a
+fresh email (itself rate limited).
+
+**Uniform responses**: the request endpoint returns the same 200 whether or
+not the email has an account; every *authentication* failure at verify
+(unknown, expired, consumed, wrong code, exhausted, deactivated) returns the
+same generic 401, so the response never distinguishes the cause. Outcome-
+independent errors are separate and don't leak account state: 400 for
+malformed/missing JSON, 403 for a cross-origin request (login-CSRF guard),
+503 on a service error.
+
+**Side effects**: consuming a magic link proves control of the mailbox, so it
+sets `email_verified = true`. The session records `authMethod: 'magic_link'`.
+
+### 4. Authenticated Request (Frontend or API)
 
 ```
 Browser                     Frontend/API              Redis
@@ -258,7 +326,7 @@ Browser                     Frontend/API              Redis
    │ Response                   │                       │
 ```
 
-### 4. Password Reset
+### 5. Password Reset
 
 ```
 Browser                        API                    PostgreSQL
@@ -290,7 +358,7 @@ Browser                        API                    PostgreSQL
    │ Redirect to login          │                        │
 ```
 
-### 5. Logout
+### 6. Logout
 
 ```
 Browser                        API                         Redis
@@ -689,6 +757,7 @@ app.use('*', authMiddleware({
 | Session | 30 days | Sliding window on access |
 | Email verification | 24 hours | Request new |
 | Password reset | 1 hour | Request new |
+| Magic link / sign-in code | 15 minutes | Request new |
 | MCP Access Token | 1 hour | Via refresh token |
 | MCP Refresh Token | 30 days | Re-authorize |
 | GitHub Access Token | No expiry* | N/A |
@@ -736,6 +805,8 @@ app.use('*', authMiddleware({
 | /api/auth/login | 5 failed attempts per 15 minutes per identifier+IP; 100 total requests per 15 minutes per IP |
 | /api/auth/signup | 3 per hour per IP |
 | /api/auth/forgot | 3 per hour per email |
+| /api/auth/magic-link/request | 5 per 15 minutes per IP; 3 per hour per email (hashed key) |
+| /api/auth/magic-link/verify | 10 per 15 minutes per IP; 5 code attempts per token |
 | General API | 100 requests per minute |
 
 Limits are identical in every environment, deliberately: staging parity is
@@ -808,6 +879,8 @@ services:
 | POST | /api/auth/login | None | Login, create session |
 | POST | /api/auth/logout | Session | Logout, destroy session |
 | GET | /api/auth/me | Session | Get current user |
+| POST | /api/auth/magic-link/request | None | Email a sign-in link + code |
+| POST | /api/auth/magic-link/verify | None | Consume link token or typed code, create session |
 | POST | /api/auth/forgot | None | Request password reset |
 | POST | /api/auth/reset | None | Reset password with token |
 | GET | /api/auth/verify | None | Verify email |

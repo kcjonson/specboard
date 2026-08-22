@@ -10,35 +10,71 @@ export function LoginContent(): JSX.Element {
 
 			<div id="error" class="error-message hidden" />
 
-			<form id="login-form">
-				<div class="form-group">
-					<label for="identifier">Username or Email</label>
-					<input
-						type="text"
-						id="identifier"
-						name="identifier"
-						required
-						autocomplete="username"
-					/>
-				</div>
+			<div id="password-section">
+				<form id="login-form">
+					<div class="form-group">
+						<label for="identifier">Username or Email</label>
+						<input
+							type="text"
+							id="identifier"
+							name="identifier"
+							required
+							autocomplete="username"
+						/>
+					</div>
 
-				<div class="form-group">
-					<label for="password">Password</label>
-					<input
-						type="password"
-						id="password"
-						name="password"
-						required
-						autocomplete="current-password"
-					/>
-				</div>
+					<div class="form-group">
+						<label for="password">Password</label>
+						<input
+							type="password"
+							id="password"
+							name="password"
+							required
+							autocomplete="current-password"
+						/>
+					</div>
 
-				<div class="forgot-password">
-					<a href="/forgot-password">Forgot your password?</a>
-				</div>
+					<div class="forgot-password">
+						<a href="/forgot-password">Forgot your password?</a>
+					</div>
 
-				<button type="submit" id="submit-btn">Sign In</button>
-			</form>
+					<button type="submit" id="submit-btn">Sign In</button>
+				</form>
+
+				<div class="method-divider"><span>or</span></div>
+
+				<button type="button" id="magic-link-btn" class="secondary">
+					Email me a sign-in code
+				</button>
+			</div>
+
+			<div id="code-section" class="hidden">
+				<p class="code-intro">
+					We sent a sign-in code to <strong id="code-email" />.
+					Click the link in the email, or enter the code here.
+				</p>
+
+				<form id="code-form">
+					<div class="form-group">
+						<label for="code">Sign-in code</label>
+						<input
+							type="text"
+							id="code"
+							name="code"
+							autocomplete="one-time-code"
+							maxlength={9}
+							placeholder="XXXX-XXXX"
+						/>
+					</div>
+
+					<button type="submit" id="code-verify-btn">Verify Code</button>
+				</form>
+
+				<div class="code-links">
+					<a href="#" id="code-resend">Resend code</a>
+					<a href="#" id="code-back">Back to password sign-in</a>
+				</div>
+			</div>
 
 			<div class="signup-link">
 				Don't have an account? <a href="/signup">Create one</a>
@@ -51,6 +87,16 @@ export const loginScript = `(function() {
 	var form = document.getElementById('login-form');
 	var errorEl = document.getElementById('error');
 	var submitBtn = document.getElementById('submit-btn');
+	var passwordSection = document.getElementById('password-section');
+	var codeSection = document.getElementById('code-section');
+	var magicLinkBtn = document.getElementById('magic-link-btn');
+	var codeForm = document.getElementById('code-form');
+	var codeInput = document.getElementById('code');
+	var codeVerifyBtn = document.getElementById('code-verify-btn');
+	var codeEmailEl = document.getElementById('code-email');
+	var resendLink = document.getElementById('code-resend');
+	var backLink = document.getElementById('code-back');
+	var pendingEmail = null;
 
 	function showError(message) {
 		errorEl.textContent = message;
@@ -71,10 +117,40 @@ export const loginScript = `(function() {
 			if (url.origin !== window.location.origin) {
 				return '/';
 			}
+			// A scheme-relative pathname ('//host' or '/\\host', which URL
+			// normalizes to '//host') passes the origin check but navigates
+			// off-site when assigned to location.href.
+			if (url.pathname.indexOf('//') === 0) {
+				return '/';
+			}
 			return url.pathname + url.search + url.hash;
 		} catch (e) {
 			return '/';
 		}
+	}
+
+	function isEmail(value) {
+		return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value);
+	}
+
+	function parseJson(res) {
+		return res.json().then(function(data) {
+			return { ok: res.ok, data: data };
+		});
+	}
+
+	function requestCode(email) {
+		var body = { email: email };
+		var next = getReturnUrl();
+		if (next !== '/') {
+			body.next = next;
+		}
+		return fetch('/api/auth/magic-link/request', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+			credentials: 'same-origin'
+		}).then(parseJson);
 	}
 
 	form.addEventListener('submit', function(e) {
@@ -93,11 +169,7 @@ export const loginScript = `(function() {
 			body: JSON.stringify({ identifier: identifier, password: password }),
 			credentials: 'same-origin'
 		})
-		.then(function(res) {
-			return res.json().then(function(data) {
-				return { ok: res.ok, data: data };
-			});
-		})
+		.then(parseJson)
 		.then(function(result) {
 			if (result.ok) {
 				window.location.href = getReturnUrl();
@@ -117,5 +189,93 @@ export const loginScript = `(function() {
 			submitBtn.disabled = false;
 			submitBtn.textContent = 'Sign In';
 		});
+	});
+
+	magicLinkBtn.addEventListener('click', function() {
+		hideError();
+
+		var email = document.getElementById('identifier').value.trim();
+		if (!isEmail(email)) {
+			showError('Enter your email address above to receive a sign-in code.');
+			return;
+		}
+
+		magicLinkBtn.disabled = true;
+		magicLinkBtn.textContent = 'Sending...';
+
+		requestCode(email)
+		.then(function(result) {
+			magicLinkBtn.disabled = false;
+			magicLinkBtn.textContent = 'Email me a sign-in code';
+			if (result.ok) {
+				pendingEmail = email;
+				codeEmailEl.textContent = email;
+				passwordSection.classList.add('hidden');
+				codeSection.classList.remove('hidden');
+				codeInput.focus();
+			} else {
+				showError(result.data.error || 'Could not send a sign-in code. Please try again.');
+			}
+		})
+		.catch(function() {
+			magicLinkBtn.disabled = false;
+			magicLinkBtn.textContent = 'Email me a sign-in code';
+			showError('Network error. Please try again.');
+		});
+	});
+
+	codeForm.addEventListener('submit', function(e) {
+		e.preventDefault();
+		hideError();
+
+		codeVerifyBtn.disabled = true;
+		codeVerifyBtn.textContent = 'Verifying...';
+
+		fetch('/api/auth/magic-link/verify', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ email: pendingEmail, code: codeInput.value }),
+			credentials: 'same-origin'
+		})
+		.then(parseJson)
+		.then(function(result) {
+			if (result.ok) {
+				window.location.href = getReturnUrl();
+			} else {
+				showError(result.data.error || 'Verification failed');
+				codeVerifyBtn.disabled = false;
+				codeVerifyBtn.textContent = 'Verify Code';
+			}
+		})
+		.catch(function() {
+			showError('Network error. Please try again.');
+			codeVerifyBtn.disabled = false;
+			codeVerifyBtn.textContent = 'Verify Code';
+		});
+	});
+
+	resendLink.addEventListener('click', function(e) {
+		e.preventDefault();
+		hideError();
+		resendLink.textContent = 'Sending...';
+
+		requestCode(pendingEmail)
+		.then(function(result) {
+			resendLink.textContent = 'Resend code';
+			if (!result.ok) {
+				showError(result.data.error || 'Could not resend the code. Please try again.');
+			}
+		})
+		.catch(function() {
+			resendLink.textContent = 'Resend code';
+			showError('Network error. Please try again.');
+		});
+	});
+
+	backLink.addEventListener('click', function(e) {
+		e.preventDefault();
+		hideError();
+		codeSection.classList.add('hidden');
+		passwordSection.classList.remove('hidden');
 	});
 })();`;

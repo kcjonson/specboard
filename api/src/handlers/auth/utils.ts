@@ -3,6 +3,16 @@
  */
 
 import type { Context } from 'hono';
+import { setCookie } from 'hono/cookie';
+import type { Redis } from 'ioredis';
+import {
+	generateSessionId,
+	createSession,
+	SESSION_COOKIE_NAME,
+	CSRF_COOKIE_NAME,
+	SESSION_TTL_SECONDS,
+	type AuthMethod,
+} from '@specboard/auth';
 
 /**
  * Auth event types for logging
@@ -14,7 +24,10 @@ export type AuthEvent =
 	| 'signup_success'
 	| 'email_verified'
 	| 'password_reset'
-	| 'password_changed';
+	| 'password_changed'
+	| 'magic_link_requested'
+	| 'magic_link_login'
+	| 'magic_link_failure';
 
 /**
  * Structured auth event logging for CloudWatch Logs Insights
@@ -31,6 +44,41 @@ export function logAuthEvent(
 			...data,
 		})
 	);
+}
+
+/**
+ * Reject cross-site browser requests to a CSRF-exempt endpoint.
+ *
+ * The magic-link/verify endpoint can't use the double-submit CSRF token (no
+ * session exists yet), so without this a cross-site auto-POST could log a
+ * victim into the attacker's account (login CSRF). Browsers always send Origin
+ * on POST, so an Origin present and cross-host is the forgery signal; a missing
+ * Origin (server-to-server, tests) is allowed, matching the /api/metrics check.
+ * Returns true if the request should be blocked.
+ *
+ * Compares hostnames, not host:port, and prefers X-Forwarded-Host: behind the
+ * ALB the request Host can carry a default port or the internal host, which
+ * would falsely reject a legitimate same-site login. X-Forwarded-Host is set
+ * by the trusted proxy, consistent with isSecureRequest trusting
+ * X-Forwarded-Proto.
+ */
+export function isCrossOriginRequest(context: Context): boolean {
+	const origin = context.req.header('Origin');
+	if (!origin) return false;
+	// Prefer the RIGHTMOST X-Forwarded-Host: each proxy appends, so the last
+	// entry is the one our trusted proxy set, while a leading value could be
+	// client-supplied. Matches getClientIp's use of the last X-Forwarded-For.
+	const forwardedList = context.req.header('X-Forwarded-Host')?.split(',');
+	const forwardedHost = forwardedList?.[forwardedList.length - 1]?.trim();
+	const rawHost = forwardedHost || context.req.header('Host');
+	if (!rawHost) return true;
+	try {
+		// Parse via URL so IPv6 literals ([::1]:3000) and ports are handled.
+		const expectedHostname = new URL(`http://${rawHost}`).hostname.toLowerCase();
+		return new URL(origin).hostname.toLowerCase() !== expectedHostname;
+	} catch {
+		return true;
+	}
 }
 
 /**
@@ -68,6 +116,38 @@ export function isValidInviteKey(key: string): boolean {
 	}
 
 	return validKeys.has(key.trim());
+}
+
+/**
+ * Create a Redis session and set the auth cookies on the response.
+ * Shared by every successful-auth path (password, magic link, passkey).
+ */
+export async function establishSession(
+	context: Context,
+	redis: Redis,
+	userId: string,
+	authMethod: AuthMethod
+): Promise<void> {
+	const sessionId = generateSessionId();
+	const csrfToken = await createSession(redis, sessionId, { userId, authMethod });
+	const secure = isSecureRequest(context);
+
+	// Session cookie is HttpOnly; CSRF cookie is readable by JS for the
+	// double-submit pattern
+	setCookie(context, SESSION_COOKIE_NAME, sessionId, {
+		httpOnly: true,
+		secure,
+		sameSite: 'Lax',
+		path: '/',
+		maxAge: SESSION_TTL_SECONDS,
+	});
+	setCookie(context, CSRF_COOKIE_NAME, csrfToken, {
+		httpOnly: false,
+		secure,
+		sameSite: 'Lax',
+		path: '/',
+		maxAge: SESSION_TTL_SECONDS,
+	});
 }
 
 /**

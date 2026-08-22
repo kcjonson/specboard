@@ -1,4 +1,9 @@
 /**
+ * How a session was established
+ */
+export type AuthMethod = 'password' | 'magic_link' | 'passkey';
+
+/**
  * Session data stored in Redis (auth-only, minimal)
  */
 export interface Session {
@@ -6,6 +11,8 @@ export interface Session {
 	csrfToken: string;
 	createdAt: number;
 	lastAccessedAt: number;
+	/** Absent on sessions created before auth methods were recorded */
+	authMethod?: AuthMethod;
 }
 
 /**
