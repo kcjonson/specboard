@@ -28,6 +28,7 @@ vi.mock('@specboard/auth', () => ({
 import { query } from '@specboard/db';
 import { getSession, verifyAuthentication, verifyRegistration, createSession } from '@specboard/auth';
 import {
+	handleWebauthnLoginOptions,
 	handleWebauthnLoginVerify,
 	handleWebauthnRegisterVerify,
 	handleDeletePasskey,
@@ -151,6 +152,42 @@ describe('handleWebauthnLoginVerify', () => {
 		expect(res.status).toBe(401);
 		expect(createSession).not.toHaveBeenCalled();
 	});
+
+	it('treats a no-op counter write-back as a clone anomaly (concurrent race)', async () => {
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			const text = sql as string;
+			if (text.includes('FROM webauthn_credentials WHERE credential_id')) return mockQueryResult([credRow]);
+			if (text.includes('FROM users WHERE id')) return mockQueryResult([activeUser]);
+			if (text.includes('UPDATE webauthn_credentials SET counter')) return mockQueryResult([], 0); // lost the race
+			return mockQueryResult([], 1);
+		});
+		const res = await post(loginApp(mockRedis({ type: 'authentication', challenge: 'c' })), {}, loginBody);
+		expect(res.status).toBe(401);
+		expect(createSession).not.toHaveBeenCalled();
+	});
+});
+
+describe('handleWebauthnLoginOptions', () => {
+	it('rejects a cross-origin request', async () => {
+		const app = new Hono();
+		app.post('/o', (c) => handleWebauthnLoginOptions(c, mockRedis(undefined)));
+		const res = await Promise.resolve(app.request('http://localhost/o', {
+			method: 'POST', headers: { Host: 'localhost', Origin: 'https://evil.example.com' },
+		}));
+		expect(res.status).toBe(403);
+	});
+
+	it('returns a challenge for a same-origin request', async () => {
+		const app = new Hono();
+		app.post('/o', (c) => handleWebauthnLoginOptions(c, mockRedis(undefined)));
+		const res = await Promise.resolve(app.request('http://localhost/o', {
+			method: 'POST', headers: { Host: 'localhost', Origin: 'http://localhost' },
+		}));
+		const data = await res.json();
+		expect(res.status).toBe(200);
+		expect(typeof data.challengeId).toBe('string');
+		expect(typeof data.options.challenge).toBe('string');
+	});
 });
 
 describe('handleWebauthnRegisterVerify', () => {
@@ -185,7 +222,10 @@ describe('handleWebauthnRegisterVerify', () => {
 	});
 
 	it('inserts the credential and returns 201', async () => {
-		vi.mocked(query).mockResolvedValue(mockQueryResult([{ id: 'c1', name: 'Passkey', created_at: new Date() }]) as never);
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '2' }]);
+			return mockQueryResult([{ id: 'c1', name: 'Passkey', created_at: new Date() }]);
+		});
 		const res = await postReg(regApp(mockRedis({ type: 'registration', challenge: 'c', userId: USER_ID })), regBody);
 		expect(res.status).toBe(201);
 		const insert = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('INSERT INTO webauthn_credentials'));
@@ -193,13 +233,24 @@ describe('handleWebauthnRegisterVerify', () => {
 	});
 
 	it('maps a duplicate credential to 409', async () => {
-		vi.mocked(query).mockImplementation(async () => {
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '0' }]);
 			const err = new Error('duplicate key') as Error & { code: string };
 			err.code = '23505';
-			throw err;
+			throw err; // the INSERT
 		});
 		const res = await postReg(regApp(mockRedis({ type: 'registration', challenge: 'c', userId: USER_ID })), regBody);
 		expect(res.status).toBe(409);
+	});
+
+	it('rejects registration when the passkey cap is reached', async () => {
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '20' }]);
+			return mockQueryResult([], 1);
+		});
+		const res = await postReg(regApp(mockRedis({ type: 'registration', challenge: 'c', userId: USER_ID })), regBody);
+		expect(res.status).toBe(409);
+		expect(verifyRegistration).not.toHaveBeenCalled();
 	});
 });
 
