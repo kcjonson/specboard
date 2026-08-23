@@ -65,9 +65,11 @@ export async function handleGetMe(
 			return context.json({ error: 'Session expired' }, 401);
 		}
 
-		// Fetch user plus password presence (onboarding needs it)
-		const userResult = await query<User & { has_password: boolean }>(
-			`SELECT u.*, (up.user_id IS NOT NULL) AS has_password
+		// Fetch user plus password presence and passkey count (onboarding needs them)
+		const userResult = await query<User & { has_password: boolean; passkey_count: string }>(
+			`SELECT u.*,
+				(up.user_id IS NOT NULL) AS has_password,
+				(SELECT COUNT(*) FROM webauthn_credentials wc WHERE wc.user_id = u.id) AS passkey_count
 			 FROM users u
 			 LEFT JOIN user_passwords up ON up.user_id = u.id
 			 WHERE u.id = $1`,
@@ -111,7 +113,7 @@ export async function handleGetMe(
 				roles: user.roles,
 				is_active: user.is_active,
 				has_password: user.has_password,
-				passkey_count: 0,
+				passkey_count: Number(user.passkey_count),
 				profile_complete: profileComplete,
 			},
 		});

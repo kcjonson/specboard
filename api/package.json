@@ -13,12 +13,13 @@
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.71.2",
 		"@aws-sdk/client-lambda": "^3.726.0",
+		"@hono/node-server": "^2.1.1",
+		"@simplewebauthn/server": "^13.3.2",
 		"@specboard/auth": "*",
 		"@specboard/core": "*",
 		"@specboard/db": "*",
 		"@specboard/email": "*",
 		"@specboard/sync-lambda": "*",
-		"@hono/node-server": "^2.1.1",
 		"hono": "^4.13.3",
 		"ioredis": "^5.4.2"
 	},

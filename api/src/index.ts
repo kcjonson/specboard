@@ -39,6 +39,13 @@ import {
 	handleChangePassword,
 	handleMagicLinkRequest,
 	handleMagicLinkVerify,
+	handleWebauthnLoginOptions,
+	handleWebauthnLoginVerify,
+	handleWebauthnRegisterOptions,
+	handleWebauthnRegisterVerify,
+	handleListPasskeys,
+	handleRenamePasskey,
+	handleDeletePasskey,
 } from './handlers/auth/index.ts';
 import {
 	handleListUsers,
@@ -229,6 +236,8 @@ app.use(
 			{ path: '/api/auth/signup', config: RATE_LIMIT_CONFIGS.signup },
 			{ path: '/api/auth/magic-link/request', config: RATE_LIMIT_CONFIGS.magicLinkRequest },
 			{ path: '/api/auth/magic-link/verify', config: RATE_LIMIT_CONFIGS.magicLinkVerify },
+			{ path: '/api/auth/webauthn/login/options', config: RATE_LIMIT_CONFIGS.webauthnLoginOptions },
+			{ path: '/api/auth/webauthn/login/verify', config: RATE_LIMIT_CONFIGS.login },
 			{ path: '/api/auth/forgot-password', config: RATE_LIMIT_CONFIGS.forgot },
 			{ path: '/api/auth/resend-verification', config: RATE_LIMIT_CONFIGS.resendVerification },
 			{ path: '/api/auth/github', config: RATE_LIMIT_CONFIGS.login }, // OAuth start - same limit as login
@@ -260,6 +269,11 @@ app.use(
 			'/api/auth/reset-password',
 			'/api/auth/magic-link/request',
 			'/api/auth/magic-link/verify',
+			// Passkey login is pre-session (no CSRF token yet); guarded by an
+			// Origin check in the handler instead. Registration/management
+			// endpoints are session-authed and stay CSRF-protected.
+			'/api/auth/webauthn/login/options',
+			'/api/auth/webauthn/login/verify',
 			'/api/auth/github/callback', // GitHub OAuth callback (comes from redirect)
 			'/api/waitlist', // Public signup form
 			'/api/metrics',
@@ -387,6 +401,15 @@ app.put('/api/auth/me', (context) => handleUpdateMe(context, redis));
 // Magic link login routes (unauthenticated)
 app.post('/api/auth/magic-link/request', (context) => handleMagicLinkRequest(context, redis));
 app.post('/api/auth/magic-link/verify', (context) => handleMagicLinkVerify(context, redis));
+
+// Passkey (WebAuthn) routes
+app.post('/api/auth/webauthn/login/options', (context) => handleWebauthnLoginOptions(context, redis));
+app.post('/api/auth/webauthn/login/verify', (context) => handleWebauthnLoginVerify(context, redis));
+app.post('/api/auth/webauthn/register/options', (context) => handleWebauthnRegisterOptions(context, redis));
+app.post('/api/auth/webauthn/register/verify', (context) => handleWebauthnRegisterVerify(context, redis));
+app.get('/api/auth/webauthn/credentials', (context) => handleListPasskeys(context, redis));
+app.patch('/api/auth/webauthn/credentials/:id', (context) => handleRenamePasskey(context, redis));
+app.delete('/api/auth/webauthn/credentials/:id', (context) => handleDeletePasskey(context, redis));
 
 // Email verification and password reset routes (unauthenticated)
 app.post('/api/auth/verify-email', handleVerifyEmail);

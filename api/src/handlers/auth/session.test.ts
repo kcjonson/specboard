@@ -37,6 +37,7 @@ const mockUser = {
 	roles: [],
 	is_active: true,
 	has_password: false,
+	passkey_count: '0', // pg returns the COUNT(*) subquery as a string
 };
 
 function mockQueryResult(rows: pg.QueryResultRow[] = [], rowCount = rows.length): pg.QueryResult {

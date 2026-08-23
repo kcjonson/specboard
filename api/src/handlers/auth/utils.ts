@@ -27,7 +27,11 @@ export type AuthEvent =
 	| 'password_changed'
 	| 'magic_link_requested'
 	| 'magic_link_login'
-	| 'magic_link_failure';
+	| 'magic_link_failure'
+	| 'passkey_registered'
+	| 'passkey_login'
+	| 'passkey_removed'
+	| 'passkey_counter_anomaly';
 
 /**
  * Structured auth event logging for CloudWatch Logs Insights
