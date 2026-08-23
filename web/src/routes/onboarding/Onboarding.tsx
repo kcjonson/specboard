@@ -4,9 +4,20 @@ import { Button, Text } from '@specboard/ui';
 import { fetchClient, FetchError } from '@specboard/fetch';
 import { navigate } from '@specboard/router';
 import { useModel, UserModel } from '@specboard/models';
+import {
+	browserSupportsWebAuthn,
+	createPasskey,
+	passkeyErrorMessage,
+	type PublicKeyCredentialCreationOptionsJSON,
+} from '../../lib/webauthn';
 import styles from './Onboarding.module.css';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,30}$/;
+
+interface RegisterOptionsResponse {
+	challengeId: string;
+	options: PublicKeyCredentialCreationOptionsJSON;
+}
 
 /**
  * Post-first-login onboarding for email-only signups: claim a username and
@@ -17,7 +28,8 @@ export function Onboarding(): JSX.Element | null {
 	const user = useMemo(() => new UserModel({ id: 'me' }), []);
 	useModel(user);
 
-	const [step, setStep] = useState<'identity' | 'password'>('identity');
+	const [step, setStep] = useState<'identity' | 'password' | 'passkey'>('identity');
+	const passkeySupported = browserSupportsWebAuthn();
 	const [username, setUsername] = useState('');
 	const [firstName, setFirstName] = useState('');
 	const [lastName, setLastName] = useState('');
@@ -88,9 +100,37 @@ export function Onboarding(): JSX.Element | null {
 			await fetchClient.put('/api/auth/change-password', {
 				new_password: newPassword,
 			});
-			finish();
+			setSaving(false);
+			goToPasskeyOrFinish();
 		} catch (err: unknown) {
 			setError(errorText(err, 'Failed to set password'));
+			setSaving(false);
+		}
+	};
+
+	// After password (set or skipped), offer a passkey if the browser supports
+	// one; otherwise onboarding is done.
+	const goToPasskeyOrFinish = (): void => {
+		setError(null);
+		if (passkeySupported) setStep('passkey');
+		else finish();
+	};
+
+	const handleAddPasskey = async (): Promise<void> => {
+		if (saving) return;
+		setError(null);
+		setSaving(true);
+		try {
+			const { challengeId, options } = await fetchClient.post<RegisterOptionsResponse>(
+				'/api/auth/webauthn/register/options'
+			);
+			const response = await createPasskey(options);
+			await fetchClient.post('/api/auth/webauthn/register/verify', { challengeId, response });
+			finish();
+		} catch (err: unknown) {
+			setError(err instanceof FetchError
+				? errorText(err, 'Could not add a passkey.')
+				: passkeyErrorMessage(err, 'Could not add a passkey.'));
 			setSaving(false);
 		}
 	};
@@ -149,7 +189,7 @@ export function Onboarding(): JSX.Element | null {
 							</Button>
 						</form>
 					</>
-				) : (
+				) : step === 'password' ? (
 					<>
 						<h1 class={styles.title}>Create a password</h1>
 						<p class={styles.subtitle}>
@@ -190,10 +230,28 @@ export function Onboarding(): JSX.Element | null {
 								{saving ? 'Saving...' : 'Create Password'}
 							</Button>
 
-							<button type="button" class={styles.skipLink} onClick={finish}>
+							<button type="button" class={styles.skipLink} onClick={goToPasskeyOrFinish}>
 								Skip for now
 							</button>
 						</form>
+					</>
+				) : (
+					<>
+						<h1 class={styles.title}>Add a passkey</h1>
+						<p class={styles.subtitle}>
+							Optional: sign in with your fingerprint, face, or device PIN instead of a password.
+						</p>
+
+						{error && <div class={styles.error}>{error}</div>}
+
+						<div class={styles.form}>
+							<Button type="button" disabled={saving} onClick={handleAddPasskey}>
+								{saving ? 'Follow your browser...' : 'Add a passkey'}
+							</Button>
+							<button type="button" class={styles.skipLink} onClick={finish}>
+								Skip for now
+							</button>
+						</div>
 					</>
 				)}
 			</div>

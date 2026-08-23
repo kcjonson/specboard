@@ -6,6 +6,7 @@ import { fetchClient } from '@specboard/fetch';
 import { useModel, UserModel, AuthorizationsCollection } from '@specboard/models';
 import { AuthorizedApps } from './AuthorizedApps';
 import { ApiKeys } from './ApiKeys';
+import { Passkeys } from './Passkeys';
 import { GitHubConnection } from './GitHubConnection';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 import { SetPasswordDialog } from './SetPasswordDialog';
@@ -387,6 +388,11 @@ export function UserSettings(props: RouteProps): JSX.Element {
 								Set Password
 							</Button>
 						</div>
+					)}
+
+					{/* Section 2b: Passkeys */}
+					{!isViewingOther && (
+						<Passkeys />
 					)}
 
 					{/* Section 3: Authorized Apps */}
