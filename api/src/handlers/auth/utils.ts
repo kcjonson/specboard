@@ -60,21 +60,18 @@ export function logAuthEvent(
  * Origin (server-to-server, tests) is allowed, matching the /api/metrics check.
  * Returns true if the request should be blocked.
  *
- * Compares hostnames, not host:port, and prefers X-Forwarded-Host: behind the
- * ALB the request Host can carry a default port or the internal host, which
- * would falsely reject a legitimate same-site login. X-Forwarded-Host is set
- * by the trusted proxy, consistent with isSecureRequest trusting
- * X-Forwarded-Proto.
+ * Compares the Origin hostname against the Host the client connected to,
+ * hostnames only (not host:port). Deliberately does NOT consult
+ * X-Forwarded-Host: neither nginx (local) nor the ALB (prod) ever sets that
+ * header, so any value present is entirely client-supplied and would let a
+ * caller name its own "expected" host, defeating the check. Host is safe here
+ * because the browser sets it to the real target on a cross-site request, so a
+ * forged Origin still mismatches; our proxies preserve Host end to end.
  */
 export function isCrossOriginRequest(context: Context): boolean {
 	const origin = context.req.header('Origin');
 	if (!origin) return false;
-	// Prefer the RIGHTMOST X-Forwarded-Host: each proxy appends, so the last
-	// entry is the one our trusted proxy set, while a leading value could be
-	// client-supplied. Matches getClientIp's use of the last X-Forwarded-For.
-	const forwardedList = context.req.header('X-Forwarded-Host')?.split(',');
-	const forwardedHost = forwardedList?.[forwardedList.length - 1]?.trim();
-	const rawHost = forwardedHost || context.req.header('Host');
+	const rawHost = context.req.header('Host');
 	if (!rawHost) return true;
 	try {
 		// Parse via URL so IPv6 literals ([::1]:3000) and ports are handled.

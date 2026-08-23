@@ -1,15 +1,18 @@
 /**
  * Passkey handler tests — the orchestration obligations the library can't
  * cover: challenge single-use, credential ownership + userHandle, counter
- * write-back, duplicate rejection, challenge/user binding, and the login-CSRF
- * origin guard. @simplewebauthn/server is mocked here; the ceremony crypto is
- * the library's own tested surface.
+ * write-back, duplicate rejection, challenge/user binding, the login-CSRF
+ * origin guard, and ownership scoping on management endpoints.
+ * @simplewebauthn/server is mocked here; the ceremony crypto is its own tested
+ * surface. Several tests assert the SQL/args, not just the status, so a dropped
+ * guard or a swapped INSERT column can't pass silently under a mocked query.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
+import { TextEncoder } from 'node:util';
 
 vi.mock('@specboard/db', () => ({ query: vi.fn() }));
 
@@ -30,12 +33,20 @@ vi.mock('@specboard/auth', () => ({
 }));
 
 import { query } from '@specboard/db';
-import { verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
+import {
+	verifyAuthenticationResponse,
+	verifyRegistrationResponse,
+	generateRegistrationOptions,
+} from '@simplewebauthn/server';
+import type { VerifiedRegistrationResponse } from '@simplewebauthn/server';
 import { getSession, createSession } from '@specboard/auth';
 import {
 	handleWebauthnLoginOptions,
 	handleWebauthnLoginVerify,
+	handleWebauthnRegisterOptions,
 	handleWebauthnRegisterVerify,
+	handleListPasskeys,
+	handleRenamePasskey,
 	handleDeletePasskey,
 } from './webauthn.ts';
 
@@ -52,6 +63,7 @@ function mockQueryResult(rows: pg.QueryResultRow[] = [], rowCount = rows.length)
 
 const USER_ID = 'user-uuid-123';
 const CHALLENGE_ID = 'a'.repeat(32);
+const MATCHING_USER_HANDLE = Buffer.from(USER_ID).toString('base64url');
 
 const credRow = {
 	id: 'cred-row-1',
@@ -64,8 +76,12 @@ const credRow = {
 
 const activeUser = { id: USER_ID, username: 'alice', email: 'a@example.com', first_name: 'A', last_name: 'B', avatar_url: null, is_active: true };
 
-/** Build an AuthenticationResponseJSON-shaped body; optional userHandle. */
-function loginBody(userHandle?: string): unknown {
+/**
+ * AuthenticationResponseJSON-shaped body. Defaults to a userHandle that matches
+ * the credential owner (so deeper-path tests reach verify); pass a different
+ * value for the mismatch case, or delete the key for the absent case.
+ */
+function loginBody(userHandle: string | undefined = MATCHING_USER_HANDLE): Record<string, unknown> {
 	return {
 		challengeId: CHALLENGE_ID,
 		response: {
@@ -88,7 +104,7 @@ function post(app: Hono, headers: Record<string, string>, body: unknown): Promis
 	return Promise.resolve(app.request('http://localhost/v', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', ...headers },
-		body: JSON.stringify(body),
+		body: typeof body === 'string' ? body : JSON.stringify(body),
 	}));
 }
 
@@ -116,6 +132,25 @@ describe('handleWebauthnLoginVerify', () => {
 		expect(query).not.toHaveBeenCalled();
 	});
 
+	it('rejects invalid JSON with 400', async () => {
+		const res = await post(loginApp(mockRedis(undefined)), {}, '{ not json');
+		expect(res.status).toBe(400);
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it('rejects a body with no response object (400)', async () => {
+		const res = await post(loginApp(mockRedis(undefined)), {}, { challengeId: CHALLENGE_ID });
+		expect(res.status).toBe(400);
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it('rejects a response with a non-string id (400)', async () => {
+		const res = await post(loginApp(mockRedis(undefined)), {},
+			{ challengeId: CHALLENGE_ID, response: { id: 123 } });
+		expect(res.status).toBe(400);
+		expect(query).not.toHaveBeenCalled();
+	});
+
 	it('rejects a missing/expired challenge', async () => {
 		const res = await post(loginApp(mockRedis(undefined)), {}, loginBody());
 		expect(res.status).toBe(401);
@@ -132,6 +167,15 @@ describe('handleWebauthnLoginVerify', () => {
 		expect(res.status).toBe(401);
 	});
 
+	it('rejects a login assertion with no userHandle (discoverable login requires it)', async () => {
+		vi.mocked(query).mockResolvedValue(mockQueryResult([credRow]) as never);
+		const body = loginBody();
+		delete (body.response as { response: Record<string, unknown> }).response.userHandle;
+		const res = await post(loginApp(mockRedis({ type: 'authentication', challenge: 'c' })), {}, body);
+		expect(res.status).toBe(401);
+		expect(verifyAuthenticationResponse).not.toHaveBeenCalled();
+	});
+
 	it('rejects a userHandle that does not match the credential owner', async () => {
 		vi.mocked(query).mockResolvedValue(mockQueryResult([credRow]) as never);
 		const res = await post(loginApp(mockRedis({ type: 'authentication', challenge: 'c' })), {},
@@ -140,21 +184,55 @@ describe('handleWebauthnLoginVerify', () => {
 		expect(verifyAuthenticationResponse).not.toHaveBeenCalled();
 	});
 
-	it('verifies, writes the counter back, and establishes a session', async () => {
+	it('verifies, passes UV/RPID/stored-credential to the library, writes the counter back, and establishes a session', async () => {
 		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
 			const text = sql as string;
 			if (text.includes('FROM webauthn_credentials WHERE credential_id')) return mockQueryResult([credRow]);
 			if (text.includes('FROM users WHERE id')) return mockQueryResult([activeUser]);
 			return mockQueryResult([], 1);
 		});
-		const res = await post(loginApp(mockRedis({ type: 'authentication', challenge: 'c' })), {},
-			loginBody(Buffer.from(USER_ID).toString('base64url')));
+		const res = await post(loginApp(mockRedis({ type: 'authentication', challenge: 'c' })), {}, loginBody());
 		const data = await res.json();
 		expect(res.status).toBe(200);
 		expect(data.user.id).toBe(USER_ID);
+		// The library must be handed UV enforcement, the RP ID, the server challenge,
+		// and the stored credential (never client-supplied key material).
+		expect(verifyAuthenticationResponse).toHaveBeenCalledWith(expect.objectContaining({
+			expectedChallenge: 'c',
+			expectedRPID: expect.any(String),
+			requireUserVerification: true,
+			credential: expect.objectContaining({ id: 'Y3JlZC1pZA', counter: 5 }),
+		}));
 		expect(createSession).toHaveBeenCalledWith(expect.anything(), 'session-id', { userId: USER_ID, authMethod: 'passkey', profileComplete: true });
 		const update = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('UPDATE webauthn_credentials SET counter'));
 		expect(update?.[1]).toEqual([6, 'cred-row-1']);
+		// The write-back guard SQL is the clone-race protection; lock it so a
+		// dropped clause can't pass under the mocked query.
+		expect(update?.[0]).toContain('counter < $1');
+		expect(update?.[0]).toContain('counter = 0');
+	});
+
+	it('accepts a synced passkey reporting counter 0 on both sides (both-zero path)', async () => {
+		vi.mocked(verifyAuthenticationResponse).mockResolvedValue({
+			verified: true,
+			authenticationInfo: {
+				newCounter: 0, credentialID: 'Y3JlZC1pZA', userVerified: true,
+				credentialDeviceType: 'multiDevice', credentialBackedUp: true,
+				origin: 'http://localhost', rpID: 'localhost',
+			},
+		});
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			const text = sql as string;
+			if (text.includes('FROM webauthn_credentials WHERE credential_id')) return mockQueryResult([{ ...credRow, counter: '0' }]);
+			if (text.includes('FROM users WHERE id')) return mockQueryResult([activeUser]);
+			if (text.includes('UPDATE webauthn_credentials SET counter')) return mockQueryResult([], 1);
+			return mockQueryResult([], 1);
+		});
+		const res = await post(loginApp(mockRedis({ type: 'authentication', challenge: 'c' })), {}, loginBody());
+		expect(res.status).toBe(200);
+		expect(createSession).toHaveBeenCalled();
+		const update = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('UPDATE webauthn_credentials SET counter'));
+		expect(update?.[1]).toEqual([0, 'cred-row-1']);
 	});
 
 	it('rejects an inactive user after verification', async () => {
@@ -214,11 +292,62 @@ describe('handleWebauthnLoginOptions', () => {
 	});
 });
 
+describe('handleWebauthnRegisterOptions', () => {
+	const regUser = { id: USER_ID, email: 'a@example.com', first_name: 'A', last_name: 'B', username: 'alice' };
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0, lastAccessedAt: 0 });
+	});
+
+	function optApp(redis: Redis): Hono {
+		const app = new Hono();
+		app.post('/ro', (c) => handleWebauthnRegisterOptions(c, redis));
+		return app;
+	}
+	function postOpt(app: Hono, headers: Record<string, string>): Promise<Response> {
+		return Promise.resolve(app.request('http://localhost/ro', { method: 'POST', headers }));
+	}
+
+	it('rejects an unauthenticated caller with 401', async () => {
+		const res = await postOpt(optApp(mockRedis(undefined)), {}); // no session cookie
+		expect(res.status).toBe(401);
+		expect(generateRegistrationOptions).not.toHaveBeenCalled();
+	});
+
+	it('builds excludeCredentials and the UUID user handle from the account, pinned to ES256/RS256', async () => {
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			const text = sql as string;
+			if (text.includes('FROM users WHERE id')) return mockQueryResult([regUser]);
+			if (text.includes('FROM webauthn_credentials WHERE user_id')) {
+				return mockQueryResult([
+					{ credential_id: 'existing1', transports: ['internal'] },
+					{ credential_id: 'existing2', transports: null },
+				]);
+			}
+			return mockQueryResult([]);
+		});
+		const res = await postOpt(optApp(mockRedis(undefined)), { Cookie: 'session_id=s' });
+		expect(res.status).toBe(200);
+		expect(generateRegistrationOptions).toHaveBeenCalledWith(expect.objectContaining({
+			userID: new TextEncoder().encode(USER_ID),
+			supportedAlgorithmIDs: [-7, -257],
+			attestationType: 'none',
+			excludeCredentials: [
+				{ id: 'existing1', transports: ['internal'] },
+				{ id: 'existing2', transports: undefined },
+			],
+		}));
+	});
+});
+
 describe('handleWebauthnRegisterVerify', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0, lastAccessedAt: 0 });
-		vi.mocked(verifyRegistrationResponse).mockResolvedValue({
+		// Typed (not `as never`) so a future library shape change fails to compile
+		// here rather than silently desyncing the mock from the real return value.
+		const verified: VerifiedRegistrationResponse = {
 			verified: true,
 			registrationInfo: {
 				fmt: 'none',
@@ -232,7 +361,8 @@ describe('handleWebauthnRegisterVerify', () => {
 				origin: 'http://localhost',
 				rpID: 'localhost',
 			},
-		} as never);
+		};
+		vi.mocked(verifyRegistrationResponse).mockResolvedValue(verified);
 	});
 
 	function regApp(redis: Redis): Hono {
@@ -244,7 +374,7 @@ describe('handleWebauthnRegisterVerify', () => {
 		return Promise.resolve(app.request('http://localhost/r', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', Cookie: 'session_id=s' },
-			body: JSON.stringify(body),
+			body: typeof body === 'string' ? body : JSON.stringify(body),
 		}));
 	}
 	const regBody = {
@@ -258,6 +388,18 @@ describe('handleWebauthnRegisterVerify', () => {
 		},
 	};
 
+	it('rejects invalid JSON with 400', async () => {
+		const res = await postReg(regApp(mockRedis(undefined)), '{ not json');
+		expect(res.status).toBe(400);
+		expect(verifyRegistrationResponse).not.toHaveBeenCalled();
+	});
+
+	it('rejects a body with no response object (400)', async () => {
+		const res = await postReg(regApp(mockRedis(undefined)), { challengeId: CHALLENGE_ID });
+		expect(res.status).toBe(400);
+		expect(verifyRegistrationResponse).not.toHaveBeenCalled();
+	});
+
 	it('rejects a challenge bound to a different user', async () => {
 		const redis = mockRedis({ type: 'registration', challenge: 'c', userId: 'someone-else' });
 		const res = await postReg(regApp(redis), regBody);
@@ -265,15 +407,26 @@ describe('handleWebauthnRegisterVerify', () => {
 		expect(verifyRegistrationResponse).not.toHaveBeenCalled();
 	});
 
-	it('inserts the credential and returns 201', async () => {
+	it('inserts the credential with the correct columns and returns 201', async () => {
 		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
 			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '2' }]);
 			return mockQueryResult([{ id: 'c1', name: 'Passkey', created_at: new Date() }]);
 		});
 		const res = await postReg(regApp(mockRedis({ type: 'registration', challenge: 'c', userId: USER_ID })), regBody);
 		expect(res.status).toBe(201);
+		// Assert the full INSERT param array so a column/value misalignment can't
+		// corrupt the table unnoticed under a mocked query.
 		const insert = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('INSERT INTO webauthn_credentials'));
-		expect(insert).toBeDefined();
+		expect(insert?.[1]).toEqual([
+			USER_ID, 'newcred', Buffer.from(new Uint8Array([1, 2])), 0,
+			['internal'], '00000000-0000-0000-0000-000000000000', 'multiDevice', true, 'Passkey',
+		]);
+		// And that ES256/RS256 + UV are enforced at verify, not just offered.
+		expect(verifyRegistrationResponse).toHaveBeenCalledWith(expect.objectContaining({
+			supportedAlgorithmIDs: [-7, -257],
+			expectedRPID: expect.any(String),
+			requireUserVerification: true,
+		}));
 	});
 
 	it('maps a duplicate credential to 409', async () => {
@@ -296,28 +449,75 @@ describe('handleWebauthnRegisterVerify', () => {
 		expect(res.status).toBe(409);
 		expect(verifyRegistrationResponse).not.toHaveBeenCalled();
 	});
+
+	it('returns a generic error (no library internals) when verification throws', async () => {
+		vi.mocked(verifyRegistrationResponse).mockRejectedValue(
+			new Error('Unexpected registration response challenge "abc", expected "xyz"')
+		);
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '0' }]);
+			return mockQueryResult([], 1);
+		});
+		const res = await postReg(regApp(mockRedis({ type: 'registration', challenge: 'c', userId: USER_ID })), regBody);
+		const data = await res.json();
+		expect(res.status).toBe(400);
+		expect(data.error).toBe('Verification failed');
+		expect(JSON.stringify(data)).not.toContain('expected');
+	});
 });
 
-describe('handleDeletePasskey', () => {
+describe('passkey management (ownership scoping)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0, lastAccessedAt: 0 });
 	});
 
-	function delApp(redis: Redis): Hono {
+	it('lists only the caller\'s own passkeys', async () => {
+		vi.mocked(query).mockResolvedValue(mockQueryResult([{ id: 'p1', name: 'Passkey' }]) as never);
 		const app = new Hono();
-		app.delete('/c/:id', (c) => handleDeletePasskey(c, redis));
-		return app;
-	}
+		app.get('/c', (c) => handleListPasskeys(c, mockRedis(undefined)));
+		const res = await Promise.resolve(app.request('http://localhost/c', { headers: { Cookie: 'session_id=s' } }));
+		expect(res.status).toBe(200);
+		const list = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('FROM webauthn_credentials'));
+		expect(list?.[0]).toContain('WHERE user_id = $1');
+		expect(list?.[1]).toEqual([USER_ID]);
+	});
 
-	it('returns 404 when the credential is not owned by the caller', async () => {
+	it('rename is scoped by user_id and 404s when not owned', async () => {
 		vi.mocked(query).mockResolvedValue(mockQueryResult([], 0) as never);
-		const res = await Promise.resolve(delApp(mockRedis(undefined)).request('http://localhost/c/other-cred', {
+		const app = new Hono();
+		app.patch('/c/:id', (c) => handleRenamePasskey(c, mockRedis(undefined)));
+		const res = await Promise.resolve(app.request('http://localhost/c/other-cred', {
+			method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: 'session_id=s' },
+			body: JSON.stringify({ name: 'Work key' }),
+		}));
+		expect(res.status).toBe(404);
+		const upd = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('UPDATE webauthn_credentials SET name'));
+		expect(upd?.[0]).toContain('user_id');
+		expect(upd?.[1]).toEqual(['Work key', 'other-cred', USER_ID]);
+	});
+
+	it('rename rejects an empty name with 400 before any write', async () => {
+		const app = new Hono();
+		app.patch('/c/:id', (c) => handleRenamePasskey(c, mockRedis(undefined)));
+		const res = await Promise.resolve(app.request('http://localhost/c/p1', {
+			method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: 'session_id=s' },
+			body: JSON.stringify({ name: '   ' }),
+		}));
+		expect(res.status).toBe(400);
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it('delete is scoped by user_id and 404s when not owned', async () => {
+		vi.mocked(query).mockResolvedValue(mockQueryResult([], 0) as never);
+		const app = new Hono();
+		app.delete('/c/:id', (c) => handleDeletePasskey(c, mockRedis(undefined)));
+		const res = await Promise.resolve(app.request('http://localhost/c/other-cred', {
 			method: 'DELETE', headers: { Cookie: 'session_id=s' },
 		}));
 		expect(res.status).toBe(404);
-		// The DELETE must be scoped by user_id.
 		const del = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('DELETE FROM webauthn_credentials'));
 		expect(del?.[0]).toContain('user_id');
+		expect(del?.[1]).toEqual(['other-cred', USER_ID]);
 	});
 });

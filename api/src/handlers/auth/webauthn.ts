@@ -34,7 +34,11 @@ const RP_ID = process.env.WEBAUTHN_RP_ID || new URL(APP_URL).hostname;
 const RP_ORIGIN = process.env.WEBAUTHN_ORIGIN || new URL(APP_URL).origin;
 const RP_NAME = 'Specboard';
 
-const CHALLENGE_TTL_SECONDS = 300;
+// Kept a touch above the 60s ceremony timeout (below) to absorb clock skew and
+// the user's verification gesture, but well under the old 5-minute window —
+// smaller replay window and a smaller Redis footprint for the unauthenticated
+// login/options path.
+const CHALLENGE_TTL_SECONDS = 120;
 const REQUIRE_UV = true;
 const MAX_PASSKEYS_PER_USER = 20;
 // ES256 and RS256 only — the algorithms covering iCloud Keychain, Google
@@ -166,20 +170,24 @@ export async function handleWebauthnLoginVerify(context: Context, redis: Redis):
 		const cred = credResult.rows[0];
 		if (!cred) return fail('unknown_credential');
 
-		// userHandle, when present, must resolve to the credential's owner —
-		// otherwise a valid signature from credential A could be claimed as user B.
+		// Discoverable login: the authenticator MUST return a userHandle
+		// (WebAuthn L2 §7.2, the "user not identified before the ceremony"
+		// branch), and it must resolve to the credential's owner — otherwise a
+		// valid signature from credential A could be claimed as user B. Every
+		// shipping platform authenticator returns it for a resident credential;
+		// a missing one is a malformed assertion, rejected rather than falling
+		// back to credential-only resolution.
 		const userHandle = response.response?.userHandle;
-		if (userHandle) {
-			let handle: string;
-			try {
-				handle = new TextDecoder('utf-8', { fatal: true }).decode(
-					new Uint8Array(Buffer.from(userHandle, 'base64url'))
-				);
-			} catch {
-				return fail('bad_user_handle');
-			}
-			if (handle !== cred.user_id) return fail('user_handle_mismatch');
+		if (!userHandle) return fail('missing_user_handle');
+		let handle: string;
+		try {
+			handle = new TextDecoder('utf-8', { fatal: true }).decode(
+				new Uint8Array(Buffer.from(userHandle, 'base64url'))
+			);
+		} catch {
+			return fail('bad_user_handle');
 		}
+		if (handle !== cred.user_id) return fail('user_handle_mismatch');
 
 		let verification;
 		try {
@@ -197,11 +205,16 @@ export async function handleWebauthnLoginVerify(context: Context, redis: Redis):
 				requireUserVerification: REQUIRE_UV,
 			});
 		} catch (verifyError) {
-			const reason = verifyError instanceof Error ? verifyError.message : 'verify_failed';
-			if (reason.toLowerCase().includes('counter')) {
+			// The library throws plain Errors whose messages embed the expected
+			// challenge and origin — log a fixed category, never the raw message.
+			// Counter regression is the one case we escalate as a clone signal;
+			// there's no error code to key on, so match the message text.
+			const message = verifyError instanceof Error ? verifyError.message : '';
+			const isCounterAnomaly = /counter value .* was lower than expected/i.test(message);
+			if (isCounterAnomaly) {
 				logAuthEvent('passkey_counter_anomaly', { credentialId: cred.id });
 			}
-			return fail(reason);
+			return fail(isCounterAnomaly ? 'counter_regression' : 'verify_failed');
 		}
 		if (!verification.verified) return fail('not_verified');
 
@@ -317,7 +330,10 @@ export async function handleWebauthnRegisterVerify(context: Context, redis: Redi
 		}
 
 		// Cap credentials per user — bounds the table and the excludeCredentials
-		// payload returned on every register/options call.
+		// payload returned on every register/options call. Advisory only: this
+		// COUNT-then-INSERT isn't transactional, so two concurrent registrations
+		// could land 1-2 over the cap. Acceptable — it's a growth guard, not a
+		// security boundary.
 		const countResult = await query<{ count: string }>(
 			'SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $1',
 			[userId]
@@ -337,7 +353,10 @@ export async function handleWebauthnRegisterVerify(context: Context, redis: Redi
 				supportedAlgorithmIDs: SUPPORTED_ALGORITHM_IDS,
 			});
 		} catch (verifyError) {
-			return context.json({ error: verifyError instanceof Error ? verifyError.message : 'Verification failed' }, 400);
+			// Don't echo the library message to the client — it embeds the
+			// expected challenge/origin. Keep the detail server-side for debugging.
+			console.error('Passkey register verify failed:', verifyError instanceof Error ? verifyError.message : 'unknown');
+			return context.json({ error: 'Verification failed' }, 400);
 		}
 		if (!verification.verified || !verification.registrationInfo) {
 			return context.json({ error: 'Verification failed' }, 400);
