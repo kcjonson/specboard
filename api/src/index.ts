@@ -288,6 +288,18 @@ app.use(
 	})
 );
 
+// Cap the body on every auth endpoint. These carry only small JSON (credentials,
+// tokens, profile fields, WebAuthn payloads ~1-3 KB), several are unauthenticated,
+// and nothing else in the stack limits body size — so an uncapped body is a
+// memory-exhaustion lever. 64 KB is far above any legitimate auth payload. Scoped
+// to /api/auth/* rather than global so large-body endpoints (chat, document/file
+// writes) are unaffected. onError returns the 413 directly rather than throwing an
+// HTTPException, which the global app.onError would otherwise flatten to a 500.
+app.use('/api/auth/*', bodyLimit({
+	maxSize: 64 * 1024,
+	onError: (context) => context.json({ error: 'Payload too large' }, 413),
+}));
+
 // JSON error responses for API routes
 app.notFound((context) => {
 	return context.json({ error: 'Not found' }, 404);
@@ -404,18 +416,6 @@ app.post('/api/auth/magic-link/request', (context) => handleMagicLinkRequest(con
 app.post('/api/auth/magic-link/verify', (context) => handleMagicLinkVerify(context, redis));
 
 // Passkey (WebAuthn) routes
-// Cap the body on these endpoints: real WebAuthn payloads are ~1-3 KB, and
-// login/* is unauthenticated, so an uncapped body could be a memory-exhaustion
-// lever (nothing else in the stack limits body size). 64 KB is far above any
-// legitimate ceremony payload. Scoped here rather than globally so large-body
-// endpoints (chat, document/file writes) are unaffected.
-// onError returns the 413 directly rather than letting bodyLimit throw an
-// HTTPException, which the global app.onError would otherwise flatten to a 500
-// (and report as an unhandled error).
-app.use('/api/auth/webauthn/*', bodyLimit({
-	maxSize: 64 * 1024,
-	onError: (context) => context.json({ error: 'Payload too large' }, 413),
-}));
 app.post('/api/auth/webauthn/login/options', (context) => handleWebauthnLoginOptions(context, redis));
 app.post('/api/auth/webauthn/login/verify', (context) => handleWebauthnLoginVerify(context, redis));
 app.post('/api/auth/webauthn/register/options', (context) => handleWebauthnRegisterOptions(context, redis));
