@@ -49,7 +49,7 @@ export function browserSupportsWebAuthn(): boolean {
 		&& typeof navigator.credentials.create === 'function';
 }
 
-export function base64urlToBuffer(value: string): ArrayBuffer {
+function base64urlToBuffer(value: string): ArrayBuffer {
 	const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
 	const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
 	const binary = atob(padded);
@@ -58,7 +58,7 @@ export function base64urlToBuffer(value: string): ArrayBuffer {
 	return bytes.buffer;
 }
 
-export function bufferToBase64url(buffer: ArrayBuffer): string {
+function bufferToBase64url(buffer: ArrayBuffer): string {
 	const bytes = new Uint8Array(buffer);
 	let binary = '';
 	for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
@@ -90,6 +90,7 @@ export async function createPasskey(
 			transports: c.transports as AuthenticatorTransport[] | undefined,
 		})),
 		authenticatorSelection: options.authenticatorSelection as AuthenticatorSelectionCriteria | undefined,
+		extensions: options.extensions as AuthenticationExtensionsClientInputs | undefined,
 	};
 
 	const credential = await navigator.credentials.create({ publicKey }) as PublicKeyCredential | null;
@@ -113,13 +114,17 @@ export async function createPasskey(
 	};
 }
 
-/** Map a ceremony error to a user-facing message. */
-export function passkeyErrorMessage(err: unknown, fallback: string): string {
+/**
+ * Map a ceremony error to a user-facing message, or `null` when it should be
+ * silent — a user-cancel/abort is a deliberate action, not an error to shout
+ * about (matching how the login page treats NotAllowedError).
+ */
+export function passkeyErrorMessage(err: unknown, fallback: string): string | null {
 	if (err instanceof Error) {
+		// User dismissed the prompt, aborted, or it timed out — stay quiet.
+		if (err.name === 'NotAllowedError' || err.name === 'AbortError') return null;
 		// The authenticator already holds a credential excluded by the RP.
 		if (err.name === 'InvalidStateError') return 'This device already has a passkey for your account.';
-		// User dismissed the prompt or it timed out.
-		if (err.name === 'NotAllowedError') return 'Passkey setup was cancelled or timed out.';
 	}
 	return fallback;
 }

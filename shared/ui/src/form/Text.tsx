@@ -30,6 +30,8 @@ export interface TextProps {
 	name?: string;
 	/** Input id */
 	id?: string;
+	/** Accessible name when no visible `label` is used */
+	ariaLabel?: string;
 	/** Autofocus */
 	autoFocus?: boolean;
 	/** Autocomplete */
@@ -53,6 +55,7 @@ export function Text({
 	class: className,
 	name,
 	id,
+	ariaLabel,
 	autoFocus,
 	autoComplete,
 	required,
@@ -76,6 +79,7 @@ export function Text({
 				readOnly={readOnly}
 				name={name}
 				id={id}
+				aria-label={ariaLabel}
 				autoFocus={autoFocus}
 				autoComplete={autoComplete}
 				required={required}

@@ -285,6 +285,9 @@ export const loginScript = `(function() {
 
 	// --- Passkey (WebAuthn) sign-in ---
 	var passkeyBtn = document.getElementById('passkey-btn');
+	// Shared so the explicit button can cancel a pending conditional-UI get()
+	// deterministically, rather than relying on listener-registration order.
+	var conditionalController = null;
 
 	function b64urlToBuf(value) {
 		var base64 = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -324,7 +327,8 @@ export const loginScript = `(function() {
 				userVerification: opts.userVerification,
 				allowCredentials: (opts.allowCredentials || []).map(function(c) {
 					return { type: 'public-key', id: b64urlToBuf(c.id), transports: c.transports };
-				})
+				}),
+				extensions: opts.extensions
 			};
 			var getOptions = { publicKey: publicKey };
 			if (mediation) getOptions.mediation = mediation;
@@ -337,17 +341,22 @@ export const loginScript = `(function() {
 
 	function passkeyVerify(challengeId, credential) {
 		var r = credential.response;
+		var assertion = {
+			clientDataJSON: bufToB64url(r.clientDataJSON),
+			authenticatorData: bufToB64url(r.authenticatorData),
+			signature: bufToB64url(r.signature)
+		};
+		// Omit userHandle when absent (matches the platform JSON form) rather than
+		// sending a literal null.
+		if (r.userHandle) {
+			assertion.userHandle = bufToB64url(r.userHandle);
+		}
 		var response = {
 			id: credential.id,
 			rawId: bufToB64url(credential.rawId),
 			type: credential.type,
 			clientExtensionResults: credential.getClientExtensionResults ? credential.getClientExtensionResults() : {},
-			response: {
-				clientDataJSON: bufToB64url(r.clientDataJSON),
-				authenticatorData: bufToB64url(r.authenticatorData),
-				signature: bufToB64url(r.signature),
-				userHandle: r.userHandle ? bufToB64url(r.userHandle) : null
-			}
+			response: assertion
 		};
 		if (credential.authenticatorAttachment) {
 			response.authenticatorAttachment = credential.authenticatorAttachment;
@@ -365,6 +374,8 @@ export const loginScript = `(function() {
 		passkeyBtn.classList.remove('hidden');
 		passkeyBtn.addEventListener('click', function() {
 			hideError();
+			// Cancel any in-flight conditional-UI get() before starting a fresh one.
+			if (conditionalController) conditionalController.abort();
 			passkeyBtn.disabled = true;
 			passkeyBtn.textContent = 'Waiting for passkey...';
 			passkeyAssert(null, null)
@@ -394,14 +405,20 @@ export const loginScript = `(function() {
 	if (passkeySupported() && window.PublicKeyCredential.isConditionalMediationAvailable) {
 		window.PublicKeyCredential.isConditionalMediationAvailable().then(function(available) {
 			if (!available) return;
-			var controller = new AbortController();
-			form.addEventListener('submit', function() { controller.abort(); });
-			magicLinkBtn.addEventListener('click', function() { controller.abort(); });
-			if (passkeyBtn) passkeyBtn.addEventListener('click', function() { controller.abort(); });
-			passkeyAssert('conditional', controller.signal)
+			conditionalController = new AbortController();
+			form.addEventListener('submit', function() { conditionalController.abort(); });
+			magicLinkBtn.addEventListener('click', function() { conditionalController.abort(); });
+			passkeyAssert('conditional', conditionalController.signal)
 			.then(function(r) { return passkeyVerify(r.challengeId, r.credential); })
 			.then(function(result) {
-				if (result.ok) window.location.href = getReturnUrl();
+				if (result.ok) {
+					window.location.href = getReturnUrl();
+				} else {
+					// A completed assertion the server rejected — most reachably, the
+					// challenge expired while the tab sat idle. Surface it instead of a
+					// silent dead-end. Cancel / no-credential arrive via .catch and stay quiet.
+					showError(result.data.error || 'Passkey sign-in did not complete. Please try again.');
+				}
 			})
 			.catch(function() { /* aborted, cancelled, or no discoverable credential */ });
 		}).catch(function() { /* isConditionalMediationAvailable unsupported */ });

@@ -8,6 +8,7 @@ import {
 	passkeyErrorMessage,
 	type PublicKeyCredentialCreationOptionsJSON,
 } from '../../lib/webauthn';
+import { fetchErrorText } from '../../lib/errors';
 import styles from './Passkeys.module.css';
 
 interface Passkey {
@@ -24,18 +25,10 @@ interface RegisterOptionsResponse {
 	options: PublicKeyCredentialCreationOptionsJSON;
 }
 
-function errorText(err: unknown, fallback: string): string {
-	if (err instanceof FetchError) {
-		const data = err.data as { error?: string } | undefined;
-		if (data?.error) return data.error;
-	}
-	return fallback;
-}
-
 function deviceLabel(passkey: Passkey): string {
 	if (passkey.device_type === 'multiDevice' || passkey.backed_up) return 'Synced across your devices';
 	if (passkey.device_type === 'singleDevice') return 'This device only';
-	return 'Security key';
+	return 'Passkey';
 }
 
 function formatDate(value: string | null): string {
@@ -47,7 +40,7 @@ function formatDate(value: string | null): string {
  * Passkey management: list, add (runs the WebAuthn registration ceremony),
  * rename, and remove. Rendered as its own settings card.
  */
-export function Passkeys(): JSX.Element | null {
+export function Passkeys(): JSX.Element {
 	const supported = browserSupportsWebAuthn();
 
 	const [passkeys, setPasskeys] = useState<Passkey[]>([]);
@@ -64,7 +57,7 @@ export function Passkeys(): JSX.Element | null {
 			const data = await fetchClient.get<{ passkeys: Passkey[] }>('/api/auth/webauthn/credentials');
 			setPasskeys(data.passkeys);
 		} catch (err: unknown) {
-			setError(errorText(err, 'Could not load your passkeys.'));
+			setError(fetchErrorText(err, 'Could not load your passkeys.'));
 		} finally {
 			setLoading(false);
 		}
@@ -74,6 +67,17 @@ export function Passkeys(): JSX.Element | null {
 		if (supported) void load();
 		else setLoading(false);
 	}, [supported, load]);
+
+	const startRename = (passkey: Passkey): void => {
+		setConfirmDelete(null);
+		setRenamingId(passkey.id);
+		setRenameValue(passkey.name);
+	};
+
+	const startDelete = (id: string): void => {
+		setRenamingId(null);
+		setConfirmDelete(id);
+	};
 
 	const handleAdd = async (): Promise<void> => {
 		setError(null);
@@ -86,10 +90,13 @@ export function Passkeys(): JSX.Element | null {
 			await fetchClient.post('/api/auth/webauthn/register/verify', { challengeId, response });
 			await load();
 		} catch (err: unknown) {
-			// DOMException (cancel/exclude) maps via passkeyErrorMessage; API errors via errorText.
-			setError(err instanceof FetchError
-				? errorText(err, 'Could not register the passkey.')
-				: passkeyErrorMessage(err, 'Could not register the passkey.'));
+			// API errors are shown; a user-cancel (passkeyErrorMessage → null) stays silent.
+			if (err instanceof FetchError) {
+				setError(fetchErrorText(err, 'Could not register the passkey.'));
+			} else {
+				const message = passkeyErrorMessage(err, 'Could not register the passkey.');
+				if (message) setError(message);
+			}
 		} finally {
 			setAdding(false);
 		}
@@ -101,11 +108,13 @@ export function Passkeys(): JSX.Element | null {
 		setBusyId(id);
 		setError(null);
 		try {
-			await fetchClient.patch(`/api/auth/webauthn/credentials/${id}`, { name });
+			await fetchClient.patch(`/api/auth/webauthn/credentials/${encodeURIComponent(id)}`, { name });
+			// Update locally — a follow-up refetch that blipped would wrongly read
+			// as the rename having failed.
+			setPasskeys((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
 			setRenamingId(null);
-			await load();
 		} catch (err: unknown) {
-			setError(errorText(err, 'Could not rename the passkey.'));
+			setError(fetchErrorText(err, 'Could not rename the passkey.'));
 		} finally {
 			setBusyId(null);
 		}
@@ -115,11 +124,11 @@ export function Passkeys(): JSX.Element | null {
 		setBusyId(id);
 		setError(null);
 		try {
-			await fetchClient.delete(`/api/auth/webauthn/credentials/${id}`);
+			await fetchClient.delete(`/api/auth/webauthn/credentials/${encodeURIComponent(id)}`);
+			setPasskeys((prev) => prev.filter((p) => p.id !== id));
 			setConfirmDelete(null);
-			await load();
 		} catch (err: unknown) {
-			setError(errorText(err, 'Could not remove the passkey.'));
+			setError(fetchErrorText(err, 'Could not remove the passkey.'));
 		} finally {
 			setBusyId(null);
 		}
@@ -136,7 +145,7 @@ export function Passkeys(): JSX.Element | null {
 				<p class={styles.notice}>This browser doesn't support passkeys.</p>
 			)}
 
-			{error && <p class={styles.error}>{error}</p>}
+			{error && <p class={styles.error} role="alert">{error}</p>}
 
 			{supported && !loading && passkeys.length > 0 && (
 				<div class={styles.list}>
@@ -150,6 +159,8 @@ export function Passkeys(): JSX.Element | null {
 								>
 									<Text
 										id={`rename-${passkey.id}`}
+										ariaLabel="Passkey name"
+										autoFocus
 										value={renameValue}
 										onInput={(e) => setRenameValue((e.target as HTMLInputElement).value)}
 									/>
@@ -175,13 +186,12 @@ export function Passkeys(): JSX.Element | null {
 											</>
 										) : (
 											<>
-												<Button
-													variant="secondary"
-													onClick={() => { setRenamingId(passkey.id); setRenameValue(passkey.name); }}
-												>
+												<Button variant="secondary" aria-label={`Rename ${passkey.name}`} onClick={() => startRename(passkey)}>
 													Rename
 												</Button>
-												<Button variant="secondary" onClick={() => setConfirmDelete(passkey.id)}>Remove</Button>
+												<Button variant="secondary" aria-label={`Remove ${passkey.name}`} onClick={() => startDelete(passkey.id)}>
+													Remove
+												</Button>
 											</>
 										)}
 									</div>

@@ -60,6 +60,7 @@ export default [
 				AttestationConveyancePreference: 'readonly',
 				AuthenticatorTransport: 'readonly',
 				AuthenticatorSelectionCriteria: 'readonly',
+				AuthenticationExtensionsClientInputs: 'readonly',
 				Blob: 'readonly',
 				requestAnimationFrame: 'readonly',
 				cancelAnimationFrame: 'readonly',

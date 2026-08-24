@@ -10,6 +10,7 @@ import {
 	passkeyErrorMessage,
 	type PublicKeyCredentialCreationOptionsJSON,
 } from '../../lib/webauthn';
+import { fetchErrorText } from '../../lib/errors';
 import styles from './Onboarding.module.css';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,30}$/;
@@ -39,7 +40,7 @@ export function Onboarding(): JSX.Element | null {
 	const [error, setError] = useState<string | null>(null);
 
 	// Landed here with a finished profile (deep link, back button): move on,
-	// unless this visit is mid-flow on the optional password step
+	// unless this visit is mid-flow on the optional password or passkey step.
 	if (user.$meta.lastFetched && user.profile_complete && step === 'identity') {
 		navigate('/');
 		return null;
@@ -61,16 +62,6 @@ export function Onboarding(): JSX.Element | null {
 		navigate('/');
 	};
 
-	// The server's friendly message lives in FetchError.data.error;
-	// err.message is just "HTTP 409: Conflict".
-	const errorText = (err: unknown, fallback: string): string => {
-		if (err instanceof FetchError) {
-			const data = err.data as { error?: string } | undefined;
-			if (data?.error) return data.error;
-		}
-		return fallback;
-	};
-
 	const handleIdentitySubmit = async (e: Event): Promise<void> => {
 		e.preventDefault();
 		if (!identityValid || saving) return;
@@ -85,7 +76,7 @@ export function Onboarding(): JSX.Element | null {
 			user.fetch();
 			setStep('password');
 		} catch (err: unknown) {
-			setError(errorText(err, 'Failed to save profile'));
+			setError(fetchErrorText(err, 'Failed to save profile'));
 		} finally {
 			setSaving(false);
 		}
@@ -103,7 +94,7 @@ export function Onboarding(): JSX.Element | null {
 			setSaving(false);
 			goToPasskeyOrFinish();
 		} catch (err: unknown) {
-			setError(errorText(err, 'Failed to set password'));
+			setError(fetchErrorText(err, 'Failed to set password'));
 			setSaving(false);
 		}
 	};
@@ -128,9 +119,13 @@ export function Onboarding(): JSX.Element | null {
 			await fetchClient.post('/api/auth/webauthn/register/verify', { challengeId, response });
 			finish();
 		} catch (err: unknown) {
-			setError(err instanceof FetchError
-				? errorText(err, 'Could not add a passkey.')
-				: passkeyErrorMessage(err, 'Could not add a passkey.'));
+			// API errors are shown; a user-cancel (passkeyErrorMessage → null) stays silent.
+			if (err instanceof FetchError) {
+				setError(fetchErrorText(err, 'Could not add a passkey.'));
+			} else {
+				const message = passkeyErrorMessage(err, 'Could not add a passkey.');
+				if (message) setError(message);
+			}
 			setSaving(false);
 		}
 	};
@@ -145,7 +140,7 @@ export function Onboarding(): JSX.Element | null {
 							Pick a username and tell us your name to finish setting up your account.
 						</p>
 
-						{error && <div class={styles.error}>{error}</div>}
+						{error && <div class={styles.error} role="alert">{error}</div>}
 
 						<form onSubmit={handleIdentitySubmit} class={styles.form}>
 							<div class={styles.field}>
@@ -196,7 +191,7 @@ export function Onboarding(): JSX.Element | null {
 							Optional: you can always sign in with an emailed code instead.
 						</p>
 
-						{error && <div class={styles.error}>{error}</div>}
+						{error && <div class={styles.error} role="alert">{error}</div>}
 
 						<form onSubmit={handlePasswordSubmit} class={styles.form}>
 							<div class={styles.field}>
@@ -242,7 +237,7 @@ export function Onboarding(): JSX.Element | null {
 							Optional: sign in with your fingerprint, face, or device PIN instead of a password.
 						</p>
 
-						{error && <div class={styles.error}>{error}</div>}
+						{error && <div class={styles.error} role="alert">{error}</div>}
 
 						<div class={styles.form}>
 							<Button type="button" disabled={saving} onClick={handleAddPasskey}>
