@@ -124,6 +124,17 @@ app.use('*', async (c, next) => {
 	});
 });
 
+// Clickjacking defense: the login and passkey ceremonies must never run inside
+// a cross-origin frame. frame-ancestors 'self' (plus the legacy X-Frame-Options
+// for older browsers) still allows same-origin framing — e.g. the OAuth consent
+// flow — but blocks foreign embedding. Set on the HTML-serving frontend, which
+// is what serves these pages in prod (there is no nginx there).
+app.use('*', async (c, next) => {
+	await next();
+	c.header('X-Frame-Options', 'SAMEORIGIN');
+	c.header('Content-Security-Policy', "frame-ancestors 'self'");
+});
+
 // Health check (no auth required)
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
