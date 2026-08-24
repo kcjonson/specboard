@@ -26,6 +26,7 @@ import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
 import { query, type User } from '@specboard/db';
 
 import { logAuthEvent, establishSession, isCrossOriginRequest, APP_URL } from './utils.ts';
+import { isValidUUID } from '../../validation.ts';
 
 // RP config. rpId is the effective domain; origin is the exact page origin.
 // Both env-overridable for deployments where the API host differs from the
@@ -84,7 +85,16 @@ async function getSessionUserId(context: Context, redis: Redis): Promise<string 
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 	if (!sessionId) return null;
 	const session = await getSession(redis, sessionId);
-	return session?.userId ?? null;
+	if (!session?.userId) return null;
+	// Deactivation doesn't expire a live session, so gate every session-authed
+	// passkey endpoint on the account still being active — otherwise a deactivated
+	// user could keep registering/renaming/removing passkeys with an old cookie.
+	// Matches handleGetMe/handleUpdateMe.
+	const active = await query<{ is_active: boolean }>(
+		'SELECT is_active FROM users WHERE id = $1',
+		[session.userId]
+	);
+	return active.rows[0]?.is_active ? session.userId : null;
 }
 
 function userJson(user: User): Record<string, unknown> {
@@ -222,16 +232,17 @@ export async function handleWebauthnLoginVerify(context: Context, redis: Redis):
 		const user = userResult.rows[0];
 		if (!user || !user.is_active) return fail('account_inactive');
 
-		// Write the counter back atomically — clone detection is inert without
-		// the write, and a bare UPDATE has a read-verify-write race where two
-		// concurrent assertions off a cloned authenticator both pass. The guard
-		// only advances the counter (allowing the both-zero synced-passkey case),
-		// and a no-op update means another request already advanced it: a clone
-		// signal, so fail rather than issue a session.
+		// Write the counter back as a compare-and-swap bound to the value read
+		// during verification — clone detection is inert without the write, and a
+		// bare UPDATE has a read-verify-write race. Binding WHERE to the original
+		// counter (not `counter < new`) means only one of two concurrent assertions
+		// can win: the loser finds the row already moved and no-ops. This naturally
+		// covers the both-zero synced-passkey case (0 = 0 still matches). A no-op
+		// means another request already advanced it — a clone signal, so fail.
 		const upd = await query(
 			`UPDATE webauthn_credentials SET counter = $1, last_used_at = NOW()
-			 WHERE id = $2 AND (counter < $1 OR counter = 0)`,
-			[verification.authenticationInfo.newCounter, cred.id]
+			 WHERE id = $2 AND counter = $3`,
+			[verification.authenticationInfo.newCounter, cred.id, Number(cred.counter)]
 		);
 		if ((upd.rowCount ?? 0) === 0) {
 			logAuthEvent('passkey_counter_anomaly', { credentialId: cred.id });
@@ -420,6 +431,9 @@ export async function handleRenamePasskey(context: Context, redis: Redis): Promi
 	if (!userId) return context.json({ error: 'Not authenticated' }, 401);
 
 	const id = context.req.param('id');
+	// A non-UUID would reach Postgres and raise 22P02 → global 500. Reject it as
+	// a plain not-found (a malformed id can't name a real credential anyway).
+	if (!isValidUUID(id)) return context.json({ error: 'Passkey not found' }, 404);
 	let body: RenameBody;
 	try {
 		body = await context.req.json<RenameBody>();
@@ -443,6 +457,7 @@ export async function handleDeletePasskey(context: Context, redis: Redis): Promi
 	if (!userId) return context.json({ error: 'Not authenticated' }, 401);
 
 	const id = context.req.param('id');
+	if (!isValidUUID(id)) return context.json({ error: 'Passkey not found' }, 404);
 	const result = await query(
 		'DELETE FROM webauthn_credentials WHERE id = $1 AND user_id = $2',
 		[id, userId]

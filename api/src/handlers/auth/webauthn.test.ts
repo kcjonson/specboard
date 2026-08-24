@@ -63,7 +63,25 @@ function mockQueryResult(rows: pg.QueryResultRow[] = [], rowCount = rows.length)
 
 const USER_ID = 'user-uuid-123';
 const CHALLENGE_ID = 'a'.repeat(32);
+const CRED_UUID = '11111111-1111-4111-8111-111111111111'; // RFC-4122 conformant (v4, variant 8)
 const MATCHING_USER_HANDLE = Buffer.from(USER_ID).toString('base64url');
+
+/**
+ * getSessionUserId now issues `SELECT is_active FROM users` to gate the
+ * session-authed endpoints on an active account. Every such test needs that to
+ * report active; this wraps a per-test query impl and answers the is_active
+ * probe first. Pass `active=false` to simulate a deactivated account.
+ */
+function mockSessionQueries(
+	impl?: (sql: string) => pg.QueryResult,
+	active = true
+): void {
+	vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+		const text = sql as string;
+		if (text.includes('SELECT is_active FROM users')) return mockQueryResult([{ is_active: active }]);
+		return impl ? impl(text) : mockQueryResult([], 1);
+	});
+}
 
 const credRow = {
 	id: 'cred-row-1',
@@ -205,11 +223,11 @@ describe('handleWebauthnLoginVerify', () => {
 		}));
 		expect(createSession).toHaveBeenCalledWith(expect.anything(), 'session-id', { userId: USER_ID, authMethod: 'passkey', profileComplete: true });
 		const update = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('UPDATE webauthn_credentials SET counter'));
-		expect(update?.[1]).toEqual([6, 'cred-row-1']);
-		// The write-back guard SQL is the clone-race protection; lock it so a
-		// dropped clause can't pass under the mocked query.
-		expect(update?.[0]).toContain('counter < $1');
-		expect(update?.[0]).toContain('counter = 0');
+		// CAS bound to the counter read at verify (5): [newCounter, id, oldCounter].
+		expect(update?.[1]).toEqual([6, 'cred-row-1', 5]);
+		// The write-back is the clone-race protection; lock the compare-and-swap
+		// predicate so a dropped/loosened clause can't pass under the mocked query.
+		expect(update?.[0]).toContain('counter = $3');
 	});
 
 	it('accepts a synced passkey reporting counter 0 on both sides (both-zero path)', async () => {
@@ -232,7 +250,8 @@ describe('handleWebauthnLoginVerify', () => {
 		expect(res.status).toBe(200);
 		expect(createSession).toHaveBeenCalled();
 		const update = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('UPDATE webauthn_credentials SET counter'));
-		expect(update?.[1]).toEqual([0, 'cred-row-1']);
+		// Both-zero: CAS WHERE counter = 0 still matches. [newCounter, id, oldCounter].
+		expect(update?.[1]).toEqual([0, 'cred-row-1', 0]);
 	});
 
 	it('rejects an inactive user after verification', async () => {
@@ -316,8 +335,7 @@ describe('handleWebauthnRegisterOptions', () => {
 	});
 
 	it('builds excludeCredentials and the UUID user handle from the account, pinned to ES256/RS256', async () => {
-		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
-			const text = sql as string;
+		mockSessionQueries((text) => {
 			if (text.includes('FROM users WHERE id')) return mockQueryResult([regUser]);
 			if (text.includes('FROM webauthn_credentials WHERE user_id')) {
 				return mockQueryResult([
@@ -363,6 +381,9 @@ describe('handleWebauthnRegisterVerify', () => {
 			},
 		};
 		vi.mocked(verifyRegistrationResponse).mockResolvedValue(verified);
+		// Default: active account, so getSessionUserId resolves. Tests that need
+		// specific query behavior re-call mockSessionQueries with their own impl.
+		mockSessionQueries();
 	});
 
 	function regApp(redis: Redis): Hono {
@@ -408,8 +429,8 @@ describe('handleWebauthnRegisterVerify', () => {
 	});
 
 	it('inserts the credential with the correct columns and returns 201', async () => {
-		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
-			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '2' }]);
+		mockSessionQueries((text) => {
+			if (text.includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '2' }]);
 			return mockQueryResult([{ id: 'c1', name: 'Passkey', created_at: new Date() }]);
 		});
 		const res = await postReg(regApp(mockRedis({ type: 'registration', challenge: 'c', userId: USER_ID })), regBody);
@@ -430,8 +451,8 @@ describe('handleWebauthnRegisterVerify', () => {
 	});
 
 	it('maps a duplicate credential to 409', async () => {
-		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
-			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '0' }]);
+		mockSessionQueries((text) => {
+			if (text.includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '0' }]);
 			const err = new Error('duplicate key') as Error & { code: string };
 			err.code = '23505';
 			throw err; // the INSERT
@@ -441,8 +462,8 @@ describe('handleWebauthnRegisterVerify', () => {
 	});
 
 	it('rejects registration when the passkey cap is reached', async () => {
-		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
-			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '20' }]);
+		mockSessionQueries((text) => {
+			if (text.includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '20' }]);
 			return mockQueryResult([], 1);
 		});
 		const res = await postReg(regApp(mockRedis({ type: 'registration', challenge: 'c', userId: USER_ID })), regBody);
@@ -454,8 +475,8 @@ describe('handleWebauthnRegisterVerify', () => {
 		vi.mocked(verifyRegistrationResponse).mockRejectedValue(
 			new Error('Unexpected registration response challenge "abc", expected "xyz"')
 		);
-		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
-			if ((sql as string).includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '0' }]);
+		mockSessionQueries((text) => {
+			if (text.includes('SELECT COUNT(*)')) return mockQueryResult([{ count: '0' }]);
 			return mockQueryResult([], 1);
 		});
 		const res = await postReg(regApp(mockRedis({ type: 'registration', challenge: 'c', userId: USER_ID })), regBody);
@@ -470,54 +491,82 @@ describe('passkey management (ownership scoping)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0, lastAccessedAt: 0 });
+		mockSessionQueries(); // active account by default
 	});
 
 	it('lists only the caller\'s own passkeys', async () => {
-		vi.mocked(query).mockResolvedValue(mockQueryResult([{ id: 'p1', name: 'Passkey' }]) as never);
+		mockSessionQueries((text) => {
+			if (text.includes('FROM webauthn_credentials')) return mockQueryResult([{ id: CRED_UUID, name: 'Passkey' }]);
+			return mockQueryResult([], 1);
+		});
 		const app = new Hono();
 		app.get('/c', (c) => handleListPasskeys(c, mockRedis(undefined)));
 		const res = await Promise.resolve(app.request('http://localhost/c', { headers: { Cookie: 'session_id=s' } }));
 		expect(res.status).toBe(200);
-		const list = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('FROM webauthn_credentials'));
+		const list = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('FROM webauthn_credentials WHERE user_id'));
 		expect(list?.[0]).toContain('WHERE user_id = $1');
 		expect(list?.[1]).toEqual([USER_ID]);
 	});
 
 	it('rename is scoped by user_id and 404s when not owned', async () => {
-		vi.mocked(query).mockResolvedValue(mockQueryResult([], 0) as never);
+		mockSessionQueries((text) => (text.includes('UPDATE webauthn_credentials SET name') ? mockQueryResult([], 0) : mockQueryResult([], 1)));
 		const app = new Hono();
 		app.patch('/c/:id', (c) => handleRenamePasskey(c, mockRedis(undefined)));
-		const res = await Promise.resolve(app.request('http://localhost/c/other-cred', {
+		const res = await Promise.resolve(app.request(`http://localhost/c/${CRED_UUID}`, {
 			method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: 'session_id=s' },
 			body: JSON.stringify({ name: 'Work key' }),
 		}));
 		expect(res.status).toBe(404);
 		const upd = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('UPDATE webauthn_credentials SET name'));
 		expect(upd?.[0]).toContain('user_id');
-		expect(upd?.[1]).toEqual(['Work key', 'other-cred', USER_ID]);
+		expect(upd?.[1]).toEqual(['Work key', CRED_UUID, USER_ID]);
 	});
 
 	it('rename rejects an empty name with 400 before any write', async () => {
 		const app = new Hono();
 		app.patch('/c/:id', (c) => handleRenamePasskey(c, mockRedis(undefined)));
-		const res = await Promise.resolve(app.request('http://localhost/c/p1', {
+		const res = await Promise.resolve(app.request(`http://localhost/c/${CRED_UUID}`, {
 			method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: 'session_id=s' },
 			body: JSON.stringify({ name: '   ' }),
 		}));
 		expect(res.status).toBe(400);
-		expect(query).not.toHaveBeenCalled();
+		const upd = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('UPDATE webauthn_credentials SET name'));
+		expect(upd).toBeUndefined();
+	});
+
+	it('rejects a malformed credential id with 404 and no DB write', async () => {
+		const app = new Hono();
+		app.delete('/c/:id', (c) => handleDeletePasskey(c, mockRedis(undefined)));
+		const res = await Promise.resolve(app.request('http://localhost/c/not-a-uuid', {
+			method: 'DELETE', headers: { Cookie: 'session_id=s' },
+		}));
+		expect(res.status).toBe(404);
+		const del = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('DELETE FROM webauthn_credentials'));
+		expect(del).toBeUndefined();
+	});
+
+	it('rejects a deactivated account with 401 before touching credentials', async () => {
+		mockSessionQueries(undefined, false); // getSessionUserId sees is_active = false
+		const app = new Hono();
+		app.delete('/c/:id', (c) => handleDeletePasskey(c, mockRedis(undefined)));
+		const res = await Promise.resolve(app.request(`http://localhost/c/${CRED_UUID}`, {
+			method: 'DELETE', headers: { Cookie: 'session_id=s' },
+		}));
+		expect(res.status).toBe(401);
+		const del = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('DELETE FROM webauthn_credentials'));
+		expect(del).toBeUndefined();
 	});
 
 	it('delete is scoped by user_id and 404s when not owned', async () => {
-		vi.mocked(query).mockResolvedValue(mockQueryResult([], 0) as never);
+		mockSessionQueries((text) => (text.includes('DELETE FROM webauthn_credentials') ? mockQueryResult([], 0) : mockQueryResult([], 1)));
 		const app = new Hono();
 		app.delete('/c/:id', (c) => handleDeletePasskey(c, mockRedis(undefined)));
-		const res = await Promise.resolve(app.request('http://localhost/c/other-cred', {
+		const res = await Promise.resolve(app.request(`http://localhost/c/${CRED_UUID}`, {
 			method: 'DELETE', headers: { Cookie: 'session_id=s' },
 		}));
 		expect(res.status).toBe(404);
 		const del = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('DELETE FROM webauthn_credentials'));
 		expect(del?.[0]).toContain('user_id');
-		expect(del?.[1]).toEqual(['other-cred', USER_ID]);
+		expect(del?.[1]).toEqual([CRED_UUID, USER_ID]);
 	});
 });
