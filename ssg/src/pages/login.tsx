@@ -34,18 +34,15 @@ export function LoginContent(): JSX.Element {
 						/>
 					</div>
 
-					<div class="forgot-password">
-						<a href="/forgot-password">Forgot your password?</a>
+					<div class="signin-actions">
+						<button type="submit" id="submit-btn">Sign In</button>
+						<button type="button" id="magic-link-btn" class="secondary">
+							Email me a sign-in code
+						</button>
 					</div>
-
-					<button type="submit" id="submit-btn">Sign In</button>
 				</form>
 
 				<div class="method-divider"><span>or</span></div>
-
-				<button type="button" id="magic-link-btn" class="secondary">
-					Email me a sign-in code
-				</button>
 
 				<button type="button" id="passkey-btn" class="secondary hidden">
 					Sign in with a passkey
@@ -80,8 +77,11 @@ export function LoginContent(): JSX.Element {
 				</div>
 			</div>
 
-			<div class="signup-link">
-				Don't have an account? <a href="/signup">Create one</a>
+			<div class="login-footer">
+				<a href="/forgot-password" class="footer-link">Forgot your password?</a>
+				<div class="signup-link">
+					Don't have an account? <a href="/signup">Create one</a>
+				</div>
 			</div>
 		</div>
 	);
