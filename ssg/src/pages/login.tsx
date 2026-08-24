@@ -111,6 +111,30 @@ export const loginScript = `(function() {
 		errorEl.classList.add('hidden');
 	}
 
+	function showCodeView() {
+		passwordSection.classList.add('hidden');
+		codeSection.classList.remove('hidden');
+		codeInput.focus();
+		// Make the password -> code switch a real history entry so the browser
+		// Back button returns to the password view instead of leaving /login.
+		// Same URL (no email in the query — privacy), just a marker state.
+		history.pushState({ loginView: 'code' }, '');
+	}
+
+	function showPasswordView() {
+		hideError();
+		codeSection.classList.add('hidden');
+		passwordSection.classList.remove('hidden');
+	}
+
+	// Back/forward returns to the password view when the code view is showing,
+	// rather than navigating away from the page.
+	window.addEventListener('popstate', function() {
+		if (!codeSection.classList.contains('hidden')) {
+			showPasswordView();
+		}
+	});
+
 	function getReturnUrl() {
 		var params = new URLSearchParams(window.location.search);
 		var next = params.get('next');
@@ -214,9 +238,7 @@ export const loginScript = `(function() {
 			if (result.ok) {
 				pendingEmail = email;
 				codeEmailEl.textContent = email;
-				passwordSection.classList.add('hidden');
-				codeSection.classList.remove('hidden');
-				codeInput.focus();
+				showCodeView();
 			} else {
 				showError(result.data.error || 'Could not send a sign-in code. Please try again.');
 			}
@@ -278,9 +300,10 @@ export const loginScript = `(function() {
 
 	backLink.addEventListener('click', function(e) {
 		e.preventDefault();
-		hideError();
-		codeSection.classList.add('hidden');
-		passwordSection.classList.remove('hidden');
+		// Go back through history so this link and the browser Back button take
+		// the same path (consuming the pushed code-view entry); popstate restores
+		// the password view.
+		history.back();
 	});
 
 	// --- Passkey (WebAuthn) sign-in ---
