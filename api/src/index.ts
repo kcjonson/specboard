@@ -5,6 +5,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { bodyLimit } from 'hono/body-limit';
 import { serve } from '@hono/node-server';
 import { Redis } from 'ioredis';
 
@@ -39,6 +40,13 @@ import {
 	handleChangePassword,
 	handleMagicLinkRequest,
 	handleMagicLinkVerify,
+	handleWebauthnLoginOptions,
+	handleWebauthnLoginVerify,
+	handleWebauthnRegisterOptions,
+	handleWebauthnRegisterVerify,
+	handleListPasskeys,
+	handleRenamePasskey,
+	handleDeletePasskey,
 } from './handlers/auth/index.ts';
 import {
 	handleListUsers,
@@ -229,6 +237,8 @@ app.use(
 			{ path: '/api/auth/signup', config: RATE_LIMIT_CONFIGS.signup },
 			{ path: '/api/auth/magic-link/request', config: RATE_LIMIT_CONFIGS.magicLinkRequest },
 			{ path: '/api/auth/magic-link/verify', config: RATE_LIMIT_CONFIGS.magicLinkVerify },
+			{ path: '/api/auth/webauthn/login/options', config: RATE_LIMIT_CONFIGS.webauthnLoginOptions },
+			{ path: '/api/auth/webauthn/login/verify', config: RATE_LIMIT_CONFIGS.login },
 			{ path: '/api/auth/forgot-password', config: RATE_LIMIT_CONFIGS.forgot },
 			{ path: '/api/auth/resend-verification', config: RATE_LIMIT_CONFIGS.resendVerification },
 			{ path: '/api/auth/github', config: RATE_LIMIT_CONFIGS.login }, // OAuth start - same limit as login
@@ -260,6 +270,11 @@ app.use(
 			'/api/auth/reset-password',
 			'/api/auth/magic-link/request',
 			'/api/auth/magic-link/verify',
+			// Passkey login is pre-session (no CSRF token yet); guarded by an
+			// Origin check in the handler instead. Registration/management
+			// endpoints are session-authed and stay CSRF-protected.
+			'/api/auth/webauthn/login/options',
+			'/api/auth/webauthn/login/verify',
 			'/api/auth/github/callback', // GitHub OAuth callback (comes from redirect)
 			'/api/waitlist', // Public signup form
 			'/api/metrics',
@@ -272,6 +287,18 @@ app.use(
 		],
 	})
 );
+
+// Cap the body on every auth endpoint. These carry only small JSON (credentials,
+// tokens, profile fields, WebAuthn payloads ~1-3 KB), several are unauthenticated,
+// and nothing else in the stack limits body size — so an uncapped body is a
+// memory-exhaustion lever. 64 KB is far above any legitimate auth payload. Scoped
+// to /api/auth/* rather than global so large-body endpoints (chat, document/file
+// writes) are unaffected. onError returns the 413 directly rather than throwing an
+// HTTPException, which the global app.onError would otherwise flatten to a 500.
+app.use('/api/auth/*', bodyLimit({
+	maxSize: 64 * 1024,
+	onError: (context) => context.json({ error: 'Payload too large' }, 413),
+}));
 
 // JSON error responses for API routes
 app.notFound((context) => {
@@ -387,6 +414,15 @@ app.put('/api/auth/me', (context) => handleUpdateMe(context, redis));
 // Magic link login routes (unauthenticated)
 app.post('/api/auth/magic-link/request', (context) => handleMagicLinkRequest(context, redis));
 app.post('/api/auth/magic-link/verify', (context) => handleMagicLinkVerify(context, redis));
+
+// Passkey (WebAuthn) routes
+app.post('/api/auth/webauthn/login/options', (context) => handleWebauthnLoginOptions(context, redis));
+app.post('/api/auth/webauthn/login/verify', (context) => handleWebauthnLoginVerify(context, redis));
+app.post('/api/auth/webauthn/register/options', (context) => handleWebauthnRegisterOptions(context, redis));
+app.post('/api/auth/webauthn/register/verify', (context) => handleWebauthnRegisterVerify(context, redis));
+app.get('/api/auth/webauthn/credentials', (context) => handleListPasskeys(context, redis));
+app.patch('/api/auth/webauthn/credentials/:id', (context) => handleRenamePasskey(context, redis));
+app.delete('/api/auth/webauthn/credentials/:id', (context) => handleDeletePasskey(context, redis));
 
 // Email verification and password reset routes (unauthenticated)
 app.post('/api/auth/verify-email', handleVerifyEmail);

@@ -299,15 +299,16 @@ describe('handleMagicLinkVerify', () => {
 		expect(res.status).toBe(200);
 	});
 
-	it('accepts a same-origin verify behind a proxy (X-Forwarded-Host, non-default Host port)', async () => {
+	it('accepts a same-origin verify behind a proxy that preserves Host', async () => {
 		mockVerifyQueries(mockTokenRow());
+		// Our proxies (nginx, ALB) forward the client Host unchanged, so a
+		// legitimate request carries Host === the real serving host.
 		const res = await Promise.resolve(
 			createApp().request('http://localhost/api/auth/magic-link/verify', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Host: 'api-internal:3001',
-					'X-Forwarded-Host': 'specboard.io',
+					Host: 'specboard.io',
 					Origin: 'https://specboard.io',
 				},
 				body: JSON.stringify({ token: TOKEN }),
@@ -332,17 +333,18 @@ describe('handleMagicLinkVerify', () => {
 		expect(res.status).toBe(200);
 	});
 
-	it('ignores an attacker-supplied leading X-Forwarded-Host, using the trusted rightmost', async () => {
+	it('ignores X-Forwarded-Host so it cannot be used to whitelist a foreign Origin', async () => {
 		mockVerifyQueries(mockTokenRow());
-		// Attacker prepends their host; the trusted proxy appends the real one.
-		// The evil Origin must still be blocked because only the rightmost counts.
+		// Neither nginx nor the ALB sets X-Forwarded-Host, so any value present is
+		// attacker-supplied. Setting it to match a foreign Origin must NOT pass:
+		// the guard compares Origin against the real Host only.
 		const res = await Promise.resolve(
 			createApp().request('http://localhost/api/auth/magic-link/verify', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Host: 'api-internal:3001',
-					'X-Forwarded-Host': 'evil.example.com, specboard.io',
+					Host: 'specboard.io',
+					'X-Forwarded-Host': 'evil.example.com',
 					Origin: 'https://evil.example.com',
 				},
 				body: JSON.stringify({ token: TOKEN }),

@@ -387,6 +387,16 @@ export const RATE_LIMIT_CONFIGS = {
 		message: 'Too many attempts, please try again later',
 	} satisfies RateLimitConfig,
 
+	/**
+	 * /api/auth/webauthn/login/options: conditional-UI autofill fires this on
+	 * every login page load, so allow a generous per-IP rate.
+	 */
+	webauthnLoginOptions: {
+		maxRequests: 30,
+		windowSeconds: 60,
+		message: 'Too many requests, please slow down',
+	} satisfies RateLimitConfig,
+
 	/** /api/auth/resend-verification: 3 per hour per IP */
 	resendVerification: {
 		maxRequests: 3,
