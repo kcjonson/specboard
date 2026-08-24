@@ -334,6 +334,15 @@ export const loginScript = `(function() {
 			if (mediation) getOptions.mediation = mediation;
 			if (signal) getOptions.signal = signal;
 			return navigator.credentials.get(getOptions).then(function(credential) {
+				// get() can resolve to null (no discoverable credential). Treat it
+				// like a cancel — tagged NotAllowedError so both the button and the
+				// conditional flow stay silent — instead of letting passkeyVerify
+				// read .response off null and surface a noisy generic failure.
+				if (!credential) {
+					var noCredential = new Error('No credential available');
+					noCredential.name = 'NotAllowedError';
+					throw noCredential;
+				}
 				return { challengeId: result.data.challengeId, credential: credential };
 			});
 		});
