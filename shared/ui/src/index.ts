@@ -93,3 +93,7 @@ export { ErrorBoundary, withErrorBoundary } from './ErrorBoundary/ErrorBoundary'
 // ResizablePanel - drag-to-resize panel with persisted width (sidebars, drawers)
 export { ResizablePanel } from './ResizablePanel/ResizablePanel';
 export type { ResizablePanelProps } from './ResizablePanel/ResizablePanel';
+
+// Logo - brand logomark and lockup (docs/brand.md)
+export { Logo, LogoMark } from './Logo/Logo';
+export type { LogoProps } from './Logo/Logo';

@@ -1,11 +1,50 @@
 /**
  * Email templates for authentication flows
+ *
+ * Branding follows docs/brand.md. Email clients strip external CSS, SVG,
+ * and webfonts, so the header lockup is a unicode chevron plus text and
+ * everything is inline-styled.
  */
 
 export interface EmailContent {
 	subject: string;
 	textBody: string;
 	htmlBody: string;
+}
+
+const BRAND_PRIMARY = '#3b82f6';
+
+function emailShell(inner: string): string {
+	return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <p style="margin: 0 0 32px;">
+    <span style="color: ${BRAND_PRIMARY}; font-size: 20px;">&#9656;</span>
+    <span style="font-size: 18px; font-weight: 700; color: #111; letter-spacing: -0.01em;">specboard</span>
+  </p>
+
+${inner}
+</body>
+</html>`;
+}
+
+function emailButton(url: string, label: string): string {
+	return `  <p style="margin: 32px 0;">
+    <a href="${url}" style="display: inline-block; background-color: ${BRAND_PRIMARY}; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500;">${label}</a>
+  </p>`;
+}
+
+function emailLinkFallback(url: string): string {
+	return `  <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+
+  <p style="color: #999; font-size: 12px;">
+    If the button doesn't work, copy and paste this link into your browser:<br>
+    <a href="${url}" style="color: #666;">${url}</a>
+  </p>`;
 }
 
 /**
@@ -26,33 +65,17 @@ If you didn't create an account with Specboard, you can safely ignore this email
 
 - The Specboard Team`;
 
-	const htmlBody = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h1 style="color: #111; font-size: 24px; margin-bottom: 24px;">Welcome to Specboard!</h1>
+	const htmlBody = emailShell(`  <h1 style="color: #111; font-size: 24px; margin-bottom: 24px;">Welcome to Specboard!</h1>
 
   <p>Please verify your email address by clicking the button below:</p>
 
-  <p style="margin: 32px 0;">
-    <a href="${verifyUrl}" style="display: inline-block; background-color: #111; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500;">Verify Email Address</a>
-  </p>
+${emailButton(verifyUrl, 'Verify Email Address')}
 
   <p style="color: #666; font-size: 14px;">This link will expire in 1 hour.</p>
 
   <p style="color: #666; font-size: 14px;">If you didn't create an account with Specboard, you can safely ignore this email.</p>
 
-  <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
-
-  <p style="color: #999; font-size: 12px;">
-    If the button doesn't work, copy and paste this link into your browser:<br>
-    <a href="${verifyUrl}" style="color: #666;">${verifyUrl}</a>
-  </p>
-</body>
-</html>`;
+${emailLinkFallback(verifyUrl)}`);
 
 	return { subject, textBody, htmlBody };
 }
@@ -81,20 +104,11 @@ If you didn't request this, you can safely ignore this email.
 
 - The Specboard Team`;
 
-	const htmlBody = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h1 style="color: #111; font-size: 24px; margin-bottom: 24px;">Sign in to Specboard</h1>
+	const htmlBody = emailShell(`  <h1 style="color: #111; font-size: 24px; margin-bottom: 24px;">Sign in to Specboard</h1>
 
   <p>Click the button below to sign in:</p>
 
-  <p style="margin: 32px 0;">
-    <a href="${loginUrl}" style="display: inline-block; background-color: #111; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500;">Sign In</a>
-  </p>
+${emailButton(loginUrl, 'Sign In')}
 
   <p>Or enter this code on the sign-in page:</p>
 
@@ -104,14 +118,7 @@ If you didn't request this, you can safely ignore this email.
 
   <p style="color: #666; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
 
-  <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
-
-  <p style="color: #999; font-size: 12px;">
-    If the button doesn't work, copy and paste this link into your browser:<br>
-    <a href="${loginUrl}" style="color: #666;">${loginUrl}</a>
-  </p>
-</body>
-</html>`;
+${emailLinkFallback(loginUrl)}`);
 
 	return { subject, textBody, htmlBody };
 }
@@ -136,35 +143,19 @@ If you didn't request a password reset, you can safely ignore this email. Your p
 
 - The Specboard Team`;
 
-	const htmlBody = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h1 style="color: #111; font-size: 24px; margin-bottom: 24px;">Password Reset Request</h1>
+	const htmlBody = emailShell(`  <h1 style="color: #111; font-size: 24px; margin-bottom: 24px;">Password Reset Request</h1>
 
   <p>You requested to reset your password for your Specboard account.</p>
 
   <p>Click the button below to set a new password:</p>
 
-  <p style="margin: 32px 0;">
-    <a href="${resetUrl}" style="display: inline-block; background-color: #111; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500;">Reset Password</a>
-  </p>
+${emailButton(resetUrl, 'Reset Password')}
 
   <p style="color: #666; font-size: 14px;">This link will expire in 1 hour.</p>
 
   <p style="color: #666; font-size: 14px;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
 
-  <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
-
-  <p style="color: #999; font-size: 12px;">
-    If the button doesn't work, copy and paste this link into your browser:<br>
-    <a href="${resetUrl}" style="color: #666;">${resetUrl}</a>
-  </p>
-</body>
-</html>`;
+${emailLinkFallback(resetUrl)}`);
 
 	return { subject, textBody, htmlBody };
 }

@@ -43,18 +43,6 @@ html {
 	z-index: var(--z-dropdown);
 }
 
-.home-header .logo {
-	font-size: 1.25rem;
-	font-weight: 700;
-	color: var(--color-text);
-	text-decoration: none;
-}
-
-.logo-text {
-	font-family: var(--font-sans);
-	letter-spacing: -0.02em;
-}
-
 .home-nav {
 	display: flex;
 	align-items: center;

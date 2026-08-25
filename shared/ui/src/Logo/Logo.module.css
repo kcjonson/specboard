@@ -1,0 +1,28 @@
+.logo {
+	display: inline-flex;
+	align-items: flex-start;
+	gap: 8px;
+	text-decoration: none;
+	color: var(--color-text);
+}
+
+.mark {
+	flex-shrink: 0;
+}
+
+.mark polygon,
+.mark rect {
+	fill: var(--color-primary);
+}
+
+.mark .ghost {
+	fill-opacity: 0.15;
+}
+
+.word {
+	flex-shrink: 0;
+}
+
+.word path {
+	fill: var(--color-text);
+}

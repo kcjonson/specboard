@@ -6,10 +6,15 @@
  * emailed magic link or code; profile details are collected in onboarding.
  */
 import type { JSX } from 'preact';
+import { BrandLogo } from '../components/logo';
 
 export function SignupContent(): JSX.Element {
 	return (
 		<div class="signup-container">
+			<div class="auth-brand">
+				<BrandLogo size={18} href="/" />
+			</div>
+
 			<h1>Create Account</h1>
 
 			<div id="error" class="error-message hidden" />

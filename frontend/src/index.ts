@@ -456,16 +456,20 @@ app.use(
 	})
 );
 
+// Public files are copied to ./static by the prod build; in dev there is no
+// ./static, so serve them from their source in web/public
+const publicRoot = VITE_DEV_SERVER ? './web/public' : './static';
+
 // Serve public static files without auth (favicon, robots.txt, version.txt)
-app.get('/favicon.svg', serveStatic({ root: './static', path: 'favicon.svg' }));
-app.get('/robots.txt', serveStatic({ root: './static', path: 'robots.txt' }));
-app.get('/version.txt', serveStatic({ root: './static', path: 'version.txt' }));
+app.get('/favicon.svg', serveStatic({ root: publicRoot, path: 'favicon.svg' }));
+app.get('/robots.txt', serveStatic({ root: publicRoot, path: 'robots.txt' }));
+app.get('/version.txt', serveStatic({ root: publicRoot, path: 'version.txt' }));
 
 // Claude Code plugin marketplace manifest (public, no auth). Lets users run
 // `/plugin marketplace add https://specboard.io/claude`. Both paths return the same
 // file so the command works whether the client fetches the URL verbatim or appends a filename.
-app.get('/claude', serveStatic({ root: './static', path: 'marketplace.json' }));
-app.get('/claude/marketplace.json', serveStatic({ root: './static', path: 'marketplace.json' }));
+app.get('/claude', serveStatic({ root: publicRoot, path: 'marketplace.json' }));
+app.get('/claude/marketplace.json', serveStatic({ root: publicRoot, path: 'marketplace.json' }));
 
 // Auth middleware for all other routes
 // Unauthenticated users see 404 for any non-public path

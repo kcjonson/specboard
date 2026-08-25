@@ -3,6 +3,7 @@
  * The project system for AI-assisted development
  */
 import type { JSX } from 'preact';
+import { BrandLogo } from '../components/logo';
 
 /**
  * Client-side scripts for:
@@ -89,9 +90,7 @@ export function HomeContent(): JSX.Element {
 		<div class="home-container">
 			{/* Header */}
 			<header class="home-header">
-				<a href="/" class="logo" aria-label="Specboard home">
-					<span class="logo-text">Specboard</span>
-				</a>
+				<BrandLogo size={22} href="/" />
 				<nav class="home-nav" aria-label="Main navigation">
 					<a id="auth-link" href="/login" style="visibility: hidden">Sign In</a>
 					<a href="#early-access" class="btn-primary">Request Access</a>

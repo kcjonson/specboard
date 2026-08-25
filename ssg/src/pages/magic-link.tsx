@@ -4,10 +4,15 @@
  * scanners that prefetch URLs don't consume it.
  */
 import type { JSX } from 'preact';
+import { BrandLogo } from '../components/logo';
 
 export function MagicLinkContent(): JSX.Element {
 	return (
 		<div class="auth-container">
+			<div class="auth-brand">
+				<BrandLogo size={18} href="/" />
+			</div>
+
 			<h1>Signing You In...</h1>
 
 			<div id="loading" class="loading-state">

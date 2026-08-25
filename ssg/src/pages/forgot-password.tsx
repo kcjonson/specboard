@@ -2,10 +2,15 @@
  * Forgot password page
  */
 import type { JSX } from 'preact';
+import { BrandLogo } from '../components/logo';
 
 export function ForgotPasswordContent(): JSX.Element {
 	return (
 		<div class="auth-container">
+			<div class="auth-brand">
+				<BrandLogo size={18} href="/" />
+			</div>
+
 			<h1>Reset Password</h1>
 
 			<div id="message" class="message-box hidden" />

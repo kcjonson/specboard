@@ -15,3 +15,40 @@ body {
 	min-height: 100vh;
 	margin: 0;
 }
+
+/* Brand logo for SSG pages (ssg/src/components/logo.tsx, docs/brand.md) */
+.brand-logo {
+	display: inline-flex;
+	align-items: flex-start;
+	gap: 8px;
+	text-decoration: none;
+	color: var(--color-text);
+}
+
+.brand-mark {
+	flex-shrink: 0;
+}
+
+.brand-mark polygon,
+.brand-mark rect {
+	fill: var(--color-primary);
+}
+
+.brand-mark .brand-ghost {
+	fill-opacity: 0.15;
+}
+
+.brand-word {
+	flex-shrink: 0;
+}
+
+.brand-word path {
+	fill: var(--color-text);
+}
+
+/* Centered above the h1 on auth cards */
+.auth-brand {
+	display: flex;
+	justify-content: center;
+	margin-bottom: 1.25rem;
+}

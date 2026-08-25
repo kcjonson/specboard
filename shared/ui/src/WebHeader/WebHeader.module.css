@@ -20,6 +20,13 @@
 	gap: var(--space-4);
 }
 
+.brandDivider {
+	width: 1px;
+	height: 20px;
+	background: var(--color-border);
+	flex-shrink: 0;
+}
+
 .projectName,
 .pageTitle {
 	font-size: var(--text-lg);
