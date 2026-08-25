@@ -19,14 +19,7 @@ body {
 /* Brand logo for SSG pages (ssg/src/components/logo.tsx, docs/brand.md) */
 .brand-logo {
 	display: inline-flex;
-	align-items: flex-start;
-	gap: 8px;
-	text-decoration: none;
-	color: var(--color-text);
-}
-
-.brand-mark {
-	flex-shrink: 0;
+	line-height: 0;
 }
 
 .brand-mark polygon,
@@ -38,11 +31,7 @@ body {
 	fill-opacity: 0.15;
 }
 
-.brand-word {
-	flex-shrink: 0;
-}
-
-.brand-word path {
+.brand-mark .brand-word {
 	fill: var(--color-text);
 }
 

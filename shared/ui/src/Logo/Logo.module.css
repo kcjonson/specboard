@@ -1,9 +1,6 @@
 .logo {
 	display: inline-flex;
-	align-items: flex-start;
-	gap: 8px;
-	text-decoration: none;
-	color: var(--color-text);
+	line-height: 0;
 }
 
 .mark {
@@ -19,10 +16,6 @@
 	fill-opacity: 0.15;
 }
 
-.word {
-	flex-shrink: 0;
-}
-
-.word path {
+.mark .word {
 	fill: var(--color-text);
 }
