@@ -14,7 +14,7 @@ const DEVICE_NAME_STORAGE_KEY = 'oauth_device_name';
 
 function getStoredDeviceName(): string {
 	try {
-		return localStorage.getItem(DEVICE_NAME_STORAGE_KEY) || '';
+		return globalThis.localStorage.getItem(DEVICE_NAME_STORAGE_KEY) || '';
 	} catch {
 		return '';
 	}
@@ -86,7 +86,7 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 				return;
 			}
 			try {
-				localStorage.setItem(DEVICE_NAME_STORAGE_KEY, deviceName.trim());
+				globalThis.localStorage.setItem(DEVICE_NAME_STORAGE_KEY, deviceName.trim());
 			} catch {
 				// Storage unavailable (private mode, quota); prefill just won't work next time
 			}

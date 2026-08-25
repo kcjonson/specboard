@@ -637,6 +637,9 @@ describe('MCP auth middleware', () => {
 		});
 
 		it('should accept tokens expiring 1ms in the future', async () => {
+			// Freeze time: with real clocks, milliseconds pass between building
+			// the mock and the middleware's expiry check
+			vi.useFakeTimers();
 			const nearFuture = new Date(Date.now() + 1);
 
 			vi.mocked(query).mockResolvedValue({
@@ -667,6 +670,7 @@ describe('MCP auth middleware', () => {
 			});
 
 			expect(res.status).toBe(200);
+			vi.useRealTimers();
 		});
 	});
 });
