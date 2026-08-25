@@ -154,7 +154,7 @@ describe('MCP auth middleware', () => {
 			expect(data.message).toBe('Invalid access token');
 		});
 
-		it('should return 401 when token is expired', async () => {
+		it('should return 401 when refresh expiry has passed', async () => {
 			const expiredDate = new Date(Date.now() - 1000); // 1 second ago
 
 			vi.mocked(query).mockResolvedValue({
@@ -165,6 +165,75 @@ describe('MCP auth middleware', () => {
 					device_name: 'Test Device',
 					scopes: ['docs:read'],
 					expires_at: expiredDate,
+					access_token_expires_at: new Date(Date.now() + 3600000),
+				}],
+				rowCount: 1,
+				command: 'SELECT',
+				oid: 0,
+				fields: [],
+			});
+
+			const app = new Hono<{ Variables: McpAuthVariables }>();
+			app.use('/mcp', mcpAuthMiddleware());
+			app.post('/mcp', (c) => c.json({ success: true }));
+
+			const res = await app.request('http://localhost/mcp', {
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer some-token',
+				},
+			});
+
+			expect(res.status).toBe(401);
+			const data = await res.json();
+			expect(data.message).toBe('Authorization expired');
+		});
+
+		it('should return 401 when access token is expired but refresh expiry is still valid', async () => {
+			vi.mocked(query).mockResolvedValue({
+				rows: [{
+					id: 'token-id',
+					user_id: 'user-123',
+					client_id: 'claude-code',
+					device_name: 'Test Device',
+					scopes: ['docs:read'],
+					expires_at: new Date(Date.now() + 30 * 24 * 3600000), // refresh window still open
+					access_token_expires_at: new Date(Date.now() - 1000),
+				}],
+				rowCount: 1,
+				command: 'SELECT',
+				oid: 0,
+				fields: [],
+			});
+
+			const app = new Hono<{ Variables: McpAuthVariables }>();
+			app.use('/mcp', mcpAuthMiddleware());
+			app.post('/mcp', (c) => c.json({ success: true }));
+
+			const res = await app.request('http://localhost/mcp', {
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer some-token',
+				},
+			});
+
+			expect(res.status).toBe(401);
+			const data = await res.json();
+			expect(data.error).toBe('auth_required');
+			expect(data.message).toBe('Access token expired');
+			expect(res.headers.get('www-authenticate')).toContain('resource_metadata=');
+		});
+
+		it('should return 401 when access_token_expires_at is missing (fails closed)', async () => {
+			vi.mocked(query).mockResolvedValue({
+				rows: [{
+					id: 'token-id',
+					user_id: 'user-123',
+					client_id: 'claude-code',
+					device_name: 'Test Device',
+					scopes: ['docs:read'],
+					expires_at: new Date(Date.now() + 3600000),
+					access_token_expires_at: undefined,
 				}],
 				rowCount: 1,
 				command: 'SELECT',
@@ -199,6 +268,7 @@ describe('MCP auth middleware', () => {
 					device_name: 'Test Device',
 					scopes: ['docs:read', 'tasks:write'],
 					expires_at: validDate,
+					access_token_expires_at: validDate,
 				}],
 				rowCount: 1,
 				command: 'SELECT',
@@ -274,6 +344,7 @@ describe('MCP auth middleware', () => {
 					device_name: 'Test Device',
 					scopes: ['docs:read', 'docs:write'],
 					expires_at: validDate,
+					access_token_expires_at: validDate,
 				}],
 				rowCount: 1,
 				command: 'SELECT',
@@ -306,6 +377,7 @@ describe('MCP auth middleware', () => {
 					device_name: 'Test Device',
 					scopes: ['docs:read'], // Only read scope
 					expires_at: validDate,
+					access_token_expires_at: validDate,
 				}],
 				rowCount: 1,
 				command: 'SELECT',
@@ -528,8 +600,8 @@ describe('MCP auth middleware', () => {
 	});
 
 	describe('Security: Token Expiration', () => {
-		it('should reject tokens that expired 1ms ago', async () => {
-			// Token that expired 1ms in the past should be rejected
+		it('should reject access tokens that expired 1ms ago', async () => {
+			// Access token that expired 1ms in the past should be rejected
 			const justExpired = new Date(Date.now() - 1);
 
 			vi.mocked(query).mockResolvedValue({
@@ -539,7 +611,8 @@ describe('MCP auth middleware', () => {
 					client_id: 'claude-code',
 					device_name: 'Test Device',
 					scopes: ['docs:read'],
-					expires_at: justExpired,
+					expires_at: new Date(Date.now() + 3600000),
+					access_token_expires_at: justExpired,
 				}],
 				rowCount: 1,
 				command: 'SELECT',
@@ -574,6 +647,7 @@ describe('MCP auth middleware', () => {
 					device_name: 'Test Device',
 					scopes: ['docs:read'],
 					expires_at: nearFuture,
+					access_token_expires_at: nearFuture,
 				}],
 				rowCount: 1,
 				command: 'SELECT',

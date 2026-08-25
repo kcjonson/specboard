@@ -450,6 +450,117 @@ describe('oauth handlers', () => {
 		});
 	});
 
+	describe('handleToken - refresh_token grant', () => {
+		const mockTokenRow = {
+			id: 'token-row-id',
+			user_id: 'user-123',
+			client_id: 'claude-code',
+			device_name: 'Test Device',
+			scopes: ['docs:read', 'tasks:write'],
+			expires_at: new Date(Date.now() + 24 * 3600000),
+		};
+
+		async function postRefresh(refreshToken: string): Promise<Response> {
+			const app = new Hono();
+			app.post('/oauth/token', handleToken);
+			return app.request('http://localhost/oauth/token', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+			});
+		}
+
+		it('should return invalid_grant for unknown refresh token', async () => {
+			vi.mocked(query).mockResolvedValue({
+				rows: [],
+				rowCount: 0,
+				command: 'SELECT',
+				oid: 0,
+				fields: [],
+			});
+
+			const res = await postRefresh('unknown-refresh-token');
+
+			expect(res.status).toBe(400);
+			const data = await res.json();
+			expect(data.error).toBe('invalid_grant');
+		});
+
+		it('should return invalid_grant and delete the row for an expired refresh token', async () => {
+			vi.mocked(query).mockImplementation(async (sql: string) => {
+				if (sql.startsWith('SELECT')) {
+					return {
+						rows: [{ ...mockTokenRow, expires_at: new Date(Date.now() - 1000) }],
+						rowCount: 1,
+						command: 'SELECT',
+						oid: 0,
+						fields: [],
+					};
+				}
+				return { rows: [], rowCount: 1, command: 'DELETE', oid: 0, fields: [] };
+			});
+
+			const res = await postRefresh('expired-refresh-token');
+
+			expect(res.status).toBe(400);
+			const data = await res.json();
+			expect(data.error).toBe('invalid_grant');
+			expect(data.error_description).toContain('expired');
+			expect(query).toHaveBeenCalledWith(
+				expect.stringContaining('DELETE FROM mcp_tokens'),
+				[mockTokenRow.id]
+			);
+		});
+
+		it('should echo back the same refresh token (no rotation)', async () => {
+			vi.mocked(query).mockImplementation(async (sql: string) => {
+				if (sql.startsWith('SELECT')) {
+					return { rows: [mockTokenRow], rowCount: 1, command: 'SELECT', oid: 0, fields: [] };
+				}
+				return { rows: [], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] };
+			});
+
+			const res = await postRefresh('my-refresh-token');
+
+			expect(res.status).toBe(200);
+			const data = await res.json();
+			expect(data.refresh_token).toBe('my-refresh-token');
+			expect(data.access_token).toBeTruthy();
+			expect(data.token_type).toBe('Bearer');
+			expect(data.expires_in).toBe(3600);
+			expect(data.scope).toBe('docs:read tasks:write');
+		});
+
+		it('should not update refresh_token_hash, and should slide expires_at and set access_token_expires_at', async () => {
+			const updates: Array<{ sql: string; params: unknown[] }> = [];
+			vi.mocked(query).mockImplementation(async (sql: string, params?: unknown[]) => {
+				if (sql.startsWith('SELECT')) {
+					return { rows: [mockTokenRow], rowCount: 1, command: 'SELECT', oid: 0, fields: [] };
+				}
+				updates.push({ sql, params: params ?? [] });
+				return { rows: [], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] };
+			});
+
+			const before = Date.now();
+			const res = await postRefresh('my-refresh-token');
+			expect(res.status).toBe(200);
+
+			expect(updates).toHaveLength(1);
+			const update = updates[0]!;
+			expect(update.sql).toContain('access_token_hash');
+			expect(update.sql).not.toContain('refresh_token_hash');
+			expect(update.sql).toContain('access_token_expires_at');
+
+			// [accessTokenHash, expiresAt, accessTokenExpiresAt, id]
+			const newExpiresAt = (update.params[1] as Date).getTime();
+			const newAccessExpiresAt = (update.params[2] as Date).getTime();
+			expect(newExpiresAt).toBeGreaterThanOrEqual(before + 30 * 24 * 3600000);
+			expect(newAccessExpiresAt).toBeGreaterThanOrEqual(before + 3600000);
+			expect(newAccessExpiresAt).toBeLessThan(before + 3600000 + 60000);
+			expect(update.params[3]).toBe(mockTokenRow.id);
+		});
+	});
+
 	describe('handleRevoke', () => {
 		it('should return 200 even for unknown tokens (RFC 7009)', async () => {
 			vi.mocked(query).mockResolvedValue({

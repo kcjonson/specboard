@@ -145,8 +145,9 @@ export function mcpAuthMiddleware(options: McpAuthMiddlewareOptions = {}) {
 			device_name: string;
 			scopes: string[];
 			expires_at: Date;
+			access_token_expires_at: Date;
 		}>(
-			'SELECT id, user_id, client_id, device_name, scopes, expires_at FROM mcp_tokens WHERE access_token_hash = $1',
+			'SELECT id, user_id, client_id, device_name, scopes, expires_at, access_token_expires_at FROM mcp_tokens WHERE access_token_hash = $1',
 			[tokenHash]
 		);
 
@@ -159,8 +160,19 @@ export function mcpAuthMiddleware(options: McpAuthMiddlewareOptions = {}) {
 			}, 401);
 		}
 
-		// Check expiration (tokens expire based on refresh token lifetime stored in expires_at)
+		// expires_at is the refresh-token (session) expiry; past it the client
+		// must re-authorize
 		if (new Date(tokenRecord.expires_at).getTime() < Date.now()) {
+			c.header('WWW-Authenticate', buildWwwAuthenticateHeader(c));
+			return c.json({
+				error: 'auth_required',
+				message: 'Authorization expired',
+			}, 401);
+		}
+
+		// Access-token TTL: a 401 here makes the client silently refresh.
+		// Inverted comparison so a missing/invalid timestamp fails closed.
+		if (!(new Date(tokenRecord.access_token_expires_at).getTime() > Date.now())) {
 			c.header('WWW-Authenticate', buildWwwAuthenticateHeader(c));
 			return c.json({
 				error: 'auth_required',

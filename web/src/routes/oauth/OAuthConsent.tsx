@@ -9,6 +9,17 @@ import styles from './OAuthConsent.module.css';
 /** CSRF cookie name (must match server) */
 const CSRF_COOKIE_NAME = 'csrf_token';
 
+/** Remembers the device name across re-authorizations on this browser */
+const DEVICE_NAME_STORAGE_KEY = 'oauth_device_name';
+
+function getStoredDeviceName(): string {
+	try {
+		return localStorage.getItem(DEVICE_NAME_STORAGE_KEY) || '';
+	} catch {
+		return '';
+	}
+}
+
 // Scope descriptions for display
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
 	'docs:read': 'Read your documents',
@@ -24,7 +35,7 @@ const CLIENT_NAMES: Record<string, string> = {
 };
 
 export function OAuthConsent(_props: RouteProps): JSX.Element {
-	const [deviceName, setDeviceName] = useState('');
+	const [deviceName, setDeviceName] = useState(getStoredDeviceName);
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -69,9 +80,16 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 	}
 
 	const handleSubmit = async (action: 'approve' | 'deny'): Promise<void> => {
-		if (action === 'approve' && !deviceName.trim()) {
-			setError('Please enter a device name');
-			return;
+		if (action === 'approve') {
+			if (!deviceName.trim()) {
+				setError('Please enter a device name');
+				return;
+			}
+			try {
+				localStorage.setItem(DEVICE_NAME_STORAGE_KEY, deviceName.trim());
+			} catch {
+				// Storage unavailable (private mode, quota); prefill just won't work next time
+			}
 		}
 
 		setSubmitting(true);
