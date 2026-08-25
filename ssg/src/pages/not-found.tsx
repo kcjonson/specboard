@@ -8,7 +8,7 @@ export function NotFoundContent(): JSX.Element {
 	return (
 		<div class="not-found-container">
 			<div class="auth-brand">
-				<BrandLogo size={32} href="/" />
+				<BrandLogo size={40} href="/" />
 			</div>
 
 			<h1>You appear to be lost...</h1>

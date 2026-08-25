@@ -8,7 +8,7 @@ export function ForgotPasswordContent(): JSX.Element {
 	return (
 		<div class="auth-container">
 			<div class="auth-brand">
-				<BrandLogo size={32} href="/" />
+				<BrandLogo size={40} href="/" />
 			</div>
 
 			<h1>Reset Password</h1>
