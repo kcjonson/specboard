@@ -25,8 +25,13 @@ import { isValidProjectSlug } from '@specboard/core/identifiers';
 // Context variables for request tracking
 type AppVariables = {
 	userId: string | undefined;
-	/** Set by requireProjectAccess once :projectSlug has been resolved and authorized. */
-	project: ResolvedProject;
+	/**
+	 * Set by requireProjectAccess once :projectSlug has been resolved and authorized.
+	 * Optional because it is absent on every route that wrapper does not cover —
+	 * handlers reach it through requireResolvedProject(), which fails loudly rather
+	 * than letting an unwrapped route read undefined as if it were authorized.
+	 */
+	project?: ResolvedProject;
 };
 
 import {
@@ -545,7 +550,7 @@ function requireProjectAccess(
 	};
 }
 
-// Project-scoped item routes (/current before /:id so it isn't captured as an id)
+// Project-scoped item routes (/current before /:itemKey so it isn't captured as a key)
 app.get('/api/projects/:projectSlug/items', requireProjectAccess(handleListItems));
 app.get('/api/projects/:projectSlug/items/current', requireProjectAccess(handleGetCurrentWork));
 app.get('/api/projects/:projectSlug/items/:itemKey', requireProjectAccess(handleGetItem));

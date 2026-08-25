@@ -19,12 +19,12 @@ export interface TableProps {
 	/** Active toolbar filters (applied to the epics shown). */
 	filters: PlanningFilters;
 	selectedItemKey?: string;
-	/** Ids to briefly flash (newly created, or changed by a background refresh). */
+	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
 	onSelectItem: (item: ItemModel | undefined) => void;
 	onOpenItem: (item: ItemModel) => void;
-	/** Open a child's detail by id (children are first-class items). */
-	onOpenChild?: (itemId: string) => void;
+	/** Open a child's detail by key (children are first-class items). */
+	onOpenChild?: (itemKey: string) => void;
 }
 
 /** Lazily load an epic's tasks the first time it is expanded. */

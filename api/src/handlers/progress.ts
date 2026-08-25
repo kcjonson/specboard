@@ -5,20 +5,26 @@
 import type { Context } from 'hono';
 import { verifyItemOwnership, getItemProgressNotes, addItemProgressNote } from '@specboard/db';
 import type { ResolvedProject } from '@specboard/db';
-import { parseItemKey } from '@specboard/core/identifiers';
+import { requireResolvedProject } from './items.ts';
+import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 
-/** The :itemKey path segment as a per-project number, or null if it isn't this project's. */
-function itemNumber(context: Context, project: ResolvedProject): number | null {
+/**
+ * The :itemKey path segment as a per-project number, or an error Response: a
+ * malformed key is a 400, another project's key is a 404 like any other miss.
+ */
+function itemNumber(context: Context, project: ResolvedProject): number | Response {
 	const key = context.req.param('itemKey');
-	const parsed = key ? parseItemKey(key) : null;
-	if (!parsed || parsed.projectKey !== project.key) return null;
-	return parsed.number;
+	if (!key || !parseItemKey(key)) return context.json({ error: 'Invalid item key' }, 400);
+
+	const number = itemNumberInProject(key, project.key);
+	if (number === null) return context.json({ error: 'Item not found' }, 404);
+	return number;
 }
 
 export async function handleListItemProgress(context: Context): Promise<Response> {
-	const project = context.get('project') as ResolvedProject;
+	const project = requireResolvedProject(context);
 	const number = itemNumber(context, project);
-	if (number === null) return context.json({ error: 'Invalid item key' }, 400);
+	if (typeof number !== 'number') return number;
 
 	try {
 		if (!(await verifyItemOwnership(project.id, number))) {
@@ -33,9 +39,9 @@ export async function handleListItemProgress(context: Context): Promise<Response
 }
 
 export async function handleCreateItemProgress(context: Context): Promise<Response> {
-	const project = context.get('project') as ResolvedProject;
+	const project = requireResolvedProject(context);
 	const number = itemNumber(context, project);
-	if (number === null) return context.json({ error: 'Invalid item key' }, 400);
+	if (typeof number !== 'number') return number;
 
 	const body = await context.req.json<{ note?: string; createdBy?: string }>();
 	if (!body.note || typeof body.note !== 'string' || body.note.trim() === '') {

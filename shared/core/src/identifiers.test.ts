@@ -11,8 +11,10 @@ import {
 	isValidProjectKey,
 	formatItemKey,
 	parseItemKey,
+	itemNumberInProject,
 	withSuffix,
 	MAX_PROJECT_SLUG_LENGTH,
+	MAX_PROJECT_KEY_LENGTH,
 } from './identifiers.ts';
 
 describe('slugifyProjectName', () => {
@@ -149,7 +151,46 @@ describe('withSuffix', () => {
 		expect(isValidProjectSlug(slug)).toBe(true);
 
 		const key = withSuffix('ABCDEFGHIJ', 10, 'key');
-		expect(key.length).toBeLessThanOrEqual(10);
+		expect(key.length).toBeLessThanOrEqual(MAX_PROJECT_KEY_LENGTH);
 		expect(isValidProjectKey(key)).toBe(true);
+	});
+
+	// Truncating to make room for the suffix can land the cut on a hyphen, which
+	// would yield `foo--2` — invalid, and rejected by the DB CHECK as a 500.
+	it('never emits a doubled hyphen when the cut lands on one', () => {
+		const base = `${'a'.repeat(52)}-bb`;
+		expect(base.length).toBe(55);
+		for (const attempt of [2, 3, 9, 10, 99, 100]) {
+			const slug = withSuffix(base, attempt, 'slug');
+			expect(slug).not.toContain('--');
+			expect(isValidProjectSlug(slug)).toBe(true);
+		}
+	});
+
+	it('stays valid for a hyphen at every position near the cut', () => {
+		for (let hyphenAt = 40; hyphenAt < MAX_PROJECT_SLUG_LENGTH; hyphenAt++) {
+			const base = `${'a'.repeat(hyphenAt)}-${'b'.repeat(MAX_PROJECT_SLUG_LENGTH - hyphenAt - 1)}`;
+			for (const attempt of [2, 10, 100]) {
+				expect(isValidProjectSlug(withSuffix(base, attempt, 'slug'))).toBe(true);
+			}
+		}
+	});
+});
+
+describe('itemNumberInProject', () => {
+	it('returns the number for a key belonging to the project', () => {
+		expect(itemNumberInProject('SB-345', 'SB')).toBe(345);
+	});
+
+	it('accepts a lowercase key', () => {
+		expect(itemNumberInProject('sb-345', 'SB')).toBe(345);
+	});
+
+	it("rejects a well-formed key carrying another project's prefix", () => {
+		expect(itemNumberInProject('XX-1', 'SB')).toBeNull();
+	});
+
+	it.each([undefined, null, 42, {}, 'nonsense', 'SB-0'])('rejects %s', (key) => {
+		expect(itemNumberInProject(key, 'SB')).toBeNull();
 	});
 });

@@ -39,75 +39,75 @@ StorageProvider (Local or Cloud)
 List all documents in a project's file tree. Returns markdown files (.md, .mdx) within the project's configured root paths.
 
 **Input:**
-- `project_id` (string, required) -- project UUID
+- `project_slug` (string, required) -- project slug, e.g. "specboard"
 - `path` (string, optional) -- directory path to list (defaults to all root paths)
 
 **Output:** Array of file entries with name, path, type (file/directory), size, modifiedAt.
 
-**Maps to:** `POST /api/projects/:id/tree`
+**Maps to:** `POST /api/projects/:projectSlug/tree`
 
 ### read_document
 
 Read the raw markdown content of a document by path.
 
 **Input:**
-- `project_id` (string, required) -- project UUID
+- `project_slug` (string, required) -- project slug, e.g. "specboard"
 - `path` (string, required) -- file path relative to repo root (e.g., `/docs/spec.md`)
 
 **Output:** File path, content (string), encoding.
 
-**Maps to:** `GET /api/projects/:id/files?path=...`
+**Maps to:** `GET /api/projects/:projectSlug/files?path=...`
 
 ### create_document
 
 Create a new markdown document. Auto-adds `.md` extension if not present. Fails if file already exists (409).
 
 **Input:**
-- `project_id` (string, required) -- project UUID
+- `project_slug` (string, required) -- project slug, e.g. "specboard"
 - `path` (string, required) -- file path for the new document
 - `content` (string, optional) -- markdown content (defaults to `# Untitled\n\n`)
 
 **Output:** File path, success status.
 
-**Maps to:** `POST /api/projects/:id/files?path=...` (API create handler needs modification to accept optional content in body)
+**Maps to:** `POST /api/projects/:projectSlug/files?path=...` (API create handler needs modification to accept optional content in body)
 
 ### update_document
 
 Replace the content of an existing markdown document.
 
 **Input:**
-- `project_id` (string, required) -- project UUID
+- `project_slug` (string, required) -- project slug, e.g. "specboard"
 - `path` (string, required) -- file path of the document
 - `content` (string, required) -- new markdown content
 
 **Output:** File path, success status.
 
-**Maps to:** `PUT /api/projects/:id/files?path=...`
+**Maps to:** `PUT /api/projects/:projectSlug/files?path=...`
 
 ### delete_document
 
 Delete a markdown document. Also removes any epic spec links (`epic_specs`) to the deleted file.
 
 **Input:**
-- `project_id` (string, required) -- project UUID
+- `project_slug` (string, required) -- project slug, e.g. "specboard"
 - `path` (string, required) -- file path of the document
 
 **Output:** File path, success status.
 
-**Maps to:** `DELETE /api/projects/:id/files?path=...`
+**Maps to:** `DELETE /api/projects/:projectSlug/files?path=...`
 
 ### move_document
 
 Rename or move a document. Also updates any epic spec links (`epic_specs`) pointing at the old path.
 
 **Input:**
-- `project_id` (string, required) -- project UUID
+- `project_slug` (string, required) -- project slug, e.g. "specboard"
 - `old_path` (string, required) -- current file path
 - `new_path` (string, required) -- new file path
 
 **Output:** Old path, new path, success status.
 
-**Maps to:** `PUT /api/projects/:id/files/rename`
+**Maps to:** `PUT /api/projects/:projectSlug/files/rename`
 
 ---
 
@@ -164,8 +164,8 @@ class ApiClient {
 ### Tool routing in index.ts
 
 Follows `mcp/src/tools/items/index.ts` pattern exactly:
-- Validates `project_id` presence
-- Calls `verifyProjectAccess(projectId, userId)` from `@specboard/db`
+- Validates `project_slug` presence
+- Calls `resolveProjectSlug(projectSlug, userId)` from `@specboard/db`
 - Routes to handler via switch statement
 
 ### Wiring into MCP server
@@ -229,7 +229,7 @@ mcp:
 - MCP Server (existing)
 - REST API & Database -- file handlers at `api/src/handlers/storage/file-handlers.ts`
 - `@specboard/auth` -- CSRF middleware modification
-- `@specboard/db` -- `verifyProjectAccess()` for authorization
+- `@specboard/db` -- `resolveProjectSlug()` for authorization
 
 ## Status
 

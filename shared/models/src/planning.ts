@@ -189,7 +189,6 @@ export class SpecModel extends SyncModel {
 	static override url = '/api/projects/:projectSlug/items/:itemKey/specs/:id';
 
 	@prop accessor id!: string;
-	@prop accessor projectId!: string;
 	@prop accessor projectSlug!: string;
 	@prop accessor itemKey!: string;
 	@prop accessor path!: string;

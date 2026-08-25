@@ -6,7 +6,7 @@ const STATUSES: Status[] = ['ready', 'in_progress', 'done'];
 interface KeyboardNavigationOptions {
 	/** All items grouped by status */
 	itemsByStatus: Record<Status, ItemModel[]>;
-	/** Currently selected item ID */
+	/** Key of the currently selected item */
 	selectedItemKey: string | undefined;
 	/** Whether a dialog is open (disables shortcuts) */
 	dialogOpen: boolean;

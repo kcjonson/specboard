@@ -12,11 +12,14 @@
 /** Longest a project slug may be. Leaves room for a dedupe suffix under the column's 63. */
 export const MAX_PROJECT_SLUG_LENGTH = 55;
 
+/** Longest a project key may be. Matches the column width and PROJECT_KEY_REGEX. */
+export const MAX_PROJECT_KEY_LENGTH = 10;
+
 /** Project keys are 2-10 chars: a leading letter so `KEY-123` parses, then alphanumerics. */
-export const PROJECT_KEY_REGEX = /^[A-Z][A-Z0-9]{1,9}$/;
+const PROJECT_KEY_REGEX = /^[A-Z][A-Z0-9]{1,9}$/;
 
 /** Slugs are hyphen-separated alphanumeric groups: no leading, trailing, or doubled hyphens. */
-export const PROJECT_SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const PROJECT_SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** Item keys look like `SB-345`. */
 const ITEM_KEY_REGEX = /^([A-Z][A-Z0-9]{1,9})-([0-9]{1,9})$/;
@@ -93,11 +96,32 @@ export function parseItemKey(key: string): { projectKey: string; number: number 
 /**
  * Append or bump a numeric suffix so a derived identifier can dodge a collision:
  * `docs` -> `docs-2` -> `docs-3`, `DOC` -> `DOC2` -> `DOC3`.
+ *
+ * Truncating a long base to make room for the suffix can land the cut on a hyphen,
+ * which would produce `foo--2` — invalid by PROJECT_SLUG_REGEX and rejected by the
+ * projects_slug_format CHECK. Re-trim after the cut so the result is always valid.
  */
 export function withSuffix(base: string, attempt: number, style: 'slug' | 'key'): string {
 	if (attempt < 2) return base;
 	const suffix = String(attempt);
-	return style === 'slug'
-		? `${base.slice(0, MAX_PROJECT_SLUG_LENGTH - suffix.length - 1)}-${suffix}`
-		: `${base.slice(0, 10 - suffix.length)}${suffix}`;
+	if (style === 'key') {
+		return `${base.slice(0, MAX_PROJECT_KEY_LENGTH - suffix.length)}${suffix}`;
+	}
+	const stem = base.slice(0, MAX_PROJECT_SLUG_LENGTH - suffix.length - 1).replace(/-+$/, '');
+	return `${stem}-${suffix}`;
+}
+
+/**
+ * Parse an item key that must belong to `projectKey`, returning its number.
+ *
+ * An item key is only meaningful against the project whose prefix it carries: `XX-1`
+ * must not address `SB-1` just because item 1 exists. Every surface that accepts a
+ * key — path segments, request bodies, MCP tool args — needs exactly this check, so
+ * it lives here rather than being restated at each one.
+ */
+export function itemNumberInProject(key: unknown, projectKey: string): number | null {
+	if (typeof key !== 'string') return null;
+	const parsed = parseItemKey(key);
+	if (!parsed || parsed.projectKey !== projectKey) return null;
+	return parsed.number;
 }

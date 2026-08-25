@@ -13,15 +13,16 @@ import {
 	SpecValidationError,
 } from '@specboard/db';
 import type { SpecSummary, ResolvedProject } from '@specboard/db';
-import { parseItemKey } from '@specboard/core/identifiers';
+import { requireResolvedProject } from './items.ts';
+import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import type { ApiSpec } from '../types.ts';
 import { isValidUUID } from '../validation.ts';
 
-function toApi(spec: SpecSummary, itemKey: string, projectId: string): ApiSpec {
+function toApi(spec: SpecSummary, itemKey: string, projectSlug: string): ApiSpec {
 	return {
 		id: spec.id,
 		itemKey,
-		projectId,
+		projectSlug,
 		path: spec.path,
 		type: spec.type,
 		createdAt: spec.createdAt.toISOString(),
@@ -32,18 +33,19 @@ function toApi(spec: SpecSummary, itemKey: string, projectId: string): ApiSpec {
  * The project resolved from :projectSlug plus the :itemKey path segment as a
  * per-project number, or null when the key doesn't address this project.
  */
-function resolve(context: Context): { project: ResolvedProject; itemKey: string; itemNumber: number } | null {
-	const project = context.get('project') as ResolvedProject;
+function resolve(context: Context): { project: ResolvedProject; itemKey: string; itemNumber: number } | Response {
+	const project = requireResolvedProject(context);
 	const itemKey = context.req.param('itemKey');
-	if (!itemKey) return null;
-	const parsed = parseItemKey(itemKey);
-	if (!parsed || parsed.projectKey !== project.key) return null;
-	return { project, itemKey, itemNumber: parsed.number };
+	if (!itemKey || !parseItemKey(itemKey)) return context.json({ error: 'Invalid item key' }, 400);
+
+	const itemNumber = itemNumberInProject(itemKey, project.key);
+	if (itemNumber === null) return context.json({ error: 'Item not found' }, 404);
+	return { project, itemKey, itemNumber };
 }
 
 export async function handleListSpecs(context: Context): Promise<Response> {
 	const resolved = resolve(context);
-	if (!resolved) return context.json({ error: 'Invalid item key' }, 400);
+	if (resolved instanceof Response) return resolved;
 	const { project, itemKey, itemNumber } = resolved;
 
 	try {
@@ -51,7 +53,7 @@ export async function handleListSpecs(context: Context): Promise<Response> {
 			return context.json({ error: 'Item not found' }, 404);
 		}
 		const specs = await listSpecsByItem(project.id, itemNumber);
-		return context.json(specs.map((s) => toApi(s, itemKey, project.id)));
+		return context.json(specs.map((s) => toApi(s, itemKey, project.slug)));
 	} catch (error) {
 		console.error('Failed to list specs:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -60,7 +62,7 @@ export async function handleListSpecs(context: Context): Promise<Response> {
 
 export async function handleAddSpec(context: Context): Promise<Response> {
 	const resolved = resolve(context);
-	if (!resolved) return context.json({ error: 'Invalid item key' }, 400);
+	if (resolved instanceof Response) return resolved;
 	const { project, itemKey, itemNumber } = resolved;
 
 	const body = await context.req.json<{ path?: unknown; type?: unknown }>();
@@ -71,7 +73,7 @@ export async function handleAddSpec(context: Context): Promise<Response> {
 		if (!spec) {
 			return context.json({ error: 'Item not found' }, 404);
 		}
-		return context.json(toApi(spec, itemKey, project.id), 201);
+		return context.json(toApi(spec, itemKey, project.slug), 201);
 	} catch (error) {
 		if (error instanceof SpecValidationError) {
 			return context.json({ error: error.message }, 400);
@@ -86,7 +88,7 @@ export async function handleAddSpec(context: Context): Promise<Response> {
 
 export async function handleDeleteSpec(context: Context): Promise<Response> {
 	const resolved = resolve(context);
-	if (!resolved) return context.json({ error: 'Invalid item key' }, 400);
+	if (resolved instanceof Response) return resolved;
 	const { project, itemNumber } = resolved;
 
 	const id = context.req.param('id');
@@ -95,6 +97,11 @@ export async function handleDeleteSpec(context: Context): Promise<Response> {
 	}
 
 	try {
+		// Verify the item the way the list and add paths do, so a missing item reports
+		// itself as a missing item rather than as a missing spec.
+		if (!(await verifyItemOwnership(project.id, itemNumber))) {
+			return context.json({ error: 'Item not found' }, 404);
+		}
 		const deleted = await removeSpec(project.id, itemNumber, id);
 		if (!deleted) {
 			return context.json({ error: 'Spec not found' }, 404);

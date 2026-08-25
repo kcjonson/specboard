@@ -5,6 +5,7 @@
  * plus a type (product | technical). Used by both API handlers and MCP tools.
  */
 
+import { formatItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { ItemSpec, SpecType } from '../types.ts';
 import type { SpecSummary } from './items.ts';
@@ -140,8 +141,10 @@ export async function removeSpec(projectId: string, itemNumber: number, specId: 
 
 /** Item keys in a project that link the given spec path (reverse lookup for the editor). */
 export async function getItemKeysBySpecPath(projectId: string, path: string): Promise<string[]> {
-	const result = await query<{ key: string }>(
-		`SELECT p.key || '-' || i.number AS key
+	// Assembled in TypeScript rather than SQL so formatItemKey stays the only place
+	// that knows what an item key looks like.
+	const result = await query<{ project_key: string; number: number }>(
+		`SELECT p.key AS project_key, i.number
 		 FROM epic_specs s
 		 JOIN items i ON i.id = s.item_id
 		 JOIN projects p ON p.id = i.project_id
@@ -149,7 +152,7 @@ export async function getItemKeysBySpecPath(projectId: string, path: string): Pr
 		 ORDER BY i.number ASC`,
 		[projectId, path]
 	);
-	return result.rows.map((r) => r.key);
+	return result.rows.map((r) => formatItemKey(r.project_key, r.number));
 }
 
 /**

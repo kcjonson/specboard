@@ -126,9 +126,14 @@ export function ProjectDialog({
 		setSelectedBranch('');
 	}, [project]);
 
+	// Identifiers are only editable in edit mode; on create the server derives them.
+	const slugValid = !isEditMode || isValidProjectSlug(slug.trim());
+	const keyValid = !isEditMode || isValidProjectKey(itemKey.trim());
+	const canSubmit = Boolean(name.trim()) && slugValid && keyValid && !saving;
+
 	async function handleSubmit(e: Event): Promise<void> {
 		e.preventDefault();
-		if (!name.trim() || saving) return;
+		if (!canSubmit) return;
 
 		try {
 			setSaving(true);
@@ -286,8 +291,8 @@ export function ProjectDialog({
 									placeholder="my-project"
 									maxLength={MAX_PROJECT_SLUG_LENGTH}
 								/>
-								{slug.trim() !== '' && !isValidProjectSlug(slug.trim()) && (
-									<span class={styles.hint}>Lowercase letters, numbers, and single hyphens between them.</span>
+								{!slugValid && (
+									<span class={styles.error}>Lowercase letters, numbers, and single hyphens between them.</span>
 								)}
 							</label>
 						</div>
@@ -304,8 +309,8 @@ export function ProjectDialog({
 									placeholder="SB"
 									maxLength={10}
 								/>
-								{itemKey.trim() !== '' && !isValidProjectKey(itemKey.trim()) && (
-									<span class={styles.hint}>2–10 characters: a letter first, then letters or digits.</span>
+								{!keyValid && (
+									<span class={styles.error}>2–10 characters: a letter first, then letters or digits.</span>
 								)}
 							</label>
 						</div>
@@ -493,7 +498,7 @@ export function ProjectDialog({
 						</Button>
 						<Button
 							type="submit"
-							disabled={!name.trim() || saving}
+							disabled={!canSubmit}
 						>
 							{saving ? 'Saving...' : isEditMode ? 'Save' : 'Create'}
 						</Button>

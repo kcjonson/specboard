@@ -16,7 +16,8 @@ export const epicTools: Tool[] = [
 			properties: {
 				project_slug: {
 					type: 'string',
-					description: 'The project slug (e.g. "specboard"), as shown in Specboard URLs',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
 				item_key: {
 					type: 'string',
@@ -49,7 +50,7 @@ export const epicTools: Tool[] = [
 					description: 'Max items to return (default: 25)',
 				},
 			},
-			required: ['project_slug'],
+			required: [],
 		},
 	},
 	{
@@ -61,7 +62,8 @@ export const epicTools: Tool[] = [
 			properties: {
 				project_slug: {
 					type: 'string',
-					description: 'The project slug (e.g. "specboard"), as shown in Specboard URLs',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
 				title: {
 					type: 'string',
@@ -93,7 +95,7 @@ export const epicTools: Tool[] = [
 					},
 				},
 			},
-			required: ['project_slug', 'title'],
+			required: ['title'],
 		},
 	},
 	{
@@ -105,7 +107,8 @@ export const epicTools: Tool[] = [
 			properties: {
 				project_slug: {
 					type: 'string',
-					description: 'The project slug (e.g. "specboard"), as shown in Specboard URLs',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
 				parent_key: {
 					type: 'string',
@@ -130,7 +133,7 @@ export const epicTools: Tool[] = [
 					description: 'Array of tasks to create',
 				},
 			},
-			required: ['project_slug', 'parent_key', 'items'],
+			required: ['parent_key', 'items'],
 		},
 	},
 	{
@@ -142,7 +145,8 @@ export const epicTools: Tool[] = [
 			properties: {
 				project_slug: {
 					type: 'string',
-					description: 'The project slug (e.g. "specboard"), as shown in Specboard URLs',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
 				item_key: {
 					type: 'string',
@@ -203,7 +207,7 @@ export const epicTools: Tool[] = [
 					description: 'Set note on a task — context for any outcome (completion, blocked, cut, etc.)',
 				},
 			},
-			required: ['project_slug', 'item_key'],
+			required: ['item_key'],
 		},
 	},
 	{
@@ -215,7 +219,8 @@ export const epicTools: Tool[] = [
 			properties: {
 				project_slug: {
 					type: 'string',
-					description: 'The project slug (e.g. "specboard"), as shown in Specboard URLs',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
 				item_key: {
 					type: 'string',
@@ -227,7 +232,7 @@ export const epicTools: Tool[] = [
 					description: 'Type of item being deleted',
 				},
 			},
-			required: ['project_slug', 'item_key'],
+			required: ['item_key'],
 		},
 	},
 ];

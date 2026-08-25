@@ -222,7 +222,7 @@ export class FileTreeModel extends Model {
 	}
 
 	/**
-	 * Initialize the model with a project ID and load data
+	 * Initialize the model with a project slug and load data
 	 * @param projectSlug - The project to load
 	 * @param currentFilePath - Optional path to currently open file (will expand to show it)
 	 */

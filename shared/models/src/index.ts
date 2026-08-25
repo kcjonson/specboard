@@ -44,6 +44,7 @@ export {
 	getPersistedTimestamp,
 } from './documentPersistence';
 export type { LoadedPersistedDocument } from './documentPersistence';
+export { claimBrowserStorage } from './browserStorageOwner';
 
 // Authorization models
 export { AuthorizationModel, AuthorizationsCollection } from './authorization';

@@ -31,8 +31,8 @@ export interface ItemRowProps {
 	onToggle: (item: ItemModel) => void;
 	onOpen: (item: ItemModel) => void;
 	onSelect: (item: ItemModel | undefined) => void;
-	/** Open a child's detail by id (children are first-class items). */
-	onOpenChild?: (itemId: string) => void;
+	/** Open a child's detail by key (children are first-class items). */
+	onOpenChild?: (itemKey: string) => void;
 }
 
 /**

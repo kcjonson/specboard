@@ -25,7 +25,10 @@ export async function handleEpicTool(
 	userId: string,
 	boundProjectSlug?: string
 ): Promise<ToolResult> {
-	const requestedProjectSlug = args?.project_slug as string | undefined;
+	// Normalized the same way the X-Specboard-Project header is, so an agent that
+	// capitalizes the slug isn't refused for disagreeing with its own binding.
+	const requested = args?.project_slug;
+	const requestedProjectSlug = typeof requested === 'string' ? requested.trim().toLowerCase() : undefined;
 
 	// When the repo is bound (committed .mcp.json X-Specboard-Project header), the binding is
 	// authoritative: reject an explicit project_slug that targets a different board, and fall back

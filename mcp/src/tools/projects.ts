@@ -12,7 +12,7 @@ export const projectTools: Tool[] = [
 	{
 		name: 'list_projects',
 		description:
-			'List the projects the user has access to, with epic counts by status. When the repo is bound (its committed .mcp.json sends an X-Specboard-Project header) only that one project is returned; otherwise all projects are returned.',
+			'List the projects the user has access to, with epic counts by status. Each project has a `slug` — the identifier every other tool takes as project_slug — and a `key`, which is only the prefix of that project\'s item keys (key "SB" means its items are SB-1, SB-2, ...). When the repo is bound (its committed .mcp.json sends an X-Specboard-Project header) only that one project is returned; otherwise all projects are returned.',
 		inputSchema: {
 			type: 'object',
 			properties: {},
@@ -76,7 +76,7 @@ async function listProjects(userId: string, boundProjectSlug?: string): Promise<
 					{
 						projects: projects.map((p) => ({
 							slug: p.slug,
-							key: p.key,
+							itemKeyPrefix: p.key,
 							name: p.name,
 							description: p.description,
 							itemCounts: p.itemCounts,

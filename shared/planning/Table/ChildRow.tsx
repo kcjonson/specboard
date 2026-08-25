@@ -23,13 +23,13 @@ const DOT_STATUS: Record<ItemStatus, StatusType> = {
 
 export interface ChildRowProps {
 	child: ChildModel;
-	/** Open this child's detail (children are first-class items). */
-	onOpen?: (itemId: string) => void;
+	/** Open this child's detail by key (children are first-class items). */
+	onOpen?: (itemKey: string) => void;
 }
 
 /** A child item row, indented one level under its parent. Clickable to open its detail. */
 export function ChildRow({ child, onOpen }: ChildRowProps): JSX.Element {
-	const handleOpen = (): void => onOpen?.(child.id);
+	const handleOpen = (): void => onOpen?.(child.key);
 	return (
 		<div
 			class={`${styles.row} ${styles.taskRow} ${styles.clickable}`}

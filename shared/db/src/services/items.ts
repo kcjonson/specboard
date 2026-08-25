@@ -10,8 +10,14 @@ import { formatItemKey } from '@specboard/core/identifiers';
 import { query } from '../index.ts';
 import type { Item, ItemType, ItemStatus, SubStatus, SpecType } from '../types.ts';
 
-/** An items row joined to its project's key, so responses can carry the item key. */
-type ItemRow = Item & { project_key: string };
+/**
+ * An items row joined to its project's key and its parent's number, so responses can
+ * carry both its own key and its parent's.
+ */
+interface ItemRow extends Item {
+	project_key: string;
+	parent_number: number | null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)
@@ -58,6 +64,8 @@ export interface ItemResponse {
 	/** The item's address, `<project key>-<number>` (e.g. SB-345). */
 	key: string;
 	parentId: string | null;
+	/** Key of the parent item, or null for a top-level item. The form every write accepts. */
+	parentKey: string | null;
 	type: ItemType;
 	title: string;
 	description: string | null;
@@ -108,6 +116,19 @@ export interface UpdateItemInput {
 	note?: string;
 }
 
+/**
+ * Raised when a parent number names no item in the project. The parent is resolved
+ * inside the INSERT/UPDATE by subquery, which yields NULL for a miss — that would
+ * silently produce a *top-level* item (at rank 1, colliding with the real top level)
+ * instead of an error, so every write re-checks the outcome and throws this.
+ */
+export class ParentItemNotFoundError extends Error {
+	constructor(public readonly parentNumber: number) {
+		super(`No item numbered ${parentNumber} in this project`);
+		this.name = 'ParentItemNotFoundError';
+	}
+}
+
 export interface GetItemsParams {
 	projectId: string;
 	/** Fetch exactly this item (by its per-project number) instead of listing. */
@@ -131,6 +152,7 @@ function transformItem(item: ItemRow): Omit<ItemResponse, 'childStats'> {
 		number: item.number!,
 		key: formatItemKey(item.project_key, item.number!),
 		parentId: item.parent_id,
+		parentKey: item.parent_number === null ? null : formatItemKey(item.project_key, item.parent_number),
 		type: item.type,
 		title: item.title,
 		description: item.description,
@@ -199,15 +221,6 @@ export async function verifyItemOwnership(projectId: string, itemNumber: number)
 	return result.rows.length > 0;
 }
 
-/** Resolve an item's number to its internal id, or null when the project has no such item. */
-export async function resolveItemNumber(projectId: string, itemNumber: number): Promise<string | null> {
-	const result = await query<{ id: string }>(
-		'SELECT id FROM items WHERE number = $1 AND project_id = $2',
-		[itemNumber, projectId]
-	);
-	return result.rows[0]?.id ?? null;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Reads
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,13 +241,14 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 
 	// The project join supplies the key that every item key is built from.
 	let sql = `
-		SELECT i.*, p.key as project_key,
+		SELECT i.*, p.key as project_key, parent.number as parent_number,
 			COUNT(c.id) as child_count,
 			COUNT(c.id) FILTER (WHERE c.status = 'done') as done_count,
 			COUNT(c.id) FILTER (WHERE c.status = 'in_progress') as in_progress_count,
 			COUNT(c.id) FILTER (WHERE c.status = 'blocked') as blocked_count
 		FROM items i
 		JOIN projects p ON p.id = i.project_id
+		LEFT JOIN items parent ON parent.id = i.parent_id
 		LEFT JOIN items c ON c.parent_id = i.id
 		WHERE i.project_id = $1
 	`;
@@ -265,7 +279,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 		}
 	}
 
-	sql += ` GROUP BY i.id, p.key ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
+	sql += ` GROUP BY i.id, p.key, parent.number ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
 	if (itemNumber === undefined) {
 		sql += ` LIMIT $${paramIndex}`;
 		queryParams.push(limit);
@@ -369,11 +383,14 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 			FROM allocated a
 			RETURNING *
 		)
-		SELECT inserted.*, (SELECT key FROM allocated) AS project_key FROM inserted`,
+		SELECT inserted.*, (SELECT key FROM allocated) AS project_key, $2::int AS parent_number FROM inserted`,
 		values
 	);
 
-	return { ...transformItem(result.rows[0]!), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
+	const row = result.rows[0];
+	if (!row) throw new Error('Item creation affected no rows — the project no longer exists');
+	if (parentNumber !== null && row.parent_id === null) throw new ParentItemNotFoundError(parentNumber);
+	return { ...transformItem(row), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
 }
 
 /** Bulk-create child items under a parent (used for task breakdowns). */
@@ -403,9 +420,12 @@ export async function createItems(
 			CROSS JOIN allocated a
 			RETURNING *
 		)
-		SELECT inserted.*, (SELECT key FROM allocated) AS project_key FROM inserted`,
+		SELECT inserted.*, (SELECT key FROM allocated) AS project_key, $2::int AS parent_number FROM inserted`,
 		[projectId, parentNumber, items.map((d) => d.type || 'task'), items.map((d) => d.title), items.map((d) => d.description || null), items.length]
 	);
+
+	if (result.rows.length === 0) throw new Error('Bulk item creation affected no rows — the project no longer exists');
+	if (result.rows[0]!.parent_id === null) throw new ParentItemNotFoundError(parentNumber);
 
 	return result.rows
 		.sort((a, b) => a.rank - b.rank)
@@ -485,15 +505,17 @@ export async function moveItem(projectId: string, itemNumber: number, newParentN
 	const rankSql = newParentNumber !== null
 		? '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = (SELECT id FROM parent))'
 		: '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $3 AND parent_id IS NULL)';
-	const result = await query(
+	const result = await query<{ id: string; parent_id: string | null }>(
 		`WITH parent AS (
 			SELECT id FROM items WHERE project_id = $3 AND number = $1
 		)
 		UPDATE items SET parent_id = (SELECT id FROM parent), rank = ${rankSql}, updated_at = NOW()
-		WHERE number = $2 AND project_id = $3 RETURNING id`,
+		WHERE number = $2 AND project_id = $3 RETURNING id, parent_id`,
 		[newParentNumber, itemNumber, projectId]
 	);
-	if (result.rows.length === 0) return null;
+	const moved = result.rows[0];
+	if (!moved) return null;
+	if (newParentNumber !== null && moved.parent_id === null) throw new ParentItemNotFoundError(newParentNumber);
 	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }

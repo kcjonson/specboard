@@ -11,7 +11,8 @@ export interface ApiSpec {
 	id: string;
 	/** Key of the item this spec is linked to (e.g. SB-345). */
 	itemKey: string;
-	projectId: string;
+	/** Slug of the project the item belongs to. */
+	projectSlug: string;
 	path: string;
 	type: SpecType;
 	createdAt: string;

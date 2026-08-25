@@ -364,26 +364,26 @@ Response includes pagination info:
 |--------|------|-------------|
 | GET | /api/projects | List user's projects |
 | POST | /api/projects | Create project |
-| GET | /api/projects/:id | Get project |
-| PATCH | /api/projects/:id | Update project |
-| DELETE | /api/projects/:id | Delete project |
+| GET | /api/projects/:projectSlug | Get project |
+| PATCH | /api/projects/:projectSlug | Update project |
+| DELETE | /api/projects/:projectSlug | Delete project |
 
 ### Project Storage (see [project-storage.md](./project-storage.md))
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/projects/:id/folders | Add local folder (local mode) |
-| DELETE | /api/projects/:id/folders | Remove folder from view |
-| POST | /api/projects/:id/repository | Connect GitHub repo (cloud mode) |
-| DELETE | /api/projects/:id/repository | Disconnect repository |
+| POST | /api/projects/:projectSlug/folders | Add local folder (local mode) |
+| DELETE | /api/projects/:projectSlug/folders | Remove folder from view |
+| POST | /api/projects/:projectSlug/repository | Connect GitHub repo (cloud mode) |
+| DELETE | /api/projects/:projectSlug/repository | Disconnect repository |
 
 ### Project Files
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET/POST | /api/projects/:id/tree | List files/folders |
-| GET | /api/projects/:id/files?path=... | Get file content |
-| PUT | /api/projects/:id/files?path=... | Save file |
+| GET/POST | /api/projects/:projectSlug/tree | List files/folders |
+| GET | /api/projects/:projectSlug/files?path=... | Get file content |
+| PUT | /api/projects/:projectSlug/files?path=... | Save file |
 
 ### Repositories (Legacy)
 

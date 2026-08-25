@@ -43,7 +43,10 @@ function readViewFromUrl(): PlanningView {
  */
 export function Planning(props: RouteProps): JSX.Element {
 	const projectSlug = props.params.projectSlug || 'demo';
-	const openItemKey = props.params.itemKey;
+	// Normalized because the server accepts a hand-typed `sb-345`; without this the
+	// route key would miss the collection's canonical `SB-345` and open a duplicate,
+	// detached model instead of the live one the board is rendering.
+	const openItemKey = props.params.itemKey?.toUpperCase();
 
 	// Collection auto-fetches after projectSlug is set. Memoized so it survives view
 	// toggles (the route/entry is unchanged, only the ?view= param differs).
@@ -53,9 +56,10 @@ export function Planning(props: RouteProps): JSX.Element {
 	const [view, setView] = useState<PlanningView>(readViewFromUrl);
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
 
-	// Board highlight. It follows the drawer when one is open, but also moves on its
-	// own for keyboard navigation with the drawer closed.
-	const [highlightedItemKey, setHighlightedItemKey] = useState<string | undefined>();
+	// The board selection — the single source of truth for which card is marked.
+	// Seeded from the route so a deep link lands with its card selected, and kept in
+	// step below whenever the route changes under it (deep link, Back/Forward).
+	const [selectedItemKey, setSelectedItemKey] = useState<string | undefined>(openItemKey);
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
 
@@ -159,17 +163,39 @@ export function Planning(props: RouteProps): JSX.Element {
 		navigate(window.location.pathname + (search ? `?${search}` : '') + window.location.hash);
 	}, []);
 
+	// Selection follows the route whenever the route moves on its own — a deep link,
+	// or the user hitting Back/Forward across item URLs.
+	useEffect(() => {
+		if (openItemKey) setSelectedItemKey(openItemKey);
+	}, [openItemKey]);
+
+	/** Board and item URLs, preserving the query string and hash the user is on. */
+	const boardUrl = useCallback(
+		(): string => `/projects/${projectSlug}/planning${window.location.search}${window.location.hash}`,
+		[projectSlug]
+	);
+	const itemUrl = useCallback(
+		(itemKey: string): string =>
+			`/projects/${projectSlug}/planning/items/${itemKey}${window.location.search}${window.location.hash}`,
+		[projectSlug]
+	);
+
+	// Moving the selection (arrow keys, clicking a card). With the drawer open it
+	// follows live, replacing the history entry rather than pushing one per keystroke.
+	// Escape clears the selection and dismisses the drawer with it.
 	const handleSelectItem = useCallback((item: ItemModel | undefined): void => {
-		setHighlightedItemKey(item?.key);
-	}, []);
+		setSelectedItemKey(item?.key);
+		if (!openItemKey) return;
+		navigate(item ? itemUrl(item.key) : boardUrl(), { replace: true });
+	}, [openItemKey, itemUrl, boardUrl]);
 
 	// Opening an item is a navigation to its key — the drawer follows the route, so the
 	// open item is shareable and Back closes it. Works for children too, which aren't in
 	// the top-level collection.
 	const handleOpenItemByKey = useCallback((itemKey: string): void => {
-		setHighlightedItemKey(itemKey);
-		navigate(`/projects/${projectSlug}/planning/items/${itemKey}${window.location.search}`);
-	}, [projectSlug]);
+		setSelectedItemKey(itemKey);
+		navigate(itemUrl(itemKey));
+	}, [itemUrl]);
 
 	const handleOpenItem = useCallback((item: ItemModel): void => {
 		handleOpenItemByKey(item.key);
@@ -192,10 +218,11 @@ export function Planning(props: RouteProps): JSX.Element {
 		setIsNewItemDialogOpen(false);
 	}, []);
 
-	// Closing navigates back to the bare board, keeping the item highlighted.
+	// Closing replaces the item entry rather than pushing the board on top of it, so
+	// Back from a closed drawer leaves the board instead of reopening the drawer.
 	const handleCloseDrawer = useCallback((): void => {
-		navigate(`/projects/${projectSlug}/planning${window.location.search}`);
-	}, [projectSlug]);
+		navigate(boardUrl(), { replace: true });
+	}, [boardUrl]);
 
 	const handleDeleteItem = useCallback((item: ItemModel): void => {
 		const inCollection = items.find((i) => i.key === item.key);
@@ -205,9 +232,9 @@ export function Planning(props: RouteProps): JSX.Element {
 			// A child opened standalone isn't in the top-level collection — delete it directly.
 			void item.delete();
 		}
-		setHighlightedItemKey(undefined);
-		navigate(`/projects/${projectSlug}/planning${window.location.search}`);
-	}, [items, projectSlug]);
+		setSelectedItemKey(undefined);
+		navigate(boardUrl(), { replace: true });
+	}, [items, boardUrl]);
 
 	const createOptions: SplitButtonOption[] = useMemo(() => [
 		{ label: 'Epic', value: 'epic', icon: 'file' as const, onClick: () => handleOpenNewItemDialog('epic') },
@@ -237,9 +264,6 @@ export function Planning(props: RouteProps): JSX.Element {
 	const openItem = openItemKey
 		? (items.find((i) => i.key === openItemKey) ?? standaloneItem)
 		: undefined;
-
-	// The highlight follows the open item, so a deep link lands with the card marked.
-	const selectedItemKey = openItemKey ?? highlightedItemKey;
 
 	// Measure the workspace so the drawer can't widen past leaving the board a
 	// usable minimum. A callback ref (not useRef + mount effect) is required

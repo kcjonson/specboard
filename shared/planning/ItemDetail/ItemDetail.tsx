@@ -9,7 +9,7 @@ import styles from './ItemDetail.module.css';
 
 export function ItemDetail({ params }: RouteProps): JSX.Element {
 	const projectSlug = params.projectSlug || 'demo';
-	const itemKey = params.itemKey || '';
+	const itemKey = (params.itemKey || '').toUpperCase();
 
 	// Model auto-fetches when given a key
 	const item = useMemo(() => new ItemModel({ key: itemKey, projectSlug }), [itemKey, projectSlug]);

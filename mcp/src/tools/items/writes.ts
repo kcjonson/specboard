@@ -22,6 +22,7 @@ import {
 	verifyItemOwnership,
 	setSpecs as setSpecsService,
 	SpecValidationError,
+	ParentItemNotFoundError,
 	type ResolvedProject,
 	type ItemType,
 	type ItemStatus,
@@ -29,7 +30,7 @@ import {
 	type SpecType,
 	type UpdateItemInput,
 } from '@specboard/db';
-import { parseItemKey } from '@specboard/core/identifiers';
+import { itemNumberInProject } from '@specboard/core/identifiers';
 
 import type { ToolResult } from './index.ts';
 
@@ -39,14 +40,6 @@ function ok(payload: unknown): ToolResult {
 
 function err(text: string): ToolResult {
 	return { content: [{ type: 'text', text }], isError: true };
-}
-
-/** Parse an item key against this project's prefix. Returns null when it isn't one of ours. */
-function itemNumber(key: unknown, project: ResolvedProject): number | null {
-	if (typeof key !== 'string') return null;
-	const parsed = parseItemKey(key);
-	if (!parsed || parsed.projectKey !== project.key) return null;
-	return parsed.number;
 }
 
 /** The message for a key that doesn't address this project, so the fix is obvious. */
@@ -67,17 +60,23 @@ export async function createItem(
 
 	let parentNumber: number | null = null;
 	if (args?.parent_key != null) {
-		parentNumber = itemNumber(args.parent_key, project);
+		parentNumber = itemNumberInProject(args.parent_key, project.key);
 		if (parentNumber === null) return badKey(args.parent_key, project, 'parent_key');
 		if (!(await verifyItemOwnership(project.id, parentNumber))) return err('Parent item not found');
 	}
 
-	const item = await createItemService(project.id, {
-		title,
-		type,
-		parentNumber,
-		description: args?.description as string | undefined,
-	});
+	let item;
+	try {
+		item = await createItemService(project.id, {
+			title,
+			type,
+			parentNumber,
+			description: args?.description as string | undefined,
+		});
+	} catch (error) {
+		if (error instanceof ParentItemNotFoundError) return err('Parent item not found');
+		throw error;
+	}
 
 	// Optionally attach typed spec links.
 	let specs;
@@ -91,7 +90,7 @@ export async function createItem(
 	}
 
 	return ok({
-		created: { key: item.key, title: item.title, type: item.type, status: item.status, parentId: item.parentId, ...(specs ? { specs } : {}) },
+		created: { key: item.key, title: item.title, type: item.type, status: item.status, parentKey: item.parentKey, ...(specs ? { specs } : {}) },
 		message: `${type.charAt(0).toUpperCase() + type.slice(1)} created`,
 	});
 }
@@ -103,15 +102,21 @@ export async function createItems(
 	const items = args?.items as Array<{ title: string; details?: string }>;
 	if (args?.parent_key == null || !items || items.length === 0) return err('parent_key and items array are required');
 
-	const parentNumber = itemNumber(args.parent_key, project);
+	const parentNumber = itemNumberInProject(args.parent_key, project.key);
 	if (parentNumber === null) return badKey(args.parent_key, project, 'parent_key');
 	if (!(await verifyItemOwnership(project.id, parentNumber))) return err('Parent item not found');
 
-	const created = await createItemsService(
-		project.id,
-		parentNumber,
-		items.map((it) => ({ title: it.title, description: it.details })),
-	);
+	let created;
+	try {
+		created = await createItemsService(
+			project.id,
+			parentNumber,
+			items.map((it) => ({ title: it.title, description: it.details })),
+		);
+	} catch (error) {
+		if (error instanceof ParentItemNotFoundError) return err('Parent item not found');
+		throw error;
+	}
 
 	return ok({ created: created.map((t) => ({ key: t.key, title: t.title, status: t.status })), count: created.length });
 }
@@ -121,7 +126,7 @@ export async function updateItem(
 	args: Record<string, unknown> | undefined,
 ): Promise<ToolResult> {
 	if (args?.item_key == null) return err('item_key is required');
-	const number = itemNumber(args.item_key, project);
+	const number = itemNumberInProject(args.item_key, project.key);
 	if (number === null) return badKey(args.item_key, project, 'item_key');
 
 	if (!(await verifyItemOwnership(project.id, number))) {
@@ -132,16 +137,22 @@ export async function updateItem(
 	if (args.parent_key !== undefined) {
 		let newParentNumber: number | null = null;
 		if (args.parent_key !== null) {
-			newParentNumber = itemNumber(args.parent_key, project);
+			newParentNumber = itemNumberInProject(args.parent_key, project.key);
 			if (newParentNumber === null) return badKey(args.parent_key, project, 'parent_key');
 			if (!(await verifyItemOwnership(project.id, newParentNumber))) return err('Parent item not found');
 			if (await wouldCreateCycle(project.id, number, newParentNumber)) {
 				return err('Cannot move an item under itself or one of its descendants');
 			}
 		}
-		const moved = await moveItemService(project.id, number, newParentNumber);
+		let moved;
+		try {
+			moved = await moveItemService(project.id, number, newParentNumber);
+		} catch (error) {
+			if (error instanceof ParentItemNotFoundError) return err('Parent item not found');
+			throw error;
+		}
 		if (!moved) return err('Item not found');
-		return ok({ updated: { key: moved.key, parentId: moved.parentId }, message: newParentNumber !== null ? 'Item moved' : 'Item promoted to top-level' });
+		return ok({ updated: { key: moved.key, parentKey: moved.parentKey }, message: newParentNumber !== null ? 'Item moved' : 'Item promoted to top-level' });
 	}
 
 	const status = args.status as ItemStatus | undefined;
@@ -215,7 +226,7 @@ export async function deleteItem(
 	args: Record<string, unknown> | undefined,
 ): Promise<ToolResult> {
 	if (args?.item_key == null) return err('item_key is required');
-	const number = itemNumber(args.item_key, project);
+	const number = itemNumberInProject(args.item_key, project.key);
 	if (number === null) return badKey(args.item_key, project, 'item_key');
 
 	if (!(await verifyItemOwnership(project.id, number))) {

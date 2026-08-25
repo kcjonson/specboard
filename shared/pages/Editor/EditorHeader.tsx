@@ -16,7 +16,7 @@ export interface EditorHeaderProps {
 	onNewPage?: () => void;
 	/** Callback to rename the current file */
 	onRename?: (newFilename: string) => void;
-	/** ID of linked epic (if this document has one) */
+	/** Key of the linked epic (if this document has one) */
 	linkedEpicKey?: string;
 	/** Whether epic creation is in progress */
 	creatingEpic?: boolean;

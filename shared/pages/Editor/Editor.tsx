@@ -11,6 +11,7 @@ import {
 	saveToLocalStorage,
 	loadFromLocalStorage,
 	hasPersistedContent,
+	claimBrowserStorage,
 	clearLocalStorage,
 	type DocumentComment,
 } from '@specboard/models';
@@ -119,6 +120,19 @@ export function Editor(props: RouteProps): JSX.Element {
 	useModel(gitStatusModel);
 	useModel(currentUser);
 
+	// Drafts, the last-opened file, and tree expansion are keyed by project slug,
+	// which is only unique per owner — on a shared browser two accounts with a
+	// project slugged the same would otherwise read each other's entries. Hand the
+	// store to the signed-in user (clearing it if it belonged to someone else)
+	// before anything reads or writes it. `id` is the literal 'me' until the fetch
+	// resolves, so this settles on the second render at the earliest.
+	const [storageClaimed, setStorageClaimed] = useState(false);
+	useEffect(() => {
+		if (!currentUser.id || currentUser.id === 'me') return;
+		claimBrowserStorage(currentUser.id);
+		setStorageClaimed(true);
+	}, [currentUser.id]);
+
 	// Auto-save state
 	const serverSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const saveRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -148,7 +162,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	const editorRef = useRef<MarkdownEditorHandle>(null);
 
 	// Epic linking state
-	const [linkedEpicKey, setLinkedEpicId] = useState<string | undefined>();
+	const [linkedEpicKey, setLinkedEpicKey] = useState<string | undefined>();
 	const [creatingEpic, setCreatingEpic] = useState(false);
 	const [epicPickerOpen, setEpicPickerOpen] = useState(false);
 	const creatingEpicRef = useRef(false);
@@ -181,15 +195,15 @@ export function Editor(props: RouteProps): JSX.Element {
 	const checkLinkedEpic = useCallback(async (path: string) => {
 		// Only check for markdown files
 		if (!path.endsWith('.md') && !path.endsWith('.markdown')) {
-			setLinkedEpicId(undefined);
+			setLinkedEpicKey(undefined);
 			return;
 		}
 
 		try {
-			const epics = await fetchClient.get<Array<{ id: string }>>(
+			const epics = await fetchClient.get<Array<{ key: string }>>(
 				`/api/projects/${projectSlug}/items?specPath=${encodeURIComponent(path)}`
 			);
-			setLinkedEpicId(epics.length > 0 ? epics[0]?.id : undefined);
+			setLinkedEpicKey(epics.length > 0 ? epics[0]?.key : undefined);
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
 			captureError(error, {
@@ -198,7 +212,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				projectSlug,
 			});
 			// Fail gracefully - epic linking is optional
-			setLinkedEpicId(undefined);
+			setLinkedEpicKey(undefined);
 		}
 	}, [projectSlug]);
 
@@ -311,14 +325,15 @@ export function Editor(props: RouteProps): JSX.Element {
 			await performServerSave();
 		}
 
-		// Check for cached changes - show recovery dialog if found
-		if (hasPersistedContent(projectSlug, path)) {
+		// Check for cached changes - show recovery dialog if found. Gated on the
+		// storage claim so a draft left by a previous account is never offered.
+		if (storageClaimed && hasPersistedContent(projectSlug, path)) {
 			setPendingRecovery(path);
 			return;
 		}
 
 		await loadFileFromServer(path);
-	}, [projectSlug, loadFileFromServer, documentModel, performServerSave]);
+	}, [projectSlug, storageClaimed, loadFileFromServer, documentModel, performServerSave]);
 
 	// Handle file renamed via sidebar double-click
 	const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
@@ -372,7 +387,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		creatingEpicRef.current = true;
 		setCreatingEpic(true);
 		try {
-			const response = await fetchClient.post<{ id: string }>(
+			const response = await fetchClient.post<{ key: string }>(
 				`/api/projects/${projectSlug}/items`,
 				{
 					title,
@@ -381,12 +396,12 @@ export function Editor(props: RouteProps): JSX.Element {
 			);
 			// Link the current document as a product spec.
 			await fetchClient.post(
-				`/api/projects/${projectSlug}/items/${response.id}/specs`,
+				`/api/projects/${projectSlug}/items/${response.key}/specs`,
 				{ path: filePath, type: 'product' }
 			);
-			setLinkedEpicId(response.id);
+			setLinkedEpicKey(response.key);
 			// Navigate to Planning page with highlight param
-			navigate(`/projects/${projectSlug}/planning?highlight=${response.id}`);
+			navigate(`/projects/${projectSlug}/planning?highlight=${response.key}`);
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
 			captureError(error, {
@@ -426,7 +441,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				captureError(error, { type: 'epic_link_error', filePath, projectSlug });
 			}
 		}
-		setLinkedEpicId(epicKey);
+		setLinkedEpicKey(epicKey);
 	}, [projectSlug, documentModel.filePath]);
 
 	// Handle restoring a deleted file
@@ -510,16 +525,16 @@ export function Editor(props: RouteProps): JSX.Element {
 		documentModel.toggleResolved(commentId);
 	}, [documentModel]);
 
-	// Restore previously selected file on mount
+	// Restore previously selected file on mount, once the store is known to be ours.
 	useEffect(() => {
-		if (restoredRef.current) return;
+		if (!storageClaimed || restoredRef.current) return;
 		restoredRef.current = true;
 
 		const savedPath = loadSelectedFile(projectSlug);
 		if (savedPath) {
 			handleFileSelect(savedPath);
 		}
-	}, [projectSlug, handleFileSelect]);
+	}, [projectSlug, storageClaimed, handleFileSelect]);
 
 	// Manual retry from error banner
 	const handleRetryManual = useCallback(() => {
@@ -598,7 +613,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		if (documentModel.filePath === deletedPath) {
 			documentModel.clear();
 			saveSelectedFile(projectSlug, null);
-			setLinkedEpicId(undefined);
+			setLinkedEpicKey(undefined);
 		}
 	}, [documentModel, projectSlug]);
 

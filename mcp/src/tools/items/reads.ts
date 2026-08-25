@@ -10,22 +10,23 @@ import {
 	type ItemStatus,
 	type ItemType,
 } from '@specboard/db';
-import { parseItemKey } from '@specboard/core/identifiers';
+import { itemNumberInProject } from '@specboard/core/identifiers';
 
 import type { ToolResult } from './index.ts';
 
 export async function getItems(project: ResolvedProject, args: Record<string, unknown>): Promise<ToolResult> {
-	// An item key from another project must not resolve here just because the number exists.
+	// An item key from another project must not resolve here just because the number
+	// exists. A non-string item_key is rejected too rather than silently listing.
 	let itemNumber: number | undefined;
-	if (typeof args.item_key === 'string') {
-		const parsed = parseItemKey(args.item_key);
-		if (!parsed || parsed.projectKey !== project.key) {
+	if (args.item_key !== undefined && args.item_key !== null) {
+		const parsed = itemNumberInProject(args.item_key, project.key);
+		if (parsed === null) {
 			return {
-				content: [{ type: 'text', text: `${args.item_key} is not an item key in project ${project.slug} (its items look like ${project.key}-1).` }],
+				content: [{ type: 'text', text: `${String(args.item_key)} is not an item key in project ${project.slug} (its items look like ${project.key}-1).` }],
 				isError: true,
 			};
 		}
-		itemNumber = parsed.number;
+		itemNumber = parsed;
 	}
 
 	const items = await getItemsService({

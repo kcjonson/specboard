@@ -19,7 +19,7 @@ export interface BoardProps {
 	/** Active toolbar filters (applied to the cards shown in each column). */
 	filters: PlanningFilters;
 	selectedItemKey?: string;
-	/** Ids to briefly flash (newly created, or changed by a background refresh). */
+	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
 	/** Disables keyboard shortcuts while a dialog is open. */
 	dialogOpen: boolean;

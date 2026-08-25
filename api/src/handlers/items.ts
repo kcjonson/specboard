@@ -22,34 +22,44 @@ import {
 	unblockItem,
 	verifyItemOwnership,
 	getItemKeysBySpecPath,
+	ParentItemNotFoundError,
 	type ResolvedProject,
 	type ItemStatus,
 	type ItemType,
 	type SubStatus,
 } from '@specboard/db';
-import { parseItemKey } from '@specboard/core/identifiers';
+import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import { isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../validation.ts';
 
-/** The project resolved from :projectSlug by requireProjectAccess. */
-function project(context: Context): ResolvedProject {
-	return context.get('project') as ResolvedProject;
+/**
+ * The project resolved from :projectSlug by requireProjectAccess.
+ *
+ * Throws rather than returning undefined: reaching here without it means the route
+ * was registered without the wrapper, which would otherwise read as "authorized" and
+ * query with an undefined project id. A 500 is the correct answer to that mistake.
+ */
+export function requireResolvedProject(context: Context): ResolvedProject {
+	const resolved = context.get('project') as ResolvedProject | undefined;
+	if (!resolved) throw new Error('Route is missing requireProjectAccess — no resolved project on context');
+	return resolved;
 }
+
+const project = requireResolvedProject;
 
 /**
- * Parse an item key from the path or a request body into its per-project number.
- * Returns null when it isn't a key, or belongs to a different project — a
- * `XX-1` key must not address `SB-1` just because the number exists.
+ * The :itemKey path segment as a number, or an error Response.
+ *
+ * A key that isn't a key at all is a 400. A well-formed key carrying another
+ * project's prefix is a 404 — the same answer as a number that doesn't exist here,
+ * so the response can't be used to discover which prefixes are real.
  */
-function itemNumberFrom(key: unknown, projectKey: string): number | null {
-	if (typeof key !== 'string') return null;
-	const parsed = parseItemKey(key);
-	if (!parsed || parsed.projectKey !== projectKey) return null;
-	return parsed.number;
-}
+function pathItemNumber(context: Context): number | Response {
+	const key = context.req.param('itemKey');
+	if (!key || !parseItemKey(key)) return context.json({ error: 'Invalid item key' }, 400);
 
-/** The :itemKey path segment as a number, or null when it doesn't address this project. */
-function pathItemNumber(context: Context): number | null {
-	return itemNumberFrom(context.req.param('itemKey'), project(context).key);
+	const number = itemNumberInProject(key, project(context).key);
+	if (number === null) return context.json({ error: 'Item not found' }, 404);
+	return number;
 }
 
 /** GET /items — top-level items with child stats, filterable by status/type/search. */
@@ -85,7 +95,7 @@ export async function handleListItems(context: Context): Promise<Response> {
 export async function handleGetItem(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
-	if (itemNumber === null) return context.json({ error: 'Invalid item key' }, 400);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
 		const items = await getItems({ projectId, itemNumber, includeChildren: true, includeNotes: true, includeSpecs: true });
@@ -127,8 +137,11 @@ export async function handleCreateItem(context: Context): Promise<Response> {
 
 	let parentNumber: number | null = null;
 	if (body.parentKey != null) {
-		parentNumber = itemNumberFrom(body.parentKey, projectKey);
-		if (parentNumber === null) return context.json({ error: 'Invalid parentKey' }, 400);
+		if (typeof body.parentKey !== 'string' || !parseItemKey(body.parentKey)) {
+			return context.json({ error: 'Invalid parentKey' }, 400);
+		}
+		parentNumber = itemNumberInProject(body.parentKey, projectKey);
+		if (parentNumber === null) return context.json({ error: 'Parent item not found' }, 404);
 	}
 
 	try {
@@ -144,6 +157,7 @@ export async function handleCreateItem(context: Context): Promise<Response> {
 		});
 		return context.json(item, 201);
 	} catch (error) {
+		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		console.error('Failed to create item:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
@@ -153,7 +167,7 @@ export async function handleCreateItem(context: Context): Promise<Response> {
 export async function handleCreateChildren(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 	const parentNumber = pathItemNumber(context);
-	if (parentNumber === null) return context.json({ error: 'Invalid item key' }, 400);
+	if (typeof parentNumber !== 'number') return parentNumber;
 
 	const body = await context.req.json<{ items?: Array<{ title?: string; description?: string; type?: unknown }> }>();
 	if (!Array.isArray(body.items) || body.items.length === 0) return context.json({ error: 'items array is required' }, 400);
@@ -171,6 +185,7 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 		);
 		return context.json(created, 201);
 	} catch (error) {
+		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		console.error('Failed to create child items:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
@@ -180,7 +195,7 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 export async function handleUpdateItem(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
-	if (itemNumber === null) return context.json({ error: 'Invalid item key' }, 400);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	const body = await context.req.json<Record<string, unknown>>();
 	if (body.status !== undefined && !isValidStatus(body.status)) return context.json({ error: 'Invalid status' }, 400);
@@ -210,13 +225,16 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 export async function handleMoveItem(context: Context): Promise<Response> {
 	const { id: projectId, key: projectKey } = project(context);
 	const itemNumber = pathItemNumber(context);
-	if (itemNumber === null) return context.json({ error: 'Invalid item key' }, 400);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	const body = await context.req.json<{ parentKey?: string | null }>();
 	let newParentNumber: number | null = null;
 	if (body.parentKey != null) {
-		newParentNumber = itemNumberFrom(body.parentKey, projectKey);
-		if (newParentNumber === null) return context.json({ error: 'Invalid parentKey' }, 400);
+		if (typeof body.parentKey !== 'string' || !parseItemKey(body.parentKey)) {
+			return context.json({ error: 'Invalid parentKey' }, 400);
+		}
+		newParentNumber = itemNumberInProject(body.parentKey, projectKey);
+		if (newParentNumber === null) return context.json({ error: 'Parent item not found' }, 404);
 	}
 	if (newParentNumber === itemNumber) return context.json({ error: 'An item cannot be its own parent' }, 400);
 
@@ -232,6 +250,7 @@ export async function handleMoveItem(context: Context): Promise<Response> {
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(item);
 	} catch (error) {
+		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		console.error('Failed to move item:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
@@ -241,7 +260,7 @@ export async function handleMoveItem(context: Context): Promise<Response> {
 export async function handleDeleteItem(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
-	if (itemNumber === null) return context.json({ error: 'Invalid item key' }, 400);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
 		const deleted = await deleteItem(projectId, itemNumber);
@@ -262,7 +281,7 @@ async function lifecycle(
 ): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
-	if (itemNumber === null) return context.json({ error: 'Invalid item key' }, 400);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	let note: string | undefined;
 	try {

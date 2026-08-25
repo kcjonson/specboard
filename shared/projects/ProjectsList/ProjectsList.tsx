@@ -99,16 +99,23 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				setProjects((prev) =>
 					prev.map((p) => (p.id === updated.id ? { ...updated } : p))
 				);
-				// Update cookie if this is the current project
-				if (getCookie('lastProjectSlug') === updated.slug) {
+				// Refresh the cookies if this is the current project. Compare against the
+				// slug we edited, not the returned one — the slug is user-editable now, so
+				// a rename would otherwise never match and leave the cookie pointing at a
+				// slug that no longer resolves.
+				if (getCookie('lastProjectSlug') === dialogProject.slug) {
+					setCookie('lastProjectSlug', updated.slug, 30);
 					setCookie('lastProjectName', updated.name, 30);
 				}
 				setDialogProject(null);
 			}
 		} catch (err) {
+			// Rethrow so the dialog renders the failure inline and keeps the user's edits.
+			// Setting the page-level error here would swap the whole list (and the dialog
+			// with it) for a full-screen retry panel — a taken slug would discard the form.
 			// A taken slug or key comes back as a 409 whose body says which one; FetchError's
 			// own message is just "HTTP 409: Conflict", so prefer the server's wording.
-			setError(apiErrorMessage(err, 'Failed to save project'));
+			throw new Error(apiErrorMessage(err, 'Failed to save project'));
 		}
 	}
 
