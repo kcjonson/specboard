@@ -89,6 +89,7 @@ export interface McpToken {
 	refresh_token_hash: string | null;
 	scopes: string[];
 	expires_at: Date;
+	access_token_expires_at: Date;
 	created_at: Date;
 }
 

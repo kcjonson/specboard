@@ -703,15 +703,16 @@ async function handleAuthorizationCodeGrant(
 	const accessTokenHash = hashToken(accessToken);
 	const refreshTokenHash = hashToken(refreshToken);
 	const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
+	const accessTokenExpiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_SECONDS * 1000);
 
 	// Use transaction to ensure atomicity: code deletion and token creation
 	// either both succeed or both fail (prevents orphaned state on crash)
 	await transaction(async (client) => {
 		await client.query('DELETE FROM oauth_codes WHERE code = $1', [code]);
 		await client.query(
-			`INSERT INTO mcp_tokens (user_id, client_id, device_name, access_token_hash, refresh_token_hash, scopes, expires_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			[authCode.user_id, authCode.client_id, authCode.device_name, accessTokenHash, refreshTokenHash, authCode.scopes, refreshExpiresAt]
+			`INSERT INTO mcp_tokens (user_id, client_id, device_name, access_token_hash, refresh_token_hash, scopes, expires_at, access_token_expires_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			[authCode.user_id, authCode.client_id, authCode.device_name, accessTokenHash, refreshTokenHash, authCode.scopes, refreshExpiresAt, accessTokenExpiresAt]
 		);
 	});
 
@@ -760,24 +761,27 @@ async function handleRefreshTokenGrant(
 		return context.json({ error: 'invalid_grant', error_description: 'Refresh token expired' }, 400);
 	}
 
-	// Generate new tokens
+	// The refresh token is deliberately NOT rotated. Claude Code stores it at
+	// user scope, shared by every session on the machine; with single-use
+	// rotation, concurrent refreshes race and the loser is left holding a dead
+	// refresh token (invalid_grant -> full re-authorization). Without rotation,
+	// the loser just has a stale access token, gets a 401, and refreshes again
+	// silently. The refresh expiry slides forward 30 days on each use.
 	const newAccessToken = generateToken();
-	const newRefreshToken = generateToken();
 	const newAccessTokenHash = hashToken(newAccessToken);
-	const newRefreshTokenHash = hashToken(newRefreshToken);
 	const newExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
+	const newAccessTokenExpiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_SECONDS * 1000);
 
-	// Update token record
 	await query(
-		`UPDATE mcp_tokens SET access_token_hash = $1, refresh_token_hash = $2, expires_at = $3 WHERE id = $4`,
-		[newAccessTokenHash, newRefreshTokenHash, newExpiresAt, token.id]
+		`UPDATE mcp_tokens SET access_token_hash = $1, expires_at = $2, access_token_expires_at = $3 WHERE id = $4`,
+		[newAccessTokenHash, newExpiresAt, newAccessTokenExpiresAt, token.id]
 	);
 
 	return context.json({
 		access_token: newAccessToken,
 		token_type: 'Bearer',
 		expires_in: ACCESS_TOKEN_TTL_SECONDS,
-		refresh_token: newRefreshToken,
+		refresh_token,
 		scope: token.scopes.join(' '),
 	});
 }
