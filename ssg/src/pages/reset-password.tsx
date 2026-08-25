@@ -2,10 +2,15 @@
  * Reset password page - processes the token from email link
  */
 import type { JSX } from 'preact';
+import { BrandLogo } from '../components/logo';
 
 export function ResetPasswordContent(): JSX.Element {
 	return (
 		<div class="auth-container">
+			<div class="auth-brand">
+				<BrandLogo size={40} href="/" />
+			</div>
+
 			<h1>Set New Password</h1>
 
 			<div id="message" class="message-box hidden" />

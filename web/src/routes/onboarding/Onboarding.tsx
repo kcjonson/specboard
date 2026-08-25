@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Button, Text } from '@specboard/ui';
+import { Button, Text, Logo } from '@specboard/ui';
 import { fetchClient, FetchError } from '@specboard/fetch';
 import { navigate } from '@specboard/router';
 import { useModel, UserModel } from '@specboard/models';
@@ -133,6 +133,7 @@ export function Onboarding(): JSX.Element | null {
 	return (
 		<div class={styles.container}>
 			<div class={styles.card}>
+				<div class={styles.brand}><Logo size={16} /></div>
 				{step === 'identity' ? (
 					<>
 						<h1 class={styles.title}>Welcome to Specboard</h1>

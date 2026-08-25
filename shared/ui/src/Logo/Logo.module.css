@@ -1,0 +1,21 @@
+.logo {
+	display: inline-flex;
+	line-height: 0;
+}
+
+.mark {
+	flex-shrink: 0;
+}
+
+.mark polygon,
+.mark rect {
+	fill: var(--color-primary);
+}
+
+.mark .ghost {
+	fill-opacity: 0.15;
+}
+
+.mark .word {
+	fill: var(--color-text);
+}

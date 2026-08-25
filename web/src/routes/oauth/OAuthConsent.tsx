@@ -2,7 +2,7 @@ import { useState, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { getCookie } from '@specboard/core/cookies';
-import { Button, Icon } from '@specboard/ui';
+import { Button, Icon, Logo } from '@specboard/ui';
 import { useModel, UserModel } from '@specboard/models';
 import styles from './OAuthConsent.module.css';
 
@@ -145,6 +145,7 @@ export function OAuthConsent(_props: RouteProps): JSX.Element {
 	return (
 		<div class={styles.container}>
 			<div class={styles.card}>
+				<div class={styles.brand}><Logo size={16} /></div>
 				<div class={styles.header}>
 					<h1 class={styles.title}>Authorize Application</h1>
 				</div>
