@@ -58,7 +58,7 @@ export function Logo({ size = 20, href, class: className }: LogoProps): JSX.Elem
 			{svg}
 		</a>
 	) : (
-		<span class={classes} aria-label="Specboard">
+		<span class={classes} role="img" aria-label="Specboard">
 			{svg}
 		</span>
 	);
