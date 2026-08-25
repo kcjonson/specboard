@@ -22,9 +22,27 @@ const POLL_INTERVAL = 10000;
 const DRAWER_MIN_WIDTH = 320;
 const BOARD_MIN_WIDTH = 360;
 
-/** Read the active view from the URL (`?view=table`), defaulting to the board. */
-function readViewFromUrl(): PlanningView {
-	return new URLSearchParams(window.location.search).get('view') === 'table' ? 'table' : 'board';
+/** Where the last explicitly chosen view is remembered between visits. */
+const VIEW_STORAGE_KEY = 'specboard.planning.view';
+
+function readStoredView(): PlanningView | undefined {
+	try {
+		const stored = globalThis.localStorage?.getItem(VIEW_STORAGE_KEY);
+		return stored === 'table' || stored === 'board' ? stored : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * The active view. An explicit `?view=` wins so links stay shareable and
+ * back/forward lands where it should; without one, fall back to whichever view
+ * the user last picked, then to the board.
+ */
+function readView(): PlanningView {
+	const param = new URLSearchParams(window.location.search).get('view');
+	if (param === 'table' || param === 'board') return param;
+	return readStoredView() || 'board';
 }
 
 /**
@@ -43,7 +61,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	const items = useMemo(() => new ItemsCollection({ projectId }), [projectId]);
 	useModel(items);
 
-	const [view, setView] = useState<PlanningView>(readViewFromUrl);
+	const [view, setView] = useState<PlanningView>(readView);
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
 
 	const [selectedItemId, setSelectedItemId] = useState<string | undefined>();
@@ -133,20 +151,21 @@ export function Planning(props: RouteProps): JSX.Element {
 	// router re-renders this same component on popstate without remounting it,
 	// so `view` would otherwise drift from `?view=`.
 	useEffect(() => {
-		const syncView = (): void => setView(readViewFromUrl());
+		const syncView = (): void => setView(readView());
 		window.addEventListener('popstate', syncView);
 		return () => window.removeEventListener('popstate', syncView);
 	}, []);
 
 	const handleChangeView = useCallback((next: PlanningView): void => {
 		setView(next);
-		// Persist in the URL so the view is shareable and survives reload.
-		const params = new URLSearchParams(window.location.search);
-		if (next === 'table') {
-			params.set('view', 'table');
-		} else {
-			params.delete('view');
+		try {
+			globalThis.localStorage?.setItem(VIEW_STORAGE_KEY, next);
+		} catch {
+			// Storage can be blocked (private mode); the URL still carries the view.
 		}
+		// Both views are written explicitly so a history entry is never ambiguous.
+		const params = new URLSearchParams(window.location.search);
+		params.set('view', next);
 		const search = params.toString();
 		navigate(window.location.pathname + (search ? `?${search}` : '') + window.location.hash);
 	}, []);

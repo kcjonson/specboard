@@ -1,5 +1,6 @@
 .board {
 	flex: 1;
+	min-height: 0;
 	display: flex;
 	gap: 16px;
 	padding: 24px;

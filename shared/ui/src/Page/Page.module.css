@@ -1,12 +1,25 @@
+/*
+ * App shell: pinned to the viewport so the header never scrolls away and each
+ * column owns its own scrolling. Inner scroll containers (a table body, a
+ * detail drawer) only work if this chain has a definite height, so the page is
+ * height-bounded rather than min-height:100vh.
+ */
 .page {
-	min-height: 100vh;
+	height: 100vh;
 	display: flex;
 	flex-direction: column;
 	background: var(--color-background);
+	overflow: hidden;
 }
 
+/*
+ * Scrolls for ordinary document-style pages. Views that manage their own
+ * scrolling (Planning, Editor) fill this box exactly, so it stays inert.
+ */
 .content {
 	flex: 1;
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
+	overflow: auto;
 }
