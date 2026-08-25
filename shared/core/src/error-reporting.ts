@@ -117,13 +117,14 @@ async function writeToErrorLogGroup(report: ErrorReport): Promise<void> {
  */
 export async function reportError(report: ErrorReport): Promise<void> {
 	// Write to dedicated error log group (1 year retention)
-	writeToErrorLogGroup(report).catch((error) => {
+	const logGroupWrite = writeToErrorLogGroup(report).catch((error) => {
 		// Log but don't throw - don't let logging failures affect the app
 		console.error('Error writing to CloudWatch log group:', error);
 	});
 
 	const dsn = process.env.ERROR_REPORTING_DSN;
 	if (!dsn) {
+		await logGroupWrite;
 		return;
 	}
 
@@ -208,6 +209,8 @@ export async function reportError(report: ErrorReport): Promise<void> {
 	} catch (error) {
 		console.error('Error reporting failed:', error);
 	}
+
+	await logGroupWrite;
 }
 
 /**
@@ -232,6 +235,48 @@ export function captureException(
 }
 
 let handlersInstalled = false;
+let handlingFatalError = false;
+
+const FATAL_FLUSH_TIMEOUT_MS = 2500;
+
+/**
+ * Report a fatal error, then exit so the orchestrator replaces the task.
+ * Merely logging would leave the process serving requests from an undefined
+ * state while health checks keep passing.
+ */
+export function handleFatalError(
+	reason: unknown,
+	source: 'api' | 'mcp' | 'frontend',
+	type: 'uncaught_exception' | 'unhandled_rejection'
+): void {
+	const error = reason instanceof Error ? reason : new Error(String(reason));
+	console.error(
+		type === 'uncaught_exception' ? 'Uncaught exception:' : 'Unhandled rejection:',
+		error
+	);
+
+	// An error thrown while already flushing must not schedule a second exit
+	if (handlingFatalError) {
+		return;
+	}
+	handlingFatalError = true;
+
+	const flush = reportError({
+		name: error.name,
+		message: error.message,
+		stack: error.stack,
+		timestamp: Date.now(),
+		source,
+		environment: process.env.NODE_ENV,
+		extra: { type },
+	});
+	const timeout = new Promise<void>((resolve) => {
+		setTimeout(resolve, FATAL_FLUSH_TIMEOUT_MS).unref();
+	});
+	void Promise.race([flush, timeout])
+		.catch(() => {})
+		.finally(() => process.exit(1));
+}
 
 /**
  * Install global error handlers for uncaught exceptions and unhandled rejections.
@@ -245,14 +290,11 @@ export function installErrorHandlers(source: 'api' | 'mcp' | 'frontend'): void {
 	handlersInstalled = true;
 
 	process.on('uncaughtException', (error: Error) => {
-		console.error('Uncaught exception:', error);
-		captureException(error, source, { type: 'uncaught_exception' });
+		handleFatalError(error, source, 'uncaught_exception');
 	});
 
 	process.on('unhandledRejection', (reason: unknown) => {
-		const error = reason instanceof Error ? reason : new Error(String(reason));
-		console.error('Unhandled rejection:', error);
-		captureException(error, source, { type: 'unhandled_rejection' });
+		handleFatalError(reason, source, 'unhandled_rejection');
 	});
 }
 
