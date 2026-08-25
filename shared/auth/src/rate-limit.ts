@@ -199,13 +199,21 @@ export function rateLimitMiddleware(
 			key = `ratelimit:${path}:${ip}`;
 		}
 
-		// Check rate limit
-		const { allowed, remaining, resetIn } = await checkRateLimit(
-			redis,
-			key,
-			config.maxRequests,
-			config.windowSeconds
-		);
+		// Check rate limit; fails open so a Redis outage doesn't 500 every request
+		let allowed: boolean;
+		let remaining: number;
+		let resetIn: number;
+		try {
+			({ allowed, remaining, resetIn } = await checkRateLimit(
+				redis,
+				key,
+				config.maxRequests,
+				config.windowSeconds
+			));
+		} catch (error) {
+			console.error('Rate limit check error:', error instanceof Error ? error.message : error);
+			return next();
+		}
 
 		// Set rate limit headers
 		c.header('X-RateLimit-Limit', config.maxRequests.toString());

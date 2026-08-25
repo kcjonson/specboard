@@ -83,8 +83,12 @@ export function authMiddleware(
 			return onUnauthenticated(requestUrl);
 		}
 
-		// Validate session in Redis
-		const session = await getSession(redis, sessionId);
+		// Validate session in Redis. A Redis outage can't validate anyone, so
+		// take the unauthenticated path rather than 500ing every route.
+		const session = await getSession(redis, sessionId).catch((error: unknown) => {
+			console.error('Auth session lookup error:', error instanceof Error ? error.message : error);
+			return null;
+		});
 
 		if (!session) {
 			return onUnauthenticated(requestUrl);

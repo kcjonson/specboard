@@ -203,7 +203,11 @@ app.use('*', async (context, next) => {
 	let userId: string | undefined;
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 	if (sessionId) {
-		const session = await getSession(redis, sessionId);
+		// Fail open: a Redis outage shouldn't 500 every request just to tag logs
+		const session = await getSession(redis, sessionId).catch((error: unknown) => {
+			console.error('Logging session lookup error:', error instanceof Error ? error.message : error);
+			return null;
+		});
 		userId = session?.userId;
 	}
 
@@ -376,11 +380,15 @@ app.post('/api/metrics', async (context) => {
 			return context.text('invalid', 400);
 		}
 
-		// Get user context from session (if logged in)
+		// Get user context from session (if logged in). Fail open: a Redis
+		// outage shouldn't stop the error report, just drop the userId.
 		let userId: string | undefined;
 		const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 		if (sessionId) {
-			const session = await getSession(redis, sessionId);
+			const session = await getSession(redis, sessionId).catch((error: unknown) => {
+				console.error('Metrics session lookup error:', error instanceof Error ? error.message : error);
+				return null;
+			});
 			userId = session?.userId;
 		}
 
@@ -511,7 +519,13 @@ function requireProjectAccess(
 		}
 
 		const sessionId = getCookie(context, SESSION_COOKIE_NAME);
-		const session = sessionId ? await getSession(redis, sessionId) : null;
+		// Redis outage means the session can't be verified: 401, not a 500
+		const session = sessionId
+			? await getSession(redis, sessionId).catch((error: unknown) => {
+				console.error('Project access session lookup error:', error instanceof Error ? error.message : error);
+				return null;
+			})
+			: null;
 		const userId = session?.userId ?? null;
 		if (!userId) {
 			return context.json({ error: 'Unauthorized' }, 401);
