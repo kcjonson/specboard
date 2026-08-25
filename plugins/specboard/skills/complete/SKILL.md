@@ -1,7 +1,7 @@
 ---
 name: complete
 description: Specboard close-out. Use when finishing a work item: verify it, get the PR(s) merged, then mark the epic complete on the board and tear the session down. The close-out bookend to /specboard:whats-next.
-allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git push:*), Bash(git merge:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr merge:*), Bash(kill:*), Bash(pkill:*), Bash(jobs:*), Glob, Grep, Read, mcp__specboard__list_projects, mcp__specboard__get_items, mcp__specboard__update_item, mcp__specboard__create_item
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git push:*), Bash(git merge:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr merge:*), Bash(kill:*), Bash(pkill:*), Bash(jobs:*), Glob, Grep, Read, mcp__specboard__list_projects, mcp__specboard__get_items, mcp__specboard__update_item, mcp__specboard__create_item, mcp__Specboard__list_projects, mcp__Specboard__get_items, mcp__Specboard__update_item, mcp__Specboard__create_item
 ---
 
 # Specboard Complete

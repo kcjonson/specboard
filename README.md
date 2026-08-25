@@ -44,6 +44,35 @@ Specboard ships a plugin for [Claude Code](https://claude.ai/code) that connects
 
 This registers the Specboard MCP server (`https://specboard.io/mcp`) and installs the workflow skill. On first connect, the OAuth flow handles authentication automatically.
 
+**In a cloud VM (Claude Code on the web, CI sandboxes):** these environments need two one-time
+settings, because their container is rebuilt for every session and starts behind a restrictive
+egress proxy.
+
+1. **Allow `specboard.io`** in the environment's network policy. The default policy denies it, so
+   the catalog URL above cannot be fetched and the plugin cannot be installed at all.
+2. **Add a startup script** so the install survives the container being reclaimed. Plugins live in
+   `~/.claude/plugins/`, which is not persisted, so without this the install is per-session:
+
+   ```bash
+   claude plugin marketplace add https://specboard.io/claude \
+     && claude plugin install specboard@specboard --scope user \
+     || echo "specboard plugin install skipped (catalog unreachable)" >&2
+   ```
+
+   Both commands are idempotent. `--scope user` installs for every repo in the VM and avoids the
+   workspace-trust gate that applies to project-scoped plugin settings. The next session starts with
+   `/specboard:whats-next` and `/specboard:complete` available.
+
+Neither step involves this repository — the catalog is served from `specboard.io` and the plugin
+payload from the public npm package — so the install path is unaffected by repository visibility.
+
+**Authentication in a cloud VM:** a headless session cannot complete the MCP OAuth browser redirect,
+so `https://specboard.io/mcp` will sit unauthenticated no matter what the network policy allows. Add
+Specboard as a claude.ai connector instead, which authenticates once at the account level and routes
+through claude.ai rather than the container's egress. Do not put a token in the startup script. Note
+that a connector does not send the `X-Specboard-Project` header, so a repo bound via `.mcp.json` will
+not auto-select its project — `list_projects` returns every project and the skill asks which to use.
+
 **Bind a repo to a project (optional):** to make the skill always target one project in a given
 repo, commit a project-scoped `.mcp.json` at the repo root carrying that project's UUID:
 
