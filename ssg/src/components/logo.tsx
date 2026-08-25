@@ -35,7 +35,7 @@ export function BrandLogo({ size = 20, wordmark = true, href, class: className }
 		<>
 			<svg width={markWidth} height={size} viewBox="0 0 240 150" aria-hidden="true" class="brand-mark">
 				<polygon points="28,30 76,62 28,94" />
-				{size >= 32 && <rect class="brand-ghost" x="126" y="46" width="92" height="30" rx="7" />}
+				{size > 32 && <rect class="brand-ghost" x="126" y="46" width="92" height="30" rx="7" />}
 				<rect x="108" y="92" width="92" height="30" rx="7" />
 			</svg>
 			{wordmark && (

@@ -8,7 +8,7 @@ export function LoginContent(): JSX.Element {
 	return (
 		<div class="login-container">
 			<div class="auth-brand">
-				<BrandLogo size={26} href="/" />
+				<BrandLogo size={32} href="/" />
 			</div>
 
 			<div id="error" class="error-message hidden" />

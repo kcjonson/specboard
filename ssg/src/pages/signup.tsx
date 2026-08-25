@@ -12,7 +12,7 @@ export function SignupContent(): JSX.Element {
 	return (
 		<div class="signup-container">
 			<div class="auth-brand">
-				<BrandLogo size={26} href="/" />
+				<BrandLogo size={32} href="/" />
 			</div>
 
 			<h1>Create Account</h1>
