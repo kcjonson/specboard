@@ -156,7 +156,7 @@ describe('@specboard/db', () => {
 			expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
 			expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
 			expect(mockClient.release).toHaveBeenCalledTimes(1);
-			expect(mockClient.release).toHaveBeenCalledWith();
+			expect(mockClient.release).toHaveBeenCalledWith(undefined);
 		});
 
 		it('should destroy the client and rethrow the original error when ROLLBACK fails', async () => {
@@ -173,18 +173,21 @@ describe('@specboard/db', () => {
 			mockConnect.mockResolvedValue(mockClient);
 			const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-			const originalError = new Error('Original failure');
+			try {
+				const originalError = new Error('Original failure');
 
-			await expect(
-				transaction(async () => {
-					throw originalError;
-				})
-			).rejects.toBe(originalError);
+				await expect(
+					transaction(async () => {
+						throw originalError;
+					})
+				).rejects.toBe(originalError);
 
-			expect(mockClient.release).toHaveBeenCalledTimes(1);
-			expect(mockClient.release).toHaveBeenCalledWith(rollbackError);
-			expect(consoleError).toHaveBeenCalled();
-			consoleError.mockRestore();
+				expect(mockClient.release).toHaveBeenCalledTimes(1);
+				expect(mockClient.release).toHaveBeenCalledWith(rollbackError);
+				expect(consoleError).toHaveBeenCalled();
+			} finally {
+				consoleError.mockRestore();
+			}
 		});
 	});
 

@@ -111,7 +111,7 @@ export async function transaction<T>(
 	fn: (client: pg.PoolClient) => Promise<T>
 ): Promise<T> {
 	const client = await pool.instance.connect();
-	let destroyed = false;
+	let releaseArg: Error | boolean | undefined;
 	try {
 		await client.query('BEGIN');
 		const result = await fn(client);
@@ -124,14 +124,11 @@ export async function transaction<T>(
 			// Connection is likely dead; destroy it so a client stuck in an
 			// aborted transaction is never returned to the pool.
 			console.error('ROLLBACK failed, destroying client:', rollbackError);
-			destroyed = true;
-			client.release(rollbackError instanceof Error ? rollbackError : true);
+			releaseArg = rollbackError instanceof Error ? rollbackError : true;
 		}
 		throw e;
 	} finally {
-		if (!destroyed) {
-			client.release();
-		}
+		client.release(releaseArg);
 	}
 }
 
