@@ -636,6 +636,10 @@ describe('MCP auth middleware', () => {
 			expect(data.message).toBe('Access token expired');
 		});
 
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
 		it('should accept tokens expiring 1ms in the future', async () => {
 			// Freeze time: with real clocks, milliseconds pass between building
 			// the mock and the middleware's expiry check
@@ -670,7 +674,6 @@ describe('MCP auth middleware', () => {
 			});
 
 			expect(res.status).toBe(200);
-			vi.useRealTimers();
 		});
 	});
 });
