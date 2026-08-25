@@ -236,7 +236,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 		}
 	}
 
-	sql += ` GROUP BY i.id ORDER BY i.rank ASC`;
+	sql += ` GROUP BY i.id ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
 	if (!itemId) {
 		sql += ` LIMIT $${paramIndex}`;
 		queryParams.push(limit);
@@ -248,7 +248,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 	const childrenByParent = new Map<string, Item[]>();
 	if (includeChildren && itemIds.length > 0) {
 		const childResult = await query<Item>(
-			'SELECT * FROM items WHERE parent_id = ANY($1) ORDER BY rank ASC',
+			'SELECT * FROM items WHERE parent_id = ANY($1) ORDER BY rank ASC, created_at ASC, id ASC',
 			[itemIds]
 		);
 		for (const child of childResult.rows) {
@@ -307,20 +307,28 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 export async function createItem(projectId: string, data: CreateItemInput): Promise<ItemResponse> {
 	const parentId = data.parentId ?? null;
 
-	// Rank within the sibling group (project for top-level, parent for children).
-	const rankResult = parentId
-		? await query<{ max: number }>('SELECT COALESCE(MAX(rank), 0) as max FROM items WHERE parent_id = $1', [parentId])
-		: await query<{ max: number }>('SELECT COALESCE(MAX(rank), 0) as max FROM items WHERE project_id = $1 AND parent_id IS NULL', [projectId]);
-	const rank = data.rank ?? (rankResult.rows[0]?.max ?? 0) + 1;
-
 	const initialStatus = data.status || 'ready';
 	const subStatus = deriveSubStatusFromStatus(initialStatus);
 
+	// Rank within the sibling group (project for top-level, parent for children), computed
+	// inside the INSERT to avoid a read-modify-write race. Concurrent inserts can still
+	// collide on a rank; the created_at/id ORDER BY tiebreakers keep ordering stable anyway.
+	const values: unknown[] = [projectId, parentId, data.type || 'epic', data.title, data.description || null, initialStatus, subStatus, data.creator || null];
+	let rankSql: string;
+	if (data.rank !== undefined) {
+		values.push(data.rank);
+		rankSql = `$${values.length}`;
+	} else if (parentId) {
+		rankSql = '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $2)';
+	} else {
+		rankSql = '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $1 AND parent_id IS NULL)';
+	}
+
 	const result = await query<Item>(
 		`INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, creator, rank)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${rankSql})
 		 RETURNING *`,
-		[projectId, parentId, data.type || 'epic', data.title, data.description || null, initialStatus, subStatus, data.creator || null, rank]
+		values
 	);
 
 	return { ...transformItem(result.rows[0]!), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
@@ -332,16 +340,15 @@ export async function createItems(
 	parentId: string,
 	items: Array<{ title: string; description?: string; type?: ItemType }>
 ): Promise<ItemResponse[]> {
-	const rankResult = await query<{ max: number }>('SELECT COALESCE(MAX(rank), 0) as max FROM items WHERE parent_id = $1', [parentId]);
-	let nextRank = (rankResult.rows[0]?.max ?? 0) + 1;
-
 	const created: ItemResponse[] = [];
+	// Sequential inserts: each row's MAX(rank) subquery sees the previous row, so ranks
+	// within the batch stay sequential without a pre-read.
 	for (const data of items) {
 		const result = await query<Item>(
 			`INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, rank)
-			 VALUES ($1, $2, $3, $4, $5, 'ready', 'not_started', $6)
+			 VALUES ($1, $2, $3, $4, $5, 'ready', 'not_started', (SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $2))
 			 RETURNING *`,
-			[projectId, parentId, data.type || 'task', data.title, data.description || null, nextRank++]
+			[projectId, parentId, data.type || 'task', data.title, data.description || null]
 		);
 		created.push({ ...transformItem(result.rows[0]!), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } });
 	}
@@ -415,14 +422,12 @@ export async function wouldCreateCycle(projectId: string, itemId: string, newPar
  * (promote to standalone). Re-ranks at the bottom of the destination sibling group.
  */
 export async function moveItem(projectId: string, itemId: string, newParentId: string | null): Promise<ItemResponse | null> {
-	const rankResult = newParentId
-		? await query<{ max: number }>('SELECT COALESCE(MAX(rank), 0) as max FROM items WHERE parent_id = $1', [newParentId])
-		: await query<{ max: number }>('SELECT COALESCE(MAX(rank), 0) as max FROM items WHERE project_id = $1 AND parent_id IS NULL', [projectId]);
-	const rank = (rankResult.rows[0]?.max ?? 0) + 1;
-
+	const rankSql = newParentId
+		? '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $1)'
+		: '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $3 AND parent_id IS NULL)';
 	const result = await query<Item>(
-		`UPDATE items SET parent_id = $1, rank = $2, updated_at = NOW() WHERE id = $3 AND project_id = $4 RETURNING *`,
-		[newParentId, rank, itemId, projectId]
+		`UPDATE items SET parent_id = $1, rank = ${rankSql}, updated_at = NOW() WHERE id = $2 AND project_id = $3 RETURNING *`,
+		[newParentId, itemId, projectId]
 	);
 	if (result.rows.length === 0) return null;
 	const found = await getItems({ projectId, itemId });
