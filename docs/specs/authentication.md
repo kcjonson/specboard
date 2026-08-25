@@ -155,6 +155,22 @@ CREATE TABLE oauth_codes (
 	redirect_uri TEXT NOT NULL,
 	expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
+
+-- Passkeys (WebAuthn credentials)
+CREATE TABLE webauthn_credentials (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	credential_id TEXT NOT NULL UNIQUE,      -- base64url; login resolves the account from it
+	public_key BYTEA NOT NULL,               -- COSE public key
+	counter BIGINT NOT NULL DEFAULT 0,       -- signature counter (compare-and-swap on write-back)
+	transports TEXT[],                       -- e.g. internal, hybrid, usb
+	aaguid UUID,                             -- all-zeros under attestation 'none'
+	device_type VARCHAR(32),                 -- singleDevice | multiDevice
+	backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+	name VARCHAR(255) NOT NULL DEFAULT 'Passkey',
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+	last_used_at TIMESTAMP WITH TIME ZONE
+);
 ```
 
 ### Redis Session Structure
@@ -388,6 +404,121 @@ Browser                        API                         Redis
    │ Clear-Cookie: session_id   │                            │
    │ Redirect to /login         │                            │
 ```
+
+### 7. Passkeys (WebAuthn)
+
+Passwordless, phishing-resistant sign-in. The backend uses
+**`@simplewebauthn/server`** for the ceremony crypto (CBOR/COSE parsing,
+signature and flag checks, counter-regression); the handlers own everything
+that touches our own state, which a stateless library can't. The frontend is
+hand-rolled (no `@simplewebauthn/browser`): a small glue layer converts the
+server's base64url options into the ArrayBuffers `navigator.credentials` wants
+and converts the credential back to the JSON the verify endpoints expect.
+
+**RP policy:**
+- **RP ID / origin** derive from `APP_URL` (`WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN`
+  override them). Single web origin today; **prod must set them explicitly**.
+  `localhost` is a secure context, so dev works without HTTPS.
+- **Algorithms**: ES256 (-7) and RS256 (-257) only — passed to both options
+  generation and verification, so anything else is rejected at registration.
+- **User verification required** on both ceremonies (biometric/PIN).
+- **Attestation `none`**: we request no attestation and never verify an
+  attestation statement — consumer passkeys don't need device provenance.
+- **Discoverable (resident) credentials required**, so login is usernameless:
+  the authenticator offers the account, and conditional-UI autofill can surface
+  it in the username field without a click.
+
+**Credential model** (`webauthn_credentials`): `user_id`, `credential_id`
+(base64url, globally UNIQUE — login resolves the account from it), `public_key`
+(COSE bytes), `counter` (BIGINT), `transports`, `aaguid`, `device_type`
+(single/multi-device), `backed_up`, `name`, `created_at`, `last_used_at`.
+
+#### Registration — Settings → "Add a passkey" (or onboarding). Session + CSRF.
+
+```
+Browser                        API                    PostgreSQL / Redis
+   │                            │                            │
+   │ POST /register/options     │ (session; active account)  │
+   │───────────────────────────►│ generateRegistrationOptions│
+   │                            │ excludeCredentials = user's │
+   │                            │ existing creds; store       │
+   │                            │ challenge (type=registration│
+   │                            │ , userId, 120s TTL)         │
+   │◄───────────────────────────│ {challengeId, options}     │
+   │ navigator.credentials      │                            │
+   │  .create() → attestation   │                            │
+   │ POST /register/verify      │                            │
+   │ {challengeId, response,     │                            │
+   │  name?}                    │                            │
+   │───────────────────────────►│ GETDEL challenge; require   │
+   │                            │ type=registration & userId  │
+   │                            │ == session user; per-user   │
+   │                            │ cap; verifyRegistrationResp │
+   │                            │ (ES256/RS256, UV); INSERT   │
+   │                            │ (UNIQUE credential_id,      │
+   │                            │  23505 → 409)               │
+   │◄───────────────────────────│ 201 {credential}           │
+```
+
+#### Authentication — login → "Sign in with a passkey" / autofill. Public, pre-session (CSRF-exempt, Origin-guarded).
+
+```
+Browser                        API                    PostgreSQL / Redis
+   │                            │                            │
+   │ POST /login/options        │ (Origin-guarded)           │
+   │───────────────────────────►│ generateAuthenticationOpts │
+   │                            │ (no allowCredentials →      │
+   │                            │  discoverable); store       │
+   │                            │ challenge (type=auth)       │
+   │◄───────────────────────────│ {challengeId, options}     │
+   │ navigator.credentials      │                            │
+   │  .get() → assertion        │                            │
+   │ POST /login/verify         │                            │
+   │ {challengeId, response}     │                            │
+   │───────────────────────────►│ GETDEL challenge (type=auth)│
+   │                            │ Resolve credential by       │
+   │                            │ response.id; userHandle     │
+   │                            │ MUST be present & == owner; │
+   │                            │ verifyAuthenticationResp;   │
+   │                            │ active-account check;       │
+   │                            │ counter write-back (CAS);   │
+   │                            │ create session (passkey)    │
+   │◄───────────────────────────│ Set-Cookie: session_id     │
+```
+
+**Handler obligations** (the catastrophic-if-missed class the library can't do):
+
+1. **Single-use challenges** in Redis, consumed via `GETDEL` before verify,
+   bound to ceremony type and — for registration — the session user.
+2. **Ownership at login**: resolve the credential from `response.id` (globally
+   unique), derive the user from *that row*, and require a present `userHandle`
+   equal to its owner (WebAuthn L2 §7.2, discoverable branch) — so a valid
+   assertion for credential A can never mint a session for user B.
+3. **Counter write-back** as a compare-and-swap bound to the counter read at
+   verify (`WHERE counter = <read>`): a no-op means a concurrent/cloned
+   assertion already advanced it → rejected. Synced passkeys report 0 forever
+   (both-zero passes), so counters catch device-bound clones only.
+4. **Per-user cap** and **duplicate-credential rejection** (`UNIQUE` + 23505).
+5. **Active-account gate**: the session-authed passkey endpoints deny
+   deactivated accounts, matching the rest of the auth surface.
+
+**Uniform responses**: every authentication failure returns the same generic
+401 (`register/verify` a generic 400); the specific reason is logged
+server-side as a category, never echoed, and the library's value-bearing error
+strings (which embed the expected challenge/origin) are never returned.
+
+**Endpoints** (all under `/api/auth/webauthn/`): `POST login/{options,verify}`
+(public, Origin-guarded, CSRF-exempt), `POST register/{options,verify}`
+(session + CSRF), `GET/PATCH/DELETE credentials[/:id]` (session,
+ownership-scoped; the `:id` route param is UUID-validated). Rate limits:
+`login/options` 30/min/IP, `login/verify` reuses the login bucket; a 64KB body
+cap covers all of `/api/auth/*`.
+
+**Deliberate exclusions**: no attestation-statement verification (attestation
+`none`); ES256/RS256 only (no EdDSA or other COSE types); user verification
+always required (PIN-less security keys excluded). Single web origin — the
+Electron desktop shells and any second origin are out of scope until
+`expectedOrigin` becomes an array.
 
 ---
 
@@ -895,6 +1026,13 @@ services:
 | GET | /api/auth/me | Session | Get current user |
 | POST | /api/auth/magic-link/request | None | Email a sign-in link + code |
 | POST | /api/auth/magic-link/verify | None | Consume link token or typed code, create session |
+| POST | /api/auth/webauthn/login/options | None | Passkey auth challenge (Origin-guarded, discoverable) |
+| POST | /api/auth/webauthn/login/verify | None | Verify passkey assertion, create session |
+| POST | /api/auth/webauthn/register/options | Session | Passkey registration challenge |
+| POST | /api/auth/webauthn/register/verify | Session | Verify + store a new passkey |
+| GET | /api/auth/webauthn/credentials | Session | List the user's passkeys |
+| PATCH | /api/auth/webauthn/credentials/:id | Session | Rename a passkey |
+| DELETE | /api/auth/webauthn/credentials/:id | Session | Remove a passkey |
 | POST | /api/auth/forgot | None | Request password reset |
 | POST | /api/auth/reset | None | Reset password with token |
 | GET | /api/auth/verify | None | Verify email |
