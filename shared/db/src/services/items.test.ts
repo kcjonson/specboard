@@ -84,23 +84,53 @@ describe('createItem', () => {
 });
 
 describe('createItems', () => {
-	it('inserts each row with an inline MAX(rank) subquery, one statement per item', async () => {
-		mockQuery
-			.mockResolvedValueOnce(insertResult({ id: 'a', parent_id: 'parent-1', rank: 1 }))
-			.mockResolvedValueOnce(insertResult({ id: 'b', parent_id: 'parent-1', rank: 2 }));
+	it('inserts the whole batch in one statement, ranking off a single MAX(rank) base', async () => {
+		mockQuery.mockResolvedValueOnce({
+			rows: [
+				makeItem({ id: 'a', parent_id: 'parent-1', type: 'task', rank: 4 }),
+				makeItem({ id: 'b', parent_id: 'parent-1', type: 'bug', rank: 5 }),
+			],
+			rowCount: 2,
+		} as QueryResult<Item>);
 
 		const created = await createItems('proj-1', 'parent-1', [
 			{ title: 'One' },
-			{ title: 'Two', type: 'bug' },
+			{ title: 'Two', type: 'bug', description: 'details' },
 		]);
 
-		expect(mockQuery).toHaveBeenCalledTimes(2);
-		for (const [sql] of mockQuery.mock.calls) {
-			expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $2)');
-		}
-		expect(mockQuery.mock.calls[0]![1]).toEqual(['proj-1', 'parent-1', 'task', 'One', null]);
-		expect(mockQuery.mock.calls[1]![1]).toEqual(['proj-1', 'parent-1', 'bug', 'Two', null]);
+		expect(mockQuery).toHaveBeenCalledTimes(1);
+		const [sql, params] = mockQuery.mock.calls[0]!;
+		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) FROM items WHERE parent_id = $2)');
+		expect(sql).toContain('row_number() OVER (ORDER BY v.ord)');
+		expect(sql).toContain('WITH ORDINALITY');
+		expect(params).toEqual(['proj-1', 'parent-1', ['task', 'bug'], ['One', 'Two'], [null, 'details']]);
 		expect(created.map((c) => c.id)).toEqual(['a', 'b']);
+		expect(created[0]).toMatchObject({
+			parentId: 'parent-1',
+			status: 'ready',
+			childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 },
+		});
+	});
+
+	it('returns items in rank order regardless of row order from the database', async () => {
+		mockQuery.mockResolvedValueOnce({
+			rows: [
+				makeItem({ id: 'b', parent_id: 'parent-1', rank: 2 }),
+				makeItem({ id: 'a', parent_id: 'parent-1', rank: 1 }),
+			],
+			rowCount: 2,
+		} as QueryResult<Item>);
+
+		const created = await createItems('proj-1', 'parent-1', [{ title: 'One' }, { title: 'Two' }]);
+
+		expect(created.map((c) => c.id)).toEqual(['a', 'b']);
+	});
+
+	it('skips the query entirely for an empty batch', async () => {
+		const created = await createItems('proj-1', 'parent-1', []);
+
+		expect(created).toEqual([]);
+		expect(mockQuery).not.toHaveBeenCalled();
 	});
 });
 
