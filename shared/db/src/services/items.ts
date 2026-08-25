@@ -354,7 +354,7 @@ export async function createItems(
 		[projectId, parentId, items.map((d) => d.type || 'task'), items.map((d) => d.title), items.map((d) => d.description || null)]
 	);
 
-	return [...result.rows]
+	return result.rows
 		.sort((a, b) => a.rank - b.rank)
 		.map((row) => ({ ...transformItem(row), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } }));
 }

@@ -105,6 +105,11 @@ describe('createItems', () => {
 		expect(sql).toContain('WITH ORDINALITY');
 		expect(params).toEqual(['proj-1', 'parent-1', ['task', 'bug'], ['One', 'Two'], [null, 'details']]);
 		expect(created.map((c) => c.id)).toEqual(['a', 'b']);
+		expect(created[0]).toMatchObject({
+			parentId: 'parent-1',
+			status: 'ready',
+			childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 },
+		});
 	});
 
 	it('returns items in rank order regardless of row order from the database', async () => {
