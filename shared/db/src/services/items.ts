@@ -129,6 +129,20 @@ export class ParentItemNotFoundError extends Error {
 	}
 }
 
+/**
+ * Raised when a move would put an item under itself or one of its descendants.
+ * moveItem enforces this inside the UPDATE rather than trusting a prior
+ * wouldCreateCycle call: two concurrent moves that are each individually safe can
+ * still close a loop between the check and the write, and a cycle detaches an
+ * entire subtree from the board with no way back through the UI.
+ */
+export class ItemCycleError extends Error {
+	constructor() {
+		super('Cannot move an item under itself or one of its descendants');
+		this.name = 'ItemCycleError';
+	}
+}
+
 export interface GetItemsParams {
 	projectId: string;
 	/** Fetch exactly this item (by its per-project number) instead of listing. */
@@ -372,11 +386,17 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 		rankSql = '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $1 AND parent_id IS NULL)';
 	}
 
+	// The allocator's UPDATE is gated on the parent resolving, so a parentNumber that
+	// names nothing produces zero rows *and writes nothing* — no phantom top-level item,
+	// no consumed number. Checking the returned row instead would be too late: this runs
+	// in autocommit, so the insert would already be durable by the time JS saw it.
 	const result = await query<ItemRow>(
 		`WITH parent AS (
 			SELECT id FROM items WHERE project_id = $1 AND number = $2
 		), allocated AS (
-			UPDATE projects SET item_seq = item_seq + 1 WHERE id = $1 RETURNING id, key, item_seq
+			UPDATE projects SET item_seq = item_seq + 1
+			WHERE id = $1 AND ($2::int IS NULL OR EXISTS (SELECT 1 FROM parent))
+			RETURNING id, key, item_seq
 		), inserted AS (
 			INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, creator, rank, number)
 			SELECT $1, (SELECT id FROM parent), $3, $4, $5, $6, $7, $8, ${rankSql}, a.item_seq
@@ -388,9 +408,19 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 	);
 
 	const row = result.rows[0];
-	if (!row) throw new Error('Item creation affected no rows — the project no longer exists');
-	if (parentNumber !== null && row.parent_id === null) throw new ParentItemNotFoundError(parentNumber);
-	return { ...transformItem(row), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
+	if (!row) await throwCreateFailure(projectId, parentNumber);
+	return { ...transformItem(row!), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
+}
+
+/**
+ * Diagnose a write that matched no rows. Both causes are rare, so one extra query on
+ * the failure path is cheaper than carrying the distinction through the main statement.
+ */
+async function throwCreateFailure(projectId: string, parentNumber: number | null): Promise<never> {
+	if (parentNumber !== null && !(await verifyItemOwnership(projectId, parentNumber))) {
+		throw new ParentItemNotFoundError(parentNumber);
+	}
+	throw new Error('Item creation affected no rows — the project no longer exists');
 }
 
 /** Bulk-create child items under a parent (used for task breakdowns). */
@@ -409,7 +439,8 @@ export async function createItems(
 		`WITH parent AS (
 			SELECT id FROM items WHERE project_id = $1 AND number = $2
 		), allocated AS (
-			UPDATE projects SET item_seq = item_seq + $6 WHERE id = $1
+			UPDATE projects SET item_seq = item_seq + $6
+			WHERE id = $1 AND EXISTS (SELECT 1 FROM parent)
 			RETURNING key, item_seq - $6 AS base
 		), inserted AS (
 			INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, rank, number)
@@ -424,8 +455,7 @@ export async function createItems(
 		[projectId, parentNumber, items.map((d) => d.type || 'task'), items.map((d) => d.title), items.map((d) => d.description || null), items.length]
 	);
 
-	if (result.rows.length === 0) throw new Error('Bulk item creation affected no rows — the project no longer exists');
-	if (result.rows[0]!.parent_id === null) throw new ParentItemNotFoundError(parentNumber);
+	if (result.rows.length === 0) await throwCreateFailure(projectId, parentNumber);
 
 	return result.rows
 		.sort((a, b) => a.rank - b.rank)
@@ -484,9 +514,12 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
  */
 export async function wouldCreateCycle(projectId: string, itemNumber: number, newParentNumber: number): Promise<boolean> {
 	const result = await query(
+		// UNION, not UNION ALL: it deduplicates against rows already produced, so if the
+		// tree is *already* cyclic the walk terminates instead of spinning forever and
+		// pinning a pool connection.
 		`WITH RECURSIVE descendants AS (
 			SELECT id FROM items WHERE number = $1 AND project_id = $2
-			UNION ALL
+			UNION
 			SELECT i.id FROM items i JOIN descendants d ON i.parent_id = d.id
 		)
 		SELECT 1 FROM descendants d
@@ -506,16 +539,35 @@ export async function moveItem(projectId: string, itemNumber: number, newParentN
 		? '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = (SELECT id FROM parent))'
 		: '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $3 AND parent_id IS NULL)';
 	const result = await query<{ id: string; parent_id: string | null }>(
-		`WITH parent AS (
+		`WITH RECURSIVE parent AS (
 			SELECT id FROM items WHERE project_id = $3 AND number = $1
+		), descendants AS (
+			SELECT id FROM items WHERE number = $2 AND project_id = $3
+			UNION
+			SELECT i.id FROM items i JOIN descendants d ON i.parent_id = d.id
 		)
 		UPDATE items SET parent_id = (SELECT id FROM parent), rank = ${rankSql}, updated_at = NOW()
-		WHERE number = $2 AND project_id = $3 RETURNING id, parent_id`,
+		WHERE number = $2 AND project_id = $3
+		  AND ($1::int IS NULL OR EXISTS (SELECT 1 FROM parent))
+		  AND ($1::int IS NULL OR NOT EXISTS (
+			SELECT 1 FROM descendants d WHERE d.id = (SELECT id FROM parent)
+		  ))
+		RETURNING id, parent_id`,
 		[newParentNumber, itemNumber, projectId]
 	);
-	const moved = result.rows[0];
-	if (!moved) return null;
-	if (newParentNumber !== null && moved.parent_id === null) throw new ParentItemNotFoundError(newParentNumber);
+	// Zero rows means the item is gone, the new parent is, or the move would close a
+	// cycle — and, critically, that the UPDATE wrote nothing. Checking after the fact
+	// would already have detached the item from its real parent and reset its rank,
+	// losing that link for good. Diagnose only on this rare path.
+	if (result.rows.length === 0) {
+		if (newParentNumber !== null) {
+			if (!(await verifyItemOwnership(projectId, newParentNumber))) {
+				throw new ParentItemNotFoundError(newParentNumber);
+			}
+			if (await wouldCreateCycle(projectId, itemNumber, newParentNumber)) throw new ItemCycleError();
+		}
+		return null;
+	}
 	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }

@@ -23,6 +23,7 @@ import {
 	verifyItemOwnership,
 	getItemKeysBySpecPath,
 	ParentItemNotFoundError,
+	ItemCycleError,
 	type ResolvedProject,
 	type ItemStatus,
 	type ItemType,
@@ -251,6 +252,7 @@ export async function handleMoveItem(context: Context): Promise<Response> {
 		return context.json(item);
 	} catch (error) {
 		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
+		if (error instanceof ItemCycleError) return context.json({ error: error.message }, 400);
 		console.error('Failed to move item:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}

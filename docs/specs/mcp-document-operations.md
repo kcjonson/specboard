@@ -39,7 +39,7 @@ StorageProvider (Local or Cloud)
 List all documents in a project's file tree. Returns markdown files (.md, .mdx) within the project's configured root paths.
 
 **Input:**
-- `project_slug` (string, required) -- project slug, e.g. "specboard"
+- `project_slug` (string, optional when the repo is bound via .mcp.json) -- project slug, e.g. "specboard"
 - `path` (string, optional) -- directory path to list (defaults to all root paths)
 
 **Output:** Array of file entries with name, path, type (file/directory), size, modifiedAt.
@@ -51,7 +51,7 @@ List all documents in a project's file tree. Returns markdown files (.md, .mdx) 
 Read the raw markdown content of a document by path.
 
 **Input:**
-- `project_slug` (string, required) -- project slug, e.g. "specboard"
+- `project_slug` (string, optional when the repo is bound via .mcp.json) -- project slug, e.g. "specboard"
 - `path` (string, required) -- file path relative to repo root (e.g., `/docs/spec.md`)
 
 **Output:** File path, content (string), encoding.
@@ -63,7 +63,7 @@ Read the raw markdown content of a document by path.
 Create a new markdown document. Auto-adds `.md` extension if not present. Fails if file already exists (409).
 
 **Input:**
-- `project_slug` (string, required) -- project slug, e.g. "specboard"
+- `project_slug` (string, optional when the repo is bound via .mcp.json) -- project slug, e.g. "specboard"
 - `path` (string, required) -- file path for the new document
 - `content` (string, optional) -- markdown content (defaults to `# Untitled\n\n`)
 
@@ -76,7 +76,7 @@ Create a new markdown document. Auto-adds `.md` extension if not present. Fails 
 Replace the content of an existing markdown document.
 
 **Input:**
-- `project_slug` (string, required) -- project slug, e.g. "specboard"
+- `project_slug` (string, optional when the repo is bound via .mcp.json) -- project slug, e.g. "specboard"
 - `path` (string, required) -- file path of the document
 - `content` (string, required) -- new markdown content
 
@@ -89,7 +89,7 @@ Replace the content of an existing markdown document.
 Delete a markdown document. Also removes any epic spec links (`epic_specs`) to the deleted file.
 
 **Input:**
-- `project_slug` (string, required) -- project slug, e.g. "specboard"
+- `project_slug` (string, optional when the repo is bound via .mcp.json) -- project slug, e.g. "specboard"
 - `path` (string, required) -- file path of the document
 
 **Output:** File path, success status.
@@ -101,7 +101,7 @@ Delete a markdown document. Also removes any epic spec links (`epic_specs`) to t
 Rename or move a document. Also updates any epic spec links (`epic_specs`) pointing at the old path.
 
 **Input:**
-- `project_slug` (string, required) -- project slug, e.g. "specboard"
+- `project_slug` (string, optional when the repo is bound via .mcp.json) -- project slug, e.g. "specboard"
 - `old_path` (string, required) -- current file path
 - `new_path` (string, required) -- new file path
 
@@ -164,7 +164,7 @@ class ApiClient {
 ### Tool routing in index.ts
 
 Follows `mcp/src/tools/items/index.ts` pattern exactly:
-- Validates `project_slug` presence
+- Resolves `project_slug` (or the repo binding) to a project
 - Calls `resolveProjectSlug(projectSlug, userId)` from `@specboard/db`
 - Routes to handler via switch statement
 

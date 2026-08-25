@@ -56,6 +56,12 @@ export function useKeyboardNavigation({
 			const { status, index } = findSelectedItem();
 
 			if (!status) {
+				// A selection that isn't on the board (a child item, open in the drawer)
+				// is not something arrow keys can step through — leave it alone rather
+				// than treating it as "nothing selected" and jumping to the first card,
+				// which would yank the drawer to an unrelated item.
+				if (selectedItemKey) return;
+
 				// No selection, select first item in first non-empty column
 				for (const s of STATUSES) {
 					const items = itemsByStatus[s];
@@ -74,7 +80,7 @@ export function useKeyboardNavigation({
 				onSelectItem(items[newIndex]);
 			}
 		},
-		[findSelectedItem, itemsByStatus, onSelectItem]
+		[findSelectedItem, selectedItemKey, itemsByStatus, onSelectItem]
 	);
 
 	// Navigate left/right between columns
@@ -83,6 +89,9 @@ export function useKeyboardNavigation({
 			const { status, index } = findSelectedItem();
 
 			if (!status) {
+				// Same as navigateVertical: an off-board selection isn't steppable.
+				if (selectedItemKey) return;
+
 				// No selection, select first item in first/last non-empty column
 				const statuses = direction === 'left' ? [...STATUSES].reverse() : STATUSES;
 				for (const s of statuses) {
@@ -111,7 +120,7 @@ export function useKeyboardNavigation({
 				}
 			}
 		},
-		[findSelectedItem, itemsByStatus, onSelectItem]
+		[findSelectedItem, selectedItemKey, itemsByStatus, onSelectItem]
 	);
 
 	// Move selected item to a status
@@ -131,9 +140,12 @@ export function useKeyboardNavigation({
 			if (dialogOpen) return;
 
 			const target = e.target as HTMLElement;
+			// SELECT included: arrow keys change a focused dropdown's value, and the
+			// drawer's Status/Sub-Status controls are dropdowns sitting inside the board.
 			const isInput =
 				target.tagName === 'INPUT' ||
 				target.tagName === 'TEXTAREA' ||
+				target.tagName === 'SELECT' ||
 				target.isContentEditable;
 
 			if (isInput) return;

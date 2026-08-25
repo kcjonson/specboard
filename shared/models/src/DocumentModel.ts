@@ -60,8 +60,8 @@ export class DocumentModel extends Model {
 	/** File path of the loaded document */
 	@prop accessor filePath: string | null = null;
 
-	/** Project slug for API context */
-	@prop accessor projectSlug: string | null = null;
+	/** Project id — keys this document's localStorage draft. Never used for API paths. */
+	@prop accessor projectId: string | null = null;
 
 	/** Whether a save operation is in progress */
 	@prop accessor saving: boolean = false;
@@ -88,7 +88,7 @@ export class DocumentModel extends Model {
 	 * Load new document content. Generates a new documentId to force
 	 * Slate editor to re-mount with fresh state.
 	 *
-	 * @param projectSlug - Project containing the document
+	 * @param projectId - Id of the project containing the document
 	 * @param filePath - Path to the document file
 	 * @param content - Slate AST content
 	 * @param options - Optional settings
@@ -96,13 +96,13 @@ export class DocumentModel extends Model {
 	 * @param options.comments - Comments attached to the document
 	 */
 	loadDocument(
-		projectSlug: string,
+		projectId: string,
 		filePath: string,
 		content: SlateContent,
 		options?: { dirty?: boolean; comments?: DocumentComment[] }
 	): void {
 		this.documentId = crypto.randomUUID();
-		this.projectSlug = projectSlug;
+		this.projectId = projectId;
 		this.filePath = filePath;
 		this.title = filePath.split('/').pop() || 'Untitled';
 		this.content = content;
@@ -139,7 +139,7 @@ export class DocumentModel extends Model {
 	 */
 	clear(): void {
 		this.documentId = crypto.randomUUID();
-		this.projectSlug = null;
+		this.projectId = null;
 		this.filePath = null;
 		this.title = 'Untitled';
 		this.content = EMPTY_DOCUMENT;

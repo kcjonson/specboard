@@ -16,6 +16,9 @@ vi.mock('@specboard/fetch', () => ({
 	},
 }));
 
+/** The project's immutable id — what expansion state is keyed by (not the slug). */
+const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
+
 // Mock localStorage
 const localStorageMock = (() => {
 	let store: Record<string, string> = {};
@@ -159,7 +162,7 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 
 			expect(model.projectSlug).toBe('project-1');
 			expect(model.rootPaths).toEqual(['/']);
@@ -175,7 +178,7 @@ describe('FileTreeModel', () => {
 		it('sets error on failure', async () => {
 			mockPost.mockRejectedValueOnce(new Error('Network error'));
 
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 
 			expect(model.error).toBe('Failed to load files');
 		});
@@ -187,8 +190,8 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1');
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('project-1', PROJECT_ID);
 
 			expect(mockPost).toHaveBeenCalledTimes(1);
 		});
@@ -196,7 +199,7 @@ describe('FileTreeModel', () => {
 		it('sends saved expanded tree from localStorage', async () => {
 			localStorageMock.setItem(
 				'fileBrowser.expanded',
-				JSON.stringify({ 'project-1': { docs: {} } })
+				JSON.stringify({ [PROJECT_ID]: { docs: {} } })
 			);
 
 			mockPost.mockResolvedValueOnce({
@@ -209,7 +212,7 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 
 			expect(mockPost).toHaveBeenCalledWith(
 				'/api/projects/project-1/tree',
@@ -230,7 +233,7 @@ describe('FileTreeModel', () => {
 				expanded: {},
 				rootPaths: ['/'],
 			});
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 		});
 
 		it('reloads tree with new expanded path', async () => {
@@ -277,7 +280,7 @@ describe('FileTreeModel', () => {
 				expanded: { docs: {} },
 				rootPaths: ['/'],
 			});
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 		});
 
 		it('removes children from files', () => {
@@ -320,17 +323,17 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 
 			const stored = JSON.parse(localStorageMock.getItem('fileBrowser.expanded')!);
-			expect(stored['project-1']).toEqual({ docs: {} });
+			expect(stored[PROJECT_ID]).toEqual({ docs: {} });
 		});
 
 		it('removes invalid paths from storage (server validates)', async () => {
 			// Pre-save with a path that server will remove
 			localStorageMock.setItem(
 				'fileBrowser.expanded',
-				JSON.stringify({ 'project-1': { docs: {}, 'deleted-folder': {} } })
+				JSON.stringify({ [PROJECT_ID]: { docs: {}, 'deleted-folder': {} } })
 			);
 
 			// Server only returns valid paths
@@ -340,11 +343,11 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 
 			const stored = JSON.parse(localStorageMock.getItem('fileBrowser.expanded')!);
-			expect(stored['project-1']).toEqual({ docs: {} });
-			expect(stored['project-1']['deleted-folder']).toBeUndefined();
+			expect(stored[PROJECT_ID]).toEqual({ docs: {} });
+			expect(stored[PROJECT_ID]['deleted-folder']).toBeUndefined();
 		});
 	});
 
@@ -355,7 +358,7 @@ describe('FileTreeModel', () => {
 				expanded: {},
 				rootPaths: ['/docs', '/other'],
 			});
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 		});
 
 		it('returns true for root paths', () => {
@@ -376,7 +379,7 @@ describe('FileTreeModel', () => {
 				expanded: {},
 				rootPaths: ['/'],
 			});
-			await model.initialize('project-1');
+			await model.initialize('project-1', PROJECT_ID);
 		});
 
 		it('returns correct depth', () => {

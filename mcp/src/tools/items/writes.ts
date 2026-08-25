@@ -23,6 +23,7 @@ import {
 	setSpecs as setSpecsService,
 	SpecValidationError,
 	ParentItemNotFoundError,
+	ItemCycleError,
 	type ResolvedProject,
 	type ItemType,
 	type ItemStatus,
@@ -149,6 +150,7 @@ export async function updateItem(
 			moved = await moveItemService(project.id, number, newParentNumber);
 		} catch (error) {
 			if (error instanceof ParentItemNotFoundError) return err('Parent item not found');
+			if (error instanceof ItemCycleError) return err(error.message);
 			throw error;
 		}
 		if (!moved) return err('Item not found');

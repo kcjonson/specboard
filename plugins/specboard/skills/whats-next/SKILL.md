@@ -14,7 +14,7 @@ close anything.**
 
 ## 1. Project Discovery
 
-Call `list_projects` to find the user's project(s) and their IDs.
+Call `list_projects` to find the user's project(s) and their slugs.
 - If a single project is returned, use it. (A repo bound via its committed `.mcp.json`
   `X-Specboard-Project` header returns exactly that project, so this auto-selects, no prompt.)
 - If multiple are returned, ask the user which to work on.
@@ -22,7 +22,7 @@ Call `list_projects` to find the user's project(s) and their IDs.
 
 A bound repo's `.mcp.json` carries the project slug in the `X-Specboard-Project` header; the MCP
 server scopes `list_projects` and the item tools to that project (still gated per user by the
-access check). The UUID is a shared, non-secret reference, committing it grants nothing without
+access check). The slug is a shared, non-secret reference, committing it grants nothing without
 each user authenticating individually.
 
 ## 2. Gather State (do these in parallel)

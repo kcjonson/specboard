@@ -128,7 +128,7 @@ export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
 		LEFT JOIN items i ON i.project_id = p.id AND i.parent_id IS NULL
 		WHERE p.owner_id = $1
 		GROUP BY p.id
-		ORDER BY p.updated_at DESC`,
+		ORDER BY p.updated_at DESC, p.created_at DESC, p.id`,
 		[userId]
 	);
 

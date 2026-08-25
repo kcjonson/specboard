@@ -37,6 +37,11 @@ interface ProjectStorage {
 export interface FileBrowserProps {
 	/** Project slug */
 	projectSlug: string;
+	/**
+	 * The same project's immutable id, keying the tree's stored expansion state.
+	 * Omit in transient contexts (the modal picker) to keep expansion in memory.
+	 */
+	projectId?: string;
 	/** Currently selected file path */
 	selectedPath?: string;
 	/** Git status model for showing uncommitted changes */
@@ -67,6 +72,7 @@ export interface FileBrowserProps {
 
 export function FileBrowser({
 	projectSlug,
+	projectId,
 	selectedPath,
 	gitStatus,
 	onFileSelect,
@@ -109,10 +115,10 @@ export function FileBrowser({
 	// Track previous selectedPath to avoid unnecessary expandToFile calls
 	const prevSelectedPathRef = useRef<string | undefined>(undefined);
 
-	// Initialize model when projectSlug changes
+	// Initialize the model when the project changes.
 	useEffect(() => {
-		model.initialize(projectSlug);
-	}, [model, projectSlug]);
+		model.initialize(projectSlug, projectId ?? '');
+	}, [model, projectSlug, projectId]);
 
 	// Clean up poll timer on unmount
 	useEffect(() => {

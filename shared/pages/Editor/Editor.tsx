@@ -11,7 +11,6 @@ import {
 	saveToLocalStorage,
 	loadFromLocalStorage,
 	hasPersistedContent,
-	claimBrowserStorage,
 	clearLocalStorage,
 	type DocumentComment,
 } from '@specboard/models';
@@ -57,12 +56,12 @@ interface LoadError {
 
 const SELECTED_FILE_KEY = 'editor.selectedFile';
 
-function loadSelectedFile(projectSlug: string): string | null {
+function loadSelectedFile(projectId: string): string | null {
 	try {
 		const stored = globalThis.localStorage?.getItem(SELECTED_FILE_KEY);
 		if (stored) {
 			const all = JSON.parse(stored) as Record<string, string>;
-			return all[projectSlug] || null;
+			return all[projectId] || null;
 		}
 	} catch {
 		// Ignore parse errors
@@ -70,16 +69,16 @@ function loadSelectedFile(projectSlug: string): string | null {
 	return null;
 }
 
-function saveSelectedFile(projectSlug: string, filePath: string | null): void {
+function saveSelectedFile(projectId: string, filePath: string | null): void {
 	try {
 		const storage = globalThis.localStorage;
 		if (!storage) return;
 		const stored = storage.getItem(SELECTED_FILE_KEY);
 		const all = stored ? (JSON.parse(stored) as Record<string, string>) : {};
 		if (filePath) {
-			all[projectSlug] = filePath;
+			all[projectId] = filePath;
 		} else {
-			delete all[projectSlug];
+			delete all[projectId];
 		}
 		storage.setItem(SELECTED_FILE_KEY, JSON.stringify(all));
 	} catch {
@@ -91,13 +90,13 @@ function saveSelectedFile(projectSlug: string, filePath: string | null): void {
  * Migrate cached localStorage content from one file path to another.
  * Used when renaming files to preserve unsaved edits.
  */
-function migrateLocalStorageContent(projectSlug: string, oldPath: string, newPath: string): void {
-	if (hasPersistedContent(projectSlug, oldPath)) {
-		const cached = loadFromLocalStorage(projectSlug, oldPath);
+function migrateLocalStorageContent(projectId: string, oldPath: string, newPath: string): void {
+	if (hasPersistedContent(projectId, oldPath)) {
+		const cached = loadFromLocalStorage(projectId, oldPath);
 		if (cached) {
-			saveToLocalStorage(projectSlug, newPath, cached.content, cached.comments);
+			saveToLocalStorage(projectId, newPath, cached.content, cached.comments);
 		}
-		clearLocalStorage(projectSlug, oldPath);
+		clearLocalStorage(projectId, oldPath);
 	}
 }
 
@@ -120,18 +119,28 @@ export function Editor(props: RouteProps): JSX.Element {
 	useModel(gitStatusModel);
 	useModel(currentUser);
 
-	// Drafts, the last-opened file, and tree expansion are keyed by project slug,
-	// which is only unique per owner — on a shared browser two accounts with a
-	// project slugged the same would otherwise read each other's entries. Hand the
-	// store to the signed-in user (clearing it if it belonged to someone else)
-	// before anything reads or writes it. `id` is the literal 'me' until the fetch
-	// resolves, so this settles on the second render at the earliest.
-	const [storageClaimed, setStorageClaimed] = useState(false);
+	// Everything this editor persists locally — drafts, the last-opened file, the
+	// tree's expansion state — is keyed by the project's immutable id rather than its
+	// slug. Slugs are unique only per owner and are user-editable, so slug keys both
+	// collided across accounts on a shared browser and were orphaned (or adopted by
+	// another project) on rename. Resolve the id before touching any of it.
+	const [projectId, setProjectId] = useState<string | undefined>();
 	useEffect(() => {
-		if (!currentUser.id || currentUser.id === 'me') return;
-		claimBrowserStorage(currentUser.id);
-		setStorageClaimed(true);
-	}, [currentUser.id]);
+		let cancelled = false;
+		fetchClient
+			.get<{ id: string }>(`/api/projects/${projectSlug}`, { params: { fields: 'name' } })
+			.then((project) => {
+				if (!cancelled) setProjectId(project.id);
+			})
+			.catch(() => {
+				// Leaving projectId unset keeps local storage untouched. There is nothing
+				// to lose by waiting: without the project the editor cannot load files
+				// either, so this is not a path where a draft silently goes missing.
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [projectSlug]);
 
 	// Auto-save state
 	const serverSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -229,8 +238,8 @@ export function Editor(props: RouteProps): JSX.Element {
 				`/api/projects/${projectSlug}/files?path=${encodeURIComponent(path)}`
 			);
 			const { content: slateContent, comments } = fromMarkdown(response.content);
-			documentModel.loadDocument(projectSlug, path, slateContent, { comments });
-			saveSelectedFile(projectSlug, path);
+			documentModel.loadDocument(projectId ?? '', path, slateContent, { comments });
+			if (projectId) saveSelectedFile(projectId, path);
 			// Check if this document has a linked epic
 			checkLinkedEpic(path);
 		} catch (err) {
@@ -241,7 +250,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				projectSlug,
 			});
 			// Clear the saved selection so we don't try to load a deleted/missing file on refresh
-			saveSelectedFile(projectSlug, null);
+			if (projectId) saveSelectedFile(projectId, null);
 			setLoadError({
 				message: 'Unable to load this file. The file may have been deleted or moved.',
 				filePath: path,
@@ -255,10 +264,10 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Perform server save
 	const performServerSave = useCallback(async (): Promise<boolean> => {
-		if (!documentModel.filePath || !documentModel.projectSlug) return true;
+		if (!documentModel.filePath || !documentModel.projectId) return true;
 		if (!documentModel.isDirty) return true;
 
-		const { projectSlug: pid, filePath: fpath, content, comments } = documentModel;
+		const { projectId: pid, filePath: fpath, content, comments } = documentModel;
 
 		setIsSaving(true);
 		try {
@@ -325,22 +334,23 @@ export function Editor(props: RouteProps): JSX.Element {
 			await performServerSave();
 		}
 
-		// Check for cached changes - show recovery dialog if found. Gated on the
-		// storage claim so a draft left by a previous account is never offered.
-		if (storageClaimed && hasPersistedContent(projectSlug, path)) {
+		// Check for cached changes - show recovery dialog if found.
+		if (projectId && hasPersistedContent(projectId, path)) {
 			setPendingRecovery(path);
 			return;
 		}
 
 		await loadFileFromServer(path);
-	}, [projectSlug, storageClaimed, loadFileFromServer, documentModel, performServerSave]);
+	}, [projectId, loadFileFromServer, documentModel, performServerSave]);
 
 	// Handle file renamed via sidebar double-click
 	const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
 		// If the renamed file is the currently open file, update the model
 		if (documentModel.filePath === oldPath) {
-			migrateLocalStorageContent(projectSlug, oldPath, newPath);
-			saveSelectedFile(projectSlug, newPath);
+			if (projectId) {
+				migrateLocalStorageContent(projectId, oldPath, newPath);
+				saveSelectedFile(projectId, newPath);
+			}
 			documentModel.updateFilePath(newPath);
 		}
 	}, [projectSlug, documentModel]);
@@ -349,27 +359,27 @@ export function Editor(props: RouteProps): JSX.Element {
 	const handleRestore = useCallback(() => {
 		if (!pendingRecovery) return;
 
-		const cached = loadFromLocalStorage(projectSlug, pendingRecovery);
+		const cached = projectId ? loadFromLocalStorage(projectId, pendingRecovery) : null;
 		if (cached) {
-			documentModel.loadDocument(projectSlug, pendingRecovery, cached.content, {
+			documentModel.loadDocument(projectId ?? '', pendingRecovery, cached.content, {
 				dirty: true,
 				comments: cached.comments,
 			});
-			saveSelectedFile(projectSlug, pendingRecovery);
+			if (projectId) saveSelectedFile(projectId, pendingRecovery);
 			// Check if this document has a linked epic
 			checkLinkedEpic(pendingRecovery);
 		}
 		setPendingRecovery(null);
-	}, [projectSlug, pendingRecovery, documentModel, checkLinkedEpic]);
+	}, [projectId, pendingRecovery, documentModel, checkLinkedEpic]);
 
 	// Handle discard from recovery dialog
 	const handleDiscard = useCallback(async () => {
 		if (!pendingRecovery) return;
 
-		clearLocalStorage(projectSlug, pendingRecovery);
+		if (projectId) clearLocalStorage(projectId, pendingRecovery);
 		await loadFileFromServer(pendingRecovery);
 		setPendingRecovery(null);
-	}, [projectSlug, pendingRecovery, loadFileFromServer]);
+	}, [projectId, pendingRecovery, loadFileFromServer]);
 
 	// Create epic from current document
 	const handleCreateEpic = useCallback(async () => {
@@ -525,16 +535,16 @@ export function Editor(props: RouteProps): JSX.Element {
 		documentModel.toggleResolved(commentId);
 	}, [documentModel]);
 
-	// Restore previously selected file on mount, once the store is known to be ours.
+	// Restore the previously selected file, once the project id is known.
 	useEffect(() => {
-		if (!storageClaimed || restoredRef.current) return;
+		if (!projectId || restoredRef.current) return;
 		restoredRef.current = true;
 
-		const savedPath = loadSelectedFile(projectSlug);
+		const savedPath = loadSelectedFile(projectId);
 		if (savedPath) {
 			handleFileSelect(savedPath);
 		}
-	}, [projectSlug, storageClaimed, handleFileSelect]);
+	}, [projectId, handleFileSelect]);
 
 	// Manual retry from error banner
 	const handleRetryManual = useCallback(() => {
@@ -544,7 +554,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Immediate localStorage save + debounced server save on content change
 	useEffect(() => {
-		const { filePath, projectSlug: pid, content, comments } = documentModel;
+		const { filePath, projectId: pid, content, comments } = documentModel;
 		if (!filePath || !pid) return;
 		if (!documentModel.isDirty) return;
 
@@ -566,7 +576,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				clearTimeout(serverSaveTimerRef.current);
 			}
 		};
-	}, [documentModel.content, documentModel.comments, documentModel.filePath, documentModel.projectSlug, documentModel.isDirty, performServerSave]);
+	}, [documentModel.content, documentModel.comments, documentModel.filePath, documentModel.projectId, documentModel.isDirty, performServerSave]);
 
 	// Cleanup retry timer on unmount
 	useEffect(() => {
@@ -612,7 +622,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	const handleFileDeleted = useCallback((deletedPath: string) => {
 		if (documentModel.filePath === deletedPath) {
 			documentModel.clear();
-			saveSelectedFile(projectSlug, null);
+			if (projectId) saveSelectedFile(projectId, null);
 			setLinkedEpicKey(undefined);
 		}
 	}, [documentModel, projectSlug]);
@@ -630,8 +640,10 @@ export function Editor(props: RouteProps): JSX.Element {
 		try {
 			const newPath = await renameFileRef.current(oldPath, newFilename);
 
-			migrateLocalStorageContent(projectSlug, oldPath, newPath);
-			saveSelectedFile(projectSlug, newPath);
+			if (projectId) {
+				migrateLocalStorageContent(projectId, oldPath, newPath);
+				saveSelectedFile(projectId, newPath);
+			}
 			documentModel.updateFilePath(newPath);
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
@@ -700,6 +712,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				>
 					<FileBrowser
 						projectSlug={projectSlug}
+						projectId={projectId}
 						selectedPath={documentModel.filePath || undefined}
 						gitStatus={gitStatusModel}
 						onFileSelect={handleFileSelect}

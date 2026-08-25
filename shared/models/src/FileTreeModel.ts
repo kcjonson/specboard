@@ -127,14 +127,15 @@ function getStorage(): typeof globalThis.localStorage | null {
 	return globalThis.localStorage ?? null;
 }
 
-function loadExpandedTreeFromStorage(projectSlug: string): ExpandedTree {
+function loadExpandedTreeFromStorage(projectId: string): ExpandedTree {
+	if (!projectId) return {};
 	try {
 		const storage = getStorage();
 		if (!storage) return {};
 		const stored = storage.getItem(STORAGE_KEY);
 		if (stored) {
 			const all = JSON.parse(stored) as Record<string, ExpandedTree>;
-			return all[projectSlug] || {};
+			return all[projectId] || {};
 		}
 	} catch {
 		// Ignore parse errors
@@ -142,13 +143,14 @@ function loadExpandedTreeFromStorage(projectSlug: string): ExpandedTree {
 	return {};
 }
 
-function saveExpandedTreeToStorage(projectSlug: string, tree: ExpandedTree): void {
+function saveExpandedTreeToStorage(projectId: string, tree: ExpandedTree): void {
+	if (!projectId) return;
 	try {
 		const storage = getStorage();
 		if (!storage) return;
 		const stored = storage.getItem(STORAGE_KEY);
 		const all = stored ? (JSON.parse(stored) as Record<string, ExpandedTree>) : {};
-		all[projectSlug] = tree;
+		all[projectId] = tree;
 		storage.setItem(STORAGE_KEY, JSON.stringify(all));
 	} catch (err) {
 		// Log storage errors (quota exceeded, etc.) for debugging
@@ -191,6 +193,13 @@ export interface PendingRename {
 
 export class FileTreeModel extends Model {
 	@prop accessor projectSlug!: string;
+
+	/**
+	 * The project's immutable id. Used only as the localStorage key for expansion
+	 * state — the slug is user-editable and unique only per owner, so keying on it
+	 * leaked across accounts and orphaned state on rename.
+	 */
+	@prop accessor projectId!: string;
 	@prop accessor rootPaths!: string[];
 	@prop accessor files!: FileEntry[];
 	@prop accessor expanded!: ExpandedTree;
@@ -209,6 +218,7 @@ export class FileTreeModel extends Model {
 	constructor() {
 		super({
 			projectSlug: '',
+			projectId: '',
 			rootPaths: [],
 			files: [],
 			expanded: {},
@@ -223,10 +233,12 @@ export class FileTreeModel extends Model {
 
 	/**
 	 * Initialize the model with a project slug and load data
-	 * @param projectSlug - The project to load
+	 * @param projectSlug - The project to load (addresses the API)
+	 * @param projectId - The same project's immutable id, keying stored expansion
+	 *   state. Pass '' to keep expansion in memory only (the modal file picker).
 	 * @param currentFilePath - Optional path to currently open file (will expand to show it)
 	 */
-	async initialize(projectSlug: string, currentFilePath?: string): Promise<void> {
+	async initialize(projectSlug: string, projectId: string, currentFilePath?: string): Promise<void> {
 		if (this.projectSlug === projectSlug && !currentFilePath) return;
 
 		// If same project but new file path, just expand to it
@@ -239,6 +251,7 @@ export class FileTreeModel extends Model {
 		this._abortInflight();
 
 		this.projectSlug = projectSlug;
+		this.projectId = projectId;
 		this.files = [];
 		this.expanded = {};
 		this.rootPaths = [];
@@ -296,7 +309,7 @@ export class FileTreeModel extends Model {
 
 		// Add to expanded tree and reload
 		const newExpanded = addPathToTree(this.expanded, path);
-		saveExpandedTreeToStorage(this.projectSlug, newExpanded);
+		saveExpandedTreeToStorage(this.projectId, newExpanded);
 		await this.loadTree();
 	}
 
@@ -362,7 +375,7 @@ export class FileTreeModel extends Model {
 
 		this.files = files;
 		this.expanded = newExpanded;
-		saveExpandedTreeToStorage(this.projectSlug, newExpanded);
+		saveExpandedTreeToStorage(this.projectId, newExpanded);
 	}
 
 	/**
@@ -403,7 +416,7 @@ export class FileTreeModel extends Model {
 			// Add to expanded tree
 			const newExpanded = addPathToTree(this.expanded, parentPath);
 			this.expanded = newExpanded;
-			saveExpandedTreeToStorage(this.projectSlug, newExpanded);
+			saveExpandedTreeToStorage(this.projectId, newExpanded);
 		}
 	}
 
@@ -535,7 +548,7 @@ export class FileTreeModel extends Model {
 
 		try {
 			// Use provided expanded tree, or load from localStorage
-			let expandedTree = providedExpandedTree ?? loadExpandedTreeFromStorage(this.projectSlug);
+			let expandedTree = providedExpandedTree ?? loadExpandedTreeFromStorage(this.projectId);
 
 			// If there's a current file, expand to show it
 			if (currentFilePath) {
@@ -569,7 +582,7 @@ export class FileTreeModel extends Model {
 			this.syncError = data.syncError ?? null;
 
 			// Persist validated expanded tree (server removes invalid paths)
-			saveExpandedTreeToStorage(this.projectSlug, data.expanded);
+			saveExpandedTreeToStorage(this.projectId, data.expanded);
 		} catch (err) {
 			// Ignore abort errors
 			if (controller.signal.aborted) return;

@@ -9,12 +9,63 @@
 -- control (projects.owner_id), so a slug resolves unambiguously for the signed-in
 -- user. Item numbers are allocated from projects.item_seq.
 --
+-- ── THIS MIGRATION REQUIRES A WRITE FREEZE ──────────────────────────────────
+--
+-- It is NOT rolling-deploy safe. The constraints it adds (projects.slug/key NOT
+-- NULL, items_number_present) reject the INSERTs that the *previous* release's
+-- code writes, so from the moment this commits until the new code is fully rolled
+-- out, every project create and every item create fails. Reads are unaffected.
+--
+-- Deploy it during a window where writes can fail, or split it into an
+-- expand/contract pair (nullable columns + backfill now, constraints in a later
+-- migration once the new code is everywhere) if that is not acceptable.
+--
+-- ── Statement ordering matters ──────────────────────────────────────────────
+--
+-- Everything here is one transaction, so the FIRST statement to touch a table
+-- holds ACCESS EXCLUSIVE on it until COMMIT. The items backfill dominates the
+-- runtime (~85s per 2M items), so all items work is done first and projects is
+-- touched only at the end: that holds the small, hot projects table for ~0.3s
+-- instead of the ~93s it took when the order was reversed. Creating
+-- idx_items_project_number before the item_seq rollup also lets that rollup use
+-- an index-only scan rather than a sequential scan per project.
+--
+-- Expect the items heap to roughly double (the backfill rewrites every row) and
+-- a large WAL burst — around 880 bytes per item. Run VACUUM (ANALYZE) items
+-- afterwards; autovacuum will not reclaim that promptly at scale.
+--
 -- The backfill derives slugs and keys from existing project names. That derivation
 -- is intentionally duplicated from shared/core/src/identifiers.ts: this migration is
 -- a frozen historical artifact and must not change when that helper evolves. The
 -- length caps below must stay in step with MAX_PROJECT_SLUG_LENGTH (55) and
 -- MAX_PROJECT_KEY_LENGTH (10) — a value this migration writes that the app's
 -- validators reject is a project no request can address.
+
+-- Fail fast rather than queueing for a lock: a single slow query on projects or
+-- items would otherwise stall every other session behind this migration's pending
+-- ACCESS EXCLUSIVE request. Aborting is safe — the whole file is one transaction.
+SET lock_timeout = '5s';
+
+-- ── Item numbers ─────────────────────────────────────────────────────────────
+-- Number every item within its project in creation order. Items with no project
+-- (pre-005 leftovers) can't be addressed by key and stay unnumbered; the CHECK
+-- below keeps that the only case.
+ALTER TABLE items ADD COLUMN number INTEGER;
+
+UPDATE items i
+SET number = n.seq
+FROM (
+	SELECT id, row_number() OVER (PARTITION BY project_id ORDER BY created_at, id) AS seq
+	FROM items
+	WHERE project_id IS NOT NULL
+) n
+WHERE i.id = n.id;
+
+ALTER TABLE items
+	ADD CONSTRAINT items_number_present CHECK (project_id IS NULL OR number IS NOT NULL);
+
+-- NULL project_id rows are exempt: NULLs compare distinct in a unique index.
+CREATE UNIQUE INDEX idx_items_project_number ON items(project_id, number);
 
 ALTER TABLE projects
 	ADD COLUMN slug     VARCHAR(63),
@@ -145,6 +196,22 @@ BEGIN
 	END LOOP;
 END $$;
 
+-- Seed each project's allocator from the numbers just assigned. Runs after
+-- idx_items_project_number exists, so this is an index-only scan.
+UPDATE projects p
+SET item_seq = COALESCE((SELECT max(i.number) FROM items i WHERE i.project_id = p.id), 0);
+
+-- Restore the trigger, but scoped: bumping item_seq to hand out an item number is
+-- bookkeeping, not a user edit, and getProjects orders by updated_at. Without the
+-- WHEN clause every item creation would reshuffle the caller's project list —
+-- the same effect this migration disables the trigger to avoid during backfill.
+DROP TRIGGER projects_updated_at ON projects;
+CREATE TRIGGER projects_updated_at
+	BEFORE UPDATE ON projects
+	FOR EACH ROW
+	WHEN (OLD.item_seq IS NOT DISTINCT FROM NEW.item_seq)
+	EXECUTE FUNCTION update_epic_timestamp();
+
 ALTER TABLE projects
 	ALTER COLUMN slug SET NOT NULL,
 	ALTER COLUMN key  SET NOT NULL,
@@ -154,29 +221,3 @@ ALTER TABLE projects
 CREATE UNIQUE INDEX idx_projects_owner_slug ON projects(owner_id, slug);
 CREATE UNIQUE INDEX idx_projects_owner_key  ON projects(owner_id, key);
 
--- ── Item numbers ─────────────────────────────────────────────────────────────
--- Number every item within its project in creation order, then seed each project's
--- allocator. Items with no project (pre-005 leftovers) can't be addressed by key
--- and stay unnumbered; the CHECK below keeps that the only case.
-ALTER TABLE items ADD COLUMN number INTEGER;
-
-UPDATE items i
-SET number = n.seq
-FROM (
-	SELECT id, row_number() OVER (PARTITION BY project_id ORDER BY created_at, id) AS seq
-	FROM items
-	WHERE project_id IS NOT NULL
-) n
-WHERE i.id = n.id;
-
-UPDATE projects p
-SET item_seq = COALESCE((SELECT max(i.number) FROM items i WHERE i.project_id = p.id), 0);
-
--- Every write that touches projects for bookkeeping is done; restore the trigger.
-ALTER TABLE projects ENABLE TRIGGER projects_updated_at;
-
-ALTER TABLE items
-	ADD CONSTRAINT items_number_present CHECK (project_id IS NULL OR number IS NOT NULL);
-
--- NULL project_id rows are exempt: NULLs compare distinct in a unique index.
-CREATE UNIQUE INDEX idx_items_project_number ON items(project_id, number);

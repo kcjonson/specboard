@@ -80,7 +80,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				// Create mode
 				const project = await fetchClient.post<Project>('/api/projects', apiData);
 				// API create response doesn't include stats — initialize them
-				const projectWithStats = { ...project, epicCount: project.epicCount ?? 0, epicCounts: project.epicCounts ?? { ready: 0, in_progress: 0, in_review: 0, done: 0 } };
+				const projectWithStats = { ...project, itemCount: project.itemCount ?? 0, itemCounts: project.itemCounts ?? { ready: 0, in_progress: 0, in_review: 0, done: 0 } };
 				setProjects((prev) => [projectWithStats, ...prev]);
 				setDialogProject(null);
 
@@ -127,7 +127,9 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			setProjects((prev) => prev.filter((p) => p.id !== dialogProject.id));
 			setDialogProject(null);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to delete project');
+			// Rethrow for the same reason handleSaveProject does: the page-level error
+			// swaps the list — and the open confirm dialog with it — for a retry panel.
+			throw new Error(apiErrorMessage(err, 'Failed to delete project'));
 		}
 	}
 

@@ -31,6 +31,47 @@ export interface ItemDrawerProps {
  * full-screen item route; only the surrounding chrome (resize handle, header)
  * differs.
  */
+export interface MissingItemDrawerProps {
+	/** The key from the route that didn't resolve. */
+	itemKey: string;
+	onClose: () => void;
+}
+
+/**
+ * Shown in place of the drawer when the route names an item that doesn't resolve —
+ * a stale link, or one deleted while the page was open. Rendering the normal drawer
+ * for a failed fetch gives an empty but *editable* panel, whose Save and Delete act
+ * on an item that isn't there.
+ */
+export function MissingItemDrawer({ itemKey, onClose }: MissingItemDrawerProps): JSX.Element {
+	return (
+		<ResizablePanel
+			storageKey="planning-drawer"
+			handleSide="left"
+			defaultWidth={420}
+			minWidth={320}
+			label="Resize detail panel"
+			class={styles.drawer}
+		>
+			<div class={styles.inner}>
+				<div class={styles.header}>
+					<h2 class={styles.title}>{itemKey}</h2>
+					<div class={styles.headerActions}>
+						<button type="button" class={styles.iconButton} onClick={onClose} aria-label="Close" title="Close">
+							<Icon name="close" class="size-lg" />
+						</button>
+					</div>
+				</div>
+				<div class={styles.content}>
+					<p class={styles.missing}>
+						{itemKey} couldn&apos;t be found. It may have been deleted, or the link may be wrong.
+					</p>
+				</div>
+			</div>
+		</ResizablePanel>
+	);
+}
+
 export function ItemDrawer({ item, projectSlug, maxWidth, onClose, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
 	// Subscribe so the header title updates once a lazily-opened item finishes loading.
 	useModel(item);

@@ -365,7 +365,7 @@ Response includes pagination info:
 | GET | /api/projects | List user's projects |
 | POST | /api/projects | Create project |
 | GET | /api/projects/:projectSlug | Get project |
-| PATCH | /api/projects/:projectSlug | Update project |
+| PUT | /api/projects/:projectSlug | Update project (name, description, slug, key, system prompt) |
 | DELETE | /api/projects/:projectSlug | Delete project |
 
 ### Project Storage (see [project-storage.md](./project-storage.md))
@@ -374,8 +374,9 @@ Response includes pagination info:
 |--------|------|-------------|
 | POST | /api/projects/:projectSlug/folders | Add local folder (local mode) |
 | DELETE | /api/projects/:projectSlug/folders | Remove folder from view |
-| POST | /api/projects/:projectSlug/repository | Connect GitHub repo (cloud mode) |
-| DELETE | /api/projects/:projectSlug/repository | Disconnect repository |
+| POST | /api/projects/:projectSlug/sync | Sync a cloud project from GitHub |
+| POST | /api/projects/:projectSlug/sync/initial | First sync after connecting a repo |
+| GET | /api/projects/:projectSlug/sync/status | Poll sync progress |
 
 ### Project Files
 
