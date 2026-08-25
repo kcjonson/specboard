@@ -33,6 +33,9 @@ export type SpecType = 'product' | 'technical';
  */
 export class ChildModel extends Model {
 	@prop accessor id!: string;
+	/** The child's address, `<project key>-<number>` (e.g. SB-346). */
+	@prop accessor key!: string;
+	@prop accessor number!: number;
 	@prop accessor type!: ItemType;
 	@prop accessor title!: string;
 	@prop accessor status!: ItemStatus;
@@ -49,14 +52,25 @@ export interface ChildStats {
 }
 
 /**
- * Item model - syncs with /api/projects/:projectId/items/:id
+ * Item model - syncs with /api/projects/:projectSlug/items/:key
+ *
+ * Items are addressed by key (`SB-345`), so `key` is the model's id field: a model
+ * without one is new and saves with POST. `id` is the server's internal UUID, carried
+ * for reference but never used to build URLs; `projectSlug` comes from the collection's
+ * URL params (or is passed in for a standalone model) and addresses the project.
  */
 export class ItemModel extends SyncModel {
-	static override url = '/api/projects/:projectId/items/:id';
+	static override url = '/api/projects/:projectSlug/items/:key';
+	static override idField = 'key';
 
 	@prop accessor id!: string;
-	@prop accessor projectId!: string;
+	/** The item's address, `<project key>-<number>` (e.g. SB-345). */
+	@prop accessor key!: string;
+	@prop accessor number!: number;
+	@prop accessor projectSlug!: string;
 	@prop accessor parentId!: string | undefined;
+	/** Key of the parent to nest under. Write-only: set it when creating a child. */
+	@prop accessor parentKey!: string | undefined;
 	@prop accessor title!: string;
 	@prop accessor type!: ItemType;
 	@prop accessor description!: string | undefined;
@@ -129,12 +143,12 @@ export class ItemModel extends SyncModel {
 }
 
 /**
- * Collection of top-level items - syncs with /api/projects/:projectId/items
+ * Collection of top-level items - syncs with /api/projects/:projectSlug/items
  *
  * @example
  * ```tsx
  * const items = new ItemsCollection();
- * items.projectId = projectId;
+ * items.projectSlug = projectSlug;
  * items.fetch();
  * useModel(items);
  *
@@ -145,12 +159,12 @@ export class ItemModel extends SyncModel {
  * ```
  */
 export class ItemsCollection extends SyncCollection<ItemModel> {
-	static url = '/api/projects/:projectId/items';
+	static url = '/api/projects/:projectSlug/items';
 	static Model = ItemModel;
 
-	// Note: projectId is set dynamically via constructor initialProps
+	// Note: projectSlug is set dynamically via constructor initialProps
 	// Do NOT declare it as a class field or it will overwrite the value
-	declare projectId: string;
+	declare projectSlug: string;
 
 	/**
 	 * Get items filtered by status, sorted by rank.
@@ -169,14 +183,15 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 
 /**
  * Spec link model — a typed link from an item to a markdown spec document.
- * Syncs with /api/projects/:projectId/items/:itemId/specs/:id
+ * Syncs with /api/projects/:projectSlug/items/:itemKey/specs/:id
  */
 export class SpecModel extends SyncModel {
-	static override url = '/api/projects/:projectId/items/:itemId/specs/:id';
+	static override url = '/api/projects/:projectSlug/items/:itemKey/specs/:id';
 
 	@prop accessor id!: string;
 	@prop accessor projectId!: string;
-	@prop accessor itemId!: string;
+	@prop accessor projectSlug!: string;
+	@prop accessor itemKey!: string;
 	@prop accessor path!: string;
 	@prop accessor type!: SpecType;
 	@prop accessor createdAt!: string;
@@ -184,21 +199,21 @@ export class SpecModel extends SyncModel {
 
 /**
  * Collection of spec links for one item.
- * Syncs with /api/projects/:projectId/items/:itemId/specs
+ * Syncs with /api/projects/:projectSlug/items/:itemKey/specs
  *
  * @example
  * ```tsx
- * const specs = new SpecsCollection({ projectId, itemId });
+ * const specs = new SpecsCollection({ projectSlug, itemKey });
  * useModel(specs);
  * await specs.add({ path: '/docs/specs/x.md', type: 'product' }); // POSTs
  * await specs.remove(spec); // DELETEs
  * ```
  */
 export class SpecsCollection extends SyncCollection<SpecModel> {
-	static url = '/api/projects/:projectId/items/:itemId/specs';
+	static url = '/api/projects/:projectSlug/items/:itemKey/specs';
 	static Model = SpecModel;
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
-	declare projectId: string;
-	declare itemId: string;
+	declare projectSlug: string;
+	declare itemKey: string;
 }

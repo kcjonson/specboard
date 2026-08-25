@@ -25,8 +25,8 @@ function getStorage(): typeof globalThis.localStorage | null {
 /**
  * Generate storage key for a document.
  */
-function getStorageKey(projectId: string, filePath: string): string {
-	return `${STORAGE_PREFIX}${projectId}:${filePath}`;
+function getStorageKey(projectSlug: string, filePath: string): string {
+	return `${STORAGE_PREFIX}${projectSlug}:${filePath}`;
 }
 
 /**
@@ -41,13 +41,13 @@ interface PersistedDocument {
 /**
  * Save document content to localStorage for crash recovery.
  *
- * @param projectId - Project ID
+ * @param projectSlug - Project slug
  * @param filePath - File path within the project
  * @param content - Slate AST content to persist
  * @param comments - Optional comments to persist alongside content
  */
 export function saveToLocalStorage(
-	projectId: string,
+	projectSlug: string,
 	filePath: string,
 	content: SlateContent,
 	comments?: DocumentComment[]
@@ -56,7 +56,7 @@ export function saveToLocalStorage(
 	if (!storage) return;
 
 	try {
-		const key = getStorageKey(projectId, filePath);
+		const key = getStorageKey(projectSlug, filePath);
 		const data: PersistedDocument = {
 			content,
 			comments,
@@ -80,19 +80,19 @@ export interface LoadedPersistedDocument {
 /**
  * Load persisted document content from localStorage.
  *
- * @param projectId - Project ID
+ * @param projectSlug - Project slug
  * @param filePath - File path within the project
  * @returns Persisted content and comments, or null if not found
  */
 export function loadFromLocalStorage(
-	projectId: string,
+	projectSlug: string,
 	filePath: string
 ): LoadedPersistedDocument | null {
 	const storage = getStorage();
 	if (!storage) return null;
 
 	try {
-		const key = getStorageKey(projectId, filePath);
+		const key = getStorageKey(projectSlug, filePath);
 		const stored = storage.getItem(key);
 		if (!stored) return null;
 
@@ -110,18 +110,18 @@ export function loadFromLocalStorage(
 /**
  * Check if there's persisted content for a document.
  *
- * @param projectId - Project ID
+ * @param projectSlug - Project slug
  * @param filePath - File path within the project
  * @returns True if persisted content exists
  */
 export function hasPersistedContent(
-	projectId: string,
+	projectSlug: string,
 	filePath: string
 ): boolean {
 	const storage = getStorage();
 	if (!storage) return false;
 
-	const key = getStorageKey(projectId, filePath);
+	const key = getStorageKey(projectSlug, filePath);
 	return storage.getItem(key) !== null;
 }
 
@@ -129,18 +129,18 @@ export function hasPersistedContent(
  * Clear persisted document content from localStorage.
  * Call this after successfully saving to the server.
  *
- * @param projectId - Project ID
+ * @param projectSlug - Project slug
  * @param filePath - File path within the project
  */
 export function clearLocalStorage(
-	projectId: string,
+	projectSlug: string,
 	filePath: string
 ): void {
 	const storage = getStorage();
 	if (!storage) return;
 
 	try {
-		const key = getStorageKey(projectId, filePath);
+		const key = getStorageKey(projectSlug, filePath);
 		storage.removeItem(key);
 	} catch (err) {
 		console.warn('Failed to clear document from localStorage:', err);
@@ -150,19 +150,19 @@ export function clearLocalStorage(
 /**
  * Get the timestamp of when the document was last persisted.
  *
- * @param projectId - Project ID
+ * @param projectSlug - Project slug
  * @param filePath - File path within the project
  * @returns Timestamp in milliseconds, or null if not found
  */
 export function getPersistedTimestamp(
-	projectId: string,
+	projectSlug: string,
 	filePath: string
 ): number | null {
 	const storage = getStorage();
 	if (!storage) return null;
 
 	try {
-		const key = getStorageKey(projectId, filePath);
+		const key = getStorageKey(projectSlug, filePath);
 		const stored = storage.getItem(key);
 		if (!stored) return null;
 

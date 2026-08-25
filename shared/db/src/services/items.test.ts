@@ -15,10 +15,14 @@ import { createItem, createItems, getItems, moveItem } from './items.ts';
 
 const mockQuery = vi.mocked(query);
 
-function makeItem(overrides: Partial<Item> = {}): Item {
+type ItemRow = Item & { project_key: string };
+
+function makeItem(overrides: Partial<ItemRow> = {}): ItemRow {
 	return {
 		id: 'item-1',
 		project_id: 'proj-1',
+		project_key: 'SB',
+		number: 1,
 		parent_id: null,
 		type: 'epic',
 		title: 'Test item',
@@ -36,11 +40,11 @@ function makeItem(overrides: Partial<Item> = {}): Item {
 		created_at: new Date('2026-01-01'),
 		updated_at: new Date('2026-01-01'),
 		...overrides,
-	} as Item;
+	} as ItemRow;
 }
 
-function insertResult(overrides: Partial<Item> = {}): QueryResult<Item> {
-	return { rows: [makeItem(overrides)], rowCount: 1 } as QueryResult<Item>;
+function insertResult(overrides: Partial<ItemRow> = {}): QueryResult<ItemRow> {
+	return { rows: [makeItem(overrides)], rowCount: 1 } as QueryResult<ItemRow>;
 }
 
 beforeEach(() => {
@@ -57,18 +61,19 @@ describe('createItem', () => {
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('INSERT INTO items');
 		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $1 AND parent_id IS NULL)');
+		expect(sql).toContain('UPDATE projects SET item_seq = item_seq + 1');
 		expect(params).toEqual(['proj-1', null, 'epic', 'Epic A', null, 'ready', 'not_started', null]);
 	});
 
 	it('computes rank inside the INSERT for child items scoped to the parent', async () => {
-		mockQuery.mockResolvedValue(insertResult({ parent_id: 'parent-1', type: 'task' }));
+		mockQuery.mockResolvedValue(insertResult({ parent_id: 'parent-1', number: 7, type: 'task' }));
 
-		await createItem('proj-1', { title: 'Task A', type: 'task', parentId: 'parent-1' });
+		await createItem('proj-1', { title: 'Task A', type: 'task', parentNumber: 7 });
 
 		expect(mockQuery).toHaveBeenCalledTimes(1);
 		const [sql, params] = mockQuery.mock.calls[0]!;
-		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $2)');
-		expect(params).toEqual(['proj-1', 'parent-1', 'task', 'Task A', null, 'ready', 'not_started', null]);
+		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = (SELECT id FROM parent))');
+		expect(params).toEqual(['proj-1', 7, 'task', 'Task A', null, 'ready', 'not_started', null]);
 	});
 
 	it('uses an explicit rank verbatim when provided', async () => {
@@ -91,19 +96,20 @@ describe('createItems', () => {
 				makeItem({ id: 'b', parent_id: 'parent-1', type: 'bug', rank: 5 }),
 			],
 			rowCount: 2,
-		} as QueryResult<Item>);
+		} as QueryResult<ItemRow>);
 
-		const created = await createItems('proj-1', 'parent-1', [
+		const created = await createItems('proj-1', 3, [
 			{ title: 'One' },
 			{ title: 'Two', type: 'bug', description: 'details' },
 		]);
 
 		expect(mockQuery).toHaveBeenCalledTimes(1);
 		const [sql, params] = mockQuery.mock.calls[0]!;
-		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) FROM items WHERE parent_id = $2)');
+		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) FROM items WHERE parent_id = (SELECT id FROM parent))');
 		expect(sql).toContain('row_number() OVER (ORDER BY v.ord)');
 		expect(sql).toContain('WITH ORDINALITY');
-		expect(params).toEqual(['proj-1', 'parent-1', ['task', 'bug'], ['One', 'Two'], [null, 'details']]);
+		expect(sql).toContain('UPDATE projects SET item_seq = item_seq + $6');
+		expect(params).toEqual(['proj-1', 3, ['task', 'bug'], ['One', 'Two'], [null, 'details'], 2]);
 		expect(created.map((c) => c.id)).toEqual(['a', 'b']);
 		expect(created[0]).toMatchObject({
 			parentId: 'parent-1',
@@ -119,15 +125,15 @@ describe('createItems', () => {
 				makeItem({ id: 'a', parent_id: 'parent-1', rank: 1 }),
 			],
 			rowCount: 2,
-		} as QueryResult<Item>);
+		} as QueryResult<ItemRow>);
 
-		const created = await createItems('proj-1', 'parent-1', [{ title: 'One' }, { title: 'Two' }]);
+		const created = await createItems('proj-1', 3, [{ title: 'One' }, { title: 'Two' }]);
 
 		expect(created.map((c) => c.id)).toEqual(['a', 'b']);
 	});
 
 	it('skips the query entirely for an empty batch', async () => {
-		const created = await createItems('proj-1', 'parent-1', []);
+		const created = await createItems('proj-1', 3, []);
 
 		expect(created).toEqual([]);
 		expect(mockQuery).not.toHaveBeenCalled();
@@ -178,12 +184,12 @@ describe('moveItem', () => {
 				rowCount: 1,
 			} as never);
 
-		await moveItem('proj-1', 'item-1', 'parent-2');
+		await moveItem('proj-1', 1, 2);
 
 		const [sql, params] = mockQuery.mock.calls[0]!;
-		expect(sql).toContain('UPDATE items SET parent_id = $1');
-		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $1)');
-		expect(params).toEqual(['parent-2', 'item-1', 'proj-1']);
+		expect(sql).toContain('UPDATE items SET parent_id = (SELECT id FROM parent)');
+		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = (SELECT id FROM parent))');
+		expect(params).toEqual([2, 1, 'proj-1']);
 	});
 
 	it('re-ranks against top-level siblings when promoting to standalone', async () => {
@@ -200,10 +206,10 @@ describe('moveItem', () => {
 				rowCount: 1,
 			} as never);
 
-		await moveItem('proj-1', 'item-1', null);
+		await moveItem('proj-1', 1, null);
 
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $3 AND parent_id IS NULL)');
-		expect(params).toEqual([null, 'item-1', 'proj-1']);
+		expect(params).toEqual([null, 1, 'proj-1']);
 	});
 });

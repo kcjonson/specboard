@@ -12,9 +12,9 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export interface EpicPickerProps {
-	projectId: string;
-	/** Called with the chosen epic's id. */
-	onSelect: (epicId: string) => void;
+	projectSlug: string;
+	/** Called with the chosen epic's key (e.g. SB-345). */
+	onSelect: (epicKey: string) => void;
 	onClose: () => void;
 }
 
@@ -22,8 +22,8 @@ export interface EpicPickerProps {
  * Modal listing the project's work items so the user can link the current
  * document to an existing one.
  */
-export function EpicPicker({ projectId, onSelect, onClose }: EpicPickerProps): JSX.Element {
-	const items = useMemo(() => new ItemsCollection({ projectId }), [projectId]);
+export function EpicPicker({ projectSlug, onSelect, onClose }: EpicPickerProps): JSX.Element {
+	const items = useMemo(() => new ItemsCollection({ projectSlug }), [projectSlug]);
 	useModel(items);
 
 	const [search, setSearch] = useState('');
@@ -52,7 +52,7 @@ export function EpicPicker({ projectId, onSelect, onClose }: EpicPickerProps): J
 							type="button"
 							class={styles.row}
 							role="option"
-							onClick={() => onSelect(item.id)}
+							onClick={() => onSelect(item.key)}
 						>
 							<span class={styles.title}>{item.title}</span>
 							<span class={styles.status}>{STATUS_LABELS[item.status] ?? item.status}</span>

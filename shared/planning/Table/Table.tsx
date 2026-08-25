@@ -18,7 +18,7 @@ export interface TableProps {
 	items: ItemsCollection;
 	/** Active toolbar filters (applied to the epics shown). */
 	filters: PlanningFilters;
-	selectedItemId?: string;
+	selectedItemKey?: string;
 	/** Ids to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
 	onSelectItem: (item: ItemModel | undefined) => void;
@@ -42,7 +42,7 @@ function ensureTasksLoaded(item: ItemModel): void {
 export function Table({
 	items,
 	filters,
-	selectedItemId,
+	selectedItemKey,
 	flashingIds,
 	onSelectItem,
 	onOpenItem,
@@ -134,8 +134,8 @@ export function Table({
 										key={item.id}
 										item={item}
 										expanded={expanded.has(item.id)}
-										selected={item.id === selectedItemId}
-										flashing={flashingIds.has(item.id)}
+										selected={item.key === selectedItemKey}
+										flashing={flashingIds.has(item.key)}
 										onToggle={toggleExpand}
 										onOpen={onOpenItem}
 										onSelect={onSelectItem}

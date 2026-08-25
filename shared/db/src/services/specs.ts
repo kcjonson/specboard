@@ -46,10 +46,13 @@ function toSummary(spec: ItemSpec): SpecSummary {
 }
 
 /** List an item's spec links, oldest first. */
-export async function listSpecsByItem(projectId: string, itemId: string): Promise<SpecSummary[]> {
+export async function listSpecsByItem(projectId: string, itemNumber: number): Promise<SpecSummary[]> {
 	const result = await query<ItemSpec>(
-		'SELECT * FROM epic_specs WHERE project_id = $1 AND item_id = $2 ORDER BY created_at ASC',
-		[projectId, itemId]
+		`SELECT s.* FROM epic_specs s
+		 JOIN items i ON i.id = s.item_id
+		 WHERE s.project_id = $1 AND i.number = $2 AND i.project_id = $1
+		 ORDER BY s.created_at ASC`,
+		[projectId, itemNumber]
 	);
 	return result.rows.map(toSummary);
 }
@@ -60,15 +63,16 @@ export async function listSpecsByItem(projectId: string, itemId: string): Promis
  */
 export async function addSpec(
 	projectId: string,
-	itemId: string,
+	itemNumber: number,
 	path: string,
 	type: SpecType
 ): Promise<SpecSummary | null> {
 	const item = await query<{ id: string }>(
-		'SELECT id FROM items WHERE id = $1 AND project_id = $2',
-		[itemId, projectId]
+		'SELECT id FROM items WHERE number = $1 AND project_id = $2',
+		[itemNumber, projectId]
 	);
-	if (item.rows.length === 0) return null;
+	const itemId = item.rows[0]?.id;
+	if (!itemId) return null;
 
 	try {
 		const result = await query<ItemSpec>(
@@ -92,14 +96,15 @@ export async function addSpec(
  */
 export async function setSpecs(
 	projectId: string,
-	itemId: string,
+	itemNumber: number,
 	specs: Array<{ path: string; type: SpecType }>
 ): Promise<SpecSummary[] | null> {
 	const item = await query<{ id: string }>(
-		'SELECT id FROM items WHERE id = $1 AND project_id = $2',
-		[itemId, projectId]
+		'SELECT id FROM items WHERE number = $1 AND project_id = $2',
+		[itemNumber, projectId]
 	);
-	if (item.rows.length === 0) return null;
+	const itemId = item.rows[0]?.id;
+	if (!itemId) return null;
 
 	const byPath = new Map<string, SpecType>();
 	for (const s of specs) {
@@ -123,21 +128,28 @@ export async function setSpecs(
 }
 
 /** Remove a spec link by id. Returns true if a row was deleted. */
-export async function removeSpec(projectId: string, itemId: string, specId: string): Promise<boolean> {
+export async function removeSpec(projectId: string, itemNumber: number, specId: string): Promise<boolean> {
 	const result = await query(
-		'DELETE FROM epic_specs WHERE id = $1 AND item_id = $2 AND project_id = $3',
-		[specId, itemId, projectId]
+		`DELETE FROM epic_specs s
+		 USING items i
+		 WHERE s.id = $1 AND s.item_id = i.id AND i.number = $2 AND s.project_id = $3`,
+		[specId, itemNumber, projectId]
 	);
 	return (result.rowCount ?? 0) > 0;
 }
 
-/** Item ids in a project that link the given spec path (reverse lookup for the editor). */
-export async function getItemIdsBySpecPath(projectId: string, path: string): Promise<string[]> {
-	const result = await query<{ item_id: string }>(
-		'SELECT item_id FROM epic_specs WHERE project_id = $1 AND path = $2',
+/** Item keys in a project that link the given spec path (reverse lookup for the editor). */
+export async function getItemKeysBySpecPath(projectId: string, path: string): Promise<string[]> {
+	const result = await query<{ key: string }>(
+		`SELECT p.key || '-' || i.number AS key
+		 FROM epic_specs s
+		 JOIN items i ON i.id = s.item_id
+		 JOIN projects p ON p.id = i.project_id
+		 WHERE s.project_id = $1 AND s.path = $2
+		 ORDER BY i.number ASC`,
 		[projectId, path]
 	);
-	return result.rows.map((r) => r.item_id);
+	return result.rows.map((r) => r.key);
 }
 
 /**

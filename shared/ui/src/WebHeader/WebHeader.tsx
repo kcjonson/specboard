@@ -20,11 +20,11 @@ const NAV_TABS: NavTab[] = [
 ];
 
 export interface WebHeaderProps {
-	/** Project ID - if provided, shows project name and nav tabs */
-	projectId?: string;
+	/** Project slug - if provided, shows project name and nav tabs */
+	projectSlug?: string;
 	/** Currently active tab (matches NavTabLabel) */
 	activeTab?: NavTabLabel;
-	/** Page title - shown when no projectId (for non-project pages like Settings) */
+	/** Page title - shown when no projectSlug (for non-project pages like Settings) */
 	title?: string;
 	/** Optional right-side action buttons (placed before user menu) */
 	actions?: ComponentChildren;
@@ -33,7 +33,7 @@ export interface WebHeaderProps {
 }
 
 export function WebHeader({
-	projectId,
+	projectSlug,
 	activeTab,
 	title,
 	actions,
@@ -50,10 +50,10 @@ export function WebHeader({
 
 	useEffect(() => {
 		// Check cookie inside effect to ensure consistent behavior
-		const lastProjectId = getCookie('lastProjectId');
-		const cachedName = projectId && lastProjectId === projectId ? getCookie('lastProjectName') : null;
+		const lastProjectSlug = getCookie('lastProjectSlug');
+		const cachedName = projectSlug && lastProjectSlug === projectSlug ? getCookie('lastProjectName') : null;
 
-		if (!projectId || cachedName) {
+		if (!projectSlug || cachedName) {
 			setFetchedName(cachedName);
 			return;
 		}
@@ -63,11 +63,11 @@ export function WebHeader({
 
 		// Fetch project name and update cookie
 		fetchClient
-			.get<{ id: string; name: string }>(`/api/projects/${projectId}`, { params: { fields: 'name' } })
+			.get<{ id: string; name: string }>(`/api/projects/${projectSlug}`, { params: { fields: 'name' } })
 			.then((project) => {
 				if (cancelled) return;
 				setFetchedName(project.name);
-				setCookie('lastProjectId', projectId, 30);
+				setCookie('lastProjectSlug', projectSlug, 30);
 				setCookie('lastProjectName', project.name, 30);
 			})
 			.catch(() => {
@@ -77,21 +77,21 @@ export function WebHeader({
 		return () => {
 			cancelled = true;
 		};
-	}, [projectId]);
+	}, [projectSlug]);
 
 	const projectName = fetchedName;
 
 	return (
 		<header class={`${styles.header} ${className || ''}`}>
 			<div class={styles.left}>
-				{projectId ? (
+				{projectSlug ? (
 					<>
 						<span class={styles.projectName}>{projectName ?? ''}</span>
 						<nav class={styles.nav}>
 							{NAV_TABS.map((tab) => (
 								<a
 									key={tab.label}
-									href={`/projects/${projectId}/${tab.path}`}
+									href={`/projects/${projectSlug}/${tab.path}`}
 									class={`${styles.navTab} ${activeTab === tab.label ? styles.navTabActive : ''}`}
 								>
 									{tab.label}

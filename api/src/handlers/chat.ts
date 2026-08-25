@@ -12,12 +12,12 @@ import { streamSSE } from 'hono/streaming';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
-import { getProject } from '@specboard/db';
+import { getProjectBySlug } from '@specboard/db';
 import { getDecryptedApiKey } from './api-keys.ts';
 import { isValidProvider, getProvider, isValidModel, type ChatMessage } from '../providers/index.ts';
 import { composeSystemPrompt } from '../prompts/index.ts';
 import { readRepoConventions } from '../prompts/repo-conventions.ts';
-import { isValidUUID } from '../validation.ts';
+import { isValidProjectSlug } from '@specboard/core/identifiers';
 
 // Constants
 const MAX_MESSAGE_LENGTH = 10000;
@@ -75,12 +75,12 @@ export async function handleChat(
 	const message = typeof req.message === 'string' ? req.message : '';
 	const document_content = typeof req.document_content === 'string' ? req.document_content : undefined;
 	const document_path = typeof req.document_path === 'string' ? req.document_path : undefined;
-	const project_id = typeof req.project_id === 'string' ? req.project_id : undefined;
+	const project_slug = typeof req.project_slug === 'string' ? req.project_slug : undefined;
 	const rawHistory = Array.isArray(req.conversation_history) ? req.conversation_history : [];
 
-	// Validate project_id if provided
-	if (project_id && !isValidUUID(project_id)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	// Validate project_slug if provided
+	if (project_slug !== undefined && !isValidProjectSlug(project_slug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
 
 	// Get provider and model from request (with defaults for backwards compatibility)
@@ -138,16 +138,16 @@ export async function handleChat(
 		conversation_history.push(msg);
 	}
 
-	// Fetch project data if project_id is provided
+	// Fetch project data if project_slug is provided
 	let projectPrompt: string | undefined;
 	let repoConventions: string | null = null;
-	if (project_id) {
-		const project = await getProject(project_id, session.userId);
+	if (project_slug) {
+		const project = await getProjectBySlug(project_slug, session.userId);
 		if (project) {
 			if (project.systemPrompt) {
 				projectPrompt = project.systemPrompt;
 			}
-			repoConventions = await readRepoConventions(project_id, session.userId, redis);
+			repoConventions = await readRepoConventions(project.id, session.userId, redis);
 		}
 	}
 

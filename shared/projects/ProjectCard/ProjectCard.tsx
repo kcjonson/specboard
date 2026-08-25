@@ -25,6 +25,10 @@ export interface RepositoryConfigCloud {
 
 export interface Project {
 	id: string;
+	/** URL identifier for this project (e.g. "specboard"). */
+	slug: string;
+	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
+	key: string;
 	name: string;
 	description?: string;
 	systemPrompt?: string;

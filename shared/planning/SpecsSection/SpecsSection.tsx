@@ -12,8 +12,8 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export interface SpecsSectionProps {
-	projectId: string;
-	itemId: string;
+	projectSlug: string;
+	itemKey: string;
 }
 
 /**
@@ -21,8 +21,8 @@ export interface SpecsSectionProps {
  * lets the user add a link via the file picker, and remove links. Backed by a
  * SpecsCollection whose add()/remove() persist to the API.
  */
-export function SpecsSection({ projectId, itemId }: SpecsSectionProps): JSX.Element {
-	const specs = useMemo(() => new SpecsCollection({ projectId, itemId }), [projectId, itemId]);
+export function SpecsSection({ projectSlug, itemKey }: SpecsSectionProps): JSX.Element {
+	const specs = useMemo(() => new SpecsCollection({ projectSlug, itemKey }), [projectSlug, itemKey]);
 	useModel(specs);
 
 	const [pickerOpen, setPickerOpen] = useState(false);
@@ -48,8 +48,8 @@ export function SpecsSection({ projectId, itemId }: SpecsSectionProps): JSX.Elem
 	}, [specs]);
 
 	const openSpec = useCallback((path: string): void => {
-		navigate(`/projects/${projectId}/pages?file=${encodeURIComponent(path)}`);
-	}, [projectId]);
+		navigate(`/projects/${projectSlug}/pages?file=${encodeURIComponent(path)}`);
+	}, [projectSlug]);
 
 	return (
 		<section class={styles.section}>
@@ -83,7 +83,7 @@ export function SpecsSection({ projectId, itemId }: SpecsSectionProps): JSX.Elem
 
 			{pickerOpen && (
 				<FilePicker
-					projectId={projectId}
+					projectSlug={projectSlug}
 					onSelect={handleAdd}
 					onClose={() => setPickerOpen(false)}
 				/>

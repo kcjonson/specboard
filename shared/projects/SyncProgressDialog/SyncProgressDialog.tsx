@@ -11,7 +11,7 @@ interface SyncStatusResponse {
 }
 
 export interface SyncProgressDialogProps {
-	projectId: string;
+	projectSlug: string;
 	projectName: string;
 	onNavigate: (destination: 'planning' | 'pages') => void;
 	onDismiss: () => void;
@@ -31,7 +31,7 @@ function getErrorMessage(err: unknown): string {
 }
 
 export function SyncProgressDialog({
-	projectId,
+	projectSlug,
 	projectName,
 	onNavigate,
 	onDismiss,
@@ -58,7 +58,7 @@ export function SyncProgressDialog({
 		async function poll(): Promise<void> {
 			try {
 				const data = await fetchClient.get<SyncStatusResponse>(
-					`/api/projects/${projectId}/sync/status`,
+					`/api/projects/${projectSlug}/sync/status`,
 					{ signal: controller.signal }
 				);
 
@@ -96,13 +96,13 @@ export function SyncProgressDialog({
 				timerRef.current = null;
 			}
 		};
-	}, [projectId, pollGeneration]);
+	}, [projectSlug, pollGeneration]);
 
 	const handleRetry = async (): Promise<void> => {
 		setRetrying(true);
 		setSyncError(null);
 		try {
-			await fetchClient.post(`/api/projects/${projectId}/sync/initial`);
+			await fetchClient.post(`/api/projects/${projectSlug}/sync/initial`);
 			if (!mountedRef.current) return;
 			setSyncStatus('pending');
 			// Restart polling by incrementing the generation counter

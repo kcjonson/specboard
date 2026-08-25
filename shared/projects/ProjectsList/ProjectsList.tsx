@@ -3,12 +3,20 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { getCookie, setCookie } from '@specboard/core/cookies';
-import { fetchClient } from '@specboard/fetch';
+import { fetchClient, FetchError } from '@specboard/fetch';
 import { Button, Page } from '@specboard/ui';
 import { ProjectCard, type Project } from '../ProjectCard/ProjectCard';
 import { ProjectDialog, type RepositoryConfig } from '../ProjectDialog/ProjectDialog';
 import { SyncProgressDialog } from '../SyncProgressDialog/SyncProgressDialog';
 import styles from './ProjectsList.module.css';
+
+/** The API's own error text when it sent one, so 409s name the field that collided. */
+function apiErrorMessage(err: unknown, fallback: string): string {
+	if (err instanceof FetchError && typeof (err.data as { error?: unknown })?.error === 'string') {
+		return (err.data as { error: string }).error;
+	}
+	return err instanceof Error ? err.message : fallback;
+}
 
 export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [projects, setProjects] = useState<Project[]>([]);
@@ -17,7 +25,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	// Dialog state: null = closed, undefined = create mode, Project = edit mode
 	const [dialogProject, setDialogProject] = useState<Project | null | undefined>(null);
 	// Sync progress dialog state: shown after creating a project with a repo
-	const [syncingProject, setSyncingProject] = useState<{ id: string; name: string } | null>(null);
+	const [syncingProject, setSyncingProject] = useState<{ slug: string; name: string } | null>(null);
 
 	const fetchProjects = useCallback(async (): Promise<void> => {
 		try {
@@ -38,9 +46,9 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 	function handleProjectClick(project: Project): void {
 		// Store last project in cookie
-		setCookie('lastProjectId', project.id, 30);
+		setCookie('lastProjectSlug', project.slug, 30);
 		setCookie('lastProjectName', project.name, 30);
-		navigate(`/projects/${project.id}/planning`);
+		navigate(`/projects/${project.slug}/planning`);
 	}
 
 	function handleOpenCreateDialog(): void {
@@ -55,13 +63,16 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		setDialogProject(null);
 	}
 
-	async function handleSaveProject(data: { name: string; description?: string; systemPrompt?: string; repository?: RepositoryConfig }): Promise<void> {
+	async function handleSaveProject(data: { name: string; description?: string; systemPrompt?: string; slug?: string; key?: string; repository?: RepositoryConfig }): Promise<void> {
 		try {
-			// Map systemPrompt to system_prompt for API
+			// Map systemPrompt to system_prompt for API. slug/key are only present when the
+			// user changed them; on create the server derives both from the name.
 			const apiData = {
 				name: data.name,
 				description: data.description,
 				system_prompt: data.systemPrompt,
+				...(data.slug !== undefined ? { slug: data.slug } : {}),
+				...(data.key !== undefined ? { key: data.key } : {}),
 				repository: data.repository,
 			};
 
@@ -75,27 +86,29 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 				if (project.repository && 'type' in project.repository && project.repository.type === 'cloud') {
 					// Repository configured — show sync progress dialog
-					setSyncingProject({ id: project.id, name: project.name });
+					setSyncingProject({ slug: project.slug, name: project.name });
 				} else {
 					// No repository — navigate immediately
-					setCookie('lastProjectId', project.id, 30);
+					setCookie('lastProjectSlug', project.slug, 30);
 					setCookie('lastProjectName', project.name, 30);
-					navigate(`/projects/${project.id}/planning`);
+					navigate(`/projects/${project.slug}/planning`);
 				}
 			} else if (dialogProject) {
 				// Edit mode
-				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.id}`, apiData);
+				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.slug}`, apiData);
 				setProjects((prev) =>
 					prev.map((p) => (p.id === updated.id ? { ...updated } : p))
 				);
 				// Update cookie if this is the current project
-				if (getCookie('lastProjectId') === updated.id) {
+				if (getCookie('lastProjectSlug') === updated.slug) {
 					setCookie('lastProjectName', updated.name, 30);
 				}
 				setDialogProject(null);
 			}
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to save project');
+			// A taken slug or key comes back as a 409 whose body says which one; FetchError's
+			// own message is just "HTTP 409: Conflict", so prefer the server's wording.
+			setError(apiErrorMessage(err, 'Failed to save project'));
 		}
 	}
 
@@ -103,7 +116,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		if (!dialogProject) return;
 
 		try {
-			await fetchClient.delete(`/api/projects/${dialogProject.id}`);
+			await fetchClient.delete(`/api/projects/${dialogProject.slug}`);
 			setProjects((prev) => prev.filter((p) => p.id !== dialogProject.id));
 			setDialogProject(null);
 		} catch (err) {
@@ -113,18 +126,18 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 	function handleSyncNavigate(destination: 'planning' | 'pages'): void {
 		if (!syncingProject) return;
-		setCookie('lastProjectId', syncingProject.id, 30);
+		setCookie('lastProjectSlug', syncingProject.slug, 30);
 		setCookie('lastProjectName', syncingProject.name, 30);
 		setSyncingProject(null);
-		navigate(`/projects/${syncingProject.id}/${destination}`);
+		navigate(`/projects/${syncingProject.slug}/${destination}`);
 	}
 
 	function handleSyncDismiss(): void {
 		if (!syncingProject) return;
-		setCookie('lastProjectId', syncingProject.id, 30);
+		setCookie('lastProjectSlug', syncingProject.slug, 30);
 		setCookie('lastProjectName', syncingProject.name, 30);
 		setSyncingProject(null);
-		navigate(`/projects/${syncingProject.id}/planning`);
+		navigate(`/projects/${syncingProject.slug}/planning`);
 	}
 
 	async function handleRetrySync(project: Project): Promise<void> {
@@ -133,7 +146,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			setProjects((prev) =>
 				prev.map((p) => (p.id === project.id ? { ...p, syncStatus: 'pending' as const, syncError: null } : p))
 			);
-			await fetchClient.post(`/api/projects/${project.id}/sync/initial`);
+			await fetchClient.post(`/api/projects/${project.slug}/sync/initial`);
 			// Refetch projects to get updated sync status
 			await fetchProjects();
 		} catch (err) {
@@ -205,7 +218,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 			{syncingProject && (
 				<SyncProgressDialog
-					projectId={syncingProject.id}
+					projectSlug={syncingProject.slug}
 					projectName={syncingProject.name}
 					onNavigate={handleSyncNavigate}
 					onDismiss={handleSyncDismiss}

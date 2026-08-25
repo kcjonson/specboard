@@ -28,26 +28,34 @@ function readViewFromUrl(): PlanningView {
 }
 
 /**
- * Planning page container — the route entry for `/projects/:projectId/planning`.
+ * Planning page container — the route entry for both `/projects/:projectSlug/planning`
+ * and `/projects/:projectSlug/planning/items/:itemKey`.
  *
  * Owns all state shared between the Board and Table views (the items collection,
  * selection, create/edit dialog, highlight, active view, and filters) and renders
  * the shared toolbar plus whichever view is active. The two views are purely
  * presentational consumers of this state.
+ *
+ * Which item the drawer shows is not local state — it's the `:itemKey` route param.
+ * Opening and closing the drawer are navigations, so the open item has a shareable
+ * URL and Back closes it. The router re-renders this same component (no remount) on
+ * those navigations, so the board, filters, and scroll position all survive.
  */
 export function Planning(props: RouteProps): JSX.Element {
-	const projectId = props.params.projectId || 'demo';
+	const projectSlug = props.params.projectSlug || 'demo';
+	const openItemKey = props.params.itemKey;
 
-	// Collection auto-fetches after projectId is set. Memoized so it survives view
+	// Collection auto-fetches after projectSlug is set. Memoized so it survives view
 	// toggles (the route/entry is unchanged, only the ?view= param differs).
-	const items = useMemo(() => new ItemsCollection({ projectId }), [projectId]);
+	const items = useMemo(() => new ItemsCollection({ projectSlug }), [projectSlug]);
 	useModel(items);
 
 	const [view, setView] = useState<PlanningView>(readViewFromUrl);
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
 
-	const [selectedItemId, setSelectedItemId] = useState<string | undefined>();
-	const [drawerOpen, setDrawerOpen] = useState(false);
+	// Board highlight. It follows the drawer when one is open, but also moves on its
+	// own for keyboard navigation with the drawer closed.
+	const [highlightedItemKey, setHighlightedItemKey] = useState<string | undefined>();
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
 
@@ -152,21 +160,20 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, []);
 
 	const handleSelectItem = useCallback((item: ItemModel | undefined): void => {
-		setSelectedItemId(item?.id);
+		setHighlightedItemKey(item?.key);
 	}, []);
 
-	// Opening an item selects it and reveals the drawer; the drawer always renders
-	// the currently selected item, so keyboard navigation updates it live.
+	// Opening an item is a navigation to its key — the drawer follows the route, so the
+	// open item is shareable and Back closes it. Works for children too, which aren't in
+	// the top-level collection.
+	const handleOpenItemByKey = useCallback((itemKey: string): void => {
+		setHighlightedItemKey(itemKey);
+		navigate(`/projects/${projectSlug}/planning/items/${itemKey}${window.location.search}`);
+	}, [projectSlug]);
+
 	const handleOpenItem = useCallback((item: ItemModel): void => {
-		setSelectedItemId(item.id);
-		setDrawerOpen(true);
-	}, []);
-
-	// Open any item by id (used for children, which aren't in the top-level collection).
-	const handleOpenItemById = useCallback((itemId: string): void => {
-		setSelectedItemId(itemId);
-		setDrawerOpen(true);
-	}, []);
+		handleOpenItemByKey(item.key);
+	}, [handleOpenItemByKey]);
 
 	const handleOpenNewItemDialog = useCallback((type: ItemType): void => {
 		setCreateType(type);
@@ -185,20 +192,22 @@ export function Planning(props: RouteProps): JSX.Element {
 		setIsNewItemDialogOpen(false);
 	}, []);
 
+	// Closing navigates back to the bare board, keeping the item highlighted.
 	const handleCloseDrawer = useCallback((): void => {
-		setDrawerOpen(false);
-	}, []);
+		navigate(`/projects/${projectSlug}/planning${window.location.search}`);
+	}, [projectSlug]);
 
 	const handleDeleteItem = useCallback((item: ItemModel): void => {
-		const inCollection = items.find((i) => i.id === item.id);
+		const inCollection = items.find((i) => i.key === item.key);
 		if (inCollection) {
 			items.remove(inCollection);
 		} else {
-			// A child opened standalone isn't in the top-level collection — delete it by id.
+			// A child opened standalone isn't in the top-level collection — delete it directly.
 			void item.delete();
 		}
-		setDrawerOpen(false);
-	}, [items]);
+		setHighlightedItemKey(undefined);
+		navigate(`/projects/${projectSlug}/planning${window.location.search}`);
+	}, [items, projectSlug]);
 
 	const createOptions: SplitButtonOption[] = useMemo(() => [
 		{ label: 'Epic', value: 'epic', icon: 'file' as const, onClick: () => handleOpenNewItemDialog('epic') },
@@ -216,18 +225,21 @@ export function Planning(props: RouteProps): JSX.Element {
 		setFilters((prev) => ({ ...prev, category: value }));
 	}, []);
 
-	// The drawer renders whichever item is selected; if that item is removed
-	// (e.g. deleted), the lookup returns undefined and the drawer collapses.
-	// A child (or any item not in the top-level collection) is opened by id via a
+	// The drawer renders the item named by the route; if that item is removed (e.g.
+	// deleted), the lookup returns undefined and the drawer collapses.
+	// A child (or any item not in the top-level collection) is opened by key via a
 	// standalone model that fetches its own detail; memoized so it isn't refetched on
 	// every render. Top-level items use the live collection model so edits reflect on the board.
 	const standaloneItem = useMemo(() => {
-		if (!selectedItemId || items.find((i) => i.id === selectedItemId)) return undefined;
-		return new ItemModel({ id: selectedItemId, projectId });
-	}, [selectedItemId, projectId, items]);
-	const selectedItem = selectedItemId
-		? (items.find((i) => i.id === selectedItemId) ?? standaloneItem)
+		if (!openItemKey || items.find((i) => i.key === openItemKey)) return undefined;
+		return new ItemModel({ key: openItemKey, projectSlug });
+	}, [openItemKey, projectSlug, items]);
+	const openItem = openItemKey
+		? (items.find((i) => i.key === openItemKey) ?? standaloneItem)
 		: undefined;
+
+	// The highlight follows the open item, so a deep link lands with the card marked.
+	const selectedItemKey = openItemKey ?? highlightedItemKey;
 
 	// Measure the workspace so the drawer can't widen past leaving the board a
 	// usable minimum. A callback ref (not useRef + mount effect) is required
@@ -251,7 +263,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	// Loading state
 	if (items.$meta.working && items.length === 0) {
 		return (
-			<Page projectId={projectId} activeTab="Planning">
+			<Page projectSlug={projectSlug} activeTab="Planning">
 				<div class={styles.loading}>Loading...</div>
 			</Page>
 		);
@@ -260,14 +272,14 @@ export function Planning(props: RouteProps): JSX.Element {
 	// Error state from collection's $meta
 	if (items.$meta.error) {
 		return (
-			<Page projectId={projectId} activeTab="Planning">
+			<Page projectSlug={projectSlug} activeTab="Planning">
 				<div class={styles.error}>Error: {items.$meta.error.message}</div>
 			</Page>
 		);
 	}
 
 	return (
-		<Page projectId={projectId} activeTab="Planning">
+		<Page projectSlug={projectSlug} activeTab="Planning">
 			<div class={styles.toolbar}>
 				<div class={styles.controls}>
 					<ViewToggle view={view} onChange={handleChangeView} />
@@ -296,18 +308,18 @@ export function Planning(props: RouteProps): JSX.Element {
 						<Table
 							items={items}
 							filters={filters}
-							selectedItemId={selectedItemId}
+							selectedItemKey={selectedItemKey}
 							flashingIds={flashingIds}
 							onSelectItem={handleSelectItem}
 							onOpenItem={handleOpenItem}
-							onOpenChild={handleOpenItemById}
+							onOpenChild={handleOpenItemByKey}
 						/>
 					) : (
 						<Board
 							items={items}
-							projectId={projectId}
+							projectSlug={projectSlug}
 							filters={filters}
-							selectedItemId={selectedItemId}
+							selectedItemKey={selectedItemKey}
 							flashingIds={flashingIds}
 							dialogOpen={isNewItemDialogOpen}
 							onSelectItem={handleSelectItem}
@@ -317,14 +329,14 @@ export function Planning(props: RouteProps): JSX.Element {
 					)}
 				</div>
 
-				{drawerOpen && selectedItem && (
+				{openItem && (
 					<ItemDrawer
-						item={selectedItem}
-						projectId={projectId}
+						item={openItem}
+						projectSlug={projectSlug}
 						maxWidth={drawerMaxWidth}
 						onClose={handleCloseDrawer}
 						onDelete={handleDeleteItem}
-						onOpenItem={handleOpenItemById}
+						onOpenItem={handleOpenItemByKey}
 					/>
 				)}
 			</div>

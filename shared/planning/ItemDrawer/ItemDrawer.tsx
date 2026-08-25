@@ -13,13 +13,13 @@ const TYPE_LABELS: Record<ItemType, string> = {
 
 export interface ItemDrawerProps {
 	item: ItemModel;
-	projectId: string;
+	projectSlug: string;
 	/** Upper bound for the drawer width, so it can't fully crowd out the board. */
 	maxWidth?: number;
 	onClose: () => void;
 	onDelete?: (item: ItemModel) => void;
-	/** Open a child's detail by id (children are first-class items). */
-	onOpenItem?: (itemId: string) => void;
+	/** Open a child's detail by key (children are first-class items). */
+	onOpenItem?: (itemKey: string) => void;
 }
 
 /**
@@ -31,14 +31,15 @@ export interface ItemDrawerProps {
  * full-screen item route; only the surrounding chrome (resize handle, header)
  * differs.
  */
-export function ItemDrawer({ item, projectId, maxWidth, onClose, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
+export function ItemDrawer({ item, projectSlug, maxWidth, onClose, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
 	// Subscribe so the header title updates once a lazily-opened item finishes loading.
 	useModel(item);
-	const title = `Edit ${TYPE_LABELS[item.type || 'epic']}`;
+	// The key doubles as the drawer's identity — it's what you'd paste into a commit or PR.
+	const title = item.key ? `${item.key} · ${TYPE_LABELS[item.type || 'epic']}` : `Edit ${TYPE_LABELS[item.type || 'epic']}`;
 
 	const handleOpenInNewWindow = useCallback((): void => {
-		window.open(`/projects/${projectId}/planning/items/${item.id}`, '_blank', 'noopener,noreferrer');
-	}, [projectId, item.id]);
+		window.open(`/projects/${projectSlug}/items/${item.key}`, '_blank', 'noopener,noreferrer');
+	}, [projectSlug, item.key]);
 
 	// Close on Escape only when focus is within the drawer; stopPropagation keeps
 	// the board's Escape-to-deselect from also firing (so selection is preserved).

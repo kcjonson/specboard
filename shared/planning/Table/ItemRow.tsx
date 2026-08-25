@@ -91,6 +91,7 @@ export function ItemRow({
 					) : (
 						<span class={styles.chevronSpacer} />
 					)}
+					<span class={styles.itemKey}>{item.key}</span>
 					<span class={styles.title}>{item.title}</span>
 				</span>
 				<span class={styles.colType} role="cell">

@@ -56,12 +56,12 @@ interface LoadError {
 
 const SELECTED_FILE_KEY = 'editor.selectedFile';
 
-function loadSelectedFile(projectId: string): string | null {
+function loadSelectedFile(projectSlug: string): string | null {
 	try {
 		const stored = globalThis.localStorage?.getItem(SELECTED_FILE_KEY);
 		if (stored) {
 			const all = JSON.parse(stored) as Record<string, string>;
-			return all[projectId] || null;
+			return all[projectSlug] || null;
 		}
 	} catch {
 		// Ignore parse errors
@@ -69,16 +69,16 @@ function loadSelectedFile(projectId: string): string | null {
 	return null;
 }
 
-function saveSelectedFile(projectId: string, filePath: string | null): void {
+function saveSelectedFile(projectSlug: string, filePath: string | null): void {
 	try {
 		const storage = globalThis.localStorage;
 		if (!storage) return;
 		const stored = storage.getItem(SELECTED_FILE_KEY);
 		const all = stored ? (JSON.parse(stored) as Record<string, string>) : {};
 		if (filePath) {
-			all[projectId] = filePath;
+			all[projectSlug] = filePath;
 		} else {
-			delete all[projectId];
+			delete all[projectSlug];
 		}
 		storage.setItem(SELECTED_FILE_KEY, JSON.stringify(all));
 	} catch {
@@ -90,18 +90,18 @@ function saveSelectedFile(projectId: string, filePath: string | null): void {
  * Migrate cached localStorage content from one file path to another.
  * Used when renaming files to preserve unsaved edits.
  */
-function migrateLocalStorageContent(projectId: string, oldPath: string, newPath: string): void {
-	if (hasPersistedContent(projectId, oldPath)) {
-		const cached = loadFromLocalStorage(projectId, oldPath);
+function migrateLocalStorageContent(projectSlug: string, oldPath: string, newPath: string): void {
+	if (hasPersistedContent(projectSlug, oldPath)) {
+		const cached = loadFromLocalStorage(projectSlug, oldPath);
 		if (cached) {
-			saveToLocalStorage(projectId, newPath, cached.content, cached.comments);
+			saveToLocalStorage(projectSlug, newPath, cached.content, cached.comments);
 		}
-		clearLocalStorage(projectId, oldPath);
+		clearLocalStorage(projectSlug, oldPath);
 	}
 }
 
 export function Editor(props: RouteProps): JSX.Element {
-	const projectId = props.params.projectId!;
+	const projectSlug = props.params.projectSlug!;
 
 	// Document model - source of truth for editor content
 	const documentModel = useMemo(() => new DocumentModel(), []);
@@ -148,7 +148,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	const editorRef = useRef<MarkdownEditorHandle>(null);
 
 	// Epic linking state
-	const [linkedEpicId, setLinkedEpicId] = useState<string | undefined>();
+	const [linkedEpicKey, setLinkedEpicId] = useState<string | undefined>();
 	const [creatingEpic, setCreatingEpic] = useState(false);
 	const [epicPickerOpen, setEpicPickerOpen] = useState(false);
 	const creatingEpicRef = useRef(false);
@@ -187,7 +187,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 		try {
 			const epics = await fetchClient.get<Array<{ id: string }>>(
-				`/api/projects/${projectId}/items?specPath=${encodeURIComponent(path)}`
+				`/api/projects/${projectSlug}/items?specPath=${encodeURIComponent(path)}`
 			);
 			setLinkedEpicId(epics.length > 0 ? epics[0]?.id : undefined);
 		} catch (err) {
@@ -195,28 +195,28 @@ export function Editor(props: RouteProps): JSX.Element {
 			captureError(error, {
 				type: 'epic_link_check_error',
 				filePath: path,
-				projectId,
+				projectSlug,
 			});
 			// Fail gracefully - epic linking is optional
 			setLinkedEpicId(undefined);
 		}
-	}, [projectId]);
+	}, [projectSlug]);
 
 	// Initialize git status when project changes
 	useEffect(() => {
-		gitStatusModel.projectId = projectId;
+		gitStatusModel.projectSlug = projectSlug;
 		gitStatusModel.refresh();
-	}, [projectId, gitStatusModel]);
+	}, [projectSlug, gitStatusModel]);
 
 	// Load file from server
 	const loadFileFromServer = useCallback(async (path: string) => {
 		try {
 			const response = await fetchClient.get<{ content: string }>(
-				`/api/projects/${projectId}/files?path=${encodeURIComponent(path)}`
+				`/api/projects/${projectSlug}/files?path=${encodeURIComponent(path)}`
 			);
 			const { content: slateContent, comments } = fromMarkdown(response.content);
-			documentModel.loadDocument(projectId, path, slateContent, { comments });
-			saveSelectedFile(projectId, path);
+			documentModel.loadDocument(projectSlug, path, slateContent, { comments });
+			saveSelectedFile(projectSlug, path);
 			// Check if this document has a linked epic
 			checkLinkedEpic(path);
 		} catch (err) {
@@ -224,16 +224,16 @@ export function Editor(props: RouteProps): JSX.Element {
 			captureError(error, {
 				type: 'file_load_error',
 				filePath: path,
-				projectId,
+				projectSlug,
 			});
 			// Clear the saved selection so we don't try to load a deleted/missing file on refresh
-			saveSelectedFile(projectId, null);
+			saveSelectedFile(projectSlug, null);
 			setLoadError({
 				message: 'Unable to load this file. The file may have been deleted or moved.',
 				filePath: path,
 			});
 		}
-	}, [projectId, documentModel, checkLinkedEpic]);
+	}, [projectSlug, documentModel, checkLinkedEpic]);
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// Auto-save mechanism (defined before handleFileSelect which depends on it)
@@ -241,10 +241,10 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Perform server save
 	const performServerSave = useCallback(async (): Promise<boolean> => {
-		if (!documentModel.filePath || !documentModel.projectId) return true;
+		if (!documentModel.filePath || !documentModel.projectSlug) return true;
 		if (!documentModel.isDirty) return true;
 
-		const { projectId: pid, filePath: fpath, content, comments } = documentModel;
+		const { projectSlug: pid, filePath: fpath, content, comments } = documentModel;
 
 		setIsSaving(true);
 		try {
@@ -312,49 +312,49 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 
 		// Check for cached changes - show recovery dialog if found
-		if (hasPersistedContent(projectId, path)) {
+		if (hasPersistedContent(projectSlug, path)) {
 			setPendingRecovery(path);
 			return;
 		}
 
 		await loadFileFromServer(path);
-	}, [projectId, loadFileFromServer, documentModel, performServerSave]);
+	}, [projectSlug, loadFileFromServer, documentModel, performServerSave]);
 
 	// Handle file renamed via sidebar double-click
 	const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
 		// If the renamed file is the currently open file, update the model
 		if (documentModel.filePath === oldPath) {
-			migrateLocalStorageContent(projectId, oldPath, newPath);
-			saveSelectedFile(projectId, newPath);
+			migrateLocalStorageContent(projectSlug, oldPath, newPath);
+			saveSelectedFile(projectSlug, newPath);
 			documentModel.updateFilePath(newPath);
 		}
-	}, [projectId, documentModel]);
+	}, [projectSlug, documentModel]);
 
 	// Handle restore from recovery dialog
 	const handleRestore = useCallback(() => {
 		if (!pendingRecovery) return;
 
-		const cached = loadFromLocalStorage(projectId, pendingRecovery);
+		const cached = loadFromLocalStorage(projectSlug, pendingRecovery);
 		if (cached) {
-			documentModel.loadDocument(projectId, pendingRecovery, cached.content, {
+			documentModel.loadDocument(projectSlug, pendingRecovery, cached.content, {
 				dirty: true,
 				comments: cached.comments,
 			});
-			saveSelectedFile(projectId, pendingRecovery);
+			saveSelectedFile(projectSlug, pendingRecovery);
 			// Check if this document has a linked epic
 			checkLinkedEpic(pendingRecovery);
 		}
 		setPendingRecovery(null);
-	}, [projectId, pendingRecovery, documentModel, checkLinkedEpic]);
+	}, [projectSlug, pendingRecovery, documentModel, checkLinkedEpic]);
 
 	// Handle discard from recovery dialog
 	const handleDiscard = useCallback(async () => {
 		if (!pendingRecovery) return;
 
-		clearLocalStorage(projectId, pendingRecovery);
+		clearLocalStorage(projectSlug, pendingRecovery);
 		await loadFileFromServer(pendingRecovery);
 		setPendingRecovery(null);
-	}, [projectId, pendingRecovery, loadFileFromServer]);
+	}, [projectSlug, pendingRecovery, loadFileFromServer]);
 
 	// Create epic from current document
 	const handleCreateEpic = useCallback(async () => {
@@ -373,7 +373,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		setCreatingEpic(true);
 		try {
 			const response = await fetchClient.post<{ id: string }>(
-				`/api/projects/${projectId}/items`,
+				`/api/projects/${projectSlug}/items`,
 				{
 					title,
 					status: 'ready',
@@ -381,18 +381,18 @@ export function Editor(props: RouteProps): JSX.Element {
 			);
 			// Link the current document as a product spec.
 			await fetchClient.post(
-				`/api/projects/${projectId}/items/${response.id}/specs`,
+				`/api/projects/${projectSlug}/items/${response.id}/specs`,
 				{ path: filePath, type: 'product' }
 			);
 			setLinkedEpicId(response.id);
 			// Navigate to Planning page with highlight param
-			navigate(`/projects/${projectId}/planning?highlight=${response.id}`);
+			navigate(`/projects/${projectSlug}/planning?highlight=${response.id}`);
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
 			captureError(error, {
 				type: 'epic_create_error',
 				filePath,
-				projectId,
+				projectSlug,
 			});
 			// Show user feedback
 			globalThis.alert?.('Failed to create epic. Please try again.');
@@ -400,34 +400,34 @@ export function Editor(props: RouteProps): JSX.Element {
 			creatingEpicRef.current = false;
 			setCreatingEpic(false);
 		}
-	}, [projectId, documentModel.filePath]);
+	}, [projectSlug, documentModel.filePath]);
 
-	// Navigate to view the linked epic
+	// Open the linked epic on the board, with its detail drawer showing.
 	const handleViewEpic = useCallback(() => {
-		if (linkedEpicId) {
-			navigate(`/projects/${projectId}/planning?highlight=${linkedEpicId}`);
+		if (linkedEpicKey) {
+			navigate(`/projects/${projectSlug}/planning/items/${linkedEpicKey}`);
 		}
-	}, [projectId, linkedEpicId]);
+	}, [projectSlug, linkedEpicKey]);
 
 	// Link the current document to an existing epic (as a product spec)
-	const handleLinkEpic = useCallback(async (epicId: string) => {
+	const handleLinkEpic = useCallback(async (epicKey: string) => {
 		const filePath = documentModel.filePath;
 		setEpicPickerOpen(false);
 		if (!filePath) return;
 		try {
 			await fetchClient.post(
-				`/api/projects/${projectId}/items/${epicId}/specs`,
+				`/api/projects/${projectSlug}/items/${epicKey}/specs`,
 				{ path: filePath, type: 'product' }
 			);
 		} catch (err) {
 			// A 409 means it's already linked — treat as success. Log others.
 			if (!(err instanceof FetchError && err.status === 409)) {
 				const error = err instanceof Error ? err : new Error(String(err));
-				captureError(error, { type: 'epic_link_error', filePath, projectId });
+				captureError(error, { type: 'epic_link_error', filePath, projectSlug });
 			}
 		}
-		setLinkedEpicId(epicId);
-	}, [projectId, documentModel.filePath]);
+		setLinkedEpicId(epicKey);
+	}, [projectSlug, documentModel.filePath]);
 
 	// Handle restoring a deleted file
 	const handleRestoreDeletedFile = useCallback(async () => {
@@ -515,11 +515,11 @@ export function Editor(props: RouteProps): JSX.Element {
 		if (restoredRef.current) return;
 		restoredRef.current = true;
 
-		const savedPath = loadSelectedFile(projectId);
+		const savedPath = loadSelectedFile(projectSlug);
 		if (savedPath) {
 			handleFileSelect(savedPath);
 		}
-	}, [projectId, handleFileSelect]);
+	}, [projectSlug, handleFileSelect]);
 
 	// Manual retry from error banner
 	const handleRetryManual = useCallback(() => {
@@ -529,7 +529,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Immediate localStorage save + debounced server save on content change
 	useEffect(() => {
-		const { filePath, projectId: pid, content, comments } = documentModel;
+		const { filePath, projectSlug: pid, content, comments } = documentModel;
 		if (!filePath || !pid) return;
 		if (!documentModel.isDirty) return;
 
@@ -551,7 +551,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				clearTimeout(serverSaveTimerRef.current);
 			}
 		};
-	}, [documentModel.content, documentModel.comments, documentModel.filePath, documentModel.projectId, documentModel.isDirty, performServerSave]);
+	}, [documentModel.content, documentModel.comments, documentModel.filePath, documentModel.projectSlug, documentModel.isDirty, performServerSave]);
 
 	// Cleanup retry timer on unmount
 	useEffect(() => {
@@ -597,10 +597,10 @@ export function Editor(props: RouteProps): JSX.Element {
 	const handleFileDeleted = useCallback((deletedPath: string) => {
 		if (documentModel.filePath === deletedPath) {
 			documentModel.clear();
-			saveSelectedFile(projectId, null);
+			saveSelectedFile(projectSlug, null);
 			setLinkedEpicId(undefined);
 		}
-	}, [documentModel, projectId]);
+	}, [documentModel, projectSlug]);
 
 	// Handle receiving the renameFile function from FileBrowser
 	const handleRenameFileRef = useCallback((renameFile: (path: string, newFilename: string) => Promise<string>) => {
@@ -615,8 +615,8 @@ export function Editor(props: RouteProps): JSX.Element {
 		try {
 			const newPath = await renameFileRef.current(oldPath, newFilename);
 
-			migrateLocalStorageContent(projectId, oldPath, newPath);
-			saveSelectedFile(projectId, newPath);
+			migrateLocalStorageContent(projectSlug, oldPath, newPath);
+			saveSelectedFile(projectSlug, newPath);
 			documentModel.updateFilePath(newPath);
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
@@ -624,13 +624,13 @@ export function Editor(props: RouteProps): JSX.Element {
 				type: 'file_rename_error',
 				filePath: oldPath,
 				newFilename,
-				projectId,
+				projectSlug,
 			});
 			// Show user-friendly error - using alert for simplicity
 			// (File operations typically succeed, so a dedicated UI component isn't warranted)
 			alert(`Failed to rename file: ${error.message}`);
 		}
-	}, [projectId, documentModel]);
+	}, [projectSlug, documentModel]);
 
 	// Handle applying AI-suggested edits from ChatSidebar
 	const handleApplyEdit = useCallback((newMarkdown: string) => {
@@ -664,7 +664,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			: undefined;
 
 	return (
-		<Page projectId={projectId} activeTab="Pages">
+		<Page projectSlug={projectSlug} activeTab="Pages">
 			{saveError && (
 				<SaveErrorBanner
 					message={saveError.message}
@@ -684,7 +684,7 @@ export function Editor(props: RouteProps): JSX.Element {
 					label="Resize file browser"
 				>
 					<FileBrowser
-						projectId={projectId}
+						projectSlug={projectSlug}
 						selectedPath={documentModel.filePath || undefined}
 						gitStatus={gitStatusModel}
 						onFileSelect={handleFileSelect}
@@ -766,7 +766,7 @@ export function Editor(props: RouteProps): JSX.Element {
 								isDirty={documentModel.isDirty}
 								isSaving={isSaving}
 								onRename={handleRename}
-								linkedEpicId={linkedEpicId}
+								linkedEpicKey={linkedEpicKey}
 								creatingEpic={creatingEpic}
 								onCreateEpic={handleCreateEpic}
 								onViewEpic={handleViewEpic}
@@ -797,7 +797,7 @@ export function Editor(props: RouteProps): JSX.Element {
 										<ChatSidebar
 											documentContent={documentContentForChat}
 											documentPath={documentModel.filePath}
-											projectId={projectId}
+											projectSlug={projectSlug}
 											onApplyEdit={handleApplyEdit}
 										/>
 									</ErrorBoundary>
@@ -826,7 +826,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			)}
 			{epicPickerOpen && (
 				<EpicPicker
-					projectId={projectId}
+					projectSlug={projectSlug}
 					onSelect={handleLinkEpic}
 					onClose={() => setEpicPickerOpen(false)}
 				/>

@@ -5,13 +5,13 @@
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import fs from 'fs/promises';
-import { addFolder, removeFolder } from '@specboard/db';
-import { isValidUUID } from '../../validation.ts';
+import { addFolder, removeFolder, resolveProjectSlug } from '@specboard/db';
+import { isValidProjectSlug } from '@specboard/core/identifiers';
 import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/storage/git-utils.ts';
 import { getUserId } from './utils.ts';
 
 /**
- * POST /api/projects/:id/folders
+ * POST /api/projects/:projectSlug/folders
  * Add a folder to the project (validates git repository)
  */
 export async function handleAddFolder(context: Context, redis: Redis): Promise<Response> {
@@ -20,10 +20,16 @@ export async function handleAddFolder(context: Context, redis: Redis): Promise<R
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!isValidUUID(projectId)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
+
+	const resolved = await resolveProjectSlug(projectSlug, userId);
+	if (!resolved) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	const projectId = resolved.id;
 
 	try {
 		const body = await context.req.json();
@@ -134,7 +140,7 @@ export async function handleAddFolder(context: Context, redis: Redis): Promise<R
 }
 
 /**
- * DELETE /api/projects/:id/folders?path=...
+ * DELETE /api/projects/:projectSlug/folders?path=...
  * Remove a folder from the project (doesn't delete files)
  */
 export async function handleRemoveFolder(context: Context, redis: Redis): Promise<Response> {
@@ -143,10 +149,16 @@ export async function handleRemoveFolder(context: Context, redis: Redis): Promis
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!isValidUUID(projectId)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
+
+	const resolved = await resolveProjectSlug(projectSlug, userId);
+	if (!resolved) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	const projectId = resolved.id;
 
 	const path = context.req.query('path');
 	if (!path) {

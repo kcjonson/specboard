@@ -45,16 +45,17 @@ Specboard ships a plugin for [Claude Code](https://claude.ai/code) that connects
 This registers the Specboard MCP server (`https://specboard.io/mcp`) and installs the workflow skill. On first connect, the OAuth flow handles authentication automatically.
 
 **Bind a repo to a project (optional):** to make the skill always target one project in a given
-repo, commit a project-scoped `.mcp.json` at the repo root carrying that project's UUID:
+repo, commit a project-scoped `.mcp.json` at the repo root carrying that project's slug — the same
+identifier you see in its Specboard URL (`/projects/<slug>/planning`):
 
 ```json
-{ "mcpServers": { "specboard": { "type": "http", "url": "https://specboard.io/mcp", "headers": { "X-Specboard-Project": "<project-uuid>" } } } }
+{ "mcpServers": { "specboard": { "type": "http", "url": "https://specboard.io/mcp", "headers": { "X-Specboard-Project": "<project-slug>" } } } }
 ```
 
 This project-scoped entry overrides the plugin's server in that repo, so reconnect the MCP after
 adding it. **On first connect it runs its own one-time OAuth** — the plugin server's token does not
 carry over to the project-scoped one, so expect a sign-in prompt (and a trust prompt for the new
-server). The UUID is a shared reference, not a credential — each user still authenticates
+server). The slug is a shared reference, not a credential — each user still authenticates
 individually, and access is checked per user against that project.
 
 ### Usage

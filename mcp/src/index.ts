@@ -62,7 +62,7 @@ const projectToolNames = new Set(['list_projects']);
 // carries the full guided workflow; this is the always-on summary that points users to it.
 const SERVER_INSTRUCTIONS = `You are connected to Specboard, the user's planning board: epics, tasks, and bugs (an epic is an optional container; tasks and bugs can nest under one or stand alone). Use these tools whenever the user is planning, picking up work, or tracking development status.
 
-Tools: list_projects finds the project (a repo bound via .mcp.json X-Specboard-Project auto-selects one). get_items reads work by status (ready/in_progress/in_review/done), by type, by search, or one item by item_id with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_id); create_items bulk-creates children under a parent. update_item changes title/description/status/sub_status/notes/branch_name/pr_url. Setting an epic's sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
+Tools: list_projects finds the project and its slug (a repo bound via .mcp.json X-Specboard-Project auto-selects one). Items are addressed by key, e.g. SB-345. get_items reads work by status (ready/in_progress/in_review/done), by type, by search, or one item by item_key with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_key); create_items bulk-creates children under a parent. update_item changes title/description/status/sub_status/notes/branch_name/pr_url. Setting an epic's sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
 
 Role model: you can run the full loop (read or write specs, create epics, break work into tasks, build, verify, merge, and close). The human stays in control by choosing when to write a spec themselves and when to review a PR before it merges. One hard rule: verify the work (tests green, behavior confirmed) before you mark any task done or any epic complete. Keep status accurate in real time; never leave a stale in_progress item.
 
@@ -77,9 +77,9 @@ interface SessionBinding {
 
 // Create MCP server factory - each session gets its own server instance
 // userId is passed from the auth middleware to ensure all operations are authorized.
-// boundProjectId, when present, is the project UUID from the X-Specboard-Project request header
+// boundProjectSlug, when present, is the project slug from the X-Specboard-Project request header
 // (set by a repo's committed .mcp.json) and scopes the session to that one project.
-function createMcpServer(userId: string, boundProjectId?: string): Server {
+function createMcpServer(userId: string, boundProjectSlug?: string): Server {
 	const server = new Server(
 		{
 			name: 'specboard',
@@ -108,11 +108,11 @@ function createMcpServer(userId: string, boundProjectId?: string): Server {
 			// Route to appropriate handler using exact matching
 			// Each handler receives userId to verify project ownership
 			if (projectToolNames.has(name)) {
-				return await handleProjectTool(name, args, userId, boundProjectId);
+				return await handleProjectTool(name, args, userId, boundProjectSlug);
 			}
 
 			if (epicToolNames.has(name)) {
-				return await handleEpicTool(name, args, userId, boundProjectId);
+				return await handleEpicTool(name, args, userId, boundProjectSlug);
 			}
 
 			return {
@@ -219,11 +219,11 @@ app.post('/mcp', async (c) => {
 	};
 
 	// Create and connect MCP server with the authenticated userId.
-	// A repo's committed .mcp.json carries the project UUID in this header; the server scopes
-	// tools to that project (access is still gated per user by verifyProjectAccess). Trim +
+	// A repo's committed .mcp.json carries the project slug in this header; the server scopes
+	// tools to that project (access is still gated per user when the slug is resolved). Trim +
 	// lowercase to tolerate stray whitespace/casing; absent/blank means "unscoped".
-	const boundProjectId = c.req.header('x-specboard-project')?.trim().toLowerCase() || undefined;
-	const server = createMcpServer(userId, boundProjectId);
+	const boundProjectSlug = c.req.header('x-specboard-project')?.trim().toLowerCase() || undefined;
+	const server = createMcpServer(userId, boundProjectSlug);
 	await server.connect(transport);
 
 	// Handle the request

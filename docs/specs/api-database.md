@@ -95,6 +95,13 @@ CREATE TABLE github_connections (
 -- See project-storage.md for storage_mode and repository details
 CREATE TABLE projects (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	slug VARCHAR(63) NOT NULL,
+	-- URL identifier, e.g. "specboard". Every user-facing URL and API path addresses
+	-- a project by slug; the UUID above is internal only.
+	key VARCHAR(10) NOT NULL,
+	-- Short uppercase prefix for this project's item keys, e.g. "SB" -> SB-345.
+	item_seq INTEGER NOT NULL DEFAULT 0,
+	-- Allocator for per-project item numbers; the last number handed out.
 	name VARCHAR(255) NOT NULL,
 	description TEXT,
 	owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -110,6 +117,11 @@ CREATE TABLE projects (
 );
 
 CREATE INDEX idx_projects_owner_id ON projects(owner_id);
+
+-- Slugs and keys are unique per owner, matching the access-control scope, so a slug
+-- resolves unambiguously for the signed-in user.
+CREATE UNIQUE INDEX idx_projects_owner_slug ON projects(owner_id, slug);
+CREATE UNIQUE INDEX idx_projects_owner_key ON projects(owner_id, key);
 
 -- Repositories (GitHub repos the user has connected - legacy, see projects)
 CREATE TABLE repositories (

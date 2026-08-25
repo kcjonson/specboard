@@ -7,7 +7,7 @@ interface KeyboardNavigationOptions {
 	/** All items grouped by status */
 	itemsByStatus: Record<Status, ItemModel[]>;
 	/** Currently selected item ID */
-	selectedItemId: string | undefined;
+	selectedItemKey: string | undefined;
 	/** Whether a dialog is open (disables shortcuts) */
 	dialogOpen: boolean;
 	/** Callback when selection changes */
@@ -22,7 +22,7 @@ interface KeyboardNavigationOptions {
 
 export function useKeyboardNavigation({
 	itemsByStatus,
-	selectedItemId,
+	selectedItemKey,
 	dialogOpen,
 	onSelectItem,
 	onOpenItem,
@@ -35,20 +35,20 @@ export function useKeyboardNavigation({
 		status: Status | undefined;
 		index: number;
 	} => {
-		if (!selectedItemId) {
+		if (!selectedItemKey) {
 			return { item: undefined, status: undefined, index: -1 };
 		}
 
 		for (const status of STATUSES) {
 			const items = itemsByStatus[status];
-			const index = items.findIndex((e) => e.id === selectedItemId);
+			const index = items.findIndex((e) => e.key === selectedItemKey);
 			if (index !== -1) {
 				return { item: items[index], status, index };
 			}
 		}
 
 		return { item: undefined, status: undefined, index: -1 };
-	}, [selectedItemId, itemsByStatus]);
+	}, [selectedItemKey, itemsByStatus]);
 
 	// Navigate up/down within a column
 	const navigateVertical = useCallback(
