@@ -98,8 +98,12 @@ export function csrfMiddleware(
 			return c.json({ error: 'Forbidden' }, 403);
 		}
 
-		// Get session from Redis (source of truth)
-		const session = await getSession(redis, sessionId);
+		// Get session from Redis (source of truth). A Redis outage means the token
+		// can't be validated, so take the no-session path (403) rather than a 500.
+		const session = await getSession(redis, sessionId).catch((error: unknown) => {
+			console.error('CSRF session lookup error:', error instanceof Error ? error.message : error);
+			return null;
+		});
 		if (!session) {
 			return c.json({ error: 'Forbidden' }, 403);
 		}

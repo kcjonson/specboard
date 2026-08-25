@@ -189,4 +189,37 @@ describe('rate limit middleware (coarse cap)', () => {
 		}
 		expect((await request()).status).toBe(429);
 	});
+
+	it('fails open when Redis rejects (outage must not 500 requests)', async () => {
+		const brokenRedis = {
+			pipeline() {
+				const p = {
+					zremrangebyscore: () => p,
+					zcard: () => p,
+					zadd: () => p,
+					expire: () => p,
+					exec: () => Promise.reject(new Error('Reached the max retries per request limit')),
+				};
+				return p;
+			},
+		} as unknown as Redis;
+
+		const app = new Hono();
+		app.use('*', rateLimitMiddleware(brokenRedis, {
+			defaultLimit: { maxRequests: 5, windowSeconds: 60 },
+		}));
+		app.get('/api/items', (c) => c.json({ ok: true }));
+		app.onError((_error, c) => c.json({ error: 'Internal server error' }, 500));
+
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const res = await app.request('/api/items', {
+				headers: { 'X-Forwarded-For': '1.2.3.4, 10.0.0.1' },
+			});
+			expect(res.status).toBe(200);
+			expect(errorSpy).toHaveBeenCalled();
+		} finally {
+			errorSpy.mockRestore();
+		}
+	});
 });
