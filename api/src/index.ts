@@ -385,7 +385,10 @@ app.post('/api/metrics', async (context) => {
 		let userId: string | undefined;
 		const sessionId = getCookie(context, SESSION_COOKIE_NAME);
 		if (sessionId) {
-			const session = await getSession(redis, sessionId).catch(() => null);
+			const session = await getSession(redis, sessionId).catch((error: unknown) => {
+				console.error('Metrics session lookup error:', error instanceof Error ? error.message : error);
+				return null;
+			});
 			userId = session?.userId;
 		}
 
