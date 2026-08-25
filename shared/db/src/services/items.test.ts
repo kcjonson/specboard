@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { QueryResult } from 'pg';
 import type { Item } from '../types.ts';
 
 vi.mock('../index.ts', () => ({
@@ -38,8 +39,8 @@ function makeItem(overrides: Partial<Item> = {}): Item {
 	} as Item;
 }
 
-function insertResult(overrides: Partial<Item> = {}) {
-	return { rows: [makeItem(overrides)], rowCount: 1 } as never;
+function insertResult(overrides: Partial<Item> = {}): QueryResult<Item> {
+	return { rows: [makeItem(overrides)], rowCount: 1 } as QueryResult<Item>;
 }
 
 beforeEach(() => {
