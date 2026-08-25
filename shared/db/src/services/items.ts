@@ -340,19 +340,23 @@ export async function createItems(
 	parentId: string,
 	items: Array<{ title: string; description?: string; type?: ItemType }>
 ): Promise<ItemResponse[]> {
-	const created: ItemResponse[] = [];
-	// Sequential inserts: each row's MAX(rank) subquery sees the previous row, so ranks
-	// within the batch stay sequential without a pre-read.
-	for (const data of items) {
-		const result = await query<Item>(
-			`INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, rank)
-			 VALUES ($1, $2, $3, $4, $5, 'ready', 'not_started', (SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $2))
-			 RETURNING *`,
-			[projectId, parentId, data.type || 'task', data.title, data.description || null]
-		);
-		created.push({ ...transformItem(result.rows[0]!), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } });
-	}
-	return created;
+	if (items.length === 0) return [];
+
+	// Single statement: one MAX(rank) snapshot plus each row's ordinal keeps ranks
+	// sequential within the batch. The subquery reads the pre-statement snapshot, so
+	// the race posture matches createItem's inline subquery.
+	const result = await query<Item>(
+		`INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, rank)
+		 SELECT $1, $2, v.type, v.title, v.description, 'ready', 'not_started',
+		        (SELECT COALESCE(MAX(rank), 0) FROM items WHERE parent_id = $2) + row_number() OVER (ORDER BY v.ord)
+		 FROM unnest($3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS v(type, title, description, ord)
+		 RETURNING *`,
+		[projectId, parentId, items.map((d) => d.type || 'task'), items.map((d) => d.title), items.map((d) => d.description || null)]
+	);
+
+	return [...result.rows]
+		.sort((a, b) => a.rank - b.rank)
+		.map((row) => ({ ...transformItem(row), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } }));
 }
 
 /** Update an item. Setting subStatus auto-derives board status at key transitions. */
