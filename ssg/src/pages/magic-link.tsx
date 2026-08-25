@@ -10,7 +10,7 @@ export function MagicLinkContent(): JSX.Element {
 	return (
 		<div class="auth-container">
 			<div class="auth-brand">
-				<BrandLogo size={18} href="/" />
+				<BrandLogo size={26} href="/" />
 			</div>
 
 			<h1>Signing You In...</h1>

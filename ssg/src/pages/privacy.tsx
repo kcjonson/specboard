@@ -8,7 +8,7 @@ export function PrivacyContent(): JSX.Element {
 	return (
 		<div class="privacy-container">
 			<div class="auth-brand">
-				<BrandLogo size={18} href="/" />
+				<BrandLogo size={26} href="/" />
 			</div>
 
 			<h1>Privacy &amp; Security</h1>
