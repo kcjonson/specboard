@@ -2,10 +2,15 @@
  * Privacy policy page content component
  */
 import type { JSX } from 'preact';
+import { BrandLogo } from '../components/logo';
 
 export function PrivacyContent(): JSX.Element {
 	return (
 		<div class="privacy-container">
+			<div class="auth-brand">
+				<BrandLogo size={40} href="/" />
+			</div>
+
 			<h1>Privacy &amp; Security</h1>
 			<p class="privacy-updated">Last updated: August 22, 2026</p>
 

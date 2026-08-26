@@ -1,17 +1,7 @@
-.container {
-	display: flex;
-	flex-direction: column;
-	height: 100vh;
-	background: var(--color-background);
-}
-
 .body {
-	/* Fixed height layout - prevents page scroll, enables column scroll */
-	position: fixed;
-	top: var(--header-height);
-	left: 0;
-	right: 0;
-	bottom: 0;
+	/* Fills the page shell's remaining height so each column scrolls itself. */
+	flex: 1;
+	min-height: 0;
 	display: flex;
 	overflow: hidden;
 }

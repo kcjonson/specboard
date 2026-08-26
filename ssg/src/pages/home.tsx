@@ -3,6 +3,7 @@
  * The project system for AI-assisted development
  */
 import type { JSX } from 'preact';
+import { BrandLogo } from '../components/logo';
 
 /**
  * Client-side scripts for:
@@ -89,9 +90,7 @@ export function HomeContent(): JSX.Element {
 		<div class="home-container">
 			{/* Header */}
 			<header class="home-header">
-				<a href="/" class="logo" aria-label="Specboard home">
-					<span class="logo-text">Specboard</span>
-				</a>
+				<BrandLogo size={22} href="/" />
 				<nav class="home-nav" aria-label="Main navigation">
 					<a id="auth-link" href="/login" style="visibility: hidden">Sign In</a>
 					<a href="#early-access" class="btn-primary">Request Access</a>
@@ -100,74 +99,24 @@ export function HomeContent(): JSX.Element {
 
 			{/* Section 1: Hero */}
 			<section class="hero" id="hero">
-				<span class="hero-badge">The project system for AI-assisted development</span>
-				<h1>Write requirements. Set priorities.<br />Your agents handle the rest.</h1>
-				<p class="hero-subtitle">
-					AI agents need context, not copy-paste. Specboard connects your docs and tasks
-					directly to any MCP-compatible agent—so they know what to build and what matters most.
-				</p>
-				<div class="hero-cta">
-					<a href="#early-access" class="btn-primary btn-large">Request Early Access</a>
-					<a href="#how-it-works" class="btn-secondary btn-large">See How It Works</a>
+				<div class="hero-copy">
+					<span class="hero-badge">The project system for AI-assisted development</span>
+					<h1>Write requirements. Set priorities. Your agents handle the rest.</h1>
+					<p class="hero-subtitle">
+						AI agents need context, not copy-paste. Specboard connects your docs and tasks
+						directly to any MCP-compatible agent—so they know what to build and what matters most.
+					</p>
+					<div class="hero-cta">
+						<a href="#early-access" class="btn-primary btn-large">Request Early Access</a>
+						<a href="#how-it-works" class="btn-secondary btn-large">See How It Works</a>
+					</div>
 				</div>
-
-				{/* Connection Diagram */}
-				<div class="hero-visual" aria-hidden="true">
-					<svg class="connection-diagram" viewBox="0 0 800 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-						{/* Docs Panel */}
-						<rect x="50" y="30" width="180" height="140" rx="12" fill="var(--color-surface)" stroke="var(--color-border)" stroke-width="2"/>
-						<rect x="70" y="50" width="24" height="24" rx="4" fill="var(--color-accent-soft)"/>
-						{/* Document icon */}
-						<g transform="translate(74, 54)" stroke="var(--color-accent)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M11 1H4a1.5 1.5 0 0 0-1.5 1.5v12A1.5 1.5 0 0 0 4 16h9a1.5 1.5 0 0 0 1.5-1.5V5.5L11 1z"/>
-							<polyline points="11 1 11 5.5 14.5 5.5"/>
-							<line x1="12" y1="10" x2="5" y2="10"/>
-							<line x1="12" y1="13" x2="5" y2="13"/>
-						</g>
-						<text x="70" y="95" fill="var(--color-text)" font-size="14" font-weight="600">Specs &amp; Docs</text>
-						<rect x="70" y="110" width="140" height="8" rx="4" fill="var(--color-border)"/>
-						<rect x="70" y="125" width="100" height="8" rx="4" fill="var(--color-border)"/>
-						<rect x="70" y="140" width="120" height="8" rx="4" fill="var(--color-border)"/>
-
-						{/* Connection Line 1 */}
-						<path d="M230 100 L310 100" stroke="var(--color-primary)" stroke-width="3" stroke-dasharray="8 4" class="connection-line"/>
-						<circle cx="270" cy="100" r="6" fill="var(--color-primary)" class="connection-dot"/>
-						<text x="255" y="85" fill="var(--color-text-muted)" font-size="11" font-family="var(--font-mono)">MCP</text>
-
-						{/* Kanban Panel */}
-						<rect x="310" y="30" width="180" height="140" rx="12" fill="var(--color-surface)" stroke="var(--color-border)" stroke-width="2"/>
-						<rect x="330" y="50" width="24" height="24" rx="4" fill="var(--color-primary)" opacity="0.15"/>
-						{/* Kanban/grid icon */}
-						<g transform="translate(334, 54)" stroke="var(--color-primary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<rect x="0.5" y="0.5" width="6" height="6" rx="1"/>
-							<rect x="9.5" y="0.5" width="6" height="6" rx="1"/>
-							<rect x="0.5" y="9.5" width="6" height="6" rx="1"/>
-							<rect x="9.5" y="9.5" width="6" height="6" rx="1"/>
-						</g>
-						<text x="330" y="95" fill="var(--color-text)" font-size="14" font-weight="600">Epics &amp; Tasks</text>
-						<rect x="330" y="110" width="60" height="45" rx="4" fill="var(--color-ready)" opacity="0.15" stroke="var(--color-ready)" stroke-width="1"/>
-						<rect x="400" y="110" width="60" height="45" rx="4" fill="var(--color-in-progress)" opacity="0.15" stroke="var(--color-in-progress)" stroke-width="1"/>
-
-						{/* Connection Line 2 */}
-						<path d="M490 100 L570 100" stroke="var(--color-primary)" stroke-width="3" stroke-dasharray="8 4" class="connection-line"/>
-						<circle cx="530" cy="100" r="6" fill="var(--color-primary)" class="connection-dot"/>
-						<text x="515" y="85" fill="var(--color-text-muted)" font-size="11" font-family="var(--font-mono)">MCP</text>
-
-						{/* Agent Panel */}
-						<rect x="570" y="30" width="180" height="140" rx="12" fill="var(--color-surface)" stroke="var(--color-primary)" stroke-width="2"/>
-						<rect x="590" y="50" width="24" height="24" rx="4" fill="var(--color-primary)" opacity="0.15"/>
-						{/* CPU/Agent icon */}
-						<g transform="translate(594, 54)" stroke="var(--color-primary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<rect x="3" y="3" width="10" height="10" rx="1"/>
-							<line x1="8" y1="0" x2="8" y2="3"/>
-							<line x1="8" y1="13" x2="8" y2="16"/>
-							<line x1="0" y1="8" x2="3" y2="8"/>
-							<line x1="13" y1="8" x2="16" y2="8"/>
-						</g>
-						<text x="590" y="95" fill="var(--color-text)" font-size="14" font-weight="600">AI Agent</text>
-						<text x="590" y="115" fill="var(--color-text-muted)" font-size="11">get_document()</text>
-						<text x="590" y="132" fill="var(--color-text-muted)" font-size="11">get_current_work()</text>
-						<text x="590" y="149" fill="var(--color-text-muted)" font-size="11">update_task()</text>
+				<div class="hero-mark" aria-hidden="true">
+					<svg viewBox="0 0 240 200">
+						<polygon points="28,55 76,87 28,119" />
+						<rect class="hero-card" x="108" y="117" width="92" height="30" rx="7" />
+						<rect class="hero-ghost" x="126" y="71" width="92" height="30" rx="7" />
+						<rect class="hero-ghost-far" x="126" y="25" width="92" height="30" rx="7" />
 					</svg>
 				</div>
 			</section>
@@ -176,7 +125,7 @@ export function HomeContent(): JSX.Element {
 			<section class="who-its-for" id="who-its-for">
 				<h2>For everyone in the AI development loop</h2>
 				<div class="audience-grid">
-					<div class="audience-card">
+					<div class="audience-card home-card">
 						<div class="audience-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -195,7 +144,7 @@ export function HomeContent(): JSX.Element {
 							</ul>
 						</div>
 					</div>
-					<div class="audience-card">
+					<div class="audience-card home-card">
 						<div class="audience-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<polyline points="16 18 22 12 16 6"></polyline>
@@ -224,7 +173,7 @@ export function HomeContent(): JSX.Element {
 			<section class="problem" id="problem">
 				<h2>The handoff to AI is broken</h2>
 				<div class="problem-grid">
-					<div class="problem-card">
+					<div class="problem-card home-card">
 						<div class="problem-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<circle cx="12" cy="12" r="10"></circle>
@@ -237,7 +186,7 @@ export function HomeContent(): JSX.Element {
 							write detailed specs that never reach the agent intact.</p>
 						</div>
 					</div>
-					<div class="problem-card">
+					<div class="problem-card home-card">
 						<div class="problem-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -251,7 +200,7 @@ export function HomeContent(): JSX.Element {
 							By the time context reaches the AI, half of it is gone.</p>
 						</div>
 					</div>
-					<div class="problem-card">
+					<div class="problem-card home-card">
 						<div class="problem-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
@@ -265,7 +214,7 @@ export function HomeContent(): JSX.Element {
 							prompt. No structure to know which docs matter for which task.</p>
 						</div>
 					</div>
-					<div class="problem-card">
+					<div class="problem-card home-card">
 						<div class="problem-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
@@ -286,7 +235,7 @@ export function HomeContent(): JSX.Element {
 			<section class="solution" id="solution">
 				<h2>One system. Structured context. Right docs for the right task.</h2>
 				<div class="pillars-grid">
-					<div class="pillar-card">
+					<div class="pillar-card home-card">
 						<div class="pillar-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -301,7 +250,7 @@ export function HomeContent(): JSX.Element {
 							proprietary blocks. Version history through Git.</p>
 						</div>
 					</div>
-					<div class="pillar-card">
+					<div class="pillar-card home-card">
 						<div class="pillar-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<rect x="3" y="3" width="7" height="7"></rect>
@@ -316,7 +265,7 @@ export function HomeContent(): JSX.Element {
 							Agents ask "what should I work on?" and get a real answer.</p>
 						</div>
 					</div>
-					<div class="pillar-card">
+					<div class="pillar-card home-card">
 						<div class="pillar-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
@@ -329,7 +278,7 @@ export function HomeContent(): JSX.Element {
 							→ gets the <em>right</em> context, not <em>all</em> context.</p>
 						</div>
 					</div>
-					<div class="pillar-card">
+					<div class="pillar-card home-card">
 						<div class="pillar-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M12 2L2 7l10 5 10-5-10-5z"></path>
@@ -351,43 +300,71 @@ export function HomeContent(): JSX.Element {
 				<h2>From brief to shipped, with full visibility</h2>
 				<div class="workflow">
 					<div class="workflow-step">
-						<div class="step-number">1</div>
-						<div class="step-role">Product</div>
+						<div class="step-header">
+							<div class="step-number">1</div>
+							<div class="step-role">Product</div>
+						</div>
 						<h3>Write the spec</h3>
 						<p>Create requirements in the documentation editor. Markdown files,
 						version-controlled, human-readable.</p>
 					</div>
-					<div class="workflow-connector" aria-hidden="true"></div>
 					<div class="workflow-step">
-						<div class="step-number">2</div>
-						<div class="step-role">Product</div>
+						<div class="step-header">
+							<div class="step-number">2</div>
+							<div class="step-role">Product</div>
+						</div>
 						<h3>Set priorities</h3>
 						<p>Create epics on the kanban board. Drag to rank what matters most.
 						Link epics to their requirement docs.</p>
 					</div>
-					<div class="workflow-connector" aria-hidden="true"></div>
 					<div class="workflow-step">
-						<div class="step-number">3</div>
-						<div class="step-role">Agent</div>
+						<div class="step-header">
+							<div class="step-number">3</div>
+							<div class="step-role">Agent</div>
+						</div>
 						<h3>Agent gets context</h3>
 						<p>Agent connects via MCP. Queries requirements directly.
 						No copy-paste. No re-explaining.</p>
 					</div>
-					<div class="workflow-connector" aria-hidden="true"></div>
 					<div class="workflow-step">
-						<div class="step-number">4</div>
-						<div class="step-role">Dev + Agent</div>
+						<div class="step-header">
+							<div class="step-number">4</div>
+							<div class="step-role">Dev + Agent</div>
+						</div>
 						<h3>Work happens</h3>
 						<p>Agent breaks down epics into tasks. Implements, tests, iterates.
 						Progress visible to everyone.</p>
 					</div>
-					<div class="workflow-connector" aria-hidden="true"></div>
 					<div class="workflow-step">
-						<div class="step-number">5</div>
-						<div class="step-role">Product</div>
+						<div class="step-header">
+							<div class="step-number">5</div>
+							<div class="step-role">Product</div>
+						</div>
 						<h3>Review & approve</h3>
 						<p>Review the PR. Mark epic complete. Agent can't close the loop—humans
 						stay in control.</p>
+					</div>
+				</div>
+				<div class="terminal" aria-hidden="true">
+					<div class="terminal-line">
+						<span class="terminal-prompt">▸</span>
+						<span class="terminal-strong">claude &gt; what should I work on next?</span>
+					</div>
+					<div class="terminal-line">
+						<span class="terminal-prompt terminal-prompt-hidden">▸</span>
+						<span>reading specboard — 2 epics ready, checkout flow is top priority</span>
+					</div>
+					<div class="terminal-line">
+						<span class="terminal-prompt terminal-prompt-hidden">▸</span>
+						<span>pulling spec: <span class="terminal-file">checkout-flow.md</span> · 4 requirements, 2 open comments</span>
+					</div>
+					<div class="terminal-line">
+						<span class="terminal-prompt terminal-prompt-hidden">▸</span>
+						<span class="terminal-chip"><span class="terminal-chip-dot"></span>Checkout flow → In Progress</span>
+					</div>
+					<div class="terminal-line">
+						<span class="terminal-prompt">▸</span>
+						<span class="terminal-cursor"></span>
 					</div>
 				</div>
 			</section>
@@ -439,7 +416,7 @@ export function HomeContent(): JSX.Element {
 			<section class="control" id="control">
 				<h2>AI assists. Humans decide.</h2>
 				<div class="control-grid">
-					<div class="control-point">
+					<div class="control-point home-card">
 						<div class="control-icon">
 							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M12 20h9"></path>
@@ -451,7 +428,7 @@ export function HomeContent(): JSX.Element {
 							<p>They define what gets built.</p>
 						</div>
 					</div>
-					<div class="control-point">
+					<div class="control-point home-card">
 						<div class="control-icon">
 							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<line x1="8" y1="6" x2="21" y2="6"></line>
@@ -467,7 +444,7 @@ export function HomeContent(): JSX.Element {
 							<p>They decide what matters most.</p>
 						</div>
 					</div>
-					<div class="control-point">
+					<div class="control-point home-card">
 						<div class="control-icon">
 							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
@@ -478,7 +455,7 @@ export function HomeContent(): JSX.Element {
 							<p>They create subtasks and submit PRs.</p>
 						</div>
 					</div>
-					<div class="control-point">
+					<div class="control-point home-card">
 						<div class="control-icon">
 							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<polyline points="9 11 12 14 22 4"></polyline>
@@ -490,7 +467,7 @@ export function HomeContent(): JSX.Element {
 							<p>Agents can't mark epics "done."</p>
 						</div>
 					</div>
-					<div class="control-point">
+					<div class="control-point home-card">
 						<div class="control-icon">
 							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -502,7 +479,7 @@ export function HomeContent(): JSX.Element {
 							<p>No more "that's not what I meant."</p>
 						</div>
 					</div>
-					<div class="control-point">
+					<div class="control-point home-card">
 						<div class="control-icon">
 							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<circle cx="12" cy="12" r="4"></circle>
@@ -526,7 +503,7 @@ export function HomeContent(): JSX.Element {
 					and data. We didn't retrofit MCP onto an existing product—we built MCP-first from day one.
 				</p>
 				<div class="mcp-content">
-					<div class="mcp-capabilities">
+					<div class="mcp-capabilities home-card">
 						<h3>What your agent can do</h3>
 						<ul class="capability-list">
 							<li><code>get_epic</code> — Read epic details and linked specs</li>
@@ -537,7 +514,7 @@ export function HomeContent(): JSX.Element {
 							<li><code>add_progress_note</code> — Log activity for visibility</li>
 						</ul>
 					</div>
-					<div class="mcp-note">
+					<div class="mcp-note home-card">
 						<p>Works with any MCP-compatible agent: Claude Code, Cursor, Windsurf,
 						and any tool that supports the protocol.</p>
 					</div>
@@ -548,7 +525,7 @@ export function HomeContent(): JSX.Element {
 			<section class="data-control" id="data">
 				<h2>Your data, your control</h2>
 				<div class="data-points">
-					<div class="data-point">
+					<div class="data-point home-card">
 						<div class="data-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<circle cx="12" cy="12" r="4"></circle>
@@ -561,7 +538,7 @@ export function HomeContent(): JSX.Element {
 							<p>Your docs live in a git repository you control. Full version history built in.</p>
 						</div>
 					</div>
-					<div class="data-point">
+					<div class="data-point home-card">
 						<div class="data-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -576,7 +553,7 @@ export function HomeContent(): JSX.Element {
 							edit them with any tool.</p>
 						</div>
 					</div>
-					<div class="data-point">
+					<div class="data-point home-card">
 						<div class="data-icon">
 							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -600,7 +577,7 @@ export function HomeContent(): JSX.Element {
 					We're rolling out to select teams. Join the waitlist.
 				</p>
 
-				<form id="early-access-form" class="early-access-form">
+				<form id="early-access-form" class="early-access-form home-card">
 					<div id="form-error" class="form-error hidden"></div>
 					<div id="form-success" class="form-success hidden">
 						<div class="success-icon">
@@ -668,25 +645,25 @@ export function HomeContent(): JSX.Element {
 
 				<div class="early-access-benefits">
 					<div class="benefit">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<polyline points="20 6 9 17 4 12"></polyline>
 						</svg>
 						<span>Priority onboarding</span>
 					</div>
 					<div class="benefit">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<polyline points="20 6 9 17 4 12"></polyline>
 						</svg>
 						<span>Direct founder access</span>
 					</div>
 					<div class="benefit">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<polyline points="20 6 9 17 4 12"></polyline>
 						</svg>
 						<span>Shape the roadmap</span>
 					</div>
 					<div class="benefit">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<polyline points="20 6 9 17 4 12"></polyline>
 						</svg>
 						<span>Founder pricing forever</span>
@@ -696,6 +673,11 @@ export function HomeContent(): JSX.Element {
 
 			{/* Section 11: Final CTA */}
 			<section class="final-cta">
+				<svg class="final-cta-mark" viewBox="0 0 240 150" aria-hidden="true">
+					<polygon points="28,30 76,62 28,94" />
+					<rect class="final-cta-ghost" x="126" y="46" width="92" height="30" rx="7" />
+					<rect x="108" y="92" width="92" height="30" rx="7" />
+				</svg>
 				<h2>Give your AI agents a proper brief</h2>
 				<p>Stop copy-pasting context. Start shipping what you actually meant.</p>
 				<a href="#early-access" class="btn-primary btn-large">Request Early Access</a>

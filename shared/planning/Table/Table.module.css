@@ -1,9 +1,10 @@
 .wrapper {
 	flex: 1;
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
 	padding: var(--space-4);
-	overflow: auto;
+	overflow: hidden;
 }
 
 .actions {
@@ -29,11 +30,14 @@
 	background: var(--color-surface-hover);
 }
 
+/* Owns the view's scrolling: rows scroll under the pinned column header, and
+   overflow:auto still clips them to the rounded border. */
 .table {
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);
-	overflow: hidden;
 	background: var(--color-card);
+	min-height: 0;
+	overflow: auto;
 }
 
 /* Shared grid template for every row (header, group header, epic, task). */
@@ -55,6 +59,9 @@
 	color: var(--color-text-muted);
 	border-bottom: 1px solid var(--color-border);
 	background: var(--color-surface);
+	position: sticky;
+	top: 0;
+	z-index: 1;
 }
 
 /* Status section header — the clear divider between In Progress / Ready / Done. */

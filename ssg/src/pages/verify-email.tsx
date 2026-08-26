@@ -2,10 +2,15 @@
  * Verify email page - shown after signup
  */
 import type { JSX } from 'preact';
+import { BrandLogo } from '../components/logo';
 
 export function VerifyEmailContent(): JSX.Element {
 	return (
 		<div class="auth-container">
+			<div class="auth-brand">
+				<BrandLogo size={40} href="/" />
+			</div>
+
 			<h1>Check Your Email</h1>
 
 			<div id="message" class="message-box hidden" />

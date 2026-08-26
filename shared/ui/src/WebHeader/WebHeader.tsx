@@ -4,6 +4,7 @@ import { getCookie, setCookie } from '@specboard/core/cookies';
 import { fetchClient } from '@specboard/fetch';
 import { useModel, UserModel } from '@specboard/models';
 import { UserMenu } from '../UserMenu/UserMenu';
+import { Logo } from '../Logo/Logo';
 import styles from './WebHeader.module.css';
 
 /** Navigation tab labels - use these for activeTab prop */
@@ -84,6 +85,8 @@ export function WebHeader({
 	return (
 		<header class={`${styles.header} ${className || ''}`}>
 			<div class={styles.left}>
+				<Logo size={16} href="/projects" />
+				<span class={styles.brandDivider} />
 				{projectSlug ? (
 					<>
 						<span class={styles.projectName}>{projectName ?? ''}</span>
