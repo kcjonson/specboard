@@ -292,9 +292,12 @@ export interface UpdateProjectInput {
 
 /** Raised when a requested slug or key is already used by another of the owner's projects. */
 export class ProjectIdentifierTakenError extends Error {
-	constructor(public readonly field: 'slug' | 'key') {
+	readonly field: 'slug' | 'key';
+
+	constructor(field: 'slug' | 'key') {
 		super(`Project ${field} is already in use`);
 		this.name = 'ProjectIdentifierTakenError';
+		this.field = field;
 	}
 }
 

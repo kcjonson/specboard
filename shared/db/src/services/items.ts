@@ -123,9 +123,12 @@ export interface UpdateItemInput {
  * instead of an error, so every write re-checks the outcome and throws this.
  */
 export class ParentItemNotFoundError extends Error {
-	constructor(public readonly parentNumber: number) {
+	readonly parentNumber: number;
+
+	constructor(parentNumber: number) {
 		super(`No item numbered ${parentNumber} in this project`);
 		this.name = 'ParentItemNotFoundError';
+		this.parentNumber = parentNumber;
 	}
 }
 

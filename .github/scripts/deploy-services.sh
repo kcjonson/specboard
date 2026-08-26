@@ -16,6 +16,8 @@ IMAGE_TAG="${1:?Usage: deploy-services.sh <image-tag>}"
 
 echo "Deploying services with image tag: $IMAGE_TAG"
 
+declare -A REGISTERED_ARNS
+
 deploy_service() {
   local SERVICE=$1
   local TMPFILE
@@ -42,6 +44,7 @@ deploy_service() {
     --query 'taskDefinition.taskDefinitionArn' --output text --region "$AWS_REGION")
 
   echo "  Registered: $NEW_ARN"
+  REGISTERED_ARNS[$SERVICE]=$NEW_ARN
 
   # Update service to use the new task definition
   aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
@@ -91,6 +94,22 @@ if ! aws ecs wait services-stable \
     --cluster "$CLUSTER" \
     --services $SERVICES_TO_WAIT \
     --region "$AWS_REGION"
+fi
+
+# services-stable is also satisfied by a completed circuit-breaker rollback, so
+# confirm each service actually ended up on the task definition registered above.
+ROLLED_BACK=""
+for SERVICE in $SERVICES_TO_WAIT; do
+  CURRENT_ARN=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+    --query 'services[0].taskDefinition' --output text --region "$AWS_REGION")
+  if [ "$CURRENT_ARN" != "${REGISTERED_ARNS[$SERVICE]}" ]; then
+    echo "ERROR: $SERVICE is running $CURRENT_ARN, expected ${REGISTERED_ARNS[$SERVICE]} (deployment rolled back)"
+    ROLLED_BACK="$ROLLED_BACK $SERVICE"
+  fi
+done
+if [ -n "$ROLLED_BACK" ]; then
+  echo "Deployment failed for:$ROLLED_BACK"
+  exit 1
 fi
 
 echo "Deployed to: http://$ALB_DNS"
