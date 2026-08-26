@@ -285,7 +285,18 @@
 
 .audience-card {
 	display: flex;
+	flex-direction: column;
 	gap: 1rem;
+}
+
+.audience-header {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+.audience-header h3 {
+	margin: 0;
 }
 
 .audience-icon,
