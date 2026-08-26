@@ -44,7 +44,7 @@ deploy_service() {
     --query 'taskDefinition.taskDefinitionArn' --output text --region "$AWS_REGION")
 
   echo "  Registered: $NEW_ARN"
-  REGISTERED_ARNS[$SERVICE]=$NEW_ARN
+  REGISTERED_ARNS["$SERVICE"]=$NEW_ARN
 
   # Update service to use the new task definition
   aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
@@ -102,8 +102,8 @@ ROLLED_BACK=""
 for SERVICE in $SERVICES_TO_WAIT; do
   CURRENT_ARN=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
     --query 'services[0].taskDefinition' --output text --region "$AWS_REGION")
-  if [ "$CURRENT_ARN" != "${REGISTERED_ARNS[$SERVICE]}" ]; then
-    echo "ERROR: $SERVICE is running $CURRENT_ARN, expected ${REGISTERED_ARNS[$SERVICE]} (deployment rolled back)"
+  if [ "$CURRENT_ARN" != "${REGISTERED_ARNS["$SERVICE"]}" ]; then
+    echo "ERROR: $SERVICE is running $CURRENT_ARN, expected ${REGISTERED_ARNS["$SERVICE"]} (deployment rolled back)"
     ROLLED_BACK="$ROLLED_BACK $SERVICE"
   fi
 done
