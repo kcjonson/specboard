@@ -6,6 +6,7 @@
 		"moduleResolution": "bundler",
 		"resolveJsonModule": true,
 		"isolatedModules": true,
+		"erasableSyntaxOnly": true,
 		"esModuleInterop": true,
 		"allowImportingTsExtensions": true,
 		"strict": true,
