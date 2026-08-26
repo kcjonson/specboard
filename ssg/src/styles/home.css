@@ -314,7 +314,8 @@
 
 .audience-card ul {
 	list-style: none;
-	margin: 0;
+	/* Icon (24px) + header gap (12px): list aligns with the heading text */
+	margin: 0 0 0 2.25rem;
 	padding: 0;
 	display: flex;
 	flex-direction: column;
