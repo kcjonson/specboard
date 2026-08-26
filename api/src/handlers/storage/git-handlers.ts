@@ -217,10 +217,10 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 
 /**
  * POST /api/projects/:projectSlug/git/restore
- * Restore a deleted file from git
+ * Restore a file to its committed version.
  *
- * Only available for local mode projects. Cloud mode projects should
- * use sync to get files back from GitHub.
+ * Local mode restores from git; cloud mode discards the file's pending
+ * change, leaving the committed content in place.
  */
 export async function handleRestore(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
