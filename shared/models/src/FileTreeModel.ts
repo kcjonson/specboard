@@ -239,6 +239,17 @@ export class FileTreeModel extends Model {
 	 * @param currentFilePath - Optional path to currently open file (will expand to show it)
 	 */
 	async initialize(projectSlug: string, projectId: string, currentFilePath?: string): Promise<void> {
+		// The id is resolved asynchronously, so the first call often arrives with '' and a
+		// second follows with the real one. Comparing the slug alone would early-return on
+		// that second call and leave projectId empty, so expansion state would never
+		// persist — and the stored expansion would never be restored, because the first
+		// load read it under the empty key. Adopt the id and reload the tree with it.
+		if (this.projectSlug === projectSlug && this.projectId !== projectId) {
+			this.projectId = projectId;
+			await this.loadTree(currentFilePath);
+			return;
+		}
+
 		if (this.projectSlug === projectSlug && !currentFilePath) return;
 
 		// If same project but new file path, just expand to it

@@ -38,12 +38,17 @@ function words(name: string): string[] {
  * single hyphens, trimmed and capped. Returns `project` when nothing usable remains.
  */
 export function slugifyProjectName(name: string): string {
+	// The trims below match a single `-`, not `-+`, because the collapse on the line
+	// above has already reduced every run of non-alphanumerics to one hyphen. `-+$` on
+	// an uncollapsed string is quadratic — it retries from each position in a long run
+	// of hyphens (measured: ~50s for 200k) — so the single-character form keeps the
+	// linearity structural rather than resting on the previous line staying put.
 	const slug = name
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
+		.replace(/^-|-$/g, '')
 		.slice(0, MAX_PROJECT_SLUG_LENGTH)
-		.replace(/-+$/, '');
+		.replace(/-$/, '');
 	return slug || FALLBACK_SLUG;
 }
 
@@ -107,7 +112,9 @@ export function withSuffix(base: string, attempt: number, style: 'slug' | 'key')
 	if (style === 'key') {
 		return `${base.slice(0, MAX_PROJECT_KEY_LENGTH - suffix.length)}${suffix}`;
 	}
-	const stem = base.slice(0, MAX_PROJECT_SLUG_LENGTH - suffix.length - 1).replace(/-+$/, '');
+	// Single `-` for the same reason as slugifyProjectName: a valid slug never contains
+	// two in a row, so matching `-+` here would only add backtracking, never coverage.
+	const stem = base.slice(0, MAX_PROJECT_SLUG_LENGTH - suffix.length - 1).replace(/-$/, '');
 	return `${stem}-${suffix}`;
 }
 

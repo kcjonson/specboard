@@ -256,7 +256,7 @@ export function Editor(props: RouteProps): JSX.Element {
 				filePath: path,
 			});
 		}
-	}, [projectSlug, documentModel, checkLinkedEpic]);
+	}, [projectSlug, projectId, documentModel, checkLinkedEpic]);
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// Auto-save mechanism (defined before handleFileSelect which depends on it)
@@ -264,23 +264,25 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Perform server save
 	const performServerSave = useCallback(async (): Promise<boolean> => {
-		if (!documentModel.filePath || !documentModel.projectId) return true;
+		if (!documentModel.filePath) return true;
 		if (!documentModel.isDirty) return true;
 
+		// `pid` is the project's immutable id and keys localStorage ONLY. API paths are
+		// addressed by slug — sending the UUID here 404s against the slug-only routes.
 		const { projectId: pid, filePath: fpath, content, comments } = documentModel;
 
 		setIsSaving(true);
 		try {
 			const markdown = toMarkdown(content as Descendant[], comments);
 			await fetchClient.put(
-				`/api/projects/${pid}/files?path=${encodeURIComponent(fpath)}`,
+				`/api/projects/${projectSlug}/files?path=${encodeURIComponent(fpath)}`,
 				{ content: markdown }
 			);
 			documentModel.markSaved();
 
 			// Clear localStorage on successful server save
 			try {
-				clearLocalStorage(pid, fpath);
+				clearLocalStorage(pid ?? '', fpath);
 			} catch (storageErr) {
 				console.warn('Failed to clear local draft from localStorage:', storageErr);
 			}
@@ -298,7 +300,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			console.error('Server save failed:', errorMessage);
 
 			// Ensure localStorage has latest changes as fallback
-			saveToLocalStorage(pid, fpath, content, comments);
+			saveToLocalStorage(pid ?? '', fpath, content, comments);
 
 			// Update error state
 			saveRetryCount.current++;
@@ -323,7 +325,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		} finally {
 			setIsSaving(false);
 		}
-	}, [documentModel, gitStatusModel]);
+	}, [projectSlug, documentModel, gitStatusModel]);
 
 	// Handle file selection from FileBrowser
 	const handleFileSelect = useCallback(async (path: string) => {
@@ -353,7 +355,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			}
 			documentModel.updateFilePath(newPath);
 		}
-	}, [projectSlug, documentModel]);
+	}, [projectId, documentModel]);
 
 	// Handle restore from recovery dialog
 	const handleRestore = useCallback(() => {
@@ -625,7 +627,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			if (projectId) saveSelectedFile(projectId, null);
 			setLinkedEpicKey(undefined);
 		}
-	}, [documentModel, projectSlug]);
+	}, [documentModel, projectId]);
 
 	// Handle receiving the renameFile function from FileBrowser
 	const handleRenameFileRef = useCallback((renameFile: (path: string, newFilename: string) => Promise<string>) => {
@@ -657,7 +659,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			// (File operations typically succeed, so a dedicated UI component isn't warranted)
 			alert(`Failed to rename file: ${error.message}`);
 		}
-	}, [projectSlug, documentModel]);
+	}, [projectSlug, projectId, documentModel]);
 
 	// Handle applying AI-suggested edits from ChatSidebar
 	const handleApplyEdit = useCallback((newMarkdown: string) => {

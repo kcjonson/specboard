@@ -12,6 +12,15 @@ const STORAGE_PREFIX = 'doc.';
 /**
  * Get storage interface, handling SSR and restricted environments.
  */
+/**
+ * Whether this document can be persisted locally. An empty project id means the
+ * project hasn't resolved yet: skip the draft rather than writing under a key that
+ * belongs to no project (and that nothing would ever read back).
+ */
+function canPersist(projectId: string): boolean {
+	return projectId !== '';
+}
+
 function getStorage(): typeof globalThis.localStorage | null {
 	try {
 		const storage = globalThis.localStorage;
@@ -57,6 +66,7 @@ export function saveToLocalStorage(
 	content: SlateContent,
 	comments?: DocumentComment[]
 ): void {
+	if (!canPersist(projectId)) return;
 	const storage = getStorage();
 	if (!storage) return;
 
@@ -93,6 +103,7 @@ export function loadFromLocalStorage(
 	projectId: string,
 	filePath: string
 ): LoadedPersistedDocument | null {
+	if (!canPersist(projectId)) return null;
 	const storage = getStorage();
 	if (!storage) return null;
 
@@ -123,6 +134,7 @@ export function hasPersistedContent(
 	projectId: string,
 	filePath: string
 ): boolean {
+	if (!canPersist(projectId)) return false;
 	const storage = getStorage();
 	if (!storage) return false;
 
@@ -141,6 +153,7 @@ export function clearLocalStorage(
 	projectId: string,
 	filePath: string
 ): void {
+	if (!canPersist(projectId)) return;
 	const storage = getStorage();
 	if (!storage) return;
 
@@ -163,6 +176,7 @@ export function getPersistedTimestamp(
 	projectId: string,
 	filePath: string
 ): number | null {
+	if (!canPersist(projectId)) return null;
 	const storage = getStorage();
 	if (!storage) return null;
 
