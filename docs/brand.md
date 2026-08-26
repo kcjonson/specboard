@@ -13,7 +13,7 @@ Feel shorthand: a craft tool. Unpretentious, durable, fast, crisp, agent-ready, 
 | [brand/logomark.svg](brand/logomark.svg) | Mark on light surfaces (`#3b82f6`) |
 | [brand/logomark-dark.svg](brand/logomark-dark.svg) | Mark on dark surfaces (`#60a5fa`) |
 | [brand/lockup.svg](brand/lockup.svg) | The lockup, fully self-contained |
-| [brand/favicon.svg](brand/favicon.svg) | Chevron-only favicon, theme-aware (canonical copy ships at `web/public/favicon.svg`) |
+| [brand/favicon.svg](brand/favicon.svg) | Favicon: chevron + card sliver off the right edge, theme-aware (canonical copy ships at `web/public/favicon.svg`) |
 | [brand/permanent-marker.woff2](brand/permanent-marker.woff2) | Source font for regenerating the wordmark outlines (Apache-2.0, see LICENSE alongside) |
 
 All SVG deliverables are self-contained: the wordmark is outlined vector paths, never live font text. In code, don't paste SVG: use the `Logo` (lockup) / `LogoMark` (mark) components from `@specboard/ui` in the SPA, and `BrandLogo` from `ssg/src/components/logo.tsx` on SSG pages. Each form renders as a single SVG; the shared geometry lives in `shared/ui/src/Logo/wordmark.ts` and theme colors come from tokens.
