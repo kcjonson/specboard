@@ -42,6 +42,7 @@ export function ChildRow({ child, onOpen }: ChildRowProps): JSX.Element {
 		>
 			<span class={styles.colTitle} role="cell">
 				<span class={styles.chevronSpacer} />
+				<span class={styles.itemKey}>{child.key}</span>
 				<span class={styles.taskTitle}>{child.title}</span>
 			</span>
 			<span class={styles.colType} role="cell">

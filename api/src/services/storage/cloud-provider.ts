@@ -58,7 +58,24 @@ export class CloudStorageProvider implements StorageProvider {
 		relativePath: string,
 		options?: ListDirectoryOptions
 	): Promise<FileEntry[]> {
-		const files = await this.client.listFiles(this.projectId);
+		const [committed, pending] = await Promise.all([
+			this.client.listFiles(this.projectId),
+			this.client.listPendingChanges(this.projectId, this.userId),
+		]);
+
+		// Overlay pending creations so new and renamed files are visible before
+		// commit. Deleted paths stay listed — the tree marks them from git status.
+		const byPath = new Map(committed.map((f) => [f.path, f]));
+		for (const change of pending) {
+			if (change.action === 'deleted' || byPath.has(change.path)) continue;
+			byPath.set(change.path, {
+				path: change.path,
+				contentHash: '',
+				sizeBytes: 0,
+				syncedAt: change.updatedAt,
+			});
+		}
+		const files = Array.from(byPath.values());
 
 		// Build a virtual directory listing from flat file list
 		// Storage paths don't have leading slashes, but API paths do (e.g., "/docs/file.md")
@@ -155,13 +172,21 @@ export class CloudStorageProvider implements StorageProvider {
 		// Normalize path: API uses leading slash, storage doesn't
 		const storagePath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
 
-		// Store as pending change (autosave)
+		const committed = await this.client.getFile(this.projectId, storagePath);
+
+		// Writing the committed content back clears the pending change instead of
+		// journaling a no-op that would keep the file dirty until the next commit.
+		if (committed && committed.content === content) {
+			await this.client.deletePendingChange(this.projectId, this.userId, storagePath);
+			return;
+		}
+
 		await this.client.putPendingChange(
 			this.projectId,
 			this.userId,
 			storagePath,
 			content,
-			'modified'
+			committed ? 'modified' : 'created'
 		);
 	}
 
@@ -169,7 +194,15 @@ export class CloudStorageProvider implements StorageProvider {
 		// Normalize path: API uses leading slash, storage doesn't
 		const storagePath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
 
-		// Store as pending deletion
+		// A file that was never committed only exists as a pending creation, so
+		// deleting it just discards that — a 'deleted' journal entry would name a
+		// path no commit contains.
+		const committed = await this.client.getFile(this.projectId, storagePath);
+		if (!committed) {
+			await this.client.deletePendingChange(this.projectId, this.userId, storagePath);
+			return;
+		}
+
 		await this.client.putPendingChange(
 			this.projectId,
 			this.userId,
@@ -185,26 +218,13 @@ export class CloudStorageProvider implements StorageProvider {
 	}
 
 	async rename(oldPath: string, newPath: string): Promise<void> {
-		// Normalize paths: API uses leading slash, storage doesn't
-		const storageOldPath = oldPath.startsWith('/') ? oldPath.slice(1) : oldPath;
-		const storageNewPath = newPath.startsWith('/') ? newPath.slice(1) : newPath;
-
-		// Read old file, write to new path, delete old
+		// writeFile/deleteFile carry the journal semantics: renaming back to a
+		// committed path clears its pending change, and renaming away from a
+		// never-committed path discards the creation rather than recording a
+		// phantom deletion.
 		const content = await this.readFile(oldPath);
-		await this.client.putPendingChange(
-			this.projectId,
-			this.userId,
-			storageNewPath,
-			content,
-			'created'
-		);
-		await this.client.putPendingChange(
-			this.projectId,
-			this.userId,
-			storageOldPath,
-			null,
-			'deleted'
-		);
+		await this.writeFile(newPath, content);
+		await this.deleteFile(oldPath);
 	}
 
 	async exists(relativePath: string): Promise<boolean> {

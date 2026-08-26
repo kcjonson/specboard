@@ -249,15 +249,9 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 
 	const repo = project.repository as RepositoryConfig | Record<string, never>;
 
-	// Cloud mode: restore from git doesn't apply - use sync instead
-	if (isCloudRepository(repo)) {
-		return context.json({
-			error: 'Restore is not available for cloud projects. Use sync to get the latest files from GitHub.',
-		}, 400);
-	}
-
-	// Must be local mode
-	if (!isLocalRepository(repo)) {
+	// Local mode restores from git; cloud mode discards the pending change,
+	// restoring the committed version. Both go through provider.restore().
+	if (!isLocalRepository(repo) && !isCloudRepository(repo)) {
 		return context.json({ error: 'Project has no storage configured' }, 400);
 	}
 
