@@ -261,6 +261,28 @@ export function Planning(props: RouteProps): JSX.Element {
 		navigate(boardUrl(), { replace: true });
 	}, [boardUrl]);
 
+	// The board mounts useKeyboardNavigation, whose Escape clears the selection and
+	// dismisses the drawer with it. The table mounts no keyboard hook, so Escape is
+	// wired here for that view; the drawer's own handler stops propagation when
+	// focus is inside it, so this only fires with focus out on the table.
+	useEffect(() => {
+		if (view !== 'table') return;
+		const onKeyDown = (e: KeyboardEvent): void => {
+			if (e.key !== 'Escape' || !openItemKey || isNewItemDialogOpen) return;
+			const target = e.target as HTMLElement;
+			if (
+				target.tagName === 'INPUT' ||
+				target.tagName === 'TEXTAREA' ||
+				target.tagName === 'SELECT' ||
+				target.isContentEditable
+			) return;
+			setSelectedItemKey(undefined);
+			handleCloseDrawer();
+		};
+		document.addEventListener('keydown', onKeyDown);
+		return () => document.removeEventListener('keydown', onKeyDown);
+	}, [view, openItemKey, isNewItemDialogOpen, handleCloseDrawer]);
+
 	const handleDeleteItem = useCallback((item: ItemModel): void => {
 		const inCollection = items.find((i) => i.key === item.key);
 		if (inCollection) {
