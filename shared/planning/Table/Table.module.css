@@ -228,3 +228,12 @@
 	font-size: var(--text-sm);
 	border-top: 1px solid var(--color-border);
 }
+
+/* The item's key (SB-345) — the same string that addresses it in the URL. */
+.itemKey {
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 12px;
+	color: var(--color-text-muted);
+	white-space: nowrap;
+	margin-right: 8px;
+}

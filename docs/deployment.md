@@ -92,6 +92,30 @@ order and tracked in the `schema_migrations` table.
 
 > Run migrations locally with `docker compose exec api sh -c 'cd /app/shared/db && npm run migrate'`.
 
+### Migrations that are not rolling-deploy safe
+
+The `migrate` job runs **before** `deploy-services`, and the service keeps old tasks
+serving through the rollout (`minHealthyPercent: 50`). So for the whole rollout, the
+*previous* release's code is running against the *new* schema. That is fine for a
+migration that only adds nullable columns or indexes, and broken for one that adds a
+constraint the old code violates.
+
+`023_project_slug_item_key.sql` is the first of the latter kind: it makes
+`projects.slug`/`key` NOT NULL and requires `items.number`, none of which the previous
+release writes. **Every project create and every item create fails for the duration of
+the rollout.** Reads are unaffected.
+
+Before adding a migration, ask whether the previous release's writes still satisfy it:
+
+- **Yes** — normal deploy, nothing to do.
+- **No** — either deploy it in a window where write failures are acceptable, or split it
+  expand/contract: one migration adding nullable columns plus a backfill, then the code,
+  then a later migration adding the constraints.
+
+Note also that a rollback redeploys old code **without** reverting the schema, so rolling
+back past such a migration lands in the same broken state — and `/api/health` is static,
+so it reports green while writes fail.
+
 ---
 
 ## Rollback

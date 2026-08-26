@@ -8,13 +8,16 @@ import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
 import {
 	getProjects,
-	getProject,
+	getProjectBySlug,
+	resolveProjectSlug,
 	createProject,
 	updateProject,
 	deleteProject,
+	ProjectIdentifierTakenError,
 } from '@specboard/db';
+import { isValidProjectSlug, isValidProjectKey } from '@specboard/core/identifiers';
 import { projectResponseToApi } from '../transform.ts';
-import { isValidUUID, isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
+import { isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
 import { startGitHubInitialSync } from './github-sync.ts';
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
@@ -53,21 +56,21 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const id = context.req.param('id');
+	const slug = context.req.param('projectSlug');
 
-	if (!isValidUUID(id)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	if (!isValidProjectSlug(slug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
 
 	// Support fields filter for lightweight queries (e.g., ?fields=name)
-	// Note: 'id' is always included in filtered responses for client convenience
+	// Note: the identifiers (id, slug, key) are always included in filtered responses
 	const fieldsParam = context.req.query('fields');
 	const requestedFields = fieldsParam
-		? fieldsParam.split(',').map((f) => f.trim()).filter((f) => f !== 'id')
+		? fieldsParam.split(',').map((f) => f.trim()).filter((f) => f !== 'id' && f !== 'slug' && f !== 'key')
 		: null;
 
 	try {
-		const project = await getProject(id, userId);
+		const project = await getProjectBySlug(slug, userId);
 
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
@@ -77,7 +80,7 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 
 		// If specific fields requested, return only those
 		if (requestedFields) {
-			const filtered: Record<string, unknown> = { id: fullResponse.id };
+			const filtered: Record<string, unknown> = { id: fullResponse.id, slug: fullResponse.slug, key: fullResponse.key };
 			for (const field of requestedFields) {
 				if (field in fullResponse) {
 					filtered[field] = fullResponse[field as keyof typeof fullResponse];
@@ -218,15 +221,29 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const id = context.req.param('id');
+	const currentSlug = context.req.param('projectSlug');
 
-	if (!isValidUUID(id)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	if (!isValidProjectSlug(currentSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
 
 	try {
 		const body = await context.req.json();
-		const { name, description, system_prompt } = body;
+		const { name, description, system_prompt, slug, key } = body;
+
+		if (slug !== undefined && !isValidProjectSlug(slug)) {
+			return context.json(
+				{ error: 'Slug must be lowercase letters, numbers, and single hyphens' },
+				400
+			);
+		}
+
+		if (key !== undefined && !isValidProjectKey(key)) {
+			return context.json(
+				{ error: 'Key must be 2-10 characters: an uppercase letter followed by uppercase letters or digits' },
+				400
+			);
+		}
 
 		if (name !== undefined && (typeof name !== 'string' || !isValidTitle(name))) {
 			return context.json(
@@ -266,10 +283,17 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 			? system_prompt.replace(CONTROL_CHAR_REGEX, '')
 			: undefined;
 
-		const project = await updateProject(id, userId, {
+		const resolved = await resolveProjectSlug(currentSlug, userId);
+		if (!resolved) {
+			return context.json({ error: 'Project not found' }, 404);
+		}
+
+		const project = await updateProject(resolved.id, userId, {
 			name,
 			description,
 			systemPrompt: sanitizedSystemPrompt,
+			slug,
+			key,
 		});
 
 		if (!project) {
@@ -278,6 +302,9 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 
 		return context.json(projectResponseToApi(project));
 	} catch (error) {
+		if (error instanceof ProjectIdentifierTakenError) {
+			return context.json({ error: error.message, code: 'IDENTIFIER_TAKEN', field: error.field }, 409);
+		}
 		console.error('Failed to update project:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
@@ -289,14 +316,19 @@ export async function handleDeleteProject(context: Context, redis: Redis): Promi
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const id = context.req.param('id');
+	const slug = context.req.param('projectSlug');
 
-	if (!isValidUUID(id)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	if (!isValidProjectSlug(slug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
 
 	try {
-		const deleted = await deleteProject(id, userId);
+		const resolved = await resolveProjectSlug(slug, userId);
+		if (!resolved) {
+			return context.json({ error: 'Project not found' }, 404);
+		}
+
+		const deleted = await deleteProject(resolved.id, userId);
 
 		if (!deleted) {
 			return context.json({ error: 'Project not found' }, 404);

@@ -121,13 +121,23 @@ function getCurrentUrl(): string {
  * navigate('/dashboard');
  * navigate('/search?q=test');
  * navigate('/docs#section');
+ * navigate('/board', { replace: true });
  * ```
+ *
+ * Pass `{ replace: true }` to swap the current history entry instead of pushing a
+ * new one — for navigations that refine the current view rather than moving to a
+ * new one (dismissing a panel, stepping a selection), where a pushed entry would
+ * make Back undo a keystroke and pile up entries to escape the page.
  */
-export function navigate(path: string): void {
-	if (path !== getCurrentUrl()) {
+export function navigate(path: string, options?: { replace?: boolean }): void {
+	if (path === getCurrentUrl()) return;
+
+	if (options?.replace) {
+		window.history.replaceState(null, '', path);
+	} else {
 		window.history.pushState(null, '', path);
-		renderCurrentRoute();
 	}
+	renderCurrentRoute();
 }
 
 /**

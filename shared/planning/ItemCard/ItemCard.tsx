@@ -14,7 +14,7 @@ const SUB_STATUS_LABELS: Partial<Record<SubStatus, string>> = {
 
 interface ItemCardProps {
 	item: ItemModel;
-	projectId: string;
+	projectSlug: string;
 	isSelected?: boolean;
 	isHighlighted?: boolean;
 	onSelect?: (item: ItemModel) => void;
@@ -50,7 +50,7 @@ function formatTimeAgo(dateString: string): string {
 
 export function ItemCard({
 	item,
-	projectId,
+	projectSlug,
 	isSelected = false,
 	isHighlighted = false,
 	onSelect,
@@ -80,7 +80,7 @@ export function ItemCard({
 
 	const handleOpenInNewWindow = (e: MouseEvent): void => {
 		e.stopPropagation();
-		window.open(`/projects/${projectId}/planning/items/${item.id}`, '_blank', 'noopener,noreferrer');
+		window.open(`/projects/${projectSlug}/items/${item.key}`, '_blank', 'noopener,noreferrer');
 	};
 
 	const cardClass = [
@@ -144,6 +144,7 @@ export function ItemCard({
 			)}
 
 			<div class={styles.footer}>
+				<span class={styles.itemKey}>{item.key}</span>
 				{subStatusLabel && (
 					<span class={`${styles.subStatus} ${styles[`subStatus_${item.subStatus}`] || ''}`}>
 						{subStatusLabel}

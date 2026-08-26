@@ -9,8 +9,10 @@ import type { SpecType, StorageMode, RepositoryConfig } from '@specboard/db';
 
 export interface ApiSpec {
 	id: string;
-	itemId: string;
-	projectId: string;
+	/** Key of the item this spec is linked to (e.g. SB-345). */
+	itemKey: string;
+	/** Slug of the project the item belongs to. */
+	projectSlug: string;
 	path: string;
 	type: SpecType;
 	createdAt: string;
@@ -20,6 +22,10 @@ export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
 
 export interface ApiProject {
 	id: string;
+	/** URL identifier for this project (e.g. "specboard"). */
+	slug: string;
+	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
+	key: string;
 	name: string;
 	description?: string;
 	ownerId: string;

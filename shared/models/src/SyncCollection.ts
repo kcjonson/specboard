@@ -409,9 +409,13 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 		// this id; drop it so this saved instance is the single canonical one.
 		const idField = (this.constructor as typeof SyncCollection).Model.idField || 'id';
 		const id = (item as unknown as Record<string, unknown>)[idField];
-		const dupIndex = this.__items.findIndex(
-			(existing) => (existing as unknown as Record<string, unknown>)[idField] === id
-		);
+		// Guard the null case the way __fetch does: without it two items that both lack
+		// an id would compare equal and the second add would evict the first.
+		const dupIndex = id == null
+			? -1
+			: this.__items.findIndex(
+				(existing) => (existing as unknown as Record<string, unknown>)[idField] === id
+			);
 		if (dupIndex !== -1) {
 			this.__unsubscribeFromChild(this.__items[dupIndex]!);
 			this.__items.splice(dupIndex, 1);

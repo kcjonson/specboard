@@ -18,13 +18,13 @@ export interface TableProps {
 	items: ItemsCollection;
 	/** Active toolbar filters (applied to the epics shown). */
 	filters: PlanningFilters;
-	selectedItemId?: string;
-	/** Ids to briefly flash (newly created, or changed by a background refresh). */
+	selectedItemKey?: string;
+	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
 	onSelectItem: (item: ItemModel | undefined) => void;
 	onOpenItem: (item: ItemModel) => void;
-	/** Open a child's detail by id (children are first-class items). */
-	onOpenChild?: (itemId: string) => void;
+	/** Open a child's detail by key (children are first-class items). */
+	onOpenChild?: (itemKey: string) => void;
 }
 
 /** Lazily load an epic's tasks the first time it is expanded. */
@@ -42,7 +42,7 @@ function ensureTasksLoaded(item: ItemModel): void {
 export function Table({
 	items,
 	filters,
-	selectedItemId,
+	selectedItemKey,
 	flashingIds,
 	onSelectItem,
 	onOpenItem,
@@ -134,8 +134,8 @@ export function Table({
 										key={item.id}
 										item={item}
 										expanded={expanded.has(item.id)}
-										selected={item.id === selectedItemId}
-										flashing={flashingIds.has(item.id)}
+										selected={item.key === selectedItemKey}
+										flashing={flashingIds.has(item.key)}
 										onToggle={toggleExpand}
 										onOpen={onOpenItem}
 										onSelect={onSelectItem}

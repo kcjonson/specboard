@@ -31,8 +31,8 @@ export interface ItemRowProps {
 	onToggle: (item: ItemModel) => void;
 	onOpen: (item: ItemModel) => void;
 	onSelect: (item: ItemModel | undefined) => void;
-	/** Open a child's detail by id (children are first-class items). */
-	onOpenChild?: (itemId: string) => void;
+	/** Open a child's detail by key (children are first-class items). */
+	onOpenChild?: (itemKey: string) => void;
 }
 
 /**
@@ -91,6 +91,7 @@ export function ItemRow({
 					) : (
 						<span class={styles.chevronSpacer} />
 					)}
+					<span class={styles.itemKey}>{item.key}</span>
 					<span class={styles.title}>{item.title}</span>
 				</span>
 				<span class={styles.colType} role="cell">

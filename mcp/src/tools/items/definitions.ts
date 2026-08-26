@@ -10,17 +10,18 @@ export const epicTools: Tool[] = [
 	{
 		name: 'get_items',
 		description:
-			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats. Optionally include each item\'s children and progress notes. Use item_id for a single item, or filter by status/type/search for lists.',
+			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats. Optionally include each item\'s children and progress notes. Use item_key for a single item, or filter by status/type/search for lists.',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
-				item_id: {
+				item_key: {
 					type: 'string',
-					description: 'Get a single item by ID. When set, other filters are ignored.',
+					description: 'Get a single item by its key (e.g. SB-345). When set, other filters are ignored.',
 				},
 				status: {
 					type: 'string',
@@ -49,19 +50,20 @@ export const epicTools: Tool[] = [
 					description: 'Max items to return (default: 25)',
 				},
 			},
-			required: ['project_id'],
+			required: [],
 		},
 	},
 	{
 		name: 'create_item',
 		description:
-			'Create an item. Epics are top-level containers; tasks and bugs can be top-level or nested under a parent (set parent_id).',
+			'Create an item. Epics are top-level containers; tasks and bugs can be top-level or nested under a parent (set parent_key).',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
 				title: {
 					type: 'string',
@@ -72,9 +74,9 @@ export const epicTools: Tool[] = [
 					enum: ['epic', 'bug', 'task'],
 					description: 'Type of item. Defaults to "epic".',
 				},
-				parent_id: {
+				parent_key: {
 					type: 'string',
-					description: 'Parent item id to nest this item under. Omit for a top-level item.',
+					description: 'Key of the item to nest this under (e.g. SB-12). Omit for a top-level item.',
 				},
 				description: {
 					type: 'string',
@@ -93,7 +95,7 @@ export const epicTools: Tool[] = [
 					},
 				},
 			},
-			required: ['project_id', 'title'],
+			required: ['title'],
 		},
 	},
 	{
@@ -103,13 +105,14 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
-				parent_id: {
+				parent_key: {
 					type: 'string',
-					description: 'The UUID of the parent work item (epic or bug)',
+					description: 'Key of the parent work item, e.g. SB-12 (epic or bug)',
 				},
 				items: {
 					type: 'array',
@@ -130,32 +133,33 @@ export const epicTools: Tool[] = [
 					description: 'Array of tasks to create',
 				},
 			},
-			required: ['project_id', 'parent_id', 'items'],
+			required: ['parent_key', 'items'],
 		},
 	},
 	{
 		name: 'update_item',
 		description:
-			'Update an item: title, description, status, sub_status, specs, branch_name, pr_url, notes, note. Set parent_id to move it under another item, or parent_id null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done).',
+			'Update an item: title, description, status, sub_status, specs, branch_name, pr_url, notes, note. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done).',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
-				item_id: {
+				item_key: {
 					type: 'string',
-					description: 'The UUID of the item to update',
+					description: 'Key of the item to update (e.g. SB-345)',
 				},
 				type: {
 					type: 'string',
 					enum: ['epic', 'bug', 'task'],
 					description: 'Item type (optional, informational).',
 				},
-				parent_id: {
+				parent_key: {
 					type: 'string',
-					description: 'Move the item under this parent, or null to promote it to top-level.',
+					description: 'Move the item under this parent (e.g. SB-12), or null to promote it to top-level.',
 				},
 				title: {
 					type: 'string',
@@ -203,7 +207,7 @@ export const epicTools: Tool[] = [
 					description: 'Set note on a task — context for any outcome (completion, blocked, cut, etc.)',
 				},
 			},
-			required: ['project_id', 'item_id'],
+			required: ['item_key'],
 		},
 	},
 	{
@@ -213,13 +217,14 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
-				item_id: {
+				item_key: {
 					type: 'string',
-					description: 'The UUID of the item to delete',
+					description: 'Key of the item to delete (e.g. SB-345)',
 				},
 				type: {
 					type: 'string',
@@ -227,7 +232,7 @@ export const epicTools: Tool[] = [
 					description: 'Type of item being deleted',
 				},
 			},
-			required: ['project_id', 'item_id'],
+			required: ['item_key'],
 		},
 	},
 ];

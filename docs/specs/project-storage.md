@@ -54,11 +54,11 @@ The frontend is storage-agnostic—it uses the same API regardless of mode.
 ```
 Frontend (browser)
     │
-    ├── POST /api/projects/:id/folders     ← Add folder (local mode)
-    ├── POST /api/projects/:id/repository  ← Connect GitHub (cloud mode)
-    ├── GET  /api/projects/:id/tree        ← List files
-    ├── GET  /api/projects/:id/files?path= ← Read file
-    └── PUT  /api/projects/:id/files?path= ← Write file
+    ├── POST /api/projects/:projectSlug/folders     ← Add folder (local mode)
+    ├── POST /api/projects/:projectSlug/repository  ← Connect GitHub (cloud mode)
+    ├── GET  /api/projects/:projectSlug/tree        ← List files
+    ├── GET  /api/projects/:projectSlug/files?path= ← Read file
+    └── PUT  /api/projects/:projectSlug/files?path= ← Write file
     │
     ▼
 Backend (Hono)
@@ -164,7 +164,7 @@ Developer running the **Electron desktop app** for:
 1. User clicks "Add Folder" in file browser
 2. Electron shows native OS folder picker (dialog.showOpenDialog)
 3. User selects folder: /Users/me/projects/my-app/docs
-4. Frontend calls POST /api/projects/:id/folders
+4. Frontend calls POST /api/projects/:projectSlug/folders
    Body: { "path": "/Users/me/projects/my-app/docs" }
 
 5. Backend validates:
@@ -276,7 +276,7 @@ async function addFolder(projectId: string, folderPath: string): Promise<void> {
 
 ### Folder Management (Local Mode)
 
-#### POST /api/projects/:id/folders
+#### POST /api/projects/:projectSlug/folders
 
 Add a local folder to the project.
 
@@ -307,7 +307,7 @@ Add a local folder to the project.
 - `400 DIFFERENT_REPO` - Path is in a different git repository
 - `400 DUPLICATE_PATH` - Path already added
 
-#### DELETE /api/projects/:id/folders
+#### DELETE /api/projects/:projectSlug/folders
 
 Remove a root path from the project (does not delete files).
 
@@ -320,7 +320,7 @@ Remove a root path from the project (does not delete files).
 
 ### Repository Connection (Cloud Mode)
 
-#### POST /api/projects/:id/repository
+#### POST /api/projects/:projectSlug/repository
 
 Connect a GitHub repository.
 
@@ -355,13 +355,13 @@ Connect a GitHub repository.
 }
 ```
 
-#### DELETE /api/projects/:id/repository
+#### DELETE /api/projects/:projectSlug/repository
 
 Disconnect repository (switches to no storage configured).
 
 ### File Operations
 
-#### GET /api/projects/:id/tree
+#### GET /api/projects/:projectSlug/tree
 
 Get file tree for all root paths.
 
@@ -396,11 +396,11 @@ Get file tree for all root paths.
 }
 ```
 
-#### GET /api/projects/:id/files?path=...
+#### GET /api/projects/:projectSlug/files?path=...
 
 Read file content. Path is passed as query parameter to handle special characters.
 
-#### PUT /api/projects/:id/files?path=...
+#### PUT /api/projects/:projectSlug/files?path=...
 
 Write file content. Path is passed as query parameter.
 

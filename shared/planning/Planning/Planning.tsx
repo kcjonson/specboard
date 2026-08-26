@@ -6,7 +6,7 @@ import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from
 import { Page, SplitButton, Text, Select, type SplitButtonOption } from '@specboard/ui';
 import { Board } from '../Board/Board';
 import { Table } from '../Table/Table';
-import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
+import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
 import { CATEGORY_ALL, CATEGORY_OPTIONS, type PlanningFilters } from './filters';
@@ -46,26 +46,38 @@ function readView(): PlanningView {
 }
 
 /**
- * Planning page container — the route entry for `/projects/:projectId/planning`.
+ * Planning page container — the route entry for both `/projects/:projectSlug/planning`
+ * and `/projects/:projectSlug/planning/items/:itemKey`.
  *
  * Owns all state shared between the Board and Table views (the items collection,
  * selection, create/edit dialog, highlight, active view, and filters) and renders
  * the shared toolbar plus whichever view is active. The two views are purely
  * presentational consumers of this state.
+ *
+ * Which item the drawer shows is not local state — it's the `:itemKey` route param.
+ * Opening and closing the drawer are navigations, so the open item has a shareable
+ * URL and Back closes it. The router re-renders this same component (no remount) on
+ * those navigations, so the board, filters, and scroll position all survive.
  */
 export function Planning(props: RouteProps): JSX.Element {
-	const projectId = props.params.projectId || 'demo';
+	const projectSlug = props.params.projectSlug || 'demo';
+	// Normalized because the server accepts a hand-typed `sb-345`; without this the
+	// route key would miss the collection's canonical `SB-345` and open a duplicate,
+	// detached model instead of the live one the board is rendering.
+	const openItemKey = props.params.itemKey?.toUpperCase();
 
-	// Collection auto-fetches after projectId is set. Memoized so it survives view
+	// Collection auto-fetches after projectSlug is set. Memoized so it survives view
 	// toggles (the route/entry is unchanged, only the ?view= param differs).
-	const items = useMemo(() => new ItemsCollection({ projectId }), [projectId]);
+	const items = useMemo(() => new ItemsCollection({ projectSlug }), [projectSlug]);
 	useModel(items);
 
 	const [view, setView] = useState<PlanningView>(readView);
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
 
-	const [selectedItemId, setSelectedItemId] = useState<string | undefined>();
-	const [drawerOpen, setDrawerOpen] = useState(false);
+	// The board selection — the single source of truth for which card is marked.
+	// Seeded from the route so a deep link lands with its card selected, and kept in
+	// step below whenever the route changes under it (deep link, Back/Forward).
+	const [selectedItemKey, setSelectedItemKey] = useState<string | undefined>(openItemKey);
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
 
@@ -170,22 +182,54 @@ export function Planning(props: RouteProps): JSX.Element {
 		navigate(window.location.pathname + (search ? `?${search}` : '') + window.location.hash);
 	}, []);
 
+	// Selection follows the route whenever the route moves on its own — a deep link,
+	// or the user hitting Back/Forward across item URLs.
+	useEffect(() => {
+		if (openItemKey) setSelectedItemKey(openItemKey);
+		else openedByPush.current = false;
+	}, [openItemKey]);
+
+	/** Board and item URLs, preserving the query string and hash the user is on. */
+	const boardUrl = useCallback(
+		(): string => `/projects/${projectSlug}/planning${window.location.search}${window.location.hash}`,
+		[projectSlug]
+	);
+	const itemUrl = useCallback(
+		(itemKey: string): string =>
+			`/projects/${projectSlug}/planning/items/${itemKey}${window.location.search}${window.location.hash}`,
+		[projectSlug]
+	);
+
+	// Moving the selection (arrow keys, clicking a card). With the drawer open it
+	// follows live, replacing the history entry rather than pushing one per keystroke.
+	// Escape clears the selection and dismisses the drawer with it.
 	const handleSelectItem = useCallback((item: ItemModel | undefined): void => {
-		setSelectedItemId(item?.id);
-	}, []);
+		setSelectedItemKey(item?.key);
+		if (!openItemKey) return;
+		navigate(item ? itemUrl(item.key) : boardUrl(), { replace: true });
+	}, [openItemKey, itemUrl, boardUrl]);
 
-	// Opening an item selects it and reveals the drawer; the drawer always renders
-	// the currently selected item, so keyboard navigation updates it live.
+	// History model for the drawer, applied by every path that opens or closes it:
+	//   - opening from the board is a new place        -> push, so Back closes it
+	//   - moving between items while already open      -> replace, so browsing ten
+	//     items doesn't leave ten entries to Back through
+	//   - closing                                      -> undo our own push (below)
+	// Card clicks call onSelect *then* onOpen, so without the replace-when-open rule
+	// the select's navigation would land first and silently swallow the open's push.
+	const openedByPush = useRef(false);
+	const handleOpenItemByKey = useCallback((itemKey: string): void => {
+		setSelectedItemKey(itemKey);
+		if (openItemKey) {
+			navigate(itemUrl(itemKey), { replace: true });
+		} else {
+			openedByPush.current = true;
+			navigate(itemUrl(itemKey));
+		}
+	}, [itemUrl, openItemKey]);
+
 	const handleOpenItem = useCallback((item: ItemModel): void => {
-		setSelectedItemId(item.id);
-		setDrawerOpen(true);
-	}, []);
-
-	// Open any item by id (used for children, which aren't in the top-level collection).
-	const handleOpenItemById = useCallback((itemId: string): void => {
-		setSelectedItemId(itemId);
-		setDrawerOpen(true);
-	}, []);
+		handleOpenItemByKey(item.key);
+	}, [handleOpenItemByKey]);
 
 	const handleOpenNewItemDialog = useCallback((type: ItemType): void => {
 		setCreateType(type);
@@ -204,20 +248,30 @@ export function Planning(props: RouteProps): JSX.Element {
 		setIsNewItemDialogOpen(false);
 	}, []);
 
+	// Closing undoes our own push where there is one, which leaves the history exactly
+	// as it was before the drawer opened. Replacing instead would strand a duplicate
+	// board entry, making the next Back appear to do nothing; pushing would make Back
+	// reopen the drawer. On a deep link there is nothing of ours to pop, so replace.
 	const handleCloseDrawer = useCallback((): void => {
-		setDrawerOpen(false);
-	}, []);
+		if (openedByPush.current) {
+			openedByPush.current = false;
+			window.history.back();
+			return;
+		}
+		navigate(boardUrl(), { replace: true });
+	}, [boardUrl]);
 
 	const handleDeleteItem = useCallback((item: ItemModel): void => {
-		const inCollection = items.find((i) => i.id === item.id);
+		const inCollection = items.find((i) => i.key === item.key);
 		if (inCollection) {
 			items.remove(inCollection);
 		} else {
-			// A child opened standalone isn't in the top-level collection — delete it by id.
+			// A child opened standalone isn't in the top-level collection — delete it directly.
 			void item.delete();
 		}
-		setDrawerOpen(false);
-	}, [items]);
+		setSelectedItemKey(undefined);
+		navigate(boardUrl(), { replace: true });
+	}, [items, boardUrl]);
 
 	const createOptions: SplitButtonOption[] = useMemo(() => [
 		{ label: 'Epic', value: 'epic', icon: 'file' as const, onClick: () => handleOpenNewItemDialog('epic') },
@@ -235,18 +289,30 @@ export function Planning(props: RouteProps): JSX.Element {
 		setFilters((prev) => ({ ...prev, category: value }));
 	}, []);
 
-	// The drawer renders whichever item is selected; if that item is removed
-	// (e.g. deleted), the lookup returns undefined and the drawer collapses.
-	// A child (or any item not in the top-level collection) is opened by id via a
-	// standalone model that fetches its own detail; memoized so it isn't refetched on
-	// every render. Top-level items use the live collection model so edits reflect on the board.
-	const standaloneItem = useMemo(() => {
-		if (!selectedItemId || items.find((i) => i.id === selectedItemId)) return undefined;
-		return new ItemModel({ id: selectedItemId, projectId });
-	}, [selectedItemId, projectId, items]);
-	const selectedItem = selectedItemId
-		? (items.find((i) => i.id === selectedItemId) ?? standaloneItem)
+	// The drawer renders the item named by the route. A top-level item uses the live
+	// collection model, so edits reflect on the board immediately. Anything else — a
+	// child, or an item the collection has dropped — gets a standalone model that
+	// fetches its own detail.
+	//
+	// `items` is a stable reference whose *contents* change, so the collection lookup
+	// has to run every render (it is a cheap array scan) rather than inside the memo:
+	// memoizing it meant that when a poll dropped the open item, the cached `undefined`
+	// stood and the drawer silently vanished mid-edit. Waiting for the first fetch also
+	// avoids building a standalone model for an item that is merely still loading.
+	const collectionItem = openItemKey ? items.find((i) => i.key === openItemKey) : undefined;
+	const standaloneKey = openItemKey && !collectionItem && items.$meta.lastFetched !== null
+		? openItemKey
 		: undefined;
+	const standaloneItem = useMemo(
+		() => (standaloneKey ? new ItemModel({ key: standaloneKey, projectSlug }) : undefined),
+		[standaloneKey, projectSlug]
+	);
+	const openItem = collectionItem ?? standaloneItem;
+
+	// A key that resolves to nothing (a stale link, an item someone else deleted) must
+	// not render an empty but editable drawer — that offers a Save and a Delete against
+	// an item that does not exist. Surface it instead.
+	const openItemMissing = Boolean(standaloneItem?.$meta.error);
 
 	// Measure the workspace so the drawer can't widen past leaving the board a
 	// usable minimum. A callback ref (not useRef + mount effect) is required
@@ -270,7 +336,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	// Loading state
 	if (items.$meta.working && items.length === 0) {
 		return (
-			<Page projectId={projectId} activeTab="Planning">
+			<Page projectSlug={projectSlug} activeTab="Planning">
 				<div class={styles.loading}>Loading...</div>
 			</Page>
 		);
@@ -279,14 +345,14 @@ export function Planning(props: RouteProps): JSX.Element {
 	// Error state from collection's $meta
 	if (items.$meta.error) {
 		return (
-			<Page projectId={projectId} activeTab="Planning">
+			<Page projectSlug={projectSlug} activeTab="Planning">
 				<div class={styles.error}>Error: {items.$meta.error.message}</div>
 			</Page>
 		);
 	}
 
 	return (
-		<Page projectId={projectId} activeTab="Planning">
+		<Page projectSlug={projectSlug} activeTab="Planning">
 			<div class={styles.toolbar}>
 				<div class={styles.controls}>
 					<ViewToggle view={view} onChange={handleChangeView} />
@@ -315,18 +381,18 @@ export function Planning(props: RouteProps): JSX.Element {
 						<Table
 							items={items}
 							filters={filters}
-							selectedItemId={selectedItemId}
+							selectedItemKey={selectedItemKey}
 							flashingIds={flashingIds}
 							onSelectItem={handleSelectItem}
 							onOpenItem={handleOpenItem}
-							onOpenChild={handleOpenItemById}
+							onOpenChild={handleOpenItemByKey}
 						/>
 					) : (
 						<Board
 							items={items}
-							projectId={projectId}
+							projectSlug={projectSlug}
 							filters={filters}
-							selectedItemId={selectedItemId}
+							selectedItemKey={selectedItemKey}
 							flashingIds={flashingIds}
 							dialogOpen={isNewItemDialogOpen}
 							onSelectItem={handleSelectItem}
@@ -336,15 +402,18 @@ export function Planning(props: RouteProps): JSX.Element {
 					)}
 				</div>
 
-				{drawerOpen && selectedItem && (
+				{openItem && !openItemMissing && (
 					<ItemDrawer
-						item={selectedItem}
-						projectId={projectId}
+						item={openItem}
+						projectSlug={projectSlug}
 						maxWidth={drawerMaxWidth}
 						onClose={handleCloseDrawer}
 						onDelete={handleDeleteItem}
-						onOpenItem={handleOpenItemById}
+						onOpenItem={handleOpenItemByKey}
 					/>
+				)}
+				{openItemMissing && (
+					<MissingItemDrawer itemKey={openItemKey!} onClose={handleCloseDrawer} />
 				)}
 			</div>
 

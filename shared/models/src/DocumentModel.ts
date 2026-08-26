@@ -60,7 +60,7 @@ export class DocumentModel extends Model {
 	/** File path of the loaded document */
 	@prop accessor filePath: string | null = null;
 
-	/** Project ID for API context */
+	/** Project id — keys this document's localStorage draft. Never used for API paths. */
 	@prop accessor projectId: string | null = null;
 
 	/** Whether a save operation is in progress */
@@ -88,7 +88,7 @@ export class DocumentModel extends Model {
 	 * Load new document content. Generates a new documentId to force
 	 * Slate editor to re-mount with fresh state.
 	 *
-	 * @param projectId - Project containing the document
+	 * @param projectId - Id of the project containing the document
 	 * @param filePath - Path to the document file
 	 * @param content - Slate AST content
 	 * @param options - Optional settings

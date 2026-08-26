@@ -147,6 +147,12 @@ export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
 
 export interface Project {
 	id: string;
+	/** URL identifier, unique per owner (e.g. "specboard"). */
+	slug: string;
+	/** Short uppercase prefix for item keys, unique per owner (e.g. "SB"). */
+	key: string;
+	/** Allocator for per-project item numbers; the last number handed out. */
+	item_seq: number;
 	name: string;
 	description: string | null;
 	owner_id: string;
@@ -175,6 +181,11 @@ export type SpecType = 'product' | 'technical';
 export interface Item {
 	id: string;
 	project_id: string | null;
+	/**
+	 * Per-project sequence number. Combined with the project's key it forms the
+	 * item's address (`SB-345`). Null only for items with no project.
+	 */
+	number: number | null;
 	parent_id: string | null;
 	type: ItemType;
 	title: string;

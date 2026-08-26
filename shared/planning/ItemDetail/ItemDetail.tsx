@@ -8,23 +8,23 @@ import { ItemView } from '../ItemView/ItemView';
 import styles from './ItemDetail.module.css';
 
 export function ItemDetail({ params }: RouteProps): JSX.Element {
-	const projectId = params.projectId || 'demo';
-	const itemId = params.id || '';
+	const projectSlug = params.projectSlug || 'demo';
+	const itemKey = (params.itemKey || '').toUpperCase();
 
-	// Model auto-fetches when given an id
-	const item = useMemo(() => new ItemModel({ id: itemId, projectId }), [itemId, projectId]);
+	// Model auto-fetches when given a key
+	const item = useMemo(() => new ItemModel({ key: itemKey, projectSlug }), [itemKey, projectSlug]);
 	useModel(item);
 
 	const handleDelete = (): void => {
 		item.delete().then(() => {
-			navigate(`/projects/${projectId}/planning`);
+			navigate(`/projects/${projectSlug}/planning`);
 		});
 	};
 
 	// Loading state - show while fetching and data hasn't arrived yet
 	if (!item.$meta.lastFetched && !item.$meta.error) {
 		return (
-			<Page projectId={projectId} activeTab="Planning">
+			<Page projectSlug={projectSlug} activeTab="Planning">
 				<div class={styles.container}>
 					<div class={styles.loading}>Loading...</div>
 				</div>
@@ -35,11 +35,11 @@ export function ItemDetail({ params }: RouteProps): JSX.Element {
 	// Error state
 	if (item.$meta.error) {
 		return (
-			<Page projectId={projectId} activeTab="Planning">
+			<Page projectSlug={projectSlug} activeTab="Planning">
 				<div class={styles.container}>
 					<div class={styles.error}>
 						<p>Error: {item.$meta.error.message}</p>
-						<a href={`/projects/${projectId}/planning`}>Back to Board</a>
+						<a href={`/projects/${projectSlug}/planning`}>Back to Board</a>
 					</div>
 				</div>
 			</Page>
@@ -47,10 +47,10 @@ export function ItemDetail({ params }: RouteProps): JSX.Element {
 	}
 
 	return (
-		<Page projectId={projectId} activeTab="Planning">
+		<Page projectSlug={projectSlug} activeTab="Planning">
 			<div class={styles.container}>
 				<nav class={styles.nav}>
-					<a href={`/projects/${projectId}/planning`} class={styles.backLink}>
+					<a href={`/projects/${projectSlug}/planning`} class={styles.backLink}>
 						<Icon name="arrow-left" class="size-sm" /> Back to Board
 					</a>
 				</nav>
@@ -58,7 +58,7 @@ export function ItemDetail({ params }: RouteProps): JSX.Element {
 					<ItemView
 						item={item}
 						onDelete={handleDelete}
-						onOpenChild={(childId) => navigate(`/projects/${projectId}/planning/items/${childId}`)}
+						onOpenChild={(childKey) => navigate(`/projects/${projectSlug}/items/${childKey}`)}
 					/>
 				</div>
 			</div>

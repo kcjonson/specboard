@@ -22,8 +22,8 @@ interface ItemViewExistingProps {
 	createType?: never;
 	onDelete?: (item: ItemModel) => void;
 	onCreate?: never;
-	/** Open a child's detail by id (clicking a child card). */
-	onOpenChild?: (itemId: string) => void;
+	/** Open a child's detail by key (clicking a child card). */
+	onOpenChild?: (itemKey: string) => void;
 }
 
 /** Props for creating a new item */
@@ -110,7 +110,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		const prev = task.status;
 		const next = prev === 'done' ? 'ready' : 'done';
 		task.status = next; // optimistic; childStats reflects it immediately
-		const target = new ItemModel({ id: task.id, projectId: item.projectId, status: next });
+		const target = new ItemModel({ key: task.key, projectSlug: item.projectSlug, status: next });
 		target.save().catch(() => {
 			task.status = prev;
 		});
@@ -159,7 +159,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		const title = newTaskTitle.trim();
 		setNewTaskTitle('');
 		// Create a child task under this item, then reload so it appears in the list.
-		const child = new ItemModel({ projectId: item.projectId, parentId: item.id, title, type: 'task' });
+		const child = new ItemModel({ projectSlug: item.projectSlug, parentKey: item.key, title, type: 'task' });
 		child.save().then(() => item.fetch()).catch(() => {});
 	};
 
@@ -308,7 +308,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 					</h3>
 					<div class={styles.taskList} role="list">
 						{item.children.map((task) => (
-							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} onOpen={(child) => onOpenChild?.(child.id)} />
+							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} onOpen={(child) => onOpenChild?.(child.key)} />
 						))}
 					</div>
 					<div class={styles.addTask}>
@@ -331,7 +331,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 			{/* Specifications — for any existing work item */}
 			{!isNew && item && (
-				<SpecsSection projectId={item.projectId} itemId={item.id} />
+				<SpecsSection projectSlug={item.projectSlug} itemKey={item.key} />
 			)}
 
 			{/* Footer */}

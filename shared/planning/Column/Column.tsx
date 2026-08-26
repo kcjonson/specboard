@@ -9,8 +9,8 @@ interface ColumnProps {
 	status: Status;
 	title: string;
 	items: ItemModel[];
-	projectId: string;
-	selectedItemId?: string;
+	projectSlug: string;
+	selectedItemKey?: string;
 	flashingIds: Set<string>;
 	onSelectItem?: (item: ItemModel) => void;
 	onOpenItem?: (item: ItemModel) => void;
@@ -29,8 +29,8 @@ export function Column({
 	status,
 	title,
 	items,
-	projectId,
-	selectedItemId,
+	projectSlug,
+	selectedItemKey,
 	flashingIds,
 	onSelectItem,
 	onOpenItem,
@@ -125,9 +125,9 @@ export function Column({
 								)}
 								<ItemCard
 									item={item}
-									projectId={projectId}
-									isSelected={item.id === selectedItemId}
-									isHighlighted={flashingIds.has(item.id)}
+									projectSlug={projectSlug}
+									isSelected={item.key === selectedItemKey}
+									isHighlighted={flashingIds.has(item.key)}
 									onSelect={onSelectItem}
 									onOpen={onOpenItem}
 									onDragStart={onDragStart}

@@ -14,15 +14,15 @@ close anything.**
 
 ## 1. Project Discovery
 
-Call `list_projects` to find the user's project(s) and their IDs.
+Call `list_projects` to find the user's project(s) and their slugs.
 - If a single project is returned, use it. (A repo bound via its committed `.mcp.json`
   `X-Specboard-Project` header returns exactly that project, so this auto-selects, no prompt.)
 - If multiple are returned, ask the user which to work on.
-- Store the resolved `project_id` for all subsequent calls.
+- Store the resolved `project_slug` for all subsequent calls (omit it entirely when the repo is bound).
 
-A bound repo's `.mcp.json` carries the project UUID in the `X-Specboard-Project` header; the MCP
+A bound repo's `.mcp.json` carries the project slug in the `X-Specboard-Project` header; the MCP
 server scopes `list_projects` and the item tools to that project (still gated per user by the
-access check). The UUID is a shared, non-secret reference, committing it grants nothing without
+access check). The slug is a shared, non-secret reference, committing it grants nothing without
 each user authenticating individually.
 
 ## 2. Gather State (do these in parallel)
@@ -46,9 +46,9 @@ If the script is unavailable, gather this manually: `git worktree list`,
 - `gh pr list --author=@me`, open PRs (feedback takes highest priority)
 
 ### 2c. MCP State
-- `get_items(project_id, { status: 'in_progress', include_children: true, include_notes: true })`
-- `get_items(project_id, { status: 'in_review', include_children: true })`
-- `get_items(project_id, { status: 'ready' })`
+- `get_items(project_slug, { status: 'in_progress', include_children: true, include_notes: true })`
+- `get_items(project_slug, { status: 'in_review', include_children: true })`
+- `get_items(project_slug, { status: 'ready' })`
 
 ## 3. Cross-Reference & Classify
 
@@ -105,7 +105,7 @@ Output a structured summary:
 When the user picks an item, this is the scoping phase. The epic's `sub_status` is `scoping` here.
 
 **Read what the epic links.**
-`get_items(project_id, { item_id: epic_id, include_children: true, include_notes: true })` returns the
+`get_items(project_slug, { item_key: epic_key, include_children: true, include_notes: true })` returns the
 epic plus its linked `specs` (each has `path` and `type`). Those links are how you find the relevant
 docs: read what's linked, and nothing more. Don't go searching the doc folder or assume a layout, a
 project organizes its docs however it likes (or keeps none). The epic's links are the source of
@@ -143,14 +143,14 @@ reasoning into task titles, and don't hide the checklist from the board.
 
 Once the plan is set:
 1. Create the feature branch (if not already on one).
-2. `update_item(project_id, epic_id, 'epic', { branch_name: '<branch>', sub_status: 'scoping' })`
-3. `create_items(project_id, epic_id, items)`, turn the plan's steps into tasks.
-4. `update_item(project_id, epic_id, 'epic', { sub_status: 'in_development' })` when you start coding.
-5. Start the first task: `update_item(project_id, task_id, 'task', { status: 'in_progress' })`.
+2. `update_item(project_slug, epic_key, 'epic', { branch_name: '<branch>', sub_status: 'scoping' })`
+3. `create_items(project_slug, epic_key, items)`, turn the plan's steps into tasks.
+4. `update_item(project_slug, epic_key, 'epic', { sub_status: 'in_development' })` when you start coding.
+5. Start the first task: `update_item(project_slug, task_key, 'task', { status: 'in_progress' })`.
 
 You may also create the epic itself when one doesn't exist for work you're about to do:
-`create_item(project_id, title, 'epic', { specs: [...] })`. Create standalone tasks and bugs the same
-way for side-work (`create_item(..., 'task')` / `'bug'`); they can stand alone or take a `parent_id`.
+`create_item(project_slug, title, 'epic', { specs: [...] })`. Create standalone tasks and bugs the same
+way for side-work (`create_item(..., 'task')` / `'bug'`); they can stand alone or take a `parent_key`.
 
 ## 8. Status Hygiene
 
@@ -174,13 +174,13 @@ Setting `sub_status` auto-moves the board status (scoping/in_development/pr_open
 complete -> done), so drive the board through sub_status, not the raw `status` field.
 
 **Task status mirrors the work:**
-- Start: `update_item(project_id, task_id, 'task', { status: 'in_progress' })`
-- Complete: `update_item(project_id, task_id, 'task', { status: 'done', note: 'Added Redis session store' })`
-- Block: `update_item(project_id, task_id, 'task', { status: 'blocked', note: 'Need auth spec clarification' })`
-- Unblock: `update_item(project_id, task_id, 'task', { status: 'ready' })`
+- Start: `update_item(project_slug, task_key, 'task', { status: 'in_progress' })`
+- Complete: `update_item(project_slug, task_key, 'task', { status: 'done', note: 'Added Redis session store' })`
+- Block: `update_item(project_slug, task_key, 'task', { status: 'blocked', note: 'Need auth spec clarification' })`
+- Unblock: `update_item(project_slug, task_key, 'task', { status: 'ready' })`
 
 Write a short note on every task completion, those notes are the human-readable work log. Add an
-epic-level note at real decision points: `update_item(project_id, epic_id, 'epic', { notes: '...' })`
+epic-level note at real decision points: `update_item(project_slug, epic_key, 'epic', { notes: '...' })`
 (notes are timestamped and appended, not overwritten).
 
 **The discipline:**

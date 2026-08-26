@@ -16,7 +16,8 @@ import {
 	decrypt,
 	type EncryptedData,
 } from '@specboard/auth';
-import { query } from '@specboard/db';
+import { query, resolveProjectSlug } from '@specboard/db';
+import { isValidProjectSlug } from '@specboard/core/identifiers';
 import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
 import {
@@ -262,7 +263,7 @@ export async function startGitHubInitialSync(
 
 /**
  * Start initial sync - downloads entire repository.
- * POST /api/projects/:id/sync/initial
+ * POST /api/projects/:projectSlug/sync/initial
  */
 export async function handleGitHubInitialSync(
 	context: Context,
@@ -278,10 +279,16 @@ export async function handleGitHubInitialSync(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!projectId) {
-		return context.json({ error: 'Project ID required' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
+
+	const resolved = await resolveProjectSlug(projectSlug, session.userId);
+	if (!resolved) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	const projectId = resolved.id;
 
 	// Get project with repository info
 	const project = await getProjectWithRepo(projectId, session.userId);
@@ -346,7 +353,7 @@ export async function handleGitHubInitialSync(
 
 /**
  * Start incremental sync - fetches only changed files.
- * POST /api/projects/:id/sync
+ * POST /api/projects/:projectSlug/sync
  */
 export async function handleGitHubSync(
 	context: Context,
@@ -363,10 +370,16 @@ export async function handleGitHubSync(
 		return context.json({ success: false, error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!projectId) {
-		return context.json({ success: false, error: 'Project ID required' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ success: false, error: 'Invalid project slug format' }, 400);
 	}
+
+	const resolved = await resolveProjectSlug(projectSlug, session.userId);
+	if (!resolved) {
+		return context.json({ success: false, error: 'Project not found' }, 404);
+	}
+	const projectId = resolved.id;
 
 	// Get project with repository info
 	const project = await getProjectWithRepo(projectId, session.userId);
@@ -447,7 +460,7 @@ export async function handleGitHubSync(
 
 /**
  * Get sync status for a project.
- * GET /api/projects/:id/sync/status
+ * GET /api/projects/:projectSlug/sync/status
  */
 export async function handleGitHubSyncStatus(
 	context: Context,
@@ -463,10 +476,16 @@ export async function handleGitHubSyncStatus(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!projectId) {
-		return context.json({ error: 'Project ID required' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
+
+	const resolved = await resolveProjectSlug(projectSlug, session.userId);
+	if (!resolved) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	const projectId = resolved.id;
 
 	// Get project with sync info
 	const project = await getProjectWithRepo(projectId, session.userId);
@@ -485,7 +504,7 @@ export async function handleGitHubSyncStatus(
 
 /**
  * Commit pending changes to GitHub repository.
- * POST /api/projects/:id/github/commit
+ * POST /api/projects/:projectSlug/github/commit
  *
  * Uses GitHub GraphQL createCommitOnBranch mutation for atomic commits:
  * 1. Get pending changes with content from storage service
@@ -507,10 +526,16 @@ export async function handleGitHubCommit(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!projectId) {
-		return context.json({ error: 'Project ID required' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
+
+	const resolved = await resolveProjectSlug(projectSlug, session.userId);
+	if (!resolved) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	const projectId = resolved.id;
 
 	// Get project with repository info
 	const project = await getProjectWithRepo(projectId, session.userId);

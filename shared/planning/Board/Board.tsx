@@ -15,11 +15,11 @@ const COLUMNS: { status: Status; title: string }[] = [
 export interface BoardProps {
 	/** Shared collection owned by the Planning container. */
 	items: ItemsCollection;
-	projectId: string;
+	projectSlug: string;
 	/** Active toolbar filters (applied to the cards shown in each column). */
 	filters: PlanningFilters;
-	selectedItemId?: string;
-	/** Ids to briefly flash (newly created, or changed by a background refresh). */
+	selectedItemKey?: string;
+	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
 	/** Disables keyboard shortcuts while a dialog is open. */
 	dialogOpen: boolean;
@@ -34,9 +34,9 @@ export interface BoardProps {
  */
 export function Board({
 	items,
-	projectId,
+	projectSlug,
 	filters,
-	selectedItemId,
+	selectedItemKey,
 	flashingIds,
 	dialogOpen,
 	onSelectItem,
@@ -72,7 +72,7 @@ export function Board({
 
 	useKeyboardNavigation({
 		itemsByStatus,
-		selectedItemId,
+		selectedItemKey,
 		dialogOpen,
 		onSelectItem,
 		onOpenItem,
@@ -162,8 +162,8 @@ export function Board({
 					status={status}
 					title={title}
 					items={itemsByStatus[status]}
-					projectId={projectId}
-					selectedItemId={selectedItemId}
+					projectSlug={projectSlug}
+					selectedItemKey={selectedItemKey}
 					flashingIds={flashingIds}
 					onSelectItem={handleColumnSelectItem}
 					onOpenItem={onOpenItem}
