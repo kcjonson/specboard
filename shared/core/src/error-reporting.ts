@@ -360,7 +360,9 @@ export function parseStackTrace(stack?: string): Array<{
 
 	for (const line of lines) {
 		// Chrome/Node: "    at functionName (filename:line:col)" or bare "    at filename:line:col"
-		const chromeMatch = line.match(/^\s*at\s+(.+)$/);
+		// The capture must start non-whitespace: `.` matches spaces too, so `\s+(.+)` would
+		// leave the boundary ambiguous and backtrack across the run whenever the match fails.
+		const chromeMatch = line.match(/^\s*at\s+(\S.*)$/);
 		if (chromeMatch) {
 			frames.push(splitFrame(chromeMatch[1] as string));
 			continue;
