@@ -54,7 +54,8 @@ scan_plans() {
 			state="incomplete"
 		fi
 		[ "$state" = "$1" ] || continue
-		title=$(grep -m1 '^# [^C]' "$file" | sed 's/^# //' || basename "$file" .md)
+		title=$(awk '/^# / && $0 !~ /^# COMPLETE/ { sub(/^# /, ""); print; exit }' "$file")
+		title=${title:-$(basename "$file" .md)}
 		modified=$(stat -f %m "$file" 2>/dev/null || stat -c %Y "$file" 2>/dev/null || echo 0)
 		mod_date=$(date -r "$modified" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -d "@$modified" +%Y-%m-%dT%H:%M:%S 2>/dev/null || echo "unknown")
 		jq -n --arg file "$file" --arg title "$title" --arg modified "$mod_date" '{file: $file, title: $title, modified: $modified}'
