@@ -82,13 +82,13 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 				htmlBody: emailContent.htmlBody,
 				replyTo: emailContent.replyTo,
 			}).catch((error) => {
-				// Name the address: the RETURNING guard above means this
-				// signup can never trigger another send, so this line is the
-				// only record of who needs one re-sent by hand.
-				console.error(
-					`Waitlist confirmation email failed for ${normalizedEmail}:`,
-					error instanceof Error ? error.message : 'Unknown error'
-				);
+				// Name the address, and log the error whole rather than just
+				// its message: the RETURNING guard above means this signup can
+				// never trigger another send, so this line is the only record
+				// of who needs one re-sent by hand and why it failed. The
+				// stack and the SES $metadata (request id, error code) are the
+				// difference between diagnosing a throttle and guessing.
+				console.error(`Waitlist confirmation email failed for ${normalizedEmail}:`, error);
 			});
 		}
 
