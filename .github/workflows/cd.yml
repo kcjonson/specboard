@@ -25,7 +25,7 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     permissions:
-      contents: read # read main's head SHA to confirm this run is still the latest
+      contents: read # compare this run's commit against main's head
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
@@ -40,31 +40,50 @@ jobs:
             echo "sha=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check if still latest commit
+      - name: Check if this commit still carries main's code
         id: check
         run: |
           SHA="${{ steps.sha.outputs.sha }}"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
-          LATEST=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          # Only one commit deploys, and it is the newest one whose code main has not
+          # moved past. That is deliberately weaker than "is the head commit": CI skips
+          # documentation-only pushes (see ci.yml's paths-ignore), so those never produce
+          # a CD run of their own. A plain head comparison would let a documentation
+          # commit landing right behind a code commit strand that code undeployed, with
+          # no later run to correct it.
+          #
+          # So compare by content instead. If everything main has gained since this
+          # commit is documentation, this commit's code is still main's code and it
+          # deploys. Anything else means a real code commit is behind us in the queue
+          # and its own run will deploy it.
+          #
+          # Keep the pattern below in sync with ci.yml's paths-ignore.
+          CMP=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/commits/main" | jq -r '.sha // empty')
+            "https://api.github.com/repos/${{ github.repository }}/compare/$SHA...main")
+
+          STATUS=$(echo "$CMP" | jq -r '.status // empty')
 
           echo "This commit: $SHA"
-          echo "Latest:      ${LATEST:-<unknown>}"
+          echo "vs main:     ${STATUS:-<unknown>}"
 
-          # Strict "only the latest commit deploys". With contents:read (granted on the
-          # job) the lookup is reliable, so skip when a strictly newer commit exists. If
-          # the lookup still comes back empty (a real API outage), fail loudly rather than
-          # deploy a possibly-stale commit or silently skip a fresh one.
-          if [ -z "$LATEST" ]; then
-            echo "::error::Could not determine main's latest commit (empty API response); not deploying. Re-run once the lookup succeeds."
+          # An empty response is a real API outage. Fail loudly rather than deploy a
+          # possibly-stale commit or silently skip a fresh one.
+          if [ -z "$STATUS" ]; then
+            echo "::error::Could not compare $SHA against main (empty API response); not deploying. Re-run once the lookup succeeds."
             exit 1
-          elif [ "$SHA" = "$LATEST" ]; then
-            echo "should_deploy=true" >> $GITHUB_OUTPUT
-          else
-            echo "Newer commits exist; a later commit's run will deploy. Skipping."
+          fi
+
+          CODE_AHEAD=$(echo "$CMP" | jq -r '.files[]?.filename' \
+            | grep -vE '^(docs/|[^/]+\.md$|([^/]+/)*README\.md$)' || true)
+
+          if [ -n "$CODE_AHEAD" ]; then
+            echo "main has newer code; that commit's own run will deploy it. Skipping:"
+            printf '%s\n' "$CODE_AHEAD" | sed 's/^/  /'
             echo "should_deploy=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
           fi
 
   build-push:
