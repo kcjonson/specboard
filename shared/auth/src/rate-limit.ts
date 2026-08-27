@@ -28,6 +28,13 @@ export interface RateLimitConfig {
 export interface RateLimitRule {
 	/** Path pattern to match (exact or wildcard with *) */
 	path: string;
+	/**
+	 * Restrict the rule to one HTTP method. Omit to match any method.
+	 * Needed where one path serves both a cheap read and an expensive write:
+	 * /api/waitlist is a public POST that sends mail and an admin GET that
+	 * lists signups, and they want very different budgets.
+	 */
+	method?: string;
 	/** Rate limit configuration */
 	config: RateLimitConfig;
 }
@@ -168,9 +175,12 @@ export function rateLimitMiddleware(
 
 		// Find matching rule
 		let config: RateLimitConfig | undefined;
+		let scopedMethod: string | undefined;
 		for (const rule of rules) {
+			if (rule.method && rule.method !== c.req.method) continue;
 			if (pathMatches(path, rule.path)) {
 				config = rule.config;
+				scopedMethod = rule.method;
 				break;
 			}
 		}
@@ -185,7 +195,10 @@ export function rateLimitMiddleware(
 			return next();
 		}
 
-		// Generate rate limit key
+		// Generate rate limit key. A method-scoped rule gets its own bucket:
+		// sharing one path-keyed counter would let the other method on that
+		// path spend its budget (and vice versa).
+		const scope = scopedMethod ? `${scopedMethod}:${path}` : path;
 		let key: string;
 		if (config.keyGenerator) {
 			const customKey = config.keyGenerator(c);
@@ -193,10 +206,10 @@ export function rateLimitMiddleware(
 				// Key generator returned null, skip rate limiting
 				return next();
 			}
-			key = `ratelimit:${path}:${customKey}`;
+			key = `ratelimit:${scope}:${customKey}`;
 		} else {
 			const ip = getClientIp(c);
-			key = `ratelimit:${path}:${ip}`;
+			key = `ratelimit:${scope}:${ip}`;
 		}
 
 		// Check rate limit; fails open so a Redis outage doesn't 500 every request
