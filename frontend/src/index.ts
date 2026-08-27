@@ -465,6 +465,11 @@ app.get('/favicon.svg', serveStatic({ root: publicRoot, path: 'favicon.svg' }));
 app.get('/robots.txt', serveStatic({ root: publicRoot, path: 'robots.txt' }));
 app.get('/version.txt', serveStatic({ root: publicRoot, path: 'version.txt' }));
 
+// Brand lockup for transactional emails. Email clients fetch this with no
+// session, so it has to be listed here explicitly - anything not on this
+// allowlist falls through to authMiddleware and 404s for them.
+app.get('/email-logo.png', serveStatic({ root: publicRoot, path: 'email-logo.png' }));
+
 // Claude Code plugin marketplace manifest (public, no auth). Lets users run
 // `/plugin marketplace add https://specboard.io/claude`. Both paths return the same
 // file so the command works whether the client fetches the URL verbatim or appends a filename.

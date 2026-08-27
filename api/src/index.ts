@@ -257,6 +257,7 @@ app.use(
 			{ path: '/oauth/authorize', config: RATE_LIMIT_CONFIGS.oauthAuthorize },
 			{ path: '/oauth/register', config: RATE_LIMIT_CONFIGS.oauthToken }, // Same limit as token endpoint
 			{ path: '/api/chat', config: RATE_LIMIT_CONFIGS.chat },
+			{ path: '/api/waitlist', config: RATE_LIMIT_CONFIGS.waitlist },
 		],
 		defaultLimit: RATE_LIMIT_CONFIGS.api,
 		excludePaths: ['/health', '/api/health', '/api/metrics'],

@@ -42,7 +42,7 @@ The mark wears the app's primary token in each mode — no brand-only colors:
 - Dark surfaces: `#60a5fa` (the dark-mode `--color-primary`)
 - One-color contexts (print, embossing): ink `#1a1a1a` on light, `#f0f0f0` on dark
 
-Emails can't load SVG or webfonts, so the email lockup is a unicode chevron (`&#9656;`) in brand blue plus bold system-font "specboard" (`shared/email/src/templates.ts`).
+Emails can't load SVG or webfonts, so the email lockup is a PNG raster of the lockup, hosted at `/email-logo.png` and served publicly by `frontend/src/index.ts`. It renders at 246x40, the same lockup size the login page uses (`BrandLogo size={40}`), so the ghost card stays in per the size rules above. `alt="specboard"` is styled to stand in for the wordmark in clients that block remote images. Regenerate it from `brand/lockup.svg` with `rsvg-convert -w 738` (3x the 246px display width).
 
 ## Type
 

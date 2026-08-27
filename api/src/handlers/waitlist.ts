@@ -5,6 +5,7 @@
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { query } from '@specboard/db';
+import { sendEmail, getWaitlistConfirmationEmailContent } from '@specboard/email';
 import { isValidEmail } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
 
@@ -57,13 +58,30 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 
 	try {
 		// Insert new signup (idempotent: do nothing if email already exists)
-		// This avoids race conditions and handles duplicates atomically
-		await query<WaitlistSignup>(
+		// This avoids race conditions and handles duplicates atomically.
+		// RETURNING doubles as the confirmation-email guard: a conflict yields
+		// no row, so signing up twice never sends a second thank-you.
+		const result = await query<Pick<WaitlistSignup, 'id'>>(
 			`INSERT INTO waitlist_signups (email, company, role, use_case)
 			 VALUES ($1, $2, $3, $4)
-			 ON CONFLICT (email) DO NOTHING`,
+			 ON CONFLICT (email) DO NOTHING
+			 RETURNING id`,
 			[normalizedEmail, company, role, useCase]
 		);
+
+		if (result.rows.length > 0) {
+			// Fire-and-forget: the signup is already committed, so a mail
+			// failure must not fail the request or roll anything back.
+			const emailContent = getWaitlistConfirmationEmailContent();
+			sendEmail({
+				to: normalizedEmail,
+				subject: emailContent.subject,
+				textBody: emailContent.textBody,
+				htmlBody: emailContent.htmlBody,
+			}).catch((error) => {
+				console.error('Waitlist confirmation email failed:', error instanceof Error ? error.message : 'Unknown error');
+			});
+		}
 
 		// Always return success (don't leak whether email already existed)
 		return context.json({ success: true }, 201);

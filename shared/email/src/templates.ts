@@ -1,9 +1,10 @@
 /**
- * Email templates for authentication flows
+ * Email templates for authentication and waitlist flows
  *
- * Branding follows docs/brand.md. Email clients strip external CSS, SVG,
- * and webfonts, so the header lockup is a unicode chevron plus text and
- * everything is inline-styled.
+ * Branding follows docs/brand.md. Email clients strip external CSS, SVG, and
+ * webfonts, so the header lockup is a hosted PNG with styled alt text as the
+ * fallback for clients that block remote images, and everything is
+ * inline-styled.
  */
 
 export interface EmailContent {
@@ -13,6 +14,12 @@ export interface EmailContent {
 }
 
 const BRAND_PRIMARY = '#3b82f6';
+const CONTACT_EMAIL = 'kevin@specboard.io';
+
+// Absolute origin: an email is read outside any app session, so every asset
+// URL has to be fully qualified. Served by frontend/src/index.ts.
+const APP_URL = process.env.APP_URL || 'https://specboard.io';
+const LOGO_URL = `${APP_URL}/email-logo.png`;
 
 function emailShell(inner: string): string {
 	return `<!DOCTYPE html>
@@ -21,10 +28,9 @@ function emailShell(inner: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background-color: #ffffff; max-width: 600px; margin: 0 auto; padding: 20px;">
   <p style="margin: 0 0 32px;">
-    <span style="color: ${BRAND_PRIMARY}; font-size: 20px;">&#9656;</span>
-    <span style="font-size: 18px; font-weight: 700; color: #111; letter-spacing: -0.01em;">specboard</span>
+    <img src="${LOGO_URL}" alt="specboard" width="246" height="40" style="display: block; border: 0; font-size: 24px; font-weight: 700; color: #111; letter-spacing: -0.01em;">
   </p>
 
 ${inner}
@@ -156,6 +162,35 @@ ${emailButton(resetUrl, 'Reset Password')}
   <p style="color: #666; font-size: 14px;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
 
 ${emailLinkFallback(resetUrl)}`);
+
+	return { subject, textBody, htmlBody };
+}
+
+/**
+ * Waitlist signup confirmation
+ *
+ * Personal thank-you rather than a transactional notice: no button, no
+ * expiring link, nothing to click through to. The reply address is the only
+ * action offered.
+ */
+export function getWaitlistConfirmationEmailContent(): EmailContent {
+	const subject = 'Thanks for joining the Specboard waitlist';
+
+	const textBody = `Thanks for signing up for early access.
+
+We're building Specboard to keep specs, planning, and the agents that read them in one place. You're on the list, and we'll email you when a spot opens up.
+
+If you have questions, or you just want to tell us what you're hoping it does, write to ${CONTACT_EMAIL}.
+
+- Kevin`;
+
+	const htmlBody = emailShell(`  <h1 style="color: #111; font-size: 24px; margin-bottom: 24px;">Thanks for signing up for early access.</h1>
+
+  <p>We're building Specboard to keep specs, planning, and the agents that read them in one place. You're on the list, and we'll email you when a spot opens up.</p>
+
+  <p>If you have questions, or you just want to tell us what you're hoping it does, write to <a href="mailto:${CONTACT_EMAIL}" style="color: ${BRAND_PRIMARY};">${CONTACT_EMAIL}</a>.</p>
+
+  <p style="margin-top: 32px;">- Kevin</p>`);
 
 	return { subject, textBody, htmlBody };
 }

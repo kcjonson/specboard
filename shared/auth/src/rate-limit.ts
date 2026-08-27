@@ -412,6 +412,21 @@ export const RATE_LIMIT_CONFIGS = {
 		message: 'Too many verification email requests, please try again in an hour',
 	} satisfies RateLimitConfig,
 
+	/**
+	 * /api/waitlist: 10 per hour per IP. The endpoint is unauthenticated and
+	 * emails whatever address it is handed, so the general API limit would
+	 * make it a usable mail relay. Kept well above the auth-flow limits
+	 * because this one is keyed per IP with no email component: a whole
+	 * office behind one NAT signing up is the success case, not abuse. The
+	 * INSERT ... ON CONFLICT already caps each address at one email ever, so
+	 * this only has to bound distinct addresses reachable from one IP.
+	 */
+	waitlist: {
+		maxRequests: 10,
+		windowSeconds: 60 * 60,
+		message: 'Too many signup requests, please try again in an hour',
+	} satisfies RateLimitConfig,
+
 	/** General API: 100 requests per minute */
 	api: {
 		maxRequests: 100,
