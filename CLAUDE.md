@@ -263,10 +263,25 @@ infra/                     # AWS CDK infrastructure
 1. **Open a PR**
 2. **Stay on the feature branch** — PR feedback may come immediately
 
-## Plan File Management
+## Plan Files
 
-When a plan file is confirmed complete (has `# COMPLETE` on first line):
+Plans live in `{project-root}/.claude/plans/`, named descriptively (`auth-refactor.md`,
+`editor-comments.md`). The directory is gitignored on purpose: a plan is working scratch for one
+piece of work, not a record anyone else can find.
 
-1. Keep in `.claude/plans/` for reference
-2. Plans are project-specific, stored in `{project-root}/.claude/plans/`
-3. Use descriptive names: `auth-refactor.md`, `editor-comments.md`
+Because they are invisible to everyone but the agent that wrote them, a plan must not be the only
+copy of anything worth keeping. When the work completes:
+
+1. **Harvest the durable parts into `docs/`** before closing anything. Architectural decisions and
+   the reasoning behind them, constraints discovered mid-implementation, and anything that would
+   make a future reader ask "why is it built this way" go into `docs/architecture.md`,
+   `docs/tech-stack.md`, the relevant `docs/specs/` file, or an operational runbook
+   (`docs/deployment.md`, `docs/setup.md`, `docs/verification.md`, `docs/production-email.md`).
+   Fold it into the existing doc rather than appending a new one. This rides the same PR as the
+   work.
+2. **Delete the plan file.** Not `# COMPLETE`, not archived, deleted. The decisions now live in
+   `docs/` and the execution sequencing lives on the Specboard item as child tasks and notes.
+   Anything that survives neither of those was not worth keeping.
+
+A finished plan still sitting in `.claude/plans/` means step 1 was skipped. Harvest it before
+deleting it.
