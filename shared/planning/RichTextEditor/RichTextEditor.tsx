@@ -1,6 +1,6 @@
-import { useMemo, useCallback } from 'preact/hooks';
+import { useMemo, useCallback, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { createEditor, Descendant, Editor, Node } from 'slate';
+import { createEditor, Descendant, Editor, Node, Transforms } from 'slate';
 import { Slate, Editable, withReact, RenderElementProps, RenderLeafProps } from 'slate-react';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
@@ -12,7 +12,7 @@ import styles from './RichTextEditor.module.css';
 import '../../pages/MarkdownEditor/types';
 
 export interface RichTextEditorProps {
-	/** Initial value as Slate nodes */
+	/** Current content as Slate nodes; a new array replaces what the editor shows. */
 	value: Descendant[];
 	/** Callback when content changes */
 	onChange: (value: Descendant[]) => void;
@@ -22,10 +22,11 @@ export interface RichTextEditorProps {
 	readOnly?: boolean;
 }
 
-// Default empty value
-const EMPTY_VALUE: Descendant[] = [
-	{ type: 'paragraph', children: [{ text: '' }] }
-];
+// A fresh empty document. Slate takes ownership of the nodes it is given, so
+// every editor and every reset needs its own copy rather than a shared constant.
+function emptyValue(): Descendant[] {
+	return [{ type: 'paragraph', children: [{ text: '' }] }];
+}
 
 // Hotkey mappings
 const HOTKEYS: Record<string, MarkType> = {
@@ -83,7 +84,7 @@ export function serializeToText(nodes: Descendant[]): string {
 // Deserialize plain text to Slate value
 export function deserializeFromText(text: string): Descendant[] {
 	if (!text || text.trim() === '') {
-		return EMPTY_VALUE;
+		return emptyValue();
 	}
 	const lines = text.split('\n');
 	return lines.map(line => ({
@@ -104,8 +105,43 @@ export function RichTextEditor({
 		[]
 	);
 
-	// Ensure value is valid
-	const initialValue = value.length > 0 ? value : EMPTY_VALUE;
+	// Ensure value is valid. Memoized so an empty `value` doesn't produce a new
+	// document every render and retrigger the sync effect below.
+	const content = useMemo(() => (value.length > 0 ? value : emptyValue()), [value]);
+
+	// The document last handed to the editor, whether by us below or by the editor
+	// itself through onChange. Comparing against `editor.children` instead would race
+	// fast typing: the state that comes back is one keystroke behind what the editor
+	// already holds, and the effect would treat that as an external change and undo it.
+	const applied = useRef<Descendant[]>(content);
+
+	// The document the replacement below wrote. Slate reports its operations through
+	// onChange exactly like a keystroke, and forwarding them would mark the newly
+	// opened item dirty and save back a description nobody typed. Matching on the value
+	// rather than latching a flag means a replacement that somehow emits nothing can't
+	// leave the next real edit suppressed.
+	const selfApplied = useRef<Descendant[] | null>(null);
+
+	// Slate reads `initialValue` once, on mount, and ignores it forever after — so a
+	// document arriving from outside (the drawer switching to another item, a fetch
+	// landing) has to be written in by hand, or the previous item's text stays on
+	// screen. It goes in through transforms rather than by assigning `editor.children`:
+	// slate-react renders each node from a cache it only invalidates on operations, so
+	// a raw assignment updates the model and leaves the old text rendered. History is
+	// dropped with it, since undo must not reach back into the replaced document.
+	useEffect(() => {
+		if (content === applied.current) return;
+		applied.current = content;
+		Transforms.deselect(editor);
+		Editor.withoutNormalizing(editor, () => {
+			for (let i = editor.children.length - 1; i >= 0; i--) {
+				Transforms.removeNodes(editor, { at: [i] });
+			}
+			Transforms.insertNodes(editor, content, { at: [0] });
+		});
+		selfApplied.current = editor.children;
+		editor.history = { undos: [], redos: [] };
+	}, [editor, content]);
 
 	// Handle keyboard shortcuts
 	const handleKeyDown = useCallback(
@@ -130,16 +166,20 @@ export function RichTextEditor({
 			const isAstChange = editor.operations.some(
 				op => op.type !== 'set_selection'
 			);
-			if (isAstChange) {
-				onChange(newValue);
+			if (!isAstChange) return;
+			if (newValue === selfApplied.current) {
+				selfApplied.current = null;
+				return;
 			}
+			applied.current = newValue;
+			onChange(newValue);
 		},
 		[editor, onChange]
 	);
 
 	return (
 		<div class={styles.container}>
-			<Slate editor={editor} initialValue={initialValue} onChange={handleChange}>
+			<Slate editor={editor} initialValue={content} onChange={handleChange}>
 				{!readOnly && (
 					<Toolbar
 						isMarkActive={(mark) => isMarkActive(editor, mark)}

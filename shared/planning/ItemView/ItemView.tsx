@@ -91,12 +91,12 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 	const taskStats = item?.childStats || { total: 0, done: 0 };
 
-	// Sync title draft when item data loads
+	// Sync the title draft to whichever item is open. Keyed on the model as well as
+	// the title so switching to an item whose title hasn't arrived yet clears the
+	// field instead of leaving the previous item's title sitting in it.
 	useEffect(() => {
-		if (item?.title) {
-			setTitleDraft(item.title);
-		}
-	}, [item?.title]);
+		setTitleDraft(item?.title || '');
+	}, [item, item?.title]);
 
 	// Sync description AST state when item changes (for navigation between items)
 	useEffect(() => {
@@ -292,7 +292,6 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 				<h3 class={styles.sectionTitle}>Description</h3>
 				<div onBlur={handleDescriptionBlur}>
 					<RichTextEditor
-						key={item?.id || 'new'}
 						value={descriptionAst}
 						onChange={handleDescriptionChange}
 						placeholder="Add a description..."
