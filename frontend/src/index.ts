@@ -465,10 +465,12 @@ app.get('/favicon.svg', serveStatic({ root: publicRoot, path: 'favicon.svg' }));
 app.get('/robots.txt', serveStatic({ root: publicRoot, path: 'robots.txt' }));
 app.get('/version.txt', serveStatic({ root: publicRoot, path: 'version.txt' }));
 
-// Brand lockup for transactional emails. Email clients fetch this with no
-// session, so it has to be listed here explicitly - anything not on this
-// allowlist falls through to authMiddleware and 404s for them.
+// Brand lockup for transactional emails, light and dark surfaces. Email
+// clients fetch these with no session, so they have to be listed here
+// explicitly - anything not on this allowlist falls through to
+// authMiddleware and 404s for them.
 app.get('/email-logo.png', serveStatic({ root: publicRoot, path: 'email-logo.png' }));
+app.get('/email-logo-dark.png', serveStatic({ root: publicRoot, path: 'email-logo-dark.png' }));
 
 // Claude Code plugin marketplace manifest (public, no auth). Lets users run
 // `/plugin marketplace add https://specboard.io/claude`. Both paths return the same

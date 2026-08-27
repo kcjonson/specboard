@@ -12,7 +12,8 @@ Feel shorthand: a craft tool. Unpretentious, durable, fast, crisp, agent-ready, 
 |------|-----|
 | [brand/logomark.svg](brand/logomark.svg) | Mark on light surfaces (`#3b82f6`) |
 | [brand/logomark-dark.svg](brand/logomark-dark.svg) | Mark on dark surfaces (`#60a5fa`) |
-| [brand/lockup.svg](brand/lockup.svg) | The lockup, fully self-contained |
+| [brand/lockup.svg](brand/lockup.svg) | The lockup on light surfaces, fully self-contained |
+| [brand/lockup-dark.svg](brand/lockup-dark.svg) | The lockup on dark surfaces (`#60a5fa` mark, `#f0f0f0` wordmark) |
 | [brand/favicon.svg](brand/favicon.svg) | Favicon: chevron + card sliver off the right edge, theme-aware (canonical copy ships at `web/public/favicon.svg`) |
 | [brand/permanent-marker.woff2](brand/permanent-marker.woff2) | Source font for regenerating the wordmark outlines (Apache-2.0, see LICENSE alongside) |
 
@@ -42,7 +43,9 @@ The mark wears the app's primary token in each mode — no brand-only colors:
 - Dark surfaces: `#60a5fa` (the dark-mode `--color-primary`)
 - One-color contexts (print, embossing): ink `#1a1a1a` on light, `#f0f0f0` on dark
 
-Emails can't load SVG or webfonts, so the email lockup is a PNG raster of the lockup, hosted at `/email-logo.png` and served publicly by `frontend/src/index.ts`. It renders at 246x40, the same lockup size the login page uses (`BrandLogo size={40}`), so the ghost card stays in per the size rules above. `alt="specboard"` is styled to stand in for the wordmark in clients that block remote images. Regenerate it from `brand/lockup.svg` with `rsvg-convert -w 738` (3x the 246px display width).
+Emails can't load SVG or webfonts, so the email lockup is a PNG raster, hosted at `/email-logo.png` and `/email-logo-dark.png` and served publicly by `frontend/src/index.ts`. Both render at 246x40, the same lockup size the login page uses (`BrandLogo size={40}`), so the ghost card stays in per the size rules above. `alt="specboard"` is styled to stand in for the wordmark in clients that block remote images.
+
+Dark mode needs the second file because email clients never invert images, so a CSS rule can't recolor the wordmark's baked-in ink. `shared/email/src/templates.ts` ships both and swaps them under `prefers-color-scheme: dark`; the dark one is inline `display:none` so a client that strips `<style>` falls back to light-only rather than stacking both. Regenerate either with `rsvg-convert -w 738 -o web/public/email-logo[-dark].png docs/brand/lockup[-dark].svg` (3x the 246px display width).
 
 ## Type
 
