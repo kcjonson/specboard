@@ -39,6 +39,14 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
 	};
 }
 
+function trimTrailingSlashes(value: string): string {
+	// Index scan rather than /\/+$/: that pattern is unanchored at the start, so the
+	// engine retries from every offset and goes quadratic on a mostly-slash segment.
+	let end = value.length;
+	while (end > 0 && value[end - 1] === '/') end--;
+	return value.slice(0, end);
+}
+
 /**
  * Joins path segments into a single path.
  * Handles leading/trailing slashes and normalizes the result.
@@ -49,8 +57,7 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
 export function joinPath(...segments: string[]): string {
 	return segments
 		.map((segment, index) => {
-			// Remove trailing slash from all but last segment
-			let s = segment.replace(/\/+$/, '');
+			let s = trimTrailingSlashes(segment);
 			// Remove leading slash from all but first segment
 			if (index > 0) {
 				s = s.replace(/^\/+/, '');

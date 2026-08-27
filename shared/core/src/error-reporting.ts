@@ -299,9 +299,49 @@ export function installErrorHandlers(source: 'api' | 'mcp' | 'frontend'): void {
 }
 
 /**
- * Parse a stack trace string into frames
+ * Split "filename:line:col" (or "filename:line", or a bare filename) apart.
+ *
+ * Both regexes hold a single greedy `.*` against anchors and required digits, so
+ * there is one unambiguous way to split any input. The previous parser chained two
+ * lazy `(.+?)` groups with optional trailing groups, which let the engine retry
+ * every split point and made frame parsing quadratic (CodeQL js/polynomial-redos).
  */
-function parseStackTrace(stack?: string): Array<{
+function parseLocation(location: string): { filename: string; lineno?: number; colno?: number } {
+	const withColumn = location.match(/^(.*):(\d+):(\d+)$/);
+	if (withColumn) {
+		return {
+			filename: withColumn[1] as string,
+			lineno: parseInt(withColumn[2] as string, 10),
+			colno: parseInt(withColumn[3] as string, 10),
+		};
+	}
+
+	const withLine = location.match(/^(.*):(\d+)$/);
+	if (withLine) {
+		return { filename: withLine[1] as string, lineno: parseInt(withLine[2] as string, 10) };
+	}
+
+	return { filename: location };
+}
+
+/** Split a Chrome/Node frame body ("fn (loc)" or a bare "loc") into function and location. */
+function splitFrame(body: string): { filename: string; function: string; lineno?: number; colno?: number } {
+	if (body.endsWith(')')) {
+		const open = body.lastIndexOf(' (');
+		if (open > 0) {
+			return {
+				function: body.slice(0, open),
+				...parseLocation(body.slice(open + 2, -1)),
+			};
+		}
+	}
+	return { function: '<anonymous>', ...parseLocation(body) };
+}
+
+/**
+ * Parse a stack trace string into frames (exported for testing)
+ */
+export function parseStackTrace(stack?: string): Array<{
 	filename: string;
 	function: string;
 	lineno?: number;
@@ -319,27 +359,19 @@ function parseStackTrace(stack?: string): Array<{
 	const lines = stack.split('\n');
 
 	for (const line of lines) {
-		// Match Chrome/Node format: "    at functionName (filename:line:col)"
-		// Also handles optional line/col: "    at functionName (filename)" or "    at functionName (filename:line)"
-		const chromeMatch = line.match(/^\s*at\s+(?:(.+?)\s+\()?(.+?)(?::(\d+))?(?::(\d+))?\)?$/);
+		// Chrome/Node: "    at functionName (filename:line:col)" or bare "    at filename:line:col"
+		const chromeMatch = line.match(/^\s*at\s+(.+)$/);
 		if (chromeMatch) {
-			frames.push({
-				function: chromeMatch[1] || '<anonymous>',
-				filename: chromeMatch[2] || '',
-				lineno: chromeMatch[3] ? parseInt(chromeMatch[3], 10) : undefined,
-				colno: chromeMatch[4] ? parseInt(chromeMatch[4], 10) : undefined,
-			});
+			frames.push(splitFrame(chromeMatch[1] as string));
 			continue;
 		}
 
-		// Match Firefox format: "functionName@filename:line:col"
-		const firefoxMatch = line.match(/^(.+?)@(.+?)(?::(\d+))?(?::(\d+))?$/);
-		if (firefoxMatch) {
+		// Firefox: "functionName@filename:line:col"
+		const separator = line.indexOf('@');
+		if (separator > 0 && separator < line.length - 1) {
 			frames.push({
-				function: firefoxMatch[1] || '<anonymous>',
-				filename: firefoxMatch[2] || '',
-				lineno: firefoxMatch[3] ? parseInt(firefoxMatch[3], 10) : undefined,
-				colno: firefoxMatch[4] ? parseInt(firefoxMatch[4], 10) : undefined,
+				function: line.slice(0, separator),
+				...parseLocation(line.slice(separator + 1)),
 			});
 		}
 	}
