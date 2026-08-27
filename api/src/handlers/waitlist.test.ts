@@ -104,6 +104,19 @@ describe('handleWaitlistSignup', () => {
 		expect(sendEmail).toHaveBeenCalledOnce();
 	});
 
+	it('accepts a pasted address with surrounding whitespace', async () => {
+		vi.mocked(query).mockResolvedValue(mockQueryResult([{ id: 'signup-uuid' }]) as never);
+
+		// isValidEmail rejects surrounding whitespace, so validating the raw
+		// value would 400 this before the trim ever ran.
+		const res = await post(createApp(), { email: '  Alice@Example.COM  ' });
+
+		expect(res.status).toBe(201);
+		expect(sendEmail).toHaveBeenCalledWith(
+			expect.objectContaining({ to: 'alice@example.com' })
+		);
+	});
+
 	it('rejects an invalid address without touching the database or sending mail', async () => {
 		const res = await post(createApp(), { email: 'not-an-email' });
 

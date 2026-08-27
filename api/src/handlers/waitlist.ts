@@ -45,13 +45,15 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	// Validate email (required) - check type, format, and length
+	// Normalize before validating, not after: isValidEmail rejects surrounding
+	// whitespace, so validating the raw value would 400 a perfectly good
+	// pasted address before the trim below ever ran.
 	const email = typeof body.email === 'string' ? body.email : '';
-	if (!isValidEmail(email) || email.length > 255) {
+	const normalizedEmail = email.trim().toLowerCase();
+	if (!isValidEmail(normalizedEmail) || normalizedEmail.length > 255) {
 		return context.json({ error: 'Valid email is required' }, 400);
 	}
 
-	const normalizedEmail = email.toLowerCase().trim();
 	const company = sanitizeOptionalString(body.company);
 	const role = sanitizeOptionalString(body.role);
 	const useCase = sanitizeOptionalString(body.use_case, 2000);
@@ -80,7 +82,13 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 				htmlBody: emailContent.htmlBody,
 				replyTo: emailContent.replyTo,
 			}).catch((error) => {
-				console.error('Waitlist confirmation email failed:', error instanceof Error ? error.message : 'Unknown error');
+				// Name the address: the RETURNING guard above means this
+				// signup can never trigger another send, so this line is the
+				// only record of who needs one re-sent by hand.
+				console.error(
+					`Waitlist confirmation email failed for ${normalizedEmail}:`,
+					error instanceof Error ? error.message : 'Unknown error'
+				);
 			});
 		}
 

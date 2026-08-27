@@ -45,7 +45,12 @@ The mark wears the app's primary token in each mode — no brand-only colors:
 
 Emails can't load SVG or webfonts, so the email lockup is a PNG raster, hosted at `/email-logo.png` and `/email-logo-dark.png` and served publicly by `frontend/src/index.ts`. Both render at 246x40, the same lockup size the login page uses (`BrandLogo size={40}`), so the ghost card stays in per the size rules above. `alt="specboard"` is styled to stand in for the wordmark in clients that block remote images.
 
-Dark mode needs the second file because email clients never invert images, so a CSS rule can't recolor the wordmark's baked-in ink. `shared/email/src/templates.ts` ships both and swaps them under `prefers-color-scheme: dark`; the dark one is inline `display:none` so a client that strips `<style>` falls back to light-only rather than stacking both. Regenerate either with `rsvg-convert -w 738 -o web/public/email-logo[-dark].png docs/brand/lockup[-dark].svg` (3x the 246px display width).
+Dark mode needs the second file because email clients never invert images, so a CSS rule can't recolor the wordmark's baked-in ink. `shared/email/src/templates.ts` ships both and swaps them under `prefers-color-scheme: dark`; the dark one is inline `display:none` so a client that strips `<style>` falls back to light-only rather than stacking both. Regenerate at 3x the 246px display width:
+
+```
+rsvg-convert -w 738 -o web/public/email-logo.png docs/brand/lockup.svg
+rsvg-convert -w 738 -o web/public/email-logo-dark.png docs/brand/lockup-dark.svg
+```
 
 ## Type
 

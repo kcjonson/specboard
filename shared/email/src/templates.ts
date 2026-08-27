@@ -48,30 +48,37 @@ function emailShell(inner: string): string {
   <style>
     :root { color-scheme: light dark; supported-color-schemes: light dark; }
     @media (prefers-color-scheme: dark) {
-      body { background-color: #1a1a1a !important; color: #d0d0d0 !important; }
+      body, .sb-surface { background-color: #1a1a1a !important; color: #d0d0d0 !important; }
       .sb-h1 { color: #f0f0f0 !important; }
       .sb-muted { color: #8a8a8a !important; }
+      /* Lighter than .sb-muted so the fallback URL stays distinguishable
+         from the label above it, which is its only affordance. */
+      .sb-muted-link { color: #b0b0b0 !important; }
       .sb-link { color: #60a5fa !important; }
       .sb-rule { border-top-color: #333333 !important; }
+      /* Dark text, not white: white on #60a5fa is 2.54:1. */
+      .sb-btn { background-color: #60a5fa !important; color: #1a1a1a !important; }
       .sb-logo-light { display: none !important; }
       .sb-logo-dark { display: block !important; }
     }
   </style>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background-color: #ffffff; max-width: 600px; margin: 0 auto; padding: 20px;">
+<body style="margin: 0; padding: 0; background-color: #ffffff;">
+  <div class="sb-surface" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background-color: #ffffff; max-width: 600px; margin: 0 auto; padding: 20px;">
   <p style="margin: 0 0 32px;">
     <img class="sb-logo-light" src="${LOGO_URL}" alt="specboard" width="246" height="40" style="display: block; border: 0; font-size: 24px; font-weight: 700; color: #111; letter-spacing: -0.01em;">
-    <img class="sb-logo-dark" src="${LOGO_DARK_URL}" alt="specboard" width="246" height="40" style="display: none; border: 0; font-size: 24px; font-weight: 700; color: #f0f0f0; letter-spacing: -0.01em;">
+    <img class="sb-logo-dark" src="${LOGO_DARK_URL}" alt="specboard" width="246" height="40" style="display: none; mso-hide: all; border: 0; font-size: 24px; font-weight: 700; color: #f0f0f0; letter-spacing: -0.01em;">
   </p>
 
 ${inner}
+  </div>
 </body>
 </html>`;
 }
 
 function emailButton(url: string, label: string): string {
 	return `  <p style="margin: 32px 0;">
-    <a href="${url}" style="display: inline-block; background-color: ${BRAND_PRIMARY}; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500;">${label}</a>
+    <a class="sb-btn" href="${url}" style="display: inline-block; background-color: ${BRAND_PRIMARY}; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500;">${label}</a>
   </p>`;
 }
 
@@ -80,7 +87,7 @@ function emailLinkFallback(url: string): string {
 
   <p class="sb-muted" style="color: #999; font-size: 12px;">
     If the button doesn't work, copy and paste this link into your browser:<br>
-    <a class="sb-muted" href="${url}" style="color: #666;">${url}</a>
+    <a class="sb-muted-link" href="${url}" style="color: #666;">${url}</a>
   </p>`;
 }
 

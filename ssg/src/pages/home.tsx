@@ -38,8 +38,6 @@ export const homeScript = `
 
 			// Normalize the same way the API does before both sending and
 			// displaying, so the address shown back is exactly the recipient.
-			// The trim also matters: the API validates before it normalizes,
-			// so an untrimmed address would 400 rather than sign up.
 			var email = document.getElementById('ea-email').value.trim().toLowerCase();
 			var company = document.getElementById('ea-company').value;
 			var role = document.getElementById('ea-role').value;

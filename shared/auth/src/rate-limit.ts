@@ -33,8 +33,13 @@ export interface RateLimitRule {
 	 * Needed where one path serves both a cheap read and an expensive write:
 	 * /api/waitlist is a public POST that sends mail and an admin GET that
 	 * lists signups, and they want very different budgets.
+	 *
+	 * Typed as a literal union on purpose: the comparison against
+	 * c.req.method is case-sensitive, so a lowercase 'post' would silently
+	 * match nothing and drop the path back to the loose default limit. This
+	 * makes that a compile error instead of a quiet loss of protection.
 	 */
-	method?: string;
+	method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 	/** Rate limit configuration */
 	config: RateLimitConfig;
 }
