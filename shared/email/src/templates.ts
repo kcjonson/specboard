@@ -17,14 +17,23 @@ export interface EmailContent {
 	subject: string;
 	textBody: string;
 	htmlBody: string;
+	/**
+	 * Reply address, wired to SES ReplyToAddresses. Set it on any template
+	 * whose copy invites a reply, so the address in the body and the one a
+	 * "Reply" click actually uses can't drift apart. SES only requires the
+	 * Source to be a verified identity, not this.
+	 */
+	replyTo?: string;
 }
 
 const BRAND_PRIMARY = '#3b82f6';
 const CONTACT_EMAIL = 'kevin@specboard.io';
 
 // Absolute origin: an email is read outside any app session, so every asset
-// URL has to be fully qualified. Served by frontend/src/index.ts.
-const APP_URL = process.env.APP_URL || 'https://specboard.io';
+// URL has to be fully qualified. Served by frontend/src/index.ts. The default
+// mirrors api/src/handlers/auth/utils.ts so a missing APP_URL can't leave an
+// email with localhost links next to production-hosted images.
+const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 const LOGO_URL = `${APP_URL}/email-logo.png`;
 const LOGO_DARK_URL = `${APP_URL}/email-logo-dark.png`;
 
@@ -214,5 +223,7 @@ If you have questions, or you just want to tell us what you're hoping it does, w
 
   <p style="margin-top: 32px;">- Kevin</p>`);
 
-	return { subject, textBody, htmlBody };
+	// The copy asks people to write to CONTACT_EMAIL, and most of them will
+	// hit Reply rather than click the mailto link.
+	return { subject, textBody, htmlBody, replyTo: CONTACT_EMAIL };
 }

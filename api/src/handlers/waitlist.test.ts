@@ -19,6 +19,7 @@ vi.mock('@specboard/email', () => ({
 		subject: 'Thanks for joining the Specboard waitlist',
 		textBody: 'text',
 		htmlBody: '<p>html</p>',
+		replyTo: 'kevin@specboard.io',
 	})),
 }));
 
@@ -65,6 +66,18 @@ describe('handleWaitlistSignup', () => {
 				to: 'alice@example.com',
 				subject: 'Thanks for joining the Specboard waitlist',
 			})
+		);
+	});
+
+	it('routes replies to the address the copy tells people to write to', async () => {
+		vi.mocked(query).mockResolvedValue(mockQueryResult([{ id: 'signup-uuid' }]) as never);
+
+		await post(createApp(), { email: 'alice@example.com' });
+
+		// Most recipients hit Reply rather than clicking the mailto link, so
+		// this has to be set or replies land on the noreply Source address.
+		expect(sendEmail).toHaveBeenCalledWith(
+			expect.objectContaining({ replyTo: 'kevin@specboard.io' })
 		);
 	});
 

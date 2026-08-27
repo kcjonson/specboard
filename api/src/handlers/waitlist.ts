@@ -78,6 +78,7 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 				subject: emailContent.subject,
 				textBody: emailContent.textBody,
 				htmlBody: emailContent.htmlBody,
+				replyTo: emailContent.replyTo,
 			}).catch((error) => {
 				console.error('Waitlist confirmation email failed:', error instanceof Error ? error.message : 'Unknown error');
 			});
