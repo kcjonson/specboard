@@ -84,7 +84,7 @@ export const epicTools: Tool[] = [
 				},
 				specs: {
 					type: 'array',
-					description: 'Linked spec documents (work items only). Each path must start with / (e.g., /docs/specs/feature.md).',
+					description: 'Linked spec documents. Any item type can carry them, tasks included. Each path must start with / (e.g., /docs/specs/feature.md).',
 					items: {
 						type: 'object',
 						properties: {
@@ -180,7 +180,7 @@ export const epicTools: Tool[] = [
 				},
 				specs: {
 					type: 'array',
-					description: 'Linked spec documents (work items only). Replaces the full set — send all links to keep, or [] to clear. Each path must start with / (e.g., /docs/specs/feature.md).',
+					description: 'Linked spec documents. Any item type can carry them, tasks included. Replaces the full set — send all links to keep, or [] to clear. Each path must start with / (e.g., /docs/specs/feature.md).',
 					items: {
 						type: 'object',
 						properties: {
