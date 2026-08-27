@@ -5,6 +5,7 @@
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { query } from '@specboard/db';
+import { sendEmail, getWaitlistConfirmationEmailContent } from '@specboard/email';
 import { isValidEmail } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
 
@@ -44,26 +45,52 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	// Validate email (required) - check type, format, and length
+	// Normalize before validating, not after: isValidEmail rejects surrounding
+	// whitespace, so validating the raw value would 400 a perfectly good
+	// pasted address before the trim below ever ran.
 	const email = typeof body.email === 'string' ? body.email : '';
-	if (!isValidEmail(email) || email.length > 255) {
+	const normalizedEmail = email.trim().toLowerCase();
+	if (!isValidEmail(normalizedEmail) || normalizedEmail.length > 255) {
 		return context.json({ error: 'Valid email is required' }, 400);
 	}
 
-	const normalizedEmail = email.toLowerCase().trim();
 	const company = sanitizeOptionalString(body.company);
 	const role = sanitizeOptionalString(body.role);
 	const useCase = sanitizeOptionalString(body.use_case, 2000);
 
 	try {
 		// Insert new signup (idempotent: do nothing if email already exists)
-		// This avoids race conditions and handles duplicates atomically
-		await query<WaitlistSignup>(
+		// This avoids race conditions and handles duplicates atomically.
+		// RETURNING doubles as the confirmation-email guard: a conflict yields
+		// no row, so signing up twice never sends a second thank-you.
+		const result = await query<Pick<WaitlistSignup, 'id'>>(
 			`INSERT INTO waitlist_signups (email, company, role, use_case)
 			 VALUES ($1, $2, $3, $4)
-			 ON CONFLICT (email) DO NOTHING`,
+			 ON CONFLICT (email) DO NOTHING
+			 RETURNING id`,
 			[normalizedEmail, company, role, useCase]
 		);
+
+		if (result.rows.length > 0) {
+			// Fire-and-forget: the signup is already committed, so a mail
+			// failure must not fail the request or roll anything back.
+			const emailContent = getWaitlistConfirmationEmailContent();
+			sendEmail({
+				to: normalizedEmail,
+				subject: emailContent.subject,
+				textBody: emailContent.textBody,
+				htmlBody: emailContent.htmlBody,
+				replyTo: emailContent.replyTo,
+			}).catch((error) => {
+				// Name the address, and log the error whole rather than just
+				// its message: the RETURNING guard above means this signup can
+				// never trigger another send, so this line is the only record
+				// of who needs one re-sent by hand and why it failed. The
+				// stack and the SES $metadata (request id, error code) are the
+				// difference between diagnosing a throttle and guessing.
+				console.error(`Waitlist confirmation email failed for ${normalizedEmail}:`, error);
+			});
+		}
 
 		// Always return success (don't leak whether email already existed)
 		return context.json({ success: true }, 201);

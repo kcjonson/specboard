@@ -36,7 +36,9 @@ export const homeScript = `
 			e.preventDefault();
 			if (errorEl) errorEl.classList.add('hidden');
 
-			var email = document.getElementById('ea-email').value;
+			// Normalize the same way the API does before both sending and
+			// displaying, so the address shown back is exactly the recipient.
+			var email = document.getElementById('ea-email').value.trim().toLowerCase();
 			var company = document.getElementById('ea-company').value;
 			var role = document.getElementById('ea-role').value;
 			var useCase = document.getElementById('ea-use-case').value;
@@ -61,6 +63,10 @@ export const homeScript = `
 			})
 			.then(function(result) {
 				if (result.ok) {
+					// textContent, not innerHTML: this is user input echoed
+					// back into the page and the input type is not a sanitizer.
+					var successEmailEl = document.getElementById('ea-success-email');
+					if (successEmailEl) successEmailEl.textContent = email;
 					if (formFields) formFields.style.display = 'none';
 					if (successEl) successEl.classList.remove('hidden');
 				} else {
@@ -586,8 +592,11 @@ export function HomeContent(): JSX.Element {
 							</svg>
 						</div>
 						<div class="form-success-text">
-							<h3>You're on the list!</h3>
-							<p>We'll be in touch soon with next steps.</p>
+							<h3>You're on the list.</h3>
+							<p>
+								We sent a confirmation to <span id="ea-success-email"></span>. We'll be in
+								touch when a spot opens up.
+							</p>
 						</div>
 					</div>
 

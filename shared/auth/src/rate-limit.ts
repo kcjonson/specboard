@@ -28,6 +28,18 @@ export interface RateLimitConfig {
 export interface RateLimitRule {
 	/** Path pattern to match (exact or wildcard with *) */
 	path: string;
+	/**
+	 * Restrict the rule to one HTTP method. Omit to match any method.
+	 * Needed where one path serves both a cheap read and an expensive write:
+	 * /api/waitlist is a public POST that sends mail and an admin GET that
+	 * lists signups, and they want very different budgets.
+	 *
+	 * Typed as a literal union on purpose: the comparison against
+	 * c.req.method is case-sensitive, so a lowercase 'post' would silently
+	 * match nothing and drop the path back to the loose default limit. This
+	 * makes that a compile error instead of a quiet loss of protection.
+	 */
+	method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 	/** Rate limit configuration */
 	config: RateLimitConfig;
 }
@@ -168,9 +180,12 @@ export function rateLimitMiddleware(
 
 		// Find matching rule
 		let config: RateLimitConfig | undefined;
+		let scopedMethod: string | undefined;
 		for (const rule of rules) {
+			if (rule.method && rule.method !== c.req.method) continue;
 			if (pathMatches(path, rule.path)) {
 				config = rule.config;
+				scopedMethod = rule.method;
 				break;
 			}
 		}
@@ -185,7 +200,10 @@ export function rateLimitMiddleware(
 			return next();
 		}
 
-		// Generate rate limit key
+		// Generate rate limit key. A method-scoped rule gets its own bucket:
+		// sharing one path-keyed counter would let the other method on that
+		// path spend its budget (and vice versa).
+		const scope = scopedMethod ? `${scopedMethod}:${path}` : path;
 		let key: string;
 		if (config.keyGenerator) {
 			const customKey = config.keyGenerator(c);
@@ -193,10 +211,10 @@ export function rateLimitMiddleware(
 				// Key generator returned null, skip rate limiting
 				return next();
 			}
-			key = `ratelimit:${path}:${customKey}`;
+			key = `ratelimit:${scope}:${customKey}`;
 		} else {
 			const ip = getClientIp(c);
-			key = `ratelimit:${path}:${ip}`;
+			key = `ratelimit:${scope}:${ip}`;
 		}
 
 		// Check rate limit; fails open so a Redis outage doesn't 500 every request
@@ -410,6 +428,21 @@ export const RATE_LIMIT_CONFIGS = {
 		maxRequests: 3,
 		windowSeconds: 60 * 60,
 		message: 'Too many verification email requests, please try again in an hour',
+	} satisfies RateLimitConfig,
+
+	/**
+	 * /api/waitlist: 10 per hour per IP. The endpoint is unauthenticated and
+	 * emails whatever address it is handed, so the general API limit would
+	 * make it a usable mail relay. Kept well above the auth-flow limits
+	 * because this one is keyed per IP with no email component: a whole
+	 * office behind one NAT signing up is the success case, not abuse. The
+	 * INSERT ... ON CONFLICT already caps each address at one email ever, so
+	 * this only has to bound distinct addresses reachable from one IP.
+	 */
+	waitlist: {
+		maxRequests: 10,
+		windowSeconds: 60 * 60,
+		message: 'Too many signup requests, please try again in an hour',
 	} satisfies RateLimitConfig,
 
 	/** General API: 100 requests per minute */

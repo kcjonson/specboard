@@ -33,6 +33,8 @@ export interface SendEmailOptions {
 	subject: string;
 	textBody: string;
 	htmlBody?: string;
+	/** Where replies go, if not the Source address. */
+	replyTo?: string;
 }
 
 /**
@@ -64,6 +66,9 @@ function logEmail(options: SendEmailOptions, reason: string): void {
 	console.log('========================================');
 	console.log(`To: ${options.to}`);
 	console.log(`From: ${EMAIL_FROM}`);
+	if (options.replyTo) {
+		console.log(`Reply-To: ${options.replyTo}`);
+	}
 	console.log(`Subject: ${options.subject}`);
 	console.log('----------------------------------------');
 	console.log('Text Body:');
@@ -85,7 +90,7 @@ function logEmail(options: SendEmailOptions, reason: string): void {
  * only emails to allowed domains will be sent.
  */
 export async function sendEmail(options: SendEmailOptions): Promise<void> {
-	const { to, subject, textBody, htmlBody } = options;
+	const { to, subject, textBody, htmlBody, replyTo } = options;
 
 	// Development mode: always log to console
 	if (NODE_ENV === 'development' || EMAIL_MODE === 'console') {
@@ -113,6 +118,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 		Destination: {
 			ToAddresses: [to],
 		},
+		...(replyTo && { ReplyToAddresses: [replyTo] }),
 		Message: {
 			Subject: {
 				Data: subject,
