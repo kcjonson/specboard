@@ -92,7 +92,7 @@ export function HomeContent(): JSX.Element {
 			<header class="home-header">
 				<BrandLogo size={22} href="/" />
 				<nav class="home-nav" aria-label="Main navigation">
-					<a id="auth-link" href="/login" style="visibility: hidden">Sign In</a>
+					<a id="auth-link" class="home-nav-link" href="/login" style="visibility: hidden">Sign In</a>
 					<a href="#early-access" class="btn-primary">Request Access</a>
 				</nav>
 			</header>
