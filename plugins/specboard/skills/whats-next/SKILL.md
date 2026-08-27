@@ -36,6 +36,8 @@ This returns JSON with:
 - `worktrees`: local git worktrees (path + branch)
 - `remoteBranches`: branches with recent activity (last 7 days)
 - `incompletePlans`: plan files the helper finds (it checks `.claude/plans/`) without a `# COMPLETE` header
+- `unharvestedPlans`: plan files that *do* have a `# COMPLETE` header and are still on disk, meaning
+  the work closed without its decisions being moved into the committed docs
 
 If the script is unavailable, gather this manually: `git worktree list`,
 `git branch -r --sort=-committerdate`, and check your plan files (wherever you keep them) for a
@@ -73,7 +75,9 @@ Present recommendations in this order:
 2. **Resume paused work**: items with `sub_status: paused`
 3. **Continue in-progress**: items with incomplete tasks
 4. **Incomplete plan files**: plans without `# COMPLETE` that match MCP items
-5. **Pick up new work**: ready items from the backlog
+5. **Un-harvested plans**: a plan marked `# COMPLETE` still sitting on disk means its work closed
+   without the decisions being moved into the committed docs. Offer to harvest and delete it
+6. **Pick up new work**: ready items from the backlog
 
 ## 5. Present Findings
 
@@ -138,6 +142,10 @@ The three layers, so you don't duplicate:
 
 Keep detail and reasoning in the plan file; keep the trackable checklist in MCP. Don't pour fine
 reasoning into task titles, and don't hide the checklist from the board.
+
+The plan file is scratch, not an archive. It's private, and often in an ignored directory, so
+anything recorded only there is invisible to everyone else. When the work closes, `/specboard:complete`
+moves the durable decisions into the committed docs and deletes the plan.
 
 ## 7. Starting Work
 

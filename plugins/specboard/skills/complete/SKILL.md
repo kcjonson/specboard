@@ -31,6 +31,14 @@ Check whether anything in the repo needs to catch up to the finished work: a cha
 progress doc, a README, a spec whose "status" line is now stale. Update what's out of date and let
 it ride the PR. Don't leave the written record describing a half-done version of the work.
 
+**Harvest the plan file.** If this work had a plan (wherever your setup keeps them, often an ignored
+scratch directory), read it back now and move anything durable into the committed docs: the
+architectural decisions and why they were made, constraints discovered mid-implementation, the
+approaches rejected and the reason. Fold each into the doc that already owns that topic rather than
+adding a new file. A plan is usually invisible to everyone but the agent that wrote it, so a
+decision recorded only there is a decision lost. This rides the same PR as the work; the plan file
+itself gets deleted in step 7.
+
 ## 4. Verify (the gate to merge)
 
 Tests green; run `/verify` or exercise the change to confirm it does what the spec intended. If you
@@ -76,8 +84,9 @@ With the PR(s) merged and the items reconciled:
 - Add a closing note summarizing what shipped, plus what was deferred and where it went:
   `update_item(project_slug, epic_key, 'epic', { notes: '<what shipped; deferred X to #Y>' })`.
 - Every task `done`; nothing left `in_progress`.
-- If you kept a plan file, mark it complete (`# COMPLETE - {date}` on the first line), wherever it
-  lives.
+- Delete the plan file, if there was one. Its decisions went into the docs in step 3 and its
+  sequencing is on the board as tasks and notes; what's left is scratch. Don't mark it complete and
+  leave it, that just accumulates stale copies of decisions the docs already own.
 
 ## 8. Tear down the session
 

@@ -126,6 +126,36 @@ specboard connect
 }
 ```
 
+### Project binding
+
+A repo pins itself to one Specboard project by committing the project **slug** in its `.mcp.json`:
+
+```json
+{
+	"mcpServers": {
+		"specboard": {
+			"type": "http",
+			"url": "https://specboard.io/mcp",
+			"headers": { "X-Specboard-Project": "specboard" }
+		}
+	}
+}
+```
+
+The server reads the header at session init and scopes every tool to that project: `list_projects`
+returns only the bound one, and the item tools default and enforce `project_slug` against it, refusing a
+slug that isn't the bound one. Auth
+stays per-user OAuth, so the committed file grants nothing on its own.
+
+**Why the slug is committed directly.** The first version of this put the project's UUID in the
+header, which meant a personal identifier landed in version control. The planned fix was an
+indirection: commit a repo slug instead, and keep a server-side `(user, repo_slug) -> project`
+binding table with a `bind_project` tool and a first-run prompt. That design was dropped. The
+slug/item-key migration (v0.10.0) made project slugs the public identifier, so the header became
+safe to commit as-is, and the indirection would have bought nothing but a table, a tool, and an
+onboarding step. There is no `repo_project_bindings` table and no `bind_project` tool; if you find
+a reference to either, it is describing the abandoned design.
+
 ### Manual Configuration
 
 For advanced users or CI environments:
