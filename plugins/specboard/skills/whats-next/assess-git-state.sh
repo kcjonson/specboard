@@ -47,13 +47,14 @@ plans_dir="$REPO_ROOT/.claude/plans"
 incomplete_plans="[]"
 unharvested_plans="[]"
 scan_plans() {
-	find "$plans_dir" -name '*.md' -type f | while read -r file; do
+	find "$plans_dir" -name '*.md' -type f -print0 | while IFS= read -r -d '' file; do
 		if head -1 "$file" | grep -q '^# COMPLETE'; then
 			state="complete"
 		else
 			state="incomplete"
 		fi
 		[ "$state" = "$1" ] || continue
+		# First H1 that isn't the COMPLETE marker; a real title may start with "C".
 		title=$(awk '/^# / && $0 !~ /^# COMPLETE/ { sub(/^# /, ""); print; exit }' "$file")
 		title=${title:-$(basename "$file" .md)}
 		modified=$(stat -f %m "$file" 2>/dev/null || stat -c %Y "$file" 2>/dev/null || echo 0)
