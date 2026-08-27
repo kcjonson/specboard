@@ -17,7 +17,8 @@ For system design and infrastructure, see [architecture.md](architecture.md).
 | Vite | Build tool and dev server |
 | CSS Modules | Scoped styling |
 | Vitest | Unit and component testing |
-| Electron | Desktop application wrapper |
+| Electron | Desktop shell (macOS, Windows, Linux) |
+| Capacitor | Mobile shell (iOS, Android) |
 
 ### API Framework
 
@@ -53,6 +54,22 @@ For system design and infrastructure, see [architecture.md](architecture.md).
 ## Monorepo Structure
 
 See [architecture.md](architecture.md) for the full directory layout and package descriptions.
+
+---
+
+## One Codebase, Every Target
+
+Large-screen web, small-screen web, iOS, Android, macOS, Windows, and Linux all run the same Preact build. Electron and Capacitor are native shells around that build, not separate applications, and they differ only in the platform implementation they inject.
+
+Practical consequences for day-to-day work:
+
+- Components never branch on target. Width and `pointer: coarse` are the questions; the operating system is not. See [Responsive Strategy](#responsive-strategy) for the rules that already govern this.
+- Anything a browser cannot do goes behind `@specboard/platform` and gets an implementation per shell.
+- Bundle size is a mobile concern, not just a nicety. The same JavaScript ships to a phone.
+
+Small-screen web shipped 2026-08, which is most of the work of running on a phone. Capacitor adds the native container, device capability, and store distribution on top of a layout that already responds.
+
+See [shared-app-shell.md](specs/shared-app-shell.md) for the target matrix and [platform-abstraction.md](specs/platform-abstraction.md) for the contract.
 
 ---
 
@@ -247,3 +264,5 @@ CI enforces ESLint on all PRs.
 | Modal implementation | Native `<dialog>` | Free focus trap, ESC, top layer; less JS to maintain |
 | Responsive breakpoints | Single 768px | One tier keeps the responsive layer auditable; nothing needed an intermediate |
 | Breakpoint tokens | Literal value + `bp-small` marker comment | Custom properties don't work in media queries; not worth a postcss dependency for one value |
+| Capacitor over React Native | Capacitor | Wraps the existing web build, so one component library, one styling system, and one editor. React Native would fork all three and tax every feature twice. |
+| One Electron shell over two | One shell | Web already serves both products from one SPA and selects by route; the desktop shell has no reason to differ. |
