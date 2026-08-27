@@ -143,7 +143,7 @@ A repo pins itself to one Specboard project by committing the project **slug** i
 ```
 
 The server reads the header at session init and scopes every tool to that project: `list_projects`
-returns only the bound one, and the item tools default and enforce `project_id` against it. Auth
+returns only the bound one, and the item tools default and enforce `project_slug` against it. Auth
 stays per-user OAuth, so the committed file grants nothing on its own.
 
 **Why the slug is committed directly.** The first version of this put the project's UUID in the
