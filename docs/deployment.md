@@ -42,7 +42,10 @@ triggers on a published GitHub release (or a manual dispatch with a tag).
 
 ### Steps
 1. Pick the next version (see [Versioning](#versioning)).
-2. **Publish a release** at the merged commit — this triggers the deploy automatically:
+2. If the release contains a schema migration: take a **manual RDS snapshot first**
+   and wait for it to report `available` — it is the rollback path, since migrations
+   are forward-only. See [verification.md](verification.md#production-release-ritual).
+3. **Publish a release** at the merged commit — this triggers the deploy automatically:
    ```bash
    gh release create vX.Y.Z --target main \
      --title "vX.Y.Z — <summary>" \
@@ -50,16 +53,21 @@ triggers on a published GitHub release (or a manual dispatch with a tag).
    ```
    (Or create the release in the GitHub UI.) `--target main` tags `main`'s current tip;
    pass a specific branch/commit only if releasing something other than the tip.
-3. Alternatively, deploy an **existing** tag without a new release:
+4. Alternatively, deploy an **existing** tag without a new release:
    ```bash
    gh workflow run prod-deploy.yml -f tag=vX.Y.Z
    ```
-4. The deploy runs:
+   > Caveat: the `migrate` job runs from the `:init` image, which every staging build
+   > repushes from `main` — so it applies `main` HEAD's migrations, not the tag's.
+   > Releasing `main`'s tip is safe; deploying an older tag is not, until this is fixed.
+5. The deploy runs:
    ```
    resolve (tag → SHA) → verify-images → setup-aws → migrate → seed
      → deploy-services → health-check → annotate-release
    ```
-5. [Verify](#verifying-a-deploy).
+   `deploy-services` fails if ECS's circuit breaker rolls any service back to its
+   previous task definition, so a green run means the new code is actually serving.
+6. [Verify](#verifying-a-deploy).
 
 ### Bootstrap mode
 `prod-deploy.yml` accepts a `bootstrap: true` input that provisions infrastructure only
@@ -120,7 +128,7 @@ so it reports green while writes fail.
 
 ## Rollback
 
-To roll production back to a previous release tag:
+Prefer fixing forward. To roll production back to a previous release tag:
 
 ```bash
 gh workflow run prod-rollback.yml -f tag=vX.Y.Z
@@ -128,10 +136,18 @@ gh workflow run prod-rollback.yml -f tag=vX.Y.Z
 
 Optional inputs:
 - `run_migrations=true` — only if the rollback target needs a different schema (rare;
-  migrations are usually forward-only).
+  migrations are forward-only).
 - `run_cdk=true` — for infrastructure-level rollback.
 
-Rollback redeploys the services from the target tag's already-built images.
+Rollback redeploys the services from the target tag's already-built images. **It does
+not revert the schema** — rolling back past a constraint-adding migration lands old
+code on the new schema, broken, with `/api/health` still green (it is static).
+
+For schema damage, **restore the pre-release RDS snapshot** — never hand-revert a
+migration. Dropping and re-applying an identifier/numbering migration renumbers rows,
+so every recorded key (branch names, PR links, bookmarks, MCP transcripts) would then
+point at a different item. The snapshot ritual and verification process live in
+[verification.md](verification.md).
 
 ---
 
@@ -145,12 +161,13 @@ curl -s -o /dev/null -w "%{http_code}\n" https://specboard.io/api/health        
 curl -s https://specboard.io/mcp/health                                          # {"status":"ok"}
 
 # Authz smoke test — an unauthenticated planning read must be rejected (401), not 200.
-# Use any valid-v4 UUID; the auth gate runs before the project lookup.
+# Any slug works; the auth gate runs before the project lookup.
 curl -s -o /dev/null -w "%{http_code}\n" \
-  https://specboard.io/api/projects/3f8a1c2e-9b4d-4e6f-8a1b-2c3d4e5f6a7b/epics    # 401
+  https://specboard.io/api/projects/some-project/items    # 401
 ```
 
-Swap `specboard.io` for `staging.specboard.io` to verify staging.
+Swap `specboard.io` for `staging.specboard.io` to verify staging. For releases that
+warrant more than a smoke test, follow [verification.md](verification.md).
 
 ---
 
