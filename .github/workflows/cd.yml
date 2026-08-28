@@ -75,6 +75,19 @@ jobs:
             exit 1
           fi
 
+          # Only `identical` and `ahead` mean this commit is one main is built on, and
+          # only then does the file list below mean "what main gained since it". A
+          # dispatch from a ref that is not on main, or rewritten history, lands on
+          # `behind` or `diverged`, where the same list means something else entirely.
+          # Staging deploys from main; refuse rather than guess.
+          case "$STATUS" in
+            identical|ahead) ;;
+            *)
+              echo "::error::$SHA is '$STATUS' relative to main, so it is not a commit main is built on; not deploying."
+              exit 1
+              ;;
+          esac
+
           CODE_AHEAD=$(echo "$CMP" | jq -r '.files[]?.filename' \
             | grep -vE '^(docs/|[^/]+\.md$|([^/]+/)*README\.md$)' || true)
 
