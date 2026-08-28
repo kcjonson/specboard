@@ -29,6 +29,8 @@ jobs:
   resolve:
     name: Resolve Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
       tag: ${{ steps.resolve.outputs.tag }}
@@ -146,6 +148,8 @@ jobs:
     name: Health Check
     needs: deploy-services
     runs-on: ubuntu-latest
+    # Only curls public health endpoints; needs nothing from the repo.
+    permissions: {}
     steps:
       - name: Wait and verify health
         run: |

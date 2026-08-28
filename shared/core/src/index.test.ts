@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { VERSION, createId, deepClone, debounce } from './index';
+import { VERSION, createId, deepClone, debounce, joinPath } from './index';
 
 describe('core', () => {
 	describe('VERSION', () => {
@@ -53,6 +53,34 @@ describe('core', () => {
 
 			expect(fn).toHaveBeenCalledTimes(1);
 			vi.useRealTimers();
+		});
+	});
+
+	describe('joinPath', () => {
+		it('joins segments with a single slash', () => {
+			expect(joinPath('docs', 'specs', 'auth.md')).toBe('docs/specs/auth.md');
+		});
+
+		it('collapses slashes at the seams', () => {
+			expect(joinPath('docs/', '/specs/', '/auth.md')).toBe('docs/specs/auth.md');
+		});
+
+		it('keeps a leading slash on the first segment only', () => {
+			expect(joinPath('/docs', '/specs')).toBe('/docs/specs');
+		});
+
+		it('drops segments that are nothing but slashes', () => {
+			expect(joinPath('docs', '///', 'auth.md')).toBe('docs/auth.md');
+		});
+
+		it('stays fast on a long run of slashes that is not a trailing run', () => {
+			// Guards the ReDoS fix. The slashes must NOT be at the end: /\/+$/ only goes
+			// quadratic when the match fails and it retries from every offset. Measured at
+			// this size the old regex took ~2.9s, the index scan ~1ms.
+			const segment = '/'.repeat(40_000) + 'b';
+			const start = Date.now();
+			expect(joinPath(segment)).toBe(segment);
+			expect(Date.now() - start).toBeLessThan(1000);
 		});
 	});
 });
