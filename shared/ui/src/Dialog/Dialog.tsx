@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
 import { Icon } from '../Icon/Icon';
 import styles from './Dialog.module.css';
@@ -31,39 +31,36 @@ export function Dialog({
 	children,
 	maxWidth = 'md',
 	class: className,
-}: DialogProps): JSX.Element | null {
+}: DialogProps): JSX.Element {
+	const ref = useRef<HTMLDialogElement>(null);
+
 	// Show header if title is provided OR showCloseButton is explicitly true OR headerActions are provided
 	const showHeader = Boolean(title) || showCloseButton === true || Boolean(headerActions);
 	// Show close button by default when header is visible, unless explicitly disabled
 	const shouldShowCloseButton = showHeader && showCloseButton !== false;
-	// Handle escape key
-	const handleKeyDown = useCallback(
-		(e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
-				onClose();
-			}
-		},
-		[onClose]
-	);
 
+	// Sync controlled `open` with the native element. Mount-with-open covers the
+	// conditional-render consumers; the toggle covers consumers that keep the
+	// Dialog mounted and flip `open`. The `open` attribute is never rendered in
+	// JSX — that would put the element in the non-modal open state.
 	useEffect(() => {
-		if (!open) return;
+		const el = ref.current;
+		if (!el) return;
+		if (open && !el.open) el.showModal();
+		else if (!open && el.open) el.close();
+	}, [open]);
 
-		document.addEventListener('keydown', handleKeyDown);
-		document.body.style.overflow = 'hidden';
+	// ESC arrives as `cancel`. preventDefault keeps the element open until the
+	// parent flips state/unmounts — single source of truth stays with the consumer.
+	const handleCancel = (e: Event): void => {
+		e.preventDefault();
+		onClose();
+	};
 
-		return () => {
-			document.removeEventListener('keydown', handleKeyDown);
-			document.body.style.overflow = '';
-		};
-	}, [open, handleKeyDown]);
-
-	if (!open) return null;
-
-	const handleBackdropClick = (e: MouseEvent): void => {
-		if (e.target === e.currentTarget) {
-			onClose();
-		}
+	// Clicks on ::backdrop retarget to the <dialog> itself. The dialog has
+	// padding: 0 and header/content fill it, so an inside click always targets a child.
+	const handleClick = (e: MouseEvent): void => {
+		if (e.target === ref.current) onClose();
 	};
 
 	const dialogClasses = [
@@ -72,40 +69,41 @@ export function Dialog({
 		className,
 	].filter(Boolean).join(' ');
 
+	// Header is always rendered: small screens need a close affordance even on
+	// title-less dialogs. CSS hides .headerEmpty / .closeDesktopHidden at >= 768px.
+	const headerClasses = showHeader ? styles.header : `${styles.header} ${styles.headerEmpty}`;
+	const closeClasses = shouldShowCloseButton
+		? styles.closeButton
+		: `${styles.closeButton} ${styles.closeDesktopHidden}`;
+
 	return (
-		<div
-			class={styles.backdrop}
-			onClick={handleBackdropClick}
-			role="dialog"
-			aria-modal="true"
+		<dialog
+			ref={ref}
+			class={dialogClasses}
+			onCancel={handleCancel}
+			onClick={handleClick}
 			aria-labelledby={title ? 'dialog-title' : undefined}
 		>
-			<div class={dialogClasses}>
-				{showHeader && (
-					<div class={styles.header}>
-						{title && (
-							<h2 id="dialog-title" class={styles.title}>{title}</h2>
-						)}
-						{!title && <div class={styles.headerSpacer} />}
-						<div class={styles.headerActions}>
-							{headerActions}
-							{shouldShowCloseButton && (
-								<button
-									type="button"
-									class={styles.closeButton}
-									onClick={onClose}
-									aria-label="Close"
-								>
-									<Icon name="close" class="size-lg" />
-								</button>
-							)}
-						</div>
-					</div>
+			<div class={headerClasses}>
+				{title && (
+					<h2 id="dialog-title" class={styles.title}>{title}</h2>
 				)}
-				<div class={styles.content}>
-					{children}
+				{!title && <div class={styles.headerSpacer} />}
+				<div class={styles.headerActions}>
+					{headerActions}
+					<button
+						type="button"
+						class={closeClasses}
+						onClick={onClose}
+						aria-label="Close"
+					>
+						<Icon name="close" class="size-lg" />
+					</button>
 				</div>
 			</div>
-		</div>
+			<div class={styles.content}>
+				{children}
+			</div>
+		</dialog>
 	);
 }

@@ -55,7 +55,7 @@
 
 .navTabActive {
 	color: var(--color-primary);
-	background-color: var(--color-primary-bg, rgba(59, 130, 246, 0.1));
+	background-color: var(--color-primary-subtle);
 }
 
 .navTabActive:hover {
@@ -66,4 +66,20 @@
 	display: flex;
 	align-items: center;
 	gap: var(--space-2);
+}
+
+@media (width < 768px) { /* bp-small: logo + nav tabs + avatar survive */
+	.projectName,
+	.pageTitle,
+	.brandDivider {
+		display: none;
+	}
+
+	.header {
+		gap: var(--space-2);
+	}
+
+	.left {
+		gap: var(--space-2);
+	}
 }

@@ -32,6 +32,7 @@
 	top: calc(100% + 8px);
 	right: 0;
 	min-width: 200px;
+	max-width: calc(100dvw - 2 * var(--space-4));
 	background: var(--color-surface);
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);

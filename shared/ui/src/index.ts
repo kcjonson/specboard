@@ -23,6 +23,10 @@ export type { ButtonProps } from './Button/Button';
 export { Dialog } from './Dialog/Dialog';
 export type { DialogProps } from './Dialog/Dialog';
 
+// DialogFooter - the one action-row pattern (dialogs, drawers, detail footers)
+export { DialogFooter } from './DialogFooter/DialogFooter';
+export type { DialogFooterProps } from './DialogFooter/DialogFooter';
+
 // Form components (Text, Select, Textarea with label/error support)
 export { Text } from './form/Text';
 export type { TextProps } from './form/Text';

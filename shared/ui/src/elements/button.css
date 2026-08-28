@@ -95,3 +95,14 @@ button.icon.size-sm {
 button.icon.size-lg {
 	font-size: var(--text-2xl);
 }
+
+@media (pointer: coarse) {
+	button {
+		min-height: var(--touch-target);
+	}
+
+	button.icon {
+		min-height: var(--touch-target);
+		min-width: var(--touch-target);
+	}
+}

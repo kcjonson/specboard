@@ -1,23 +1,56 @@
-.backdrop {
-	position: fixed;
-	inset: 0;
-	background: rgba(0, 0, 0, 0.5);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: var(--space-6);
-	z-index: var(--z-modal);
-	animation: fadeIn var(--transition-fast);
-}
-
+/* Desktop-and-up baseline. Closed-state styles live on .dialog (they are also the
+   exit-animation target); open-state on .dialog[open]. display is NOT set on the
+   base class — the UA's display:none for closed dialogs must survive. */
 .dialog {
+	margin: auto; /* native top-layer centering */
+	border: none;
+	padding: 0;
 	background: var(--color-surface);
+	color: var(--color-text);
 	border-radius: var(--radius-lg);
 	box-shadow: var(--shadow-dialog);
-	width: 100%;
-	max-height: calc(100vh - 48px);
-	overflow-y: auto;
-	animation: slideUp var(--transition-normal);
+	width: calc(100dvw - 2 * var(--space-6));
+	max-height: calc(100dvh - 2 * var(--space-6));
+	opacity: 0;
+	transform: translateY(8px) scale(0.98);
+	transition:
+		opacity var(--transition-fast),
+		transform var(--transition-fast),
+		display var(--transition-fast) allow-discrete,
+		overlay var(--transition-fast) allow-discrete;
+}
+
+.dialog[open] {
+	display: flex;
+	flex-direction: column;
+	opacity: 1;
+	transform: none;
+}
+
+/* Entry: first style pass after insertion into the open state. */
+@starting-style {
+	.dialog[open] {
+		opacity: 0;
+		transform: translateY(8px) scale(0.98);
+	}
+}
+
+.dialog::backdrop {
+	background: rgb(0 0 0 / 0);
+	transition:
+		background var(--transition-fast),
+		display var(--transition-fast) allow-discrete,
+		overlay var(--transition-fast) allow-discrete;
+}
+
+.dialog[open]::backdrop {
+	background: rgb(0 0 0 / 0.5);
+}
+
+@starting-style {
+	.dialog[open]::backdrop {
+		background: rgb(0 0 0 / 0);
+	}
 }
 
 /* Size variants */
@@ -41,8 +74,10 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: var(--space-6);
+	gap: var(--space-2);
+	padding: var(--space-4) var(--space-6);
 	border-bottom: 1px solid var(--color-border);
+	flex-shrink: 0;
 }
 
 .title {
@@ -78,24 +113,59 @@
 
 .content {
 	padding: var(--space-6);
+	overflow-y: auto; /* THE scrollable region — keyboard invariant */
+	min-height: 0;
 }
 
-@keyframes fadeIn {
-	from {
-		opacity: 0;
-	}
-	to {
-		opacity: 1;
+@media (pointer: coarse) {
+	.closeButton {
+		min-width: var(--touch-target);
+		min-height: var(--touch-target);
 	}
 }
 
-@keyframes slideUp {
-	from {
-		opacity: 0;
-		transform: translateY(20px);
+@media (width >= 768px) { /* bp-small (desktop side) */
+	.headerEmpty {
+		display: none;
 	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
+
+	.closeDesktopHidden {
+		display: none;
+	}
+}
+
+@media (width < 768px) { /* bp-small: full-screen takeover, slide-up */
+	.dialog {
+		width: 100dvw;
+		height: 100dvh;
+		max-width: none; /* beats .sm/.md/.lg/.xl */
+		max-height: none;
+		border-radius: 0;
+		box-shadow: none;
+		opacity: 1; /* slide only, no fade */
+		transform: translateY(100%);
+		transition:
+			transform var(--transition-normal),
+			display var(--transition-normal) allow-discrete,
+			overlay var(--transition-normal) allow-discrete;
+	}
+
+	.dialog[open] {
+		transform: none;
+	}
+
+	@starting-style {
+		.dialog[open] {
+			transform: translateY(100%);
+		}
+	}
+
+	.header {
+		padding-top: max(var(--space-4), env(safe-area-inset-top));
+	}
+
+	.content {
+		flex: 1;
+		padding-bottom: max(var(--space-6), env(safe-area-inset-bottom));
 	}
 }

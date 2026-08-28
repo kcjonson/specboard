@@ -39,3 +39,9 @@ select.error {
 select.error:focus {
 	border-color: var(--color-error);
 }
+
+@media (width < 768px) { /* bp-small: <16px inputs make iOS zoom the page on focus */
+	select {
+		font-size: var(--text-base);
+	}
+}

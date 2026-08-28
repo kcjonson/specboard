@@ -50,6 +50,12 @@ function readStoredWidth(key: string, fallback: number): number {
  * mid-drag — so one handler covers all the teardown. Width ownership/persistence
  * live here; the only cross-panel coupling is the optional `maxWidth`/`onResize`
  * pair, used where a parent must enforce a constraint it alone can see.
+ *
+ * Small-screen contract: below the 768px breakpoint the panel neither sizes nor
+ * resizes itself — width is `auto`, the handle is hidden, and the consumer's
+ * `class` owns positioning (in practice: a fixed takeover). The width is exposed
+ * as the `--panel-width` custom property rather than an inline `width` so
+ * consumer media queries can reposition the panel without `!important`.
  */
 export function ResizablePanel(props: ResizablePanelProps): JSX.Element {
 	const { storageKey, handleSide, defaultWidth, minWidth, maxWidth = Infinity, onResize, label } = props;
@@ -111,7 +117,7 @@ export function ResizablePanel(props: ResizablePanelProps): JSX.Element {
 		<div
 			ref={panelRef}
 			class={props.class ? `${styles.panel} ${props.class}` : styles.panel}
-			style={{ width: `${width}px` }}
+			style={{ '--panel-width': `${width}px` }}
 		>
 			{props.children}
 			<div

@@ -5,10 +5,21 @@
 	   to content height if an ancestor lacks a definite height. */
 	align-self: stretch;
 	min-height: 0;
-	/* Width is set inline; children fill the panel. */
+	/* Width comes from the inline --panel-width custom property; children fill the panel. */
+	width: var(--panel-width);
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+}
+
+@media (width < 768px) { /* bp-small: panel is a plain box; parent owns layout */
+	.panel {
+		width: auto;
+	}
+
+	.handle {
+		display: none;
+	}
 }
 
 /*
