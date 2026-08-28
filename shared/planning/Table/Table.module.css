@@ -237,3 +237,15 @@
 	white-space: nowrap;
 	margin-right: 8px;
 }
+
+@media (width < 768px) { /* bp-small: Title + Status only; the rest lives in the item takeover */
+	.row {
+		grid-template-columns: minmax(0, 1fr) 140px;
+	}
+
+	.colType,
+	.colTasks,
+	.colAssignee {
+		display: none;
+	}
+}

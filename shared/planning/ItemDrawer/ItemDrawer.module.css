@@ -35,12 +35,22 @@
 }
 
 .iconButton {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	background: none;
 	border: none;
 	color: var(--color-text-muted);
 	cursor: pointer;
 	padding: 0;
 	line-height: 1;
+}
+
+@media (pointer: coarse) {
+	.iconButton {
+		min-width: var(--touch-target);
+		min-height: var(--touch-target);
+	}
 }
 
 .iconButton:hover {
@@ -65,4 +75,32 @@
 	color: var(--color-text-muted);
 	font-size: 14px;
 	line-height: 1.5;
+}
+
+@media (width < 768px) { /* bp-small: full-screen takeover, slides in from the right like a nav push */
+	.drawer {
+		position: fixed;
+		inset: 0;
+		height: 100dvh; /* shrinks with the keyboard on Android */
+		z-index: var(--z-modal);
+		translate: 0 0;
+		transition: translate var(--transition-normal);
+	}
+
+	@starting-style {
+		.drawer {
+			translate: 100% 0;
+		}
+	}
+
+	.header {
+		padding-top: max(var(--space-3), env(safe-area-inset-top));
+		/* The resize handle is hidden below the breakpoint; no clearance needed. */
+		padding-left: var(--space-4);
+	}
+
+	.content {
+		padding-left: var(--space-4);
+		padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+	}
 }

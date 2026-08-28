@@ -54,6 +54,16 @@
 	display: none;
 }
 
+@media (width < 768px) { /* bp-small: filters go fluid so the toolbar wraps cleanly */
+	.filter {
+		flex: 1;
+	}
+
+	.filter input[type='search'] {
+		width: 100%;
+	}
+}
+
 .loading {
 	display: flex;
 	align-items: center;

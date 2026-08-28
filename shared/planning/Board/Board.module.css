@@ -6,3 +6,13 @@
 	padding: 24px;
 	overflow-x: auto;
 }
+
+@media (width < 768px) { /* bp-small: columns stack; the board scrolls vertically */
+	.board {
+		flex-direction: column;
+		overflow-x: hidden;
+		overflow-y: auto;
+		padding: var(--space-4);
+		gap: var(--space-4);
+	}
+}
