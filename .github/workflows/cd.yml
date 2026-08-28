@@ -59,19 +59,28 @@ jobs:
           # and its own run will deploy it.
           #
           # Keep the pattern below in sync with ci.yml's paths-ignore.
-          CMP=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          CMP="$RUNNER_TEMP/compare.json"
+          HTTP=$(curl -s -o "$CMP" -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/compare/$SHA...main")
 
-          STATUS=$(echo "$CMP" | jq -r '.status // empty')
+          # Whatever goes wrong here, refuse to deploy rather than guess: guessing either
+          # ships a stale commit or strands a fresh one. Report the HTTP status and the
+          # API's own message, since rate limiting, an expired token and an unknown SHA
+          # all otherwise look identical from the parsed body.
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Comparing $SHA against main returned HTTP $HTTP: $(jq -r '.message // "no message"' "$CMP"). Not deploying."
+            exit 1
+          fi
+
+          STATUS=$(jq -r '.status // empty' "$CMP")
 
           echo "This commit: $SHA"
-          echo "vs main:     ${STATUS:-<unknown>}"
+          echo "vs main:     ${STATUS:-<none>}"
 
-          # An empty response is a real API outage. Fail loudly rather than deploy a
-          # possibly-stale commit or silently skip a fresh one.
           if [ -z "$STATUS" ]; then
-            echo "::error::Could not compare $SHA against main (empty API response); not deploying. Re-run once the lookup succeeds."
+            echo "::error::Comparing $SHA against main returned 200 with no status field; not deploying."
             exit 1
           fi
 
@@ -88,7 +97,7 @@ jobs:
               ;;
           esac
 
-          CODE_AHEAD=$(echo "$CMP" | jq -r '.files[]?.filename' \
+          CODE_AHEAD=$(jq -r '.files[]?.filename' "$CMP" \
             | grep -vE '^(docs/|[^/]+\.md$|([^/]+/)*README\.md$)' || true)
 
           if [ -n "$CODE_AHEAD" ]; then
