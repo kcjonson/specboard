@@ -96,6 +96,10 @@ jobs:
     uses: ./.github/workflows/_build-images.yml
     with:
       push: true
+      # Pin to the commit `check` cleared, not github.sha. Under workflow_run the latter
+      # is main's head, which is not necessarily this run's commit, and deploy-services
+      # below asks ECS for the tag `check` chose.
+      ref: ${{ needs.check.outputs.sha }}
     secrets: inherit
 
   setup-aws:
