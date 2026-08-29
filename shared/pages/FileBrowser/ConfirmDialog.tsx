@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Button, Dialog } from '@specboard/ui';
+import { Button, Dialog, DialogFooter } from '@specboard/ui';
 import styles from './ConfirmDialog.module.css';
 
 export interface ConfirmDialogProps {
@@ -46,14 +46,14 @@ export function ConfirmDialog({
 			<div class={styles.content}>
 				{message && <p class={styles.message}>{message}</p>}
 				{warning && <p class={styles.warning}>{warning}</p>}
-				<div class={styles.actions}>
+				<DialogFooter>
 					<Button onClick={onCancel} class="secondary">
 						{cancelText}
 					</Button>
 					<Button onClick={onConfirm} class={confirmVariant}>
 						{confirmText}
 					</Button>
-				</div>
+				</DialogFooter>
 			</div>
 		</Dialog>
 	);

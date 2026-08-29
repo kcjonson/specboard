@@ -68,6 +68,10 @@
 	color: var(--color-text-muted);
 }
 
+.emptyStateActions {
+	margin-top: var(--space-4);
+}
+
 /* Error state */
 .errorState {
 	flex: 1;
@@ -115,7 +119,7 @@
 	font-size: var(--text-xs);
 	color: var(--color-text-muted);
 	font-family: var(--font-mono);
-	background: var(--color-background-alt, #f5f5f5);
+	background: var(--color-surface-hover);
 	padding: var(--space-1) var(--space-2);
 	border-radius: var(--radius-sm);
 	margin-bottom: var(--space-4);
@@ -157,7 +161,7 @@
 }
 
 .errorDismissButton:hover {
-	background: var(--color-background-alt, #f5f5f5);
+	background: var(--color-surface-hover);
 	color: var(--color-text);
 }
 
@@ -212,7 +216,7 @@
 	height: 48px;
 	margin: 0 auto var(--space-4);
 	border-radius: 50%;
-	background: var(--color-error-subtle, #fef2f2);
+	background: var(--color-error-subtle);
 	color: var(--color-error, #dc2626);
 	display: flex;
 	align-items: center;
@@ -237,7 +241,7 @@
 	font-size: var(--text-xs);
 	color: var(--color-text-muted);
 	font-family: var(--font-mono);
-	background: var(--color-background-alt, #f5f5f5);
+	background: var(--color-surface-hover);
 	padding: var(--space-1) var(--space-2);
 	border-radius: var(--radius-sm);
 	margin-bottom: var(--space-4);
@@ -272,4 +276,42 @@
 .restoreButton:disabled {
 	opacity: 0.6;
 	cursor: not-allowed;
+}
+
+/* Small-screen takeovers: both side panels stay mounted but park off-screen and
+   slide in when Editor's filesOpen/chatOpen state adds .panelOpen. Scoped under
+   .body to outrank the ResizablePanel module's own single-class rules without
+   depending on bundle order. */
+@media (width < 768px) { /* bp-small */
+	.body .filesPanel,
+	.body .chatPanel {
+		position: fixed;
+		inset: 0;
+		height: 100dvh;
+		z-index: var(--z-modal);
+		background: var(--color-surface);
+		visibility: hidden; /* unfocusable + out of the a11y tree while parked */
+		transition:
+			translate var(--transition-normal),
+			visibility var(--transition-normal); /* visibility snaps at the transition edge */
+	}
+
+	.body .filesPanel {
+		translate: -100% 0; /* lives on the left, slides from the left */
+	}
+
+	.body .chatPanel {
+		translate: 100% 0; /* lives on the right, slides from the right */
+	}
+
+	.body .panelOpen {
+		translate: 0 0;
+		visibility: visible;
+	}
+}
+
+@media (width >= 768px) { /* bp-small (desktop side) */
+	.mobileOnly {
+		display: none;
+	}
 }

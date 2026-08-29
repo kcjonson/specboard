@@ -19,6 +19,25 @@
 	letter-spacing: 0.05em;
 }
 
+.closeButton {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: var(--touch-target);
+	min-height: var(--touch-target);
+	padding: 0;
+	background: transparent;
+	border: none;
+	border-radius: var(--radius-sm);
+	color: var(--color-text-muted);
+	cursor: pointer;
+}
+
+.closeButton:hover {
+	background: var(--color-surface-hover);
+	color: var(--color-text);
+}
+
 .content {
 	flex: 1;
 	min-height: 0;
@@ -192,8 +211,32 @@
 }
 
 .treeItem:hover .fileActions .deleteButton,
-.folderItem:hover .folderActions .deleteButton {
+.folderItem:hover .folderActions .deleteButton,
+.treeItem:focus-within .fileActions .deleteButton,
+.folderItem:focus-within .folderActions .deleteButton {
 	display: flex;
+}
+
+.folderItem:focus-within .folderActions {
+	opacity: 1;
+}
+
+@media (hover: none) { /* touch: hover reveal never fires — always visible */
+	.fileActions .deleteButton,
+	.folderActions .deleteButton {
+		display: flex;
+	}
+
+	.folderActions {
+		opacity: 1;
+	}
+}
+
+@media (pointer: coarse) {
+	/* Tappable rows without inflating every glyph in the dense tree. */
+	.treeItem {
+		min-height: var(--touch-target);
+	}
 }
 
 /* Hide status dot when showing delete button */
@@ -275,5 +318,11 @@
 .treeItem.deleted .fileName {
 	text-decoration: line-through;
 	color: var(--color-text-muted);
+}
+
+@media (width >= 768px) { /* bp-small (desktop side) */
+	.mobileOnly {
+		display: none;
+	}
 }
 

@@ -66,6 +66,8 @@ export interface FileBrowserProps {
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes (file tree is already reloaded) */
 	onPullComplete?: () => void | Promise<void>;
+	/** When provided, renders a close button in the header (small screens only) */
+	onClose?: () => void;
 	/** Additional CSS class */
 	class?: string;
 }
@@ -85,6 +87,7 @@ export function FileBrowser({
 	hasUnsavedChanges,
 	onBeforePull,
 	onPullComplete,
+	onClose,
 	class: className,
 }: FileBrowserProps): JSX.Element {
 	// Create model instance once per component
@@ -476,7 +479,18 @@ export function FileBrowser({
 
 		return (
 			<div class={`${styles.container} ${className || ''}`}>
-				<div class={styles.header}>Files</div>
+				<div class={styles.header}>
+					<span>Files</span>
+					{onClose && (
+						<button
+							class={`${styles.closeButton} ${styles.mobileOnly}`}
+							onClick={onClose}
+							aria-label="Close file browser"
+						>
+							<Icon name="x-mark" />
+						</button>
+					)}
+				</div>
 				<div class={styles.emptyState}>
 					{isSyncing ? (
 						<>
@@ -535,6 +549,15 @@ export function FileBrowser({
 				<span>Files</span>
 				{gitStatus && gitStatus.changedCount > 0 && (
 					<Badge class="variant-warning size-sm">{gitStatus.changedCount}</Badge>
+				)}
+				{onClose && (
+					<button
+						class={`${styles.closeButton} ${styles.mobileOnly}`}
+						onClick={onClose}
+						aria-label="Close file browser"
+					>
+						<Icon name="x-mark" />
+					</button>
 				)}
 			</div>
 			<div class={styles.content}>

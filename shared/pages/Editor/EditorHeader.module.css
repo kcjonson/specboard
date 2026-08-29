@@ -67,8 +67,15 @@
 	transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
-.titleArea:hover .editButton {
+.titleArea:hover .editButton,
+.titleArea:focus-within .editButton {
 	opacity: 1;
+}
+
+@media (hover: none) { /* touch: hover reveal never fires — always visible */
+	.editButton {
+		opacity: 1;
+	}
 }
 
 .editButton:hover {
@@ -87,4 +94,21 @@
 	outline: none;
 	box-shadow: 0 0 0 2px var(--color-primary-subtle);
 	min-width: 200px;
+}
+
+@media (width >= 768px) { /* bp-small (desktop side) */
+	.mobileOnly {
+		display: none;
+	}
+}
+
+@media (width < 768px) { /* bp-small: actions crowd out the title on one row — wrap instead */
+	.header {
+		flex-wrap: wrap;
+		row-gap: var(--space-1);
+	}
+
+	.titleArea {
+		flex: 1 1 100%;
+	}
 }

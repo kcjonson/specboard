@@ -2,7 +2,7 @@ import { useMemo, useEffect, useCallback, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { navigate, type RouteProps } from '@specboard/router';
-import { Page, Icon, ErrorBoundary, ResizablePanel } from '@specboard/ui';
+import { Page, Icon, Button, ErrorBoundary, ResizablePanel } from '@specboard/ui';
 import {
 	DocumentModel,
 	UserModel,
@@ -179,6 +179,11 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Restore file state
 	const [isRestoring, setIsRestoring] = useState(false);
 
+	// Small-screen panel takeovers. Inert on desktop: only the bp-small CSS in
+	// Editor.module.css reads the resulting classes.
+	const [filesOpen, setFilesOpen] = useState(false);
+	const [chatOpen, setChatOpen] = useState(false);
+
 	// Resizable sidebars. We measure the flex container (`.body`) and feed each
 	// ResizablePanel a dynamic maxWidth so neither sidebar can crush the center
 	// editor below CENTER_MIN_WIDTH. The panels own their width + persistence;
@@ -329,6 +334,7 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Handle file selection from FileBrowser
 	const handleFileSelect = useCallback(async (path: string) => {
+		setFilesOpen(false);
 		setLoadError(null);
 
 		// Save current file before switching (if dirty)
@@ -711,6 +717,7 @@ export function Editor(props: RouteProps): JSX.Element {
 					maxWidth={fileBrowserMaxWidth}
 					onResize={setFileBrowserWidth}
 					label="Resize file browser"
+					class={`${styles.filesPanel} ${filesOpen ? styles.panelOpen : ''}`}
 				>
 					<FileBrowser
 						projectSlug={projectSlug}
@@ -727,6 +734,7 @@ export function Editor(props: RouteProps): JSX.Element {
 						hasUnsavedChanges={documentModel.isDirty}
 						onBeforePull={handleBeforePull}
 						onPullComplete={handlePullComplete}
+						onClose={() => setFilesOpen(false)}
 						class={styles.sidebar}
 					/>
 				</ResizablePanel>
@@ -750,6 +758,12 @@ export function Editor(props: RouteProps): JSX.Element {
 										onClick={() => setLoadError(null)}
 									>
 										Dismiss
+									</button>
+									<button
+										class={`${styles.errorDismissButton} ${styles.mobileOnly}`}
+										onClick={() => setFilesOpen(true)}
+									>
+										Browse files
 									</button>
 								</div>
 							</div>
@@ -801,6 +815,8 @@ export function Editor(props: RouteProps): JSX.Element {
 								onCreateEpic={handleCreateEpic}
 								onViewEpic={handleViewEpic}
 								onLinkEpic={() => setEpicPickerOpen(true)}
+								onToggleFiles={() => setFilesOpen(true)}
+								onToggleChat={() => setChatOpen(true)}
 							/>
 							<div class={styles.mainContent}>
 								<div class={styles.editorArea}>
@@ -822,6 +838,7 @@ export function Editor(props: RouteProps): JSX.Element {
 									maxWidth={chatMaxWidth}
 									onResize={setChatWidth}
 									label="Resize chat sidebar"
+									class={`${styles.chatPanel} ${chatOpen ? styles.panelOpen : ''}`}
 								>
 									<ErrorBoundary>
 										<ChatSidebar
@@ -829,6 +846,7 @@ export function Editor(props: RouteProps): JSX.Element {
 											documentPath={documentModel.filePath}
 											projectSlug={projectSlug}
 											onApplyEdit={handleApplyEdit}
+											onClose={() => setChatOpen(false)}
 										/>
 									</ErrorBoundary>
 								</ResizablePanel>
@@ -841,6 +859,9 @@ export function Editor(props: RouteProps): JSX.Element {
 								<div class={styles.emptyStateTitle}>No file selected</div>
 								<div class={styles.emptyStateHint}>
 									Select a markdown file from the sidebar to start editing
+								</div>
+								<div class={`${styles.emptyStateActions} ${styles.mobileOnly}`}>
+									<Button onClick={() => setFilesOpen(true)}>Browse files</Button>
 								</div>
 							</div>
 						</div>

@@ -54,6 +54,19 @@
 	outline-offset: 2px;
 }
 
+@media (pointer: coarse) {
+	.closeButton {
+		min-width: var(--touch-target);
+		min-height: var(--touch-target);
+	}
+}
+
+@media (width >= 768px) { /* bp-small (desktop side): no reopen affordance on desktop, so no close */
+	.closeButton {
+		display: none;
+	}
+}
+
 /* Model selector */
 .modelSelector {
 	padding: var(--space-2) var(--space-4);

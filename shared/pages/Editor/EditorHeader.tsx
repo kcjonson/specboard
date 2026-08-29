@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { Button } from '@specboard/ui';
+import { Button, Icon } from '@specboard/ui';
 import styles from './EditorHeader.module.css';
 
 export interface EditorHeaderProps {
@@ -26,6 +26,10 @@ export interface EditorHeaderProps {
 	onViewEpic?: () => void;
 	/** Callback to link this document to an existing epic */
 	onLinkEpic?: () => void;
+	/** Opens the file browser takeover (small screens only) */
+	onToggleFiles?: () => void;
+	/** Opens the AI chat takeover (small screens only) */
+	onToggleChat?: () => void;
 }
 
 /** Check if file path is a markdown file */
@@ -46,6 +50,8 @@ export function EditorHeader({
 	onCreateEpic,
 	onViewEpic,
 	onLinkEpic,
+	onToggleFiles,
+	onToggleChat,
 }: EditorHeaderProps): JSX.Element {
 	const [isEditing, setIsEditing] = useState(false);
 	const [editTitle, setEditTitle] = useState('');
@@ -154,6 +160,26 @@ export function EditorHeader({
 						disabled={creatingEpic}
 					>
 						{creatingEpic ? 'Creating...' : 'Create Epic'}
+					</Button>
+				)}
+				{onToggleFiles && (
+					<Button
+						onClick={onToggleFiles}
+						class={`icon ${styles.mobileOnly}`}
+						aria-label="Browse files"
+						title="Browse files"
+					>
+						<Icon name="file" />
+					</Button>
+				)}
+				{onToggleChat && (
+					<Button
+						onClick={onToggleChat}
+						class={`icon ${styles.mobileOnly}`}
+						aria-label="AI chat"
+						title="AI chat"
+					>
+						<Icon name="comment" />
 					</Button>
 				)}
 			</div>
