@@ -7,21 +7,17 @@ import styles from './BlockersSection.module.css';
 export interface BlockersSectionProps {
 	projectSlug: string;
 	itemKey: string;
-	/** The project's item-key prefix (e.g. "SB"), used to recognize typed keys. */
-	projectKey?: string;
 	/** Open a blocking item's detail (clicking an item blocker). */
 	onOpenItem?: (itemKey: string) => void;
 	/** Called after a blocker is added or cleared, so the parent can refresh derived state. */
 	onChange?: () => void;
 }
 
-const ITEM_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
-
 /**
  * Manages an item's open blockers: another item (auto-clears when it completes)
  * or free text (clears only when removed here). One input serves both — typed
- * input shaped like an item key (SB-12) links that item, anything else is a
- * written reason.
+ * input shaped like one of THIS project's item keys (SB-12) links that item,
+ * anything else (other prefixes included) is a written reason.
  */
 export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: BlockersSectionProps): JSX.Element {
 	const blockers = useMemo(() => new BlockersCollection({ projectSlug, itemKey }), [projectSlug, itemKey]);
@@ -30,12 +26,19 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 	const [draft, setDraft] = useState('');
 	const [error, setError] = useState<string | null>(null);
 
+	// This item's own key carries the project prefix; only keys with the same
+	// prefix are treated as item references.
+	const keyPattern = useMemo(() => {
+		const prefix = itemKey.split('-')[0] ?? '';
+		return new RegExp(`^${prefix}-\\d+$`, 'i');
+	}, [itemKey]);
+
 	const handleAdd = useCallback(async (): Promise<void> => {
 		const value = draft.trim();
 		if (!value) return;
 		setError(null);
 		try {
-			if (ITEM_KEY_PATTERN.test(value)) {
+			if (keyPattern.test(value)) {
 				await blockers.add({ blockerKey: value.toUpperCase() });
 			} else {
 				await blockers.add({ text: value });
@@ -45,7 +48,7 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 		} catch {
 			setError('Could not add that blocker — check the item key, or whether it already blocks this item.');
 		}
-	}, [blockers, draft, onChange]);
+	}, [blockers, draft, keyPattern, onChange]);
 
 	const handleKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === 'Enter') {

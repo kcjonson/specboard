@@ -1,16 +1,10 @@
 import { useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { ItemsCollection, type ItemModel, type Status } from '@specboard/models';
+import { ItemsCollection, type ItemModel, type Status, type ItemStatus } from '@specboard/models';
 import { Column } from '../Column/Column';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
 import { matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Board.module.css';
-
-const COLUMNS: { status: Status; title: string }[] = [
-	{ status: 'ready', title: 'Ready' },
-	{ status: 'in_progress', title: 'In Progress' },
-	{ status: 'done', title: 'Done' },
-];
 
 export interface BoardProps {
 	/** Shared collection owned by the Planning container. */
@@ -164,43 +158,36 @@ export function Board({
 		});
 	}
 
+	// The Blocked column appears after In Progress, only while something is held
+	// there. Not a drop target: blocking needs a reason (use the drawer). Built as
+	// a flat list so every column is keyed at the top level of the map.
+	const columns: { status: ItemStatus; title: string; items: ItemModel[]; droppable: boolean }[] = [
+		{ status: 'ready', title: 'Ready', items: itemsByStatus.ready, droppable: true },
+		{ status: 'in_progress', title: 'In Progress', items: itemsByStatus.in_progress, droppable: true },
+		...(blockedItems.length > 0
+			? [{ status: 'blocked' as const, title: 'Blocked', items: blockedItems, droppable: false }]
+			: []),
+		{ status: 'done', title: 'Done', items: itemsByStatus.done, droppable: true },
+	];
+
 	return (
 		<div class={styles.board}>
-			{COLUMNS.map(({ status, title }) => (
-				<>
-					<Column
-						key={status}
-						status={status}
-						title={title}
-						items={itemsByStatus[status]}
-						projectSlug={projectSlug}
-						selectedItemKey={selectedItemKey}
-						flashingIds={flashingIds}
-						onSelectItem={handleColumnSelectItem}
-						onOpenItem={onOpenItem}
-						onDropItem={handleDropItem}
-						onDragStart={handleDragStart}
-						onDragEnd={handleDragEnd}
-					/>
-					{/* The Blocked column appears after In Progress, only while something is
-					    held there. Not a drop target: blocking needs a reason (use the drawer). */}
-					{status === 'in_progress' && blockedItems.length > 0 && (
-						<Column
-							key="blocked"
-							status="blocked"
-							title="Blocked"
-							items={blockedItems}
-							projectSlug={projectSlug}
-							selectedItemKey={selectedItemKey}
-							flashingIds={flashingIds}
-							droppable={false}
-							onSelectItem={handleColumnSelectItem}
-							onOpenItem={onOpenItem}
-							onDragStart={handleDragStart}
-							onDragEnd={handleDragEnd}
-						/>
-					)}
-				</>
+			{columns.map(({ status, title, items: columnItems, droppable }) => (
+				<Column
+					key={status}
+					status={status}
+					title={title}
+					items={columnItems}
+					projectSlug={projectSlug}
+					selectedItemKey={selectedItemKey}
+					flashingIds={flashingIds}
+					droppable={droppable}
+					onSelectItem={handleColumnSelectItem}
+					onOpenItem={onOpenItem}
+					onDropItem={droppable ? handleDropItem : undefined}
+					onDragStart={handleDragStart}
+					onDragEnd={handleDragEnd}
+				/>
 			))}
 		</div>
 	);

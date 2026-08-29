@@ -353,9 +353,9 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 		const childResult = await query<Item & { blocked: boolean }>(
 			`SELECT c.*, (c.status = 'blocked' OR ob.item_id IS NOT NULL) as blocked
 			 FROM items c
-			 LEFT JOIN (SELECT DISTINCT item_id FROM item_blockers WHERE cleared_at IS NULL) ob ON ob.item_id = c.id
+			 LEFT JOIN (SELECT DISTINCT item_id FROM item_blockers WHERE project_id = $2 AND cleared_at IS NULL) ob ON ob.item_id = c.id
 			 WHERE c.parent_id = ANY($1) ORDER BY c.rank ASC, c.created_at ASC, c.id ASC`,
-			[itemIds]
+			[itemIds, projectId]
 		);
 		for (const child of childResult.rows) {
 			if (!child.parent_id) continue;

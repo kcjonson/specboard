@@ -146,7 +146,7 @@ export function ItemCard({
 			<div class={styles.footer}>
 				<span class={styles.itemKey}>{item.key}</span>
 				{item.blocked && (
-					<span class={styles.blockedChip} title="This item has open blockers">
+					<span class={styles.blockedChip} title="This item is blocked">
 						Blocked
 					</span>
 				)}
