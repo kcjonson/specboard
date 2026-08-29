@@ -486,7 +486,7 @@ export function ProjectDialog({
 					start={isEditMode && onDelete && (
 						<Button
 							type="button"
-							class={`text ${styles.deleteButton}`}
+							class="text danger"
 							onClick={() => setShowDeleteConfirm(true)}
 						>
 							Delete

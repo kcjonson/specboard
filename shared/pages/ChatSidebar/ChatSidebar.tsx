@@ -70,7 +70,7 @@ export function ChatSidebar({
 				</h3>
 				{onClose && (
 					<button
-						class={styles.closeButton}
+						class="icon mobile-only"
 						onClick={onClose}
 						aria-label="Close chat"
 					>

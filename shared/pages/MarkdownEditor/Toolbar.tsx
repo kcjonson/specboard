@@ -96,8 +96,9 @@ export function Toolbar({
 			</ToolbarGroup>
 			{onAddComment && (
 				<>
-					<ToolbarSeparator />
-					<ToolbarGroup ariaLabel="Comments">
+					{/* Commenting is desktop-only for now (CommentsMargin hides too). */}
+					<ToolbarSeparator desktopOnly />
+					<ToolbarGroup ariaLabel="Comments" desktopOnly>
 						<ToolbarButton
 							active={false}
 							disabled={!canAddComment}

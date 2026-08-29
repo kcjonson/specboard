@@ -165,7 +165,7 @@ export function EditorHeader({
 				{onToggleFiles && (
 					<Button
 						onClick={onToggleFiles}
-						class={`icon ${styles.mobileOnly}`}
+						class="icon mobile-only"
 						aria-label="Browse files"
 						title="Browse files"
 					>
@@ -175,7 +175,7 @@ export function EditorHeader({
 				{onToggleChat && (
 					<Button
 						onClick={onToggleChat}
-						class={`icon ${styles.mobileOnly}`}
+						class="icon mobile-only"
 						aria-label="AI chat"
 						title="AI chat"
 					>

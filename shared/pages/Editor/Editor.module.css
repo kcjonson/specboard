@@ -92,8 +92,8 @@
 	height: 48px;
 	margin: 0 auto var(--space-4);
 	border-radius: 50%;
-	background: var(--color-error-bg, #fef2f2);
-	color: var(--color-error, #dc2626);
+	background: var(--color-error-bg);
+	color: var(--color-error);
 	font-size: 24px;
 	font-weight: var(--font-bold);
 	display: flex;
@@ -216,8 +216,8 @@
 	height: 48px;
 	margin: 0 auto var(--space-4);
 	border-radius: 50%;
-	background: var(--color-error-subtle);
-	color: var(--color-error, #dc2626);
+	background: var(--color-error-bg);
+	color: var(--color-error);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -310,8 +310,9 @@
 	}
 }
 
-@media (width >= 768px) { /* bp-small (desktop side) */
-	.mobileOnly {
-		display: none;
+@media (prefers-reduced-motion: reduce) {
+	.body .filesPanel,
+	.body .chatPanel {
+		transition: none;
 	}
 }

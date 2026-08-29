@@ -24,7 +24,7 @@
 }
 
 .dirtyIndicator {
-	color: var(--color-warning, #f59e0b);
+	color: var(--color-warning);
 	font-size: var(--text-lg);
 	font-weight: var(--font-bold);
 }
@@ -94,12 +94,6 @@
 	outline: none;
 	box-shadow: 0 0 0 2px var(--color-primary-subtle);
 	min-width: 200px;
-}
-
-@media (width >= 768px) { /* bp-small (desktop side) */
-	.mobileOnly {
-		display: none;
-	}
 }
 
 @media (width < 768px) { /* bp-small: actions crowd out the title on one row — wrap instead */

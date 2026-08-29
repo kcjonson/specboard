@@ -184,6 +184,23 @@ export function Editor(props: RouteProps): JSX.Element {
 	const [filesOpen, setFilesOpen] = useState(false);
 	const [chatOpen, setChatOpen] = useState(false);
 
+	// One CloseWatcher per open takeover: Android back (and ESC) close the panel
+	// instead of leaving the page. Desktop never opens these, so the watchers only
+	// exist on small screens.
+	useEffect(() => {
+		if (!filesOpen) return;
+		const watcher = new CloseWatcher();
+		watcher.onclose = (): void => setFilesOpen(false);
+		return () => watcher.destroy();
+	}, [filesOpen]);
+
+	useEffect(() => {
+		if (!chatOpen) return;
+		const watcher = new CloseWatcher();
+		watcher.onclose = (): void => setChatOpen(false);
+		return () => watcher.destroy();
+	}, [chatOpen]);
+
 	// Resizable sidebars. We measure the flex container (`.body`) and feed each
 	// ResizablePanel a dynamic maxWidth so neither sidebar can crush the center
 	// editor below CENTER_MIN_WIDTH. The panels own their width + persistence;
@@ -760,7 +777,7 @@ export function Editor(props: RouteProps): JSX.Element {
 										Dismiss
 									</button>
 									<button
-										class={`${styles.errorDismissButton} ${styles.mobileOnly}`}
+										class={`${styles.errorDismissButton} mobile-only`}
 										onClick={() => setFilesOpen(true)}
 									>
 										Browse files
@@ -798,6 +815,12 @@ export function Editor(props: RouteProps): JSX.Element {
 									>
 										<Icon name="rotate-ccw" class="size-sm" />
 										{isRestoring ? 'Restoring...' : 'Restore File'}
+									</button>
+									<button
+										class={`${styles.errorDismissButton} mobile-only`}
+										onClick={() => setFilesOpen(true)}
+									>
+										Browse files
 									</button>
 								</div>
 							</div>
@@ -860,7 +883,7 @@ export function Editor(props: RouteProps): JSX.Element {
 								<div class={styles.emptyStateHint}>
 									Select a markdown file from the sidebar to start editing
 								</div>
-								<div class={`${styles.emptyStateActions} ${styles.mobileOnly}`}>
+								<div class={`${styles.emptyStateActions} mobile-only`}>
 									<Button onClick={() => setFilesOpen(true)}>Browse files</Button>
 								</div>
 							</div>

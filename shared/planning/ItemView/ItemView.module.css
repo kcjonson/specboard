@@ -130,6 +130,13 @@
 	flex: 1;
 }
 
+/* The shared Text field reserves a line below the input for an error message.
+   This row never shows one, and the empty line pushed the + Add button's center
+   below the input's — collapse it. */
+.addTask > div > span {
+	display: none;
+}
+
 /* Placeholder text */
 .placeholder {
 	color: var(--color-text-muted);
@@ -150,7 +157,7 @@
 	gap: 8px;
 	padding: 8px 12px;
 	background: var(--color-warning-bg);
-	border: 1px solid var(--color-warning, #f59e0b);
+	border: 1px solid var(--color-warning);
 	border-radius: 4px;
 	color: var(--color-warning-text, #92400e);
 	font-size: 13px;
@@ -188,7 +195,7 @@
 	flex: 1;
 	padding: 8px 12px;
 	background: var(--color-surface);
-	border: 1px solid var(--color-warning, #f59e0b);
+	border: 1px solid var(--color-warning);
 	border-radius: 4px;
 	color: var(--color-text-muted);
 	font-family: var(--font-mono);

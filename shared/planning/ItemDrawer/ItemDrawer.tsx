@@ -57,7 +57,7 @@ export function MissingItemDrawer({ itemKey, onClose }: MissingItemDrawerProps):
 				<div class={styles.header}>
 					<h2 class={styles.title}>{itemKey}</h2>
 					<div class={styles.headerActions}>
-						<button type="button" class={styles.iconButton} onClick={onClose} aria-label="Close" title="Close">
+						<button type="button" class="icon" onClick={onClose} aria-label="Close" title="Close">
 							<Icon name="close" class="size-lg" />
 						</button>
 					</div>
@@ -110,7 +110,7 @@ export function ItemDrawer({ item, projectSlug, maxWidth, onClose, onDelete, onO
 					<div class={styles.headerActions}>
 						<button
 							type="button"
-							class={styles.iconButton}
+							class="icon"
 							onClick={handleOpenInNewWindow}
 							aria-label="Open in new window"
 							title="Open in new window"
@@ -119,7 +119,7 @@ export function ItemDrawer({ item, projectSlug, maxWidth, onClose, onDelete, onO
 						</button>
 						<button
 							type="button"
-							class={styles.iconButton}
+							class="icon"
 							onClick={onClose}
 							aria-label="Close"
 							title="Close"

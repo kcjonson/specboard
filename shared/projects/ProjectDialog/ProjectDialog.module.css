@@ -39,16 +39,6 @@
 	min-height: 80px;
 }
 
-/* Doubled class outweighs the element+class selectors in elements/button.css
-   (button.text would otherwise win and paint this primary-blue). */
-.deleteButton.deleteButton {
-	color: var(--color-error);
-}
-
-.deleteButton.deleteButton:hover {
-	background: var(--color-error-bg);
-}
-
 .labelText {
 	font-weight: 500;
 }

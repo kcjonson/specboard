@@ -56,7 +56,9 @@
 
 @media (width < 768px) { /* bp-small: filters go fluid so the toolbar wraps cleanly */
 	.filter {
-		flex: 1;
+		/* Full-basis so the search takes its own row instead of squeezing beside
+		   the other toolbar controls. */
+		flex: 1 1 100%;
 	}
 
 	.filter input[type='search'] {

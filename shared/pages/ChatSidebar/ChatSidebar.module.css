@@ -29,44 +29,6 @@
 	margin: 0;
 }
 
-.closeButton {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 28px;
-	height: 28px;
-	padding: 0;
-	background: transparent;
-	border: none;
-	border-radius: var(--radius-sm);
-	color: var(--color-text-muted);
-	cursor: pointer;
-	transition: background-color 0.15s, color 0.15s;
-}
-
-.closeButton:hover {
-	background: var(--color-background);
-	color: var(--color-text);
-}
-
-.closeButton:focus-visible {
-	outline: 2px solid var(--color-primary);
-	outline-offset: 2px;
-}
-
-@media (pointer: coarse) {
-	.closeButton {
-		min-width: var(--touch-target);
-		min-height: var(--touch-target);
-	}
-}
-
-@media (width >= 768px) { /* bp-small (desktop side): no reopen affordance on desktop, so no close */
-	.closeButton {
-		display: none;
-	}
-}
-
 /* Model selector */
 .modelSelector {
 	padding: var(--space-2) var(--space-4);
@@ -297,6 +259,12 @@
 	opacity: 0.5;
 }
 
+@media (width < 768px) { /* bp-small: 16px minimum stops iOS zooming the page on focus */
+	.input {
+		font-size: var(--text-base);
+	}
+}
+
 .sendButton {
 	display: flex;
 	align-items: center;
@@ -359,7 +327,6 @@
 		animation: none;
 	}
 
-	.closeButton,
 	.suggestion,
 	.sendButton {
 		transition: none;

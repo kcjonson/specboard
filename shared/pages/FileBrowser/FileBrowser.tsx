@@ -445,6 +445,17 @@ export function FileBrowser({
 		setDeleteTarget(null);
 	};
 
+	// Small-screen takeover close affordance, shared by both header renders.
+	const closeButton = onClose && (
+		<button
+			class="icon mobile-only"
+			onClick={onClose}
+			aria-label="Close file browser"
+		>
+			<Icon name="x-mark" />
+		</button>
+	);
+
 	// Helper to render the pending new file input
 	const renderPendingNewFile = (): JSX.Element | null => {
 		if (!model.pendingNewFile) return null;
@@ -481,15 +492,7 @@ export function FileBrowser({
 			<div class={`${styles.container} ${className || ''}`}>
 				<div class={styles.header}>
 					<span>Files</span>
-					{onClose && (
-						<button
-							class={`${styles.closeButton} ${styles.mobileOnly}`}
-							onClick={onClose}
-							aria-label="Close file browser"
-						>
-							<Icon name="x-mark" />
-						</button>
-					)}
+					{closeButton}
 				</div>
 				<div class={styles.emptyState}>
 					{isSyncing ? (
@@ -550,15 +553,7 @@ export function FileBrowser({
 				{gitStatus && gitStatus.changedCount > 0 && (
 					<Badge class="variant-warning size-sm">{gitStatus.changedCount}</Badge>
 				)}
-				{onClose && (
-					<button
-						class={`${styles.closeButton} ${styles.mobileOnly}`}
-						onClick={onClose}
-						aria-label="Close file browser"
-					>
-						<Icon name="x-mark" />
-					</button>
-				)}
+				{closeButton}
 			</div>
 			<div class={styles.content}>
 				<div class={styles.tree}>

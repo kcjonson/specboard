@@ -19,25 +19,6 @@
 	letter-spacing: 0.05em;
 }
 
-.closeButton {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	min-width: var(--touch-target);
-	min-height: var(--touch-target);
-	padding: 0;
-	background: transparent;
-	border: none;
-	border-radius: var(--radius-sm);
-	color: var(--color-text-muted);
-	cursor: pointer;
-}
-
-.closeButton:hover {
-	background: var(--color-surface-hover);
-	color: var(--color-text);
-}
-
 .content {
 	flex: 1;
 	min-height: 0;
@@ -192,7 +173,7 @@
 
 .removeButton:hover,
 .deleteButton:hover {
-	background: var(--color-error-subtle);
+	background: var(--color-error-bg);
 	color: var(--color-error);
 }
 
@@ -237,6 +218,16 @@
 	.treeItem {
 		min-height: var(--touch-target);
 	}
+
+	/* The per-item actions are ~20px glyphs next to a destructive delete; give
+	   them a real tap footprint. Height is capped by the row, so width does the
+	   separating. */
+	.addFileButton,
+	.removeButton,
+	.deleteButton {
+		min-width: var(--touch-target);
+		min-height: var(--touch-target);
+	}
 }
 
 /* Hide status dot when showing delete button */
@@ -270,7 +261,7 @@
 .error {
 	padding: var(--space-2) var(--space-3);
 	margin: var(--space-2);
-	background: var(--color-error-subtle);
+	background: var(--color-error-bg);
 	color: var(--color-error);
 	font-size: var(--text-sm);
 	border-radius: var(--radius-sm);
@@ -318,11 +309,5 @@
 .treeItem.deleted .fileName {
 	text-decoration: line-through;
 	color: var(--color-text-muted);
-}
-
-@media (width >= 768px) { /* bp-small (desktop side) */
-	.mobileOnly {
-		display: none;
-	}
 }
 

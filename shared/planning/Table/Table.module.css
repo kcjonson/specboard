@@ -42,8 +42,10 @@
 
 /* Shared grid template for every row (header, group header, epic, task). */
 .row {
+	/* One status track width for both templates, so desktop and mobile can't drift. */
+	--col-status: 110px;
 	display: grid;
-	grid-template-columns: minmax(240px, 1fr) 70px 140px 80px 140px;
+	grid-template-columns: minmax(240px, 1fr) 70px var(--col-status) 80px 140px;
 	align-items: center;
 	gap: var(--space-3);
 	padding: var(--space-2) var(--space-3);
@@ -240,7 +242,7 @@
 
 @media (width < 768px) { /* bp-small: Title + Status only; the rest lives in the item takeover */
 	.row {
-		grid-template-columns: minmax(0, 1fr) 140px;
+		grid-template-columns: minmax(0, 1fr) var(--col-status);
 	}
 
 	.colType,
