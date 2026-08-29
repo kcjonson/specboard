@@ -342,15 +342,16 @@ In epic detail modal, press `C` or click "+ Add Task":
 
 ---
 
-## Responsive Considerations
+## Responsive Behavior
 
-Desktop-only for MVP, but structure for future mobile:
+Shipped 2026-08. One 768px breakpoint (see [tech-stack.md](../tech-stack.md#responsive-strategy)):
 
 | Breakpoint | Behavior |
 |------------|----------|
-| Desktop (>768px) | Three columns side by side |
-| Tablet (future) | Horizontal scroll or collapsed columns |
-| Mobile (future) | Stack columns vertically, swipe between |
+| 768px and up | Three columns side by side; item opens in a resizable side drawer |
+| Below 768px | Columns stack vertically, the board scrolls as one list; the table view drops to Title + Status (type, task count, and assignee stay visible in the item view); opening an item is a full-screen takeover closable via X, ESC, or browser back |
+
+Drag-and-drop is native HTML5 DnD and does not fire on touch — status changes on small screens happen inside the item view. Touch DnD is a known follow-up, not planned for now.
 
 ---
 
