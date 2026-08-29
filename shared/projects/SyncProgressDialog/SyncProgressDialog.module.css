@@ -48,10 +48,10 @@
 	overflow-wrap: break-word;
 }
 
-.actions {
-	display: flex;
-	gap: var(--space-3);
-	margin-top: var(--space-2);
+/* DialogFooter sits inside the centered .content column; stretch it so the
+   actions end-align like every other footer. */
+.footer {
+	align-self: stretch;
 }
 
 .dismissLink {

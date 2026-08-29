@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Dialog, Button, Text } from '@specboard/ui';
+import { Dialog, DialogFooter, Button, Text } from '@specboard/ui';
 import { fetchClient } from '@specboard/fetch';
 import styles from './ChangePasswordDialog.module.css';
 
@@ -121,14 +121,14 @@ export function SetPasswordDialog({ open, onClose, userId, userName }: SetPasswo
 					/>
 				</div>
 
-				<div class={styles.actions}>
+				<DialogFooter>
 					<Button type="button" variant="secondary" onClick={handleClose}>
 						Cancel
 					</Button>
 					<Button type="submit" disabled={!isValid || saving}>
 						{saving ? 'Setting...' : 'Set Password'}
 					</Button>
-				</div>
+				</DialogFooter>
 			</form>
 		</Dialog>
 	);

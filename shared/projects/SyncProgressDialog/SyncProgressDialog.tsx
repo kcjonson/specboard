@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { fetchClient, FetchError } from '@specboard/fetch';
-import { Dialog, Button, Icon } from '@specboard/ui';
+import { Dialog, DialogFooter, Button, Icon } from '@specboard/ui';
 import type { SyncStatus } from '@specboard/models';
 import styles from './SyncProgressDialog.module.css';
 
@@ -147,14 +147,14 @@ export function SyncProgressDialog({
 						<div class={styles.hint}>
 							Your repository has been imported successfully.
 						</div>
-						<div class={styles.actions}>
+						<DialogFooter class={styles.footer}>
 							<Button onClick={() => onNavigate('pages')}>
 								Go to Pages
 							</Button>
 							<Button onClick={() => onNavigate('planning')}>
 								Go to Planning
 							</Button>
-						</div>
+						</DialogFooter>
 					</>
 				)}
 
@@ -167,14 +167,14 @@ export function SyncProgressDialog({
 						{syncError && (
 							<div class={styles.errorMessage}>{syncError}</div>
 						)}
-						<div class={styles.actions}>
+						<DialogFooter class={styles.footer}>
+							<Button class="secondary" onClick={onDismiss}>
+								Continue anyway
+							</Button>
 							<Button onClick={handleRetry} disabled={retrying}>
 								{retrying ? 'Retrying...' : 'Retry Sync'}
 							</Button>
-							<Button onClick={onDismiss}>
-								Continue anyway
-							</Button>
-						</div>
+						</DialogFooter>
 					</>
 				)}
 			</div>

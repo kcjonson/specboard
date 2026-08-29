@@ -39,24 +39,13 @@
 	min-height: 80px;
 }
 
-.footer {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	margin-top: var(--space-2);
-}
-
-.actions {
-	display: flex;
-	gap: var(--space-3);
-	margin-left: auto;
-}
-
-.deleteButton {
+/* Doubled class outweighs the element+class selectors in elements/button.css
+   (button.text would otherwise win and paint this primary-blue). */
+.deleteButton.deleteButton {
 	color: var(--color-error);
 }
 
-.deleteButton:hover {
+.deleteButton.deleteButton:hover {
 	background: var(--color-error-bg);
 }
 

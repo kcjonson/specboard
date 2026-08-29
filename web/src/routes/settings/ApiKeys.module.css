@@ -165,40 +165,6 @@
 	justify-content: flex-start;
 }
 
-/* Dialog overlay */
-.overlay {
-	position: fixed;
-	inset: 0;
-	background: rgba(0, 0, 0, 0.5);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	z-index: 1000;
-}
-
-.dialog {
-	background: var(--color-surface);
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-lg);
-	padding: var(--space-6);
-	width: 100%;
-	max-width: 480px;
-	box-shadow: var(--shadow-lg);
-}
-
-.dialogTitle {
-	font-size: var(--text-lg);
-	font-weight: var(--font-semibold);
-	color: var(--color-text);
-	margin: 0 0 var(--space-2) 0;
-}
-
-.dialogDescription {
-	font-size: var(--text-sm);
-	color: var(--color-text-muted);
-	margin: 0 0 var(--space-4) 0;
-}
-
 .dialogError {
 	padding: var(--space-3);
 	background: rgba(239, 68, 68, 0.1);
@@ -209,42 +175,10 @@
 	margin-bottom: var(--space-4);
 }
 
-.formField {
-	margin-bottom: var(--space-4);
-}
-
 .hint {
 	font-size: var(--text-sm);
 	color: var(--color-text-muted);
-	margin: var(--space-2) 0 0 0;
-}
-
-.label {
-	display: block;
-	font-size: var(--text-sm);
-	font-weight: var(--font-medium);
-	color: var(--color-text);
-	margin-bottom: var(--space-2);
-}
-
-.input {
-	width: 100%;
-	padding: var(--space-3);
-	font-size: var(--text-sm);
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-md);
-	background: var(--color-background);
-	color: var(--color-text);
-}
-
-.input:focus {
-	outline: none;
-	border-color: var(--color-primary);
-	box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.2);
-}
-
-.input::placeholder {
-	color: var(--color-text-muted);
+	margin: 0 0 var(--space-4) 0;
 }
 
 .link {
@@ -254,15 +188,6 @@
 
 .link:hover {
 	text-decoration: none;
-}
-
-.dialogActions {
-	display: flex;
-	justify-content: flex-end;
-	gap: var(--space-3);
-	margin-top: var(--space-4);
-	padding-top: var(--space-4);
-	border-top: 1px solid var(--color-border);
 }
 
 /* Button variants */
@@ -337,10 +262,4 @@
 .link:focus-visible {
 	outline: 2px solid var(--color-primary);
 	outline-offset: 2px;
-}
-
-.input:focus-visible {
-	outline: none;
-	border-color: var(--color-primary);
-	box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.2);
 }

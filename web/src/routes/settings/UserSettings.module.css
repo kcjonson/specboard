@@ -80,6 +80,12 @@
 	gap: var(--space-4);
 }
 
+@media (width < 768px) { /* bp-small: stack paired fields */
+	.row {
+		grid-template-columns: 1fr;
+	}
+}
+
 .field {
 	display: flex;
 	flex-direction: column;
