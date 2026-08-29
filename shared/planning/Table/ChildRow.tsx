@@ -12,11 +12,11 @@ const STATUS_LABELS: Record<ItemStatus, string> = {
 	done: 'Done',
 };
 
-// 'blocked'/'in_review' have no dedicated StatusDot color — fall back to the neutral dot.
+// 'in_review' has no dedicated StatusDot color — fall back to the neutral dot.
 const DOT_STATUS: Record<ItemStatus, StatusType> = {
 	ready: 'ready',
 	in_progress: 'in_progress',
-	blocked: 'default',
+	blocked: 'blocked',
 	in_review: 'default',
 	done: 'done',
 };

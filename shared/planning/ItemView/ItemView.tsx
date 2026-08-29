@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { useModel, ItemModel, type ChildModel, type Status, type SubStatus, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type ChildModel, type Status, type ItemStatus, type SubStatus, type ItemType, type ItemOrigin, type ItemWorker } from '@specboard/models';
 import { Button, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { SpecsSection } from '../SpecsSection/SpecsSection';
+import { BlockersSection } from '../BlockersSection/BlockersSection';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import styles from './ItemView.module.css';
 
@@ -38,11 +39,42 @@ interface ItemViewCreateProps {
 
 export type ItemViewProps = ItemViewExistingProps | ItemViewCreateProps;
 
-const STATUS_OPTIONS: { value: Status; label: string }[] = [
+const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
 	{ value: 'ready', label: 'Ready' },
 	{ value: 'in_progress', label: 'In Progress' },
+	{ value: 'blocked', label: 'Blocked' },
 	{ value: 'done', label: 'Done' },
 ];
+
+// Creating an item already blocked makes no sense; blockers get added after.
+const CREATE_STATUS_OPTIONS = STATUS_OPTIONS.filter((o) => o.value !== 'blocked');
+
+/** Milliseconds after which an agent session with no observed writes reads as stale. */
+const WORKER_STALE_MS = 15 * 60 * 1000;
+
+function workerLabel(worker: ItemWorker): string {
+	return worker.actor.client?.name || worker.actor.deviceName || 'Agent session';
+}
+
+function originLabel(origin: ItemOrigin): string {
+	if (origin.actor.type === 'agent') {
+		const name = origin.actor.client?.name || 'Agent';
+		return origin.actor.deviceName ? `${name} on ${origin.actor.deviceName}` : name;
+	}
+	if (origin.actor.type === 'system') return 'System';
+	return 'User';
+}
+
+function formatTimeAgo(dateString: string): string {
+	const diffMs = Date.now() - new Date(dateString).getTime();
+	const diffMinutes = Math.floor(diffMs / (1000 * 60));
+	const diffHours = Math.floor(diffMinutes / 60);
+	const diffDays = Math.floor(diffHours / 24);
+	if (diffDays > 0) return `${diffDays}d ago`;
+	if (diffHours > 0) return `${diffHours}h ago`;
+	if (diffMinutes > 0) return `${diffMinutes}m ago`;
+	return 'just now';
+}
 
 const SUB_STATUS_OPTIONS: { value: SubStatus; label: string }[] = [
 	{ value: 'not_started', label: 'Not Started' },
@@ -89,7 +121,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// Track whether description has unsaved changes
 	const descriptionDirtyRef = useRef(false);
 
-	const taskStats = item?.childStats || { total: 0, done: 0 };
+	const taskStats = item?.childStats || { total: 0, done: 0, blocked: 0 };
 
 	// Sync the title draft to whichever item is open. Keyed on the model as well as
 	// the title so switching to an item whose title hasn't arrived yet clears the
@@ -174,9 +206,9 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// Status change (for create mode, just update the draft)
 	const handleStatusChange = (e: Event): void => {
 		const target = e.target as HTMLSelectElement;
-		const newStatus = target.value as Status;
+		const newStatus = target.value as ItemStatus;
 		if (isNew) {
-			setStatusDraft(newStatus);
+			setStatusDraft(newStatus as Status);
 		} else if (item) {
 			const previousStatus = item.status;
 			item.status = newStatus;
@@ -249,7 +281,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 						<Select
 							id="item-status"
 							value={isNew ? statusDraft : (item?.status || 'ready')}
-							options={STATUS_OPTIONS}
+							options={isNew ? CREATE_STATUS_OPTIONS : STATUS_OPTIONS}
 							onChange={handleStatusChange}
 							label="Status"
 						/>
@@ -282,6 +314,43 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 							>
 								{item.prUrl.replace(/^https?:\/\/github\.com\//, '')}
 							</a>
+						</div>
+					)}
+					{!isNew && item?.origin && (
+						<div class={styles.field}>
+							<label class={styles.fieldLabel}>Created by</label>
+							<span class={styles.fieldValue}>
+								{originLabel(item.origin)}
+								{item.origin.discoveredFrom && (
+									<>
+										{' · discovered from '}
+										<button
+											type="button"
+											class={styles.inlineLink}
+											onClick={() => item.origin?.discoveredFrom && onOpenChild?.(item.origin.discoveredFrom.itemKey)}
+										>
+											{item.origin.discoveredFrom.itemKey}
+										</button>
+									</>
+								)}
+							</span>
+						</div>
+					)}
+					{!isNew && item?.workers && item.workers.length > 0 && (
+						<div class={styles.field}>
+							<label class={styles.fieldLabel}>Working now</label>
+							<span class={styles.fieldValue}>
+								{item.workers.map((worker, i) => {
+									const stale = Date.now() - new Date(worker.lastSeenAt).getTime() > WORKER_STALE_MS;
+									return (
+										<span key={worker.id} class={stale ? styles.staleWorker : undefined}>
+											{i > 0 && ', '}
+											{workerLabel(worker)} · {formatTimeAgo(worker.lastSeenAt)}
+											{stale && ' (stale)'}
+										</span>
+									);
+								})}
+							</span>
 						</div>
 					)}
 				</div>
@@ -326,6 +395,16 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 						</Button>
 					</div>
 				</section>
+			)}
+
+			{/* Blockers — for any existing work item */}
+			{!isNew && item && (
+				<BlockersSection
+					projectSlug={item.projectSlug}
+					itemKey={item.key}
+					onOpenItem={onOpenChild}
+					onChange={() => void item.fetch()}
+				/>
 			)}
 
 			{/* Specifications — for any existing work item */}

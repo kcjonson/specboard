@@ -191,9 +191,9 @@ async function seedSampleProject(pool, ownerId) {
 		for (let i = 0; i < SAMPLE_EPICS.length; i++) {
 			const epic = SAMPLE_EPICS[i];
 			const epicResult = await client.query(
-				`INSERT INTO items (project_id, parent_id, title, description, status, type, rank, creator, number)
-				 VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-				[projectId, epic.title, epic.description, epic.status, epic.type, i + 1, ownerId, allocate()]
+				`INSERT INTO items (project_id, parent_id, title, description, status, type, rank, origin, number)
+				 VALUES ($1, NULL, $2, $3, $4, $5, $6, $7::jsonb, $8) RETURNING id`,
+				[projectId, epic.title, epic.description, epic.status, epic.type, i + 1, JSON.stringify({ actor: { type: 'user', userId: ownerId } }), allocate()]
 			);
 			const epicId = epicResult.rows[0]?.id;
 			if (!epicId) {

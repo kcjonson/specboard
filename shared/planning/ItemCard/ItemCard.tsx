@@ -145,6 +145,11 @@ export function ItemCard({
 
 			<div class={styles.footer}>
 				<span class={styles.itemKey}>{item.key}</span>
+				{item.blocked && (
+					<span class={styles.blockedChip} title="This item has open blockers">
+						Blocked
+					</span>
+				)}
 				{subStatusLabel && (
 					<span class={`${styles.subStatus} ${styles[`subStatus_${item.subStatus}`] || ''}`}>
 						{subStatusLabel}

@@ -55,6 +55,16 @@ export function Board({
 		[items, items.version, filters]
 	);
 
+	// Items held at status 'blocked' (a manual hold; row-blocked items stay in their
+	// real column with a chip). Rendered as an extra display-only column when present.
+	const blockedItems = useMemo(
+		() => items
+			.filter((i) => i.status === 'blocked')
+			.filter((i) => matchesFilters(i, filters))
+			.sort((a, b) => a.rank - b.rank),
+		[items, items.version, filters]
+	);
+
 	// Wrapper for Column (which only emits ItemModel, never undefined).
 	const handleColumnSelectItem = useCallback(
 		(item: ItemModel): void => onSelectItem(item),
@@ -157,20 +167,40 @@ export function Board({
 	return (
 		<div class={styles.board}>
 			{COLUMNS.map(({ status, title }) => (
-				<Column
-					key={status}
-					status={status}
-					title={title}
-					items={itemsByStatus[status]}
-					projectSlug={projectSlug}
-					selectedItemKey={selectedItemKey}
-					flashingIds={flashingIds}
-					onSelectItem={handleColumnSelectItem}
-					onOpenItem={onOpenItem}
-					onDropItem={handleDropItem}
-					onDragStart={handleDragStart}
-					onDragEnd={handleDragEnd}
-				/>
+				<>
+					<Column
+						key={status}
+						status={status}
+						title={title}
+						items={itemsByStatus[status]}
+						projectSlug={projectSlug}
+						selectedItemKey={selectedItemKey}
+						flashingIds={flashingIds}
+						onSelectItem={handleColumnSelectItem}
+						onOpenItem={onOpenItem}
+						onDropItem={handleDropItem}
+						onDragStart={handleDragStart}
+						onDragEnd={handleDragEnd}
+					/>
+					{/* The Blocked column appears after In Progress, only while something is
+					    held there. Not a drop target: blocking needs a reason (use the drawer). */}
+					{status === 'in_progress' && blockedItems.length > 0 && (
+						<Column
+							key="blocked"
+							status="blocked"
+							title="Blocked"
+							items={blockedItems}
+							projectSlug={projectSlug}
+							selectedItemKey={selectedItemKey}
+							flashingIds={flashingIds}
+							droppable={false}
+							onSelectItem={handleColumnSelectItem}
+							onOpenItem={onOpenItem}
+							onDragStart={handleDragStart}
+							onDragEnd={handleDragEnd}
+						/>
+					)}
+				</>
 			))}
 		</div>
 	);

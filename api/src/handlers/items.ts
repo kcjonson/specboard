@@ -23,6 +23,7 @@ import {
 	verifyItemOwnership,
 	getItemKeysBySpecPath,
 	ParentItemNotFoundError,
+	DiscoveredFromNotFoundError,
 	ItemCycleError,
 	type ResolvedProject,
 	type ItemStatus,
@@ -31,6 +32,7 @@ import {
 } from '@specboard/db';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import { isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../validation.ts';
+import { apiActor } from './blockers.ts';
 
 /**
  * The project resolved from :projectSlug by requireProjectAccess.
@@ -99,7 +101,7 @@ export async function handleGetItem(context: Context): Promise<Response> {
 	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
-		const items = await getItems({ projectId, itemNumber, includeChildren: true, includeNotes: true, includeSpecs: true });
+		const items = await getItems({ projectId, itemNumber, includeChildren: true, includeNotes: true, includeSpecs: true, includeBlockers: true, includeWorkers: true });
 		const item = items[0];
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(item);
@@ -117,7 +119,9 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 		const [inProgress, inReview, ready] = await Promise.all([
 			getItems({ projectId, status: 'in_progress', includeChildren: true, includeNotes: true }),
 			getItems({ projectId, status: 'in_review', includeChildren: true }),
-			getItems({ projectId, status: 'ready' }),
+			// Ready means actually startable: row-blocked items are excluded
+			// (status='blocked' is already excluded by the equality filter).
+			getItems({ projectId, status: 'ready', excludeBlocked: true }),
 		]);
 		return context.json({ active: [...inProgress, ...inReview], ready });
 	} catch (error) {
@@ -130,7 +134,7 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 export async function handleCreateItem(context: Context): Promise<Response> {
 	const { id: projectId, key: projectKey } = project(context);
 
-	const body = await context.req.json<{ title?: string; type?: unknown; parentKey?: string | null; description?: string; status?: unknown }>();
+	const body = await context.req.json<{ title?: string; type?: unknown; parentKey?: string | null; description?: string; status?: unknown; discoveredFromKey?: unknown }>();
 	const title = body.title || 'Untitled';
 	if (!isValidTitle(title)) return context.json({ error: `Title must be between 1 and ${MAX_TITLE_LENGTH} characters` }, 400);
 	if (body.type !== undefined && !isValidType(body.type)) return context.json({ error: 'Invalid type. Must be one of: epic, task, bug' }, 400);
@@ -145,6 +149,16 @@ export async function handleCreateItem(context: Context): Promise<Response> {
 		if (parentNumber === null) return context.json({ error: 'Parent item not found' }, 404);
 	}
 
+	let discoveredFromNumber: number | undefined;
+	if (body.discoveredFromKey != null) {
+		if (typeof body.discoveredFromKey !== 'string' || !parseItemKey(body.discoveredFromKey)) {
+			return context.json({ error: 'Invalid discoveredFromKey' }, 400);
+		}
+		const resolved = itemNumberInProject(body.discoveredFromKey, projectKey);
+		if (resolved === null) return context.json({ error: 'Discovered-from item not found' }, 404);
+		discoveredFromNumber = resolved;
+	}
+
 	try {
 		if (parentNumber !== null && !(await verifyItemOwnership(projectId, parentNumber))) {
 			return context.json({ error: 'Parent item not found' }, 404);
@@ -155,10 +169,13 @@ export async function handleCreateItem(context: Context): Promise<Response> {
 			parentNumber,
 			description: body.description,
 			status: body.status as ItemStatus | undefined,
+			origin: { actor: apiActor(context) },
+			discoveredFromNumber,
 		});
 		return context.json(item, 201);
 	} catch (error) {
 		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
+		if (error instanceof DiscoveredFromNotFoundError) return context.json({ error: 'Discovered-from item not found' }, 404);
 		console.error('Failed to create item:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
@@ -182,7 +199,8 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 		const created = await createItems(
 			projectId,
 			parentNumber,
-			body.items.map((it) => ({ title: it.title!, description: it.description, type: it.type as ItemType | undefined }))
+			body.items.map((it) => ({ title: it.title!, description: it.description, type: it.type as ItemType | undefined })),
+			{ actor: apiActor(context) }
 		);
 		return context.json(created, 201);
 	} catch (error) {
