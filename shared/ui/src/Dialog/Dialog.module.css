@@ -1,8 +1,18 @@
 /* Desktop-and-up baseline. Closed-state styles live on .dialog (they are also the
    exit-animation target); open-state on .dialog[open]. display is NOT set on the
-   base class — the UA's display:none for closed dialogs must survive. */
+   base class — author rules beat the UA's display:none for closed dialogs no
+   matter the specificity, and a mounted-closed dialog must not hit-test. The
+   allow-discrete transition holds display:flex through the exit, so every other
+   layout property (flex-direction, position, centering, sizing) lives here on the
+   base rule to keep the exit frame's layout identical to the open one — including
+   in browsers without `overlay` transitions, which drop top-layer membership
+   (and the UA's :modal positioning) the instant [open] is removed. */
 .dialog {
-	margin: auto; /* native top-layer centering */
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-modal); /* only felt outside the top layer, i.e. during exit */
+	margin: auto;
+	flex-direction: column;
 	border: none;
 	padding: 0;
 	background: var(--color-surface);
@@ -22,9 +32,14 @@
 
 .dialog[open] {
 	display: flex;
-	flex-direction: column;
 	opacity: 1;
 	transform: none;
+}
+
+/* The dialog itself takes initial focus (tabIndex=-1); a focus ring on the whole
+   surface signals nothing useful. */
+.dialog:focus-visible {
+	outline: none;
 }
 
 /* Entry: first style pass after insertion into the open state. */
@@ -97,39 +112,14 @@
 	gap: var(--space-2);
 }
 
-.closeButton {
-	background: none;
-	border: none;
-	font-size: var(--text-2xl);
-	color: var(--color-text-muted);
-	cursor: pointer;
-	padding: 0;
-	line-height: 1;
-}
-
-.closeButton:hover {
-	color: var(--color-text);
-}
-
 .content {
 	padding: var(--space-6);
 	overflow-y: auto; /* THE scrollable region — keyboard invariant */
 	min-height: 0;
 }
 
-@media (pointer: coarse) {
-	.closeButton {
-		min-width: var(--touch-target);
-		min-height: var(--touch-target);
-	}
-}
-
 @media (width >= 768px) { /* bp-small (desktop side) */
 	.headerEmpty {
-		display: none;
-	}
-
-	.closeDesktopHidden {
 		display: none;
 	}
 }
@@ -167,5 +157,12 @@
 	.content {
 		flex: 1;
 		padding-bottom: max(var(--space-6), env(safe-area-inset-bottom));
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.dialog,
+	.dialog::backdrop {
+		transition: none;
 	}
 }

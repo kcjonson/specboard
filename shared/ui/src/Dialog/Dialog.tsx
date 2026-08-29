@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useId, useRef } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
 import { Icon } from '../Icon/Icon';
 import styles from './Dialog.module.css';
@@ -33,6 +33,10 @@ export function Dialog({
 	class: className,
 }: DialogProps): JSX.Element {
 	const ref = useRef<HTMLDialogElement>(null);
+	const titleId = useId();
+	// Set while we close the element ourselves (unmount cleanup), so the native
+	// `close` listener doesn't call onClose into a parent that's tearing down.
+	const suppressCloseSync = useRef(false);
 
 	// Show header if title is provided OR showCloseButton is explicitly true OR headerActions are provided
 	const showHeader = Boolean(title) || showCloseButton === true || Boolean(headerActions);
@@ -46,15 +50,44 @@ export function Dialog({
 	useEffect(() => {
 		const el = ref.current;
 		if (!el) return;
-		if (open && !el.open) el.showModal();
-		else if (!open && el.open) el.close();
+		if (open && !el.open) {
+			el.showModal();
+			// showModal's focusing steps honor [autofocus] on a descendant; without
+			// one they focus the first tabbable — the header close X, where Enter
+			// dismisses. Focus the dialog itself instead (tabIndex=-1 below makes it
+			// focusable) so Tab reaches the content in order.
+			if (!el.querySelector('[autofocus]')) el.focus();
+		} else if (!open && el.open) {
+			el.close();
+		}
 	}, [open]);
+
+	// Consumers that conditionally render unmount while open; close the element
+	// first so the top layer exits and focus restores to the opener.
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+		return () => {
+			if (el.open) {
+				suppressCloseSync.current = true;
+				el.close();
+			}
+		};
+	}, []);
 
 	// ESC arrives as `cancel`. preventDefault keeps the element open until the
 	// parent flips state/unmounts — single source of truth stays with the consumer.
 	const handleCancel = (e: Event): void => {
 		e.preventDefault();
 		onClose();
+	};
+
+	// Safety net: if the element closes without going through props (close-watcher
+	// edge cases where `cancel` never fires), resync the owner so `open` can't
+	// wedge at true against a closed element.
+	const handleNativeClose = (): void => {
+		if (suppressCloseSync.current) return;
+		if (open) onClose();
 	};
 
 	// Clicks on ::backdrop retarget to the <dialog> itself. The dialog has
@@ -70,23 +103,23 @@ export function Dialog({
 	].filter(Boolean).join(' ');
 
 	// Header is always rendered: small screens need a close affordance even on
-	// title-less dialogs. CSS hides .headerEmpty / .closeDesktopHidden at >= 768px.
+	// title-less dialogs. CSS hides .headerEmpty (and mobile-only closes) at >= 768px.
 	const headerClasses = showHeader ? styles.header : `${styles.header} ${styles.headerEmpty}`;
-	const closeClasses = shouldShowCloseButton
-		? styles.closeButton
-		: `${styles.closeButton} ${styles.closeDesktopHidden}`;
+	const closeClasses = shouldShowCloseButton ? 'icon' : 'icon mobile-only';
 
 	return (
 		<dialog
 			ref={ref}
 			class={dialogClasses}
+			tabIndex={-1}
 			onCancel={handleCancel}
+			onClose={handleNativeClose}
 			onClick={handleClick}
-			aria-labelledby={title ? 'dialog-title' : undefined}
+			aria-labelledby={title ? titleId : undefined}
 		>
 			<div class={headerClasses}>
 				{title && (
-					<h2 id="dialog-title" class={styles.title}>{title}</h2>
+					<h2 id={titleId} class={styles.title}>{title}</h2>
 				)}
 				{!title && <div class={styles.headerSpacer} />}
 				<div class={styles.headerActions}>
