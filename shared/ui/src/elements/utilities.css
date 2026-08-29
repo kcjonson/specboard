@@ -1,0 +1,13 @@
+/**
+ * Global utility classes
+ *
+ * Class-level (0-1-0) selectors: they beat element-selector defaults but lose to
+ * CSS module class rules, so anything converted to a utility must not also carry
+ * a module rule for the same property.
+ */
+
+@media (width >= 768px) { /* bp-small (desktop side) */
+	.mobile-only {
+		display: none;
+	}
+}

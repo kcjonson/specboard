@@ -75,6 +75,17 @@ button.danger:hover:not(:disabled) {
 	color: var(--color-text-inverse);
 }
 
+/* Borderless destructive action (e.g. Delete in a dialog footer). */
+button.text.danger {
+	color: var(--color-error);
+	border: none;
+}
+
+button.text.danger:hover:not(:disabled) {
+	background: var(--color-error-bg);
+	color: var(--color-error);
+}
+
 button.icon {
 	background: none;
 	border: none;
