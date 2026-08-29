@@ -385,6 +385,8 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 							onInput={(e) => setNewTaskTitle((e.target as HTMLInputElement).value)}
 							onKeyDown={handleAddTaskKeyDown}
 							placeholder="Add a task..."
+							ariaLabel="Add a task"
+							compact
 						/>
 						<Button
 							class="text"

@@ -1,14 +1,20 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { ItemsCollection, type ItemModel, type Status } from '@specboard/models';
+import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
 import { StatusDot } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
 import { matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Table.module.css';
 
-/** Status sections, in display order (active work first). */
-const GROUPS: { status: Status; label: string }[] = [
+/**
+ * Status sections, in display order (active work first). Blocked and In Review
+ * only appear while something is held there, so the common case stays three
+ * sections — but nothing vanishes from the table.
+ */
+const GROUPS: { status: ItemStatus; label: string; whenNonEmpty?: boolean }[] = [
 	{ status: 'in_progress', label: 'In Progress' },
+	{ status: 'blocked', label: 'Blocked', whenNonEmpty: true },
+	{ status: 'in_review', label: 'In Review', whenNonEmpty: true },
 	{ status: 'ready', label: 'Ready' },
 	{ status: 'done', label: 'Done' },
 ];
@@ -50,16 +56,18 @@ export function Table({
 }: TableProps): JSX.Element {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-	const grouped = useMemo(
-		() => ({
-			in_progress: items.byStatus('in_progress').filter((i) => matchesFilters(i, filters)),
-			ready: items.byStatus('ready').filter((i) => matchesFilters(i, filters)),
-			done: items.byStatus('done').filter((i) => matchesFilters(i, filters)),
-		}),
+	const grouped = useMemo(() => {
+		const byStatus = {} as Record<ItemStatus, ItemModel[]>;
+		for (const group of GROUPS) {
+			byStatus[group.status] = items
+				.filter((i) => i.status === group.status)
+				.filter((i) => matchesFilters(i, filters))
+				.sort((a, b) => a.rank - b.rank);
+		}
+		return byStatus;
 		// items.version changes on add/remove/status change so the grouping recomputes
 		// even though the collection reference is stable.
-		[items, items.version, filters]
-	);
+	}, [items, items.version, filters]);
 
 	const toggleExpand = useCallback((item: ItemModel): void => {
 		const willExpand = !expanded.has(item.id);
@@ -112,8 +120,9 @@ export function Table({
 					<span class={styles.colAssignee} role="columnheader">Assignee</span>
 				</div>
 
-				{GROUPS.map(({ status, label }) => {
+				{GROUPS.map(({ status, label, whenNonEmpty }) => {
 					const groupItems = grouped[status];
+					if (whenNonEmpty && groupItems.length === 0) return null;
 					return (
 						<div key={status} class={styles.group} role="rowgroup">
 							<div class={styles.groupHeader} role="row">

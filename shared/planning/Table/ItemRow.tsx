@@ -100,6 +100,9 @@ export function ItemRow({
 				<span class={styles.colStatus} role="cell">
 					<StatusDot status={DOT_STATUS[item.status]} />
 					{STATUS_LABELS[item.status]}
+					{item.blocked && item.status !== 'blocked' && (
+						<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
+					)}
 				</span>
 				<span class={styles.colTasks} role="cell">{hasChildren ? `${done}/${total}` : '—'}</span>
 				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>

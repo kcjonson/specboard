@@ -109,6 +109,8 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 					onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
 					onKeyDown={handleKeyDown}
 					placeholder="Item key (SB-12) or a reason..."
+					ariaLabel="Add a blocker"
+					compact
 				/>
 				<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim()}>
 					+ Add

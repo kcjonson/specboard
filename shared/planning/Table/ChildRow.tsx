@@ -51,6 +51,9 @@ export function ChildRow({ child, onOpen }: ChildRowProps): JSX.Element {
 			<span class={styles.colStatus} role="cell">
 				<StatusDot status={DOT_STATUS[child.status]} />
 				{STATUS_LABELS[child.status]}
+				{child.blocked && child.status !== 'blocked' && (
+					<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
+				)}
 			</span>
 			<span class={styles.colTasks} role="cell" />
 			<span class={styles.colAssignee} role="cell" />

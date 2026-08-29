@@ -62,7 +62,7 @@ export async function listActiveWorkersByItems(itemIds: string[]): Promise<Map<s
 	const result = await query<{ id: string; item_id: string; actor: AgentActor; branch: string | null; started_at: Date; last_seen_at: Date }>(
 		`SELECT id, item_id, actor, branch, started_at, last_seen_at
 		 FROM item_workers WHERE item_id = ANY($1) AND ended_at IS NULL
-		 ORDER BY started_at ASC`,
+		 ORDER BY last_seen_at DESC`,
 		[itemIds]
 	);
 	const byItem = new Map<string, WorkerSummary[]>();
@@ -74,14 +74,14 @@ export async function listActiveWorkersByItems(itemIds: string[]): Promise<Map<s
 	return byItem;
 }
 
-/** Active episodes on an item, oldest first. */
+/** Active episodes on an item, most recently seen first. */
 export async function listActiveWorkers(projectId: string, itemNumber: number): Promise<WorkerSummary[]> {
 	const result = await query<{ id: string; actor: AgentActor; branch: string | null; started_at: Date; last_seen_at: Date }>(
 		`SELECT w.id, w.actor, w.branch, w.started_at, w.last_seen_at
 		 FROM item_workers w
 		 JOIN items i ON i.id = w.item_id
 		 WHERE i.project_id = $1 AND i.number = $2 AND w.ended_at IS NULL
-		 ORDER BY w.started_at ASC`,
+		 ORDER BY w.last_seen_at DESC`,
 		[projectId, itemNumber]
 	);
 	return result.rows.map((r) => ({ id: r.id, actor: r.actor, branch: r.branch, startedAt: r.started_at, lastSeenAt: r.last_seen_at }));

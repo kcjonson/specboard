@@ -53,12 +53,16 @@
 	flex: 1;
 	min-width: 0;
 	text-align: left;
+	/* The app ships a global `button { display: inline-flex; justify-content: center }`
+	   on some routes; block display keeps this text-only button left-aligned everywhere. */
+	display: block;
 	appearance: none;
 	border: none;
 	background: transparent;
 	color: var(--color-primary);
 	font-family: inherit;
 	font-size: var(--text-sm);
+	font-weight: var(--font-normal);
 	cursor: pointer;
 	padding: 0;
 	overflow: hidden;
