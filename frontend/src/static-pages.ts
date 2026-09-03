@@ -96,6 +96,7 @@ export const pages = {
 	forgotPassword: loadPage(`${ssgBase}/forgot-password.html`),
 	resetPassword: loadPage(`${ssgBase}/reset-password.html`),
 	privacy: loadPage(`${ssgBase}/privacy.html`),
+	setup: loadPage(`${ssgBase}/setup.html`),
 };
 
 /**

@@ -1,0 +1,80 @@
+/**
+ * Setup guide page styles
+ */
+
+body {
+	padding: 1rem;
+}
+
+.setup-container {
+	max-width: 640px;
+	margin: 0 auto;
+	padding: 3rem 1rem 4rem;
+}
+
+.setup-container h1 {
+	font-size: 2rem;
+	font-weight: 600;
+	margin-bottom: 0.5rem;
+	color: var(--color-text);
+}
+
+.setup-intro {
+	margin-bottom: 2rem;
+}
+
+.setup-container h2 {
+	font-size: 1.25rem;
+	font-weight: 600;
+	margin: 2rem 0 0.75rem;
+	color: var(--color-text);
+}
+
+.setup-container h3 {
+	font-size: 1rem;
+	font-weight: 600;
+	margin: 1.5rem 0 0.5rem;
+	color: var(--color-text);
+}
+
+.setup-container p {
+	color: var(--color-text-muted);
+	line-height: 1.6;
+	margin-bottom: 1rem;
+}
+
+.setup-container a {
+	color: var(--color-primary);
+}
+
+.setup-container pre {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 6px;
+	padding: 0.75rem 1rem;
+	margin-bottom: 1rem;
+	overflow-x: auto;
+}
+
+.setup-container pre code {
+	background: none;
+	border: none;
+	padding: 0;
+	font-size: 0.85rem;
+	line-height: 1.5;
+	white-space: pre;
+}
+
+.setup-container code {
+	font-family: var(--font-mono);
+	font-size: 0.85em;
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	padding: 0.1em 0.35em;
+	color: var(--color-text);
+}
+
+.setup-home-link {
+	margin-top: 3rem;
+}

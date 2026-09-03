@@ -1,7 +1,7 @@
 ---
 name: whats-next
 description: Specboard development workflow. Use when working in a repo connected to Specboard, to find what to work on next, scope an epic, write or link a spec, break work into tasks, keep board status accurate, and run the loop through PR and close-out. Triggers on "what's next", "what should I work on", picking up an epic, or any Specboard planning/status update.
-allowed-tools: Bash(git status:*), Bash(git branch:*), Bash(git log:*), Bash(git checkout:*), Bash(git push:*), Bash(git rev-parse:*), Bash(git worktree list:*), Bash(git fetch:*), Bash(git for-each-ref:*), Bash(git merge:*), Bash(bash ${CLAUDE_SKILL_DIR}/assess-git-state.sh), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr create:*), Bash(gh pr merge:*), Glob, Grep, Read, mcp__specboard__list_projects, mcp__specboard__get_items, mcp__specboard__create_item, mcp__specboard__create_items, mcp__specboard__update_item, mcp__specboard__delete_item
+allowed-tools: Bash(git status:*), Bash(git branch:*), Bash(git log:*), Bash(git checkout:*), Bash(git push:*), Bash(git rev-parse:*), Bash(git worktree list:*), Bash(git fetch:*), Bash(git for-each-ref:*), Bash(git merge:*), Bash(bash ${CLAUDE_SKILL_DIR}/assess-git-state.sh), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr create:*), Bash(gh pr merge:*), Glob, Grep, Read, mcp__specboard__list_projects, mcp__specboard__get_items, mcp__specboard__create_item, mcp__specboard__create_items, mcp__specboard__update_item, mcp__specboard__delete_item, mcp__Specboard__list_projects, mcp__Specboard__get_items, mcp__Specboard__create_item, mcp__Specboard__create_items, mcp__Specboard__update_item, mcp__Specboard__delete_item
 ---
 
 # Specboard Workflow

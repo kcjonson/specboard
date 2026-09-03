@@ -58,6 +58,7 @@ export default defineConfig({
 				'styles/ssg/home.css': resolve(__dirname, '../ssg/src/styles/home.css'),
 				'styles/ssg/auth.css': resolve(__dirname, '../ssg/src/styles/auth.css'),
 				'styles/ssg/privacy.css': resolve(__dirname, '../ssg/src/styles/privacy.css'),
+				'styles/ssg/setup.css': resolve(__dirname, '../ssg/src/styles/setup.css'),
 			},
 		},
 	},
