@@ -18,6 +18,22 @@
 	transition: background var(--transition-fast);
 }
 
+@media (pointer: coarse) {
+	/* Outranks the element-level 44px button min-height so the avatar stays a
+	   36px circle; the ::after grows the hit box back to 44x44 (DrawerHandle
+	   uses the same pattern). */
+	.avatar {
+		position: relative;
+		min-height: 36px;
+	}
+
+	.avatar::after {
+		content: '';
+		position: absolute;
+		inset: -4px;
+	}
+}
+
 .avatar:hover {
 	background: var(--color-primary-hover);
 }
