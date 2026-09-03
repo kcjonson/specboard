@@ -73,7 +73,7 @@ function pathItemNumber(context: Context): number | Response {
 	return number;
 }
 
-/** GET /items — top-level items with child stats, filterable by status/type/search. */
+/** GET /items — top-level items with child stats, filterable by status/type/search. `limit` caps rows (default 500, max 1000). */
 export async function handleListItems(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 
@@ -81,6 +81,8 @@ export async function handleListItems(context: Context): Promise<Response> {
 	const type = context.req.query('type');
 	const search = context.req.query('search');
 	const specPath = context.req.query('specPath');
+	const limitParam = Number.parseInt(context.req.query('limit') ?? '', 10);
+	const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 1000) : 500;
 
 	try {
 		// Reverse lookup: items linking a given spec path (used by the doc editor).
@@ -93,7 +95,7 @@ export async function handleListItems(context: Context): Promise<Response> {
 			status: isValidStatus(status) ? status : undefined,
 			type: isValidType(type) ? type : undefined,
 			search: search || undefined,
-			limit: 500,
+			limit,
 		});
 		return context.json(items.map(apiItem));
 	} catch (error) {
