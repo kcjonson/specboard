@@ -195,7 +195,10 @@ export class ItemModel extends SyncModel {
  * ```
  */
 export class ItemsCollection extends SyncCollection<ItemModel> {
-	static url = '/api/projects/:projectSlug/items';
+	// limit=1000 is the server's max; without it the API caps the list at 500,
+	// which silently hides items on large boards. Real pagination is tracked
+	// separately.
+	static url = '/api/projects/:projectSlug/items?limit=1000';
 	static Model = ItemModel;
 
 	// Note: projectSlug is set dynamically via constructor initialProps
