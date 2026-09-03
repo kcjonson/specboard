@@ -38,26 +38,20 @@ export function Board({
 	onCreateItem,
 }: BoardProps): JSX.Element {
 	// Items grouped by status, with the toolbar filters applied to the cards shown.
+	// 'blocked' holds the status-level manual holds (row-blocked items stay in
+	// their real column with a chip); its column renders only when non-empty.
 	const itemsByStatus = useMemo(
 		() => ({
 			ready: items.byStatus('ready').filter((i) => matchesFilters(i, filters)),
 			in_progress: items.byStatus('in_progress').filter((i) => matchesFilters(i, filters)),
+			blocked: items.byStatus('blocked').filter((i) => matchesFilters(i, filters)),
 			done: items.byStatus('done').filter((i) => matchesFilters(i, filters)),
 		}),
 		// items.version changes on add/remove/status change so the grouping recomputes
 		// even though the collection reference is stable.
 		[items, items.version, filters]
 	);
-
-	// Items held at status 'blocked' (a manual hold; row-blocked items stay in their
-	// real column with a chip). Rendered as an extra display-only column when present.
-	const blockedItems = useMemo(
-		() => items
-			.filter((i) => i.status === 'blocked')
-			.filter((i) => matchesFilters(i, filters))
-			.sort((a, b) => a.rank - b.rank),
-		[items, items.version, filters]
-	);
+	const blockedItems = itemsByStatus.blocked;
 
 	// Wrapper for Column (which only emits ItemModel, never undefined).
 	const handleColumnSelectItem = useCallback(
@@ -76,6 +70,10 @@ export function Board({
 
 	useKeyboardNavigation({
 		itemsByStatus,
+		// Traversal follows the rendered column order, Blocked included when shown.
+		columns: blockedItems.length > 0
+			? ['ready', 'in_progress', 'blocked', 'done']
+			: ['ready', 'in_progress', 'done'],
 		selectedItemKey,
 		dialogOpen,
 		onSelectItem,

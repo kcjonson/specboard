@@ -207,7 +207,7 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	/**
 	 * Get items filtered by status, sorted by rank.
 	 */
-	byStatus(status: Status): ItemModel[] {
+	byStatus(status: ItemStatus): ItemModel[] {
 		return this.filter((e) => e.status === status).sort((a, b) => a.rank - b.rank);
 	}
 

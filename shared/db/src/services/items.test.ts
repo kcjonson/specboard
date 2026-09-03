@@ -270,9 +270,10 @@ describe('reaching done', () => {
 		blocked_count: '0',
 	};
 
-	it('completeItem clears dependent blockers in the same transaction, then ends workers', async () => {
+	it('completeItem clears dependent and own blockers in the same transaction, then ends workers', async () => {
 		mockClientQuery
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1' }], rowCount: 1 })
+			.mockResolvedValueOnce({ rows: [], rowCount: 0 })
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 		mockQuery
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never)
@@ -283,11 +284,13 @@ describe('reaching done', () => {
 		expect(mockTransaction).toHaveBeenCalledTimes(1);
 		const [updateSql] = mockClientQuery.mock.calls[0]!;
 		expect(updateSql).toContain(`SET status = 'done'`);
-		const [clearSql, clearParams] = mockClientQuery.mock.calls[1]!;
-		expect(clearSql).toContain('UPDATE item_blockers');
-		expect(clearSql).toContain(`'{"type":"system","cause":"blocking_item_done"}'::jsonb`);
-		expect(clearSql).toContain('WHERE blocker_item_id = $1 AND cleared_at IS NULL');
-		expect(clearParams).toEqual(['item-1']);
+		const [depSql, depParams] = mockClientQuery.mock.calls[1]!;
+		expect(depSql).toContain(`'{"type":"system","cause":"blocking_item_done"}'::jsonb`);
+		expect(depSql).toContain('WHERE blocker_item_id = $1 AND cleared_at IS NULL');
+		expect(depParams).toEqual(['item-1']);
+		const [ownSql, ownParams] = mockClientQuery.mock.calls[2]!;
+		expect(ownSql).toContain(`'{"type":"system","cause":"item_completed"}'::jsonb`);
+		expect(ownParams).toEqual(['item-1']);
 		const [endWorkersSql] = mockQuery.mock.calls[0]!;
 		expect(endWorkersSql).toContain('UPDATE item_workers');
 	});
@@ -295,6 +298,7 @@ describe('reaching done', () => {
 	it('updateItem to done runs the same clear inside a transaction; other statuses do not', async () => {
 		mockClientQuery
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1' }], rowCount: 1 })
+			.mockResolvedValueOnce({ rows: [], rowCount: 0 })
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 		mockQuery
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never)
@@ -306,5 +310,18 @@ describe('reaching done', () => {
 		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
 		await updateItem('proj-1', 1, { title: 'renamed' });
 		expect(mockTransaction).toHaveBeenCalledTimes(1);
+	});
+
+	it('updateItem ends worker episodes on any status transition out of in_progress', async () => {
+		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
+
+		await updateItem('proj-1', 1, { status: 'ready' });
+		const endCall = mockQuery.mock.calls.find(([sql]) => (sql as string).includes('UPDATE item_workers'));
+		expect(endCall).toBeDefined();
+
+		mockQuery.mockClear();
+		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
+		await updateItem('proj-1', 1, { status: 'in_progress' });
+		expect(mockQuery.mock.calls.some(([sql]) => (sql as string).includes('UPDATE item_workers'))).toBe(false);
 	});
 });

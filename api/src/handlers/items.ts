@@ -29,10 +29,11 @@ import {
 	type ItemStatus,
 	type ItemType,
 	type SubStatus,
+	type UserActor,
 } from '@specboard/db';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import { isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../validation.ts';
-import { apiActor } from './blockers.ts';
+import { apiItem } from '../types.ts';
 
 /**
  * The project resolved from :projectSlug by requireProjectAccess.
@@ -45,6 +46,13 @@ export function requireResolvedProject(context: Context): ResolvedProject {
 	const resolved = context.get('project') as ResolvedProject | undefined;
 	if (!resolved) throw new Error('Route is missing requireProjectAccess — no resolved project on context');
 	return resolved;
+}
+
+/** The authenticated user as a provenance actor (requireProjectAccess sets userId). */
+export function apiActor(context: Context): UserActor {
+	const userId = context.get('userId') as string | undefined;
+	if (!userId) throw new Error('Route is missing requireProjectAccess — no userId on context');
+	return { type: 'user', userId };
 }
 
 const project = requireResolvedProject;
@@ -87,7 +95,7 @@ export async function handleListItems(context: Context): Promise<Response> {
 			search: search || undefined,
 			limit: 500,
 		});
-		return context.json(items);
+		return context.json(items.map(apiItem));
 	} catch (error) {
 		console.error('Failed to list items:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -104,7 +112,7 @@ export async function handleGetItem(context: Context): Promise<Response> {
 		const items = await getItems({ projectId, itemNumber, includeChildren: true, includeNotes: true, includeSpecs: true, includeBlockers: true, includeWorkers: true });
 		const item = items[0];
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(item);
+		return context.json(apiItem(item));
 	} catch (error) {
 		console.error('Failed to get item:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -123,7 +131,7 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 			// (status='blocked' is already excluded by the equality filter).
 			getItems({ projectId, status: 'ready', excludeBlocked: true }),
 		]);
-		return context.json({ active: [...inProgress, ...inReview], ready });
+		return context.json({ active: [...inProgress, ...inReview].map(apiItem), ready: ready.map(apiItem) });
 	} catch (error) {
 		console.error('Failed to get current work:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -172,7 +180,7 @@ export async function handleCreateItem(context: Context): Promise<Response> {
 			origin: { actor: apiActor(context) },
 			discoveredFromNumber,
 		});
-		return context.json(item, 201);
+		return context.json(apiItem(item), 201);
 	} catch (error) {
 		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		if (error instanceof DiscoveredFromNotFoundError) return context.json({ error: 'Discovered-from item not found' }, 404);
@@ -202,7 +210,7 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 			body.items.map((it) => ({ title: it.title!, description: it.description, type: it.type as ItemType | undefined })),
 			{ actor: apiActor(context) }
 		);
-		return context.json(created, 201);
+		return context.json(created.map(apiItem), 201);
 	} catch (error) {
 		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		console.error('Failed to create child items:', error);
@@ -233,7 +241,7 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 			note: body.note as string | undefined,
 		});
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(item);
+		return context.json(apiItem(item));
 	} catch (error) {
 		console.error('Failed to update item:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -267,7 +275,7 @@ export async function handleMoveItem(context: Context): Promise<Response> {
 		}
 		const item = await moveItem(projectId, itemNumber, newParentNumber);
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(item);
+		return context.json(apiItem(item));
 	} catch (error) {
 		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		if (error instanceof ItemCycleError) return context.json({ error: error.message }, 400);
@@ -315,7 +323,7 @@ async function lifecycle(
 	try {
 		const item = await run(projectId, itemNumber, note);
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(item);
+		return context.json(apiItem(item as Parameters<typeof apiItem>[0]));
 	} catch (error) {
 		console.error('Lifecycle update failed:', error);
 		return context.json({ error: 'Database error' }, 500);

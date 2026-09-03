@@ -1,8 +1,9 @@
 /**
  * Blocker handlers — polymorphic blocked-by rows on items.
  *
- * A blocker is exactly one of: another item in the project ({ itemKey }) or free
- * text ({ text }). DELETE clears (tombstones) a blocker; rows are never removed.
+ * A blocker is exactly one of: another item in the project ({ blockerKey }) or
+ * free text ({ text }). DELETE clears (tombstones) a blocker; only item
+ * deletion removes rows (FK cascade).
  */
 
 import type { Context } from 'hono';
@@ -15,30 +16,11 @@ import {
 	BlockerConflictError,
 	BlockerTargetError,
 } from '@specboard/db';
-import type { BlockerSummary, ResolvedProject, UserActor } from '@specboard/db';
-import { requireResolvedProject } from './items.ts';
+import type { ResolvedProject } from '@specboard/db';
+import { requireResolvedProject, apiActor } from './items.ts';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
+import { apiBlocker } from '../types.ts';
 import { isValidUUID } from '../validation.ts';
-
-function toApi(blocker: BlockerSummary): Record<string, unknown> {
-	return {
-		id: blocker.id,
-		type: blocker.type,
-		text: blocker.text,
-		blockerKey: blocker.blockerKey,
-		blockerTitle: blocker.blockerTitle,
-		blockerStatus: blocker.blockerStatus,
-		createdAt: blocker.createdAt.toISOString(),
-		clearedAt: blocker.clearedAt ? blocker.clearedAt.toISOString() : null,
-	};
-}
-
-/** The authenticated user as a provenance actor (requireProjectAccess sets userId). */
-export function apiActor(context: Context): UserActor {
-	const userId = context.get('userId') as string | undefined;
-	if (!userId) throw new Error('Route is missing requireProjectAccess — no userId on context');
-	return { type: 'user', userId };
-}
 
 function resolve(context: Context): { project: ResolvedProject; itemNumber: number } | Response {
 	const project = requireResolvedProject(context);
@@ -59,7 +41,7 @@ export async function handleListBlockers(context: Context): Promise<Response> {
 	try {
 		const blockers = await listBlockers(project.id, itemNumber, { includeCleared });
 		if (!blockers) return context.json({ error: 'Item not found' }, 404);
-		return context.json(blockers.map(toApi));
+		return context.json(blockers.map(apiBlocker));
 	} catch (error) {
 		console.error('Failed to list blockers:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -93,7 +75,7 @@ export async function handleAddBlocker(context: Context): Promise<Response> {
 
 		const blocker = await addBlocker(project.id, itemNumber, input, apiActor(context));
 		if (!blocker) return context.json({ error: 'Item not found' }, 404);
-		return context.json(toApi(blocker), 201);
+		return context.json(apiBlocker(blocker), 201);
 	} catch (error) {
 		if (error instanceof BlockerValidationError) return context.json({ error: error.message }, 400);
 		if (error instanceof BlockerTargetError) return context.json({ error: error.message }, 400);

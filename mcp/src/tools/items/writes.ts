@@ -23,7 +23,6 @@ import {
 	setSpecs as setSpecsService,
 	setBlockers as setBlockersService,
 	recordWorkerActivity,
-	endWorkers,
 	SpecValidationError,
 	BlockerValidationError,
 	BlockerConflictError,
@@ -39,6 +38,7 @@ import {
 	type UpdateItemInput,
 	type AgentActor,
 	type BlockerInput,
+	type BlockerSummary,
 } from '@specboard/db';
 import { itemNumberInProject } from '@specboard/core/identifiers';
 
@@ -135,21 +135,32 @@ export async function createItem(
 		}
 	}
 
-	// Optionally record blockers the item is created with.
+	// Optionally record blockers the item is created with. The item already
+	// exists at this point, so a blocker failure must not read as a failed
+	// create — report the created key with a warning instead, or a retrying
+	// agent will file duplicates.
 	let blockers;
+	let blockerWarning: string | undefined;
 	if (Array.isArray(args?.blockers) && args.blockers.length > 0) {
 		const inputs = parseBlockers(args.blockers, project);
-		if (!Array.isArray(inputs)) return inputs;
-		try {
-			blockers = await setBlockersService(project.id, item.number, inputs, actor);
-		} catch (error) {
-			if (error instanceof BlockerValidationError || error instanceof BlockerTargetError) return err(error.message);
-			throw error;
+		if (!Array.isArray(inputs)) {
+			blockerWarning = `blockers not applied: ${inputs.content[0]?.text ?? 'invalid blockers'}. Add them with update_item.`;
+		} else {
+			try {
+				blockers = await setBlockersService(project.id, item.number, inputs, actor);
+			} catch (error) {
+				if (error instanceof BlockerValidationError || error instanceof BlockerTargetError || error instanceof BlockerConflictError) {
+					blockerWarning = `blockers not applied: ${error.message}. Add them with update_item.`;
+				} else {
+					throw error;
+				}
+			}
 		}
 	}
 
 	return ok({
 		created: { key: item.key, title: item.title, type: item.type, status: item.status, parentKey: item.parentKey, ...(specs ? { specs } : {}), ...(blockers ? { blockers, blocked: true } : {}) },
+		...(blockerWarning ? { warning: blockerWarning } : {}),
 		message: `${type.charAt(0).toUpperCase() + type.slice(1)} created`,
 	});
 }
@@ -200,6 +211,23 @@ export async function updateItem(
 		return err('Access denied: item does not belong to this project');
 	}
 
+	// The blockers full-replace applies on EVERY update path — the schema promises
+	// it unconditionally, so the status shortcuts and the move path may not drop it.
+	const applyBlockers = async (): Promise<{ blockers?: BlockerSummary[] } | ToolResult> => {
+		if (!Array.isArray(args.blockers)) return {};
+		const inputs = parseBlockers(args.blockers, project);
+		if (!Array.isArray(inputs)) return inputs;
+		try {
+			const blockers = await setBlockersService(project.id, number, inputs, actor);
+			return blockers ? { blockers } : {};
+		} catch (error) {
+			if (error instanceof BlockerValidationError || error instanceof BlockerTargetError || error instanceof BlockerConflictError) {
+				return err(error.message);
+			}
+			throw error;
+		}
+	};
+
 	// Reparent (move under another item) or promote to top-level (parent_key null).
 	if (args.parent_key !== undefined) {
 		let newParentNumber: number | null = null;
@@ -220,37 +248,50 @@ export async function updateItem(
 			throw error;
 		}
 		if (!moved) return err('Item not found');
-		return ok({ updated: { key: moved.key, parentKey: moved.parentKey }, message: newParentNumber !== null ? 'Item moved' : 'Item promoted to top-level' });
+		const blockers = await applyBlockers();
+		if ('content' in blockers) return blockers;
+		return ok({ updated: { key: moved.key, parentKey: moved.parentKey, ...blockers }, message: newParentNumber !== null ? 'Item moved' : 'Item promoted to top-level' });
 	}
 
 	const status = args.status as ItemStatus | undefined;
 	const note = args.note as string | undefined;
 
-	// Status-transition shortcuts.
+	// Status-transition shortcuts. Worker episodes are recorded/ended inside the
+	// services (any transition out of in_progress ends them, whichever surface).
 	if (status === 'in_progress') {
 		const item = await startItemService(project.id, number);
 		if (note !== undefined) await updateItemService(project.id, number, { note });
 		if (!item) return err('Item not found');
 		await recordWorkerActivity(project.id, number, actor, args.branch_name as string | undefined);
-		return ok({ updated: { key: item.key, status: item.status }, message: 'Item started' });
+		const blockers = await applyBlockers();
+		if ('content' in blockers) return blockers;
+		return ok({ updated: { key: item.key, status: item.status, ...blockers }, message: 'Item started' });
 	}
 	if (status === 'done') {
 		const item = await completeItemService(project.id, number, note);
 		if (!item) return err('Item not found');
+		// No applyBlockers here: completion just cleared every open row, and
+		// blocking a done item is refused anyway — report that instead of a
+		// confusing validation error when the arg is present.
+		if (Array.isArray(args.blockers) && args.blockers.length > 0) {
+			return ok({ updated: { key: item.key, status: item.status, note: item.note }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
+		}
 		return ok({ updated: { key: item.key, status: item.status, note: item.note }, message: 'Item completed' });
 	}
 	if (status === 'blocked') {
 		if (!note) return err('note is required when blocking an item');
 		const item = await blockItemService(project.id, number, note);
 		if (!item) return err('Item not found');
-		return ok({ updated: { key: item.key, status: item.status, note: item.note }, message: 'Item blocked' });
+		const blockers = await applyBlockers();
+		if ('content' in blockers) return blockers;
+		return ok({ updated: { key: item.key, status: item.status, note: item.note, ...blockers }, message: 'Item blocked' });
 	}
 	if (status === 'ready' && args.title === undefined && args.description === undefined && note === undefined) {
 		const item = await unblockItemService(project.id, number);
 		if (!item) return err('Item not found');
-		// This session stepped away from the item; end its worker episode.
-		await endWorkers(project.id, number, actor.sessionId);
-		return ok({ updated: { key: item.key, status: item.status }, message: 'Item unblocked' });
+		const blockers = await applyBlockers();
+		if ('content' in blockers) return blockers;
+		return ok({ updated: { key: item.key, status: item.status, ...blockers }, message: 'Item unblocked' });
 	}
 
 	// General field update.
@@ -280,26 +321,15 @@ export async function updateItem(
 
 	// Replace the full set of OPEN blockers when provided. Item blockers auto-clear
 	// when the blocking item completes; text blockers only clear by leaving this list.
-	let blockers;
-	if (Array.isArray(args.blockers)) {
-		const inputs = parseBlockers(args.blockers, project);
-		if (!Array.isArray(inputs)) return inputs;
-		try {
-			blockers = await setBlockersService(project.id, number, inputs, actor);
-		} catch (error) {
-			if (error instanceof BlockerValidationError || error instanceof BlockerTargetError) return err(error.message);
-			if (error instanceof BlockerConflictError) return err(error.message);
-			throw error;
-		}
-	}
+	const blockersResult = await applyBlockers();
+	if ('content' in blockersResult) return blockersResult;
+	const blockers = blockersResult.blockers;
 
 	// Observed worker presence: a write that leaves the item in_progress marks this
-	// session active on it; a write that moves it to ready/in_review ends the episode
-	// (done ends every session's episode inside the service).
+	// session active on it. Transitions out of in_progress end episodes inside the
+	// item service, so every surface behaves the same.
 	if (item.status === 'in_progress') {
 		await recordWorkerActivity(project.id, number, actor, args.branch_name as string | undefined);
-	} else if (status !== undefined && (item.status === 'ready' || item.status === 'in_review')) {
-		await endWorkers(project.id, number, actor.sessionId);
 	}
 
 	return ok({

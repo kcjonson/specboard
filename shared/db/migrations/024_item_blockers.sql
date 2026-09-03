@@ -14,6 +14,10 @@
 -- Same-project scoping of blocker_item_id is enforced in the service layer,
 -- like items.parent_id.
 --
+-- Deletion is the one operation that erases blocker history: the FK cascades
+-- remove rows (tombstones included) when the blocked item, the blocking item,
+-- or the project is deleted — consistent with deletion erasing the item itself.
+--
 -- Rolling-deploy safe: nothing here is read or written by the previous release.
 
 CREATE TABLE item_blockers (
@@ -33,9 +37,15 @@ CREATE TABLE item_blockers (
 	CONSTRAINT item_blockers_text_nonempty CHECK (blocker_text IS NULL OR length(btrim(blocker_text)) > 0)
 );
 
--- Open-blocker lookups dominate; partial indexes keep them tight.
-CREATE INDEX idx_item_blockers_item ON item_blockers(item_id) WHERE cleared_at IS NULL;
-CREATE INDEX idx_item_blockers_blocker ON item_blockers(blocker_item_id) WHERE cleared_at IS NULL;
--- No duplicate open item-blocker per item; duplicates may exist among tombstones.
+-- Open-blocker lookups dominate; partial indexes keep them tight. The two
+-- FK-side indexes are full (FK cascade checks can't use partial indexes), and
+-- blocker_item_id's also serves the auto-clear lookup.
+CREATE INDEX idx_item_blockers_item ON item_blockers(item_id);
+CREATE INDEX idx_item_blockers_blocker ON item_blockers(blocker_item_id);
+-- The derived-blocked CTE reads open rows per project on every item list.
+CREATE INDEX idx_item_blockers_project_open ON item_blockers(project_id) WHERE cleared_at IS NULL;
+-- No duplicate open blocker per item (either kind); duplicates may exist among tombstones.
 CREATE UNIQUE INDEX idx_item_blockers_uniq_item ON item_blockers(item_id, blocker_item_id)
 	WHERE cleared_at IS NULL AND blocker_item_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_item_blockers_uniq_text ON item_blockers(item_id, blocker_text)
+	WHERE cleared_at IS NULL AND blocker_text IS NOT NULL;

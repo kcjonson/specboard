@@ -28,3 +28,5 @@ CREATE TABLE item_workers (
 CREATE UNIQUE INDEX idx_item_workers_active ON item_workers(item_id, (actor->>'sessionId'))
 	WHERE ended_at IS NULL;
 CREATE INDEX idx_item_workers_item ON item_workers(item_id);
+-- FK-cascade path for project deletion.
+CREATE INDEX idx_item_workers_project ON item_workers(project_id);

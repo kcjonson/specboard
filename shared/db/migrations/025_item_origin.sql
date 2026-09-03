@@ -9,8 +9,9 @@
 -- Immutability is enforced the same way as items.number: no update path ever
 -- writes the column.
 --
--- creator is dropped: accepted by the service since 018 but passed by no
--- caller, so it is NULL on every row. origin.actor replaces it.
+-- creator is dropped; origin.actor replaces it. Rows that carry a creator
+-- (seeded data, and pre-unification epics whose values 018 copied over) are
+-- backfilled into origin as a user actor first, so no provenance is lost.
 --
 -- ── ROLLING-DEPLOY NOTE ──────────────────────────────────────────────────────
 -- Dropping creator breaks the previous release's createItem INSERT (it names
@@ -19,6 +20,11 @@
 -- as 023.
 
 ALTER TABLE items ADD COLUMN origin JSONB;
+
+UPDATE items
+SET origin = jsonb_build_object('actor', jsonb_build_object('type', 'user', 'userId', creator))
+WHERE creator IS NOT NULL;
+
 ALTER TABLE items DROP COLUMN creator;
 
 COMMENT ON COLUMN items.origin IS 'Immutable creation provenance: { actor: Actor, discoveredFrom?: { itemId, itemKey } }. NULL = predates tracking.';

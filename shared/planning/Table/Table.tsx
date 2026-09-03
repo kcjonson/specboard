@@ -59,10 +59,7 @@ export function Table({
 	const grouped = useMemo(() => {
 		const byStatus = {} as Record<ItemStatus, ItemModel[]>;
 		for (const group of GROUPS) {
-			byStatus[group.status] = items
-				.filter((i) => i.status === group.status)
-				.filter((i) => matchesFilters(i, filters))
-				.sort((a, b) => a.rank - b.rank);
+			byStatus[group.status] = items.byStatus(group.status).filter((i) => matchesFilters(i, filters));
 		}
 		return byStatus;
 		// items.version changes on add/remove/status change so the grouping recomputes

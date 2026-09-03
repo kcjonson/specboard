@@ -25,6 +25,9 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 
 	const [draft, setDraft] = useState('');
 	const [error, setError] = useState<string | null>(null);
+	// Double-Enter would otherwise submit the same blocker twice before the
+	// first request settles.
+	const [busy, setBusy] = useState(false);
 
 	// This item's own key carries the project prefix; only keys with the same
 	// prefix are treated as item references.
@@ -35,8 +38,9 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 
 	const handleAdd = useCallback(async (): Promise<void> => {
 		const value = draft.trim();
-		if (!value) return;
+		if (!value || busy) return;
 		setError(null);
+		setBusy(true);
 		try {
 			if (keyPattern.test(value)) {
 				await blockers.add({ blockerKey: value.toUpperCase() });
@@ -47,8 +51,10 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 			onChange?.();
 		} catch {
 			setError('Could not add that blocker — check the item key, or whether it already blocks this item.');
+		} finally {
+			setBusy(false);
 		}
-	}, [blockers, draft, keyPattern, onChange]);
+	}, [blockers, draft, busy, keyPattern, onChange]);
 
 	const handleKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === 'Enter') {
@@ -115,7 +121,7 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 					ariaLabel="Add a blocker"
 					compact
 				/>
-				<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim()}>
+				<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim() || busy}>
 					+ Add
 				</Button>
 			</div>

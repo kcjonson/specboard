@@ -8,6 +8,7 @@ import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { SpecsSection } from '../SpecsSection/SpecsSection';
 import { BlockersSection } from '../BlockersSection/BlockersSection';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
+import { formatTimeAgo } from '../utils/time';
 import styles from './ItemView.module.css';
 
 const TYPE_LABELS: Record<ItemType, string> = {
@@ -43,11 +44,31 @@ const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
 	{ value: 'ready', label: 'Ready' },
 	{ value: 'in_progress', label: 'In Progress' },
 	{ value: 'blocked', label: 'Blocked' },
+	{ value: 'in_review', label: 'In Review' },
 	{ value: 'done', label: 'Done' },
 ];
 
-// Creating an item already blocked makes no sense; blockers get added after.
-const CREATE_STATUS_OPTIONS = STATUS_OPTIONS.filter((o) => o.value !== 'blocked');
+// Creating an item already blocked or in review makes no sense; those states are entered later.
+const CREATE_STATUS_OPTIONS = STATUS_OPTIONS.filter((o) => o.value !== 'blocked' && o.value !== 'in_review');
+
+/**
+ * Mirror of the server's sub-status -> status derive. The server only applies
+ * it when a write carries sub_status WITHOUT status, and SyncModel.save() PUTs
+ * the whole model — so the client must move status itself or "Complete" would
+ * leave the item in its old column.
+ */
+function deriveStatusFromSubStatus(subStatus: SubStatus): ItemStatus | undefined {
+	switch (subStatus) {
+		case 'scoping':
+		case 'in_development':
+		case 'pr_open':
+			return 'in_progress';
+		case 'complete':
+			return 'done';
+		default:
+			return undefined;
+	}
+}
 
 /** Milliseconds after which an agent session with no observed writes reads as stale. */
 const WORKER_STALE_MS = 15 * 60 * 1000;
@@ -65,16 +86,6 @@ function originLabel(origin: ItemOrigin): string {
 	return 'User';
 }
 
-function formatTimeAgo(dateString: string): string {
-	const diffMs = Date.now() - new Date(dateString).getTime();
-	const diffMinutes = Math.floor(diffMs / (1000 * 60));
-	const diffHours = Math.floor(diffMinutes / 60);
-	const diffDays = Math.floor(diffHours / 24);
-	if (diffDays > 0) return `${diffDays}d ago`;
-	if (diffHours > 0) return `${diffHours}h ago`;
-	if (diffMinutes > 0) return `${diffMinutes}m ago`;
-	return 'just now';
-}
 
 const SUB_STATUS_OPTIONS: { value: SubStatus; label: string }[] = [
 	{ value: 'not_started', label: 'Not Started' },
@@ -218,15 +229,19 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		}
 	};
 
-	// Sub-status change
+	// Sub-status change (moves status too at the key transitions)
 	const handleSubStatusChange = (e: Event): void => {
 		if (!item || isNew) return;
 		const target = e.target as HTMLSelectElement;
 		const newSubStatus = target.value as SubStatus;
 		const previousSubStatus = item.subStatus;
+		const previousStatus = item.status;
 		item.subStatus = newSubStatus;
+		const derived = deriveStatusFromSubStatus(newSubStatus);
+		if (derived && derived !== item.status) item.status = derived;
 		item.save().catch(() => {
 			item.subStatus = previousSubStatus;
+			item.status = previousStatus;
 		});
 	};
 

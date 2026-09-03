@@ -4,9 +4,15 @@
  * Each row blocks an item on another item (FK) XOR free text. An item is blocked
  * while it has any open row (cleared_at IS NULL) or while its status is
  * 'blocked' (the separate manual hold; rows never mutate status). Item blockers
- * are cleared automatically when the blocking item reaches done; text blockers
+ * are cleared automatically when the blocking item reaches done, and an item's
+ * own open rows are cleared when IT reaches done; text blockers otherwise clear
  * only when explicitly removed. Cleared rows are tombstones — reopening a done
- * blocking item does not re-block dependents.
+ * blocking item does not re-block dependents. Deletion is the one operation
+ * that erases history (FK cascades remove rows, tombstones included).
+ *
+ * Every blocker mutation bumps the affected item's updated_at: the board's
+ * poll reconcile skips items whose updatedAt is unchanged, so without the bump
+ * other sessions would never see derived blocked-state changes.
  *
  * Used by both API handlers and MCP tools.
  */
@@ -16,6 +22,8 @@ import { formatItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Actor, ItemBlocker, ItemStatus } from '../types.ts';
 
+export const MAX_BLOCKER_TEXT_LENGTH = 500;
+
 /** Thrown when a blocker input is malformed (not exactly one of item/text, bad text). */
 export class BlockerValidationError extends Error {
 	constructor(message: string) {
@@ -24,9 +32,9 @@ export class BlockerValidationError extends Error {
 	}
 }
 
-/** Thrown when adding an item blocker that is already open on the item. */
+/** Thrown when adding a blocker that is already open on the item. */
 export class BlockerConflictError extends Error {
-	constructor(message = 'That item is already an open blocker on this item') {
+	constructor(message = 'That blocker is already open on this item') {
 		super(message);
 		this.name = 'BlockerConflictError';
 	}
@@ -104,6 +112,9 @@ export function validateBlockerInput(raw: { itemNumber?: unknown; text?: unknown
 	if (typeof raw.text !== 'string' || raw.text.trim().length === 0) {
 		throw new BlockerValidationError('Blocker text must be a non-empty string');
 	}
+	if (raw.text.trim().length > MAX_BLOCKER_TEXT_LENGTH) {
+		throw new BlockerValidationError(`Blocker text must be at most ${MAX_BLOCKER_TEXT_LENGTH} characters`);
+	}
 	return { text: raw.text.trim() };
 }
 
@@ -121,7 +132,11 @@ export async function listBlockers(
 	itemNumber: number,
 	opts: { includeCleared?: boolean } = {}
 ): Promise<BlockerSummary[] | null> {
-	const itemId = await resolveItemId(projectId, itemNumber);
+	const item = await query<{ id: string }>(
+		'SELECT id FROM items WHERE number = $1 AND project_id = $2',
+		[itemNumber, projectId]
+	);
+	const itemId = item.rows[0]?.id;
 	if (!itemId) return null;
 	const result = await query<BlockerRow>(
 		`${BLOCKER_SELECT}
@@ -136,6 +151,11 @@ export async function listBlockers(
  * Add one blocker to an item. Item blockers must reference a distinct,
  * not-done item in the same project; the blocked item itself must not be done.
  * Returns null if the item doesn't exist in the project.
+ *
+ * Runs in a transaction that takes FOR SHARE locks on the item rows it
+ * validated, so a concurrent completeItem can't slip its status write and
+ * auto-clear between the not-done check and the insert (the completion's
+ * UPDATE blocks on the lock and, once it proceeds, sees the committed row).
  */
 export async function addBlocker(
 	projectId: string,
@@ -143,32 +163,36 @@ export async function addBlocker(
 	input: BlockerInput,
 	actor?: Actor
 ): Promise<BlockerSummary | null> {
-	const item = await query<{ id: string; status: ItemStatus }>(
-		'SELECT id, status FROM items WHERE number = $1 AND project_id = $2',
-		[itemNumber, projectId]
-	);
-	const itemRow = item.rows[0];
-	if (!itemRow) return null;
-	if (itemRow.status === 'done') {
-		throw new BlockerTargetError('Cannot block a done item');
-	}
+	const validated = validateBlockerInput(input);
+	const actorJson = actor ? JSON.stringify(actor) : null;
 
-	let blockerItemId: string | null = null;
-	if ('itemNumber' in input) {
-		blockerItemId = await resolveBlockerTarget(projectId, itemRow.id, input.itemNumber);
-	}
+	const blockerId = await transaction(async (client) => {
+		const itemRow = await lockItem(client, projectId, itemNumber);
+		if (!itemRow) return null;
+		if (itemRow.status === 'done') throw new BlockerTargetError('Cannot block a done item');
 
-	try {
-		const result = await query<{ id: string }>(
-			`INSERT INTO item_blockers (item_id, project_id, blocker_item_id, blocker_text, created_by)
-			 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			[itemRow.id, projectId, blockerItemId, 'text' in input ? input.text : null, actor ? JSON.stringify(actor) : null]
-		);
-		return await getBlocker(projectId, result.rows[0]!.id);
-	} catch (err) {
-		if ((err as { code?: string }).code === '23505') throw new BlockerConflictError();
-		throw err;
-	}
+		let blockerItemId: string | null = null;
+		if ('itemNumber' in validated) {
+			blockerItemId = await resolveBlockerTarget(client, projectId, itemRow.id, validated.itemNumber);
+		}
+
+		let inserted;
+		try {
+			inserted = await client.query<{ id: string }>(
+				`INSERT INTO item_blockers (item_id, project_id, blocker_item_id, blocker_text, created_by)
+				 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+				[itemRow.id, projectId, blockerItemId, 'text' in validated ? validated.text : null, actorJson]
+			);
+		} catch (err) {
+			if ((err as { code?: string }).code === '23505') throw new BlockerConflictError();
+			throw err;
+		}
+		await bumpItem(client, itemRow.id);
+		return inserted.rows[0]!.id;
+	});
+
+	if (!blockerId) return null;
+	return getBlocker(projectId, blockerId);
 }
 
 /**
@@ -181,14 +205,18 @@ export async function clearBlocker(
 	blockerId: string,
 	actor?: Actor
 ): Promise<boolean> {
-	const result = await query(
+	const result = await query<{ item_id: string }>(
 		`UPDATE item_blockers b SET cleared_at = now(), cleared_by = $4
 		 FROM items i
 		 WHERE b.id = $1 AND b.cleared_at IS NULL
-		   AND b.item_id = i.id AND i.number = $2 AND b.project_id = $3`,
+		   AND b.item_id = i.id AND i.number = $2 AND b.project_id = $3
+		 RETURNING b.item_id`,
 		[blockerId, itemNumber, projectId, actor ? JSON.stringify(actor) : null]
 	);
-	return (result.rowCount ?? 0) > 0;
+	const itemId = result.rows[0]?.item_id;
+	if (!itemId) return false;
+	await query('UPDATE items SET updated_at = NOW() WHERE id = $1', [itemId]);
+	return true;
 }
 
 /**
@@ -199,7 +227,7 @@ export async function clearBlocker(
  *
  * Sequential statements inside one transaction on purpose: data-modifying CTEs
  * share a snapshot, so a reconcile written as one statement couldn't see its
- * own clears.
+ * own clears. Targets are validated under the same locks as addBlocker.
  */
 export async function setBlockers(
 	projectId: string,
@@ -207,31 +235,29 @@ export async function setBlockers(
 	inputs: BlockerInput[],
 	actor?: Actor
 ): Promise<BlockerSummary[] | null> {
-	const item = await query<{ id: string; status: ItemStatus }>(
-		'SELECT id, status FROM items WHERE number = $1 AND project_id = $2',
-		[itemNumber, projectId]
-	);
-	const itemRow = item.rows[0];
-	if (!itemRow) return null;
-	if (itemRow.status === 'done' && inputs.length > 0) {
-		throw new BlockerTargetError('Cannot block a done item');
-	}
-
-	// De-duplicate; resolve item refs up front so validation failures happen
-	// before any write.
-	const wantTexts = new Set<string>();
-	const wantItemIds = new Map<string, number>();
-	for (const input of inputs) {
-		if ('text' in input) {
-			wantTexts.add(input.text);
-		} else {
-			const id = await resolveBlockerTarget(projectId, itemRow.id, input.itemNumber);
-			wantItemIds.set(id, input.itemNumber);
-		}
-	}
-
+	const validated = inputs.map((input) => validateBlockerInput(input));
 	const actorJson = actor ? JSON.stringify(actor) : null;
-	await transaction(async (client) => {
+
+	const found = await transaction(async (client) => {
+		const itemRow = await lockItem(client, projectId, itemNumber);
+		if (!itemRow) return false;
+		if (itemRow.status === 'done' && validated.length > 0) {
+			throw new BlockerTargetError('Cannot block a done item');
+		}
+
+		// De-duplicate; resolve item refs under lock so a concurrent completion
+		// can't invalidate the not-done check before the inserts commit.
+		const wantTexts = new Set<string>();
+		const wantItemIds = new Map<string, number>();
+		for (const input of validated) {
+			if ('text' in input) {
+				wantTexts.add(input.text);
+			} else {
+				const id = await resolveBlockerTarget(client, projectId, itemRow.id, input.itemNumber);
+				wantItemIds.set(id, input.itemNumber);
+			}
+		}
+
 		const open = await client.query<{ id: string; blocker_item_id: string | null; blocker_text: string | null }>(
 			'SELECT id, blocker_item_id, blocker_text FROM item_blockers WHERE item_id = $1 AND cleared_at IS NULL',
 			[itemRow.id]
@@ -249,23 +275,60 @@ export async function setBlockers(
 				[toClear, actorJson]
 			);
 		}
-		for (const blockerItemId of wantItemIds.keys()) {
-			await client.query(
-				`INSERT INTO item_blockers (item_id, project_id, blocker_item_id, created_by)
-				 VALUES ($1, $2, $3, $4)`,
-				[itemRow.id, projectId, blockerItemId, actorJson]
-			);
+		try {
+			for (const blockerItemId of wantItemIds.keys()) {
+				await client.query(
+					`INSERT INTO item_blockers (item_id, project_id, blocker_item_id, created_by)
+					 VALUES ($1, $2, $3, $4)`,
+					[itemRow.id, projectId, blockerItemId, actorJson]
+				);
+			}
+			for (const text of wantTexts) {
+				await client.query(
+					`INSERT INTO item_blockers (item_id, project_id, blocker_text, created_by)
+					 VALUES ($1, $2, $3, $4)`,
+					[itemRow.id, projectId, text, actorJson]
+				);
+			}
+		} catch (err) {
+			if ((err as { code?: string }).code === '23505') throw new BlockerConflictError();
+			throw err;
 		}
-		for (const text of wantTexts) {
-			await client.query(
-				`INSERT INTO item_blockers (item_id, project_id, blocker_text, created_by)
-				 VALUES ($1, $2, $3, $4)`,
-				[itemRow.id, projectId, text, actorJson]
-			);
-		}
+		await bumpItem(client, itemRow.id);
+		return true;
 	});
 
+	if (!found) return null;
 	return listBlockers(projectId, itemNumber);
+}
+
+/**
+ * Completion side effect, run inside the caller's status-write transaction:
+ * tombstone every open blocker pointing AT the completed item (its dependents
+ * unblock, pure SQL), and the completed item's OWN open rows (done and blocked
+ * must not coexist; addBlocker refuses done items, so completion may not
+ * manufacture that state either). Dependents get their updated_at bumped so
+ * polling boards pick up the derived change; the completed item's own bump
+ * comes from the status write itself.
+ */
+export async function clearBlockersForCompletion(client: pg.PoolClient, itemId: string): Promise<void> {
+	const cleared = await client.query<{ item_id: string }>(
+		`UPDATE item_blockers
+		 SET cleared_at = now(), cleared_by = '{"type":"system","cause":"blocking_item_done"}'::jsonb
+		 WHERE blocker_item_id = $1 AND cleared_at IS NULL
+		 RETURNING item_id`,
+		[itemId]
+	);
+	const dependentIds = [...new Set(cleared.rows.map((r) => r.item_id))];
+	if (dependentIds.length > 0) {
+		await client.query('UPDATE items SET updated_at = NOW() WHERE id = ANY($1)', [dependentIds]);
+	}
+	await client.query(
+		`UPDATE item_blockers
+		 SET cleared_at = now(), cleared_by = '{"type":"system","cause":"item_completed"}'::jsonb
+		 WHERE item_id = $1 AND cleared_at IS NULL`,
+		[itemId]
+	);
 }
 
 /** Batch-load open blockers for many items (item-response hydration). */
@@ -288,36 +351,32 @@ export async function listOpenBlockersByItems(
 	return byItem;
 }
 
-/**
- * Auto-clear: tombstone every open blocker that points at an item which just
- * reached done. Pure SQL, runs inside the caller's transaction alongside the
- * status write.
- */
-export async function clearBlockersOnDone(client: pg.PoolClient, blockingItemId: string): Promise<void> {
-	await client.query(
-		`UPDATE item_blockers
-		 SET cleared_at = now(), cleared_by = '{"type":"system","cause":"blocking_item_done"}'::jsonb
-		 WHERE blocker_item_id = $1 AND cleared_at IS NULL`,
-		[blockingItemId]
-	);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function resolveItemId(projectId: string, itemNumber: number): Promise<string | null> {
-	const result = await query<{ id: string }>(
-		'SELECT id FROM items WHERE number = $1 AND project_id = $2',
+/** Lock the blocked item's row for the duration of a blocker write. */
+async function lockItem(
+	client: pg.PoolClient,
+	projectId: string,
+	itemNumber: number
+): Promise<{ id: string; status: ItemStatus } | null> {
+	const result = await client.query<{ id: string; status: ItemStatus }>(
+		'SELECT id, status FROM items WHERE number = $1 AND project_id = $2 FOR SHARE',
 		[itemNumber, projectId]
 	);
-	return result.rows[0]?.id ?? null;
+	return result.rows[0] ?? null;
 }
 
-/** Resolve a blocker target to its id, enforcing same-project, not-self, not-done. */
-async function resolveBlockerTarget(projectId: string, itemId: string, targetNumber: number): Promise<string> {
-	const target = await query<{ id: string; status: ItemStatus }>(
-		'SELECT id, status FROM items WHERE number = $1 AND project_id = $2',
+/** Resolve a blocker target to its id under lock, enforcing same-project, not-self, not-done. */
+async function resolveBlockerTarget(
+	client: pg.PoolClient,
+	projectId: string,
+	itemId: string,
+	targetNumber: number
+): Promise<string> {
+	const target = await client.query<{ id: string; status: ItemStatus }>(
+		'SELECT id, status FROM items WHERE number = $1 AND project_id = $2 FOR SHARE',
 		[targetNumber, projectId]
 	);
 	const row = target.rows[0];
@@ -327,6 +386,10 @@ async function resolveBlockerTarget(projectId: string, itemId: string, targetNum
 		throw new BlockerTargetError(`Item ${targetNumber} is already done — it cannot be a blocker`);
 	}
 	return row.id;
+}
+
+async function bumpItem(client: pg.PoolClient, itemId: string): Promise<void> {
+	await client.query('UPDATE items SET updated_at = NOW() WHERE id = $1', [itemId]);
 }
 
 async function getBlocker(projectId: string, blockerId: string): Promise<BlockerSummary | null> {

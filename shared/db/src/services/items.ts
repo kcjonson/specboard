@@ -9,7 +9,7 @@
 import { formatItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin } from '../types.ts';
-import { clearBlockersOnDone, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
+import { clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
 
 /**
@@ -98,10 +98,14 @@ export interface ItemWithChildren extends ItemResponse {
 export interface ItemWithDetails extends ItemWithChildren {
 	progressNotes: ProgressNoteSummary[];
 	specs: SpecSummary[];
-	/** Open blockers (when requested via includeBlockers). */
-	blockers: BlockerSummary[];
-	/** Active agent-session episodes (when requested via includeWorkers). */
-	workers: WorkerSummary[];
+	/**
+	 * Open blockers / active agent-session episodes. Present only when requested
+	 * (includeBlockers / includeWorkers) — deliberately absent otherwise, so a
+	 * client model applying an update response doesn't wipe state the response
+	 * simply didn't load.
+	 */
+	blockers?: BlockerSummary[];
+	workers?: WorkerSummary[];
 }
 
 export interface CreateItemInput {
@@ -393,10 +397,10 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 
 	const blockersByItem = includeBlockers && itemIds.length > 0
 		? await listOpenBlockersByItems(projectId, itemIds)
-		: new Map<string, BlockerSummary[]>();
+		: undefined;
 	const workersByItem = includeWorkers && itemIds.length > 0
 		? await listActiveWorkersByItems(itemIds)
-		: new Map<string, WorkerSummary[]>();
+		: undefined;
 
 	return result.rows.map((row) => ({
 		...transformItem(row),
@@ -410,8 +414,8 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 		children: (childrenByParent.get(row.id) || []).map((child) => summarizeItem(child, row.project_key)),
 		progressNotes: notesByItem.get(row.id) || [],
 		specs: specsByItem.get(row.id) || [],
-		blockers: blockersByItem.get(row.id) || [],
-		workers: workersByItem.get(row.id) || [],
+		...(blockersByItem ? { blockers: blockersByItem.get(row.id) || [] } : {}),
+		...(workersByItem ? { workers: workersByItem.get(row.id) || [] } : {}),
 	}));
 }
 
@@ -580,21 +584,25 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 	values.push(itemNumber, projectId);
 	const sql = `UPDATE items SET ${updates.join(', ')} WHERE number = $${i++} AND project_id = $${i} RETURNING id`;
 
-	// Reaching done (directly or via subStatus 'complete') auto-clears blockers
-	// that point at this item, in the same transaction as the status write, and
-	// ends any active worker episodes.
+	// Reaching done (directly or via subStatus 'complete') auto-clears blockers —
+	// dependents' and the item's own — in the same transaction as the status write.
 	if (data.status === 'done') {
 		const updated = await transaction(async (client) => {
 			const result = await client.query<{ id: string }>(sql, values);
 			const id = result.rows[0]?.id;
-			if (id) await clearBlockersOnDone(client, id);
+			if (id) await clearBlockersForCompletion(client, id);
 			return id !== undefined;
 		});
 		if (!updated) return null;
-		await endWorkers(projectId, itemNumber);
 	} else {
 		const result = await query(sql, values);
 		if (result.rows.length === 0) return null;
+	}
+
+	// Any status transition out of in_progress ends worker episodes — the item
+	// is no longer being worked, whichever surface moved it.
+	if (data.status !== undefined && data.status !== 'in_progress') {
+		await endWorkers(projectId, itemNumber);
 	}
 
 	const found = await getItems({ projectId, itemNumber });
@@ -691,7 +699,7 @@ export async function startItem(projectId: string, itemNumber: number): Promise<
 
 /**
  * Complete an item, optionally recording an outcome note. Auto-clears blockers
- * pointing at this item (same transaction) and ends active worker episodes.
+ * (dependents' and its own, same transaction) and ends active worker episodes.
  */
 export async function completeItem(projectId: string, itemNumber: number, note?: string): Promise<ItemResponse | null> {
 	const completed = await transaction(async (client) => {
@@ -700,7 +708,7 @@ export async function completeItem(projectId: string, itemNumber: number, note?:
 			[itemNumber, projectId, note ?? null]
 		);
 		const id = result.rows[0]?.id;
-		if (id) await clearBlockersOnDone(client, id);
+		if (id) await clearBlockersForCompletion(client, id);
 		return id !== undefined;
 	});
 	if (!completed) return null;
@@ -709,24 +717,26 @@ export async function completeItem(projectId: string, itemNumber: number, note?:
 	return found[0] ?? null;
 }
 
-/** Block an item with a required reason note. */
+/** Block an item with a required reason note. Ends worker episodes (no longer being worked). */
 export async function blockItem(projectId: string, itemNumber: number, note: string): Promise<ItemResponse | null> {
 	const result = await query(
 		`UPDATE items SET status = 'blocked', note = $3, updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
 		[itemNumber, projectId, note]
 	);
 	if (result.rows.length === 0) return null;
+	await endWorkers(projectId, itemNumber);
 	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }
 
-/** Unblock an item back to ready. */
+/** Unblock an item back to ready. Ends worker episodes (no longer being worked). */
 export async function unblockItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const result = await query(
 		`UPDATE items SET status = 'ready', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
 		[itemNumber, projectId]
 	);
 	if (result.rows.length === 0) return null;
+	await endWorkers(projectId, itemNumber);
 	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }

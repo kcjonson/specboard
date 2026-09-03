@@ -19,8 +19,12 @@ Decided once, used everywhere:
    deletion, and new agent fields are additive keys with no migration. Actors are
    always constructed server-side from the authenticated context (API session, or
    MCP OAuth token + transport session + protocol clientInfo) and never accepted
-   from a client payload. There are exactly two constructor sites: the API's
-   `requireProjectAccess`-gated handlers, and the MCP server's per-call actor.
+   from a client payload. Request-path construction happens in exactly two
+   places — the API's `requireProjectAccess`-gated handlers and the MCP server's
+   per-call actor — plus the system actor the services stamp on auto-clears and
+   the user actor the seed script writes. Browser-facing responses strip actor
+   internals (user id, OAuth client id, MCP session id) down to what the UI
+   renders: type, device name, client info.
 
 No generic `item_links` table: origin is 1-per-item and immutable (a column, not
 a row), and blockers carry lifecycle (`cleared_at`/`cleared_by`) that would be
@@ -39,15 +43,24 @@ One row per blocker; an item can hold any mix of item and text blockers.
 - **Auto-clear is pure SQL**: when an item reaches `done` (via `completeItem` or
   `updateItem`, in the same transaction as the status write), every open blocker
   pointing at it is tombstoned with `cleared_by = { type: 'system', cause:
-  'blocking_item_done' }`. Other blockers on the dependent are untouched; it
-  stays blocked while any row is open.
+  'blocking_item_done' }`, and the item's **own** open rows are tombstoned with
+  `cause: 'item_completed'` — done and blocked never coexist, matching the write
+  rule that refuses to block a done item. Other blockers on a dependent are
+  untouched; it stays blocked while any row is open.
 - **Tombstones, not deletes**: clearing sets `cleared_at`/`cleared_by`. History
   ("was blocked by X, cleared when X completed; still blocked by Y") is
   queryable, and reopening a done blocking item does **not** re-block dependents
-  — cleared is cleared; re-block explicitly.
+  — cleared is cleared; re-block explicitly. Deletion is the one operation that
+  erases history: FK cascades remove rows, tombstones included, when either end
+  or the project is deleted.
 - **Edges**: blocking a done item is rejected; a done item can't be added as a
   blocker (it could never clear naturally); self-blocking is rejected; the
-  partial unique index forbids duplicate *open* item-blockers only.
+  partial unique indexes forbid duplicate *open* blockers of either kind; text
+  is capped at 500 characters. Blocker writes run in transactions that lock the
+  item rows they validated (`FOR SHARE`), so a concurrent completion can't slip
+  between the not-done check and the insert. Every blocker mutation bumps the
+  affected item's `updated_at` so polling boards pick up derived changes made by
+  other sessions.
 - **Ready means startable**: `getItems({ excludeBlocked: true })` backs the
   current-work ready list and MCP `get_items status=ready` (override with
   `include_blocked`). Text blockers represent a human hold and clear only when
@@ -59,12 +72,19 @@ One row per blocker; an item can hold any mix of item and text blockers.
 Surfaces: REST sub-resource `GET/POST /items/:itemKey/blockers`,
 `DELETE /items/:itemKey/blockers/:id` (wire fields for the blocking item are
 `blockerKey`/`blockerTitle`/`blockerStatus`, deliberately not `itemKey`, so they
-can't collide with the blocked item's URL param in client models); MCP
-`blockers` array on `create_item`/`update_item` (full replace of open blockers,
-the same contract as `specs`); `BlockersSection` in the item drawer/detail (typed
-input: an item key links, anything else is text). On the board, `status='blocked'`
-items get a display-only Blocked column (not a drag target); row-blocked items
-stay in their real column with a Blocked chip.
+can't collide with the blocked item's URL param in client models; the MCP arg
+stays `item_key`, matching every other MCP key field); MCP `blockers` array on
+`create_item`/`update_item` — a full replace of open blockers applied on every
+update path, status shortcuts and moves included (a completion ignores it with a
+warning, since a done item can't be blocked, and a create that fails its
+blockers still reports the created key with a warning rather than reading as a
+failed create); `BlockersSection` in the item drawer/detail (typed input: a key
+with this project's prefix links that item, anything else is text). On the
+board, `status='blocked'` items get a Blocked column that appears while
+non-empty (keyboard-traversable, not a drag target); row-blocked items stay in
+their real column with a Blocked chip. The status-level hold requires a reason
+note on the MCP path only — agents must explain themselves; a person clicking
+the drawer's status select is not interrogated.
 
 ## Origin (`items.origin`, migration 025)
 
@@ -77,8 +97,9 @@ immutable because no update path maps it (the same enforcement as
   SB-12 snapshot.
 - `discoveredFrom` is a snapshot, not an FK: provenance is a fact about the
   past and survives deletion of the source item.
-- The old `items.creator` column (never populated by any caller) was dropped;
-  `origin.actor` replaces it.
+- The old `items.creator` column was dropped; rows that carried a value (seeded
+  data, pre-unification epics) were backfilled into `origin` as user actors
+  first, then `origin.actor` replaced it.
 - MCP `create_item`/`create_items` take `discovered_from` (an item key; the
   batch shares one origin); the REST create takes `discoveredFromKey`. The
   actor half is always captured server-side.
@@ -88,13 +109,14 @@ immutable because no update path maps it (the same enforcement as
 Observed agent presence: one row per (item, agent session) episode, keyed by the
 partial unique index on `(item_id, (actor->>'sessionId')) WHERE ended_at IS NULL`.
 
-- **No heartbeat or claim call.** Rows are a side effect of real MCP writes:
-  a write that leaves an item `in_progress` upserts the episode (bumping
-  `last_seen_at`); a write that moves it to `ready`/`in_review` ends that
-  session's episode; `done` ends every session's episode. A heartbeat requires
-  agent cooperation and produces exactly the stale rows it is meant to prevent;
-  deriving presence from observed writes makes staleness meaningful by
-  construction.
+- **No heartbeat or claim call.** Episodes open as a side effect of real MCP
+  writes: a write that leaves an item `in_progress` upserts the episode
+  (bumping `last_seen_at`). Episodes END in the item service, so every surface
+  behaves the same: any status transition out of `in_progress` — done, ready,
+  in_review, or blocked, via MCP, the REST API, or a board drag — ends all
+  active episodes on the item. A heartbeat requires agent cooperation and
+  produces exactly the stale rows it is meant to prevent; deriving presence
+  from observed writes makes staleness meaningful by construction.
 - **Staleness is derived at read time** (`now() - last_seen_at`), never stored.
   The UI dims a worker after 15 minutes without an observed write.
 - `assignee` is untouched and stays a human user FK. `items.branch_name`
