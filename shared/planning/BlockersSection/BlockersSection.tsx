@@ -30,11 +30,13 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 	const [busy, setBusy] = useState(false);
 
 	// This item's own key carries the project prefix; only keys with the same
-	// prefix are treated as item references.
-	const keyPattern = useMemo(() => {
-		const prefix = itemKey.split('-')[0] ?? '';
-		return new RegExp(`^${prefix}-\\d+$`, 'i');
-	}, [itemKey]);
+	// prefix are treated as item references. Escaped defensively — today's
+	// validator only allows [A-Z0-9] prefixes, but this shouldn't depend on it.
+	const prefix = itemKey.split('-')[0] ?? '';
+	const keyPattern = useMemo(
+		() => new RegExp(`^${prefix.replace(/[^a-zA-Z0-9]/g, '\\$&')}-\\d+$`, 'i'),
+		[prefix]
+	);
 
 	const handleAdd = useCallback(async (): Promise<void> => {
 		const value = draft.trim();
@@ -117,7 +119,7 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 					value={draft}
 					onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
 					onKeyDown={handleKeyDown}
-					placeholder="Item key (SB-12) or a reason..."
+					placeholder={`Item key (${prefix}-12) or a reason...`}
 					ariaLabel="Add a blocker"
 					compact
 				/>
