@@ -160,6 +160,8 @@ app.get('/home', (c) => servePage(c, pages.home));
 
 app.get('/privacy', (c) => servePage(c, pages.privacy));
 
+app.get('/setup', (c) => servePage(c, pages.setup));
+
 // Root - marketing for unauthenticated, SPA for authenticated
 // IMPORTANT: This route returns different content based on auth state,
 // so the unauthenticated response must use private/no-cache to prevent
@@ -484,7 +486,7 @@ app.get('/claude/marketplace.json', serveStatic({ root: publicRoot, path: 'marke
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/signup', '/home', '/privacy', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
+		excludePaths: ['/health', '/login', '/signup', '/home', '/privacy', '/setup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
 		onUnauthenticated: () => {
 			// Show 404 for unauthenticated requests
 			// This avoids revealing which routes exist and eliminates route duplication
