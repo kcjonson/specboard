@@ -112,6 +112,22 @@ button.icon.size-lg {
 		min-height: var(--touch-target);
 	}
 
+	/* size-sm is the sanctioned dense size for utility buttons: visually small,
+	   with the ::after growing the hit box back to 44px tall (the UserMenu /
+	   DrawerHandle pattern). */
+	button.size-sm {
+		position: relative;
+		min-height: 32px;
+	}
+
+	button.size-sm::after {
+		content: '';
+		position: absolute;
+		/* -7px, not -6px: inset resolves against the padding box, inside the 1px border. */
+		inset: -7px 0;
+	}
+
+	/* After size-sm so icon.size-sm keeps the full square target. */
 	button.icon {
 		min-height: var(--touch-target);
 		min-width: var(--touch-target);
