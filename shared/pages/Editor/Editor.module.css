@@ -279,10 +279,11 @@
 }
 
 /* Small-screen panels: the chat stays a full-screen takeover; the file browser
-   is a partial-width left drawer with a scrim and a persistent edge handle.
-   Both stay mounted, park off-screen, and slide in when Editor's state adds
-   .panelOpen. Scoped under .body to outrank the ResizablePanel module's own
-   single-class rules without depending on bundle order. */
+   is a partial-width left drawer with a scrim and a persistent edge handle
+   (the shared DrawerHandle component). Both stay mounted, park off-screen, and
+   slide in when Editor's state adds .panelOpen. Scoped under .body to outrank
+   the ResizablePanel module's own single-class rules without depending on
+   bundle order. */
 @media (width < 768px) { /* bp-small: file browser is a left drawer with a scrim + edge handle */
 	.body .filesPanel {
 		position: fixed;
@@ -305,54 +306,29 @@
 		visibility: visible;
 	}
 
+	/* Stays mounted so it can fade both directions; visibility gates hit-testing
+	   and snaps at the transition edge, like the drawer itself. */
 	.drawerScrim {
 		position: fixed;
 		inset: 0;
 		z-index: var(--z-modal); /* under the panel via DOM order */
 		background: rgb(0 0 0 / 0.5);
-		transition: opacity var(--transition-normal);
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity var(--transition-normal),
+			visibility var(--transition-normal);
 	}
 
-	@starting-style {
+	.drawerScrim.scrimOpen {
+		opacity: 1;
+		visibility: visible;
+	}
+
+	@media (prefers-color-scheme: dark) {
 		.drawerScrim {
-			opacity: 0;
+			background: rgb(0 0 0 / 0.65); /* 0.5 black barely reads over a near-black page */
 		}
-	}
-
-	.drawerHandle {
-		position: absolute;
-		left: 100%;
-		top: 50%;
-		translate: 0 -50%;
-		visibility: visible; /* stays visible/tabbable while the panel is parked */
-		width: 32px;
-		height: 56px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		background: var(--color-surface);
-		color: var(--color-text-muted);
-		border: 1px solid var(--color-border);
-		border-left: none;
-		border-radius: 0 var(--radius-md) var(--radius-md) 0;
-		box-shadow: var(--shadow-md);
-		cursor: pointer;
-	}
-
-	/* Grow the 32x56 pill to a >=44px hit box without widening the visual. */
-	.drawerHandle::after {
-		content: '';
-		position: absolute;
-		inset: -4px -12px -4px 0;
-	}
-
-	.drawerHandle svg {
-		transition: rotate var(--transition-normal);
-	}
-
-	.panelOpen .drawerHandle svg {
-		rotate: 180deg;
 	}
 
 	.body .chatPanel {
@@ -377,8 +353,7 @@
 @media (prefers-reduced-motion: reduce) {
 	.body .filesPanel,
 	.body .chatPanel,
-	.drawerScrim,
-	.drawerHandle svg {
+	.drawerScrim {
 		transition: none;
 	}
 }

@@ -98,6 +98,10 @@ export { ErrorBoundary, withErrorBoundary } from './ErrorBoundary/ErrorBoundary'
 export { ResizablePanel } from './ResizablePanel/ResizablePanel';
 export type { ResizablePanelProps } from './ResizablePanel/ResizablePanel';
 
+// DrawerHandle - edge handle for small-screen drawers
+export { DrawerHandle } from './DrawerHandle/DrawerHandle';
+export type { DrawerHandleProps } from './DrawerHandle/DrawerHandle';
+
 // Logo - brand logomark and lockup (docs/brand.md)
 export { Logo, LogoMark } from './Logo/Logo';
 export type { LogoProps } from './Logo/Logo';

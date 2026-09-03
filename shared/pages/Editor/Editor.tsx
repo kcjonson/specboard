@@ -2,7 +2,7 @@ import { useMemo, useEffect, useCallback, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { navigate, type RouteProps } from '@specboard/router';
-import { Page, Icon, Button, ErrorBoundary, ResizablePanel } from '@specboard/ui';
+import { Page, Icon, Button, DrawerHandle, ErrorBoundary, ResizablePanel } from '@specboard/ui';
 import {
 	DocumentModel,
 	UserModel,
@@ -185,8 +185,9 @@ export function Editor(props: RouteProps): JSX.Element {
 	const [chatOpen, setChatOpen] = useState(false);
 
 	// One CloseWatcher per open takeover: Android back (and ESC) close the panel
-	// instead of leaving the page. Desktop never opens these, so the watchers only
-	// exist on small screens.
+	// instead of leaving the page. Every path that opens these is gated to small
+	// screens (mobile-only buttons, the matchMedia check below), so the watchers
+	// never mount on desktop, where they would eat the first ESC.
 	useEffect(() => {
 		if (!filesOpen) return;
 		const watcher = new CloseWatcher();
@@ -202,13 +203,14 @@ export function Editor(props: RouteProps): JSX.Element {
 	}, [chatOpen]);
 
 	// With no file open (and none stored to restore) the drawer IS the landing
-	// content. Fires on first visit and after a delete; inert on desktop where the
-	// panel is an in-flow column. Checking localStorage keeps the drawer from
-	// flashing over a file that is about to restore.
+	// content. Fires on first visit and after a delete. Gated to small screens
+	// (bp-small) because on desktop the panel is an in-flow column — opening it
+	// there is invisible but mounts a CloseWatcher. Checking localStorage keeps
+	// the drawer from flashing over a file that is about to restore.
 	useEffect(() => {
-		if (projectId && !documentModel.filePath && !loadSelectedFile(projectId)) {
-			setFilesOpen(true);
-		}
+		if (!projectId || documentModel.filePath || loadSelectedFile(projectId)) return;
+		if (!globalThis.matchMedia('(width < 768px)').matches) return;
+		setFilesOpen(true);
 	}, [projectId, documentModel.filePath]);
 
 	// A file opening (select, restore, create, rename) collapses the drawer.
@@ -367,6 +369,12 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Handle file selection from FileBrowser
 	const handleFileSelect = useCallback(async (path: string) => {
 		setLoadError(null);
+
+		// Tapping the already-open file just dismisses the drawer.
+		if (path === documentModel.filePath) {
+			setFilesOpen(false);
+			return;
+		}
 
 		// Save current file before switching (if dirty)
 		if (documentModel.isDirty && documentModel.filePath) {
@@ -740,13 +748,11 @@ export function Editor(props: RouteProps): JSX.Element {
 				/>
 			)}
 			<div class={styles.body} ref={bodyRef}>
-				{filesOpen && (
-					<div
-						class={`${styles.drawerScrim} mobile-only`}
-						onClick={() => setFilesOpen(false)}
-						aria-hidden="true"
-					/>
-				)}
+				<div
+					class={`${styles.drawerScrim} ${filesOpen ? styles.scrimOpen : ''} mobile-only`}
+					onClick={() => setFilesOpen(false)}
+					aria-hidden="true"
+				/>
 				<ResizablePanel
 					storageKey="editor-file-browser"
 					handleSide="right"
@@ -757,15 +763,12 @@ export function Editor(props: RouteProps): JSX.Element {
 					label="Resize file browser"
 					class={`${styles.filesPanel} ${filesOpen ? styles.panelOpen : ''}`}
 				>
-					<button
-						type="button"
-						class={`${styles.drawerHandle} mobile-only`}
-						onClick={() => setFilesOpen((open) => !open)}
-						aria-label={filesOpen ? 'Close file drawer' : 'Browse files'}
-						aria-expanded={filesOpen}
-					>
-						<Icon name="chevron-right" />
-					</button>
+					<DrawerHandle
+						open={filesOpen}
+						onToggle={() => setFilesOpen((open) => !open)}
+						openLabel="Browse files"
+						closeLabel="Close file drawer"
+					/>
 					<FileBrowser
 						projectSlug={projectSlug}
 						projectId={projectId}

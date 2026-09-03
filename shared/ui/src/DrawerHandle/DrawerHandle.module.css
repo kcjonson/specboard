@@ -1,0 +1,61 @@
+/*
+ * Drawer edge handle: a half-pill attached to the drawer's trailing edge,
+ * offset a fixed --space-6 (24px) up from the bottom — the convention every
+ * drawer shares. The parent drawer is expected to park off-screen with
+ * `visibility: hidden`; the handle overrides that per-descendant so it stays
+ * visible and tabbable at the screen edge while parked.
+ */
+@media (width < 768px) { /* bp-small: drawers (and their handles) exist only on small screens */
+	.handle {
+		position: absolute;
+		left: 100%;
+		bottom: var(--space-6);
+		visibility: visible;
+		width: 32px;
+		height: 56px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		background: var(--color-surface);
+		color: var(--color-text-muted);
+		border: 1px solid var(--color-border);
+		border-left: none;
+		border-radius: 0 var(--radius-md) var(--radius-md) 0;
+		box-shadow: var(--shadow-md);
+		cursor: pointer;
+	}
+
+	/* Outranks the element-level button:hover:not(:disabled) primary fill. */
+	.handle:hover:not(:disabled) {
+		background: var(--color-surface);
+		color: var(--color-text);
+	}
+
+	/* Grow the 32x56 pill to a >=44px hit box without widening the visual. */
+	.handle::after {
+		content: '';
+		position: absolute;
+		inset: -4px -12px -4px 0;
+	}
+
+	.handle svg {
+		transition: rotate var(--transition-normal);
+	}
+
+	.open svg {
+		rotate: 180deg;
+	}
+}
+
+@media (width >= 768px) { /* bp-small (desktop side): drawers are in-flow columns; no handle */
+	.handle {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.handle svg {
+		transition: none;
+	}
+}
