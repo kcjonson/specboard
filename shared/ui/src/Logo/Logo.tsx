@@ -64,11 +64,11 @@ export function Logo({ size = 20, href, responsive = false, class: className }: 
 			</g>
 		</svg>
 	);
-	// 24px (vs the lockup's 16) because the mark alone needs the size to read.
+	// 28px (vs the lockup's 16) because the mark alone needs the size to read.
 	const content = responsive ? (
 		<>
 			{svg}
-			{markSvg(24, styles.markOnly)}
+			{markSvg(28, styles.markOnly)}
 		</>
 	) : (
 		svg

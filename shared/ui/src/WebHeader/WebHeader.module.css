@@ -106,7 +106,7 @@
 	background: var(--color-surface);
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);
-	box-shadow: var(--shadow-md);
+	box-shadow: var(--shadow-card-hover); /* matches the UserMenu dropdown beside it */
 	opacity: 0;
 	translate: 0 -4px;
 	transition:
@@ -156,19 +156,26 @@
 	margin: var(--space-1) 0;
 }
 
+/* Same row treatment as UserMenu's items (14px, surface hover), with the
+   min-height keeping 44px touch targets. */
 .menuItem {
 	display: flex;
 	align-items: center;
 	min-height: var(--touch-target);
-	padding: var(--space-2) var(--space-4);
-	font-size: var(--text-base);
-	font-weight: var(--font-medium);
+	padding: var(--space-3) var(--space-4);
+	font-size: var(--text-sm);
 	color: var(--color-text);
 	text-decoration: none;
+	transition: background var(--transition-fast);
 }
 
 .menuItem:hover {
 	background: var(--color-surface-hover);
+}
+
+.menuItem:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: -2px;
 }
 
 .menuItemActive {

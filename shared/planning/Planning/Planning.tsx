@@ -414,7 +414,7 @@ export function Planning(props: RouteProps): JSX.Element {
 					<SplitButton options={createOptions} prefix="+ New" />
 					<button
 						type="button"
-						class={`icon mobile-only ${styles.searchButton} ${filtersActive ? styles.searchActive : ''}`}
+						class={`secondary mobile-only ${styles.searchButton} ${filtersActive ? styles.searchActive : ''}`}
 						popovertarget="planning-search"
 						aria-label="Search and filter"
 					>
