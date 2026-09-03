@@ -148,13 +148,6 @@
 	flex: 1;
 }
 
-/* The shared Text field reserves a line below the input for an error message.
-   This row never shows one, and the empty line pushed the + Add button's center
-   below the input's — collapse it. */
-.addTask > div > span {
-	display: none;
-}
-
 /* Placeholder text */
 .placeholder {
 	color: var(--color-text-muted);

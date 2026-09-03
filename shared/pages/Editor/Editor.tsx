@@ -812,6 +812,7 @@ export function Editor(props: RouteProps): JSX.Element {
 										Dismiss
 									</button>
 									<button
+										type="button"
 										class={`${styles.errorDismissButton} mobile-only`}
 										onClick={() => setFilesOpen(true)}
 									>
@@ -852,6 +853,7 @@ export function Editor(props: RouteProps): JSX.Element {
 										{isRestoring ? 'Restoring...' : 'Restore File'}
 									</button>
 									<button
+										type="button"
 										class={`${styles.errorDismissButton} mobile-only`}
 										onClick={() => setFilesOpen(true)}
 									>

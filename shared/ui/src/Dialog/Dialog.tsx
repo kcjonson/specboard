@@ -10,7 +10,11 @@ export interface DialogProps {
 	onClose: () => void;
 	/** Dialog title/label in header */
 	title?: string;
-	/** Whether to show close button in header (default: true when header is visible) */
+	/**
+	 * Whether to show the header close button on desktop (default: true when the
+	 * header is visible). Small screens always render a close affordance —
+	 * every takeover must be closable — so `false` only suppresses it at >= 768px.
+	 */
 	showCloseButton?: boolean;
 	/** Custom actions to render in header (before close button) */
 	headerActions?: ComponentChildren;
@@ -40,7 +44,9 @@ export function Dialog({
 
 	// Show header if title is provided OR showCloseButton is explicitly true OR headerActions are provided
 	const showHeader = Boolean(title) || showCloseButton === true || Boolean(headerActions);
-	// Show close button by default when header is visible, unless explicitly disabled
+	// Desktop close button: on by default when the header is visible, off when
+	// explicitly disabled. Small screens get the X regardless (via mobile-only
+	// below) — the small-screen spec requires every takeover to be closable.
 	const shouldShowCloseButton = showHeader && showCloseButton !== false;
 
 	// Sync controlled `open` with the native element. Mount-with-open covers the

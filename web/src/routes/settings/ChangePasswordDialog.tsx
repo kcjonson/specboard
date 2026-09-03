@@ -95,6 +95,7 @@ export function ChangePasswordDialog({ open, onClose }: ChangePasswordDialogProp
 						value={currentPassword}
 						onInput={(e) => setCurrentPassword((e.target as HTMLInputElement).value)}
 						autoComplete="current-password"
+						compact
 						required
 					/>
 				</div>
@@ -109,6 +110,7 @@ export function ChangePasswordDialog({ open, onClose }: ChangePasswordDialogProp
 						value={newPassword}
 						onInput={(e) => setNewPassword((e.target as HTMLInputElement).value)}
 						autoComplete="new-password"
+						compact
 						required
 					/>
 					<span class={styles.hint}>
@@ -126,6 +128,7 @@ export function ChangePasswordDialog({ open, onClose }: ChangePasswordDialogProp
 						value={confirmPassword}
 						onInput={(e) => setConfirmPassword((e.target as HTMLInputElement).value)}
 						autoComplete="new-password"
+						compact
 						required
 					/>
 				</div>
