@@ -32,6 +32,12 @@ export interface TextProps {
 	id?: string;
 	/** Accessible name when no visible `label` is used */
 	ariaLabel?: string;
+	/**
+	 * Inline usage (add-rows, toolbars): skips the reserved error line below the
+	 * input, so the field's height is exactly the input and flex-centering against
+	 * siblings lines up. Errors passed while compact are not rendered.
+	 */
+	compact?: boolean;
 	/** Autofocus */
 	autoFocus?: boolean;
 	/** Autocomplete */
@@ -56,6 +62,7 @@ export function Text({
 	name,
 	id,
 	ariaLabel,
+	compact = false,
 	autoFocus,
 	autoComplete,
 	required,
@@ -84,7 +91,7 @@ export function Text({
 				autoComplete={autoComplete}
 				required={required}
 			/>
-			<span class={errorClasses}>{error || '\u00A0'}</span>
+			{!compact && <span class={errorClasses}>{error || '\u00A0'}</span>}
 		</div>
 	);
 }

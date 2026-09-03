@@ -9,7 +9,7 @@
  * - delete_item: Delete any item
  */
 
-import { resolveProjectSlug, type ResolvedProject } from '@specboard/db';
+import { resolveProjectSlug, type ResolvedProject, type AgentActor } from '@specboard/db';
 
 import { epicTools } from './definitions.ts';
 import { getItems } from './reads.ts';
@@ -22,9 +22,10 @@ export { epicTools };
 export async function handleEpicTool(
 	name: string,
 	args: Record<string, unknown> | undefined,
-	userId: string,
+	actor: AgentActor,
 	boundProjectSlug?: string
 ): Promise<ToolResult> {
+	const userId = actor.userId;
 	// Normalized the same way the X-Specboard-Project header is, so an agent that
 	// capitalizes the slug isn't refused for disagreeing with its own binding.
 	const requested = args?.project_slug;
@@ -75,11 +76,11 @@ export async function handleEpicTool(
 			case 'get_items':
 				return await getItems(project, args as Record<string, unknown>);
 			case 'create_item':
-				return await createItem(project, args);
+				return await createItem(project, args, actor);
 			case 'create_items':
-				return await createItems(project, args);
+				return await createItems(project, args, actor);
 			case 'update_item':
-				return await updateItem(project, args);
+				return await updateItem(project, args, actor);
 			case 'delete_item':
 				return await deleteItem(project, args);
 			default:

@@ -28,6 +28,33 @@ export type ItemType = 'epic' | 'task' | 'bug';
 export type SpecType = 'product' | 'technical';
 
 /**
+ * Who or what performed an action (creation provenance, worker episodes).
+ * This is the API's SANITIZED view, not the server's full Actor union: the
+ * server strips actor internals (user id, OAuth client id, MCP session id)
+ * before responses reach the browser, leaving only what the UI renders.
+ */
+export interface Actor {
+	type: 'user' | 'agent' | 'system';
+	deviceName?: string;
+	client?: { name: string; version?: string };
+}
+
+/** Immutable creation provenance on an item. */
+export interface ItemOrigin {
+	actor: Actor;
+	discoveredFrom?: { itemId: string; itemKey: string };
+}
+
+/** An active agent-session episode on an item. */
+export interface ItemWorker {
+	id: string;
+	actor: Actor;
+	branch: string | null;
+	startedAt: string;
+	lastSeenAt: string;
+}
+
+/**
  * Child summary — a nested item as returned in an item's `children` array.
  * Display-only; edit a child by loading it as a full ItemModel.
  */
@@ -39,6 +66,8 @@ export class ChildModel extends Model {
 	@prop accessor type!: ItemType;
 	@prop accessor title!: string;
 	@prop accessor status!: ItemStatus;
+	/** Derived server-side: status is 'blocked' OR an open blocker exists. */
+	@prop accessor blocked!: boolean | undefined;
 	@prop accessor description!: string | undefined;
 	@prop accessor note!: string | undefined;
 }
@@ -49,6 +78,7 @@ export class ChildModel extends Model {
 export interface ChildStats {
 	total: number;
 	done: number;
+	blocked: number;
 }
 
 /**
@@ -76,7 +106,12 @@ export class ItemModel extends SyncModel {
 	@prop accessor description!: string | undefined;
 	@prop accessor status!: ItemStatus;
 	@prop accessor subStatus!: SubStatus | undefined;
-	@prop accessor creator!: string | undefined;
+	/** Derived server-side: status is 'blocked' OR an open blocker exists. Read-only. */
+	@prop accessor blocked!: boolean | undefined;
+	/** Immutable creation provenance. Read-only; the server never accepts it on writes. */
+	@prop accessor origin!: ItemOrigin | undefined;
+	/** Active agent sessions on this item (detail reads only). Read-only. */
+	@prop accessor workers!: ItemWorker[] | undefined;
 	@prop accessor assignee!: string | undefined;
 	@prop accessor rank!: number;
 	@prop accessor prUrl!: string | undefined;
@@ -136,9 +171,10 @@ export class ItemModel extends SyncModel {
 		if (this.children.length > 0) {
 			const total = this.children.length;
 			const done = this.children.filter((c) => c.status === 'done').length;
-			return { total, done };
+			const blocked = this.children.filter((c) => c.blocked ?? c.status === 'blocked').length;
+			return { total, done, blocked };
 		}
-		return this.childStatsSummary ?? { total: 0, done: 0 };
+		return this.childStatsSummary ?? { total: 0, done: 0, blocked: 0 };
 	}
 }
 
@@ -169,7 +205,7 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	/**
 	 * Get items filtered by status, sorted by rank.
 	 */
-	byStatus(status: Status): ItemModel[] {
+	byStatus(status: ItemStatus): ItemModel[] {
 		return this.filter((e) => e.status === status).sort((a, b) => a.rank - b.rank);
 	}
 
@@ -211,6 +247,42 @@ export class SpecModel extends SyncModel {
 export class SpecsCollection extends SyncCollection<SpecModel> {
 	static url = '/api/projects/:projectSlug/items/:itemKey/specs';
 	static Model = SpecModel;
+
+	// Set dynamically via constructor initialProps — do NOT declare as class fields.
+	declare projectSlug: string;
+	declare itemKey: string;
+}
+
+/**
+ * Blocker model — one blocked-by row on an item: another item ({ itemKey }) XOR
+ * free text ({ text }). Syncs with /api/projects/:projectSlug/items/:itemKey/blockers/:id
+ */
+export class BlockerModel extends SyncModel {
+	static override url = '/api/projects/:projectSlug/items/:itemKey/blockers/:id';
+
+	@prop accessor id!: string;
+	@prop accessor projectSlug!: string;
+	@prop accessor itemKey!: string;
+	@prop accessor type!: 'item' | 'text';
+	@prop accessor text!: string | undefined;
+	/** Key/title/status of the blocking item (item blockers only). Named blocker* so they can't collide with the URL's :itemKey. */
+	@prop accessor blockerKey!: string | undefined;
+	@prop accessor blockerTitle!: string | undefined;
+	@prop accessor blockerStatus!: ItemStatus | undefined;
+	@prop accessor createdAt!: string;
+	@prop accessor clearedAt!: string | undefined;
+}
+
+/**
+ * Collection of open blockers for one item.
+ * Syncs with /api/projects/:projectSlug/items/:itemKey/blockers
+ *
+ * add({ blockerKey }) blocks on another item; add({ text }) records a written
+ * reason. remove(blocker) clears it (the server tombstones, never deletes).
+ */
+export class BlockersCollection extends SyncCollection<BlockerModel> {
+	static url = '/api/projects/:projectSlug/items/:itemKey/blockers';
+	static Model = BlockerModel;
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
 	declare projectSlug: string;

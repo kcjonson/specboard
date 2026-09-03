@@ -9,3 +9,5 @@ export * from './items.ts';
 export * from './specs.ts';
 export * from './progress.ts';
 export * from './projects.ts';
+export * from './blockers.ts';
+export * from './workers.ts';
