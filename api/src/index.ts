@@ -94,6 +94,11 @@ import {
 	handleDeleteSpec,
 } from './handlers/specs.ts';
 import {
+	handleListBlockers,
+	handleAddBlocker,
+	handleClearBlocker,
+} from './handlers/blockers.ts';
+import {
 	handleListItemProgress,
 	handleCreateItemProgress,
 } from './handlers/progress.ts';
@@ -548,6 +553,8 @@ function requireProjectAccess(
 		}
 
 		context.set('project', project);
+		// Handlers that record provenance (item create, blockers) read this as the actor.
+		context.set('userId', userId);
 		return handler(context);
 	};
 }
@@ -570,6 +577,11 @@ app.post('/api/projects/:projectSlug/items/:itemKey/unblock', requireProjectAcce
 app.get('/api/projects/:projectSlug/items/:itemKey/specs', requireProjectAccess(handleListSpecs));
 app.post('/api/projects/:projectSlug/items/:itemKey/specs', requireProjectAccess(handleAddSpec));
 app.delete('/api/projects/:projectSlug/items/:itemKey/specs/:id', requireProjectAccess(handleDeleteSpec));
+
+// Project-scoped blocker routes
+app.get('/api/projects/:projectSlug/items/:itemKey/blockers', requireProjectAccess(handleListBlockers));
+app.post('/api/projects/:projectSlug/items/:itemKey/blockers', requireProjectAccess(handleAddBlocker));
+app.delete('/api/projects/:projectSlug/items/:itemKey/blockers/:id', requireProjectAccess(handleClearBlocker));
 
 // Project-scoped progress notes routes
 app.get('/api/projects/:projectSlug/items/:itemKey/progress', requireProjectAccess(handleListItemProgress));

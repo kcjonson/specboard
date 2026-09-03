@@ -27,6 +27,31 @@ check → build-push (ECR images) → setup-aws → migrate → seed → deploy-
 Nothing manual. The image is tagged with the merge commit SHA and pushed to ECR, so that
 SHA becomes deployable to production later.
 
+### Documentation-only merges are skipped entirely
+
+`ci.yml` carries a `paths-ignore` list (`docs/**`, root-level markdown, `README.md` at any
+depth). A push or PR whose whole diff lands inside it runs no CI, and since CD triggers on
+CI's completion, it runs no deploy either. Copilot review is unaffected: it fires on PR
+ready-for-review, not through Actions.
+
+The list is narrow on purpose. `api/src/prompts/*.md` is prompt payload the API ships and
+`plugins/specboard/**/*.md` is published in the plugin package, so both count as code.
+
+One consequence lands on CD's `check` job, which decides whether a run is still worth
+deploying. It cannot ask "am I main's head commit?" any more, because a documentation
+commit landing right behind a code commit would make the answer no while producing no CD
+run of its own, stranding that code undeployed. It instead compares its commit against
+main by content and deploys when everything main has gained since is documentation.
+
+### Which commit reaches staging
+
+| Merged to main | Deploys |
+|----------------|---------|
+| One code commit | That commit |
+| Code, then documentation | The code commit (documentation adds nothing to deploy) |
+| Code, then more code | The later commit; the earlier run skips |
+| Documentation only | Nothing. Staging keeps running the code it already has |
+
 ---
 
 ## Production (manual release)
@@ -39,6 +64,10 @@ triggers on a published GitHub release (or a manual dispatch with a tag).
 - **Staging CD succeeded for that commit** — `prod-deploy.yml`'s `verify-images` job
   checks ECR for images built from the tag's SHA. No images → the deploy fails. (CD builds
   them on merge, so a green staging deploy satisfies this.)
+- **The tagged commit is not documentation-only.** Those never build an image, so
+  `verify-images` fails for them. Nothing is deployed when it does, so the failure is safe,
+  but the fix is to tag the last commit that changed code instead. Its code is identical to
+  the documentation commit's, since only documentation separates them.
 
 ### Steps
 1. Pick the next version (see [Versioning](#versioning)).

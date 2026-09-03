@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
 	FileTreeModel,
 	getDepthForPath,
@@ -387,5 +387,41 @@ describe('FileTreeModel', () => {
 			expect(model.getDepth('/docs')).toBe(1);
 			expect(model.getDepth('/docs/nested')).toBe(2);
 		});
+	});
+});
+
+describe('Tree traversal with prototype-chain names', () => {
+	afterEach(() => {
+		delete (Object.prototype as Record<string, unknown>).polluted;
+	});
+
+	it('nests a __proto__ segment as an ordinary child', () => {
+		const tree = pathsToExpandedTree(['/docs/__proto__/deep']);
+		expect(expandedTreeToPaths(tree)).toEqual(['/docs', '/docs/__proto__', '/docs/__proto__/deep']);
+	});
+
+	it('does not reach Object.prototype when adding a path', () => {
+		addPathToTree({}, '/__proto__/polluted');
+		expect(Object.prototype).not.toHaveProperty('polluted');
+	});
+
+	it('treats constructor as a name, not a built-in', () => {
+		const tree = addPathToTree({}, '/constructor');
+		expect(expandedTreeToPaths(tree)).toEqual(['/constructor']);
+	});
+
+	it('removes a __proto__ node without touching the prototype', () => {
+		const tree = pathsToExpandedTree(['/docs/__proto__', '/docs/other']);
+		expect(expandedTreeToPaths(removePathFromTree(tree, '/docs/__proto__'))).toEqual([
+			'/docs',
+			'/docs/other',
+		]);
+	});
+
+	it('reports an absent prototype-named path as collapsed', () => {
+		const model = new FileTreeModel();
+		expect(model.isExpanded('/constructor')).toBe(false);
+		expect(model.isExpanded('/__proto__')).toBe(false);
+		expect(model.isExpanded('/toString')).toBe(false);
 	});
 });

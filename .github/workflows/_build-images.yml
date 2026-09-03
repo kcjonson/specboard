@@ -7,6 +7,16 @@ on:
         description: 'Push images to ECR'
         required: true
         type: boolean
+      ref:
+        description: >-
+          Commit to build and tag. Defaults to github.sha, which is only correct when the
+          caller was triggered by the commit itself. A workflow_run caller must pass the
+          triggering commit explicitly: github.sha resolves to the default branch head
+          there, so the image would be built from and tagged with whatever happens to be
+          on main rather than the commit being deployed.
+        required: false
+        type: string
+        default: ''
     outputs:
       registry:
         description: 'ECR registry URL'
@@ -25,8 +35,14 @@ jobs:
     outputs:
       registry: ${{ inputs.push && steps.login-ecr.outputs.registry || '' }}
     steps:
+      - name: Resolve build commit
+        id: commit
+        run: echo "sha=${{ inputs.ref || github.sha }}" >> $GITHUB_OUTPUT
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.commit.outputs.sha }}
 
       - name: Configure AWS credentials
         if: inputs.push
@@ -61,7 +77,7 @@ jobs:
           tags: |
             ${{ steps.prefix.outputs.value }}/api:latest
             ${{ steps.prefix.outputs.value }}/api:init
-            ${{ steps.prefix.outputs.value }}/api:${{ github.sha }}
+            ${{ steps.prefix.outputs.value }}/api:${{ steps.commit.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -74,9 +90,9 @@ jobs:
           tags: |
             ${{ steps.prefix.outputs.value }}/frontend:latest
             ${{ steps.prefix.outputs.value }}/frontend:init
-            ${{ steps.prefix.outputs.value }}/frontend:${{ github.sha }}
+            ${{ steps.prefix.outputs.value }}/frontend:${{ steps.commit.outputs.sha }}
           build-args: |
-            GIT_SHA=${{ github.sha }}
+            GIT_SHA=${{ steps.commit.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -89,7 +105,7 @@ jobs:
           tags: |
             ${{ steps.prefix.outputs.value }}/mcp:latest
             ${{ steps.prefix.outputs.value }}/mcp:init
-            ${{ steps.prefix.outputs.value }}/mcp:${{ github.sha }}
+            ${{ steps.prefix.outputs.value }}/mcp:${{ steps.commit.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -113,6 +129,6 @@ jobs:
           tags: |
             ${{ steps.prefix.outputs.value }}/storage:latest
             ${{ steps.prefix.outputs.value }}/storage:init
-            ${{ steps.prefix.outputs.value }}/storage:${{ github.sha }}
+            ${{ steps.prefix.outputs.value }}/storage:${{ steps.commit.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

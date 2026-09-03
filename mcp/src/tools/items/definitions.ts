@@ -25,17 +25,21 @@ export const epicTools: Tool[] = [
 				},
 				status: {
 					type: 'string',
-					enum: ['ready', 'in_progress', 'in_review', 'done'],
+					enum: ['ready', 'in_progress', 'blocked', 'in_review', 'done'],
 					description: 'Filter by board status',
 				},
 				type: {
 					type: 'string',
-					enum: ['epic', 'bug'],
+					enum: ['epic', 'task', 'bug'],
 					description: 'Filter by item type',
 				},
 				search: {
 					type: 'string',
 					description: 'Search title and description (case-insensitive)',
+				},
+				include_blocked: {
+					type: 'boolean',
+					description: 'status=ready normally excludes blocked items (open blockers); set true to include them.',
 				},
 				include_children: {
 					type: 'boolean',
@@ -94,6 +98,21 @@ export const epicTools: Tool[] = [
 						required: ['path', 'type'],
 					},
 				},
+				discovered_from: {
+					type: 'string',
+					description: 'Key of the item you were working on when this one was discovered (e.g. SB-12). Immutable provenance, set only at creation — pass it whenever you file follow-on work found mid-task.',
+				},
+				blockers: {
+					type: 'array',
+					description: 'Blockers the item starts with. Each entry is exactly one of { item_key } (blocked by that item; auto-clears when it completes) or { text } (a written reason; clears only when removed). Only record blockers the user or the work explicitly established — never infer them.',
+					items: {
+						type: 'object',
+						properties: {
+							item_key: { type: 'string', description: 'Key of the blocking item (e.g. SB-12)' },
+							text: { type: 'string', description: 'Free-text reason' },
+						},
+					},
+				},
 			},
 			required: ['title'],
 		},
@@ -132,6 +151,10 @@ export const epicTools: Tool[] = [
 					},
 					description: 'Array of tasks to create',
 				},
+				discovered_from: {
+					type: 'string',
+					description: 'Key of the item you were working on when these were discovered (e.g. SB-12). Shared by the whole batch; immutable provenance.',
+				},
 			},
 			required: ['parent_key', 'items'],
 		},
@@ -139,7 +162,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'update_item',
 		description:
-			'Update an item: title, description, status, sub_status, specs, branch_name, pr_url, notes, note. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done).',
+			'Update an item: title, description, status, sub_status, specs, blockers, branch_name, pr_url, notes, note. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). blockers replaces the item\'s open blockers (item refs auto-clear when the blocking item completes; text clears only when removed).',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -205,6 +228,17 @@ export const epicTools: Tool[] = [
 				note: {
 					type: 'string',
 					description: 'Set note on a task — context for any outcome (completion, blocked, cut, etc.)',
+				},
+				blockers: {
+					type: 'array',
+					description: 'Replace the full set of the item\'s OPEN blockers — send everything that should still block, or [] to clear. Each entry is exactly one of { item_key } (blocked by that item; auto-clears when it completes) or { text } (a written reason; clears only by leaving this list). An item is blocked while any blocker is open. Only record blockers the user or the work explicitly established — never infer them.',
+					items: {
+						type: 'object',
+						properties: {
+							item_key: { type: 'string', description: 'Key of the blocking item (e.g. SB-12)' },
+							text: { type: 'string', description: 'Free-text reason' },
+						},
+					},
 				},
 			},
 			required: ['item_key'],

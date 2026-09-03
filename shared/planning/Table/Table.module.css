@@ -194,6 +194,16 @@
 	gap: var(--space-2);
 }
 
+.blockedChip {
+	font-size: var(--text-xs);
+	font-weight: var(--font-medium);
+	padding: 1px 6px;
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--color-error) 15%, transparent);
+	color: var(--color-error);
+	white-space: nowrap;
+}
+
 .colTasks,
 .colAssignee {
 	color: var(--color-text-muted);

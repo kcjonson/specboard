@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { useModel, ItemModel, type ChildModel, type Status, type SubStatus, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type ChildModel, type Status, type ItemStatus, type SubStatus, type ItemType, type ItemOrigin, type ItemWorker } from '@specboard/models';
 import { Button, DialogFooter, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { SpecsSection } from '../SpecsSection/SpecsSection';
+import { BlockersSection } from '../BlockersSection/BlockersSection';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
+import { formatTimeAgo } from '../utils/time';
 import styles from './ItemView.module.css';
 
 const TYPE_LABELS: Record<ItemType, string> = {
@@ -38,11 +40,52 @@ interface ItemViewCreateProps {
 
 export type ItemViewProps = ItemViewExistingProps | ItemViewCreateProps;
 
-const STATUS_OPTIONS: { value: Status; label: string }[] = [
+const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
 	{ value: 'ready', label: 'Ready' },
 	{ value: 'in_progress', label: 'In Progress' },
+	{ value: 'blocked', label: 'Blocked' },
+	{ value: 'in_review', label: 'In Review' },
 	{ value: 'done', label: 'Done' },
 ];
+
+// Creating an item already blocked or in review makes no sense; those states are entered later.
+const CREATE_STATUS_OPTIONS = STATUS_OPTIONS.filter((o) => o.value !== 'blocked' && o.value !== 'in_review');
+
+/**
+ * Mirror of the server's sub-status -> status derive. The server only applies
+ * it when a write carries sub_status WITHOUT status, and SyncModel.save() PUTs
+ * the whole model — so the client must move status itself or "Complete" would
+ * leave the item in its old column.
+ */
+function deriveStatusFromSubStatus(subStatus: SubStatus): ItemStatus | undefined {
+	switch (subStatus) {
+		case 'scoping':
+		case 'in_development':
+		case 'pr_open':
+			return 'in_progress';
+		case 'complete':
+			return 'done';
+		default:
+			return undefined;
+	}
+}
+
+/** Milliseconds after which an agent session with no observed writes reads as stale. */
+const WORKER_STALE_MS = 15 * 60 * 1000;
+
+function workerLabel(worker: ItemWorker): string {
+	return worker.actor.client?.name || worker.actor.deviceName || 'Agent session';
+}
+
+function originLabel(origin: ItemOrigin): string {
+	if (origin.actor.type === 'agent') {
+		const name = origin.actor.client?.name || 'Agent';
+		return origin.actor.deviceName ? `${name} on ${origin.actor.deviceName}` : name;
+	}
+	if (origin.actor.type === 'system') return 'System';
+	return 'User';
+}
+
 
 const SUB_STATUS_OPTIONS: { value: SubStatus; label: string }[] = [
 	{ value: 'not_started', label: 'Not Started' },
@@ -89,7 +132,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// Track whether description has unsaved changes
 	const descriptionDirtyRef = useRef(false);
 
-	const taskStats = item?.childStats || { total: 0, done: 0 };
+	const taskStats = item?.childStats || { total: 0, done: 0, blocked: 0 };
 
 	// Sync the title draft to whichever item is open. Keyed on the model as well as
 	// the title so switching to an item whose title hasn't arrived yet clears the
@@ -174,9 +217,9 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// Status change (for create mode, just update the draft)
 	const handleStatusChange = (e: Event): void => {
 		const target = e.target as HTMLSelectElement;
-		const newStatus = target.value as Status;
+		const newStatus = target.value as ItemStatus;
 		if (isNew) {
-			setStatusDraft(newStatus);
+			setStatusDraft(newStatus as Status);
 		} else if (item) {
 			const previousStatus = item.status;
 			item.status = newStatus;
@@ -186,15 +229,19 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		}
 	};
 
-	// Sub-status change
+	// Sub-status change (moves status too at the key transitions)
 	const handleSubStatusChange = (e: Event): void => {
 		if (!item || isNew) return;
 		const target = e.target as HTMLSelectElement;
 		const newSubStatus = target.value as SubStatus;
 		const previousSubStatus = item.subStatus;
+		const previousStatus = item.status;
 		item.subStatus = newSubStatus;
+		const derived = deriveStatusFromSubStatus(newSubStatus);
+		if (derived && derived !== item.status) item.status = derived;
 		item.save().catch(() => {
 			item.subStatus = previousSubStatus;
+			item.status = previousStatus;
 		});
 	};
 
@@ -248,8 +295,12 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 					<div class={styles.field}>
 						<Select
 							id="item-status"
-							value={isNew ? statusDraft : (item?.status || 'ready')}
-							options={STATUS_OPTIONS}
+							// Create mode clamps to its own options: a stale draft of
+							// 'blocked'/'in_review' would otherwise leave the select valueless.
+							value={isNew
+								? (CREATE_STATUS_OPTIONS.some((o) => o.value === statusDraft) ? statusDraft : 'ready')
+								: (item?.status || 'ready')}
+							options={isNew ? CREATE_STATUS_OPTIONS : STATUS_OPTIONS}
 							onChange={handleStatusChange}
 							label="Status"
 						/>
@@ -284,6 +335,43 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 							</a>
 						</div>
 					)}
+					{!isNew && item?.origin && (
+						<div class={styles.field}>
+							<label class={styles.fieldLabel}>Created by</label>
+							<span class={styles.fieldValue}>
+								{originLabel(item.origin)}
+								{item.origin.discoveredFrom && (
+									<>
+										{' · discovered from '}
+										<button
+											type="button"
+											class={styles.inlineLink}
+											onClick={() => item.origin?.discoveredFrom && onOpenChild?.(item.origin.discoveredFrom.itemKey)}
+										>
+											{item.origin.discoveredFrom.itemKey}
+										</button>
+									</>
+								)}
+							</span>
+						</div>
+					)}
+					{!isNew && item?.workers && item.workers.length > 0 && (
+						<div class={styles.field}>
+							<label class={styles.fieldLabel}>Working now</label>
+							<span class={styles.fieldValue}>
+								{item.workers.map((worker, i) => {
+									const stale = Date.now() - new Date(worker.lastSeenAt).getTime() > WORKER_STALE_MS;
+									return (
+										<span key={worker.id} class={stale ? styles.staleWorker : undefined}>
+											{i > 0 && ', '}
+											{workerLabel(worker)} · {formatTimeAgo(worker.lastSeenAt)}
+											{stale && ' (stale)'}
+										</span>
+									);
+								})}
+							</span>
+						</div>
+					)}
 				</div>
 			</div>
 
@@ -316,6 +404,8 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 							onInput={(e) => setNewTaskTitle((e.target as HTMLInputElement).value)}
 							onKeyDown={handleAddTaskKeyDown}
 							placeholder="Add a task..."
+							ariaLabel="Add a task"
+							compact
 						/>
 						<Button
 							class="text"
@@ -326,6 +416,16 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 						</Button>
 					</div>
 				</section>
+			)}
+
+			{/* Blockers — for any existing work item */}
+			{!isNew && item && (
+				<BlockersSection
+					projectSlug={item.projectSlug}
+					itemKey={item.key}
+					onOpenItem={onOpenChild}
+					onChange={() => void item.fetch()}
+				/>
 			)}
 
 			{/* Specifications — for any existing work item */}

@@ -35,9 +35,14 @@ export async function getItems(project: ResolvedProject, args: Record<string, un
 		status: args.status as ItemStatus | undefined,
 		type: args.type as ItemType | undefined,
 		search: args.search as string | undefined,
+		// Ready means actually startable: blocked items are excluded unless the
+		// caller asks for them with include_blocked.
+		excludeBlocked: args.status === 'ready' && args.include_blocked !== true,
 		includeChildren: args.include_children as boolean | undefined,
 		includeNotes: args.include_notes as boolean | undefined,
 		includeSpecs: true,
+		includeBlockers: itemNumber !== undefined,
+		includeWorkers: itemNumber !== undefined,
 		limit: args.limit as number | undefined,
 	});
 

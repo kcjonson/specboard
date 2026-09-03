@@ -13,11 +13,11 @@ const STATUS_LABELS: Record<ItemStatus, string> = {
 	done: 'Done',
 };
 
-// 'blocked'/'in_review' have no dedicated StatusDot color — fall back to the neutral dot.
+// 'in_review' has no dedicated StatusDot color — fall back to the neutral dot.
 const DOT_STATUS: Record<ItemStatus, StatusType> = {
 	ready: 'ready',
 	in_progress: 'in_progress',
-	blocked: 'default',
+	blocked: 'blocked',
 	in_review: 'default',
 	done: 'done',
 };
@@ -100,6 +100,9 @@ export function ItemRow({
 				<span class={styles.colStatus} role="cell">
 					<StatusDot status={DOT_STATUS[item.status]} />
 					{STATUS_LABELS[item.status]}
+					{item.blocked && item.status !== 'blocked' && (
+						<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
+					)}
 				</span>
 				<span class={styles.colTasks} role="cell">{hasChildren ? `${done}/${total}` : '—'}</span>
 				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>

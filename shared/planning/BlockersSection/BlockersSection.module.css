@@ -39,17 +39,17 @@
 	letter-spacing: 0.03em;
 }
 
-.product {
-	background: var(--color-accent-soft);
-	color: var(--color-accent);
+.item {
+	background: color-mix(in srgb, var(--color-error) 12%, transparent);
+	color: var(--color-error);
 }
 
-.technical {
-	background: var(--color-info-bg);
-	color: var(--color-info);
+.text {
+	background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+	color: var(--color-warning);
 }
 
-.specLink {
+.itemLink {
 	flex: 1;
 	min-width: 0;
 	text-align: left;
@@ -70,8 +70,18 @@
 	white-space: nowrap;
 }
 
-.specLink:hover {
+.itemLink:hover {
 	text-decoration: underline;
+}
+
+.reason {
+	flex: 1;
+	min-width: 0;
+	font-size: var(--text-sm);
+	color: var(--color-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .error {
@@ -81,4 +91,10 @@
 
 .addRow {
 	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.addRow > :first-child {
+	flex: 1;
 }
