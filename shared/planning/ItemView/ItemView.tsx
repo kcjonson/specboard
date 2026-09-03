@@ -295,7 +295,11 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 					<div class={styles.field}>
 						<Select
 							id="item-status"
-							value={isNew ? statusDraft : (item?.status || 'ready')}
+							// Create mode clamps to its own options: a stale draft of
+							// 'blocked'/'in_review' would otherwise leave the select valueless.
+							value={isNew
+								? (CREATE_STATUS_OPTIONS.some((o) => o.value === statusDraft) ? statusDraft : 'ready')
+								: (item?.status || 'ready')}
 							options={isNew ? CREATE_STATUS_OPTIONS : STATUS_OPTIONS}
 							onChange={handleStatusChange}
 							label="Status"
