@@ -3,13 +3,13 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
-import { Page, SplitButton, Text, Select, type SplitButtonOption } from '@specboard/ui';
+import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption } from '@specboard/ui';
 import { Board } from '../Board/Board';
 import { Table } from '../Table/Table';
 import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
-import { CATEGORY_ALL, CATEGORY_OPTIONS, type PlanningFilters } from './filters';
+import { CATEGORY_ALL, CATEGORY_OPTIONS, isFilterActive, type PlanningFilters } from './filters';
 import styles from './Planning.module.css';
 
 /** Duration to flash an item that was just created or changed by a refresh (ms) */
@@ -311,6 +311,36 @@ export function Planning(props: RouteProps): JSX.Element {
 		setFilters((prev) => ({ ...prev, category: value }));
 	}, []);
 
+	const filtersActive = isFilterActive(filters);
+
+	const handleClearFilters = useCallback((): void => {
+		setFilters({ search: '', category: CATEGORY_ALL });
+	}, []);
+
+	// Rendered twice (inline desktop / popover mobile); both copies are controlled
+	// by the same `filters` state so they can never disagree. autoFocus only in the
+	// popover so the keyboard opens with it.
+	const renderFilters = (inPopover: boolean): JSX.Element => (
+		<>
+			<div class={styles.filter}>
+				<Text
+					type="search"
+					value={filters.search}
+					placeholder="Search items..."
+					onInput={handleSearchInput}
+					autoFocus={inPopover}
+				/>
+			</div>
+			<div class={styles.filter}>
+				<Select
+					value={filters.category}
+					options={CATEGORY_OPTIONS}
+					onChange={handleCategoryChange}
+				/>
+			</div>
+		</>
+	);
+
 	// The drawer renders the item named by the route. A top-level item uses the live
 	// collection model, so edits reflect on the board immediately. Anything else — a
 	// child, or an item the collection has dropped — gets a standalone model that
@@ -378,23 +408,27 @@ export function Planning(props: RouteProps): JSX.Element {
 			<div class={styles.toolbar}>
 				<div class={styles.controls}>
 					<ViewToggle view={view} onChange={handleChangeView} />
-					<div class={styles.filter}>
-						<Text
-							type="search"
-							value={filters.search}
-							placeholder="Search items..."
-							onInput={handleSearchInput}
-						/>
-					</div>
-					<div class={styles.filter}>
-						<Select
-							value={filters.category}
-							options={CATEGORY_OPTIONS}
-							onChange={handleCategoryChange}
-						/>
+					<div class={styles.filters}>{renderFilters(false)}</div>
+				</div>
+				<div class={styles.toolbarEnd}>
+					<SplitButton options={createOptions} prefix="+ New" />
+					<button
+						type="button"
+						class={`icon mobile-only ${styles.searchButton} ${filtersActive ? styles.searchActive : ''}`}
+						popovertarget="planning-search"
+						aria-label="Search and filter"
+					>
+						<Icon name="search" />
+					</button>
+					<div popover="auto" id="planning-search" class={styles.searchPopover}>
+						{renderFilters(true)}
+						{filtersActive && (
+							<div class={styles.searchClearRow}>
+								<Button class="text" onClick={handleClearFilters}>Clear filters</Button>
+							</div>
+						)}
 					</div>
 				</div>
-				<SplitButton options={createOptions} prefix="+ New" />
 			</div>
 
 			<div class={styles.workspace} ref={workspaceRefCallback}>
