@@ -187,16 +187,19 @@ export function Editor(props: RouteProps): JSX.Element {
 	// One CloseWatcher per open takeover: Android back (and ESC) close the panel
 	// instead of leaving the page. Every path that opens these is gated to small
 	// screens (mobile-only buttons, the matchMedia check below), so the watchers
-	// never mount on desktop, where they would eat the first ESC.
+	// never mount on desktop, where they would eat the first ESC. The typeof
+	// guard is the browser floor: latest-1 includes Safari 18.0–18.3, which
+	// lack CloseWatcher (shipped 18.4) — there the drawer still closes via the
+	// scrim and handle, it just loses back/ESC.
 	useEffect(() => {
-		if (!filesOpen) return;
+		if (!filesOpen || typeof CloseWatcher !== 'function') return;
 		const watcher = new CloseWatcher();
 		watcher.onclose = (): void => setFilesOpen(false);
 		return () => watcher.destroy();
 	}, [filesOpen]);
 
 	useEffect(() => {
-		if (!chatOpen) return;
+		if (!chatOpen || typeof CloseWatcher !== 'function') return;
 		const watcher = new CloseWatcher();
 		watcher.onclose = (): void => setChatOpen(false);
 		return () => watcher.destroy();

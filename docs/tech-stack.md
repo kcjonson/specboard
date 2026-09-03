@@ -103,7 +103,7 @@ Latest-1 major browsers only. Modern CSS is the baseline: `dvh`, `@starting-styl
 
 ### Prefer the Platform Over JS
 
-If CSS or a native element can do it, no JS. Native `<dialog>` + `showModal()` for modals (focus trap, ESC, top layer, `::backdrop` for free), CSS transitions with `@starting-style` and `allow-discrete` for open/close animation, `body:has(dialog:modal)` for scroll locking. Responsive behavior is pure CSS — components don't read `matchMedia`; any open/closed state they hold is inert on desktop because only the small-screen CSS reads it.
+If CSS or a native element can do it, no JS. Native `<dialog>` + `showModal()` for modals (focus trap, ESC, top layer, `::backdrop` for free), CSS transitions with `@starting-style` and `allow-discrete` for open/close animation, `body:has(dialog:modal)` for scroll locking. Responsive behavior is pure CSS — components don't read `matchMedia` for layout; any open/closed state they hold is inert on desktop because only the small-screen CSS reads it. One exception: JS-owned state that must not engage on desktop at all (e.g. the Editor gating its drawer auto-open and CloseWatcher wiring) may read `matchMedia` once as a guard. CSS stays the primary mechanism.
 
 ### One Breakpoint: 768px
 
