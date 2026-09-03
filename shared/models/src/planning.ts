@@ -179,7 +179,7 @@ export class ItemModel extends SyncModel {
 }
 
 /**
- * Collection of top-level items - syncs with /api/projects/:projectSlug/items
+ * Collection of top-level items - syncs with /api/projects/:projectSlug/items?limit=1000
  *
  * @example
  * ```tsx
