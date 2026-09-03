@@ -2,7 +2,7 @@ import { useMemo, useEffect, useCallback, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { navigate, type RouteProps } from '@specboard/router';
-import { Page, Icon, ErrorBoundary, ResizablePanel } from '@specboard/ui';
+import { Page, Icon, Button, DrawerHandle, ErrorBoundary, ResizablePanel } from '@specboard/ui';
 import {
 	DocumentModel,
 	UserModel,
@@ -179,6 +179,48 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Restore file state
 	const [isRestoring, setIsRestoring] = useState(false);
 
+	// Small-screen panel takeovers. Inert on desktop: only the bp-small CSS in
+	// Editor.module.css reads the resulting classes.
+	const [filesOpen, setFilesOpen] = useState(false);
+	const [chatOpen, setChatOpen] = useState(false);
+
+	// One CloseWatcher per open takeover: Android back (and ESC) close the panel
+	// instead of leaving the page. Every path that opens these is gated to small
+	// screens (mobile-only buttons, the matchMedia check below), so the watchers
+	// never mount on desktop, where they would eat the first ESC. The typeof
+	// guard is the browser floor: latest-1 includes Safari 18.0–18.3, which
+	// lack CloseWatcher (shipped 18.4) — there the drawer still closes via the
+	// scrim and handle, it just loses back/ESC.
+	useEffect(() => {
+		if (!filesOpen || typeof CloseWatcher !== 'function') return;
+		const watcher = new CloseWatcher();
+		watcher.onclose = (): void => setFilesOpen(false);
+		return () => watcher.destroy();
+	}, [filesOpen]);
+
+	useEffect(() => {
+		if (!chatOpen || typeof CloseWatcher !== 'function') return;
+		const watcher = new CloseWatcher();
+		watcher.onclose = (): void => setChatOpen(false);
+		return () => watcher.destroy();
+	}, [chatOpen]);
+
+	// With no file open (and none stored to restore) the drawer IS the landing
+	// content. Fires on first visit and after a delete. Gated to small screens
+	// (bp-small) because on desktop the panel is an in-flow column — opening it
+	// there is invisible but mounts a CloseWatcher. Checking localStorage keeps
+	// the drawer from flashing over a file that is about to restore.
+	useEffect(() => {
+		if (!projectId || documentModel.filePath || loadSelectedFile(projectId)) return;
+		if (!globalThis.matchMedia('(width < 768px)').matches) return;
+		setFilesOpen(true);
+	}, [projectId, documentModel.filePath]);
+
+	// A file opening (select, restore, create, rename) collapses the drawer.
+	useEffect(() => {
+		if (documentModel.filePath) setFilesOpen(false);
+	}, [documentModel.filePath]);
+
 	// Resizable sidebars. We measure the flex container (`.body`) and feed each
 	// ResizablePanel a dynamic maxWidth so neither sidebar can crush the center
 	// editor below CENTER_MIN_WIDTH. The panels own their width + persistence;
@@ -330,6 +372,12 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Handle file selection from FileBrowser
 	const handleFileSelect = useCallback(async (path: string) => {
 		setLoadError(null);
+
+		// Tapping the already-open file just dismisses the drawer.
+		if (path === documentModel.filePath) {
+			setFilesOpen(false);
+			return;
+		}
 
 		// Save current file before switching (if dirty)
 		if (documentModel.isDirty && documentModel.filePath) {
@@ -703,6 +751,11 @@ export function Editor(props: RouteProps): JSX.Element {
 				/>
 			)}
 			<div class={styles.body} ref={bodyRef}>
+				<div
+					class={`${styles.drawerScrim} ${filesOpen ? styles.scrimOpen : ''} mobile-only`}
+					onClick={() => setFilesOpen(false)}
+					aria-hidden="true"
+				/>
 				<ResizablePanel
 					storageKey="editor-file-browser"
 					handleSide="right"
@@ -711,7 +764,14 @@ export function Editor(props: RouteProps): JSX.Element {
 					maxWidth={fileBrowserMaxWidth}
 					onResize={setFileBrowserWidth}
 					label="Resize file browser"
+					class={`${styles.filesPanel} ${filesOpen ? styles.panelOpen : ''}`}
 				>
+					<DrawerHandle
+						open={filesOpen}
+						onToggle={() => setFilesOpen((open) => !open)}
+						openLabel="Browse files"
+						closeLabel="Close file drawer"
+					/>
 					<FileBrowser
 						projectSlug={projectSlug}
 						projectId={projectId}
@@ -751,6 +811,13 @@ export function Editor(props: RouteProps): JSX.Element {
 									>
 										Dismiss
 									</button>
+									<button
+										type="button"
+										class={`${styles.errorDismissButton} mobile-only`}
+										onClick={() => setFilesOpen(true)}
+									>
+										Browse files
+									</button>
 								</div>
 							</div>
 						</div>
@@ -785,6 +852,13 @@ export function Editor(props: RouteProps): JSX.Element {
 										<Icon name="rotate-ccw" class="size-sm" />
 										{isRestoring ? 'Restoring...' : 'Restore File'}
 									</button>
+									<button
+										type="button"
+										class={`${styles.errorDismissButton} mobile-only`}
+										onClick={() => setFilesOpen(true)}
+									>
+										Browse files
+									</button>
 								</div>
 							</div>
 						</div>
@@ -801,6 +875,7 @@ export function Editor(props: RouteProps): JSX.Element {
 								onCreateEpic={handleCreateEpic}
 								onViewEpic={handleViewEpic}
 								onLinkEpic={() => setEpicPickerOpen(true)}
+								onToggleChat={() => setChatOpen(true)}
 							/>
 							<div class={styles.mainContent}>
 								<div class={styles.editorArea}>
@@ -822,6 +897,7 @@ export function Editor(props: RouteProps): JSX.Element {
 									maxWidth={chatMaxWidth}
 									onResize={setChatWidth}
 									label="Resize chat sidebar"
+									class={`${styles.chatPanel} ${chatOpen ? styles.panelOpen : ''}`}
 								>
 									<ErrorBoundary>
 										<ChatSidebar
@@ -829,6 +905,7 @@ export function Editor(props: RouteProps): JSX.Element {
 											documentPath={documentModel.filePath}
 											projectSlug={projectSlug}
 											onApplyEdit={handleApplyEdit}
+											onClose={() => setChatOpen(false)}
 										/>
 									</ErrorBoundary>
 								</ResizablePanel>
@@ -841,6 +918,9 @@ export function Editor(props: RouteProps): JSX.Element {
 								<div class={styles.emptyStateTitle}>No file selected</div>
 								<div class={styles.emptyStateHint}>
 									Select a markdown file from the sidebar to start editing
+								</div>
+								<div class={`${styles.emptyStateActions} mobile-only`}>
+									<Button onClick={() => setFilesOpen(true)}>Browse files</Button>
 								</div>
 							</div>
 						</div>

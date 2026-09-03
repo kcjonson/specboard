@@ -19,3 +19,15 @@
 .mark .word {
 	fill: var(--color-text);
 }
+
+@media (width < 768px) { /* bp-small: lockup -> mark-only form */
+	.lockupSvg {
+		display: none;
+	}
+}
+
+@media (width >= 768px) { /* bp-small (desktop side) */
+	.markOnly {
+		display: none;
+	}
+}

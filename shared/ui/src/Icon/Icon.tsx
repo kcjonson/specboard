@@ -31,7 +31,9 @@ export type IconName =
 	| 'key'
 	| 'bug'
 	| 'wrench'
-	| 'alert-circle';
+	| 'alert-circle'
+	| 'menu'
+	| 'search';
 
 export interface IconProps {
 	/** The icon to display */
@@ -223,6 +225,19 @@ const icons: Record<IconName, JSX.Element> = {
 			<circle cx="12" cy="12" r="10" />
 			<line x1="12" y1="8" x2="12" y2="12" />
 			<line x1="12" y1="16" x2="12.01" y2="16" />
+		</>
+	),
+	menu: (
+		<>
+			<line x1="3" y1="6" x2="21" y2="6" />
+			<line x1="3" y1="12" x2="21" y2="12" />
+			<line x1="3" y1="18" x2="21" y2="18" />
+		</>
+	),
+	search: (
+		<>
+			<circle cx="11" cy="11" r="7" />
+			<line x1="16.5" y1="16.5" x2="21" y2="21" />
 		</>
 	),
 };

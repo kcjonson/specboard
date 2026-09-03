@@ -5,8 +5,8 @@
 	border-radius: var(--radius-md);
 	border: 1px solid var(--color-border);
 	overflow: hidden;
-	/* Max height is 50% of viewport */
-	max-height: 50vh;
+	/* Max height is 50% of viewport (dvh: mobile toolbars don't count) */
+	max-height: 50dvh;
 }
 
 .container:focus-within {
@@ -18,6 +18,9 @@
 .editorWrapper {
 	flex: 1;
 	overflow-y: auto;
+	/* Slate's editable can report a few px more than the wrapper; without this the
+	   description shows a permanent horizontal scrollbar in narrow drawers. */
+	overflow-x: hidden;
 	min-height: 160px;
 }
 

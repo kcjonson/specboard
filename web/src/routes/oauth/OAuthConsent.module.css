@@ -1,5 +1,5 @@
 .container {
-	min-height: 100vh;
+	min-height: 100dvh;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -168,4 +168,15 @@
 .denyButton:disabled {
 	opacity: 0.6;
 	cursor: not-allowed;
+}
+
+@media (width < 768px) { /* bp-small: stack full-width, approve on top */
+	.buttonGroup {
+		flex-direction: column-reverse;
+	}
+
+	.denyButton,
+	.approveButton {
+		flex: none;
+	}
 }

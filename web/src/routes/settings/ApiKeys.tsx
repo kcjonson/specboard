@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Button, Icon } from '@specboard/ui';
+import { Button, Dialog, DialogFooter, Icon, Select, Text } from '@specboard/ui';
 import { fetchClient } from '@specboard/fetch';
 import styles from './ApiKeys.module.css';
 
@@ -62,11 +62,6 @@ export function ApiKeys(): JSX.Element {
 	const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 	const [deleting, setDeleting] = useState<string | null>(null);
 
-	// Dialog refs for focus management
-	const dialogRef = useRef<HTMLDivElement>(null);
-	const providerSelectRef = useRef<HTMLSelectElement>(null);
-	const previousFocusRef = useRef<HTMLElement | null>(null);
-
 	// Track mounted state for async operations
 	const mountedRef = useRef(true);
 	useEffect(() => {
@@ -86,50 +81,7 @@ export function ApiKeys(): JSX.Element {
 		setNewKeyName('');
 		setNewApiKey('');
 		setAddError(null);
-		previousFocusRef.current?.focus();
 	}, []);
-
-	// Focus trap and escape key handling for dialog
-	useEffect(() => {
-		if (!showAddDialog) return;
-
-		previousFocusRef.current = document.activeElement as HTMLElement;
-
-		const timer = setTimeout(() => {
-			providerSelectRef.current?.focus();
-		}, 0);
-
-		const handleKeyDown = (e: KeyboardEvent): void => {
-			if (e.key === 'Escape') {
-				e.preventDefault();
-				closeDialog();
-				return;
-			}
-
-			if (e.key === 'Tab' && dialogRef.current) {
-				const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(
-					'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
-				);
-				const firstElement = focusableElements[0];
-				const lastElement = focusableElements[focusableElements.length - 1];
-
-				if (e.shiftKey && document.activeElement === firstElement) {
-					e.preventDefault();
-					lastElement?.focus();
-				} else if (!e.shiftKey && document.activeElement === lastElement) {
-					e.preventDefault();
-					firstElement?.focus();
-				}
-			}
-		};
-
-		document.addEventListener('keydown', handleKeyDown);
-
-		return () => {
-			clearTimeout(timer);
-			document.removeEventListener('keydown', handleKeyDown);
-		};
-	}, [showAddDialog, closeDialog]);
 
 	// Load API keys and providers
 	useEffect(() => {
@@ -391,99 +343,73 @@ export function ApiKeys(): JSX.Element {
 			)}
 
 			{/* Add Key Dialog */}
-			{showAddDialog && (
-				<div
-					class={styles.overlay}
-					onClick={closeDialog}
-					role="presentation"
-				>
-					<div
-						ref={dialogRef}
-						class={styles.dialog}
-						onClick={(e) => e.stopPropagation()}
-						role="dialog"
-						aria-modal="true"
-						aria-labelledby="add-key-dialog-title"
+			<Dialog
+				open={showAddDialog}
+				onClose={closeDialog}
+				title="Add API Key"
+				maxWidth="sm"
+			>
+				{addError && (
+					<div class={styles.dialogError}>{addError}</div>
+				)}
+
+				<Select
+					id="provider"
+					label="Provider"
+					value={selectedProvider}
+					options={providersWithoutKeys.map(provider => ({
+						value: provider.name,
+						label: provider.displayName,
+					}))}
+					onChange={(e) => setSelectedProvider((e.target as HTMLSelectElement).value)}
+				/>
+				{currentProviderConfig && (
+					<p class={styles.hint}>
+						{currentProviderConfig.description}. Get your API key from{' '}
+						<a
+							href={currentProviderConfig.consoleUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							class={styles.link}
+						>
+							{new URL(currentProviderConfig.consoleUrl).hostname}
+						</a>
+					</p>
+				)}
+
+				<Text
+					id="key-name"
+					label="Key Name"
+					placeholder="e.g., Personal Key"
+					value={newKeyName}
+					onInput={(e) => setNewKeyName((e.target as HTMLInputElement).value)}
+				/>
+
+				<Text
+					id="api-key"
+					type="password"
+					label="API Key"
+					placeholder={currentProviderConfig?.keyPlaceholder || 'Enter API key'}
+					value={newApiKey}
+					onInput={(e) => setNewApiKey((e.target as HTMLInputElement).value)}
+				/>
+
+				<DialogFooter>
+					<Button
+						class="secondary"
+						onClick={closeDialog}
+						disabled={validating}
 					>
-						<h3 id="add-key-dialog-title" class={styles.dialogTitle}>Add API Key</h3>
-
-						{addError && (
-							<div class={styles.dialogError}>{addError}</div>
-						)}
-
-						<div class={styles.formField}>
-							<label class={styles.label} for="provider">Provider</label>
-							<select
-								ref={providerSelectRef}
-								id="provider"
-								class={styles.input}
-								value={selectedProvider}
-								onChange={(e) => setSelectedProvider((e.target as HTMLSelectElement).value)}
-							>
-								{providers.filter(p => !p.hasKey).map(provider => (
-									<option key={provider.name} value={provider.name}>
-										{provider.displayName}
-									</option>
-								))}
-							</select>
-							{currentProviderConfig && (
-								<p class={styles.hint}>
-									{currentProviderConfig.description}. Get your API key from{' '}
-									<a
-										href={currentProviderConfig.consoleUrl}
-										target="_blank"
-										rel="noopener noreferrer"
-										class={styles.link}
-									>
-										{new URL(currentProviderConfig.consoleUrl).hostname}
-									</a>
-								</p>
-							)}
-						</div>
-
-						<div class={styles.formField}>
-							<label class={styles.label} for="key-name">Key Name</label>
-							<input
-								id="key-name"
-								type="text"
-								class={styles.input}
-								placeholder="e.g., Personal Key"
-								value={newKeyName}
-								onInput={(e) => setNewKeyName((e.target as HTMLInputElement).value)}
-							/>
-						</div>
-
-						<div class={styles.formField}>
-							<label class={styles.label} for="api-key">API Key</label>
-							<input
-								id="api-key"
-								type="password"
-								class={styles.input}
-								placeholder={currentProviderConfig?.keyPlaceholder || 'Enter API key'}
-								value={newApiKey}
-								onInput={(e) => setNewApiKey((e.target as HTMLInputElement).value)}
-							/>
-						</div>
-
-						<div class={styles.dialogActions}>
-							<Button
-								onClick={closeDialog}
-								class={styles.ghostButton}
-								disabled={validating}
-							>
-								Cancel
-							</Button>
-							<Button
-								onClick={handleValidate}
-								class={styles.primaryButton}
-								disabled={!selectedProvider || !newKeyName.trim() || !newApiKey.trim() || validating}
-							>
-								{validating ? 'Validating...' : 'Add Key'}
-							</Button>
-						</div>
-					</div>
-				</div>
-			)}
+						Cancel
+					</Button>
+					<Button
+						onClick={handleValidate}
+						disabled={!selectedProvider || !newKeyName.trim() || !newApiKey.trim() || validating}
+					>
+						{validating ? 'Validating...' : 'Add Key'}
+					</Button>
+				</DialogFooter>
+			</Dialog>
 		</div>
 	);
 }

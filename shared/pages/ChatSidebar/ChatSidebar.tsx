@@ -14,6 +14,8 @@ interface ChatSidebarProps {
 	documentPath?: string;
 	projectSlug?: string;
 	onApplyEdit?: (newMarkdown: string) => void;
+	/** When provided, renders a close button in the header (small screens only) */
+	onClose?: () => void;
 }
 
 export function ChatSidebar({
@@ -21,6 +23,7 @@ export function ChatSidebar({
 	documentPath,
 	projectSlug,
 	onApplyEdit,
+	onClose,
 }: ChatSidebarProps): JSX.Element {
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -65,6 +68,16 @@ export function ChatSidebar({
 					<Icon name="comment" class="size-md" />
 					AI Chat
 				</h3>
+				{onClose && (
+					<button
+						type="button"
+						class="icon mobile-only"
+						onClick={onClose}
+						aria-label="Close chat"
+					>
+						<Icon name="x-mark" />
+					</button>
+				)}
 			</div>
 
 			{/* Model selector */}

@@ -11,9 +11,10 @@
 	font-size: var(--text-sm);
 }
 
-/* Constrain the embedded FileBrowser to a scrollable region inside the dialog. */
+/* Constrain the embedded FileBrowser to a scrollable region inside the dialog.
+   The dvh bound keeps the takeover + open keyboard from pushing it off screen. */
 .browser {
-	height: 360px;
+	height: min(360px, 50dvh);
 	overflow: auto;
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);

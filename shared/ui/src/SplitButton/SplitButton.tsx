@@ -77,7 +77,6 @@ export function SplitButton({
 	}, []);
 
 	const containerClasses = [styles.container, className].filter(Boolean).join(' ');
-	const mainLabel = prefix ? `${prefix} ${defaultOption?.label ?? ''}` : (defaultOption?.label ?? '');
 
 	return (
 		<div class={containerClasses} ref={containerRef}>
@@ -87,7 +86,12 @@ export function SplitButton({
 				onClick={handleMainClick}
 				disabled={disabled}
 			>
-				{mainLabel}
+				{prefix ? (
+					<>
+						{prefix}
+						<span class={styles.optionWord}>{defaultOption?.label ?? ''}</span>
+					</>
+				) : (defaultOption?.label ?? '')}
 			</button>
 			<button
 				type="button"

@@ -1,0 +1,12 @@
+/**
+ * Dialog element styles
+ *
+ * Native <dialog> handles its own layering (top layer) and focus; the one
+ * global concern is locking body scroll while any modal dialog is open.
+ * The SPA shell is already overflow:hidden — this covers SSG pages and any
+ * future surface for free.
+ */
+
+body:has(dialog:modal) {
+	overflow: hidden;
+}

@@ -75,6 +75,17 @@ button.danger:hover:not(:disabled) {
 	color: var(--color-text-inverse);
 }
 
+/* Borderless destructive action (e.g. Delete in a dialog footer). */
+button.text.danger {
+	color: var(--color-error);
+	border: none;
+}
+
+button.text.danger:hover:not(:disabled) {
+	background: var(--color-error-bg);
+	color: var(--color-error);
+}
+
 button.icon {
 	background: none;
 	border: none;
@@ -94,4 +105,31 @@ button.icon.size-sm {
 
 button.icon.size-lg {
 	font-size: var(--text-2xl);
+}
+
+@media (pointer: coarse) {
+	button {
+		min-height: var(--touch-target);
+	}
+
+	/* size-sm is the sanctioned dense size for utility buttons: visually small,
+	   with the ::after growing the hit box back to 44px tall (the UserMenu /
+	   DrawerHandle pattern). */
+	button.size-sm {
+		position: relative;
+		min-height: 32px;
+	}
+
+	button.size-sm::after {
+		content: '';
+		position: absolute;
+		/* -7px, not -6px: inset resolves against the padding box, inside the 1px border. */
+		inset: -7px 0;
+	}
+
+	/* After size-sm so icon.size-sm keeps the full square target. */
+	button.icon {
+		min-height: var(--touch-target);
+		min-width: var(--touch-target);
+	}
 }

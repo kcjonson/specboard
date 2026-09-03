@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Button, Dialog, Icon } from '@specboard/ui';
+import { Button, Dialog, DialogFooter, Icon } from '@specboard/ui';
 import type { IconName } from '@specboard/ui';
 import type { GitStatusModel, ChangedFile } from '@specboard/models';
 import styles from './CommitDialog.module.css';
@@ -126,7 +126,7 @@ export function CommitDialog({
 					</span>
 				</div>
 
-				<div class={styles.actions}>
+				<DialogFooter>
 					<Button onClick={onClose} class="secondary" type="button">
 						Cancel
 					</Button>
@@ -137,7 +137,7 @@ export function CommitDialog({
 					>
 						{gitStatus.committing ? 'Committing...' : 'Commit'}
 					</Button>
-				</div>
+				</DialogFooter>
 			</form>
 		</Dialog>
 	);

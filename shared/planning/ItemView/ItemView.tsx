@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { useModel, ItemModel, type ChildModel, type Status, type ItemStatus, type SubStatus, type ItemType, type ItemOrigin, type ItemWorker } from '@specboard/models';
-import { Button, Select, Text } from '@specboard/ui';
+import { Button, DialogFooter, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { SpecsSection } from '../SpecsSection/SpecsSection';
@@ -433,8 +433,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 				<SpecsSection projectSlug={item.projectSlug} itemKey={item.key} />
 			)}
 
-			{/* Footer */}
-			<div class={styles.footer}>
+			<DialogFooter divider>
 				{isNew ? (
 					<Button onClick={handleCreate} disabled={!titleDraft.trim()}>
 						Create {typeLabel}
@@ -444,7 +443,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 						Delete {typeLabel}
 					</Button>
 				)}
-			</div>
+			</DialogFooter>
 		</div>
 	);
 }

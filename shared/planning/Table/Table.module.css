@@ -13,23 +13,6 @@
 	margin-bottom: var(--space-3);
 }
 
-.actionButton {
-	appearance: none;
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-md);
-	background: var(--color-surface);
-	color: var(--color-text);
-	font-family: inherit;
-	font-size: var(--text-sm);
-	padding: var(--space-1) var(--space-3);
-	cursor: pointer;
-	transition: background var(--transition-fast);
-}
-
-.actionButton:hover {
-	background: var(--color-surface-hover);
-}
-
 /* Owns the view's scrolling: rows scroll under the pinned column header, and
    overflow:auto still clips them to the rounded border. */
 .table {
@@ -42,8 +25,10 @@
 
 /* Shared grid template for every row (header, group header, epic, task). */
 .row {
+	/* One status track width for both templates, so desktop and mobile can't drift. */
+	--col-status: 110px;
 	display: grid;
-	grid-template-columns: minmax(240px, 1fr) 70px 140px 80px 140px;
+	grid-template-columns: minmax(240px, 1fr) 70px var(--col-status) 80px 140px;
 	align-items: center;
 	gap: var(--space-3);
 	padding: var(--space-2) var(--space-3);
@@ -246,4 +231,16 @@
 	color: var(--color-text-muted);
 	white-space: nowrap;
 	margin-right: 8px;
+}
+
+@media (width < 768px) { /* bp-small: Title + Status only; the rest lives in the item takeover */
+	.row {
+		grid-template-columns: minmax(0, 1fr) var(--col-status);
+	}
+
+	.colType,
+	.colTasks,
+	.colAssignee {
+		display: none;
+	}
 }

@@ -1,46 +1,5 @@
-.content {
-	padding: var(--space-2) 0;
-}
-
 .message {
-	margin: 0 0 var(--space-4);
+	margin: 0;
 	color: var(--color-text);
 	line-height: 1.5;
-}
-
-.actions {
-	display: flex;
-	gap: var(--space-2);
-	justify-content: flex-end;
-}
-
-.restoreButton {
-	padding: var(--space-2) var(--space-4);
-	font-size: var(--text-sm);
-	font-weight: var(--font-medium);
-	color: white;
-	background: var(--color-primary);
-	border: none;
-	border-radius: var(--radius-md);
-	cursor: pointer;
-}
-
-.restoreButton:hover {
-	background: var(--color-primary-hover, var(--color-primary));
-}
-
-.discardButton {
-	padding: var(--space-2) var(--space-4);
-	font-size: var(--text-sm);
-	font-weight: var(--font-medium);
-	color: var(--color-text-muted);
-	background: transparent;
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-md);
-	cursor: pointer;
-}
-
-.discardButton:hover {
-	background: var(--color-background-alt, #f5f5f5);
-	color: var(--color-text);
 }

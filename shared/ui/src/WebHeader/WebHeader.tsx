@@ -5,6 +5,7 @@ import { fetchClient } from '@specboard/fetch';
 import { useModel, UserModel } from '@specboard/models';
 import { UserMenu } from '../UserMenu/UserMenu';
 import { Logo } from '../Logo/Logo';
+import { Icon } from '../Icon/Icon';
 import styles from './WebHeader.module.css';
 
 /** Navigation tab labels - use these for activeTab prop */
@@ -82,10 +83,18 @@ export function WebHeader({
 
 	const projectName = fetchedName;
 
+	// Router navigation swaps the page under the popover but the popover element
+	// survives the re-render, so close it explicitly when a link is chosen.
+	const handleMenuNavClick = (e: MouseEvent): void => {
+		if ((e.target as HTMLElement).closest('a')) {
+			(e.currentTarget as HTMLElement).hidePopover();
+		}
+	};
+
 	return (
 		<header class={`${styles.header} ${className || ''}`}>
 			<div class={styles.left}>
-				<Logo size={16} href="/projects" />
+				<Logo size={16} responsive href="/projects" />
 				<span class={styles.brandDivider} />
 				{projectSlug ? (
 					<>
@@ -115,6 +124,32 @@ export function WebHeader({
 			</div>
 			<div class={styles.actions}>
 				{actions}
+				{projectSlug && (
+					<>
+						<button
+							type="button"
+							class={`icon mobile-only ${styles.menuButton}`}
+							popovertarget="sb-nav-menu"
+							aria-label="Project menu"
+						>
+							<Icon name="menu" />
+						</button>
+						<div popover="auto" id="sb-nav-menu" class={styles.menuPopover} onClick={handleMenuNavClick}>
+							{projectName && <div class={styles.menuProject}>{projectName}</div>}
+							<div class={styles.menuDivider} />
+							{NAV_TABS.map((tab) => (
+								<a
+									key={tab.label}
+									href={`/projects/${projectSlug}/${tab.path}`}
+									class={`${styles.menuItem} ${activeTab === tab.label ? styles.menuItemActive : ''}`}
+									aria-current={activeTab === tab.label ? 'page' : undefined}
+								>
+									{tab.label}
+								</a>
+							))}
+						</div>
+					</>
+				)}
 				{user.email && (
 					<UserMenu
 						displayName={[user.first_name, user.last_name].filter(Boolean).join(' ') || user.email.split('@')[0] || user.email}

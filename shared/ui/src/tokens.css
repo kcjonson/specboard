@@ -28,6 +28,9 @@
 	--color-primary: #3b82f6;
 	--color-primary-hover: #2563eb;
 
+	/* Colors - Interactive (subtle fills) */
+	--color-primary-subtle: color-mix(in srgb, var(--color-primary) 10%, white);
+
 	/* Colors - Accent (warm highlight) */
 	--color-accent: #f59e0b;
 	--color-accent-hover: #d97706;
@@ -53,6 +56,7 @@
 	--space-5: 20px;
 	--space-6: 24px;
 	--space-8: 32px;
+	--space-12: 48px;
 
 	/* Border Radius */
 	--radius-sm: 4px;
@@ -62,6 +66,7 @@
 
 	/* Shadows */
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--shadow-md: 0 4px 8px rgba(0, 0, 0, 0.1);
 	--shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1);
 	--shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.15);
 	--shadow-card-dragging: 0 8px 24px rgba(0, 0, 0, 0.2);
@@ -78,6 +83,7 @@
 	--text-lg: 18px;
 	--text-xl: 20px;
 	--text-2xl: 24px;
+	--text-3xl: 30px;
 
 	/* Font Weights */
 	--font-normal: 400;
@@ -94,11 +100,26 @@
 	--transition-fast: 150ms ease;
 	--transition-normal: 250ms ease;
 
+	/*
+	 * Breakpoint: 768px ("bp-small"). Custom properties can't appear in media
+	 * queries, so the value is written literally as `@media (width < 768px)` with
+	 * the marker comment `bp-small` at every site — grep "bp-small" to find them all.
+	 *
+	 * Layering: native <dialog>s render in the browser top layer, ABOVE all
+	 * z-index values here — modal dialogs need no z token. --z-modal is the layer
+	 * for non-dialog full-screen takeovers (panel/drawer overlays on small
+	 * screens). --z-dropdown stays below --z-modal so in-page chrome never covers
+	 * a takeover.
+	 */
+
 	/* Z-Index */
 	--z-resize-handle: 40;
 	--z-dropdown: 50;
 	--z-modal: 100;
 	--z-tooltip: 150;
+
+	/* Touch */
+	--touch-target: 44px; /* minimum hit target on coarse pointers */
 
 	/* Layout */
 	--header-height: 57px;
@@ -131,6 +152,9 @@
 		--color-primary: #60a5fa;
 		--color-primary-hover: #3b82f6;
 
+		/* Colors - Interactive (subtle fills) */
+		--color-primary-subtle: color-mix(in srgb, var(--color-primary) 15%, black);
+
 		/* Colors - Accent (warm highlight) */
 		--color-accent: #fbbf24;
 		--color-accent-hover: #f59e0b;
@@ -150,9 +174,19 @@
 
 		/* Shadows - adjusted for dark backgrounds */
 		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+		--shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
 		--shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
 		--shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.5);
 		--shadow-card-dragging: 0 8px 24px rgba(0, 0, 0, 0.6);
 		--shadow-dialog: 0 20px 40px rgba(0, 0, 0, 0.5);
 	}
+}
+
+/* ResizablePanel sets --panel-width inline while dragging; registering it as a
+   non-inherited length keeps each drag frame's invalidation scoped to the panel
+   instead of recomputing every descendant's custom properties. */
+@property --panel-width {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
 }

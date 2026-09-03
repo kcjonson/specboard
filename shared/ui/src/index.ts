@@ -23,6 +23,10 @@ export type { ButtonProps } from './Button/Button';
 export { Dialog } from './Dialog/Dialog';
 export type { DialogProps } from './Dialog/Dialog';
 
+// DialogFooter - the one action-row pattern (dialogs, drawers, detail footers)
+export { DialogFooter } from './DialogFooter/DialogFooter';
+export type { DialogFooterProps } from './DialogFooter/DialogFooter';
+
 // Form components (Text, Select, Textarea with label/error support)
 export { Text } from './form/Text';
 export type { TextProps } from './form/Text';
@@ -93,6 +97,10 @@ export { ErrorBoundary, withErrorBoundary } from './ErrorBoundary/ErrorBoundary'
 // ResizablePanel - drag-to-resize panel with persisted width (sidebars, drawers)
 export { ResizablePanel } from './ResizablePanel/ResizablePanel';
 export type { ResizablePanelProps } from './ResizablePanel/ResizablePanel';
+
+// DrawerHandle - edge handle for small-screen drawers
+export { DrawerHandle } from './DrawerHandle/DrawerHandle';
+export type { DrawerHandleProps } from './DrawerHandle/DrawerHandle';
 
 // Logo - brand logomark and lockup (docs/brand.md)
 export { Logo, LogoMark } from './Logo/Logo';

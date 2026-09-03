@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Dialog, Button, Text } from '@specboard/ui';
+import { Dialog, DialogFooter, Button, Text } from '@specboard/ui';
 import { fetchClient } from '@specboard/fetch';
 import styles from './ChangePasswordDialog.module.css';
 
@@ -100,6 +100,7 @@ export function SetPasswordDialog({ open, onClose, userId, userName }: SetPasswo
 						value={newPassword}
 						onInput={(e) => setNewPassword((e.target as HTMLInputElement).value)}
 						autoComplete="new-password"
+						compact
 						required
 					/>
 					<span class={styles.hint}>
@@ -117,18 +118,19 @@ export function SetPasswordDialog({ open, onClose, userId, userName }: SetPasswo
 						value={confirmPassword}
 						onInput={(e) => setConfirmPassword((e.target as HTMLInputElement).value)}
 						autoComplete="new-password"
+						compact
 						required
 					/>
 				</div>
 
-				<div class={styles.actions}>
+				<DialogFooter>
 					<Button type="button" variant="secondary" onClick={handleClose}>
 						Cancel
 					</Button>
 					<Button type="submit" disabled={!isValid || saving}>
 						{saving ? 'Setting...' : 'Set Password'}
 					</Button>
-				</div>
+				</DialogFooter>
 			</form>
 		</Dialog>
 	);

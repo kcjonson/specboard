@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Dialog, Button, Icon } from '@specboard/ui';
+import { Dialog, DialogFooter, Button, Icon } from '@specboard/ui';
 import {
 	GitHubConnectionModel,
 	GitHubReposCollection,
@@ -204,7 +204,7 @@ export function ProjectDialog({
 						Are you sure you want to delete "{project?.name}"? This will also delete all epics and tasks in this project.
 					</p>
 					<p class={styles.secondaryText}>This action cannot be undone.</p>
-					<div class={styles.actions}>
+					<DialogFooter>
 						<Button
 							class="text"
 							onClick={() => setShowDeleteConfirm(false)}
@@ -219,7 +219,7 @@ export function ProjectDialog({
 						>
 							{deleting ? 'Deleting...' : 'Delete Project'}
 						</Button>
-					</div>
+					</DialogFooter>
 				</div>
 			</Dialog>
 		);
@@ -482,28 +482,27 @@ export function ProjectDialog({
 					</div>
 				)}
 
-				<div class={styles.footer}>
-					{isEditMode && onDelete && (
+				<DialogFooter
+					start={isEditMode && onDelete && (
 						<Button
 							type="button"
-							class={`text ${styles.deleteButton}`}
+							class="text danger"
 							onClick={() => setShowDeleteConfirm(true)}
 						>
 							Delete
 						</Button>
 					)}
-					<div class={styles.actions}>
-						<Button type="button" class="text" onClick={onClose}>
-							Cancel
-						</Button>
-						<Button
-							type="submit"
-							disabled={!canSubmit}
-						>
-							{saving ? 'Saving...' : isEditMode ? 'Save' : 'Create'}
-						</Button>
-					</div>
-				</div>
+				>
+					<Button type="button" class="text" onClick={onClose}>
+						Cancel
+					</Button>
+					<Button
+						type="submit"
+						disabled={!canSubmit}
+					>
+						{saving ? 'Saving...' : isEditMode ? 'Save' : 'Create'}
+					</Button>
+				</DialogFooter>
 			</form>
 		</Dialog>
 	);

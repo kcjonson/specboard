@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { Dialog, Button } from '@specboard/ui';
+import { Dialog, DialogFooter, Button } from '@specboard/ui';
 import styles from './RecoveryDialog.module.css';
 
 export interface RecoveryDialogProps {
@@ -24,20 +24,18 @@ export function RecoveryDialog({
 			onClose={onDiscard}
 			maxWidth="sm"
 		>
-			<div class={styles.content}>
-				<p class={styles.message}>
-					Unsaved changes were found for <strong>{fileName}</strong>.
-					Would you like to restore them?
-				</p>
-				<div class={styles.actions}>
-					<Button onClick={onRestore} class={styles.restoreButton}>
-						Restore
-					</Button>
-					<Button onClick={onDiscard} class={styles.discardButton}>
-						Discard
-					</Button>
-				</div>
-			</div>
+			<p class={styles.message}>
+				Unsaved changes were found for <strong>{fileName}</strong>.
+				Would you like to restore them?
+			</p>
+			<DialogFooter>
+				<Button onClick={onDiscard} class="secondary">
+					Discard
+				</Button>
+				<Button onClick={onRestore}>
+					Restore
+				</Button>
+			</DialogFooter>
 		</Dialog>
 	);
 }

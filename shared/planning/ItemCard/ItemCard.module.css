@@ -83,6 +83,12 @@
 	opacity: 1;
 }
 
+@media (hover: none) { /* touch: the hover reveal never fires — always visible */
+	.openButton {
+		opacity: 1;
+	}
+}
+
 .titleRow {
 	display: flex;
 	align-items: center;

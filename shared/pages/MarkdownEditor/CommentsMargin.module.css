@@ -6,6 +6,12 @@
 	padding-right: var(--space-4);
 }
 
+@media (width < 768px) { /* bp-small: commenting is desktop-only for now */
+	.container {
+		display: none;
+	}
+}
+
 /* New comment input container */
 .newCommentContainer {
 	position: absolute;

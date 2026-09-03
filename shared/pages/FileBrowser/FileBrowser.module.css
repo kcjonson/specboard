@@ -173,7 +173,7 @@
 
 .removeButton:hover,
 .deleteButton:hover {
-	background: var(--color-error-subtle);
+	background: var(--color-error-bg);
 	color: var(--color-error);
 }
 
@@ -192,8 +192,42 @@
 }
 
 .treeItem:hover .fileActions .deleteButton,
-.folderItem:hover .folderActions .deleteButton {
+.folderItem:hover .folderActions .deleteButton,
+.treeItem:focus-within .fileActions .deleteButton,
+.folderItem:focus-within .folderActions .deleteButton {
 	display: flex;
+}
+
+.folderItem:focus-within .folderActions {
+	opacity: 1;
+}
+
+@media (hover: none) { /* touch: hover reveal never fires — always visible */
+	.fileActions .deleteButton,
+	.folderActions .deleteButton {
+		display: flex;
+	}
+
+	.folderActions {
+		opacity: 1;
+	}
+}
+
+@media (pointer: coarse) {
+	/* Tappable rows without inflating every glyph in the dense tree. */
+	.treeItem {
+		min-height: var(--touch-target);
+	}
+
+	/* The per-item actions are ~20px glyphs next to a destructive delete; give
+	   them a real tap footprint. Height is capped by the row, so width does the
+	   separating. */
+	.addFileButton,
+	.removeButton,
+	.deleteButton {
+		min-width: var(--touch-target);
+		min-height: var(--touch-target);
+	}
 }
 
 /* Hide status dot when showing delete button */
@@ -227,7 +261,7 @@
 .error {
 	padding: var(--space-2) var(--space-3);
 	margin: var(--space-2);
-	background: var(--color-error-subtle);
+	background: var(--color-error-bg);
 	color: var(--color-error);
 	font-size: var(--text-sm);
 	border-radius: var(--radius-sm);

@@ -26,6 +26,12 @@
 	position: relative;
 }
 
+/* Fill the wrapper so the arrow (anchored to the wrapper's right edge) hugs the
+   control even when a stretch container makes the wrapper wider than the select. */
+.selectWrapper select {
+	width: 100%;
+}
+
 .selectWrapper::after {
 	content: '';
 	position: absolute;

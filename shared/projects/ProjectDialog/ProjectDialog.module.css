@@ -39,27 +39,6 @@
 	min-height: 80px;
 }
 
-.footer {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	margin-top: var(--space-2);
-}
-
-.actions {
-	display: flex;
-	gap: var(--space-3);
-	margin-left: auto;
-}
-
-.deleteButton {
-	color: var(--color-error);
-}
-
-.deleteButton:hover {
-	background: var(--color-error-bg);
-}
-
 .labelText {
 	font-weight: 500;
 }

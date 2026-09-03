@@ -2,10 +2,10 @@
  * App shell: pinned to the viewport so the header never scrolls away and each
  * column owns its own scrolling. Inner scroll containers (a table body, a
  * detail drawer) only work if this chain has a definite height, so the page is
- * height-bounded rather than min-height:100vh.
+ * height-bounded rather than min-height:100dvh.
  */
 .page {
-	height: 100vh;
+	height: 100dvh;
 	display: flex;
 	flex-direction: column;
 	background: var(--color-background);

@@ -48,3 +48,15 @@ input.error {
 input.error:focus {
 	border-color: var(--color-error);
 }
+
+@media (width < 768px) { /* bp-small: <16px inputs make iOS zoom the page on focus */
+	input[type="text"],
+	input[type="email"],
+	input[type="password"],
+	input[type="search"],
+	input[type="url"],
+	input[type="tel"],
+	input[type="number"] {
+		font-size: var(--text-base);
+	}
+}

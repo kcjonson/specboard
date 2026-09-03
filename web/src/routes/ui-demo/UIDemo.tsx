@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import {
 	Button,
 	Dialog,
+	DialogFooter,
 	Text,
 	Textarea,
 	Select,
@@ -133,10 +134,10 @@ export function UIDemo(): JSX.Element {
 						title="Example Dialog"
 					>
 						<p>This is the dialog content. Press Escape or click outside to close.</p>
-						<div class={styles.dialogActions}>
+						<DialogFooter>
 							<Button class="text" onClick={() => setDialogOpen(false)}>Cancel</Button>
 							<Button onClick={() => setDialogOpen(false)}>Confirm</Button>
-						</div>
+						</DialogFooter>
 					</Dialog>
 				</section>
 

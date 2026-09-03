@@ -476,7 +476,9 @@ export function FileBrowser({
 
 		return (
 			<div class={`${styles.container} ${className || ''}`}>
-				<div class={styles.header}>Files</div>
+				<div class={styles.header}>
+					<span>Files</span>
+				</div>
 				<div class={styles.emptyState}>
 					{isSyncing ? (
 						<>

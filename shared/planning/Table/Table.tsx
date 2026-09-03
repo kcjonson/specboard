@@ -100,10 +100,10 @@ export function Table({
 	return (
 		<div class={styles.wrapper}>
 			<div class={styles.actions}>
-				<button type="button" class={styles.actionButton} onClick={expandAll}>
+				<button type="button" class="secondary size-sm" onClick={expandAll}>
 					Expand all
 				</button>
-				<button type="button" class={styles.actionButton} onClick={collapseAll}>
+				<button type="button" class="secondary size-sm" onClick={collapseAll}>
 					Collapse all
 				</button>
 			</div>

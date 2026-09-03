@@ -32,12 +32,14 @@ export interface ToolbarGroupProps {
 	children: ComponentChildren;
 	/** Accessible label for the group */
 	ariaLabel?: string;
+	/** Hide below the small-screen breakpoint */
+	desktopOnly?: boolean;
 }
 
 /** Group of related toolbar buttons */
-export function ToolbarGroup({ children, ariaLabel }: ToolbarGroupProps): JSX.Element {
+export function ToolbarGroup({ children, ariaLabel, desktopOnly = false }: ToolbarGroupProps): JSX.Element {
 	return (
-		<div class={styles.group} role="group" aria-label={ariaLabel}>
+		<div class={`${styles.group} ${desktopOnly ? styles.desktopOnly : ''}`} role="group" aria-label={ariaLabel}>
 			{children}
 		</div>
 	);
@@ -46,11 +48,13 @@ export function ToolbarGroup({ children, ariaLabel }: ToolbarGroupProps): JSX.El
 export interface ToolbarSeparatorProps {
 	/** Compact size variant */
 	compact?: boolean;
+	/** Hide below the small-screen breakpoint */
+	desktopOnly?: boolean;
 }
 
 /** Visual separator between button groups */
-export function ToolbarSeparator({ compact = false }: ToolbarSeparatorProps): JSX.Element {
-	return <div class={`${styles.separator} ${compact ? styles.compact : ''}`} />;
+export function ToolbarSeparator({ compact = false, desktopOnly = false }: ToolbarSeparatorProps): JSX.Element {
+	return <div class={`${styles.separator} ${compact ? styles.compact : ''} ${desktopOnly ? styles.desktopOnly : ''}`} />;
 }
 
 export interface ToolbarButtonProps {

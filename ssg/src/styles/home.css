@@ -883,6 +883,21 @@
 }
 
 @media (max-width: 480px) {
+	/* Keep the header on one line: neither the Sign In link nor the Request
+	   Access button may wrap internally. */
+	.home-header {
+		padding: 1.125rem 1rem;
+	}
+
+	.home-nav {
+		gap: 1rem;
+	}
+
+	.home-nav-link,
+	.home-nav .btn-primary {
+		white-space: nowrap;
+	}
+
 	.hero-cta {
 		flex-direction: column;
 		align-self: stretch;

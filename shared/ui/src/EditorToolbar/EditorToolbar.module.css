@@ -68,3 +68,13 @@
 	background: var(--color-primary);
 	opacity: 0.9;
 }
+
+@media (width < 768px) { /* bp-small: too many buttons for one 375px row — wrap */
+	.toolbar {
+		flex-wrap: wrap;
+	}
+
+	.desktopOnly {
+		display: none;
+	}
+}
