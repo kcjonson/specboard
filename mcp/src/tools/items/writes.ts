@@ -65,14 +65,19 @@ function parseBlockers(raw: unknown[], project: ResolvedProject): BlockerInput[]
 	const inputs: BlockerInput[] = [];
 	for (const entry of raw) {
 		const b = entry as { item_key?: unknown; text?: unknown };
-		if (b.item_key != null) {
+		const hasKey = b.item_key != null;
+		const hasText = b.text != null;
+		if (hasKey === hasText) {
+			return err('Each blocker is exactly one of: { item_key } or { text }');
+		}
+		if (hasKey) {
 			const number = itemNumberInProject(b.item_key, project.key);
 			if (number === null) return badKey(b.item_key, project, 'blocker item_key');
 			inputs.push({ itemNumber: number });
 		} else if (typeof b.text === 'string' && b.text.trim().length > 0) {
 			inputs.push({ text: b.text.trim() });
 		} else {
-			return err('Each blocker is exactly one of: { item_key } or { text }');
+			return err('Blocker text must be a non-empty string');
 		}
 	}
 	return inputs;

@@ -28,17 +28,15 @@ export type ItemType = 'epic' | 'task' | 'bug';
 export type SpecType = 'product' | 'technical';
 
 /**
- * Who or what performed an action (creation provenance, blocker attribution,
- * worker episodes). Mirrors the server's Actor union; always server-captured.
+ * Who or what performed an action (creation provenance, worker episodes).
+ * This is the API's SANITIZED view, not the server's full Actor union: the
+ * server strips actor internals (user id, OAuth client id, MCP session id)
+ * before responses reach the browser, leaving only what the UI renders.
  */
 export interface Actor {
 	type: 'user' | 'agent' | 'system';
-	userId?: string;
-	clientId?: string;
 	deviceName?: string;
-	sessionId?: string;
 	client?: { name: string; version?: string };
-	cause?: string;
 }
 
 /** Immutable creation provenance on an item. */
