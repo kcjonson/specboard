@@ -201,6 +201,21 @@ export function Editor(props: RouteProps): JSX.Element {
 		return () => watcher.destroy();
 	}, [chatOpen]);
 
+	// With no file open (and none stored to restore) the drawer IS the landing
+	// content. Fires on first visit and after a delete; inert on desktop where the
+	// panel is an in-flow column. Checking localStorage keeps the drawer from
+	// flashing over a file that is about to restore.
+	useEffect(() => {
+		if (projectId && !documentModel.filePath && !loadSelectedFile(projectId)) {
+			setFilesOpen(true);
+		}
+	}, [projectId, documentModel.filePath]);
+
+	// A file opening (select, restore, create, rename) collapses the drawer.
+	useEffect(() => {
+		if (documentModel.filePath) setFilesOpen(false);
+	}, [documentModel.filePath]);
+
 	// Resizable sidebars. We measure the flex container (`.body`) and feed each
 	// ResizablePanel a dynamic maxWidth so neither sidebar can crush the center
 	// editor below CENTER_MIN_WIDTH. The panels own their width + persistence;
@@ -351,7 +366,6 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Handle file selection from FileBrowser
 	const handleFileSelect = useCallback(async (path: string) => {
-		setFilesOpen(false);
 		setLoadError(null);
 
 		// Save current file before switching (if dirty)
@@ -726,6 +740,13 @@ export function Editor(props: RouteProps): JSX.Element {
 				/>
 			)}
 			<div class={styles.body} ref={bodyRef}>
+				{filesOpen && (
+					<div
+						class={`${styles.drawerScrim} mobile-only`}
+						onClick={() => setFilesOpen(false)}
+						aria-hidden="true"
+					/>
+				)}
 				<ResizablePanel
 					storageKey="editor-file-browser"
 					handleSide="right"
@@ -736,6 +757,15 @@ export function Editor(props: RouteProps): JSX.Element {
 					label="Resize file browser"
 					class={`${styles.filesPanel} ${filesOpen ? styles.panelOpen : ''}`}
 				>
+					<button
+						type="button"
+						class={`${styles.drawerHandle} mobile-only`}
+						onClick={() => setFilesOpen((open) => !open)}
+						aria-label={filesOpen ? 'Close file drawer' : 'Browse files'}
+						aria-expanded={filesOpen}
+					>
+						<Icon name="chevron-right" />
+					</button>
 					<FileBrowser
 						projectSlug={projectSlug}
 						projectId={projectId}
@@ -751,7 +781,6 @@ export function Editor(props: RouteProps): JSX.Element {
 						hasUnsavedChanges={documentModel.isDirty}
 						onBeforePull={handleBeforePull}
 						onPullComplete={handlePullComplete}
-						onClose={() => setFilesOpen(false)}
 						class={styles.sidebar}
 					/>
 				</ResizablePanel>
@@ -838,7 +867,6 @@ export function Editor(props: RouteProps): JSX.Element {
 								onCreateEpic={handleCreateEpic}
 								onViewEpic={handleViewEpic}
 								onLinkEpic={() => setEpicPickerOpen(true)}
-								onToggleFiles={() => setFilesOpen(true)}
 								onToggleChat={() => setChatOpen(true)}
 							/>
 							<div class={styles.mainContent}>

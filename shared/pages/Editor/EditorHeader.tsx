@@ -26,8 +26,6 @@ export interface EditorHeaderProps {
 	onViewEpic?: () => void;
 	/** Callback to link this document to an existing epic */
 	onLinkEpic?: () => void;
-	/** Opens the file browser takeover (small screens only) */
-	onToggleFiles?: () => void;
 	/** Opens the AI chat takeover (small screens only) */
 	onToggleChat?: () => void;
 }
@@ -50,7 +48,6 @@ export function EditorHeader({
 	onCreateEpic,
 	onViewEpic,
 	onLinkEpic,
-	onToggleFiles,
 	onToggleChat,
 }: EditorHeaderProps): JSX.Element {
 	const [isEditing, setIsEditing] = useState(false);
@@ -160,16 +157,6 @@ export function EditorHeader({
 						disabled={creatingEpic}
 					>
 						{creatingEpic ? 'Creating...' : 'Create Epic'}
-					</Button>
-				)}
-				{onToggleFiles && (
-					<Button
-						onClick={onToggleFiles}
-						class="icon mobile-only"
-						aria-label="Browse files"
-						title="Browse files"
-					>
-						<Icon name="file" />
 					</Button>
 				)}
 				{onToggleChat && (

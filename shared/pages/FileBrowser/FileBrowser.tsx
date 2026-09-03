@@ -66,8 +66,6 @@ export interface FileBrowserProps {
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes (file tree is already reloaded) */
 	onPullComplete?: () => void | Promise<void>;
-	/** When provided, renders a close button in the header (small screens only) */
-	onClose?: () => void;
 	/** Additional CSS class */
 	class?: string;
 }
@@ -87,7 +85,6 @@ export function FileBrowser({
 	hasUnsavedChanges,
 	onBeforePull,
 	onPullComplete,
-	onClose,
 	class: className,
 }: FileBrowserProps): JSX.Element {
 	// Create model instance once per component
@@ -445,17 +442,6 @@ export function FileBrowser({
 		setDeleteTarget(null);
 	};
 
-	// Small-screen takeover close affordance, shared by both header renders.
-	const closeButton = onClose && (
-		<button
-			class="icon mobile-only"
-			onClick={onClose}
-			aria-label="Close file browser"
-		>
-			<Icon name="x-mark" />
-		</button>
-	);
-
 	// Helper to render the pending new file input
 	const renderPendingNewFile = (): JSX.Element | null => {
 		if (!model.pendingNewFile) return null;
@@ -492,7 +478,6 @@ export function FileBrowser({
 			<div class={`${styles.container} ${className || ''}`}>
 				<div class={styles.header}>
 					<span>Files</span>
-					{closeButton}
 				</div>
 				<div class={styles.emptyState}>
 					{isSyncing ? (
@@ -553,7 +538,6 @@ export function FileBrowser({
 				{gitStatus && gitStatus.changedCount > 0 && (
 					<Badge class="variant-warning size-sm">{gitStatus.changedCount}</Badge>
 				)}
-				{closeButton}
 			</div>
 			<div class={styles.content}>
 				<div class={styles.tree}>
