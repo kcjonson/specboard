@@ -3,11 +3,15 @@
 	position: relative;
 }
 
-/* Main action button - override border-radius to only round left side */
+/* Main action button - override border-radius to only round left side.
+   The prefix and type word are separate flex items, so a word-space-sized
+   gap (instead of the button default) makes them read as one label; the
+   gap vanishes with the word when small screens hide it. */
 .main {
 	border-top-right-radius: 0;
 	border-bottom-right-radius: 0;
 	border-right: none;
+	gap: var(--space-1);
 }
 
 /* Dropdown trigger - narrow button with only right-side rounding */
@@ -25,7 +29,7 @@
 	top: 100%;
 	right: 0;
 	margin-top: var(--space-1);
-	min-width: 140px;
+	width: max-content;
 	background: var(--color-surface);
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);
@@ -37,6 +41,7 @@
 .option {
 	display: flex;
 	align-items: center;
+	justify-content: flex-start; /* the button element default centers */
 	gap: var(--space-2);
 	width: 100%;
 	padding: var(--space-2) var(--space-3);
@@ -52,10 +57,6 @@
 
 .option:hover:not(:disabled) {
 	background: var(--color-surface-hover);
-}
-
-.optionWord {
-	white-space: pre;
 }
 
 @media (width < 768px) { /* bp-small: main button shows the prefix only ("+ New") */

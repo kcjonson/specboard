@@ -89,7 +89,7 @@ export function SplitButton({
 				{prefix ? (
 					<>
 						{prefix}
-						<span class={styles.optionWord}>{` ${defaultOption?.label ?? ''}`}</span>
+						<span class={styles.optionWord}>{defaultOption?.label ?? ''}</span>
 					</>
 				) : (defaultOption?.label ?? '')}
 			</button>
