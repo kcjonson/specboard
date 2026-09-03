@@ -154,6 +154,16 @@
 	color: var(--color-text-muted);
 }
 
+/* The item's key (SB-345) — the same string that addresses it in the URL. */
+.itemKey {
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.02em;
+	color: var(--color-text-muted);
+	white-space: nowrap;
+}
+
 .subStatus {
 	font-size: 11px;
 	font-weight: 500;
@@ -161,6 +171,16 @@
 	border-radius: 3px;
 	background: var(--color-surface-hover);
 	color: var(--color-text-muted);
+	white-space: nowrap;
+}
+
+.blockedChip {
+	font-size: 11px;
+	font-weight: 500;
+	padding: 1px 6px;
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--color-error) 15%, transparent);
+	color: var(--color-error);
 	white-space: nowrap;
 }
 

@@ -74,6 +74,24 @@
 	color: var(--color-text);
 }
 
+.inlineLink {
+	appearance: none;
+	border: none;
+	background: transparent;
+	padding: 0;
+	font: inherit;
+	color: var(--color-primary);
+	cursor: pointer;
+}
+
+.inlineLink:hover {
+	text-decoration: underline;
+}
+
+.staleWorker {
+	color: var(--color-text-muted);
+}
+
 /* Sections */
 .section {
 	display: flex;

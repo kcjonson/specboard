@@ -1,14 +1,20 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { ItemsCollection, type ItemModel, type Status } from '@specboard/models';
+import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
 import { StatusDot } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
 import { matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Table.module.css';
 
-/** Status sections, in display order (active work first). */
-const GROUPS: { status: Status; label: string }[] = [
+/**
+ * Status sections, in display order (active work first). Blocked and In Review
+ * only appear while something is held there, so the common case stays three
+ * sections — but nothing vanishes from the table.
+ */
+const GROUPS: { status: ItemStatus; label: string; whenNonEmpty?: boolean }[] = [
 	{ status: 'in_progress', label: 'In Progress' },
+	{ status: 'blocked', label: 'Blocked', whenNonEmpty: true },
+	{ status: 'in_review', label: 'In Review', whenNonEmpty: true },
 	{ status: 'ready', label: 'Ready' },
 	{ status: 'done', label: 'Done' },
 ];
@@ -18,13 +24,13 @@ export interface TableProps {
 	items: ItemsCollection;
 	/** Active toolbar filters (applied to the epics shown). */
 	filters: PlanningFilters;
-	selectedItemId?: string;
-	/** Ids to briefly flash (newly created, or changed by a background refresh). */
+	selectedItemKey?: string;
+	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
 	onSelectItem: (item: ItemModel | undefined) => void;
 	onOpenItem: (item: ItemModel) => void;
-	/** Open a child's detail by id (children are first-class items). */
-	onOpenChild?: (itemId: string) => void;
+	/** Open a child's detail by key (children are first-class items). */
+	onOpenChild?: (itemKey: string) => void;
 }
 
 /** Lazily load an epic's tasks the first time it is expanded. */
@@ -42,7 +48,7 @@ function ensureTasksLoaded(item: ItemModel): void {
 export function Table({
 	items,
 	filters,
-	selectedItemId,
+	selectedItemKey,
 	flashingIds,
 	onSelectItem,
 	onOpenItem,
@@ -50,16 +56,15 @@ export function Table({
 }: TableProps): JSX.Element {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-	const grouped = useMemo(
-		() => ({
-			in_progress: items.byStatus('in_progress').filter((i) => matchesFilters(i, filters)),
-			ready: items.byStatus('ready').filter((i) => matchesFilters(i, filters)),
-			done: items.byStatus('done').filter((i) => matchesFilters(i, filters)),
-		}),
+	const grouped = useMemo(() => {
+		const byStatus = {} as Record<ItemStatus, ItemModel[]>;
+		for (const group of GROUPS) {
+			byStatus[group.status] = items.byStatus(group.status).filter((i) => matchesFilters(i, filters));
+		}
+		return byStatus;
 		// items.version changes on add/remove/status change so the grouping recomputes
 		// even though the collection reference is stable.
-		[items, items.version, filters]
-	);
+	}, [items, items.version, filters]);
 
 	const toggleExpand = useCallback((item: ItemModel): void => {
 		const willExpand = !expanded.has(item.id);
@@ -112,8 +117,9 @@ export function Table({
 					<span class={styles.colAssignee} role="columnheader">Assignee</span>
 				</div>
 
-				{GROUPS.map(({ status, label }) => {
+				{GROUPS.map(({ status, label, whenNonEmpty }) => {
 					const groupItems = grouped[status];
+					if (whenNonEmpty && groupItems.length === 0) return null;
 					return (
 						<div key={status} class={styles.group} role="rowgroup">
 							<div class={styles.groupHeader} role="row">
@@ -134,8 +140,8 @@ export function Table({
 										key={item.id}
 										item={item}
 										expanded={expanded.has(item.id)}
-										selected={item.id === selectedItemId}
-										flashing={flashingIds.has(item.id)}
+										selected={item.key === selectedItemKey}
+										flashing={flashingIds.has(item.key)}
 										onToggle={toggleExpand}
 										onOpen={onOpenItem}
 										onSelect={onSelectItem}

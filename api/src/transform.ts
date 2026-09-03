@@ -12,6 +12,8 @@ import type { ApiProject } from './types.ts';
 export function projectResponseToApi(project: ProjectResponse): ApiProject {
 	return {
 		id: project.id,
+		slug: project.slug,
+		key: project.key,
 		name: project.name,
 		description: project.description ?? undefined,
 		ownerId: project.ownerId,

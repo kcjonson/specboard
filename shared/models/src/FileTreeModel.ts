@@ -70,51 +70,93 @@ export function expandedTreeToPaths(tree: ExpandedTree, basePath: string = '', d
 	return paths;
 }
 
+/**
+ * Tree nodes carry no prototype, and every lookup is an own-property check.
+ *
+ * Path segments come from the repo's file list, so a directory named `__proto__` or
+ * `constructor` would otherwise reach the prototype chain: `current[part]` returns a
+ * truthy built-in (making an unexpanded path look expanded), and `current[part] = {}`
+ * reassigns a prototype instead of adding a child (CodeQL js/prototype-polluting-assignment).
+ * With a null prototype those names nest like any other.
+ */
+function emptyTree(): ExpandedTree {
+	return Object.create(null) as ExpandedTree;
+}
+
+/** Look up a child, ignoring anything inherited rather than genuinely in the tree. */
+function childOf(tree: ExpandedTree, name: string): ExpandedTree | undefined {
+	return Object.hasOwn(tree, name) ? (tree[name] as ExpandedTree) : undefined;
+}
+
+/** Deep-copy into null-prototype nodes (replaces a JSON round-trip, which rebuilds plain objects). */
+function cloneTree(tree: ExpandedTree): ExpandedTree {
+	const result = emptyTree();
+	for (const [name, subtree] of Object.entries(tree)) {
+		result[name] = cloneTree(subtree);
+	}
+	return result;
+}
+
+/** Walk to a path's node, creating missing nodes along the way. */
+function ensurePath(tree: ExpandedTree, parts: string[]): ExpandedTree {
+	let current = tree;
+	for (const part of parts) {
+		let next = childOf(current, part);
+		if (!next) {
+			next = emptyTree();
+			current[part] = next;
+		}
+		current = next;
+	}
+	return current;
+}
+
+/** Split a path into its non-empty segments */
+function pathParts(path: string): string[] {
+	return path.split('/').filter(Boolean);
+}
+
 /** Convert flat array of paths to nested tree */
 export function pathsToExpandedTree(paths: string[]): ExpandedTree {
-	const tree: ExpandedTree = {};
+	const tree = emptyTree();
 	for (const path of paths) {
-		const parts = path.split('/').filter(Boolean);
-		let current = tree;
-		for (const part of parts) {
-			if (!current[part]) {
-				current[part] = {};
-			}
-			current = current[part];
-		}
+		ensurePath(tree, pathParts(path));
 	}
 	return tree;
 }
 
 /** Add a path to the expanded tree */
 export function addPathToTree(tree: ExpandedTree, path: string): ExpandedTree {
-	const result = JSON.parse(JSON.stringify(tree)) as ExpandedTree;
-	const parts = path.split('/').filter(Boolean);
-	let current = result;
-	for (const part of parts) {
-		if (!current[part]) {
-			current[part] = {};
-		}
-		current = current[part];
-	}
+	const result = cloneTree(tree);
+	ensurePath(result, pathParts(path));
 	return result;
 }
 
 /** Remove a path and its descendants from the expanded tree */
 export function removePathFromTree(tree: ExpandedTree, path: string): ExpandedTree {
-	const result = JSON.parse(JSON.stringify(tree)) as ExpandedTree;
-	const parts = path.split('/').filter(Boolean);
-	if (parts.length === 0) return {};
+	const result = cloneTree(tree);
+	const parts = pathParts(path);
+	if (parts.length === 0) return emptyTree();
 
 	let current = result;
 	for (let i = 0; i < parts.length - 1; i++) {
-		const part = parts[i] as string;
-		if (!current[part]) return result; // Path doesn't exist
-		current = current[part];
+		const next = childOf(current, parts[i] as string);
+		if (!next) return result; // Path doesn't exist
+		current = next;
 	}
-	const lastPart = parts[parts.length - 1] as string;
-	delete current[lastPart];
+	delete current[parts[parts.length - 1] as string];
 	return result;
+}
+
+/** Whether every segment of `path` is present in `tree` */
+function isPathInTree(tree: ExpandedTree, path: string): boolean {
+	let current = tree;
+	for (const part of pathParts(path)) {
+		const next = childOf(current, part);
+		if (!next) return false;
+		current = next;
+	}
+	return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,6 +170,7 @@ function getStorage(): typeof globalThis.localStorage | null {
 }
 
 function loadExpandedTreeFromStorage(projectId: string): ExpandedTree {
+	if (!projectId) return {};
 	try {
 		const storage = getStorage();
 		if (!storage) return {};
@@ -143,6 +186,7 @@ function loadExpandedTreeFromStorage(projectId: string): ExpandedTree {
 }
 
 function saveExpandedTreeToStorage(projectId: string, tree: ExpandedTree): void {
+	if (!projectId) return;
 	try {
 		const storage = getStorage();
 		if (!storage) return;
@@ -190,6 +234,13 @@ export interface PendingRename {
 }
 
 export class FileTreeModel extends Model {
+	@prop accessor projectSlug!: string;
+
+	/**
+	 * The project's immutable id. Used only as the localStorage key for expansion
+	 * state — the slug is user-editable and unique only per owner, so keying on it
+	 * leaked across accounts and orphaned state on rename.
+	 */
 	@prop accessor projectId!: string;
 	@prop accessor rootPaths!: string[];
 	@prop accessor files!: FileEntry[];
@@ -208,10 +259,11 @@ export class FileTreeModel extends Model {
 
 	constructor() {
 		super({
+			projectSlug: '',
 			projectId: '',
 			rootPaths: [],
 			files: [],
-			expanded: {},
+			expanded: emptyTree(),
 			loading: false,
 			error: null,
 			pendingNewFile: null,
@@ -222,15 +274,28 @@ export class FileTreeModel extends Model {
 	}
 
 	/**
-	 * Initialize the model with a project ID and load data
-	 * @param projectId - The project to load
+	 * Initialize the model with a project slug and load data
+	 * @param projectSlug - The project to load (addresses the API)
+	 * @param projectId - The same project's immutable id, keying stored expansion
+	 *   state. Pass '' to keep expansion in memory only (the modal file picker).
 	 * @param currentFilePath - Optional path to currently open file (will expand to show it)
 	 */
-	async initialize(projectId: string, currentFilePath?: string): Promise<void> {
-		if (this.projectId === projectId && !currentFilePath) return;
+	async initialize(projectSlug: string, projectId: string, currentFilePath?: string): Promise<void> {
+		// The id is resolved asynchronously, so the first call often arrives with '' and a
+		// second follows with the real one. Comparing the slug alone would early-return on
+		// that second call and leave projectId empty, so expansion state would never
+		// persist — and the stored expansion would never be restored, because the first
+		// load read it under the empty key. Adopt the id and reload the tree with it.
+		if (this.projectSlug === projectSlug && this.projectId !== projectId) {
+			this.projectId = projectId;
+			await this.loadTree(currentFilePath);
+			return;
+		}
+
+		if (this.projectSlug === projectSlug && !currentFilePath) return;
 
 		// If same project but new file path, just expand to it
-		if (this.projectId === projectId && currentFilePath) {
+		if (this.projectSlug === projectSlug && currentFilePath) {
 			await this.expandToFile(currentFilePath);
 			return;
 		}
@@ -238,9 +303,10 @@ export class FileTreeModel extends Model {
 		// Abort any in-flight request for the old project
 		this._abortInflight();
 
+		this.projectSlug = projectSlug;
 		this.projectId = projectId;
 		this.files = [];
-		this.expanded = {};
+		this.expanded = emptyTree();
 		this.rootPaths = [];
 		this.error = null;
 		this.syncStatus = null;
@@ -254,13 +320,7 @@ export class FileTreeModel extends Model {
 	 * Check if a path is expanded
 	 */
 	isExpanded(path: string): boolean {
-		const parts = path.split('/').filter(Boolean);
-		let current = this.expanded;
-		for (const part of parts) {
-			if (!current[part]) return false;
-			current = current[part];
-		}
-		return true;
+		return isPathInTree(this.expanded, path);
 	}
 
 	/**
@@ -336,13 +396,7 @@ export class FileTreeModel extends Model {
 	 * Check if a path is expanded in a given tree (helper for expandToFile)
 	 */
 	private isExpandedInTree(tree: ExpandedTree, path: string): boolean {
-		const parts = path.split('/').filter(Boolean);
-		let current = tree;
-		for (const part of parts) {
-			if (!current[part]) return false;
-			current = current[part];
-		}
-		return true;
+		return isPathInTree(tree, path);
 	}
 
 	/**
@@ -423,7 +477,7 @@ export class FileTreeModel extends Model {
 
 		try {
 			await fetchClient.post(
-				`/api/projects/${this.projectId}/files?path=${encodeURIComponent(fullPath)}`
+				`/api/projects/${this.projectSlug}/files?path=${encodeURIComponent(fullPath)}`
 			);
 
 			this.pendingNewFile = null;
@@ -495,7 +549,7 @@ export class FileTreeModel extends Model {
 
 		try {
 			await fetchClient.put<{ success: boolean }>(
-				`/api/projects/${this.projectId}/files/rename`,
+				`/api/projects/${this.projectSlug}/files/rename`,
 				{ oldPath, newPath }
 			);
 
@@ -554,7 +608,7 @@ export class FileTreeModel extends Model {
 
 			// Single request to server - returns ready-to-render data
 			const data = await fetchClient.post<FileTreeResponse>(
-				`/api/projects/${this.projectId}/tree`,
+				`/api/projects/${this.projectSlug}/tree`,
 				{ expanded: expandedTree },
 				{ signal: controller.signal }
 			);

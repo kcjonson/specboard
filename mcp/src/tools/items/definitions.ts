@@ -10,31 +10,36 @@ export const epicTools: Tool[] = [
 	{
 		name: 'get_items',
 		description:
-			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats. Optionally include each item\'s children and progress notes. Use item_id for a single item, or filter by status/type/search for lists.',
+			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats. Optionally include each item\'s children and progress notes. Use item_key for a single item, or filter by status/type/search for lists.',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
-				item_id: {
+				item_key: {
 					type: 'string',
-					description: 'Get a single item by ID. When set, other filters are ignored.',
+					description: 'Get a single item by its key (e.g. SB-345). When set, other filters are ignored.',
 				},
 				status: {
 					type: 'string',
-					enum: ['ready', 'in_progress', 'in_review', 'done'],
+					enum: ['ready', 'in_progress', 'blocked', 'in_review', 'done'],
 					description: 'Filter by board status',
 				},
 				type: {
 					type: 'string',
-					enum: ['epic', 'bug'],
+					enum: ['epic', 'task', 'bug'],
 					description: 'Filter by item type',
 				},
 				search: {
 					type: 'string',
 					description: 'Search title and description (case-insensitive)',
+				},
+				include_blocked: {
+					type: 'boolean',
+					description: 'status=ready normally excludes blocked items (open blockers); set true to include them.',
 				},
 				include_children: {
 					type: 'boolean',
@@ -49,19 +54,20 @@ export const epicTools: Tool[] = [
 					description: 'Max items to return (default: 25)',
 				},
 			},
-			required: ['project_id'],
+			required: [],
 		},
 	},
 	{
 		name: 'create_item',
 		description:
-			'Create an item. Epics are top-level containers; tasks and bugs can be top-level or nested under a parent (set parent_id).',
+			'Create an item. Epics are top-level containers; tasks and bugs can be top-level or nested under a parent (set parent_key).',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
 				title: {
 					type: 'string',
@@ -72,9 +78,9 @@ export const epicTools: Tool[] = [
 					enum: ['epic', 'bug', 'task'],
 					description: 'Type of item. Defaults to "epic".',
 				},
-				parent_id: {
+				parent_key: {
 					type: 'string',
-					description: 'Parent item id to nest this item under. Omit for a top-level item.',
+					description: 'Key of the item to nest this under (e.g. SB-12). Omit for a top-level item.',
 				},
 				description: {
 					type: 'string',
@@ -82,7 +88,7 @@ export const epicTools: Tool[] = [
 				},
 				specs: {
 					type: 'array',
-					description: 'Linked spec documents (work items only). Each path must start with / (e.g., /docs/specs/feature.md).',
+					description: 'Linked spec documents. Any item type can carry them, tasks included. Each path must start with / (e.g., /docs/specs/feature.md).',
 					items: {
 						type: 'object',
 						properties: {
@@ -92,8 +98,23 @@ export const epicTools: Tool[] = [
 						required: ['path', 'type'],
 					},
 				},
+				discovered_from: {
+					type: 'string',
+					description: 'Key of the item you were working on when this one was discovered (e.g. SB-12). Immutable provenance, set only at creation — pass it whenever you file follow-on work found mid-task.',
+				},
+				blockers: {
+					type: 'array',
+					description: 'Blockers the item starts with. Each entry is exactly one of { item_key } (blocked by that item; auto-clears when it completes) or { text } (a written reason; clears only when removed). Only record blockers the user or the work explicitly established — never infer them.',
+					items: {
+						type: 'object',
+						properties: {
+							item_key: { type: 'string', description: 'Key of the blocking item (e.g. SB-12)' },
+							text: { type: 'string', description: 'Free-text reason' },
+						},
+					},
+				},
 			},
-			required: ['project_id', 'title'],
+			required: ['title'],
 		},
 	},
 	{
@@ -103,13 +124,14 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
-				parent_id: {
+				parent_key: {
 					type: 'string',
-					description: 'The UUID of the parent work item (epic or bug)',
+					description: 'Key of the parent work item, e.g. SB-12 (epic or bug)',
 				},
 				items: {
 					type: 'array',
@@ -129,33 +151,38 @@ export const epicTools: Tool[] = [
 					},
 					description: 'Array of tasks to create',
 				},
+				discovered_from: {
+					type: 'string',
+					description: 'Key of the item you were working on when these were discovered (e.g. SB-12). Shared by the whole batch; immutable provenance.',
+				},
 			},
-			required: ['project_id', 'parent_id', 'items'],
+			required: ['parent_key', 'items'],
 		},
 	},
 	{
 		name: 'update_item',
 		description:
-			'Update an item: title, description, status, sub_status, specs, branch_name, pr_url, notes, note. Set parent_id to move it under another item, or parent_id null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done).',
+			'Update an item: title, description, status, sub_status, specs, blockers, branch_name, pr_url, notes, note. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). blockers replaces the item\'s open blockers (item refs auto-clear when the blocking item completes; text clears only when removed).',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
-				item_id: {
+				item_key: {
 					type: 'string',
-					description: 'The UUID of the item to update',
+					description: 'Key of the item to update (e.g. SB-345)',
 				},
 				type: {
 					type: 'string',
 					enum: ['epic', 'bug', 'task'],
 					description: 'Item type (optional, informational).',
 				},
-				parent_id: {
+				parent_key: {
 					type: 'string',
-					description: 'Move the item under this parent, or null to promote it to top-level.',
+					description: 'Move the item under this parent (e.g. SB-12), or null to promote it to top-level.',
 				},
 				title: {
 					type: 'string',
@@ -176,7 +203,7 @@ export const epicTools: Tool[] = [
 				},
 				specs: {
 					type: 'array',
-					description: 'Linked spec documents (work items only). Replaces the full set — send all links to keep, or [] to clear. Each path must start with / (e.g., /docs/specs/feature.md).',
+					description: 'Linked spec documents. Any item type can carry them, tasks included. Replaces the full set — send all links to keep, or [] to clear. Each path must start with / (e.g., /docs/specs/feature.md).',
 					items: {
 						type: 'object',
 						properties: {
@@ -202,8 +229,19 @@ export const epicTools: Tool[] = [
 					type: 'string',
 					description: 'Set note on a task — context for any outcome (completion, blocked, cut, etc.)',
 				},
+				blockers: {
+					type: 'array',
+					description: 'Replace the full set of the item\'s OPEN blockers — send everything that should still block, or [] to clear. Each entry is exactly one of { item_key } (blocked by that item; auto-clears when it completes) or { text } (a written reason; clears only by leaving this list). An item is blocked while any blocker is open. Only record blockers the user or the work explicitly established — never infer them.',
+					items: {
+						type: 'object',
+						properties: {
+							item_key: { type: 'string', description: 'Key of the blocking item (e.g. SB-12)' },
+							text: { type: 'string', description: 'Free-text reason' },
+						},
+					},
+				},
 			},
-			required: ['project_id', 'item_id'],
+			required: ['item_key'],
 		},
 	},
 	{
@@ -213,13 +251,14 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_id: {
+				project_slug: {
 					type: 'string',
-					description: 'The UUID of the project',
+					description:
+						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
 				},
-				item_id: {
+				item_key: {
 					type: 'string',
-					description: 'The UUID of the item to delete',
+					description: 'Key of the item to delete (e.g. SB-345)',
 				},
 				type: {
 					type: 'string',
@@ -227,7 +266,7 @@ export const epicTools: Tool[] = [
 					description: 'Type of item being deleted',
 				},
 			},
-			required: ['project_id', 'item_id'],
+			required: ['item_key'],
 		},
 	},
 ];

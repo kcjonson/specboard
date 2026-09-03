@@ -4,6 +4,7 @@ import type { RouteProps } from '@specboard/router';
 import { useEffect, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { getCookie, setCookie } from '@specboard/core/cookies';
+import { isValidProjectSlug } from '@specboard/core/identifiers';
 import { fetchClient } from '@specboard/fetch';
 import { NotFound } from '@specboard/ui';
 
@@ -32,17 +33,11 @@ import '../../shared/styles/common.css';
 import './styles/tokens.css';
 import './styles/global.css';
 
-// UUID validation for cookie values
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-function isValidUUID(id: string): boolean {
-	return UUID_REGEX.test(id);
-}
-
 // Smart redirect component for root path
 // Fetches projects and redirects based on:
 // - 0 projects → /projects
-// - 1 project → /projects/:id/planning
-// - Multiple projects + valid cookie → /projects/:id/planning
+// - 1 project → /projects/:slug/planning
+// - Multiple projects + valid cookie → /projects/:slug/planning
 // - Multiple projects + no cookie → /projects
 function RootRedirect(_props: RouteProps): JSX.Element | null {
 	const [loading, setLoading] = useState(true);
@@ -51,7 +46,7 @@ function RootRedirect(_props: RouteProps): JSX.Element | null {
 		async function determineRedirect(): Promise<void> {
 			try {
 				const projects = await fetchClient.get<Project[]>('/api/projects');
-				const lastProjectId = getCookie('lastProjectId');
+				const lastProjectSlug = getCookie('lastProjectSlug');
 
 				if (projects.length === 0) {
 					// No projects - go to projects list
@@ -60,18 +55,18 @@ function RootRedirect(_props: RouteProps): JSX.Element | null {
 					// Single project - go directly there
 					const [project] = projects;
 					if (project) {
-						setCookie('lastProjectId', project.id, 30);
+						setCookie('lastProjectSlug', project.slug, 30);
 						setCookie('lastProjectName', project.name, 30);
-						navigate(`/projects/${project.id}/planning`);
+						navigate(`/projects/${project.slug}/planning`);
 					}
-				} else if (lastProjectId && isValidUUID(lastProjectId)) {
+				} else if (lastProjectSlug && isValidProjectSlug(lastProjectSlug)) {
 					// Multiple projects with valid cookie - check if project exists
-					const project = projects.find((p) => p.id === lastProjectId);
+					const project = projects.find((p) => p.slug === lastProjectSlug);
 					if (project) {
 						// Refresh both cookies together to keep them in sync
-						setCookie('lastProjectId', project.id, 30);
+						setCookie('lastProjectSlug', project.slug, 30);
 						setCookie('lastProjectName', project.name, 30);
-						navigate(`/projects/${lastProjectId}/planning`);
+						navigate(`/projects/${project.slug}/planning`);
 					} else {
 						// Cookie references deleted project - go to list
 						navigate('/projects');
@@ -102,10 +97,13 @@ const routes = [
 	// Projects list (first thing user sees if no recent project)
 	{ route: '/projects', entry: ProjectsList },
 
-	// Project-scoped routes
-	{ route: '/projects/:projectId/planning', entry: Planning },
-	{ route: '/projects/:projectId/planning/items/:id', entry: ItemDetail },
-	{ route: '/projects/:projectId/pages', entry: Editor },
+	// Project-scoped routes. The board and the board-with-an-item-selected share the
+	// Planning entry, so selecting a card is a navigation (shareable URL, working Back)
+	// rather than hidden state; ItemDetail is the standalone full-page view.
+	{ route: '/projects/:projectSlug/planning', entry: Planning },
+	{ route: '/projects/:projectSlug/planning/items/:itemKey', entry: Planning },
+	{ route: '/projects/:projectSlug/items/:itemKey', entry: ItemDetail },
+	{ route: '/projects/:projectSlug/pages', entry: Editor },
 
 	// App routes (not project-scoped)
 	// Onboarding gating is server-side: the frontend service redirects SPA

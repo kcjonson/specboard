@@ -16,8 +16,8 @@ export interface EditorHeaderProps {
 	onNewPage?: () => void;
 	/** Callback to rename the current file */
 	onRename?: (newFilename: string) => void;
-	/** ID of linked epic (if this document has one) */
-	linkedEpicId?: string;
+	/** Key of the linked epic (if this document has one) */
+	linkedEpicKey?: string;
 	/** Whether epic creation is in progress */
 	creatingEpic?: boolean;
 	/** Callback to create an epic from this document */
@@ -41,7 +41,7 @@ export function EditorHeader({
 	isSaving,
 	onNewPage: _onNewPage,
 	onRename,
-	linkedEpicId,
+	linkedEpicKey,
 	creatingEpic,
 	onCreateEpic,
 	onViewEpic,
@@ -137,17 +137,17 @@ export function EditorHeader({
 				{isSaving && <span class={styles.savingIndicator} title="Saving..." />}
 			</div>
 			<div class={styles.actions}>
-				{showEpicButton && linkedEpicId && onViewEpic && (
+				{showEpicButton && linkedEpicKey && onViewEpic && (
 					<Button onClick={onViewEpic} class="secondary">
 						View Epic
 					</Button>
 				)}
-				{showEpicButton && !linkedEpicId && onLinkEpic && (
+				{showEpicButton && !linkedEpicKey && onLinkEpic && (
 					<Button onClick={onLinkEpic} class="secondary">
 						Link to Epic
 					</Button>
 				)}
-				{showEpicButton && !linkedEpicId && onCreateEpic && (
+				{showEpicButton && !linkedEpicKey && onCreateEpic && (
 					<Button
 						onClick={onCreateEpic}
 						class="secondary"

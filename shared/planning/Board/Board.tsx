@@ -1,25 +1,19 @@
 import { useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { ItemsCollection, type ItemModel, type Status } from '@specboard/models';
+import { ItemsCollection, type ItemModel, type Status, type ItemStatus } from '@specboard/models';
 import { Column } from '../Column/Column';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
 import { matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Board.module.css';
 
-const COLUMNS: { status: Status; title: string }[] = [
-	{ status: 'ready', title: 'Ready' },
-	{ status: 'in_progress', title: 'In Progress' },
-	{ status: 'done', title: 'Done' },
-];
-
 export interface BoardProps {
 	/** Shared collection owned by the Planning container. */
 	items: ItemsCollection;
-	projectId: string;
+	projectSlug: string;
 	/** Active toolbar filters (applied to the cards shown in each column). */
 	filters: PlanningFilters;
-	selectedItemId?: string;
-	/** Ids to briefly flash (newly created, or changed by a background refresh). */
+	selectedItemKey?: string;
+	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
 	/** Disables keyboard shortcuts while a dialog is open. */
 	dialogOpen: boolean;
@@ -34,9 +28,9 @@ export interface BoardProps {
  */
 export function Board({
 	items,
-	projectId,
+	projectSlug,
 	filters,
-	selectedItemId,
+	selectedItemKey,
 	flashingIds,
 	dialogOpen,
 	onSelectItem,
@@ -44,16 +38,20 @@ export function Board({
 	onCreateItem,
 }: BoardProps): JSX.Element {
 	// Items grouped by status, with the toolbar filters applied to the cards shown.
+	// 'blocked' holds the status-level manual holds (row-blocked items stay in
+	// their real column with a chip); its column renders only when non-empty.
 	const itemsByStatus = useMemo(
 		() => ({
 			ready: items.byStatus('ready').filter((i) => matchesFilters(i, filters)),
 			in_progress: items.byStatus('in_progress').filter((i) => matchesFilters(i, filters)),
+			blocked: items.byStatus('blocked').filter((i) => matchesFilters(i, filters)),
 			done: items.byStatus('done').filter((i) => matchesFilters(i, filters)),
 		}),
 		// items.version changes on add/remove/status change so the grouping recomputes
 		// even though the collection reference is stable.
 		[items, items.version, filters]
 	);
+	const blockedItems = itemsByStatus.blocked;
 
 	// Wrapper for Column (which only emits ItemModel, never undefined).
 	const handleColumnSelectItem = useCallback(
@@ -72,7 +70,11 @@ export function Board({
 
 	useKeyboardNavigation({
 		itemsByStatus,
-		selectedItemId,
+		// Traversal follows the rendered column order, Blocked included when shown.
+		columns: blockedItems.length > 0
+			? ['ready', 'in_progress', 'blocked', 'done']
+			: ['ready', 'in_progress', 'done'],
+		selectedItemKey,
 		dialogOpen,
 		onSelectItem,
 		onOpenItem,
@@ -154,20 +156,33 @@ export function Board({
 		});
 	}
 
+	// The Blocked column appears after In Progress, only while something is held
+	// there. Not a drop target: blocking needs a reason (use the drawer). Built as
+	// a flat list so every column is keyed at the top level of the map.
+	const columns: { status: ItemStatus; title: string; items: ItemModel[]; droppable: boolean }[] = [
+		{ status: 'ready', title: 'Ready', items: itemsByStatus.ready, droppable: true },
+		{ status: 'in_progress', title: 'In Progress', items: itemsByStatus.in_progress, droppable: true },
+		...(blockedItems.length > 0
+			? [{ status: 'blocked' as const, title: 'Blocked', items: blockedItems, droppable: false }]
+			: []),
+		{ status: 'done', title: 'Done', items: itemsByStatus.done, droppable: true },
+	];
+
 	return (
 		<div class={styles.board}>
-			{COLUMNS.map(({ status, title }) => (
+			{columns.map(({ status, title, items: columnItems, droppable }) => (
 				<Column
 					key={status}
 					status={status}
 					title={title}
-					items={itemsByStatus[status]}
-					projectId={projectId}
-					selectedItemId={selectedItemId}
+					items={columnItems}
+					projectSlug={projectSlug}
+					selectedItemKey={selectedItemKey}
 					flashingIds={flashingIds}
+					droppable={droppable}
 					onSelectItem={handleColumnSelectItem}
 					onOpenItem={onOpenItem}
-					onDropItem={handleDropItem}
+					onDropItem={droppable ? handleDropItem : undefined}
 					onDragStart={handleDragStart}
 					onDragEnd={handleDragEnd}
 				/>

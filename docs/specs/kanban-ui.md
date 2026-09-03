@@ -7,7 +7,9 @@ This specification defines the user interface and interactions for the kanban bo
 ## Overview
 
 A lightweight, keyboard-first kanban board with:
-- Three fixed columns: Ready, In Progress, Done
+- Three fixed columns (Ready, In Progress, Done) plus a Blocked column that
+  appears only while an item is held at status `blocked` (see
+  [item-relationships.md](item-relationships.md))
 - Epic → Task two-level hierarchy
 - Drag-and-drop with keyboard alternatives
 - Sub-500ms performance target

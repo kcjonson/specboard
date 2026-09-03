@@ -209,6 +209,16 @@
 	gap: var(--space-2);
 }
 
+.blockedChip {
+	font-size: var(--text-xs);
+	font-weight: var(--font-medium);
+	padding: 1px 6px;
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--color-error) 15%, transparent);
+	color: var(--color-error);
+	white-space: nowrap;
+}
+
 .colTasks,
 .colAssignee {
 	color: var(--color-text-muted);
@@ -227,4 +237,13 @@
 	color: var(--color-text-muted);
 	font-size: var(--text-sm);
 	border-top: 1px solid var(--color-border);
+}
+
+/* The item's key (SB-345) — the same string that addresses it in the URL. */
+.itemKey {
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 12px;
+	color: var(--color-text-muted);
+	white-space: nowrap;
+	margin-right: 8px;
 }

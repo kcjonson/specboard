@@ -13,11 +13,11 @@ const STATUS_LABELS: Record<ItemStatus, string> = {
 	done: 'Done',
 };
 
-// 'blocked'/'in_review' have no dedicated StatusDot color — fall back to the neutral dot.
+// 'in_review' has no dedicated StatusDot color — fall back to the neutral dot.
 const DOT_STATUS: Record<ItemStatus, StatusType> = {
 	ready: 'ready',
 	in_progress: 'in_progress',
-	blocked: 'default',
+	blocked: 'blocked',
 	in_review: 'default',
 	done: 'done',
 };
@@ -31,8 +31,8 @@ export interface ItemRowProps {
 	onToggle: (item: ItemModel) => void;
 	onOpen: (item: ItemModel) => void;
 	onSelect: (item: ItemModel | undefined) => void;
-	/** Open a child's detail by id (children are first-class items). */
-	onOpenChild?: (itemId: string) => void;
+	/** Open a child's detail by key (children are first-class items). */
+	onOpenChild?: (itemKey: string) => void;
 }
 
 /**
@@ -91,6 +91,7 @@ export function ItemRow({
 					) : (
 						<span class={styles.chevronSpacer} />
 					)}
+					<span class={styles.itemKey}>{item.key}</span>
 					<span class={styles.title}>{item.title}</span>
 				</span>
 				<span class={styles.colType} role="cell">
@@ -99,6 +100,9 @@ export function ItemRow({
 				<span class={styles.colStatus} role="cell">
 					<StatusDot status={DOT_STATUS[item.status]} />
 					{STATUS_LABELS[item.status]}
+					{item.blocked && item.status !== 'blocked' && (
+						<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
+					)}
 				</span>
 				<span class={styles.colTasks} role="cell">{hasChildren ? `${done}/${total}` : '—'}</span>
 				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>

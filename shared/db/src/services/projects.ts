@@ -2,8 +2,19 @@
  * Project service - shared business logic for projects
  */
 
+import {
+	slugifyProjectName,
+	deriveProjectKey,
+	withSuffix,
+} from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import { type Project, type StorageMode, type RepositoryConfig, type SyncStatus, isLocalRepository } from '../types.ts';
+
+/** Postgres unique-violation SQLSTATE, raised when a slug or key is already taken. */
+const UNIQUE_VIOLATION = '23505';
+
+/** How many suffixed candidates to try before giving up on a free slug/key. */
+const MAX_IDENTIFIER_ATTEMPTS = 50;
 
 // Maximum number of root paths per project to prevent abuse
 const MAX_ROOT_PATHS = 20;
@@ -14,6 +25,10 @@ const MAX_ROOT_PATHS = 20;
 
 export interface ProjectResponse {
 	id: string;
+	/** URL identifier, unique per owner (e.g. "specboard"). */
+	slug: string;
+	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
+	key: string;
 	name: string;
 	description: string | null;
 	ownerId: string;
@@ -46,6 +61,8 @@ export interface ProjectWithStats extends ProjectResponse {
 function transformProject(project: Project): ProjectResponse {
 	return {
 		id: project.id,
+		slug: project.slug,
+		key: project.key,
 		name: project.name,
 		description: project.description,
 		ownerId: project.owner_id,
@@ -65,15 +82,26 @@ function transformProject(project: Project): ProjectResponse {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Verify that a user has access to a project
- * Returns true if the user owns the project, false otherwise
+ * The identity a request needs once its project slug has been resolved: the internal
+ * primary key for every downstream query, and the key that prefixes item keys.
  */
-export async function verifyProjectAccess(projectId: string, userId: string): Promise<boolean> {
-	const result = await query<{ id: string }>(
-		'SELECT id FROM projects WHERE id = $1 AND owner_id = $2',
-		[projectId, userId]
+export interface ResolvedProject {
+	id: string;
+	slug: string;
+	key: string;
+}
+
+/**
+ * Resolve a project slug to its internal id for a given user. Returns null when the
+ * slug doesn't exist or isn't theirs — callers surface both as "not found" so the
+ * slug namespace of other users isn't probeable.
+ */
+export async function resolveProjectSlug(slug: string, userId: string): Promise<ResolvedProject | null> {
+	const result = await query<ResolvedProject>(
+		'SELECT id, slug, key FROM projects WHERE slug = $1 AND owner_id = $2',
+		[slug, userId]
 	);
-	return result.rows.length > 0;
+	return result.rows[0] ?? null;
 }
 
 /**
@@ -100,7 +128,7 @@ export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
 		LEFT JOIN items i ON i.project_id = p.id AND i.parent_id IS NULL
 		WHERE p.owner_id = $1
 		GROUP BY p.id
-		ORDER BY p.updated_at DESC`,
+		ORDER BY p.updated_at DESC, p.created_at DESC, p.id`,
 		[userId]
 	);
 
@@ -117,7 +145,27 @@ export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
 }
 
 /**
- * Get a single project by ID
+ * Get a single project by its slug — the identifier every URL and API path uses.
+ */
+export async function getProjectBySlug(
+	slug: string,
+	userId: string
+): Promise<ProjectResponse | null> {
+	const result = await query<Project>(
+		'SELECT * FROM projects WHERE slug = $1 AND owner_id = $2',
+		[slug, userId]
+	);
+
+	if (result.rows.length === 0) {
+		return null;
+	}
+
+	return transformProject(result.rows[0]!);
+}
+
+/**
+ * Get a single project by its internal id. For callers that already hold the primary
+ * key (a resolved request, a background job); slug callers want getProjectBySlug.
  */
 export async function getProject(
 	projectId: string,
@@ -153,6 +201,44 @@ export interface CreateProjectInput {
 	repository?: RepositoryConfigInput;
 }
 
+/**
+ * Insert a project, retrying until it finds a slug and key that are free for this
+ * owner. The unique indexes are the arbiter rather than a pre-flight SELECT, so two
+ * concurrent creates can't agree on the same identifier. Each identifier is bumped
+ * only when it is the one that collided — "Spectrum" alongside an existing "Specboard"
+ * takes the free slug `spectrum` and only suffixes the contested key.
+ */
+async function insertProject(
+	name: string,
+	columns: string,
+	placeholders: string,
+	values: unknown[]
+): Promise<Project> {
+	const baseSlug = slugifyProjectName(name);
+	const baseKey = deriveProjectKey(name);
+	let slugAttempt = 1;
+	let keyAttempt = 1;
+
+	while (slugAttempt <= MAX_IDENTIFIER_ATTEMPTS && keyAttempt <= MAX_IDENTIFIER_ATTEMPTS) {
+		try {
+			const result = await query<Project>(
+				`INSERT INTO projects (${columns}, slug, key)
+				 VALUES (${placeholders}, $${values.length + 1}, $${values.length + 2})
+				 RETURNING *`,
+				[...values, withSuffix(baseSlug, slugAttempt, 'slug'), withSuffix(baseKey, keyAttempt, 'key')]
+			);
+			return result.rows[0]!;
+		} catch (error) {
+			const { code, constraint } = error as { code?: string; constraint?: string };
+			if (code !== UNIQUE_VIOLATION) throw error;
+			if (constraint === 'idx_projects_owner_key') keyAttempt++;
+			else slugAttempt++;
+		}
+	}
+
+	throw new Error(`Could not find a free slug or key for project name "${name}"`);
+}
+
 export async function createProject(
 	userId: string,
 	data: CreateProjectInput
@@ -170,25 +256,27 @@ export async function createProject(
 			branch: data.repository.branch,
 		};
 
-		const result = await query<Project>(
-			`INSERT INTO projects (name, description, owner_id, storage_mode, repository, root_paths, system_prompt)
-			 VALUES ($1, $2, $3, 'cloud', $4, $5, $6)
-			 RETURNING *`,
-			[data.name, data.description || null, userId, JSON.stringify(repoConfig), JSON.stringify(['/']), data.systemPrompt || null]  // Empty string or undefined → NULL in DB
+		const project = await insertProject(
+			data.name,
+			'name, description, owner_id, storage_mode, repository, root_paths, system_prompt',
+			"$1, $2, $3, 'cloud', $4, $5, $6",
+			// Empty string or undefined → NULL in DB
+			[data.name, data.description || null, userId, JSON.stringify(repoConfig), JSON.stringify(['/']), data.systemPrompt || null]
 		);
 
-		return transformProject(result.rows[0]!);
+		return transformProject(project);
 	}
 
 	// No repository - create with default storage_mode 'none'
-	const result = await query<Project>(
-		`INSERT INTO projects (name, description, owner_id, system_prompt)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING *`,
-		[data.name, data.description || null, userId, data.systemPrompt || null]  // Empty string or undefined → NULL in DB
+	const project = await insertProject(
+		data.name,
+		'name, description, owner_id, system_prompt',
+		'$1, $2, $3, $4',
+		// Empty string or undefined → NULL in DB
+		[data.name, data.description || null, userId, data.systemPrompt || null]
 	);
 
-	return transformProject(result.rows[0]!);
+	return transformProject(project);
 }
 
 /**
@@ -198,6 +286,19 @@ export interface UpdateProjectInput {
 	name?: string;
 	description?: string;
 	systemPrompt?: string;
+	slug?: string;
+	key?: string;
+}
+
+/** Raised when a requested slug or key is already used by another of the owner's projects. */
+export class ProjectIdentifierTakenError extends Error {
+	readonly field: 'slug' | 'key';
+
+	constructor(field: 'slug' | 'key') {
+		super(`Project ${field} is already in use`);
+		this.name = 'ProjectIdentifierTakenError';
+		this.field = field;
+	}
 }
 
 export async function updateProject(
@@ -221,6 +322,16 @@ export async function updateProject(
 		updates.push(`system_prompt = $${paramIndex++}`);
 		values.push(data.systemPrompt || null);  // Empty string or undefined → NULL in DB
 	}
+	// Renaming a project deliberately leaves its slug and key alone: they're in URLs
+	// and item keys, so they only change when asked for explicitly.
+	if (data.slug !== undefined) {
+		updates.push(`slug = $${paramIndex++}`);
+		values.push(data.slug);
+	}
+	if (data.key !== undefined) {
+		updates.push(`key = $${paramIndex++}`);
+		values.push(data.key);
+	}
 
 	if (updates.length === 0) {
 		return getProject(projectId, userId);
@@ -229,12 +340,21 @@ export async function updateProject(
 	updates.push('updated_at = NOW()');
 	values.push(projectId, userId);
 
-	const result = await query<Project>(
-		`UPDATE projects SET ${updates.join(', ')}
-		 WHERE id = $${paramIndex++} AND owner_id = $${paramIndex}
-		 RETURNING *`,
-		values
-	);
+	let result;
+	try {
+		result = await query<Project>(
+			`UPDATE projects SET ${updates.join(', ')}
+			 WHERE id = $${paramIndex++} AND owner_id = $${paramIndex}
+			 RETURNING *`,
+			values
+		);
+	} catch (error) {
+		const { code, constraint } = error as { code?: string; constraint?: string };
+		if (code === UNIQUE_VIOLATION) {
+			throw new ProjectIdentifierTakenError(constraint === 'idx_projects_owner_key' ? 'key' : 'slug');
+		}
+		throw error;
+	}
 
 	if (result.rows.length === 0) {
 		return null;

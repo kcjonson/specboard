@@ -1,6 +1,10 @@
 /**
  * Item handlers — unified work-item CRUD, lifecycle, children, and current-work.
  * Thin wrappers over the @specboard/db item service (which returns camelCase responses).
+ *
+ * Items are addressed by their key (`SB-345`). requireProjectAccess has already
+ * resolved `:projectSlug` to the project on the context; these handlers turn the
+ * `:itemKey` path segment into the per-project number the service works in.
  */
 
 import type { Context } from 'hono';
@@ -17,17 +21,61 @@ import {
 	blockItem,
 	unblockItem,
 	verifyItemOwnership,
-	getItemIdsBySpecPath,
+	getItemKeysBySpecPath,
+	ParentItemNotFoundError,
+	DiscoveredFromNotFoundError,
+	ItemCycleError,
+	type ResolvedProject,
 	type ItemStatus,
 	type ItemType,
 	type SubStatus,
+	type UserActor,
 } from '@specboard/db';
-import { isValidUUID, isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../validation.ts';
+import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
+import { isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../validation.ts';
+import { apiItem } from '../types.ts';
+
+/**
+ * The project resolved from :projectSlug by requireProjectAccess.
+ *
+ * Throws rather than returning undefined: reaching here without it means the route
+ * was registered without the wrapper, which would otherwise read as "authorized" and
+ * query with an undefined project id. A 500 is the correct answer to that mistake.
+ */
+export function requireResolvedProject(context: Context): ResolvedProject {
+	const resolved = context.get('project') as ResolvedProject | undefined;
+	if (!resolved) throw new Error('Route is missing requireProjectAccess — no resolved project on context');
+	return resolved;
+}
+
+/** The authenticated user as a provenance actor (requireProjectAccess sets userId). */
+export function apiActor(context: Context): UserActor {
+	const userId = context.get('userId') as string | undefined;
+	if (!userId) throw new Error('Route is missing requireProjectAccess — no userId on context');
+	return { type: 'user', userId };
+}
+
+const project = requireResolvedProject;
+
+/**
+ * The :itemKey path segment as a number, or an error Response.
+ *
+ * A key that isn't a key at all is a 400. A well-formed key carrying another
+ * project's prefix is a 404 — the same answer as a number that doesn't exist here,
+ * so the response can't be used to discover which prefixes are real.
+ */
+function pathItemNumber(context: Context): number | Response {
+	const key = context.req.param('itemKey');
+	if (!key || !parseItemKey(key)) return context.json({ error: 'Invalid item key' }, 400);
+
+	const number = itemNumberInProject(key, project(context).key);
+	if (number === null) return context.json({ error: 'Item not found' }, 404);
+	return number;
+}
 
 /** GET /items — top-level items with child stats, filterable by status/type/search. */
 export async function handleListItems(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	if (!isValidUUID(projectId)) return context.json({ error: 'Invalid project ID format' }, 400);
+	const { id: projectId } = project(context);
 
 	const status = context.req.query('status');
 	const type = context.req.query('type');
@@ -37,8 +85,8 @@ export async function handleListItems(context: Context): Promise<Response> {
 	try {
 		// Reverse lookup: items linking a given spec path (used by the doc editor).
 		if (specPath) {
-			const ids = await getItemIdsBySpecPath(projectId, specPath);
-			return context.json(ids.map((id) => ({ id })));
+			const keys = await getItemKeysBySpecPath(projectId, specPath);
+			return context.json(keys.map((key) => ({ key })));
 		}
 		const items = await getItems({
 			projectId,
@@ -47,24 +95,24 @@ export async function handleListItems(context: Context): Promise<Response> {
 			search: search || undefined,
 			limit: 500,
 		});
-		return context.json(items);
+		return context.json(items.map(apiItem));
 	} catch (error) {
 		console.error('Failed to list items:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
 }
 
-/** GET /items/:id — a single item with its children, notes, and specs. */
+/** GET /items/:itemKey — a single item with its children, notes, and specs. */
 export async function handleGetItem(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	const id = context.req.param('id');
-	if (!isValidUUID(projectId) || !isValidUUID(id)) return context.json({ error: 'Invalid ID format' }, 400);
+	const { id: projectId } = project(context);
+	const itemNumber = pathItemNumber(context);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
-		const items = await getItems({ projectId, itemId: id, includeChildren: true, includeNotes: true, includeSpecs: true });
+		const items = await getItems({ projectId, itemNumber, includeChildren: true, includeNotes: true, includeSpecs: true, includeBlockers: true, includeWorkers: true });
 		const item = items[0];
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(item);
+		return context.json(apiItem(item));
 	} catch (error) {
 		console.error('Failed to get item:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -73,57 +121,79 @@ export async function handleGetItem(context: Context): Promise<Response> {
 
 /** GET /items/current — active (in_progress + in_review) and ready items. */
 export async function handleGetCurrentWork(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	if (!isValidUUID(projectId)) return context.json({ error: 'Invalid project ID format' }, 400);
+	const { id: projectId } = project(context);
 
 	try {
 		const [inProgress, inReview, ready] = await Promise.all([
 			getItems({ projectId, status: 'in_progress', includeChildren: true, includeNotes: true }),
 			getItems({ projectId, status: 'in_review', includeChildren: true }),
-			getItems({ projectId, status: 'ready' }),
+			// Ready means actually startable: row-blocked items are excluded
+			// (status='blocked' is already excluded by the equality filter).
+			getItems({ projectId, status: 'ready', excludeBlocked: true }),
 		]);
-		return context.json({ active: [...inProgress, ...inReview], ready });
+		return context.json({ active: [...inProgress, ...inReview].map(apiItem), ready: ready.map(apiItem) });
 	} catch (error) {
 		console.error('Failed to get current work:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
 }
 
-/** POST /items — create a top-level item or a child (when parentId is given). */
+/** POST /items — create a top-level item or a child (when parentKey is given). */
 export async function handleCreateItem(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	if (!isValidUUID(projectId)) return context.json({ error: 'Invalid project ID format' }, 400);
+	const { id: projectId, key: projectKey } = project(context);
 
-	const body = await context.req.json<{ title?: string; type?: unknown; parentId?: string | null; description?: string; status?: unknown }>();
+	const body = await context.req.json<{ title?: string; type?: unknown; parentKey?: string | null; description?: string; status?: unknown; discoveredFromKey?: unknown }>();
 	const title = body.title || 'Untitled';
 	if (!isValidTitle(title)) return context.json({ error: `Title must be between 1 and ${MAX_TITLE_LENGTH} characters` }, 400);
 	if (body.type !== undefined && !isValidType(body.type)) return context.json({ error: 'Invalid type. Must be one of: epic, task, bug' }, 400);
 	if (body.status !== undefined && !isValidStatus(body.status)) return context.json({ error: 'Invalid status' }, 400);
-	if (body.parentId != null && !isValidUUID(body.parentId)) return context.json({ error: 'Invalid parentId format' }, 400);
+
+	let parentNumber: number | null = null;
+	if (body.parentKey != null) {
+		if (typeof body.parentKey !== 'string' || !parseItemKey(body.parentKey)) {
+			return context.json({ error: 'Invalid parentKey' }, 400);
+		}
+		parentNumber = itemNumberInProject(body.parentKey, projectKey);
+		if (parentNumber === null) return context.json({ error: 'Parent item not found' }, 404);
+	}
+
+	let discoveredFromNumber: number | undefined;
+	if (body.discoveredFromKey != null) {
+		if (typeof body.discoveredFromKey !== 'string' || !parseItemKey(body.discoveredFromKey)) {
+			return context.json({ error: 'Invalid discoveredFromKey' }, 400);
+		}
+		const resolved = itemNumberInProject(body.discoveredFromKey, projectKey);
+		if (resolved === null) return context.json({ error: 'Discovered-from item not found' }, 404);
+		discoveredFromNumber = resolved;
+	}
 
 	try {
-		if (body.parentId && !(await verifyItemOwnership(projectId, body.parentId))) {
+		if (parentNumber !== null && !(await verifyItemOwnership(projectId, parentNumber))) {
 			return context.json({ error: 'Parent item not found' }, 404);
 		}
 		const item = await createItem(projectId, {
 			title,
 			type: body.type as ItemType | undefined,
-			parentId: body.parentId ?? null,
+			parentNumber,
 			description: body.description,
 			status: body.status as ItemStatus | undefined,
+			origin: { actor: apiActor(context) },
+			discoveredFromNumber,
 		});
-		return context.json(item, 201);
+		return context.json(apiItem(item), 201);
 	} catch (error) {
+		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
+		if (error instanceof DiscoveredFromNotFoundError) return context.json({ error: 'Discovered-from item not found' }, 404);
 		console.error('Failed to create item:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
 }
 
-/** POST /items/:id/children — bulk-create child items under a parent. */
+/** POST /items/:itemKey/children — bulk-create child items under a parent. */
 export async function handleCreateChildren(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	const parentId = context.req.param('id');
-	if (!isValidUUID(projectId) || !isValidUUID(parentId)) return context.json({ error: 'Invalid ID format' }, 400);
+	const { id: projectId } = project(context);
+	const parentNumber = pathItemNumber(context);
+	if (typeof parentNumber !== 'number') return parentNumber;
 
 	const body = await context.req.json<{ items?: Array<{ title?: string; description?: string; type?: unknown }> }>();
 	if (!Array.isArray(body.items) || body.items.length === 0) return context.json({ error: 'items array is required' }, 400);
@@ -133,31 +203,33 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 	}
 
 	try {
-		if (!(await verifyItemOwnership(projectId, parentId))) return context.json({ error: 'Parent item not found' }, 404);
+		if (!(await verifyItemOwnership(projectId, parentNumber))) return context.json({ error: 'Parent item not found' }, 404);
 		const created = await createItems(
 			projectId,
-			parentId,
-			body.items.map((it) => ({ title: it.title!, description: it.description, type: it.type as ItemType | undefined }))
+			parentNumber,
+			body.items.map((it) => ({ title: it.title!, description: it.description, type: it.type as ItemType | undefined })),
+			{ actor: apiActor(context) }
 		);
-		return context.json(created, 201);
+		return context.json(created.map(apiItem), 201);
 	} catch (error) {
+		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		console.error('Failed to create child items:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
 }
 
-/** PUT /items/:id — update an item's fields. */
+/** PUT /items/:itemKey — update an item's fields. */
 export async function handleUpdateItem(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	const id = context.req.param('id');
-	if (!isValidUUID(projectId) || !isValidUUID(id)) return context.json({ error: 'Invalid ID format' }, 400);
+	const { id: projectId } = project(context);
+	const itemNumber = pathItemNumber(context);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	const body = await context.req.json<Record<string, unknown>>();
 	if (body.status !== undefined && !isValidStatus(body.status)) return context.json({ error: 'Invalid status' }, 400);
 	if (typeof body.title === 'string' && !isValidTitle(body.title)) return context.json({ error: 'Invalid title' }, 400);
 
 	try {
-		const item = await updateItem(projectId, id, {
+		const item = await updateItem(projectId, itemNumber, {
 			title: body.title as string | undefined,
 			description: body.description as string | undefined,
 			status: body.status as ItemStatus | undefined,
@@ -169,47 +241,57 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 			note: body.note as string | undefined,
 		});
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(item);
+		return context.json(apiItem(item));
 	} catch (error) {
 		console.error('Failed to update item:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
 }
 
-/** POST /items/:id/move — reparent an item, or promote to top-level (parentId null). */
+/** POST /items/:itemKey/move — reparent an item, or promote to top-level (parentKey null). */
 export async function handleMoveItem(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	const id = context.req.param('id');
-	if (!isValidUUID(projectId) || !isValidUUID(id)) return context.json({ error: 'Invalid ID format' }, 400);
+	const { id: projectId, key: projectKey } = project(context);
+	const itemNumber = pathItemNumber(context);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
-	const body = await context.req.json<{ parentId?: string | null }>();
-	const newParentId = body.parentId ?? null;
-	if (newParentId !== null && !isValidUUID(newParentId)) return context.json({ error: 'Invalid parentId format' }, 400);
-	if (newParentId === id) return context.json({ error: 'An item cannot be its own parent' }, 400);
+	const body = await context.req.json<{ parentKey?: string | null }>();
+	let newParentNumber: number | null = null;
+	if (body.parentKey != null) {
+		if (typeof body.parentKey !== 'string' || !parseItemKey(body.parentKey)) {
+			return context.json({ error: 'Invalid parentKey' }, 400);
+		}
+		newParentNumber = itemNumberInProject(body.parentKey, projectKey);
+		if (newParentNumber === null) return context.json({ error: 'Parent item not found' }, 404);
+	}
+	if (newParentNumber === itemNumber) return context.json({ error: 'An item cannot be its own parent' }, 400);
 
 	try {
-		if (!(await verifyItemOwnership(projectId, id))) return context.json({ error: 'Item not found' }, 404);
-		if (newParentId && !(await verifyItemOwnership(projectId, newParentId))) return context.json({ error: 'Parent item not found' }, 404);
-		if (newParentId && (await wouldCreateCycle(projectId, id, newParentId))) {
+		if (!(await verifyItemOwnership(projectId, itemNumber))) return context.json({ error: 'Item not found' }, 404);
+		if (newParentNumber !== null && !(await verifyItemOwnership(projectId, newParentNumber))) {
+			return context.json({ error: 'Parent item not found' }, 404);
+		}
+		if (newParentNumber !== null && (await wouldCreateCycle(projectId, itemNumber, newParentNumber))) {
 			return context.json({ error: 'Cannot move an item under itself or one of its descendants' }, 400);
 		}
-		const item = await moveItem(projectId, id, newParentId);
+		const item = await moveItem(projectId, itemNumber, newParentNumber);
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(item);
+		return context.json(apiItem(item));
 	} catch (error) {
+		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
+		if (error instanceof ItemCycleError) return context.json({ error: error.message }, 400);
 		console.error('Failed to move item:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
 }
 
-/** DELETE /items/:id — delete an item (children cascade). */
+/** DELETE /items/:itemKey — delete an item (children cascade). */
 export async function handleDeleteItem(context: Context): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	const id = context.req.param('id');
-	if (!isValidUUID(projectId) || !isValidUUID(id)) return context.json({ error: 'Invalid ID format' }, 400);
+	const { id: projectId } = project(context);
+	const itemNumber = pathItemNumber(context);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
-		const deleted = await deleteItem(projectId, id);
+		const deleted = await deleteItem(projectId, itemNumber);
 		if (!deleted) return context.json({ error: 'Item not found' }, 404);
 		return context.json({ success: true });
 	} catch (error) {
@@ -222,12 +304,12 @@ export async function handleDeleteItem(context: Context): Promise<Response> {
 
 async function lifecycle(
 	context: Context,
-	run: (projectId: string, id: string, note: string | undefined) => Promise<unknown>,
+	run: (projectId: string, itemNumber: number, note: string | undefined) => Promise<unknown>,
 	requireNote = false
 ): Promise<Response> {
-	const projectId = context.req.param('projectId');
-	const id = context.req.param('id');
-	if (!isValidUUID(projectId) || !isValidUUID(id)) return context.json({ error: 'Invalid ID format' }, 400);
+	const { id: projectId } = project(context);
+	const itemNumber = pathItemNumber(context);
+	if (typeof itemNumber !== 'number') return itemNumber;
 
 	let note: string | undefined;
 	try {
@@ -239,16 +321,16 @@ async function lifecycle(
 	if (requireNote && (!note || note.trim() === '')) return context.json({ error: 'note is required' }, 400);
 
 	try {
-		const item = await run(projectId, id, note);
+		const item = await run(projectId, itemNumber, note);
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(item);
+		return context.json(apiItem(item as Parameters<typeof apiItem>[0]));
 	} catch (error) {
 		console.error('Lifecycle update failed:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
 }
 
-export const handleStartItem = (c: Context): Promise<Response> => lifecycle(c, (p, id) => startItem(p, id));
-export const handleCompleteItem = (c: Context): Promise<Response> => lifecycle(c, (p, id, note) => completeItem(p, id, note));
-export const handleBlockItem = (c: Context): Promise<Response> => lifecycle(c, (p, id, note) => blockItem(p, id, note!), true);
-export const handleUnblockItem = (c: Context): Promise<Response> => lifecycle(c, (p, id) => unblockItem(p, id));
+export const handleStartItem = (c: Context): Promise<Response> => lifecycle(c, (p, n) => startItem(p, n));
+export const handleCompleteItem = (c: Context): Promise<Response> => lifecycle(c, (p, n, note) => completeItem(p, n, note));
+export const handleBlockItem = (c: Context): Promise<Response> => lifecycle(c, (p, n, note) => blockItem(p, n, note!), true);
+export const handleUnblockItem = (c: Context): Promise<Response> => lifecycle(c, (p, n) => unblockItem(p, n));

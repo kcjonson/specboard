@@ -160,6 +160,8 @@ app.get('/home', (c) => servePage(c, pages.home));
 
 app.get('/privacy', (c) => servePage(c, pages.privacy));
 
+app.get('/setup', (c) => servePage(c, pages.setup));
+
 // Root - marketing for unauthenticated, SPA for authenticated
 // IMPORTANT: This route returns different content based on auth state,
 // so the unauthenticated response must use private/no-cache to prevent
@@ -465,6 +467,13 @@ app.get('/favicon.svg', serveStatic({ root: publicRoot, path: 'favicon.svg' }));
 app.get('/robots.txt', serveStatic({ root: publicRoot, path: 'robots.txt' }));
 app.get('/version.txt', serveStatic({ root: publicRoot, path: 'version.txt' }));
 
+// Brand lockup for transactional emails, light and dark surfaces. Email
+// clients fetch these with no session, so they have to be listed here
+// explicitly - anything not on this allowlist falls through to
+// authMiddleware and 404s for them.
+app.get('/email-logo.png', serveStatic({ root: publicRoot, path: 'email-logo.png' }));
+app.get('/email-logo-dark.png', serveStatic({ root: publicRoot, path: 'email-logo-dark.png' }));
+
 // Claude Code plugin marketplace manifest (public, no auth). Lets users run
 // `/plugin marketplace add https://specboard.io/claude`. Both paths return the same
 // file so the command works whether the client fetches the URL verbatim or appends a filename.
@@ -477,7 +486,7 @@ app.get('/claude/marketplace.json', serveStatic({ root: publicRoot, path: 'marke
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/signup', '/home', '/privacy', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
+		excludePaths: ['/health', '/login', '/signup', '/home', '/privacy', '/setup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
 		onUnauthenticated: () => {
 			// Show 404 for unauthenticated requests
 			// This avoids revealing which routes exist and eliminates route duplication

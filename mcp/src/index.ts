@@ -26,6 +26,7 @@ import {
 
 import { installErrorHandlers, logRequest } from '@specboard/core';
 import { mcpAuthMiddleware, type McpAuthVariables } from '@specboard/auth';
+import type { AgentActor } from '@specboard/db';
 
 /**
  * Signal to @hono/node-server that the response was already written
@@ -62,11 +63,13 @@ const projectToolNames = new Set(['list_projects']);
 // carries the full guided workflow; this is the always-on summary that points users to it.
 const SERVER_INSTRUCTIONS = `You are connected to Specboard, the user's planning board: epics, tasks, and bugs (an epic is an optional container; tasks and bugs can nest under one or stand alone). Use these tools whenever the user is planning, picking up work, or tracking development status.
 
-Tools: list_projects finds the project (a repo bound via .mcp.json X-Specboard-Project auto-selects one). get_items reads work by status (ready/in_progress/in_review/done), by type, by search, or one item by item_id with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_id); create_items bulk-creates children under a parent. update_item changes title/description/status/sub_status/notes/branch_name/pr_url. Setting an epic's sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
+Tools: list_projects finds the project and its slug (a repo bound via .mcp.json X-Specboard-Project auto-selects one, and then project_slug can be omitted). A project is addressed by its slug ("specboard"); its items are addressed by key ("SB-345"). Never pass an item key or a prefix as project_slug. get_items reads work by status (ready/in_progress/blocked/in_review/done), by type, by search, or one item by item_key with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_key); create_items bulk-creates children. update_item changes title/description/status/sub_status/notes/branch_name/pr_url. Setting sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
 
-Role model: you can run the full loop (read or write specs, create epics, break work into tasks, build, verify, merge, and close). The human stays in control by choosing when to write a spec themselves and when to review a PR before it merges. One hard rule: verify the work (tests green, behavior confirmed) before you mark any task done or any epic complete. Keep status accurate in real time; never leave a stale in_progress item.
+Blockers and provenance: an item is blocked while any blocker is open; set them explicitly via the blockers array ({item_key} auto-clears when that item completes, {text} clears only when removed) — never infer them. status=ready excludes blocked items (include_blocked to override). When you file work discovered mid-task, pass discovered_from with the item you were working. Your session is recorded as each item's creator and, while an item is in_progress, as an active worker.
 
-For the full guided workflow (scoping, plan files, status hygiene, close-out), install the Specboard plugin: /plugin marketplace add https://specboard.io/claude then /plugin install specboard@specboard`;
+Role model: you can run the full loop (specs, epics, tasks, build, verify, merge, close); the human decides when to write specs themselves and when to review PRs. One hard rule: verify the work (tests green, behavior confirmed) before marking anything done. Keep status accurate; never leave a stale in_progress item.
+
+For the full guided workflow, install the Specboard plugin: /plugin marketplace add https://specboard.io/claude then /plugin install specboard@specboard`;
 
 // Session-to-user binding for security
 // Prevents session hijacking by ensuring a session can only be used by the user who created it
@@ -75,11 +78,27 @@ interface SessionBinding {
 	transport: StreamableHTTPServerTransport;
 }
 
+/**
+ * The authenticated agent session behind an MCP connection. userId/clientId/
+ * deviceName come from the OAuth token; sessionId is filled in by the transport
+ * once the session initializes (the object is captured by the tool-handler
+ * closure, so later calls see it). This is the server-side source for the
+ * AgentActor recorded as provenance — never client-supplied.
+ */
+interface McpAgentIdentity {
+	userId: string;
+	clientId: string;
+	deviceName?: string;
+	sessionId?: string;
+}
+
 // Create MCP server factory - each session gets its own server instance
-// userId is passed from the auth middleware to ensure all operations are authorized.
-// boundProjectId, when present, is the project UUID from the X-Specboard-Project request header
-// (set by a repo's committed .mcp.json) and scopes the session to that one project.
-function createMcpServer(userId: string, boundProjectId?: string): Server {
+// identity is derived from the auth middleware to ensure all operations are authorized
+// and to record provenance. boundProjectSlug, when present, is the project slug from the
+// X-Specboard-Project request header (set by a repo's committed .mcp.json) and scopes
+// the session to that one project.
+function createMcpServer(identity: McpAgentIdentity, boundProjectSlug?: string): Server {
+	const userId = identity.userId;
 	const server = new Server(
 		{
 			name: 'specboard',
@@ -100,19 +119,31 @@ function createMcpServer(userId: string, boundProjectId?: string): Server {
 		};
 	});
 
-	// Handle tool calls - pass userId for authorization
+	// Handle tool calls - pass the actor for authorization and provenance
 	server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		const { name, arguments: args } = request.params;
 
+		// Built per call: sessionId lands on the identity after initialize, and the
+		// protocol clientInfo (agent name/version) is only known post-handshake.
+		const clientInfo = server.getClientVersion();
+		const actor: AgentActor = {
+			type: 'agent',
+			userId: identity.userId,
+			clientId: identity.clientId,
+			...(identity.deviceName ? { deviceName: identity.deviceName } : {}),
+			...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
+			...(clientInfo ? { client: { name: clientInfo.name, version: clientInfo.version } } : {}),
+		};
+
 		try {
 			// Route to appropriate handler using exact matching
-			// Each handler receives userId to verify project ownership
+			// Each handler receives the identity to verify project ownership
 			if (projectToolNames.has(name)) {
-				return await handleProjectTool(name, args, userId, boundProjectId);
+				return await handleProjectTool(name, args, userId, boundProjectSlug);
 			}
 
 			if (epicToolNames.has(name)) {
-				return await handleEpicTool(name, args, userId, boundProjectId);
+				return await handleEpicTool(name, args, actor, boundProjectSlug);
 			}
 
 			return {
@@ -201,11 +232,19 @@ app.post('/mcp', async (c) => {
 		return transportHandledResponse();
 	}
 
-	// New session - create transport and server
+	// New session - create transport and server. The identity object is shared with
+	// the server's tool-handler closure; sessionId is filled in on initialize so
+	// provenance actors can carry it.
+	const identity: McpAgentIdentity = {
+		userId,
+		clientId: mcpToken.clientId,
+		deviceName: mcpToken.deviceName ?? undefined,
+	};
 	const transport = new StreamableHTTPServerTransport({
 		sessionIdGenerator: () => randomUUID(),
 		onsessioninitialized: (newSessionId) => {
 			// Bind the session to the authenticated user
+			identity.sessionId = newSessionId;
 			sessions.set(newSessionId, { userId, transport });
 			console.log(`Session initialized: ${newSessionId} for user: ${userId}`);
 		},
@@ -219,11 +258,11 @@ app.post('/mcp', async (c) => {
 	};
 
 	// Create and connect MCP server with the authenticated userId.
-	// A repo's committed .mcp.json carries the project UUID in this header; the server scopes
-	// tools to that project (access is still gated per user by verifyProjectAccess). Trim +
+	// A repo's committed .mcp.json carries the project slug in this header; the server scopes
+	// tools to that project (access is still gated per user when the slug is resolved). Trim +
 	// lowercase to tolerate stray whitespace/casing; absent/blank means "unscoped".
-	const boundProjectId = c.req.header('x-specboard-project')?.trim().toLowerCase() || undefined;
-	const server = createMcpServer(userId, boundProjectId);
+	const boundProjectSlug = c.req.header('x-specboard-project')?.trim().toLowerCase() || undefined;
+	const server = createMcpServer(identity, boundProjectSlug);
 	await server.connect(transport);
 
 	// Handle the request

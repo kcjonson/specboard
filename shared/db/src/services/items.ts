@@ -6,8 +6,20 @@
  * are themselves items, so the same operations apply at every level.
  */
 
-import { query } from '../index.ts';
-import type { Item, ItemType, ItemStatus, SubStatus, SpecType } from '../types.ts';
+import { formatItemKey } from '@specboard/core/identifiers';
+import { query, transaction } from '../index.ts';
+import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin } from '../types.ts';
+import { clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
+import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
+
+/**
+ * An items row joined to its project's key and its parent's number, so responses can
+ * carry both its own key and its parent's.
+ */
+interface ItemRow extends Item {
+	project_key: string;
+	parent_number: number | null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)
@@ -29,9 +41,15 @@ export interface SpecSummary {
 
 export interface ItemSummary {
 	id: string;
+	/** Per-project sequence number. */
+	number: number;
+	/** The item's address, `<project key>-<number>` (e.g. SB-345). */
+	key: string;
 	type: ItemType;
 	title: string;
 	status: ItemStatus;
+	/** Derived: status is 'blocked' OR an open blocker row exists. */
+	blocked: boolean;
 	description: string | null;
 	note: string | null;
 }
@@ -45,13 +63,22 @@ export interface ProgressNoteSummary {
 
 export interface ItemResponse {
 	id: string;
+	/** Per-project sequence number. */
+	number: number;
+	/** The item's address, `<project key>-<number>` (e.g. SB-345). */
+	key: string;
 	parentId: string | null;
+	/** Key of the parent item, or null for a top-level item. The form every write accepts. */
+	parentKey: string | null;
 	type: ItemType;
 	title: string;
 	description: string | null;
 	status: ItemStatus;
 	subStatus: SubStatus | null;
-	creator: string | null;
+	/** Derived: status is 'blocked' OR an open blocker row exists. */
+	blocked: boolean;
+	/** Immutable creation provenance; null predates tracking. */
+	origin: ItemOrigin | null;
 	assignee: string | null;
 	rank: number;
 	dueDate: Date | null;
@@ -71,15 +98,27 @@ export interface ItemWithChildren extends ItemResponse {
 export interface ItemWithDetails extends ItemWithChildren {
 	progressNotes: ProgressNoteSummary[];
 	specs: SpecSummary[];
+	/**
+	 * Open blockers / active agent-session episodes. Present only when requested
+	 * (includeBlockers / includeWorkers) — deliberately absent otherwise, so a
+	 * client model applying an update response doesn't wipe state the response
+	 * simply didn't load.
+	 */
+	blockers?: BlockerSummary[];
+	workers?: WorkerSummary[];
 }
 
 export interface CreateItemInput {
 	title: string;
 	type?: ItemType;
-	parentId?: string | null;
+	/** Number of the item to nest under, or null/omitted for a top-level item. */
+	parentNumber?: number | null;
 	description?: string;
 	status?: ItemStatus;
-	creator?: string;
+	/** Creation provenance; the actor is captured server-side by the caller. */
+	origin: ItemOrigin;
+	/** Number of the item being worked when this one was filed; snapshotted into origin. */
+	discoveredFromNumber?: number;
 	rank?: number;
 }
 
@@ -95,15 +134,61 @@ export interface UpdateItemInput {
 	note?: string;
 }
 
+/**
+ * Raised when a parent number names no item in the project. The parent is resolved
+ * inside the INSERT/UPDATE by subquery, which yields NULL for a miss — that would
+ * silently produce a *top-level* item (at rank 1, colliding with the real top level)
+ * instead of an error, so every write re-checks the outcome and throws this.
+ */
+export class ParentItemNotFoundError extends Error {
+	readonly parentNumber: number;
+
+	constructor(parentNumber: number) {
+		super(`No item numbered ${parentNumber} in this project`);
+		this.name = 'ParentItemNotFoundError';
+		this.parentNumber = parentNumber;
+	}
+}
+
+/**
+ * Raised when a move would put an item under itself or one of its descendants.
+ * moveItem enforces this inside the UPDATE rather than trusting a prior
+ * wouldCreateCycle call: two concurrent moves that are each individually safe can
+ * still close a loop between the check and the write, and a cycle detaches an
+ * entire subtree from the board with no way back through the UI.
+ */
+export class ItemCycleError extends Error {
+	constructor() {
+		super('Cannot move an item under itself or one of its descendants');
+		this.name = 'ItemCycleError';
+	}
+}
+
+/** Raised when discoveredFromNumber names no item in the project. */
+export class DiscoveredFromNotFoundError extends Error {
+	readonly itemNumber: number;
+
+	constructor(itemNumber: number) {
+		super(`No item numbered ${itemNumber} in this project`);
+		this.name = 'DiscoveredFromNotFoundError';
+		this.itemNumber = itemNumber;
+	}
+}
+
 export interface GetItemsParams {
 	projectId: string;
-	itemId?: string;
+	/** Fetch exactly this item (by its per-project number) instead of listing. */
+	itemNumber?: number;
 	status?: ItemStatus;
 	type?: ItemType;
 	search?: string;
+	/** Drop items that are blocked (status 'blocked' or any open blocker row). */
+	excludeBlocked?: boolean;
 	includeChildren?: boolean;
 	includeNotes?: boolean;
 	includeSpecs?: boolean;
+	includeBlockers?: boolean;
+	includeWorkers?: boolean;
 	limit?: number;
 }
 
@@ -111,16 +196,19 @@ export interface GetItemsParams {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function transformItem(item: Item): Omit<ItemResponse, 'childStats'> {
+function transformItem(item: ItemRow): Omit<ItemResponse, 'childStats' | 'blocked'> {
 	return {
 		id: item.id,
+		number: item.number!,
+		key: formatItemKey(item.project_key, item.number!),
 		parentId: item.parent_id,
+		parentKey: item.parent_number === null ? null : formatItemKey(item.project_key, item.parent_number),
 		type: item.type,
 		title: item.title,
 		description: item.description,
 		status: item.status,
 		subStatus: item.sub_status,
-		creator: item.creator,
+		origin: item.origin,
 		assignee: item.assignee,
 		rank: item.rank,
 		dueDate: item.due_date,
@@ -133,12 +221,15 @@ function transformItem(item: Item): Omit<ItemResponse, 'childStats'> {
 	};
 }
 
-function summarizeItem(item: Item): ItemSummary {
+function summarizeItem(item: Item & { blocked?: boolean }, projectKey: string): ItemSummary {
 	return {
 		id: item.id,
+		number: item.number!,
+		key: formatItemKey(projectKey, item.number!),
 		type: item.type,
 		title: item.title,
 		status: item.status,
+		blocked: item.blocked ?? item.status === 'blocked',
 		description: item.description,
 		note: item.note,
 	};
@@ -172,11 +263,11 @@ function deriveSubStatusFromStatus(status: ItemStatus): SubStatus {
 // Authorization
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Verify an item belongs to the project. Replaces the old epic/task ownership checks. */
-export async function verifyItemOwnership(projectId: string, itemId: string): Promise<boolean> {
+/** Verify an item with this number exists in the project. */
+export async function verifyItemOwnership(projectId: string, itemNumber: number): Promise<boolean> {
 	const result = await query(
-		'SELECT id FROM items WHERE id = $1 AND project_id = $2',
-		[itemId, projectId]
+		'SELECT id FROM items WHERE number = $1 AND project_id = $2',
+		[itemNumber, projectId]
 	);
 	return result.rows.length > 0;
 }
@@ -185,7 +276,8 @@ export async function verifyItemOwnership(projectId: string, itemId: string): Pr
 // Reads
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ItemWithCounts = Item & {
+type ItemWithCounts = ItemRow & {
+	blocked: boolean;
 	child_count: string;
 	done_count: string;
 	in_progress_count: string;
@@ -193,28 +285,40 @@ type ItemWithCounts = Item & {
 };
 
 /**
- * Query top-level items (parent_id IS NULL) with child stats, or a single item by id.
- * Optionally include each item's children, progress notes, and spec links.
+ * Query top-level items (parent_id IS NULL) with child stats, or a single item by its
+ * per-project number. Optionally include each item's children, progress notes, specs,
+ * blockers, and active workers.
  */
 export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[]> {
-	const { projectId, itemId, status, type, search, includeChildren, includeNotes, includeSpecs, limit = 25 } = params;
+	const { projectId, itemNumber, status, type, search, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers, limit = 25 } = params;
 
+	// The project join supplies the key that every item key is built from.
+	// open_blocks joins are one-to-one (DISTINCT), so they don't inflate the
+	// child aggregate the way a direct join on item_blockers would.
 	let sql = `
-		SELECT i.*,
+		WITH open_blocks AS (
+			SELECT DISTINCT item_id FROM item_blockers WHERE project_id = $1 AND cleared_at IS NULL
+		)
+		SELECT i.*, p.key as project_key, parent.number as parent_number,
+			(i.status = 'blocked' OR ob.item_id IS NOT NULL) as blocked,
 			COUNT(c.id) as child_count,
 			COUNT(c.id) FILTER (WHERE c.status = 'done') as done_count,
 			COUNT(c.id) FILTER (WHERE c.status = 'in_progress') as in_progress_count,
-			COUNT(c.id) FILTER (WHERE c.status = 'blocked') as blocked_count
+			COUNT(c.id) FILTER (WHERE c.status = 'blocked' OR cob.item_id IS NOT NULL) as blocked_count
 		FROM items i
+		JOIN projects p ON p.id = i.project_id
+		LEFT JOIN items parent ON parent.id = i.parent_id
+		LEFT JOIN open_blocks ob ON ob.item_id = i.id
 		LEFT JOIN items c ON c.parent_id = i.id
+		LEFT JOIN open_blocks cob ON cob.item_id = c.id
 		WHERE i.project_id = $1
 	`;
 	const queryParams: unknown[] = [projectId];
 	let paramIndex = 2;
 
-	if (itemId) {
-		sql += ` AND i.id = $${paramIndex}`;
-		queryParams.push(itemId);
+	if (itemNumber !== undefined) {
+		sql += ` AND i.number = $${paramIndex}`;
+		queryParams.push(itemNumber);
 		paramIndex++;
 	} else {
 		// Lists show top-level items only; children surface via includeChildren.
@@ -234,10 +338,13 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 			queryParams.push(`%${search}%`);
 			paramIndex++;
 		}
+		if (excludeBlocked) {
+			sql += ` AND NOT (i.status = 'blocked' OR ob.item_id IS NOT NULL)`;
+		}
 	}
 
-	sql += ` GROUP BY i.id ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
-	if (!itemId) {
+	sql += ` GROUP BY i.id, p.key, parent.number, ob.item_id ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
+	if (itemNumber === undefined) {
 		sql += ` LIMIT $${paramIndex}`;
 		queryParams.push(limit);
 	}
@@ -245,11 +352,14 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 	const result = await query<ItemWithCounts>(sql, queryParams);
 	const itemIds = result.rows.map((r) => r.id);
 
-	const childrenByParent = new Map<string, Item[]>();
+	const childrenByParent = new Map<string, Array<Item & { blocked: boolean }>>();
 	if (includeChildren && itemIds.length > 0) {
-		const childResult = await query<Item>(
-			'SELECT * FROM items WHERE parent_id = ANY($1) ORDER BY rank ASC, created_at ASC, id ASC',
-			[itemIds]
+		const childResult = await query<Item & { blocked: boolean }>(
+			`SELECT c.*, (c.status = 'blocked' OR ob.item_id IS NOT NULL) as blocked
+			 FROM items c
+			 LEFT JOIN (SELECT DISTINCT item_id FROM item_blockers WHERE project_id = $2 AND cleared_at IS NULL) ob ON ob.item_id = c.id
+			 WHERE c.parent_id = ANY($1) ORDER BY c.rank ASC, c.created_at ASC, c.id ASC`,
+			[itemIds, projectId]
 		);
 		for (const child of childResult.rows) {
 			if (!child.parent_id) continue;
@@ -285,17 +395,27 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 		}
 	}
 
+	const blockersByItem = includeBlockers && itemIds.length > 0
+		? await listOpenBlockersByItems(projectId, itemIds)
+		: undefined;
+	const workersByItem = includeWorkers && itemIds.length > 0
+		? await listActiveWorkersByItems(itemIds)
+		: undefined;
+
 	return result.rows.map((row) => ({
 		...transformItem(row),
+		blocked: row.blocked,
 		childStats: {
 			total: parseInt(row.child_count, 10),
 			done: parseInt(row.done_count, 10),
 			inProgress: parseInt(row.in_progress_count, 10),
 			blocked: parseInt(row.blocked_count, 10),
 		},
-		children: (childrenByParent.get(row.id) || []).map(summarizeItem),
+		children: (childrenByParent.get(row.id) || []).map((child) => summarizeItem(child, row.project_key)),
 		progressNotes: notesByItem.get(row.id) || [],
 		specs: specsByItem.get(row.id) || [],
+		...(blockersByItem ? { blockers: blockersByItem.get(row.id) || [] } : {}),
+		...(workersByItem ? { workers: workersByItem.get(row.id) || [] } : {}),
 	}));
 }
 
@@ -303,64 +423,132 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 // Writes
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Create an item. Top-level when parentId is null/omitted, or a child under parentId. */
+/**
+ * Create an item. Top-level when parentNumber is null/omitted, or a child under it.
+ *
+ * The item's number comes from the project's allocator, bumped in the same statement
+ * as the insert so concurrent creates can't be handed the same number.
+ */
 export async function createItem(projectId: string, data: CreateItemInput): Promise<ItemResponse> {
-	const parentId = data.parentId ?? null;
+	const parentNumber = data.parentNumber ?? null;
 
 	const initialStatus = data.status || 'ready';
 	const subStatus = deriveSubStatusFromStatus(initialStatus);
+	const origin = await resolveOrigin(projectId, data.origin, data.discoveredFromNumber);
 
 	// Rank within the sibling group (project for top-level, parent for children), computed
 	// inside the INSERT to avoid a read-modify-write race. Concurrent inserts can still
 	// collide on a rank; the created_at/id ORDER BY tiebreakers keep ordering stable anyway.
-	const values: unknown[] = [projectId, parentId, data.type || 'epic', data.title, data.description || null, initialStatus, subStatus, data.creator || null];
+	const values: unknown[] = [projectId, parentNumber, data.type || 'epic', data.title, data.description || null, initialStatus, subStatus, JSON.stringify(origin)];
 	let rankSql: string;
 	if (data.rank !== undefined) {
 		values.push(data.rank);
 		rankSql = `$${values.length}`;
-	} else if (parentId) {
-		rankSql = '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $2)';
+	} else if (parentNumber !== null) {
+		rankSql = '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = (SELECT id FROM parent))';
 	} else {
 		rankSql = '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $1 AND parent_id IS NULL)';
 	}
 
-	const result = await query<Item>(
-		`INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, creator, rank)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${rankSql})
-		 RETURNING *`,
+	// The allocator's UPDATE is gated on the parent resolving, so a parentNumber that
+	// names nothing produces zero rows *and writes nothing* — no phantom top-level item,
+	// no consumed number. Checking the returned row instead would be too late: this runs
+	// in autocommit, so the insert would already be durable by the time JS saw it.
+	const result = await query<ItemRow>(
+		`WITH parent AS (
+			SELECT id FROM items WHERE project_id = $1 AND number = $2
+		), allocated AS (
+			UPDATE projects SET item_seq = item_seq + 1
+			WHERE id = $1 AND ($2::int IS NULL OR EXISTS (SELECT 1 FROM parent))
+			RETURNING id, key, item_seq
+		), inserted AS (
+			INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, origin, rank, number)
+			SELECT $1, (SELECT id FROM parent), $3, $4, $5, $6, $7, $8::jsonb, ${rankSql}, a.item_seq
+			FROM allocated a
+			RETURNING *
+		)
+		SELECT inserted.*, (SELECT key FROM allocated) AS project_key, $2::int AS parent_number FROM inserted`,
 		values
 	);
 
-	return { ...transformItem(result.rows[0]!), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
+	const row = result.rows[0];
+	if (!row) await throwCreateFailure(projectId, parentNumber);
+	return { ...transformItem(row!), blocked: row!.status === 'blocked', childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
 }
 
-/** Bulk-create child items under a parent (used for task breakdowns). */
+/**
+ * Snapshot discoveredFromNumber into the origin as { itemId, itemKey }. The
+ * lookup runs before the insert (autocommit), so a concurrent delete of the
+ * source between the two is a harmless stale snapshot — which is what a
+ * snapshot is for.
+ */
+async function resolveOrigin(projectId: string, origin: ItemOrigin, discoveredFromNumber?: number): Promise<ItemOrigin> {
+	if (discoveredFromNumber == null) return origin;
+	const result = await query<{ id: string; key: string }>(
+		`SELECT i.id, p.key FROM items i JOIN projects p ON p.id = i.project_id
+		 WHERE i.project_id = $1 AND i.number = $2`,
+		[projectId, discoveredFromNumber]
+	);
+	const row = result.rows[0];
+	if (!row) throw new DiscoveredFromNotFoundError(discoveredFromNumber);
+	return { ...origin, discoveredFrom: { itemId: row.id, itemKey: formatItemKey(row.key, discoveredFromNumber) } };
+}
+
+/**
+ * Diagnose a write that matched no rows. Both causes are rare, so one extra query on
+ * the failure path is cheaper than carrying the distinction through the main statement.
+ */
+async function throwCreateFailure(projectId: string, parentNumber: number | null): Promise<never> {
+	if (parentNumber !== null && !(await verifyItemOwnership(projectId, parentNumber))) {
+		throw new ParentItemNotFoundError(parentNumber);
+	}
+	throw new Error('Item creation affected no rows — the project no longer exists');
+}
+
+/** Bulk-create child items under a parent (used for task breakdowns). One origin is shared by the batch. */
 export async function createItems(
 	projectId: string,
-	parentId: string,
-	items: Array<{ title: string; description?: string; type?: ItemType }>
+	parentNumber: number,
+	items: Array<{ title: string; description?: string; type?: ItemType }>,
+	origin: ItemOrigin,
+	discoveredFromNumber?: number
 ): Promise<ItemResponse[]> {
 	if (items.length === 0) return [];
+	const resolvedOrigin = await resolveOrigin(projectId, origin, discoveredFromNumber);
 
 	// Single statement: one MAX(rank) snapshot plus each row's ordinal keeps ranks
 	// sequential within the batch. The subquery reads the pre-statement snapshot, so
-	// the race posture matches createItem's inline subquery.
-	const result = await query<Item>(
-		`INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, rank)
-		 SELECT $1, $2, v.type, v.title, v.description, 'ready', 'not_started',
-		        (SELECT COALESCE(MAX(rank), 0) FROM items WHERE parent_id = $2) + row_number() OVER (ORDER BY v.ord)
-		 FROM unnest($3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS v(type, title, description, ord)
-		 RETURNING *`,
-		[projectId, parentId, items.map((d) => d.type || 'task'), items.map((d) => d.title), items.map((d) => d.description || null)]
+	// the race posture matches createItem's inline subquery. Item numbers come from
+	// one bump of the project allocator, split across the batch by the same ordinal.
+	const result = await query<ItemRow>(
+		`WITH parent AS (
+			SELECT id FROM items WHERE project_id = $1 AND number = $2
+		), allocated AS (
+			UPDATE projects SET item_seq = item_seq + $6
+			WHERE id = $1 AND EXISTS (SELECT 1 FROM parent)
+			RETURNING key, item_seq - $6 AS base
+		), inserted AS (
+			INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, origin, rank, number)
+			SELECT $1, (SELECT id FROM parent), v.type, v.title, v.description, 'ready', 'not_started', $7::jsonb,
+			       (SELECT COALESCE(MAX(rank), 0) FROM items WHERE parent_id = (SELECT id FROM parent)) + row_number() OVER (ORDER BY v.ord),
+			       a.base + row_number() OVER (ORDER BY v.ord)
+			FROM unnest($3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS v(type, title, description, ord)
+			CROSS JOIN allocated a
+			RETURNING *
+		)
+		SELECT inserted.*, (SELECT key FROM allocated) AS project_key, $2::int AS parent_number FROM inserted`,
+		[projectId, parentNumber, items.map((d) => d.type || 'task'), items.map((d) => d.title), items.map((d) => d.description || null), items.length, JSON.stringify(resolvedOrigin)]
 	);
+
+	if (result.rows.length === 0) await throwCreateFailure(projectId, parentNumber);
 
 	return result.rows
 		.sort((a, b) => a.rank - b.rank)
-		.map((row) => ({ ...transformItem(row), childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } }));
+		.map((row) => ({ ...transformItem(row), blocked: false, childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } }));
 }
 
 /** Update an item. Setting subStatus auto-derives board status at key transitions. */
-export async function updateItem(projectId: string, itemId: string, data: UpdateItemInput): Promise<ItemResponse | null> {
+export async function updateItem(projectId: string, itemNumber: number, data: UpdateItemInput): Promise<ItemResponse | null> {
 	if (data.subStatus !== undefined && data.status === undefined) {
 		const derived = deriveStatusFromSubStatus(data.subStatus);
 		if (derived) data.status = derived;
@@ -388,35 +576,58 @@ export async function updateItem(projectId: string, itemId: string, data: Update
 	}
 
 	if (updates.length === 0) {
-		const found = await getItems({ projectId, itemId });
+		const found = await getItems({ projectId, itemNumber });
 		return found[0] ?? null;
 	}
 
 	updates.push('updated_at = NOW()');
-	values.push(itemId, projectId);
-	const result = await query<Item>(
-		`UPDATE items SET ${updates.join(', ')} WHERE id = $${i++} AND project_id = $${i} RETURNING *`,
-		values
-	);
-	if (result.rows.length === 0) return null;
+	values.push(itemNumber, projectId);
+	const sql = `UPDATE items SET ${updates.join(', ')} WHERE number = $${i++} AND project_id = $${i} RETURNING id`;
 
-	const found = await getItems({ projectId, itemId });
+	// Reaching done (directly or via subStatus 'complete') auto-clears blockers —
+	// dependents' and the item's own — in the same transaction as the status write.
+	if (data.status === 'done') {
+		const updated = await transaction(async (client) => {
+			const result = await client.query<{ id: string }>(sql, values);
+			const id = result.rows[0]?.id;
+			if (id) await clearBlockersForCompletion(client, id);
+			return id !== undefined;
+		});
+		if (!updated) return null;
+	} else {
+		const result = await query(sql, values);
+		if (result.rows.length === 0) return null;
+	}
+
+	// Any status transition out of in_progress ends worker episodes — the item
+	// is no longer being worked, whichever surface moved it.
+	if (data.status !== undefined && data.status !== 'in_progress') {
+		await endWorkers(projectId, itemNumber);
+	}
+
+	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }
 
 /**
- * True if making `newParentId` the parent of `itemId` would create a cycle — i.e.
- * newParentId is itemId itself or one of its descendants. Walks down from itemId.
+ * True if making `newParentNumber` the parent of `itemNumber` would create a cycle —
+ * i.e. the new parent is the item itself or one of its descendants. Walks down from
+ * the item.
  */
-export async function wouldCreateCycle(projectId: string, itemId: string, newParentId: string): Promise<boolean> {
+export async function wouldCreateCycle(projectId: string, itemNumber: number, newParentNumber: number): Promise<boolean> {
 	const result = await query(
+		// UNION, not UNION ALL: it deduplicates against rows already produced, so if the
+		// tree is *already* cyclic the walk terminates instead of spinning forever and
+		// pinning a pool connection.
 		`WITH RECURSIVE descendants AS (
-			SELECT id FROM items WHERE id = $1 AND project_id = $2
-			UNION ALL
+			SELECT id FROM items WHERE number = $1 AND project_id = $2
+			UNION
 			SELECT i.id FROM items i JOIN descendants d ON i.parent_id = d.id
 		)
-		SELECT 1 FROM descendants WHERE id = $3 LIMIT 1`,
-		[itemId, projectId, newParentId]
+		SELECT 1 FROM descendants d
+		JOIN items i ON i.id = d.id
+		WHERE i.number = $3 AND i.project_id = $2 LIMIT 1`,
+		[itemNumber, projectId, newParentNumber]
 	);
 	return result.rows.length > 0;
 }
@@ -425,71 +636,107 @@ export async function wouldCreateCycle(projectId: string, itemId: string, newPar
  * Move an item to a new parent (reparent), or to top-level when newParentId is null
  * (promote to standalone). Re-ranks at the bottom of the destination sibling group.
  */
-export async function moveItem(projectId: string, itemId: string, newParentId: string | null): Promise<ItemResponse | null> {
-	const rankSql = newParentId
-		? '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = $1)'
+export async function moveItem(projectId: string, itemNumber: number, newParentNumber: number | null): Promise<ItemResponse | null> {
+	const rankSql = newParentNumber !== null
+		? '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = (SELECT id FROM parent))'
 		: '(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $3 AND parent_id IS NULL)';
-	const result = await query<Item>(
-		`UPDATE items SET parent_id = $1, rank = ${rankSql}, updated_at = NOW() WHERE id = $2 AND project_id = $3 RETURNING *`,
-		[newParentId, itemId, projectId]
+	const result = await query<{ id: string; parent_id: string | null }>(
+		`WITH RECURSIVE parent AS (
+			SELECT id FROM items WHERE project_id = $3 AND number = $1
+		), descendants AS (
+			SELECT id FROM items WHERE number = $2 AND project_id = $3
+			UNION
+			SELECT i.id FROM items i JOIN descendants d ON i.parent_id = d.id
+		)
+		UPDATE items SET parent_id = (SELECT id FROM parent), rank = ${rankSql}, updated_at = NOW()
+		WHERE number = $2 AND project_id = $3
+		  AND ($1::int IS NULL OR EXISTS (SELECT 1 FROM parent))
+		  AND ($1::int IS NULL OR NOT EXISTS (
+			SELECT 1 FROM descendants d WHERE d.id = (SELECT id FROM parent)
+		  ))
+		RETURNING id, parent_id`,
+		[newParentNumber, itemNumber, projectId]
 	);
-	if (result.rows.length === 0) return null;
-	const found = await getItems({ projectId, itemId });
+	// Zero rows means the item is gone, the new parent is, or the move would close a
+	// cycle — and, critically, that the UPDATE wrote nothing. Checking after the fact
+	// would already have detached the item from its real parent and reset its rank,
+	// losing that link for good. Diagnose only on this rare path.
+	if (result.rows.length === 0) {
+		if (newParentNumber !== null) {
+			if (!(await verifyItemOwnership(projectId, newParentNumber))) {
+				throw new ParentItemNotFoundError(newParentNumber);
+			}
+			if (await wouldCreateCycle(projectId, itemNumber, newParentNumber)) throw new ItemCycleError();
+		}
+		return null;
+	}
+	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }
 
 /** Delete an item (its children cascade via the parent_id FK). */
-export async function deleteItem(projectId: string, itemId: string): Promise<boolean> {
-	const result = await query('DELETE FROM items WHERE id = $1 AND project_id = $2', [itemId, projectId]);
+export async function deleteItem(projectId: string, itemNumber: number): Promise<boolean> {
+	const result = await query('DELETE FROM items WHERE number = $1 AND project_id = $2', [itemNumber, projectId]);
 	return (result.rowCount ?? 0) > 0;
 }
 
 // ── Status lifecycle (applies to any item) ──────────────────────────────────
 
 /** Start an item: in_progress, and bump its parent to in_progress if it was ready. */
-export async function startItem(projectId: string, itemId: string): Promise<ItemResponse | null> {
-	const result = await query<Item>(
-		`UPDATE items SET status = 'in_progress', updated_at = NOW() WHERE id = $1 AND project_id = $2 RETURNING *`,
-		[itemId, projectId]
+export async function startItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
+	const result = await query<{ parent_id: string | null }>(
+		`UPDATE items SET status = 'in_progress', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
+		[itemNumber, projectId]
 	);
 	if (result.rows.length === 0) return null;
-	const item = result.rows[0]!;
-	if (item.parent_id) {
-		await query(`UPDATE items SET status = 'in_progress', updated_at = NOW() WHERE id = $1 AND status = 'ready'`, [item.parent_id]);
+	const parentId = result.rows[0]!.parent_id;
+	if (parentId) {
+		await query(`UPDATE items SET status = 'in_progress', updated_at = NOW() WHERE id = $1 AND status = 'ready'`, [parentId]);
 	}
-	const found = await getItems({ projectId, itemId });
+	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }
 
-/** Complete an item, optionally recording an outcome note. */
-export async function completeItem(projectId: string, itemId: string, note?: string): Promise<ItemResponse | null> {
-	const result = await query(
-		`UPDATE items SET status = 'done', note = COALESCE($3, note), updated_at = NOW() WHERE id = $1 AND project_id = $2 RETURNING id`,
-		[itemId, projectId, note ?? null]
-	);
-	if (result.rows.length === 0) return null;
-	const found = await getItems({ projectId, itemId });
+/**
+ * Complete an item, optionally recording an outcome note. Auto-clears blockers
+ * (dependents' and its own, same transaction) and ends active worker episodes.
+ */
+export async function completeItem(projectId: string, itemNumber: number, note?: string): Promise<ItemResponse | null> {
+	const completed = await transaction(async (client) => {
+		const result = await client.query<{ id: string }>(
+			`UPDATE items SET status = 'done', note = COALESCE($3, note), updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
+			[itemNumber, projectId, note ?? null]
+		);
+		const id = result.rows[0]?.id;
+		if (id) await clearBlockersForCompletion(client, id);
+		return id !== undefined;
+	});
+	if (!completed) return null;
+	await endWorkers(projectId, itemNumber);
+	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }
 
-/** Block an item with a required reason note. */
-export async function blockItem(projectId: string, itemId: string, note: string): Promise<ItemResponse | null> {
+/** Block an item with a required reason note. Ends worker episodes (no longer being worked). */
+export async function blockItem(projectId: string, itemNumber: number, note: string): Promise<ItemResponse | null> {
 	const result = await query(
-		`UPDATE items SET status = 'blocked', note = $3, updated_at = NOW() WHERE id = $1 AND project_id = $2 RETURNING id`,
-		[itemId, projectId, note]
+		`UPDATE items SET status = 'blocked', note = $3, updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
+		[itemNumber, projectId, note]
 	);
 	if (result.rows.length === 0) return null;
-	const found = await getItems({ projectId, itemId });
+	await endWorkers(projectId, itemNumber);
+	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }
 
-/** Unblock an item back to ready. */
-export async function unblockItem(projectId: string, itemId: string): Promise<ItemResponse | null> {
+/** Unblock an item back to ready. Ends worker episodes (no longer being worked). */
+export async function unblockItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const result = await query(
-		`UPDATE items SET status = 'ready', updated_at = NOW() WHERE id = $1 AND project_id = $2 RETURNING id`,
-		[itemId, projectId]
+		`UPDATE items SET status = 'ready', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
+		[itemNumber, projectId]
 	);
 	if (result.rows.length === 0) return null;
-	const found = await getItems({ projectId, itemId });
+	await endWorkers(projectId, itemNumber);
+	const found = await getItems({ projectId, itemNumber });
 	return found[0] ?? null;
 }

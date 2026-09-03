@@ -1,17 +1,19 @@
 import { useState, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { Status, ItemModel } from '@specboard/models';
+import type { Status, ItemStatus, ItemModel } from '@specboard/models';
 import { StatusDot } from '@specboard/ui';
 import { ItemCard } from '../ItemCard/ItemCard';
 import styles from './Column.module.css';
 
 interface ColumnProps {
-	status: Status;
+	status: ItemStatus;
 	title: string;
 	items: ItemModel[];
-	projectId: string;
-	selectedItemId?: string;
+	projectSlug: string;
+	selectedItemKey?: string;
 	flashingIds: Set<string>;
+	/** Whether cards can be dropped into this column (the Blocked column is display-only). */
+	droppable?: boolean;
 	onSelectItem?: (item: ItemModel) => void;
 	onOpenItem?: (item: ItemModel) => void;
 	onDropItem?: (itemId: string, status: Status, index: number) => void;
@@ -19,19 +21,14 @@ interface ColumnProps {
 	onDragEnd?: (e: DragEvent) => void;
 }
 
-const STATUS_LABELS: Record<Status, string> = {
-	ready: 'Ready',
-	in_progress: 'In Progress',
-	done: 'Done',
-};
-
 export function Column({
 	status,
 	title,
 	items,
-	projectId,
-	selectedItemId,
+	projectSlug,
+	selectedItemKey,
 	flashingIds,
+	droppable = true,
 	onSelectItem,
 	onOpenItem,
 	onDropItem,
@@ -65,6 +62,7 @@ export function Column({
 	}, [items.length]);
 
 	const handleDragOver = (e: DragEvent): void => {
+		if (!droppable) return;
 		e.preventDefault();
 		setIsDragOver(true);
 		setDropIndex(calculateDropIndex(e));
@@ -80,6 +78,7 @@ export function Column({
 	};
 
 	const handleDrop = (e: DragEvent): void => {
+		if (!droppable) return;
 		e.preventDefault();
 		setIsDragOver(false);
 
@@ -88,7 +87,8 @@ export function Column({
 		setDropIndex(null);
 
 		if (itemId && onDropItem) {
-			onDropItem(itemId, status, index);
+			// Only droppable columns reach here, and those carry a board Status.
+			onDropItem(itemId, status as Status, index);
 		}
 	};
 
@@ -102,7 +102,7 @@ export function Column({
 			<div class={styles.header}>
 				<h2 class={styles.title}>
 					<StatusDot status={status} />
-					{STATUS_LABELS[status]}
+					{title}
 				</h2>
 				<span class={styles.count}>{items.length}</span>
 			</div>
@@ -125,9 +125,9 @@ export function Column({
 								)}
 								<ItemCard
 									item={item}
-									projectId={projectId}
-									isSelected={item.id === selectedItemId}
-									isHighlighted={flashingIds.has(item.id)}
+									projectSlug={projectSlug}
+									isSelected={item.key === selectedItemKey}
+									isHighlighted={flashingIds.has(item.key)}
 									onSelect={onSelectItem}
 									onOpen={onOpenItem}
 									onDragStart={onDragStart}

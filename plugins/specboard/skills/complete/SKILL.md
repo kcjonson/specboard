@@ -13,7 +13,7 @@ never a close, and an open PR is never a closed ticket.
 
 ## 1. Find the items and the PR(s)
 
-- `list_projects`, then `get_items(project_id, { item_id: epic_id, include_children: true })` to load
+- `list_projects`, then `get_items(project_slug, { item_key: epic_key, include_children: true })` to load
   the epic(s) you're closing and their tasks.
 - Find every PR for this work, there may be more than one: `gh pr list --head <branch>`, plus any
   `pr_url` recorded on the epic, plus PRs that reference it. A feature can span several PRs, and you
@@ -30,6 +30,14 @@ Don't close anything on top of a dirty tree.
 Check whether anything in the repo needs to catch up to the finished work: a changelog, a status or
 progress doc, a README, a spec whose "status" line is now stale. Update what's out of date and let
 it ride the PR. Don't leave the written record describing a half-done version of the work.
+
+**Harvest the plan file.** If this work had a plan (wherever your setup keeps them, often an ignored
+scratch directory), read it back now and move anything durable into the committed docs: the
+architectural decisions and why they were made, constraints discovered mid-implementation, the
+approaches rejected and the reason. Fold each into the doc that already owns that topic rather than
+adding a new file. A plan is usually invisible to everyone but the agent that wrote it, so a
+decision recorded only there is a decision lost. This rides the same PR as the work; the plan file
+itself gets deleted in step 7.
 
 ## 4. Verify (the gate to merge)
 
@@ -55,13 +63,13 @@ half-closed epics are the main thing this step exists to prevent.
 
 - **File the followups the session surfaced.** Anything you flagged for later (a discovered bug, a
   "we should also..." note, a TODO you left in the chat) gets filed as its own item, not left in the
-  conversation: `create_item(project_id, title, 'bug' | 'task' | 'epic', { description })`, or
-  `create_items(project_id, other_epic_id, [...])` for tasks under another epic. If it isn't on the
+  conversation: `create_item(project_slug, title, 'bug' | 'task' | 'epic', { description })`, or
+  `create_items(project_slug, other_epic_key, [...])` for tasks under another epic. If it isn't on the
   board, it's lost.
 - **Move deferred tasks out of this epic.** A task that was punted (out of scope, next phase, not
   happening now) can't just sit open, it blocks the close and misrepresents the epic. Refile it
   where it belongs (`create_item` / `create_items` under a followup or next-phase epic), then remove
-  it from this epic with `delete_item(project_id, task_id, 'task')`. The work survives in its new
+  it from this epic with `delete_item(project_slug, task_key, 'task')`. The work survives in its new
   home; this epic stops carrying it.
 - **Still-in-scope, unfinished work means the epic isn't done.** If a not-done task genuinely belongs
   to this epic and is still needed, don't close, finish it first.
@@ -72,12 +80,13 @@ the board.
 ## 7. Close the board
 
 With the PR(s) merged and the items reconciled:
-- `update_item(project_id, epic_id, 'epic', { sub_status: 'complete' })` sets the board to `done`.
+- `update_item(project_slug, epic_key, 'epic', { sub_status: 'complete' })` sets the board to `done`.
 - Add a closing note summarizing what shipped, plus what was deferred and where it went:
-  `update_item(project_id, epic_id, 'epic', { notes: '<what shipped; deferred X to #Y>' })`.
+  `update_item(project_slug, epic_key, 'epic', { notes: '<what shipped; deferred X to #Y>' })`.
 - Every task `done`; nothing left `in_progress`.
-- If you kept a plan file, mark it complete (`# COMPLETE - {date}` on the first line), wherever it
-  lives.
+- Delete the plan file, if there was one. Its decisions went into the docs in step 3 and its
+  sequencing is on the board as tasks and notes; what's left is scratch. Don't mark it complete and
+  leave it, that just accumulates stale copies of decisions the docs already own.
 
 ## 8. Tear down the session
 

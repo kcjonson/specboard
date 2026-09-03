@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-	<desc>Specboard favicon: chevron only. The card is dropped at 24px and below.</desc>
-	<style>polygon { fill: #3b82f6; } @media (prefers-color-scheme: dark) { polygon { fill: #60a5fa; } }</style>
-	<polygon points="22,20 82,50 22,80"/>
+	<desc>Specboard favicon: chevron with a card sliver bleeding off the right edge, theme-aware.</desc>
+	<style>polygon, rect { fill: #3b82f6; } @media (prefers-color-scheme: dark) { polygon, rect { fill: #60a5fa; } }</style>
+	<polygon points="10,22 66,50 10,78"/>
+	<rect x="76" y="60" width="36" height="20" rx="6"/>
 </svg>

@@ -27,6 +27,31 @@ check → build-push (ECR images) → setup-aws → migrate → seed → deploy-
 Nothing manual. The image is tagged with the merge commit SHA and pushed to ECR, so that
 SHA becomes deployable to production later.
 
+### Documentation-only merges are skipped entirely
+
+`ci.yml` carries a `paths-ignore` list (`docs/**`, root-level markdown, `README.md` at any
+depth). A push or PR whose whole diff lands inside it runs no CI, and since CD triggers on
+CI's completion, it runs no deploy either. Copilot review is unaffected: it fires on PR
+ready-for-review, not through Actions.
+
+The list is narrow on purpose. `api/src/prompts/*.md` is prompt payload the API ships and
+`plugins/specboard/**/*.md` is published in the plugin package, so both count as code.
+
+One consequence lands on CD's `check` job, which decides whether a run is still worth
+deploying. It cannot ask "am I main's head commit?" any more, because a documentation
+commit landing right behind a code commit would make the answer no while producing no CD
+run of its own, stranding that code undeployed. It instead compares its commit against
+main by content and deploys when everything main has gained since is documentation.
+
+### Which commit reaches staging
+
+| Merged to main | Deploys |
+|----------------|---------|
+| One code commit | That commit |
+| Code, then documentation | The code commit (documentation adds nothing to deploy) |
+| Code, then more code | The later commit; the earlier run skips |
+| Documentation only | Nothing. Staging keeps running the code it already has |
+
 ---
 
 ## Production (manual release)
@@ -39,10 +64,17 @@ triggers on a published GitHub release (or a manual dispatch with a tag).
 - **Staging CD succeeded for that commit** — `prod-deploy.yml`'s `verify-images` job
   checks ECR for images built from the tag's SHA. No images → the deploy fails. (CD builds
   them on merge, so a green staging deploy satisfies this.)
+- **The tagged commit is not documentation-only.** Those never build an image, so
+  `verify-images` fails for them. Nothing is deployed when it does, so the failure is safe,
+  but the fix is to tag the last commit that changed code instead. Its code is identical to
+  the documentation commit's, since only documentation separates them.
 
 ### Steps
 1. Pick the next version (see [Versioning](#versioning)).
-2. **Publish a release** at the merged commit — this triggers the deploy automatically:
+2. If the release contains a schema migration: take a **manual RDS snapshot first**
+   and wait for it to report `available` — it is the rollback path, since migrations
+   are forward-only. See [verification.md](verification.md#production-release-ritual).
+3. **Publish a release** at the merged commit — this triggers the deploy automatically:
    ```bash
    gh release create vX.Y.Z --target main \
      --title "vX.Y.Z — <summary>" \
@@ -50,16 +82,21 @@ triggers on a published GitHub release (or a manual dispatch with a tag).
    ```
    (Or create the release in the GitHub UI.) `--target main` tags `main`'s current tip;
    pass a specific branch/commit only if releasing something other than the tip.
-3. Alternatively, deploy an **existing** tag without a new release:
+4. Alternatively, deploy an **existing** tag without a new release:
    ```bash
    gh workflow run prod-deploy.yml -f tag=vX.Y.Z
    ```
-4. The deploy runs:
+   > Caveat: the `migrate` job runs from the `:init` image, which every staging build
+   > repushes from `main` — so it applies `main` HEAD's migrations, not the tag's.
+   > Releasing `main`'s tip is safe; deploying an older tag is not, until this is fixed.
+5. The deploy runs:
    ```
    resolve (tag → SHA) → verify-images → setup-aws → migrate → seed
      → deploy-services → health-check → annotate-release
    ```
-5. [Verify](#verifying-a-deploy).
+   `deploy-services` fails if ECS's circuit breaker rolls any service back to its
+   previous task definition, so a green run means the new code is actually serving.
+6. [Verify](#verifying-a-deploy).
 
 ### Bootstrap mode
 `prod-deploy.yml` accepts a `bootstrap: true` input that provisions infrastructure only
@@ -92,11 +129,35 @@ order and tracked in the `schema_migrations` table.
 
 > Run migrations locally with `docker compose exec api sh -c 'cd /app/shared/db && npm run migrate'`.
 
+### Migrations that are not rolling-deploy safe
+
+The `migrate` job runs **before** `deploy-services`, and the service keeps old tasks
+serving through the rollout (`minHealthyPercent: 50`). So for the whole rollout, the
+*previous* release's code is running against the *new* schema. That is fine for a
+migration that only adds nullable columns or indexes, and broken for one that adds a
+constraint the old code violates.
+
+`023_project_slug_item_key.sql` is the first of the latter kind: it makes
+`projects.slug`/`key` NOT NULL and requires `items.number`, none of which the previous
+release writes. **Every project create and every item create fails for the duration of
+the rollout.** Reads are unaffected.
+
+Before adding a migration, ask whether the previous release's writes still satisfy it:
+
+- **Yes** — normal deploy, nothing to do.
+- **No** — either deploy it in a window where write failures are acceptable, or split it
+  expand/contract: one migration adding nullable columns plus a backfill, then the code,
+  then a later migration adding the constraints.
+
+Note also that a rollback redeploys old code **without** reverting the schema, so rolling
+back past such a migration lands in the same broken state — and `/api/health` is static,
+so it reports green while writes fail.
+
 ---
 
 ## Rollback
 
-To roll production back to a previous release tag:
+Prefer fixing forward. To roll production back to a previous release tag:
 
 ```bash
 gh workflow run prod-rollback.yml -f tag=vX.Y.Z
@@ -104,10 +165,18 @@ gh workflow run prod-rollback.yml -f tag=vX.Y.Z
 
 Optional inputs:
 - `run_migrations=true` — only if the rollback target needs a different schema (rare;
-  migrations are usually forward-only).
+  migrations are forward-only).
 - `run_cdk=true` — for infrastructure-level rollback.
 
-Rollback redeploys the services from the target tag's already-built images.
+Rollback redeploys the services from the target tag's already-built images. **It does
+not revert the schema** — rolling back past a constraint-adding migration lands old
+code on the new schema, broken, with `/api/health` still green (it is static).
+
+For schema damage, **restore the pre-release RDS snapshot** — never hand-revert a
+migration. Dropping and re-applying an identifier/numbering migration renumbers rows,
+so every recorded key (branch names, PR links, bookmarks, MCP transcripts) would then
+point at a different item. The snapshot ritual and verification process live in
+[verification.md](verification.md).
 
 ---
 
@@ -121,12 +190,13 @@ curl -s -o /dev/null -w "%{http_code}\n" https://specboard.io/api/health        
 curl -s https://specboard.io/mcp/health                                          # {"status":"ok"}
 
 # Authz smoke test — an unauthenticated planning read must be rejected (401), not 200.
-# Use any valid-v4 UUID; the auth gate runs before the project lookup.
+# Any slug works; the auth gate runs before the project lookup.
 curl -s -o /dev/null -w "%{http_code}\n" \
-  https://specboard.io/api/projects/3f8a1c2e-9b4d-4e6f-8a1b-2c3d4e5f6a7b/epics    # 401
+  https://specboard.io/api/projects/some-project/items    # 401
 ```
 
-Swap `specboard.io` for `staging.specboard.io` to verify staging.
+Swap `specboard.io` for `staging.specboard.io` to verify staging. For releases that
+warrant more than a smoke test, follow [verification.md](verification.md).
 
 ---
 

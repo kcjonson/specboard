@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { MockInstance } from 'vitest';
+import { parseStackTrace } from './error-reporting.ts';
 
 describe('handleFatalError', () => {
 	let exitSpy: MockInstance;
@@ -84,5 +85,61 @@ describe('handleFatalError', () => {
 				process.removeListener('unhandledRejection', listener);
 			}
 		}
+	});
+});
+
+describe('parseStackTrace', () => {
+	it('returns no frames for an absent stack', () => {
+		expect(parseStackTrace(undefined)).toEqual([]);
+	});
+
+	it('parses a Chrome/Node frame with a function name', () => {
+		const frames = parseStackTrace('Error: boom\n    at loadTree (/app/src/tree.ts:42:15)');
+		expect(frames).toEqual([
+			{ function: 'loadTree', filename: '/app/src/tree.ts', lineno: 42, colno: 15 },
+		]);
+	});
+
+	it('parses a bare Chrome/Node frame as anonymous', () => {
+		const frames = parseStackTrace('    at /app/src/tree.ts:42:15');
+		expect(frames).toEqual([
+			{ function: '<anonymous>', filename: '/app/src/tree.ts', lineno: 42, colno: 15 },
+		]);
+	});
+
+	it('parses a frame with no line or column', () => {
+		const frames = parseStackTrace('    at loadTree (native)');
+		expect(frames).toEqual([
+			{ function: 'loadTree', filename: 'native', lineno: undefined, colno: undefined },
+		]);
+	});
+
+	it('keeps bracketed method names intact', () => {
+		const frames = parseStackTrace('    at Object.run [as handler] (/app/x.ts:3:9)');
+		expect(frames[0]?.function).toBe('Object.run [as handler]');
+		expect(frames[0]?.filename).toBe('/app/x.ts');
+	});
+
+	it('parses the Firefox format', () => {
+		const frames = parseStackTrace('loadTree@/app/src/tree.ts:42:15');
+		expect(frames).toEqual([
+			{ function: 'loadTree', filename: '/app/src/tree.ts', lineno: 42, colno: 15 },
+		]);
+	});
+
+	it('returns innermost frame first', () => {
+		const frames = parseStackTrace('Error: boom\n    at outer (/a.ts:1:1)\n    at inner (/b.ts:2:2)');
+		expect(frames.map((f) => f.filename)).toEqual(['/b.ts', '/a.ts']);
+	});
+
+	it('stays fast on a frame line padded around an open paren', () => {
+		// Guards the ReDoS fix. The lone '(' is what makes the old regex's first lazy
+		// group participate and then fail, so it retried every split point: measured at
+		// this size the old pattern took ~2.6s, the new parser under a millisecond.
+		const pad = ' '.repeat(40_000);
+		const start = Date.now();
+		const frames = parseStackTrace(`    at ${pad}(${pad}`);
+		expect(frames[0]?.function).toBe('<anonymous>');
+		expect(Date.now() - start).toBeLessThan(1000);
 	});
 });

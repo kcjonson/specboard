@@ -25,7 +25,7 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     permissions:
-      contents: read # read main's head SHA to confirm this run is still the latest
+      contents: read # compare this run's commit against main's head
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
@@ -40,31 +40,72 @@ jobs:
             echo "sha=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check if still latest commit
+      - name: Check if this commit still carries main's code
         id: check
         run: |
           SHA="${{ steps.sha.outputs.sha }}"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
-          LATEST=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          # Only one commit deploys, and it is the newest one whose code main has not
+          # moved past. That is deliberately weaker than "is the head commit": CI skips
+          # documentation-only pushes (see ci.yml's paths-ignore), so those never produce
+          # a CD run of their own. A plain head comparison would let a documentation
+          # commit landing right behind a code commit strand that code undeployed, with
+          # no later run to correct it.
+          #
+          # So compare by content instead. If everything main has gained since this
+          # commit is documentation, this commit's code is still main's code and it
+          # deploys. Anything else means a real code commit is behind us in the queue
+          # and its own run will deploy it.
+          #
+          # Keep the pattern below in sync with ci.yml's paths-ignore.
+          CMP="$RUNNER_TEMP/compare.json"
+          HTTP=$(curl -s -o "$CMP" -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/commits/main" | jq -r '.sha // empty')
+            "https://api.github.com/repos/${{ github.repository }}/compare/$SHA...main")
+
+          # Whatever goes wrong here, refuse to deploy rather than guess: guessing either
+          # ships a stale commit or strands a fresh one. Report the HTTP status and the
+          # API's own message, since rate limiting, an expired token and an unknown SHA
+          # all otherwise look identical from the parsed body.
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Comparing $SHA against main returned HTTP $HTTP: $(jq -r '.message // "no message"' "$CMP"). Not deploying."
+            exit 1
+          fi
+
+          STATUS=$(jq -r '.status // empty' "$CMP")
 
           echo "This commit: $SHA"
-          echo "Latest:      ${LATEST:-<unknown>}"
+          echo "vs main:     ${STATUS:-<none>}"
 
-          # Strict "only the latest commit deploys". With contents:read (granted on the
-          # job) the lookup is reliable, so skip when a strictly newer commit exists. If
-          # the lookup still comes back empty (a real API outage), fail loudly rather than
-          # deploy a possibly-stale commit or silently skip a fresh one.
-          if [ -z "$LATEST" ]; then
-            echo "::error::Could not determine main's latest commit (empty API response); not deploying. Re-run once the lookup succeeds."
+          if [ -z "$STATUS" ]; then
+            echo "::error::Comparing $SHA against main returned 200 with no status field; not deploying."
             exit 1
-          elif [ "$SHA" = "$LATEST" ]; then
-            echo "should_deploy=true" >> $GITHUB_OUTPUT
-          else
-            echo "Newer commits exist; a later commit's run will deploy. Skipping."
+          fi
+
+          # Only `identical` and `ahead` mean this commit is one main is built on, and
+          # only then does the file list below mean "what main gained since it". A
+          # dispatch from a ref that is not on main, or rewritten history, lands on
+          # `behind` or `diverged`, where the same list means something else entirely.
+          # Staging deploys from main; refuse rather than guess.
+          case "$STATUS" in
+            identical|ahead) ;;
+            *)
+              echo "::error::$SHA is '$STATUS' relative to main, so it is not a commit main is built on; not deploying."
+              exit 1
+              ;;
+          esac
+
+          CODE_AHEAD=$(jq -r '.files[]?.filename' "$CMP" \
+            | grep -vE '^(docs/|[^/]+\.md$|([^/]+/)*README\.md$)' || true)
+
+          if [ -n "$CODE_AHEAD" ]; then
+            echo "main has newer code; that commit's own run will deploy it. Skipping:"
+            printf '%s\n' "$CODE_AHEAD" | sed 's/^/  /'
             echo "should_deploy=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
           fi
 
   build-push:
@@ -77,6 +118,10 @@ jobs:
     uses: ./.github/workflows/_build-images.yml
     with:
       push: true
+      # Pin to the commit `check` cleared, not github.sha. Under workflow_run the latter
+      # is main's head, which is not necessarily this run's commit, and deploy-services
+      # below asks ECS for the tag `check` chose.
+      ref: ${{ needs.check.outputs.sha }}
     secrets: inherit
 
   setup-aws:

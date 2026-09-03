@@ -12,8 +12,9 @@ Feel shorthand: a craft tool. Unpretentious, durable, fast, crisp, agent-ready, 
 |------|-----|
 | [brand/logomark.svg](brand/logomark.svg) | Mark on light surfaces (`#3b82f6`) |
 | [brand/logomark-dark.svg](brand/logomark-dark.svg) | Mark on dark surfaces (`#60a5fa`) |
-| [brand/lockup.svg](brand/lockup.svg) | The lockup, fully self-contained |
-| [brand/favicon.svg](brand/favicon.svg) | Chevron-only favicon, theme-aware (canonical copy ships at `web/public/favicon.svg`) |
+| [brand/lockup.svg](brand/lockup.svg) | The lockup on light surfaces, fully self-contained |
+| [brand/lockup-dark.svg](brand/lockup-dark.svg) | The lockup on dark surfaces (`#60a5fa` mark, `#f0f0f0` wordmark) |
+| [brand/favicon.svg](brand/favicon.svg) | Favicon: chevron + card sliver off the right edge, theme-aware (canonical copy ships at `web/public/favicon.svg`) |
 | [brand/permanent-marker.woff2](brand/permanent-marker.woff2) | Source font for regenerating the wordmark outlines (Apache-2.0, see LICENSE alongside) |
 
 All SVG deliverables are self-contained: the wordmark is outlined vector paths, never live font text. In code, don't paste SVG: use the `Logo` (lockup) / `LogoMark` (mark) components from `@specboard/ui` in the SPA, and `BrandLogo` from `ssg/src/components/logo.tsx` on SSG pages. Each form renders as a single SVG; the shared geometry lives in `shared/ui/src/Logo/wordmark.ts` and theme colors come from tokens.
@@ -42,7 +43,14 @@ The mark wears the app's primary token in each mode — no brand-only colors:
 - Dark surfaces: `#60a5fa` (the dark-mode `--color-primary`)
 - One-color contexts (print, embossing): ink `#1a1a1a` on light, `#f0f0f0` on dark
 
-Emails can't load SVG or webfonts, so the email lockup is a unicode chevron (`&#9656;`) in brand blue plus bold system-font "specboard" (`shared/email/src/templates.ts`).
+Emails can't load SVG or webfonts, so the email lockup is a PNG raster, hosted at `/email-logo.png` and `/email-logo-dark.png` and served publicly by `frontend/src/index.ts`. Both render at 246x40, the same lockup size the login page uses (`BrandLogo size={40}`), so the ghost card stays in per the size rules above. `alt="specboard"` is styled to stand in for the wordmark in clients that block remote images.
+
+Dark mode needs the second file because email clients never invert images, so a CSS rule can't recolor the wordmark's baked-in ink. `shared/email/src/templates.ts` ships both and swaps them under `prefers-color-scheme: dark`; the dark one is inline `display:none` so a client that strips `<style>` falls back to light-only rather than stacking both. Regenerate at 3x the 246px display width:
+
+```
+rsvg-convert -w 738 -o web/public/email-logo.png docs/brand/lockup.svg
+rsvg-convert -w 738 -o web/public/email-logo-dark.png docs/brand/lockup-dark.svg
+```
 
 ## Type
 

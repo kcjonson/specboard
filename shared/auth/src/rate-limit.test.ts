@@ -190,6 +190,44 @@ describe('rate limit middleware (coarse cap)', () => {
 		expect((await request()).status).toBe(429);
 	});
 
+	it('scopes a method-restricted rule to its own method and bucket', async () => {
+		// /api/waitlist is a public POST that sends mail and an admin GET that
+		// lists signups. Without method scoping the tight POST budget would
+		// throttle the admin UI, and both methods would share one counter.
+		const redis = createFakeRedis();
+		const app = new Hono();
+		app.use(
+			'*',
+			rateLimitMiddleware(redis, {
+				rules: [
+					{
+						path: '/api/waitlist',
+						method: 'POST',
+						config: { maxRequests: 2, windowSeconds: 3600, message: 'Too many' },
+					},
+				],
+				defaultLimit: { maxRequests: 50, windowSeconds: 60 },
+			})
+		);
+		app.post('/api/waitlist', (c) => c.json({ ok: true }));
+		app.get('/api/waitlist', (c) => c.json({ ok: true }));
+
+		const call = (method: string): Promise<Response> =>
+			Promise.resolve(
+				app.request('/api/waitlist', { method, headers: { 'X-Forwarded-For': '1.2.3.4' } })
+			);
+
+		expect((await call('POST')).status).toBe(200);
+		expect((await call('POST')).status).toBe(200);
+		expect((await call('POST')).status).toBe(429);
+
+		// The GET falls through to the default limit and must not have been
+		// spent by the POSTs above.
+		for (let i = 0; i < 10; i++) {
+			expect((await call('GET')).status).toBe(200);
+		}
+	});
+
 	it('fails open when Redis rejects (outage must not 500 requests)', async () => {
 		const brokenRedis = {
 			pipeline() {

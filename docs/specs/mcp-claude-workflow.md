@@ -92,11 +92,14 @@ user (OAuth 2.1 Bearer token).
 | Tool | Purpose |
 |------|---------|
 | `list_projects` | Discover projects (a bound repo returns just its one) |
-| `get_items` | Read items by status/type/search, or one by `item_id`, with optional tasks and notes |
-| `create_item` | Create an epic, task, or bug (optionally under a `parent_id`); epics may link `specs: [{ path, type }]` |
-| `create_items` | Bulk-create tasks under a parent |
-| `update_item` | Update title/description/status/sub_status/notes/branch_name/pr_url (items) or status/details/note (tasks) |
+| `get_items` | Read items by status/type/search, or one by `item_key`, with optional tasks and notes; `status=ready` excludes blocked items unless `include_blocked` |
+| `create_item` | Create an epic, task, or bug (optionally under a `parent_key`); may link `specs: [{ path, type }]`, record `discovered_from`, and start with `blockers` |
+| `create_items` | Bulk-create tasks under a parent; the batch shares one `discovered_from` |
+| `update_item` | Update title/description/status/sub_status/specs/blockers/notes/branch_name/pr_url; `blockers` replaces the full open set on every path |
 | `delete_item` | Delete an item or task |
+
+Blockers, creation origin, and worker presence are specified in
+[item-relationships.md](item-relationships.md).
 
 Specs are read directly from the filesystem using the `path` of each linked spec (the `specs`
 array, each entry typed `product` or `technical`). A spec link may point at a path that isn't merged

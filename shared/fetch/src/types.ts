@@ -18,13 +18,15 @@ export type ResponseInterceptor = <T>(data: T, response: Response) => T | Promis
 export type ErrorInterceptor = (error: FetchError) => void | Promise<void>;
 
 export class FetchError extends Error {
-	constructor(
-		message: string,
-		public status: number,
-		public response?: Response,
-		public data?: unknown
-	) {
+	status: number;
+	response?: Response;
+	data?: unknown;
+
+	constructor(message: string, status: number, response?: Response, data?: unknown) {
 		super(message);
 		this.name = 'FetchError';
+		this.status = status;
+		this.response = response;
+		this.data = data;
 	}
 }

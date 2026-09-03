@@ -5,7 +5,7 @@ import styles from './ProjectCard.module.css';
 
 export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
 
-export interface EpicCounts {
+export interface ItemCounts {
 	ready: number;
 	in_progress: number;
 	in_review: number;
@@ -25,11 +25,15 @@ export interface RepositoryConfigCloud {
 
 export interface Project {
 	id: string;
+	/** URL identifier for this project (e.g. "specboard"). */
+	slug: string;
+	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
+	key: string;
 	name: string;
 	description?: string;
 	systemPrompt?: string;
-	epicCount: number;
-	epicCounts?: EpicCounts;
+	itemCount: number;
+	itemCounts?: ItemCounts;
 	repository?: RepositoryConfigCloud | Record<string, never>;
 	syncStatus?: SyncStatus | null;
 	syncError?: string | null;
@@ -80,8 +84,8 @@ export function ProjectCard({ project, onClick, onEdit, onRetrySync }: ProjectCa
 		}
 	}
 
-	const { epicCounts, syncStatus, syncError } = project;
-	const hasEpics = project.epicCount > 0;
+	const { itemCounts, syncStatus, syncError } = project;
+	const hasItems = project.itemCount > 0;
 	const isSyncing = syncStatus === 'pending' || syncStatus === 'syncing';
 	const hasSyncError = syncStatus === 'failed';
 
@@ -143,30 +147,30 @@ export function ProjectCard({ project, onClick, onEdit, onRetrySync }: ProjectCa
 			{/* Only show epic stats when not showing sync error */}
 			{!hasSyncError && (
 				<div class={styles.stats}>
-					{hasEpics && epicCounts ? (
+					{hasItems && itemCounts ? (
 						<div class={styles.epicStats}>
-							{epicCounts.ready > 0 && (
+							{itemCounts.ready > 0 && (
 								<span class={styles.statItem}>
 									<StatusDot status="ready" />
-									<span class={styles.statCount}>{epicCounts.ready}</span>
+									<span class={styles.statCount}>{itemCounts.ready}</span>
 								</span>
 							)}
-							{epicCounts.in_progress > 0 && (
+							{itemCounts.in_progress > 0 && (
 								<span class={styles.statItem}>
 									<StatusDot status="in_progress" />
-									<span class={styles.statCount}>{epicCounts.in_progress}</span>
+									<span class={styles.statCount}>{itemCounts.in_progress}</span>
 								</span>
 							)}
-							{epicCounts.in_review > 0 && (
+							{itemCounts.in_review > 0 && (
 								<span class={styles.statItem}>
 									<StatusDot status="in_review" />
-									<span class={styles.statCount}>{epicCounts.in_review}</span>
+									<span class={styles.statCount}>{itemCounts.in_review}</span>
 								</span>
 							)}
-							{epicCounts.done > 0 && (
+							{itemCounts.done > 0 && (
 								<span class={styles.statItem}>
 									<StatusDot status="done" />
-									<span class={styles.statCount}>{epicCounts.done}</span>
+									<span class={styles.statCount}>{itemCounts.done}</span>
 								</span>
 							)}
 						</div>

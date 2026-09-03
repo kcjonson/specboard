@@ -31,6 +31,10 @@
 	background: var(--color-in-progress);
 }
 
+.blocked {
+	background: var(--color-error);
+}
+
 .in_review {
 	background: var(--color-in-review);
 }

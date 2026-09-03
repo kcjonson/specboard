@@ -19,12 +19,19 @@ import {
 import { reportError, installErrorHandlers, logRequest } from '@specboard/core';
 import { getCookie } from 'hono/cookie';
 import type { Context } from 'hono';
-import { verifyProjectAccess } from '@specboard/db';
-import { isValidUUID } from './validation.ts';
+import { resolveProjectSlug, type ResolvedProject } from '@specboard/db';
+import { isValidProjectSlug } from '@specboard/core/identifiers';
 
 // Context variables for request tracking
 type AppVariables = {
 	userId: string | undefined;
+	/**
+	 * Set by requireProjectAccess once :projectSlug has been resolved and authorized.
+	 * Optional because it is absent on every route that wrapper does not cover —
+	 * handlers reach it through requireResolvedProject(), which fails loudly rather
+	 * than letting an unwrapped route read undefined as if it were authorized.
+	 */
+	project?: ResolvedProject;
 };
 
 import {
@@ -86,6 +93,11 @@ import {
 	handleAddSpec,
 	handleDeleteSpec,
 } from './handlers/specs.ts';
+import {
+	handleListBlockers,
+	handleAddBlocker,
+	handleClearBlocker,
+} from './handlers/blockers.ts';
 import {
 	handleListItemProgress,
 	handleCreateItemProgress,
@@ -250,6 +262,8 @@ app.use(
 			{ path: '/oauth/authorize', config: RATE_LIMIT_CONFIGS.oauthAuthorize },
 			{ path: '/oauth/register', config: RATE_LIMIT_CONFIGS.oauthToken }, // Same limit as token endpoint
 			{ path: '/api/chat', config: RATE_LIMIT_CONFIGS.chat },
+			// POST only: the admin GET on this same path stays on the default limit
+			{ path: '/api/waitlist', method: 'POST', config: RATE_LIMIT_CONFIGS.waitlist },
 		],
 		defaultLimit: RATE_LIMIT_CONFIGS.api,
 		excludePaths: ['/health', '/api/health', '/api/metrics'],
@@ -477,45 +491,47 @@ app.post('/api/users/me/api-keys/:provider/validate', (context) => handleValidat
 
 // Project routes
 app.get('/api/projects', (context) => handleListProjects(context, redis));
-app.get('/api/projects/:id', (context) => handleGetProject(context, redis));
+app.get('/api/projects/:projectSlug', (context) => handleGetProject(context, redis));
 app.post('/api/projects', (context) => handleCreateProject(context, redis));
-app.put('/api/projects/:id', (context) => handleUpdateProject(context, redis));
-app.delete('/api/projects/:id', (context) => handleDeleteProject(context, redis));
+app.put('/api/projects/:projectSlug', (context) => handleUpdateProject(context, redis));
+app.delete('/api/projects/:projectSlug', (context) => handleDeleteProject(context, redis));
 
 // Project storage routes (folders, files)
-app.post('/api/projects/:id/folders', (context) => handleAddFolder(context, redis));
-app.delete('/api/projects/:id/folders', (context) => handleRemoveFolder(context, redis));
-app.get('/api/projects/:id/tree', (context) => handleListFiles(context, redis));
-app.post('/api/projects/:id/tree', (context) => handleListFiles(context, redis));
-app.get('/api/projects/:id/files', (context) => handleReadFile(context, redis));
-app.post('/api/projects/:id/files', (context) => handleCreateFile(context, redis));
-app.put('/api/projects/:id/files', (context) => handleWriteFile(context, redis));
-app.put('/api/projects/:id/files/rename', (context) => handleRenameFile(context, redis));
-app.delete('/api/projects/:id/files', (context) => handleDeleteFile(context, redis));
+app.post('/api/projects/:projectSlug/folders', (context) => handleAddFolder(context, redis));
+app.delete('/api/projects/:projectSlug/folders', (context) => handleRemoveFolder(context, redis));
+app.get('/api/projects/:projectSlug/tree', (context) => handleListFiles(context, redis));
+app.post('/api/projects/:projectSlug/tree', (context) => handleListFiles(context, redis));
+app.get('/api/projects/:projectSlug/files', (context) => handleReadFile(context, redis));
+app.post('/api/projects/:projectSlug/files', (context) => handleCreateFile(context, redis));
+app.put('/api/projects/:projectSlug/files', (context) => handleWriteFile(context, redis));
+app.put('/api/projects/:projectSlug/files/rename', (context) => handleRenameFile(context, redis));
+app.delete('/api/projects/:projectSlug/files', (context) => handleDeleteFile(context, redis));
 
 // Project git routes (local mode)
-app.get('/api/projects/:id/git/status', (context) => handleGetGitStatus(context, redis));
-app.post('/api/projects/:id/git/commit', (context) => handleCommit(context, redis));
-app.post('/api/projects/:id/git/restore', (context) => handleRestore(context, redis));
-app.post('/api/projects/:id/git/pull', (context) => handlePull(context, redis));
+app.get('/api/projects/:projectSlug/git/status', (context) => handleGetGitStatus(context, redis));
+app.post('/api/projects/:projectSlug/git/commit', (context) => handleCommit(context, redis));
+app.post('/api/projects/:projectSlug/git/restore', (context) => handleRestore(context, redis));
+app.post('/api/projects/:projectSlug/git/pull', (context) => handlePull(context, redis));
 
 // GitHub sync routes (cloud mode)
-app.post('/api/projects/:id/sync', (context) => handleGitHubSync(context, redis));
-app.post('/api/projects/:id/sync/initial', (context) => handleGitHubInitialSync(context, redis));
-app.get('/api/projects/:id/sync/status', (context) => handleGitHubSyncStatus(context, redis));
-app.post('/api/projects/:id/github/commit', (context) => handleGitHubCommit(context, redis));
+app.post('/api/projects/:projectSlug/sync', (context) => handleGitHubSync(context, redis));
+app.post('/api/projects/:projectSlug/sync/initial', (context) => handleGitHubInitialSync(context, redis));
+app.get('/api/projects/:projectSlug/sync/status', (context) => handleGitHubSyncStatus(context, redis));
+app.post('/api/projects/:projectSlug/github/commit', (context) => handleGitHubCommit(context, redis));
 
-// Authorization gate for project-scoped planning routes (epics, specs, tasks, progress).
-// These handlers query by the client-supplied :projectId alone, so without this wrapper they
-// are unauthenticated/IDOR-able. Require a valid session AND that the user owns the project
-// before the handler runs. 404 (not 403) on no-access so we don't disclose project existence.
+// Authorization gate for project-scoped planning routes (items, specs, progress).
+// These handlers query by the client-supplied :projectSlug alone, so without this wrapper
+// they are unauthenticated/IDOR-able. Require a valid session AND that the user owns the
+// project before the handler runs, then hand the handler the resolved project (its internal
+// id and item-key prefix) via context. 404 (not 403) on no-access so we don't disclose
+// which slugs exist in other accounts.
 function requireProjectAccess(
 	handler: (context: Context) => Promise<Response>
 ): (context: Context) => Promise<Response> {
 	return async (context) => {
-		const projectId = context.req.param('projectId');
-		if (!projectId || !isValidUUID(projectId)) {
-			return context.json({ error: 'Invalid project ID format' }, 400);
+		const slug = context.req.param('projectSlug');
+		if (!slug || !isValidProjectSlug(slug)) {
+			return context.json({ error: 'Invalid project slug format' }, 400);
 		}
 
 		const sessionId = getCookie(context, SESSION_COOKIE_NAME);
@@ -531,36 +547,45 @@ function requireProjectAccess(
 			return context.json({ error: 'Unauthorized' }, 401);
 		}
 
-		if (!(await verifyProjectAccess(projectId, userId))) {
+		const project = await resolveProjectSlug(slug, userId);
+		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
+		context.set('project', project);
+		// Handlers that record provenance (item create, blockers) read this as the actor.
+		context.set('userId', userId);
 		return handler(context);
 	};
 }
 
-// Project-scoped item routes (/current before /:id so it isn't captured as an id)
-app.get('/api/projects/:projectId/items', requireProjectAccess(handleListItems));
-app.get('/api/projects/:projectId/items/current', requireProjectAccess(handleGetCurrentWork));
-app.get('/api/projects/:projectId/items/:id', requireProjectAccess(handleGetItem));
-app.post('/api/projects/:projectId/items', requireProjectAccess(handleCreateItem));
-app.post('/api/projects/:projectId/items/:id/children', requireProjectAccess(handleCreateChildren));
-app.put('/api/projects/:projectId/items/:id', requireProjectAccess(handleUpdateItem));
-app.delete('/api/projects/:projectId/items/:id', requireProjectAccess(handleDeleteItem));
-app.post('/api/projects/:projectId/items/:id/move', requireProjectAccess(handleMoveItem));
-app.post('/api/projects/:projectId/items/:id/start', requireProjectAccess(handleStartItem));
-app.post('/api/projects/:projectId/items/:id/complete', requireProjectAccess(handleCompleteItem));
-app.post('/api/projects/:projectId/items/:id/block', requireProjectAccess(handleBlockItem));
-app.post('/api/projects/:projectId/items/:id/unblock', requireProjectAccess(handleUnblockItem));
+// Project-scoped item routes (/current before /:itemKey so it isn't captured as a key)
+app.get('/api/projects/:projectSlug/items', requireProjectAccess(handleListItems));
+app.get('/api/projects/:projectSlug/items/current', requireProjectAccess(handleGetCurrentWork));
+app.get('/api/projects/:projectSlug/items/:itemKey', requireProjectAccess(handleGetItem));
+app.post('/api/projects/:projectSlug/items', requireProjectAccess(handleCreateItem));
+app.post('/api/projects/:projectSlug/items/:itemKey/children', requireProjectAccess(handleCreateChildren));
+app.put('/api/projects/:projectSlug/items/:itemKey', requireProjectAccess(handleUpdateItem));
+app.delete('/api/projects/:projectSlug/items/:itemKey', requireProjectAccess(handleDeleteItem));
+app.post('/api/projects/:projectSlug/items/:itemKey/move', requireProjectAccess(handleMoveItem));
+app.post('/api/projects/:projectSlug/items/:itemKey/start', requireProjectAccess(handleStartItem));
+app.post('/api/projects/:projectSlug/items/:itemKey/complete', requireProjectAccess(handleCompleteItem));
+app.post('/api/projects/:projectSlug/items/:itemKey/block', requireProjectAccess(handleBlockItem));
+app.post('/api/projects/:projectSlug/items/:itemKey/unblock', requireProjectAccess(handleUnblockItem));
 
 // Project-scoped spec link routes
-app.get('/api/projects/:projectId/items/:itemId/specs', requireProjectAccess(handleListSpecs));
-app.post('/api/projects/:projectId/items/:itemId/specs', requireProjectAccess(handleAddSpec));
-app.delete('/api/projects/:projectId/items/:itemId/specs/:id', requireProjectAccess(handleDeleteSpec));
+app.get('/api/projects/:projectSlug/items/:itemKey/specs', requireProjectAccess(handleListSpecs));
+app.post('/api/projects/:projectSlug/items/:itemKey/specs', requireProjectAccess(handleAddSpec));
+app.delete('/api/projects/:projectSlug/items/:itemKey/specs/:id', requireProjectAccess(handleDeleteSpec));
+
+// Project-scoped blocker routes
+app.get('/api/projects/:projectSlug/items/:itemKey/blockers', requireProjectAccess(handleListBlockers));
+app.post('/api/projects/:projectSlug/items/:itemKey/blockers', requireProjectAccess(handleAddBlocker));
+app.delete('/api/projects/:projectSlug/items/:itemKey/blockers/:id', requireProjectAccess(handleClearBlocker));
 
 // Project-scoped progress notes routes
-app.get('/api/projects/:projectId/items/:itemId/progress', requireProjectAccess(handleListItemProgress));
-app.post('/api/projects/:projectId/items/:itemId/progress', requireProjectAccess(handleCreateItemProgress));
+app.get('/api/projects/:projectSlug/items/:itemKey/progress', requireProjectAccess(handleListItemProgress));
+app.post('/api/projects/:projectSlug/items/:itemKey/progress', requireProjectAccess(handleCreateItemProgress));
 
 // AI Chat
 app.get('/api/chat/models', (context) => handleGetChatModels(context, redis));

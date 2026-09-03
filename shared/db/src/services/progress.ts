@@ -24,22 +24,30 @@ function transformProgressNote(note: ProgressNote): ProgressNoteResponse {
 }
 
 /** Get progress notes for an item, newest first. */
-export async function getItemProgressNotes(itemId: string): Promise<ProgressNoteResponse[]> {
+export async function getItemProgressNotes(projectId: string, itemNumber: number): Promise<ProgressNoteResponse[]> {
 	const result = await query<ProgressNote>(
-		'SELECT * FROM progress_notes WHERE item_id = $1 ORDER BY created_at DESC',
-		[itemId]
+		`SELECT n.* FROM progress_notes n
+		 JOIN items i ON i.id = n.item_id
+		 WHERE i.number = $1 AND i.project_id = $2
+		 ORDER BY n.created_at DESC`,
+		[itemNumber, projectId]
 	);
 	return result.rows.map(transformProgressNote);
 }
 
-/** Add a progress note to an item. Throws if the item doesn't exist. */
+/** Add a progress note to an item. Throws if the item doesn't exist in the project. */
 export async function addItemProgressNote(
-	itemId: string,
+	projectId: string,
+	itemNumber: number,
 	note: string,
 	createdBy: string = 'system'
 ): Promise<ProgressNoteResponse> {
-	const itemCheck = await query('SELECT id FROM items WHERE id = $1', [itemId]);
-	if (itemCheck.rows.length === 0) {
+	const itemCheck = await query<{ id: string }>(
+		'SELECT id FROM items WHERE number = $1 AND project_id = $2',
+		[itemNumber, projectId]
+	);
+	const itemId = itemCheck.rows[0]?.id;
+	if (!itemId) {
 		throw new Error('Item not found');
 	}
 

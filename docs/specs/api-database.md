@@ -95,6 +95,13 @@ CREATE TABLE github_connections (
 -- See project-storage.md for storage_mode and repository details
 CREATE TABLE projects (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	slug VARCHAR(63) NOT NULL,
+	-- URL identifier, e.g. "specboard". Every user-facing URL and API path addresses
+	-- a project by slug; the UUID above is internal only.
+	key VARCHAR(10) NOT NULL,
+	-- Short uppercase prefix for this project's item keys, e.g. "SB" -> SB-345.
+	item_seq INTEGER NOT NULL DEFAULT 0,
+	-- Allocator for per-project item numbers; the last number handed out.
 	name VARCHAR(255) NOT NULL,
 	description TEXT,
 	owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -110,6 +117,11 @@ CREATE TABLE projects (
 );
 
 CREATE INDEX idx_projects_owner_id ON projects(owner_id);
+
+-- Slugs and keys are unique per owner, matching the access-control scope, so a slug
+-- resolves unambiguously for the signed-in user.
+CREATE UNIQUE INDEX idx_projects_owner_slug ON projects(owner_id, slug);
+CREATE UNIQUE INDEX idx_projects_owner_key ON projects(owner_id, key);
 
 -- Repositories (GitHub repos the user has connected - legacy, see projects)
 CREATE TABLE repositories (
@@ -352,26 +364,27 @@ Response includes pagination info:
 |--------|------|-------------|
 | GET | /api/projects | List user's projects |
 | POST | /api/projects | Create project |
-| GET | /api/projects/:id | Get project |
-| PATCH | /api/projects/:id | Update project |
-| DELETE | /api/projects/:id | Delete project |
+| GET | /api/projects/:projectSlug | Get project |
+| PUT | /api/projects/:projectSlug | Update project (name, description, slug, key, system prompt) |
+| DELETE | /api/projects/:projectSlug | Delete project |
 
 ### Project Storage (see [project-storage.md](./project-storage.md))
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/projects/:id/folders | Add local folder (local mode) |
-| DELETE | /api/projects/:id/folders | Remove folder from view |
-| POST | /api/projects/:id/repository | Connect GitHub repo (cloud mode) |
-| DELETE | /api/projects/:id/repository | Disconnect repository |
+| POST | /api/projects/:projectSlug/folders | Add local folder (local mode) |
+| DELETE | /api/projects/:projectSlug/folders | Remove folder from view |
+| POST | /api/projects/:projectSlug/sync | Sync a cloud project from GitHub |
+| POST | /api/projects/:projectSlug/sync/initial | First sync after connecting a repo |
+| GET | /api/projects/:projectSlug/sync/status | Poll sync progress |
 
 ### Project Files
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET/POST | /api/projects/:id/tree | List files/folders |
-| GET | /api/projects/:id/files?path=... | Get file content |
-| PUT | /api/projects/:id/files?path=... | Save file |
+| GET/POST | /api/projects/:projectSlug/tree | List files/folders |
+| GET | /api/projects/:projectSlug/files?path=... | Get file content |
+| PUT | /api/projects/:projectSlug/files?path=... | Save file |
 
 ### Repositories (Legacy)
 

@@ -12,14 +12,14 @@ import styles from './ChatSidebar.module.css';
 interface ChatSidebarProps {
 	documentContent?: string;
 	documentPath?: string;
-	projectId?: string;
+	projectSlug?: string;
 	onApplyEdit?: (newMarkdown: string) => void;
 }
 
 export function ChatSidebar({
 	documentContent,
 	documentPath,
-	projectId,
+	projectSlug,
 	onApplyEdit,
 }: ChatSidebarProps): JSX.Element {
 	const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -48,7 +48,7 @@ export function ChatSidebar({
 	} = useChatStream({
 		documentContent,
 		documentPath,
-		projectId,
+		projectSlug,
 		selectedModel,
 		inputRef,
 	});

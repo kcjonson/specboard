@@ -9,7 +9,7 @@
  * - delete_item: Delete any item
  */
 
-import { verifyProjectAccess } from '@specboard/db';
+import { resolveProjectSlug, type ResolvedProject, type AgentActor } from '@specboard/db';
 
 import { epicTools } from './definitions.ts';
 import { getItems } from './reads.ts';
@@ -22,44 +22,48 @@ export { epicTools };
 export async function handleEpicTool(
 	name: string,
 	args: Record<string, unknown> | undefined,
-	userId: string,
-	boundProjectId?: string
+	actor: AgentActor,
+	boundProjectSlug?: string
 ): Promise<ToolResult> {
-	const requestedProjectId = args?.project_id as string | undefined;
+	const userId = actor.userId;
+	// Normalized the same way the X-Specboard-Project header is, so an agent that
+	// capitalizes the slug isn't refused for disagreeing with its own binding.
+	const requested = args?.project_slug;
+	const requestedProjectSlug = typeof requested === 'string' ? requested.trim().toLowerCase() : undefined;
 
 	// When the repo is bound (committed .mcp.json X-Specboard-Project header), the binding is
-	// authoritative: reject an explicit project_id that targets a different board, and fall back
+	// authoritative: reject an explicit project_slug that targets a different board, and fall back
 	// to the binding when none is supplied so callers never have to repeat it.
-	if (boundProjectId && requestedProjectId && requestedProjectId !== boundProjectId) {
+	if (boundProjectSlug && requestedProjectSlug && requestedProjectSlug !== boundProjectSlug) {
 		return {
 			content: [
 				{
 					type: 'text',
-					text: `This repo is bound to project ${boundProjectId} and cannot operate on project ${requestedProjectId}.`,
+					text: `This repo is bound to project ${boundProjectSlug} and cannot operate on project ${requestedProjectSlug}.`,
 				},
 			],
 			isError: true,
 		};
 	}
 
-	const projectId = requestedProjectId ?? boundProjectId;
-	if (!projectId) {
+	const projectSlug = requestedProjectSlug ?? boundProjectSlug;
+	if (!projectSlug) {
 		return {
-			content: [{ type: 'text', text: 'project_id is required' }],
+			content: [{ type: 'text', text: 'project_slug is required' }],
 			isError: true,
 		};
 	}
 
-	// Security: Verify the user has access to this project. verifyProjectAccess returns false for
-	// both "project doesn't exist" and "no access" — keep the message ambiguous between the two so
-	// it can't be used to enumerate valid project IDs (no existence disclosure, no echoing the ID
-	// back). When the project came from the repo binding rather than an explicit project_id, point
-	// at .mcp.json so a stale committed UUID is self-diagnosing instead of an opaque "access denied".
-	const fromBinding = !requestedProjectId && Boolean(boundProjectId);
-	const hasAccess = await verifyProjectAccess(projectId, userId);
-	if (!hasAccess) {
+	// Security: resolve the slug within this user's projects. A miss covers both "project doesn't
+	// exist" and "no access" — keep the message ambiguous between the two so it can't be used to
+	// enumerate slugs (no existence disclosure, no echoing the slug back). When the project came
+	// from the repo binding rather than an explicit project_slug, point at .mcp.json so a stale
+	// committed slug is self-diagnosing instead of an opaque "access denied".
+	const fromBinding = !requestedProjectSlug && Boolean(boundProjectSlug);
+	const project: ResolvedProject | null = await resolveProjectSlug(projectSlug, userId);
+	if (!project) {
 		const text = fromBinding
-			? "This repo's .mcp.json binding (X-Specboard-Project) points to a project that's unavailable — it may not exist, or your Specboard account may not have access to it. Verify the project UUID committed in .mcp.json and that your account has access to that project."
+			? "This repo's .mcp.json binding (X-Specboard-Project) points to a project that's unavailable — it may not exist, or your Specboard account may not have access to it. Verify the project slug committed in .mcp.json and that your account has access to that project."
 			: "Access denied: that project doesn't exist, or your account doesn't have access to it.";
 		return {
 			content: [{ type: 'text', text }],
@@ -70,15 +74,15 @@ export async function handleEpicTool(
 	try {
 		switch (name) {
 			case 'get_items':
-				return await getItems(projectId, args as Record<string, unknown>);
+				return await getItems(project, args as Record<string, unknown>);
 			case 'create_item':
-				return await createItem(projectId, args);
+				return await createItem(project, args, actor);
 			case 'create_items':
-				return await createItems(projectId, args);
+				return await createItems(project, args, actor);
 			case 'update_item':
-				return await updateItem(projectId, args);
+				return await updateItem(project, args, actor);
 			case 'delete_item':
-				return await deleteItem(projectId, args);
+				return await deleteItem(project, args);
 			default:
 				return {
 					content: [{ type: 'text', text: `Unknown tool: ${name}` }],

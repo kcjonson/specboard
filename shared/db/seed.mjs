@@ -76,6 +76,10 @@ const LOCAL_DEV_PASSWORD = 'Password123!';
 const SAMPLE_PROJECT = {
 	name: 'Sample Project',
 	description: 'Seeded sample data for local development',
+	// Matches what slugifyProjectName/deriveProjectKey would derive from the name,
+	// so seeded data looks like anything created through the app. Items are SAM-1, ...
+	slug: 'sample-project',
+	key: 'SAM',
 };
 
 /**
@@ -167,22 +171,29 @@ async function seedSampleProject(pool, ownerId) {
 	try {
 		await client.query('BEGIN');
 
+		// slug and key are NOT NULL with no default — the app derives them from the
+		// name on create, and the seed has to supply them the same way.
 		const projectResult = await client.query(
-			`INSERT INTO projects (name, description, owner_id)
-			 VALUES ($1, $2, $3) RETURNING id`,
-			[SAMPLE_PROJECT.name, SAMPLE_PROJECT.description, ownerId]
+			`INSERT INTO projects (name, description, owner_id, slug, key)
+			 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			[SAMPLE_PROJECT.name, SAMPLE_PROJECT.description, ownerId, SAMPLE_PROJECT.slug, SAMPLE_PROJECT.key]
 		);
 		const projectId = projectResult.rows[0]?.id;
 		if (!projectId) {
 			throw new Error('Failed to create sample project');
 		}
 
+		// items.number is NOT NULL for any item with a project, and unique within it.
+		// Allocate from the project's own counter so item_seq stays >= max(number).
+		let nextNumber = 0;
+		const allocate = () => (nextNumber += 1);
+
 		for (let i = 0; i < SAMPLE_EPICS.length; i++) {
 			const epic = SAMPLE_EPICS[i];
 			const epicResult = await client.query(
-				`INSERT INTO items (project_id, parent_id, title, description, status, type, rank, creator)
-				 VALUES ($1, NULL, $2, $3, $4, $5, $6, $7) RETURNING id`,
-				[projectId, epic.title, epic.description, epic.status, epic.type, i + 1, ownerId]
+				`INSERT INTO items (project_id, parent_id, title, description, status, type, rank, origin, number)
+				 VALUES ($1, NULL, $2, $3, $4, $5, $6, $7::jsonb, $8) RETURNING id`,
+				[projectId, epic.title, epic.description, epic.status, epic.type, i + 1, JSON.stringify({ actor: { type: 'user', userId: ownerId } }), allocate()]
 			);
 			const epicId = epicResult.rows[0]?.id;
 			if (!epicId) {
@@ -192,12 +203,14 @@ async function seedSampleProject(pool, ownerId) {
 			for (let j = 0; j < epic.tasks.length; j++) {
 				const task = epic.tasks[j];
 				await client.query(
-					`INSERT INTO items (project_id, parent_id, title, status, type, rank)
-					 VALUES ($1, $2, $3, $4, 'task', $5)`,
-					[projectId, epicId, task.title, task.status, j + 1]
+					`INSERT INTO items (project_id, parent_id, title, status, type, rank, origin, number)
+					 VALUES ($1, $2, $3, $4, 'task', $5, $6::jsonb, $7)`,
+					[projectId, epicId, task.title, task.status, j + 1, JSON.stringify({ actor: { type: 'user', userId: ownerId } }), allocate()]
 				);
 			}
 		}
+
+		await client.query('UPDATE projects SET item_seq = $2 WHERE id = $1', [projectId, nextNumber]);
 
 		await client.query('COMMIT');
 		console.log(`Sample project seeded with ${SAMPLE_EPICS.length} epics`);

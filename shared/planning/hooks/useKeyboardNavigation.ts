@@ -1,13 +1,19 @@
 import { useEffect, useCallback } from 'preact/hooks';
-import type { ItemModel, Status } from '@specboard/models';
+import type { ItemModel, Status, ItemStatus } from '@specboard/models';
 
-const STATUSES: Status[] = ['ready', 'in_progress', 'done'];
+const DEFAULT_COLUMNS: ItemStatus[] = ['ready', 'in_progress', 'done'];
 
 interface KeyboardNavigationOptions {
 	/** All items grouped by status */
-	itemsByStatus: Record<Status, ItemModel[]>;
-	/** Currently selected item ID */
-	selectedItemId: string | undefined;
+	itemsByStatus: Partial<Record<ItemStatus, ItemModel[]>>;
+	/**
+	 * Column traversal order (the board's rendered columns). Selection moves
+	 * through these; the 1/2/3 move shortcuts stay ready/in_progress/done —
+	 * blocking needs a reason, so there's no move-to-blocked key.
+	 */
+	columns?: ItemStatus[];
+	/** Key of the currently selected item */
+	selectedItemKey: string | undefined;
 	/** Whether a dialog is open (disables shortcuts) */
 	dialogOpen: boolean;
 	/** Callback when selection changes */
@@ -22,7 +28,8 @@ interface KeyboardNavigationOptions {
 
 export function useKeyboardNavigation({
 	itemsByStatus,
-	selectedItemId,
+	columns = DEFAULT_COLUMNS,
+	selectedItemKey,
 	dialogOpen,
 	onSelectItem,
 	onOpenItem,
@@ -32,23 +39,23 @@ export function useKeyboardNavigation({
 	// Find the selected item and its position
 	const findSelectedItem = useCallback((): {
 		item: ItemModel | undefined;
-		status: Status | undefined;
+		status: ItemStatus | undefined;
 		index: number;
 	} => {
-		if (!selectedItemId) {
+		if (!selectedItemKey) {
 			return { item: undefined, status: undefined, index: -1 };
 		}
 
-		for (const status of STATUSES) {
-			const items = itemsByStatus[status];
-			const index = items.findIndex((e) => e.id === selectedItemId);
+		for (const status of columns) {
+			const items = itemsByStatus[status] ?? [];
+			const index = items.findIndex((e) => e.key === selectedItemKey);
 			if (index !== -1) {
 				return { item: items[index], status, index };
 			}
 		}
 
 		return { item: undefined, status: undefined, index: -1 };
-	}, [selectedItemId, itemsByStatus]);
+	}, [selectedItemKey, itemsByStatus, columns]);
 
 	// Navigate up/down within a column
 	const navigateVertical = useCallback(
@@ -56,9 +63,15 @@ export function useKeyboardNavigation({
 			const { status, index } = findSelectedItem();
 
 			if (!status) {
+				// A selection that isn't on the board (a child item, open in the drawer)
+				// is not something arrow keys can step through — leave it alone rather
+				// than treating it as "nothing selected" and jumping to the first card,
+				// which would yank the drawer to an unrelated item.
+				if (selectedItemKey) return;
+
 				// No selection, select first item in first non-empty column
-				for (const s of STATUSES) {
-					const items = itemsByStatus[s];
+				for (const s of columns) {
+					const items = itemsByStatus[s] ?? [];
 					if (items.length > 0) {
 						onSelectItem(items[0]);
 						return;
@@ -67,14 +80,14 @@ export function useKeyboardNavigation({
 				return;
 			}
 
-			const items = itemsByStatus[status];
+			const items = itemsByStatus[status] ?? [];
 			const newIndex = direction === 'up' ? index - 1 : index + 1;
 
 			if (newIndex >= 0 && newIndex < items.length) {
 				onSelectItem(items[newIndex]);
 			}
 		},
-		[findSelectedItem, itemsByStatus, onSelectItem]
+		[findSelectedItem, selectedItemKey, itemsByStatus, columns, onSelectItem]
 	);
 
 	// Navigate left/right between columns
@@ -83,10 +96,13 @@ export function useKeyboardNavigation({
 			const { status, index } = findSelectedItem();
 
 			if (!status) {
+				// Same as navigateVertical: an off-board selection isn't steppable.
+				if (selectedItemKey) return;
+
 				// No selection, select first item in first/last non-empty column
-				const statuses = direction === 'left' ? [...STATUSES].reverse() : STATUSES;
+				const statuses = direction === 'left' ? [...columns].reverse() : columns;
 				for (const s of statuses) {
-					const items = itemsByStatus[s];
+					const items = itemsByStatus[s] ?? [];
 					if (items.length > 0) {
 						onSelectItem(items[0]);
 						return;
@@ -95,14 +111,14 @@ export function useKeyboardNavigation({
 				return;
 			}
 
-			const currentStatusIndex = STATUSES.indexOf(status);
+			const currentStatusIndex = columns.indexOf(status);
 			const newStatusIndex =
 				direction === 'left' ? currentStatusIndex - 1 : currentStatusIndex + 1;
 
-			if (newStatusIndex >= 0 && newStatusIndex < STATUSES.length) {
-				const newStatus = STATUSES[newStatusIndex];
+			if (newStatusIndex >= 0 && newStatusIndex < columns.length) {
+				const newStatus = columns[newStatusIndex];
 				if (newStatus) {
-					const newColumnItems = itemsByStatus[newStatus];
+					const newColumnItems = itemsByStatus[newStatus] ?? [];
 					if (newColumnItems.length > 0) {
 						// Try to maintain similar position, or go to last item
 						const newIndex = Math.min(index, newColumnItems.length - 1);
@@ -111,7 +127,7 @@ export function useKeyboardNavigation({
 				}
 			}
 		},
-		[findSelectedItem, itemsByStatus, onSelectItem]
+		[findSelectedItem, selectedItemKey, itemsByStatus, columns, onSelectItem]
 	);
 
 	// Move selected item to a status
@@ -131,9 +147,12 @@ export function useKeyboardNavigation({
 			if (dialogOpen) return;
 
 			const target = e.target as HTMLElement;
+			// SELECT included: arrow keys change a focused dropdown's value, and the
+			// drawer's Status/Sub-Status controls are dropdowns sitting inside the board.
 			const isInput =
 				target.tagName === 'INPUT' ||
 				target.tagName === 'TEXTAREA' ||
+				target.tagName === 'SELECT' ||
 				target.isContentEditable;
 
 			if (isInput) return;

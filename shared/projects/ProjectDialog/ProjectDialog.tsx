@@ -7,6 +7,7 @@ import {
 	GitHubBranchesCollection,
 	useModel,
 } from '@specboard/models';
+import { isValidProjectSlug, isValidProjectKey, MAX_PROJECT_SLUG_LENGTH } from '@specboard/core/identifiers';
 import type { Project, RepositoryConfigCloud } from '../ProjectCard/ProjectCard';
 import styles from './ProjectDialog.module.css';
 
@@ -28,7 +29,7 @@ export interface ProjectDialogProps {
 	/** Called when dialog should close */
 	onClose: () => void;
 	/** Called when project is saved (created or updated) */
-	onSave: (data: { name: string; description?: string; systemPrompt?: string; repository?: RepositoryConfig }) => Promise<void>;
+	onSave: (data: { name: string; description?: string; systemPrompt?: string; slug?: string; key?: string; repository?: RepositoryConfig }) => Promise<void>;
 	/** Called when project is deleted (only available in edit mode) */
 	onDelete?: () => Promise<void>;
 }
@@ -43,6 +44,9 @@ export function ProjectDialog({
 	const [name, setName] = useState(project?.name ?? '');
 	const [description, setDescription] = useState(project?.description ?? '');
 	const [systemPrompt, setSystemPrompt] = useState(project?.systemPrompt ?? '');
+	// Only editable once the project exists: on create both are derived from the name.
+	const [slug, setSlug] = useState(project?.slug ?? '');
+	const [itemKey, setItemKey] = useState(project?.key ?? '');
 	const [saving, setSaving] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -114,24 +118,35 @@ export function ProjectDialog({
 		setName(project?.name ?? '');
 		setDescription(project?.description ?? '');
 		setSystemPrompt(project?.systemPrompt ?? '');
+		setSlug(project?.slug ?? '');
+		setItemKey(project?.key ?? '');
 		setShowDeleteConfirm(false);
 		setError(null);
 		setSelectedRepo('');
 		setSelectedBranch('');
 	}, [project]);
 
+	// Identifiers are only editable in edit mode; on create the server derives them.
+	const slugValid = !isEditMode || isValidProjectSlug(slug.trim());
+	const keyValid = !isEditMode || isValidProjectKey(itemKey.trim());
+	const canSubmit = Boolean(name.trim()) && slugValid && keyValid && !saving;
+
 	async function handleSubmit(e: Event): Promise<void> {
 		e.preventDefault();
-		if (!name.trim() || saving) return;
+		if (!canSubmit) return;
 
 		try {
 			setSaving(true);
 			setError(null);
 
-			const data: { name: string; description?: string; systemPrompt?: string; repository?: RepositoryConfig } = {
+			const data: { name: string; description?: string; systemPrompt?: string; slug?: string; key?: string; repository?: RepositoryConfig } = {
 				name: name.trim(),
 				description: description.trim() || undefined,
 				systemPrompt: systemPrompt.trim(),
+				// Send identifiers only when the user actually changed one, so an untouched
+				// dialog can never trip the "already in use" conflict on its own values.
+				...(isEditMode && slug.trim() !== project?.slug ? { slug: slug.trim() } : {}),
+				...(isEditMode && itemKey.trim() !== project?.key ? { key: itemKey.trim() } : {}),
 			};
 
 			// Include repository config if selected
@@ -261,6 +276,46 @@ export function ProjectDialog({
 						/>
 					</label>
 				</div>
+
+				{isEditMode && (
+					<>
+						<div class={styles.field}>
+							<label class={styles.label}>
+								<span class={styles.labelText}>URL slug</span>
+								<span class={styles.hint}>Identifies this project in its address: /projects/{slug || '…'}/planning</span>
+								<input
+									type="text"
+									class={styles.input}
+									value={slug}
+									onInput={(e) => setSlug((e.target as HTMLInputElement).value.toLowerCase())}
+									placeholder="my-project"
+									maxLength={MAX_PROJECT_SLUG_LENGTH}
+								/>
+								{!slugValid && (
+									<span class={styles.error}>Lowercase letters, numbers, and single hyphens between them.</span>
+								)}
+							</label>
+						</div>
+
+						<div class={styles.field}>
+							<label class={styles.label}>
+								<span class={styles.labelText}>Item key prefix</span>
+								<span class={styles.hint}>Prefixes this project's work items: {itemKey || '…'}-345</span>
+								<input
+									type="text"
+									class={styles.input}
+									value={itemKey}
+									onInput={(e) => setItemKey((e.target as HTMLInputElement).value.toUpperCase())}
+									placeholder="SB"
+									maxLength={10}
+								/>
+								{!keyValid && (
+									<span class={styles.error}>2–10 characters: a letter first, then letters or digits.</span>
+								)}
+							</label>
+						</div>
+					</>
+				)}
 
 				<div class={styles.field}>
 					<label class={styles.label}>
@@ -443,7 +498,7 @@ export function ProjectDialog({
 						</Button>
 						<Button
 							type="submit"
-							disabled={!name.trim() || saving}
+							disabled={!canSubmit}
 						>
 							{saving ? 'Saving...' : isEditMode ? 'Save' : 'Create'}
 						</Button>

@@ -35,8 +35,13 @@ interface ProjectStorage {
 }
 
 export interface FileBrowserProps {
-	/** Project ID */
-	projectId: string;
+	/** Project slug */
+	projectSlug: string;
+	/**
+	 * The same project's immutable id, keying the tree's stored expansion state.
+	 * Omit in transient contexts (the modal picker) to keep expansion in memory.
+	 */
+	projectId?: string;
 	/** Currently selected file path */
 	selectedPath?: string;
 	/** Git status model for showing uncommitted changes */
@@ -66,6 +71,7 @@ export interface FileBrowserProps {
 }
 
 export function FileBrowser({
+	projectSlug,
 	projectId,
 	selectedPath,
 	gitStatus,
@@ -109,10 +115,10 @@ export function FileBrowser({
 	// Track previous selectedPath to avoid unnecessary expandToFile calls
 	const prevSelectedPathRef = useRef<string | undefined>(undefined);
 
-	// Initialize model when projectId changes
+	// Initialize the model when the project changes.
 	useEffect(() => {
-		model.initialize(projectId);
-	}, [model, projectId]);
+		model.initialize(projectSlug, projectId ?? '');
+	}, [model, projectSlug, projectId]);
 
 	// Clean up poll timer on unmount
 	useEffect(() => {
@@ -156,7 +162,7 @@ export function FileBrowser({
 
 		// Call API directly (simpler than going through model for external calls)
 		await fetchClient.put<{ success: boolean }>(
-			`/api/projects/${projectId}/files/rename`,
+			`/api/projects/${projectSlug}/files/rename`,
 			{ oldPath: path, newPath }
 		);
 
@@ -164,7 +170,7 @@ export function FileBrowser({
 		await model.reload();
 
 		return newPath;
-	}, [model, projectId]);
+	}, [model, projectSlug]);
 
 	useEffect(() => {
 		onRenameFileRef?.(handleRenameFile);
@@ -334,7 +340,7 @@ export function FileBrowser({
 
 		try {
 			await fetchClient.post<ProjectStorage>(
-				`/api/projects/${projectId}/folders`,
+				`/api/projects/${projectSlug}/folders`,
 				{ path }
 			);
 			// Reload the tree to pick up new folder
@@ -351,7 +357,7 @@ export function FileBrowser({
 		setRetryingSync(true);
 		model.error = null;
 		try {
-			await fetchClient.post(`/api/projects/${projectId}/sync/initial`);
+			await fetchClient.post(`/api/projects/${projectSlug}/sync/initial`);
 			await model.reload();
 		} catch (err) {
 			console.error('Failed to retry sync:', err);
@@ -385,7 +391,7 @@ export function FileBrowser({
 
 		try {
 			await fetchClient.delete<ProjectStorage>(
-				`/api/projects/${projectId}/folders?path=${encodeURIComponent(folderPath)}`
+				`/api/projects/${projectSlug}/folders?path=${encodeURIComponent(folderPath)}`
 			);
 			model.reload();
 		} catch (err) {
@@ -400,7 +406,7 @@ export function FileBrowser({
 
 		try {
 			await fetchClient.delete(
-				`/api/projects/${projectId}/files?path=${encodeURIComponent(path)}`
+				`/api/projects/${projectSlug}/files?path=${encodeURIComponent(path)}`
 			);
 			model.reload();
 			gitStatus?.refresh();

@@ -4,14 +4,14 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { isValidUUID } from '../../validation.ts';
+import { isValidProjectSlug } from '@specboard/core/identifiers';
 import { getUserId, getStorageProvider } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
-import { getProject, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
+import { getProjectBySlug, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 
 /**
- * GET /api/projects/:id/git/status
+ * GET /api/projects/:projectSlug/git/status
  * Get git status including branch, ahead/behind, and changed files
  *
  * Works for both local and cloud mode projects:
@@ -24,15 +24,15 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!isValidUUID(projectId)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
 
 	// Get project first to verify it exists and check mode
 	let project;
 	try {
-		project = await getProject(projectId, userId);
+		project = await getProjectBySlug(projectSlug, userId);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -41,6 +41,7 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
 	if (!project) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
+	const projectId = project.id;
 
 	// Get storage provider based on project mode
 	const provider = await getStorageProvider(projectId, userId);
@@ -88,7 +89,7 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
 }
 
 /**
- * POST /api/projects/:id/git/commit
+ * POST /api/projects/:projectSlug/git/commit
  * Commit all changes with optional message
  * Auto-generates message if not provided
  *
@@ -100,15 +101,15 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!isValidUUID(projectId)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
 
 	// Check project mode - must be either cloud or local, never ambiguous
 	let project;
 	try {
-		project = await getProject(projectId, userId);
+		project = await getProjectBySlug(projectSlug, userId);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -117,6 +118,7 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 	if (!project) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
+	const projectId = project.id;
 
 	// Route based on project storage mode
 	const repo = project.repository as RepositoryConfig | Record<string, never>;
@@ -214,11 +216,11 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 }
 
 /**
- * POST /api/projects/:id/git/restore
- * Restore a deleted file from git
+ * POST /api/projects/:projectSlug/git/restore
+ * Restore a file to its committed version.
  *
- * Only available for local mode projects. Cloud mode projects should
- * use sync to get files back from GitHub.
+ * Local mode restores from git; cloud mode discards the file's pending
+ * change, leaving the committed content in place.
  */
 export async function handleRestore(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
@@ -226,15 +228,15 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!isValidUUID(projectId)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
 
 	// Get project and check mode - restore only works for local mode
 	let project;
 	try {
-		project = await getProject(projectId, userId);
+		project = await getProjectBySlug(projectSlug, userId);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -243,18 +245,13 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 	if (!project) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
+	const projectId = project.id;
 
 	const repo = project.repository as RepositoryConfig | Record<string, never>;
 
-	// Cloud mode: restore from git doesn't apply - use sync instead
-	if (isCloudRepository(repo)) {
-		return context.json({
-			error: 'Restore is not available for cloud projects. Use sync to get the latest files from GitHub.',
-		}, 400);
-	}
-
-	// Must be local mode
-	if (!isLocalRepository(repo)) {
+	// Local mode restores from git; cloud mode discards the pending change,
+	// restoring the committed version. Both go through provider.restore().
+	if (!isLocalRepository(repo) && !isCloudRepository(repo)) {
 		return context.json({ error: 'Project has no storage configured' }, 400);
 	}
 
@@ -290,7 +287,7 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 }
 
 /**
- * POST /api/projects/:id/git/pull
+ * POST /api/projects/:projectSlug/git/pull
  * Pull latest changes from remote
  *
  * For local mode: Runs git pull
@@ -302,15 +299,15 @@ export async function handlePull(context: Context, redis: Redis): Promise<Respon
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectId = context.req.param('id');
-	if (!isValidUUID(projectId)) {
-		return context.json({ error: 'Invalid project ID format' }, 400);
+	const projectSlug = context.req.param('projectSlug');
+	if (!isValidProjectSlug(projectSlug)) {
+		return context.json({ error: 'Invalid project slug format' }, 400);
 	}
 
 	// Get project and check mode
 	let project;
 	try {
-		project = await getProject(projectId, userId);
+		project = await getProjectBySlug(projectSlug, userId);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -319,6 +316,7 @@ export async function handlePull(context: Context, redis: Redis): Promise<Respon
 	if (!project) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
+	const projectId = project.id;
 
 	const repo = project.repository as RepositoryConfig | Record<string, never>;
 

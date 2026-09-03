@@ -5,7 +5,8 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./cookies": "./src/cookies.ts"
+		"./cookies": "./src/cookies.ts",
+		"./identifiers": "./src/identifiers.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
@@ -15,7 +16,7 @@
 		"lint:fix": "eslint src --fix"
 	},
 	"dependencies": {
-		"@aws-sdk/client-cloudwatch-logs": "^3.600.0"
+		"@aws-sdk/client-cloudwatch-logs": "^3.1119.0"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.2"

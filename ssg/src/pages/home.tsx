@@ -36,7 +36,9 @@ export const homeScript = `
 			e.preventDefault();
 			if (errorEl) errorEl.classList.add('hidden');
 
-			var email = document.getElementById('ea-email').value;
+			// Normalize the same way the API does before both sending and
+			// displaying, so the address shown back is exactly the recipient.
+			var email = document.getElementById('ea-email').value.trim().toLowerCase();
 			var company = document.getElementById('ea-company').value;
 			var role = document.getElementById('ea-role').value;
 			var useCase = document.getElementById('ea-use-case').value;
@@ -61,6 +63,10 @@ export const homeScript = `
 			})
 			.then(function(result) {
 				if (result.ok) {
+					// textContent, not innerHTML: this is user input echoed
+					// back into the page and the input type is not a sanitizer.
+					var successEmailEl = document.getElementById('ea-success-email');
+					if (successEmailEl) successEmailEl.textContent = email;
 					if (formFields) formFields.style.display = 'none';
 					if (successEl) successEl.classList.remove('hidden');
 				} else {
@@ -92,7 +98,7 @@ export function HomeContent(): JSX.Element {
 			<header class="home-header">
 				<BrandLogo size={22} href="/" />
 				<nav class="home-nav" aria-label="Main navigation">
-					<a id="auth-link" href="/login" style="visibility: hidden">Sign In</a>
+					<a id="auth-link" class="home-nav-link" href="/login" style="visibility: hidden">Sign In</a>
 					<a href="#early-access" class="btn-primary">Request Access</a>
 				</nav>
 			</header>
@@ -126,40 +132,40 @@ export function HomeContent(): JSX.Element {
 				<h2>For everyone in the AI development loop</h2>
 				<div class="audience-grid">
 					<div class="audience-card home-card">
-						<div class="audience-icon">
-							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-								<polyline points="14 2 14 8 20 8"></polyline>
-								<line x1="16" y1="13" x2="8" y2="13"></line>
-								<line x1="16" y1="17" x2="8" y2="17"></line>
-							</svg>
-						</div>
-						<div>
+						<div class="audience-header">
+							<div class="audience-icon">
+								<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+									<polyline points="14 2 14 8 20 8"></polyline>
+									<line x1="16" y1="13" x2="8" y2="13"></line>
+									<line x1="16" y1="17" x2="8" y2="17"></line>
+								</svg>
+							</div>
 							<h3>For Product People</h3>
-							<ul>
-								<li>Write requirements that agents can actually read</li>
-								<li>See what's being worked on and what's done</li>
-								<li>Stay in control—agents can't close epics without you</li>
-								<li>No more "that's not what I meant in the spec"</li>
-							</ul>
 						</div>
+						<ul>
+							<li>Write requirements that agents can actually read</li>
+							<li>See what's being worked on and what's done</li>
+							<li>Stay in control—agents can't close epics without you</li>
+							<li>No more "that's not what I meant in the spec"</li>
+						</ul>
 					</div>
 					<div class="audience-card home-card">
-						<div class="audience-icon">
-							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<polyline points="16 18 22 12 16 6"></polyline>
-								<polyline points="8 6 2 12 8 18"></polyline>
-							</svg>
-						</div>
-						<div>
+						<div class="audience-header">
+							<div class="audience-icon">
+								<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<polyline points="16 18 22 12 16 6"></polyline>
+									<polyline points="8 6 2 12 8 18"></polyline>
+								</svg>
+							</div>
 							<h3>For Developers</h3>
-							<ul>
-								<li>Get specs your AI agents can query directly</li>
-								<li>Stop copy-pasting context into every session</li>
-								<li>Let agents ask "what are the requirements?" and get a real answer</li>
-								<li>No more translating between PM-speak and agent prompts</li>
-							</ul>
 						</div>
+						<ul>
+							<li>Get specs your AI agents can query directly</li>
+							<li>Stop copy-pasting context into every session</li>
+							<li>Let agents ask "what are the requirements?" and get a real answer</li>
+							<li>No more translating between PM-speak and agent prompts</li>
+						</ul>
 					</div>
 				</div>
 				<p class="audience-note">
@@ -586,8 +592,11 @@ export function HomeContent(): JSX.Element {
 							</svg>
 						</div>
 						<div class="form-success-text">
-							<h3>You're on the list!</h3>
-							<p>We'll be in touch soon with next steps.</p>
+							<h3>You're on the list.</h3>
+							<p>
+								We sent a confirmation to <span id="ea-success-email"></span>. We'll be in
+								touch when a spot opens up.
+							</p>
 						</div>
 					</div>
 
@@ -685,7 +694,7 @@ export function HomeContent(): JSX.Element {
 
 			{/* Footer */}
 			<footer class="home-footer">
-				<p>&copy; {new Date().getFullYear()} Specboard. All rights reserved. <a href="/privacy">Privacy &amp; Security</a></p>
+				<p>&copy; {new Date().getFullYear()} Specboard. All rights reserved. <a href="/setup">Setup</a> &middot; <a href="/privacy">Privacy &amp; Security</a></p>
 			</footer>
 		</div>
 	);

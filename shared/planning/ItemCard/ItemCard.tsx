@@ -2,6 +2,7 @@ import type { JSX } from 'preact';
 import type { ItemModel, SubStatus } from '@specboard/models';
 import { Icon } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
+import { formatTimeAgo } from '../utils/time';
 import styles from './ItemCard.module.css';
 
 const SUB_STATUS_LABELS: Partial<Record<SubStatus, string>> = {
@@ -14,7 +15,7 @@ const SUB_STATUS_LABELS: Partial<Record<SubStatus, string>> = {
 
 interface ItemCardProps {
 	item: ItemModel;
-	projectId: string;
+	projectSlug: string;
 	isSelected?: boolean;
 	isHighlighted?: boolean;
 	onSelect?: (item: ItemModel) => void;
@@ -32,25 +33,9 @@ function getInitials(name: string): string {
 		.slice(0, 2);
 }
 
-function formatTimeAgo(dateString: string): string {
-	const date = new Date(dateString);
-	const now = new Date();
-	const diffMs = now.getTime() - date.getTime();
-	const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-	const diffDays = Math.floor(diffHours / 24);
-
-	if (diffDays > 0) {
-		return `${diffDays}d ago`;
-	}
-	if (diffHours > 0) {
-		return `${diffHours}h ago`;
-	}
-	return 'just now';
-}
-
 export function ItemCard({
 	item,
-	projectId,
+	projectSlug,
 	isSelected = false,
 	isHighlighted = false,
 	onSelect,
@@ -80,7 +65,7 @@ export function ItemCard({
 
 	const handleOpenInNewWindow = (e: MouseEvent): void => {
 		e.stopPropagation();
-		window.open(`/projects/${projectId}/planning/items/${item.id}`, '_blank', 'noopener,noreferrer');
+		window.open(`/projects/${projectSlug}/items/${item.key}`, '_blank', 'noopener,noreferrer');
 	};
 
 	const cardClass = [
@@ -139,11 +124,19 @@ export function ItemCard({
 					</div>
 					<div class={styles.progressText}>
 						{taskStats.done}/{taskStats.total} tasks
+						{taskStats.blocked > 0 && ` · ${taskStats.blocked} blocked`}
 					</div>
 				</div>
 			)}
 
 			<div class={styles.footer}>
+				<span class={styles.itemKey}>{item.key}</span>
+				{/* Redundant inside the Blocked column, where status alone put the card. */}
+				{item.blocked && item.status !== 'blocked' && (
+					<span class={styles.blockedChip} title="This item is blocked">
+						Blocked
+					</span>
+				)}
 				{subStatusLabel && (
 					<span class={`${styles.subStatus} ${styles[`subStatus_${item.subStatus}`] || ''}`}>
 						{subStatusLabel}

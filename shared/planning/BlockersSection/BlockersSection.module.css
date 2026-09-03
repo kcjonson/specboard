@@ -1,0 +1,100 @@
+.section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.sectionTitle {
+	margin: 0;
+	font-size: var(--text-sm);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+}
+
+.placeholder {
+	margin: 0;
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+}
+
+.list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+}
+
+.row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.badge {
+	flex-shrink: 0;
+	font-size: var(--text-xs);
+	font-weight: var(--font-medium);
+	padding: 2px var(--space-2);
+	border-radius: var(--radius-full);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.item {
+	background: color-mix(in srgb, var(--color-error) 12%, transparent);
+	color: var(--color-error);
+}
+
+.text {
+	background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+	color: var(--color-warning);
+}
+
+.itemLink {
+	flex: 1;
+	min-width: 0;
+	text-align: left;
+	/* The app ships a global `button { display: inline-flex; justify-content: center }`
+	   on some routes; block display keeps this text-only button left-aligned everywhere. */
+	display: block;
+	appearance: none;
+	border: none;
+	background: transparent;
+	color: var(--color-primary);
+	font-family: inherit;
+	font-size: var(--text-sm);
+	font-weight: var(--font-normal);
+	cursor: pointer;
+	padding: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.itemLink:hover {
+	text-decoration: underline;
+}
+
+.reason {
+	flex: 1;
+	min-width: 0;
+	font-size: var(--text-sm);
+	color: var(--color-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.error {
+	color: var(--color-error);
+	font-size: var(--text-sm);
+}
+
+.addRow {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.addRow > :first-child {
+	flex: 1;
+}

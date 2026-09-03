@@ -31,7 +31,14 @@ Send path: handler → `@specboard/email` `sendEmail()` → SES. Templates in `s
 
 ## Sandbox status
 
-The account is in the SES sandbox (sends only to verified domains). The January 2026 production access request was denied (case 176774600400459); see `.claude/plans/email-failure-analysis.md` for the post-mortem and `.claude/plans/email-recovery.md` for the recovery plan and resubmission checklist. Sandbox end-to-end testing (verification + reset flows through staging) passed 2026-08-15.
+The January 2026 production access request was denied (case 176774600400459): the bounce and
+complaint handling question went unanswered and the use case was framed as staging-only. A second
+root cause surfaced later, the February 24 CDK zone recreation silently wiped the DKIM and StartMail
+DNS records. Sandbox end-to-end testing (verification and reset flows through staging) passed
+2026-08-15, and the config-set IAM gap found during that recovery was fixed in PR #153.
+
+Confirm current sandbox-or-production standing in the SES console before relying on this section;
+it is not asserted here because it changes outside the repo.
 
 ## Testing in staging
 

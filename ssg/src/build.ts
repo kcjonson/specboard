@@ -21,6 +21,7 @@ import { MagicLinkContent, magicLinkScript } from './pages/magic-link.js';
 import { ForgotPasswordContent, forgotPasswordScript } from './pages/forgot-password.js';
 import { ResetPasswordContent, resetPasswordScript } from './pages/reset-password.js';
 import { PrivacyContent } from './pages/privacy.js';
+import { SetupContent } from './pages/setup.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -87,6 +88,7 @@ function build(): void {
 	const homeCss = getCssPath(manifest, '../ssg/src/styles/home.css');
 	const authCss = getCssPath(manifest, '../ssg/src/styles/auth.css');
 	const privacyCss = getCssPath(manifest, '../ssg/src/styles/privacy.css');
+	const setupCss = getCssPath(manifest, '../ssg/src/styles/setup.css');
 
 	// Render login page
 	writePage('login.html', renderDocument({
@@ -109,6 +111,14 @@ function build(): void {
 		title: 'Privacy & Security - Specboard',
 		cssFiles: [commonCss, privacyCss],
 		body: render(PrivacyContent()),
+	}));
+
+	// Render setup guide page
+	writePage('setup.html', renderDocument({
+		title: 'Setup - Specboard',
+		description: 'Connect Claude to your Specboard planning board: Claude Code, the Claude app, and cloud VMs.',
+		cssFiles: [commonCss, setupCss],
+		body: render(SetupContent()),
 	}));
 
 	// Render not found page
