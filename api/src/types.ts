@@ -20,7 +20,7 @@ export interface ApiSpec {
 
 /**
  * Browser-facing shapes for item sub-objects. Actor internals (userId, OAuth
- * clientId) stay server-side; the UI only needs what it renders.
+ * clientId, MCP sessionId) stay server-side; the UI only needs what it renders.
  */
 function apiActorView(actor: Actor): Record<string, unknown> {
 	return {

@@ -10,11 +10,16 @@
  * - Track progress via sub-status and notes
  *
  * Runs as an HTTP server using Hono with the MCP Streamable HTTP transport in
- * stateless mode: no session IDs are issued, every POST is self-contained, and a
- * deploy (or a second task) never strands a connected client. All tools are
- * request/response, so the standalone SSE stream that sessions would enable is
- * not needed. Requires an OAuth 2.1 Bearer token for /mcp endpoints.
+ * stateless mode: every POST is self-contained, and a deploy (or a second task)
+ * never strands a connected client. A session id is still minted at initialize,
+ * but only as a correlation token the client echoes back so provenance can trace
+ * work to one agent session; the server stores nothing for it and never rejects
+ * one. All tools are request/response, so the standalone SSE stream that real
+ * sessions would enable is not needed. Requires an OAuth 2.1 Bearer token for
+ * /mcp endpoints.
  */
+
+import { randomUUID } from 'node:crypto';
 
 import { Hono } from 'hono';
 import { serve, type HttpBindings } from '@hono/node-server';
@@ -65,6 +70,10 @@ For the full guided workflow, install the Specboard plugin: /plugin marketplace 
 
 // Same body the SDK transport emits for a malformed POST.
 const PARSE_ERROR = { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: invalid JSON body' }, id: null };
+
+// Only ids of our own minting shape are echoed into provenance; anything else is
+// treated as absent rather than stored.
+const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Create the MCP server for one request. The transport is stateless, so every
@@ -177,8 +186,9 @@ app.use('/mcp', mcpAuthMiddleware({
 	excludePaths: ['/mcp/health'],
 }));
 
-// MCP POST - every request is self-contained. A stale mcp-session-id header from a
-// client that connected before a deploy is simply ignored.
+// MCP POST - every request is self-contained. The mcp-session-id header is a
+// correlation token: minted here on initialize, echoed by the client afterwards,
+// never validated, so one issued before a deploy keeps working.
 app.post('/mcp', async (c) => {
 	const mcpToken = c.get('mcpToken');
 
@@ -200,11 +210,24 @@ app.post('/mcp', async (c) => {
 		mcpToken.client = clientInfo;
 	}
 
+	const req = c.env.incoming;
+	const res = c.env.outgoing;
+
+	let sessionId: string | undefined;
+	if (clientInfo) {
+		sessionId = randomUUID();
+		res.setHeader('mcp-session-id', sessionId);
+	} else {
+		const echoed = c.req.header('mcp-session-id');
+		sessionId = echoed && SESSION_ID_PATTERN.test(echoed) ? echoed.toLowerCase() : undefined;
+	}
+
 	const actor: AgentActor = {
 		type: 'agent',
 		userId: mcpToken.userId,
 		clientId: mcpToken.clientId,
 		...(mcpToken.deviceName ? { deviceName: mcpToken.deviceName } : {}),
+		...(sessionId ? { sessionId } : {}),
 		...(mcpToken.client ? { client: mcpToken.client } : {}),
 	};
 
@@ -213,8 +236,6 @@ app.post('/mcp', async (c) => {
 	// lowercase to tolerate stray whitespace/casing; absent/blank means "unscoped".
 	const boundProjectSlug = c.req.header('x-specboard-project')?.trim().toLowerCase() || undefined;
 
-	const req = c.env.incoming;
-	const res = c.env.outgoing;
 	const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 	const server = createMcpServer(actor, boundProjectSlug);
 	res.on('close', () => {
