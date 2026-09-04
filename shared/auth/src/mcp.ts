@@ -7,11 +7,20 @@ import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { query } from '@specboard/db';
 
+export interface McpClientInfo {
+	name: string;
+	version?: string;
+}
+
 export interface McpTokenPayload {
+	/** mcp_tokens.id — stable across access-token refreshes. */
+	tokenId: string;
 	userId: string;
 	clientId: string;
 	deviceName: string;
 	scopes: string[];
+	/** MCP protocol clientInfo last recorded at initialize, if any. */
+	client?: McpClientInfo;
 }
 
 export interface McpAuthVariables {
@@ -146,8 +155,10 @@ export function mcpAuthMiddleware(options: McpAuthMiddlewareOptions = {}) {
 			scopes: string[];
 			expires_at: Date;
 			access_token_expires_at: Date;
+			client_name: string | null;
+			client_version: string | null;
 		}>(
-			'SELECT id, user_id, client_id, device_name, scopes, expires_at, access_token_expires_at FROM mcp_tokens WHERE access_token_hash = $1',
+			'SELECT id, user_id, client_id, device_name, scopes, expires_at, access_token_expires_at, client_name, client_version FROM mcp_tokens WHERE access_token_hash = $1',
 			[tokenHash]
 		);
 
@@ -190,14 +201,36 @@ export function mcpAuthMiddleware(options: McpAuthMiddlewareOptions = {}) {
 
 		// Attach token info to context
 		c.set('mcpToken', {
+			tokenId: tokenRecord.id,
 			userId: tokenRecord.user_id,
 			clientId: tokenRecord.client_id,
 			deviceName: tokenRecord.device_name,
 			scopes: tokenRecord.scopes,
+			...(tokenRecord.client_name
+				? { client: { name: tokenRecord.client_name, ...(tokenRecord.client_version ? { version: tokenRecord.client_version } : {}) } }
+				: {}),
 		});
 
 		await next();
 	};
+}
+
+// Client-chosen text bound for a VARCHAR(n) column: control characters out (Postgres
+// rejects NUL outright), then cap by code point so a surrogate pair is never split.
+function storableText(value: string, max: number): string {
+	return Array.from(value.replace(/\p{Cc}/gu, '')).slice(0, max).join('');
+}
+
+/**
+ * Remember the MCP protocol clientInfo a token holder sent at initialize. The MCP
+ * transport is stateless, so this is what later tool calls read to stamp the
+ * client on provenance actors.
+ */
+export async function recordMcpClientInfo(tokenId: string, client: McpClientInfo): Promise<void> {
+	await query(
+		'UPDATE mcp_tokens SET client_name = $1, client_version = $2 WHERE id = $3',
+		[storableText(client.name, 255), client.version ? storableText(client.version, 64) : null, tokenId]
+	);
 }
 
 /**

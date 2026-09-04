@@ -54,6 +54,8 @@ export {
 	mcpAuthMiddleware,
 	requireScope,
 	getMcpToken,
+	recordMcpClientInfo,
+	type McpClientInfo,
 	type McpTokenPayload,
 	type McpAuthVariables,
 	type McpAuthMiddlewareOptions,

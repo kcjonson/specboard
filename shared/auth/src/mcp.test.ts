@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import { createHash } from 'node:crypto';
-import { mcpAuthMiddleware, requireScope, getMcpToken, type McpAuthVariables } from './mcp.ts';
+import { mcpAuthMiddleware, requireScope, getMcpToken, recordMcpClientInfo, type McpAuthVariables } from './mcp.ts';
 
 // Mock database
 vi.mock('@specboard/db', () => ({
@@ -674,6 +674,71 @@ describe('MCP auth middleware', () => {
 			});
 
 			expect(res.status).toBe(200);
+		});
+	});
+
+	describe('client info on the token', () => {
+		const tokenRow = {
+			id: 'token-id',
+			user_id: 'user-123',
+			client_id: 'claude-code',
+			device_name: 'Test Device',
+			scopes: ['docs:read'],
+			expires_at: new Date(Date.now() + 30 * 24 * 3600000),
+			access_token_expires_at: new Date(Date.now() + 3600000),
+		};
+
+		async function payloadFor(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+			vi.mocked(query).mockResolvedValue({ rows: [row], rowCount: 1, command: 'SELECT', oid: 0, fields: [] });
+			const app = new Hono<{ Variables: McpAuthVariables }>();
+			app.use('/mcp', mcpAuthMiddleware());
+			app.post('/mcp', (c) => c.json(c.get('mcpToken')));
+			const res = await app.request('http://localhost/mcp', {
+				method: 'POST',
+				headers: { Authorization: 'Bearer some-token' },
+			});
+			expect(res.status).toBe(200);
+			return res.json();
+		}
+
+		it('selects the client columns and exposes tokenId', async () => {
+			const payload = await payloadFor({ ...tokenRow, client_name: null, client_version: null });
+
+			expect(vi.mocked(query).mock.calls[0]![0]).toContain('client_name, client_version');
+			expect(payload.tokenId).toBe('token-id');
+			expect(payload.client).toBeUndefined();
+		});
+
+		it('maps client_name/client_version to payload.client, omitting a null version', async () => {
+			expect((await payloadFor({ ...tokenRow, client_name: 'claude-code', client_version: null })).client)
+				.toEqual({ name: 'claude-code' });
+			expect((await payloadFor({ ...tokenRow, client_name: 'claude-code', client_version: '2.1.0' })).client)
+				.toEqual({ name: 'claude-code', version: '2.1.0' });
+		});
+
+		it('recordMcpClientInfo strips control characters and caps to the column widths by code point', async () => {
+			vi.mocked(query).mockResolvedValue({ rows: [], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] });
+			const astral = '\u{1F600}';
+			await recordMcpClientInfo('token-id', {
+				name: `bad\u0000name${astral.repeat(300)}`,
+				version: `v\u0007${'x'.repeat(100)}`,
+			});
+
+			const [sql, params] = vi.mocked(query).mock.calls[0]!;
+			expect(sql).toContain('SET client_name = $1, client_version = $2 WHERE id = $3');
+			const [name, version, id] = params as [string, string, string];
+			expect(name.startsWith('badname')).toBe(true);
+			expect(Array.from(name)).toHaveLength(255);
+			expect(name.endsWith(astral)).toBe(true);
+			expect(version).toBe(`v${'x'.repeat(63)}`);
+			expect(id).toBe('token-id');
+		});
+
+		it('recordMcpClientInfo writes NULL for a missing version', async () => {
+			vi.mocked(query).mockResolvedValue({ rows: [], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] });
+			await recordMcpClientInfo('token-id', { name: 'claude-code' });
+
+			expect(vi.mocked(query).mock.calls[0]![1]).toEqual(['claude-code', null, 'token-id']);
 		});
 	});
 });

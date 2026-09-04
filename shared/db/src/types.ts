@@ -195,9 +195,13 @@ export interface AgentActor {
 	clientId: string;
 	/** User-chosen device name from OAuth consent (mcp_tokens.device_name). */
 	deviceName?: string;
-	/** MCP transport session UUID. */
+	/**
+	 * Correlation id minted at MCP initialize and echoed by the client on every
+	 * later request. The server keeps no state for it; it exists so work traces
+	 * back to one agent session rather than one install.
+	 */
 	sessionId?: string;
-	/** MCP protocol clientInfo from initialize. */
+	/** MCP protocol clientInfo, recorded on the token at initialize (mcp_tokens.client_name/version). */
 	client?: { name: string; version?: string };
 }
 
@@ -279,8 +283,8 @@ export interface ItemBlocker {
 	cleared_by: Actor | null;
 }
 
-// One observed agent-session episode on an item. actor always carries sessionId
-// here (it keys the active-episode unique index).
+// One observed agent-session episode on an item. actor.clientId + sessionId key
+// the active-episode unique index.
 export interface ItemWorker {
 	id: string;
 	item_id: string;
