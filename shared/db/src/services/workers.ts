@@ -19,22 +19,17 @@ export interface WorkerSummary {
 	lastSeenAt: Date;
 }
 
-/**
- * Record activity by an agent session on an item: insert an episode or bump the
- * active one. No-op when the actor has no sessionId — the active-episode unique
- * index keys on it, and NULLs there would stack duplicate rows.
- */
+/** Record activity by an agent client on an item: insert an episode or bump the active one. */
 export async function recordWorkerActivity(
 	projectId: string,
 	itemNumber: number,
 	actor: AgentActor,
 	branch?: string
 ): Promise<void> {
-	if (!actor.sessionId) return;
 	await query(
 		`INSERT INTO item_workers (item_id, project_id, actor, branch)
 		 SELECT i.id, $1, $3::jsonb, $4 FROM items i WHERE i.project_id = $1 AND i.number = $2
-		 ON CONFLICT (item_id, (actor->>'sessionId')) WHERE ended_at IS NULL
+		 ON CONFLICT (item_id, (actor->>'clientId')) WHERE ended_at IS NULL
 		 DO UPDATE SET last_seen_at = now(),
 			branch = COALESCE(EXCLUDED.branch, item_workers.branch),
 			actor = EXCLUDED.actor`,
@@ -42,18 +37,14 @@ export async function recordWorkerActivity(
 	);
 }
 
-/**
- * End active episodes on an item — one session's when sessionId is given,
- * otherwise all (item completed).
- */
-export async function endWorkers(projectId: string, itemNumber: number, sessionId?: string): Promise<void> {
+/** End every active episode on an item (it left in_progress). */
+export async function endWorkers(projectId: string, itemNumber: number): Promise<void> {
 	await query(
 		`UPDATE item_workers w SET ended_at = now()
 		 FROM items i
 		 WHERE w.item_id = i.id AND i.project_id = $1 AND i.number = $2
-		   AND w.ended_at IS NULL
-		   AND ($3::text IS NULL OR w.actor->>'sessionId' = $3)`,
-		[projectId, itemNumber, sessionId ?? null]
+		   AND w.ended_at IS NULL`,
+		[projectId, itemNumber]
 	);
 }
 
