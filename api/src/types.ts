@@ -5,7 +5,7 @@
  * so there's no Api* shape for them here.
  */
 
-import type { SpecType, StorageMode, RepositoryConfig, BlockerSummary, WorkerSummary, Actor, ItemOrigin, ItemWithDetails } from '@specboard/db';
+import type { SpecType, StorageMode, RepositoryConfig, BlockerSummary, WorkerSummary, ItemNoteSummary, Actor, ItemOrigin, ItemWithDetails } from '@specboard/db';
 
 export interface ApiSpec {
 	id: string;
@@ -44,8 +44,19 @@ export function apiItem<T extends Partial<ItemWithDetails> & { origin: ItemOrigi
 	return {
 		...item,
 		origin: apiOrigin(item.origin),
+		...(item.notes ? { notes: item.notes.map(apiNote) } : {}),
 		...(item.blockers ? { blockers: item.blockers.map(apiBlocker) } : {}),
 		...(item.workers ? { workers: item.workers.map(apiWorker) } : {}),
+	};
+}
+
+/** One activity-log entry. A backfilled entry has no actor. */
+export function apiNote(note: ItemNoteSummary): Record<string, unknown> {
+	return {
+		id: note.id,
+		note: note.note,
+		actor: note.actor ? apiActorView(note.actor) : null,
+		createdAt: note.createdAt.toISOString(),
 	};
 }
 

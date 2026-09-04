@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { useModel, ItemModel, type ChildModel, type Status, type ItemStatus, type SubStatus, type ItemType, type ItemOrigin, type ItemWorker } from '@specboard/models';
+import { useModel, ItemModel, type ChildModel, type Status, type ItemStatus, type SubStatus, type ItemType } from '@specboard/models';
 import { Button, DialogFooter, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { SpecsSection } from '../SpecsSection/SpecsSection';
 import { BlockersSection } from '../BlockersSection/BlockersSection';
+import { NotesSection } from '../NotesSection/NotesSection';
+import { actorLabel } from '../utils/actor';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import { formatTimeAgo } from '../utils/time';
 import styles from './ItemView.module.css';
@@ -72,20 +74,6 @@ function deriveStatusFromSubStatus(subStatus: SubStatus): ItemStatus | undefined
 
 /** Milliseconds after which an agent session with no observed writes reads as stale. */
 const WORKER_STALE_MS = 15 * 60 * 1000;
-
-function workerLabel(worker: ItemWorker): string {
-	return worker.actor.client?.name || worker.actor.deviceName || 'Agent session';
-}
-
-function originLabel(origin: ItemOrigin): string {
-	if (origin.actor.type === 'agent') {
-		const name = origin.actor.client?.name || 'Agent';
-		return origin.actor.deviceName ? `${name} on ${origin.actor.deviceName}` : name;
-	}
-	if (origin.actor.type === 'system') return 'System';
-	return 'User';
-}
-
 
 const SUB_STATUS_OPTIONS: { value: SubStatus; label: string }[] = [
 	{ value: 'not_started', label: 'Not Started' },
@@ -339,7 +327,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 						<div class={styles.field}>
 							<label class={styles.fieldLabel}>Created by</label>
 							<span class={styles.fieldValue}>
-								{originLabel(item.origin)}
+								{actorLabel(item.origin.actor)}
 								{item.origin.discoveredFrom && (
 									<>
 										{' · discovered from '}
@@ -364,7 +352,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 									return (
 										<span key={worker.id} class={stale ? styles.staleWorker : undefined}>
 											{i > 0 && ', '}
-											{workerLabel(worker)} · {formatTimeAgo(worker.lastSeenAt)}
+											{actorLabel(worker.actor)} · {formatTimeAgo(worker.lastSeenAt)}
 											{stale && ' (stale)'}
 										</span>
 									);
@@ -431,6 +419,11 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 			{/* Specifications — for any existing work item */}
 			{!isNew && item && (
 				<SpecsSection projectSlug={item.projectSlug} itemKey={item.key} />
+			)}
+
+			{/* Activity log — for any existing work item */}
+			{!isNew && item && (
+				<NotesSection projectSlug={item.projectSlug} itemKey={item.key} />
 			)}
 
 			<DialogFooter divider>

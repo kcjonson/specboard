@@ -10,7 +10,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'get_items',
 		description:
-			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats. Optionally include each item\'s children and progress notes. Use item_key for a single item, or filter by status/type/search for lists.',
+			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats. Optionally include each item\'s children and activity-log entries. Use item_key for a single item, or filter by status/type/search for lists.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -47,7 +47,7 @@ export const epicTools: Tool[] = [
 				},
 				include_notes: {
 					type: 'boolean',
-					description: 'Include progress notes for each item (default: false)',
+					description: 'Include the item\'s activity-log entries, newest first (default: false)',
 				},
 				limit: {
 					type: 'number',
@@ -162,7 +162,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'update_item',
 		description:
-			'Update an item: title, description, status, sub_status, specs, blockers, branch_name, pr_url, notes, note. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). blockers replaces the item\'s open blockers (item refs auto-clear when the blocking item completes; text clears only when removed).',
+			'Update an item: title, description, status, sub_status, specs, blockers, branch_name, pr_url, note. note appends an entry to the item\'s activity log, never overwrites. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). blockers replaces the item\'s open blockers (item refs auto-clear when the blocking item completes; text clears only when removed).',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -221,17 +221,13 @@ export const epicTools: Tool[] = [
 					type: 'string',
 					description: 'Pull request URL',
 				},
-				notes: {
-					type: 'string',
-					description: 'Append an entry to the item\'s running notes log. Auto-prepends the date. Any item type.',
-				},
 				note: {
 					type: 'string',
-					description: 'Set the item\'s single note — context for any outcome (completion, blocked, cut, etc.). Any item type; replaces the previous value, unlike notes.',
+					description: 'Append an entry to the item\'s activity log — what you did, decided, or are waiting on. Appended on every path, status changes and moves included; never overwrites an earlier entry. Required when status is blocked, unless blockers says why instead.',
 				},
 				blockers: {
 					type: 'array',
-					description: 'Replace the full set of the item\'s OPEN blockers — send everything that should still block, or [] to clear. Each entry is exactly one of { item_key } (blocked by that item; auto-clears when it completes) or { text } (a written reason; clears only by leaving this list). An item is blocked while any blocker is open. Only record blockers the user or the work explicitly established — never infer them.',
+					description: 'Replace the full set of the item\'s OPEN blockers — send everything that should still block, or [] to clear. Each entry is exactly one of { item_key } (blocked by that item; auto-clears when it completes) or { text } (a written reason; clears only by leaving this list). An item is blocked while any blocker is open. A non-empty array satisfies the reason requirement for status blocked, so no separate note is needed. Only record blockers the user or the work explicitly established — never infer them.',
 					items: {
 						type: 'object',
 						properties: {

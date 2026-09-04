@@ -232,4 +232,40 @@ describe('SyncCollection reconciling fetch', () => {
 
 		expect(fetchClient.get).toHaveBeenCalledTimes(1);
 	});
+
+	// A refetch issued after a write must not coalesce onto a request the server
+	// answered before that write — the reconcile would drop the new row.
+	it('force starts a fresh request after the in-flight one and keeps its result', async () => {
+		let releaseFirst: (rows: Array<Record<string, unknown>>) => void = () => {};
+		const first = new Promise<Array<Record<string, unknown>>>((resolve) => {
+			releaseFirst = resolve;
+		});
+		vi.mocked(fetchClient.get).mockImplementationOnce(() => first as never);
+
+		const docs = new Docs({}); // constructor fetch is the slow one
+		const stale = docs.fetch(); // coalesces onto it
+
+		vi.mocked(fetchClient.get).mockResolvedValue([
+			{ id: 1, title: 'a', updatedAt: 't1' },
+			{ id: 2, title: 'b', updatedAt: 't1' },
+		]);
+		const forced = docs.fetch({ force: true });
+
+		releaseFirst([{ id: 1, title: 'a', updatedAt: 't1' }]);
+		await Promise.all([stale, forced]);
+
+		expect(fetchClient.get).toHaveBeenCalledTimes(2);
+		expect(docs.toArray().map((doc) => doc.id)).toEqual([1, 2]);
+	});
+
+	it('still coalesces when force is not set', async () => {
+		vi.mocked(fetchClient.get).mockResolvedValue([{ id: 1, title: 'a', updatedAt: 't1' }]);
+		const docs = new Docs({});
+		await docs.fetch();
+
+		vi.mocked(fetchClient.get).mockClear();
+		await Promise.all([docs.fetch(), docs.fetch({ force: false })]);
+
+		expect(fetchClient.get).toHaveBeenCalledTimes(1);
+	});
 });

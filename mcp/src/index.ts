@@ -7,7 +7,7 @@
  * - Discover projects (list_projects)
  * - Read epics and specs (human-defined work)
  * - Create and manage items and tasks (unified CRUD)
- * - Track progress via sub-status and notes
+ * - Track progress via sub-status and the item activity log
  *
  * Runs as an HTTP server using Hono with MCP Streamable HTTP transport.
  * Requires OAuth 2.1 Bearer token for /mcp endpoints.
@@ -63,9 +63,9 @@ const projectToolNames = new Set(['list_projects']);
 // carries the full guided workflow; this is the always-on summary that points users to it.
 const SERVER_INSTRUCTIONS = `You are connected to Specboard, the user's planning board: epics, tasks, and bugs (an epic is an optional container; tasks and bugs can nest under one or stand alone). Use these tools whenever the user is planning, picking up work, or tracking development status.
 
-Tools: list_projects finds the project and its slug (a repo bound via .mcp.json X-Specboard-Project auto-selects one, and then project_slug can be omitted). A project is addressed by its slug ("specboard"); its items are addressed by key ("SB-345"). Never pass an item key or a prefix as project_slug. get_items reads work by status (ready/in_progress/blocked/in_review/done), by type, by search, or one item by item_key with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_key); create_items bulk-creates children. update_item changes title/description/status/sub_status/notes/branch_name/pr_url. Setting sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
+Tools: list_projects finds the project and its slug (a repo bound via .mcp.json X-Specboard-Project auto-selects one, and then project_slug can be omitted). A project is addressed by its slug ("specboard"); its items are addressed by key ("SB-345"). Never pass an item key or a prefix as project_slug. get_items reads work by status (ready/in_progress/blocked/in_review/done), by type, by search, or one item by item_key with include_children/include_notes (the item's activity log). create_item makes an epic, task, or bug (optionally under a parent_key); create_items bulk-creates children. update_item changes title/description/status/sub_status/branch_name/pr_url, and note appends an entry to the activity log (never overwrites); write one whenever you complete, block, or make a call worth remembering. Setting sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
 
-Blockers and provenance: an item is blocked while any blocker is open; set them explicitly via the blockers array ({item_key} auto-clears when that item completes, {text} clears only when removed) — never infer them. status=ready excludes blocked items (include_blocked to override). When you file work discovered mid-task, pass discovered_from with the item you were working. Your session is recorded as each item's creator and, while an item is in_progress, as an active worker.
+Blockers and provenance: an item is blocked while any blocker is open; set them explicitly via the blockers array ({item_key} auto-clears when that item completes, {text} clears only when removed) — never infer them. status=ready excludes blocked items (include_blocked to override). Blocking an item needs a reason: pass note, or blockers saying what it waits on. When you file work discovered mid-task, pass discovered_from with the item you were working. Your session is recorded as each item's creator and, while an item is in_progress, as an active worker.
 
 Role model: you can run the full loop (specs, epics, tasks, build, verify, merge, close); the human decides when to write specs themselves and when to review PRs. One hard rule: verify the work (tests green, behavior confirmed) before marking anything done. Keep status accurate; never leave a stale in_progress item.
 

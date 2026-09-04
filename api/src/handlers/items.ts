@@ -104,14 +104,14 @@ export async function handleListItems(context: Context): Promise<Response> {
 	}
 }
 
-/** GET /items/:itemKey — a single item with its children, notes, and specs. */
+/** GET /items/:itemKey — a single item with its children, specs, blockers, and workers. Activity-log entries are their own sub-resource. */
 export async function handleGetItem(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
 	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
-		const items = await getItems({ projectId, itemNumber, includeChildren: true, includeNotes: true, includeSpecs: true, includeBlockers: true, includeWorkers: true });
+		const items = await getItems({ projectId, itemNumber, includeChildren: true, includeSpecs: true, includeBlockers: true, includeWorkers: true });
 		const item = items[0];
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(apiItem(item));
@@ -127,7 +127,7 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 
 	try {
 		const [inProgress, inReview, ready] = await Promise.all([
-			getItems({ projectId, status: 'in_progress', includeChildren: true, includeNotes: true }),
+			getItems({ projectId, status: 'in_progress', includeChildren: true }),
 			getItems({ projectId, status: 'in_review', includeChildren: true }),
 			// Ready means actually startable: row-blocked items are excluded
 			// (status='blocked' is already excluded by the equality filter).
@@ -239,8 +239,6 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 			rank: body.rank as number | undefined,
 			prUrl: body.prUrl as string | undefined,
 			branchName: body.branchName as string | undefined,
-			notes: body.notes as string | undefined,
-			note: body.note as string | undefined,
 		});
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(apiItem(item));
@@ -306,24 +304,14 @@ export async function handleDeleteItem(context: Context): Promise<Response> {
 
 async function lifecycle(
 	context: Context,
-	run: (projectId: string, itemNumber: number, note: string | undefined) => Promise<unknown>,
-	requireNote = false
+	run: (projectId: string, itemNumber: number) => Promise<unknown>
 ): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
 	if (typeof itemNumber !== 'number') return itemNumber;
 
-	let note: string | undefined;
 	try {
-		const body = await context.req.json<{ note?: string }>().catch(() => ({}) as { note?: string });
-		note = typeof body.note === 'string' ? body.note : undefined;
-	} catch {
-		note = undefined;
-	}
-	if (requireNote && (!note || note.trim() === '')) return context.json({ error: 'note is required' }, 400);
-
-	try {
-		const item = await run(projectId, itemNumber, note);
+		const item = await run(projectId, itemNumber);
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(apiItem(item as Parameters<typeof apiItem>[0]));
 	} catch (error) {
@@ -332,7 +320,7 @@ async function lifecycle(
 	}
 }
 
-export const handleStartItem = (c: Context): Promise<Response> => lifecycle(c, (p, n) => startItem(p, n));
-export const handleCompleteItem = (c: Context): Promise<Response> => lifecycle(c, (p, n, note) => completeItem(p, n, note));
-export const handleBlockItem = (c: Context): Promise<Response> => lifecycle(c, (p, n, note) => blockItem(p, n, note!), true);
-export const handleUnblockItem = (c: Context): Promise<Response> => lifecycle(c, (p, n) => unblockItem(p, n));
+export const handleStartItem = (c: Context): Promise<Response> => lifecycle(c, startItem);
+export const handleCompleteItem = (c: Context): Promise<Response> => lifecycle(c, completeItem);
+export const handleBlockItem = (c: Context): Promise<Response> => lifecycle(c, blockItem);
+export const handleUnblockItem = (c: Context): Promise<Response> => lifecycle(c, unblockItem);

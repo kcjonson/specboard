@@ -82,7 +82,7 @@ the board.
 With the PR(s) merged and the items reconciled:
 - `update_item(project_slug, epic_key, 'epic', { sub_status: 'complete' })` sets the board to `done`.
 - Add a closing note summarizing what shipped, plus what was deferred and where it went:
-  `update_item(project_slug, epic_key, 'epic', { notes: '<what shipped; deferred X to #Y>' })`.
+  `update_item(project_slug, epic_key, 'epic', { note: '<what shipped; deferred X to #Y>' })`.
 - Every task `done`; nothing left `in_progress`.
 - Delete the plan file, if there was one. Its decisions went into the docs in step 3 and its
   sequencing is on the board as tasks and notes; what's left is scratch. Don't mark it complete and
