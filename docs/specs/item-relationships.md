@@ -13,18 +13,19 @@ Decided once, used everywhere:
    uses both arms (`blocker_item_id` XOR `blocker_text`).
 2. **Actor**: a JSONB discriminated union (`shared/db/src/types.ts`) of
    `UserActor { type: 'user', userId }`,
-   `AgentActor { type: 'agent', userId, clientId, deviceName?, sessionId?, client? }`, and
+   `AgentActor { type: 'agent', userId, clientId, deviceName?, client? }`, and
    `SystemActor { type: 'system', cause }`. Actors are **event records**: JSONB
    snapshots rather than FKs, so provenance survives token revocation and item
    deletion, and new agent fields are additive keys with no migration. Actors are
    always constructed server-side from the authenticated context (API session, or
-   MCP OAuth token + transport session + protocol clientInfo) and never accepted
+   the MCP OAuth token, which also carries the protocol clientInfo recorded on it
+   at initialize) and never accepted
    from a client payload. Request-path construction happens in exactly two
    places — the API's `requireProjectAccess`-gated handlers and the MCP server's
    per-call actor — plus the system actor the services stamp on auto-clears and
    the user actor the seed script writes. Browser-facing responses strip actor
-   internals (user id, OAuth client id, MCP session id) down to what the UI
-   renders: type, device name, client info.
+   internals (user id, OAuth client id) down to what the UI renders: type,
+   device name, client info.
 
 No generic `item_links` table: origin is 1-per-item and immutable (a column, not
 a row), and blockers carry lifecycle (`cleared_at`/`cleared_by`) that would be
@@ -106,8 +107,12 @@ immutable because no update path maps it (the same enforcement as
 
 ## Workers (`item_workers`, migration 026)
 
-Observed agent presence: one row per (item, agent session) episode, keyed by the
-partial unique index on `(item_id, (actor->>'sessionId')) WHERE ended_at IS NULL`.
+Observed agent presence: one row per (item, OAuth client) episode, keyed by the
+partial unique index on `(item_id, (actor->>'clientId')) WHERE ended_at IS NULL`.
+The MCP transport is stateless (no session IDs, so a deploy never strands a
+connected client; migration 027), which makes the OAuth client, one registration
+per Claude Code install or connector, the finest durable identity an agent has.
+Two sessions on one machine therefore share an episode.
 
 - **No heartbeat or claim call.** Episodes open as a side effect of real MCP
   writes: a write that leaves an item `in_progress` upserts the episode
@@ -120,5 +125,5 @@ partial unique index on `(item_id, (actor->>'sessionId')) WHERE ended_at IS NULL
 - **Staleness is derived at read time** (`now() - last_seen_at`), never stored.
   The UI dims a worker after 15 minutes without an observed write.
 - `assignee` is untouched and stays a human user FK. `items.branch_name`
-  remains the item-level branch; `item_workers.branch` is the per-session
-  snapshot (two sessions in two worktrees can work one item).
+  remains the item-level branch; `item_workers.branch` is the per-client
+  snapshot (two machines can work one item on different branches).

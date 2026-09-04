@@ -30,8 +30,8 @@ export type SpecType = 'product' | 'technical';
 /**
  * Who or what performed an action (creation provenance, worker episodes).
  * This is the API's SANITIZED view, not the server's full Actor union: the
- * server strips actor internals (user id, OAuth client id, MCP session id)
- * before responses reach the browser, leaving only what the UI renders.
+ * server strips actor internals (user id, OAuth client id) before responses
+ * reach the browser, leaving only what the UI renders.
  */
 export interface Actor {
 	type: 'user' | 'agent' | 'system';
@@ -45,7 +45,7 @@ export interface ItemOrigin {
 	discoveredFrom?: { itemId: string; itemKey: string };
 }
 
-/** An active agent-session episode on an item. */
+/** An active agent-client episode on an item. */
 export interface ItemWorker {
 	id: string;
 	actor: Actor;
@@ -110,7 +110,7 @@ export class ItemModel extends SyncModel {
 	@prop accessor blocked!: boolean | undefined;
 	/** Immutable creation provenance. Read-only; the server never accepts it on writes. */
 	@prop accessor origin!: ItemOrigin | undefined;
-	/** Active agent sessions on this item (detail reads only). Read-only. */
+	/** Active agent clients on this item (detail reads only). Read-only. */
 	@prop accessor workers!: ItemWorker[] | undefined;
 	@prop accessor assignee!: string | undefined;
 	@prop accessor rank!: number;
