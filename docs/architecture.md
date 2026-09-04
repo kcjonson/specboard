@@ -46,6 +46,23 @@ Specboard is a monorepo containing two products (Documentation Editor and Planni
 
 ---
 
+## Client Targets
+
+The same Preact application runs on every target. A target supplies a shell that hosts the web build, a platform implementation injected into it, and a packaging step. Nothing above the platform boundary branches on target.
+
+| Target | Shell | Platform implementation |
+|--------|-------|------------------------|
+| Web (large screen) | Browser | `platform-web` |
+| Web (small screen) | Browser | `platform-web` |
+| iOS, Android | Capacitor | `platform-capacitor` |
+| macOS, Windows, Linux | Electron | `platform-electron` |
+
+Capacitor and Electron are the same idea applied to different operating systems: a native shell around one web build, differing only in the capabilities it injects. Mobile is Capacitor rather than React Native so that the component library, the styling system, and the editor stay singular.
+
+See [shared-app-shell.md](specs/shared-app-shell.md) for the full target matrix, responsive strategy, and build outputs.
+
+---
+
 ## Services
 
 ### Frontend Container
@@ -132,12 +149,15 @@ specboard/
 │   ├── platform/                # Platform abstraction interfaces
 │   ├── platform-electron/       # Electron implementations
 │   ├── platform-web/            # Web implementations
+│   ├── platform-capacitor/      # iOS/Android implementations (planned)
 │   ├── models/                  # Observable state management (Model/SyncModel)
 │   ├── router/                  # Custom client-side router
 │   └── fetch/                   # Custom HTTP client wrapper
 ├── web/                         # Unified web app (Vite + Preact)
-├── docs-desktop/                # Documentation editor Electron app
-├── planning-desktop/            # Planning board Electron app
+├── docs-desktop/                # Electron scaffold (collapsing into desktop/)
+├── planning-desktop/            # Electron scaffold (collapsing into desktop/)
+├── desktop/                     # Electron shell, both products (planned)
+├── mobile/                      # Capacitor shell, iOS + Android (planned)
 ├── api/                         # Backend API server (Hono)
 ├── frontend/                    # Frontend server (Hono, serves SPA)
 ├── mcp/                         # MCP server for AI tool integration
@@ -154,6 +174,8 @@ specboard/
 **Internal packages** (`shared/db/`, `shared/auth/`, etc.) — built TypeScript libraries consumed by backend services. Published to the npm workspace, not to a registry.
 
 **Apps** (`web/`, `api/`, `frontend/`, `mcp/`, `storage/`) — deployable services, each with its own Dockerfile.
+
+**Shells** (`desktop/`, `mobile/`) — native wrappers around the `web/` build output. They do not compile their own copy of the app, which is what keeps the targets from drifting apart.
 
 ---
 

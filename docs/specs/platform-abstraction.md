@@ -1,6 +1,6 @@
 # Platform Abstraction Specification
 
-This specification defines the abstraction layer that allows the editor core to run in both Electron (desktop) and web environments.
+This specification defines the abstraction layer that allows the editor core to run unchanged on every target: browser, Electron (desktop), and Capacitor (iOS and Android).
 
 > **Related Spec**: See [Project Storage](./project-storage.md) for how projects connect to git repositories and the storage provider architecture.
 
@@ -13,9 +13,12 @@ The platform abstraction provides interfaces for:
 - **Git Operations** - Commit, diff, status, etc.
 - **System** - Platform detection, paths, dialogs
 
-Each interface has two implementations:
+Each interface has three implementations:
 - **Electron** - Uses Node.js APIs and local git CLI
 - **Web** - Calls backend REST API
+- **Capacitor** - Uses Capacitor plugins for device capability, and the same REST API as web for anything repository-shaped
+
+This boundary is the only place a target is allowed to matter. See [shared-app-shell.md](./shared-app-shell.md) for the target matrix and what each shell contributes.
 
 ### Relationship to Project Storage
 
@@ -51,16 +54,18 @@ For web deployments:
 │   </PlatformProvider>                                           │
 └─────────────────────────────────────────────────────────────────┘
                               │
-            ┌─────────────────┴─────────────────┐
-            ▼                                   ▼
-┌─────────────────────────┐       ┌─────────────────────────┐
-│  @specboard/         │       │  @specboard/         │
-│  platform-electron      │       │  platform-web           │
-│                         │       │                         │
-│  - Node.js fs           │       │  - REST API calls       │
-│  - child_process git    │       │  - Backend handles git  │
-│  - Electron dialogs     │       │  - Browser dialogs      │
-└─────────────────────────┘       └─────────────────────────┘
+       ┌────────────────────┼────────────────────┐
+       ▼                    ▼                    ▼
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│  @specboard/     │ │  @specboard/     │ │  @specboard/     │
+│ platform-electron│ │  platform-web    │ │platform-capacitor│
+│                  │ │                  │ │                  │
+│ - Node.js fs     │ │ - REST API calls │ │ - Capacitor      │
+│ - child_process  │ │ - Backend git    │ │   Filesystem     │
+│   git            │ │ - Browser        │ │ - REST API git   │
+│ - Electron       │ │   dialogs        │ │ - Native share / │
+│   dialogs        │ │                  │ │   browser        │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
 ```
 
 ---
@@ -122,6 +127,12 @@ Uses REST API calls:
 - `writeFile` → `PUT /api/repos/:repoId/files` with path and content
 - `readDirectory` → `GET /api/repos/:repoId/tree?path=...`
 - `watch` → Polling (MVP) or WebSocket/SSE (future)
+
+### Capacitor Implementation
+
+Project files live in the cloud, so the same REST API calls as the web implementation. The Capacitor `Filesystem` plugin covers device-local needs only: caching, downloads, and anything the user explicitly saves out of the app.
+
+Mobile is cloud-mode only. There is no local git checkout on a phone, and the contract has to say so rather than leaving callers to discover it.
 
 ---
 
@@ -213,6 +224,10 @@ Uses REST API calls:
 
 Backend executes git commands against repo stored on EFS.
 
+### Capacitor Implementation
+
+Identical to the web implementation. Git is remote-only on mobile.
+
 ---
 
 ## System Interface
@@ -221,8 +236,8 @@ Backend executes git commands against repo stored on EFS.
 
 | Method | Description |
 |--------|-------------|
-| `platform` | Returns 'electron' or 'web' |
-| `isElectron` | Boolean check |
+| `platform` | Returns 'electron', 'web', 'ios', or 'android' |
+| `isNative` | Boolean check (Electron or Capacitor) |
 | `isWeb` | Boolean check |
 | `showMessage(options)` | Show alert/confirm dialog |
 | `showOpenDialog(options)` | File picker dialog |
@@ -267,6 +282,16 @@ Uses browser APIs:
 - `openExternal` → `window.open(url, '_blank')`
 - `showInFolder` → Not available (desktop only)
 
+### Capacitor Implementation
+
+Uses Capacitor plugins:
+- `showMessage` → the same custom modal component as web, so the dialog looks like the app rather than the OS
+- `copyToClipboard` → `Clipboard.write()`
+- `openExternal` → `Browser.open()`, which keeps the user in an in-app browser instead of losing them to Safari
+- `showOpenDialog`, `showInFolder` → Not available
+
+Capability that only exists here (secure token storage via `Preferences`, deep-link handling, share sheet, safe-area insets) also belongs on this interface rather than being reached for directly from a component.
+
 ---
 
 ## Platform Provider
@@ -300,6 +325,14 @@ Web app:
 - Creates WebSystem
 - Wraps app in PlatformProvider
 
+Mobile app:
+- Creates CapacitorFileSystem with API client and repo ID
+- Reuses WebGit, since git is remote on mobile
+- Creates CapacitorSystem
+- Wraps app in PlatformProvider
+
+The app itself is the same build in all three cases. Only the implementation handed to the provider changes.
+
 ---
 
 ## Package Structure
@@ -324,14 +357,23 @@ packages/
 │   │   └── index.ts
 │   └── package.json
 │
-└── platform-web/
+├── platform-web/
+│   ├── src/
+│   │   ├── filesystem.ts        # REST API implementation
+│   │   ├── git.ts               # REST API implementation
+│   │   ├── system.ts            # Browser API implementation
+│   │   └── index.ts
+│   └── package.json
+│
+└── platform-capacitor/
     ├── src/
-    │   ├── filesystem.ts        # REST API implementation
-    │   ├── git.ts               # REST API implementation
-    │   ├── system.ts            # Browser API implementation
+    │   ├── filesystem.ts        # Capacitor Filesystem + REST API
+    │   ├── system.ts            # Capacitor plugin implementation
     │   └── index.ts
     └── package.json
 ```
+
+Note that `packages/` above is historical; these live under `shared/` in the current layout.
 
 ---
 
