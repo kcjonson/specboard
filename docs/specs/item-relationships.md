@@ -1,8 +1,8 @@
 # Item relationships and provenance
 
-Blockers (blocked-by), creation origin, and worker presence on planning items.
-Introduced by migrations 024-026; this records the design and the reasoning so
-the shapes don't get reinvented.
+Blockers (blocked-by), creation origin, worker presence, and the activity log on
+planning items. Introduced by migrations 024-027; this records the design and the
+reasoning so the shapes don't get reinvented.
 
 ## The two shared shapes
 
@@ -36,7 +36,8 @@ generic table is a mechanical `INSERT…SELECT` away.
 One row per blocker; an item can hold any mix of item and text blockers.
 
 - **Blocked is a hybrid**: an item is blocked when `status = 'blocked'` (a
-  manual, status-level hold — the pre-existing `blockItem`/note flow, unchanged)
+  manual, status-level hold set by `blockItem`, which touches nothing but the
+  status)
   **or** when any open blocker row exists. Blocker rows never mutate `status`,
   so there is nothing to keep in sync and nothing to restore on unblock. Every
   item response carries the derived `blocked` boolean.
@@ -82,9 +83,11 @@ failed create); `BlockersSection` in the item drawer/detail (typed input: a key
 with this project's prefix links that item, anything else is text). On the
 board, `status='blocked'` items get a Blocked column that appears while
 non-empty (keyboard-traversable, not a drag target); row-blocked items stay in
-their real column with a Blocked chip. The status-level hold requires a reason
-note on the MCP path only — agents must explain themselves; a person clicking
-the drawer's status select is not interrogated.
+their real column with a Blocked chip. The status-level hold requires a reason on
+the MCP path only, since agents must explain themselves; a person clicking the
+drawer's status select is not interrogated. On that path the reason is either a
+`note` (which lands in the activity log below) or a non-empty `blockers` array,
+since blocker rows already say what the item is waiting on.
 
 ## Origin (`items.origin`, migration 025)
 
@@ -122,3 +125,56 @@ partial unique index on `(item_id, (actor->>'sessionId')) WHERE ended_at IS NULL
 - `assignee` is untouched and stays a human user FK. `items.branch_name`
   remains the item-level branch; `item_workers.branch` is the per-session
   snapshot (two sessions in two worktrees can work one item).
+
+## Activity log (`item_notes`, migration 027)
+
+One append-only log per item: `{ id, item_id, note, actor, created_at }`, newest
+first everywhere it is read.
+
+- **Three mechanisms collapsed into one.** `progress_notes` rows, the
+  `items.notes` blob (append-only, entries joined by newline and prefixed
+  `[YYYY-MM-DD]`), and `items.note` (a single overwritable outcome/block reason)
+  all answered the same question (what happened on this item) with three
+  shapes, three write paths, and three vocabularies. 027 renames the table to
+  `item_notes`, splits the blob into one row per entry, folds the last `items.note`
+  value in as a final entry, and drops both columns. The word "notes" is now
+  unambiguous because the column it collided with is gone.
+- **Append-only.** Entries are never edited or deleted; the log is the item's
+  history, and there is no update or delete route. Only item or project deletion
+  removes rows, by FK cascade.
+- **Actor, not `created_by`.** The dropped `created_by` column held the literals
+  `'claude'`/`'system'`, a weaker encoding of the Actor union 024-026 already
+  standardized on. Actors are captured server-side (`apiActor` in the API
+  handler, the per-call `AgentActor` in MCP) and never read from a request body.
+  NULL means the entry predates actor capture, the same convention as
+  `items.origin`; every row backfilled by 027 is NULL.
+- **Status writes and log writes are separate.** `completeItem`/`blockItem` lost
+  their `note` parameter; appending is one function, `addItemNote`, called after
+  the transition. The note is therefore not in the same transaction as the status
+  flip. Losing a log entry to a partial failure is acceptable; losing a status
+  write is not.
+- **Blocking needs a reason** on the MCP path: `status: 'blocked'` requires a
+  `note` or a non-empty `blockers` array. `POST /items/:itemKey/block` requires
+  neither, matching the blocker rule above.
+- **Two read paths, deliberately.** Agents get entries inline on the item payload
+  via MCP `include_notes`, so one call answers "what is the state of this work".
+  The browser reads the sub-resource `GET/POST /items/:itemKey/notes` instead, so
+  the item response stays small and the item model has no `notes` prop to PUT
+  back. `handleGetItem` must not re-enable `includeNotes`.
+- MCP `update_item` takes one `note` param with append semantics, applied on
+  every write path (the status shortcuts and the reparent move included). Empty
+  or whitespace-only text is nothing to say, not an error. There is no
+  pagination; volume doesn't warrant it yet.
+- **Validation lives in the service, once.** `addItemNote` trims the text and
+  throws `NoteValidationError` when it is empty or over `MAX_NOTE_LENGTH`
+  (10,000; an absurd-size guard, not an editorial limit, and entries are agent-written
+  prose and the 027 backfill imports long ones). The API maps that to a 400 and
+  MCP to a tool error. Handlers do not pre-trim or pre-check. Appending also
+  bumps the item's `updated_at`, so polling boards and agents see that the item
+  changed.
+- **`notes` is present on an item response only when it was requested**
+  (`include_notes`), like `blockers` and `workers`. An absent key means "not
+  loaded"; `[]` would tell an agent the item has no history.
+- **027 keeps `items_notes_backup_027`**, the raw `notes`/`note` text per item.
+  The blob parse is irreversible and the columns drop in the same transaction;
+  a later migration drops the backup once the log is verified in prod.

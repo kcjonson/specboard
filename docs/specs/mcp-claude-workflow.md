@@ -92,10 +92,10 @@ user (OAuth 2.1 Bearer token).
 | Tool | Purpose |
 |------|---------|
 | `list_projects` | Discover projects (a bound repo returns just its one) |
-| `get_items` | Read items by status/type/search, or one by `item_key`, with optional tasks and notes; `status=ready` excludes blocked items unless `include_blocked` |
+| `get_items` | Read items by status/type/search, or one by `item_key`, with optional tasks and activity-log entries (`include_notes`); `status=ready` excludes blocked items unless `include_blocked` |
 | `create_item` | Create an epic, task, or bug (optionally under a `parent_key`); may link `specs: [{ path, type }]`, record `discovered_from`, and start with `blockers` |
 | `create_items` | Bulk-create tasks under a parent; the batch shares one `discovered_from` |
-| `update_item` | Update title/description/status/sub_status/specs/blockers/notes/branch_name/pr_url; `blockers` replaces the full open set on every path |
+| `update_item` | Update title/description/status/sub_status/specs/blockers/branch_name/pr_url; `note` appends an activity-log entry on every path; `blockers` replaces the full open set on every path |
 | `delete_item` | Delete an item or task |
 
 Blockers, creation origin, and worker presence are specified in

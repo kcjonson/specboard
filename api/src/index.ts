@@ -99,9 +99,9 @@ import {
 	handleClearBlocker,
 } from './handlers/blockers.ts';
 import {
-	handleListItemProgress,
-	handleCreateItemProgress,
-} from './handlers/progress.ts';
+	handleListItemNotes,
+	handleAddItemNote,
+} from './handlers/notes.ts';
 import {
 	handleListProjects,
 	handleGetProject,
@@ -519,7 +519,7 @@ app.post('/api/projects/:projectSlug/sync/initial', (context) => handleGitHubIni
 app.get('/api/projects/:projectSlug/sync/status', (context) => handleGitHubSyncStatus(context, redis));
 app.post('/api/projects/:projectSlug/github/commit', (context) => handleGitHubCommit(context, redis));
 
-// Authorization gate for project-scoped planning routes (items, specs, progress).
+// Authorization gate for project-scoped planning routes (items, specs, notes).
 // These handlers query by the client-supplied :projectSlug alone, so without this wrapper
 // they are unauthenticated/IDOR-able. Require a valid session AND that the user owns the
 // project before the handler runs, then hand the handler the resolved project (its internal
@@ -583,9 +583,9 @@ app.get('/api/projects/:projectSlug/items/:itemKey/blockers', requireProjectAcce
 app.post('/api/projects/:projectSlug/items/:itemKey/blockers', requireProjectAccess(handleAddBlocker));
 app.delete('/api/projects/:projectSlug/items/:itemKey/blockers/:id', requireProjectAccess(handleClearBlocker));
 
-// Project-scoped progress notes routes
-app.get('/api/projects/:projectSlug/items/:itemKey/progress', requireProjectAccess(handleListItemProgress));
-app.post('/api/projects/:projectSlug/items/:itemKey/progress', requireProjectAccess(handleCreateItemProgress));
+// Project-scoped item activity-log routes
+app.get('/api/projects/:projectSlug/items/:itemKey/notes', requireProjectAccess(handleListItemNotes));
+app.post('/api/projects/:projectSlug/items/:itemKey/notes', requireProjectAccess(handleAddItemNote));
 
 // AI Chat
 app.get('/api/chat/models', (context) => handleGetChatModels(context, redis));

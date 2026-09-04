@@ -19,11 +19,13 @@ import {
 	completeItem as completeItemService,
 	blockItem as blockItemService,
 	unblockItem as unblockItemService,
+	addItemNote,
 	verifyItemOwnership,
 	setSpecs as setSpecsService,
 	setBlockers as setBlockersService,
 	recordWorkerActivity,
 	SpecValidationError,
+	NoteValidationError,
 	BlockerValidationError,
 	BlockerConflictError,
 	BlockerTargetError,
@@ -233,33 +235,22 @@ export async function updateItem(
 		}
 	};
 
-	// Reparent (move under another item) or promote to top-level (parent_key null).
-	if (args.parent_key !== undefined) {
-		let newParentNumber: number | null = null;
-		if (args.parent_key !== null) {
-			newParentNumber = itemNumberInProject(args.parent_key, project.key);
-			if (newParentNumber === null) return badKey(args.parent_key, project, 'parent_key');
-			if (!(await verifyItemOwnership(project.id, newParentNumber))) return err('Parent item not found');
-			if (await wouldCreateCycle(project.id, number, newParentNumber)) {
-				return err('Cannot move an item under itself or one of its descendants');
-			}
-		}
-		let moved;
+	// An entry for the item's activity log, appended on every path that can carry
+	// one. Empty or whitespace-only is nothing to say, not an error; over-long is,
+	// and the service is what says so.
+	const note = typeof args.note === 'string' ? args.note.trim() : '';
+	const appendNote = async (): Promise<ToolResult | undefined> => {
+		if (!note) return undefined;
 		try {
-			moved = await moveItemService(project.id, number, newParentNumber);
+			await addItemNote(project.id, number, note, actor);
 		} catch (error) {
-			if (error instanceof ParentItemNotFoundError) return err('Parent item not found');
-			if (error instanceof ItemCycleError) return err(error.message);
+			if (error instanceof NoteValidationError) return err(error.message);
 			throw error;
 		}
-		if (!moved) return err('Item not found');
-		const blockers = await applyBlockers();
-		if ('content' in blockers) return blockers;
-		return ok({ updated: { key: moved.key, parentKey: moved.parentKey, ...blockers }, message: newParentNumber !== null ? 'Item moved' : 'Item promoted to top-level' });
-	}
+		return undefined;
+	};
 
 	const status = args.status as ItemStatus | undefined;
-	const note = args.note as string | undefined;
 
 	// Every field the status shortcuts below don't write themselves. They return
 	// early, so anything not applied here is dropped while the call still reports
@@ -271,58 +262,99 @@ export async function updateItem(
 	if (args.sub_status !== undefined) fields.subStatus = args.sub_status as SubStatus;
 	if (args.branch_name !== undefined) fields.branchName = args.branch_name as string;
 	if (args.pr_url !== undefined) fields.prUrl = args.pr_url as string;
-	if (args.notes !== undefined) fields.notes = args.notes as string;
 	const hasFields = Object.keys(fields).length > 0;
+
+	// A block has to say why: either a log entry or the blocker rows themselves.
+	// Checked before anything is written so a rejected call leaves no half-applied
+	// move behind.
+	if (status === 'blocked' && !note && !(Array.isArray(args.blockers) && args.blockers.length > 0)) {
+		return err('note or a non-empty blockers array is required when blocking an item');
+	}
+
+	// Reparent (move under another item) or promote to top-level (parent_key null).
+	// A prelude, not a path of its own: everything else sent alongside the move
+	// still runs below, and every response from here on reports the new parent.
+	let moved: { key: string; parentKey: string | null } | undefined;
+	let newParentNumber: number | null = null;
+	if (args.parent_key !== undefined) {
+		if (args.parent_key !== null) {
+			newParentNumber = itemNumberInProject(args.parent_key, project.key);
+			if (newParentNumber === null) return badKey(args.parent_key, project, 'parent_key');
+			if (!(await verifyItemOwnership(project.id, newParentNumber))) return err('Parent item not found');
+			if (await wouldCreateCycle(project.id, number, newParentNumber)) {
+				return err('Cannot move an item under itself or one of its descendants');
+			}
+		}
+		try {
+			moved = (await moveItemService(project.id, number, newParentNumber)) ?? undefined;
+		} catch (error) {
+			if (error instanceof ParentItemNotFoundError) return err('Parent item not found');
+			if (error instanceof ItemCycleError) return err(error.message);
+			throw error;
+		}
+		if (!moved) return err('Item not found');
+	}
+	const movedParent = moved ? { parentKey: moved.parentKey } : {};
+
+	// A move on its own: nothing below would write anything, and the general
+	// update's re-read would only restate what the move already returned.
+	if (moved && status === undefined && !hasFields && !note && !Array.isArray(args.specs) && !Array.isArray(args.blockers)) {
+		return ok({ updated: { key: moved.key, parentKey: moved.parentKey }, message: newParentNumber !== null ? 'Item moved' : 'Item promoted to top-level' });
+	}
 
 	// Status-transition shortcuts. Worker episodes are recorded/ended inside the
 	// services (any transition out of in_progress ends them, whichever surface).
 	if (status === 'in_progress') {
-		// startItem doesn't take a note, so it rides along with the other fields.
-		if (note !== undefined) fields.note = note;
-		if (Object.keys(fields).length > 0) await updateItemService(project.id, number, fields);
+		if (hasFields) await updateItemService(project.id, number, fields);
 		const item = await startItemService(project.id, number);
 		if (!item) return err('Item not found');
+		const noteError = await appendNote();
+		if (noteError) return noteError;
 		await recordWorkerActivity(project.id, number, actor, args.branch_name as string | undefined);
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
-		return ok({ updated: { key: item.key, status: item.status, ...blockers }, message: 'Item started' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers }, message: 'Item started' });
 	}
 	if (status === 'done') {
 		if (hasFields) await updateItemService(project.id, number, fields);
-		const item = await completeItemService(project.id, number, note);
+		const item = await completeItemService(project.id, number);
 		if (!item) return err('Item not found');
+		const noteError = await appendNote();
+		if (noteError) return noteError;
 		// No applyBlockers here: completion just cleared every open row, and
 		// blocking a done item is refused anyway — report that instead of a
 		// confusing validation error when the arg is present.
 		if (Array.isArray(args.blockers) && args.blockers.length > 0) {
-			return ok({ updated: { key: item.key, status: item.status, note: item.note }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
+			return ok({ updated: { key: item.key, status: item.status, ...movedParent }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
 		}
-		return ok({ updated: { key: item.key, status: item.status, note: item.note }, message: 'Item completed' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent }, message: 'Item completed' });
 	}
 	if (status === 'blocked') {
-		if (!note) return err('note is required when blocking an item');
 		if (hasFields) await updateItemService(project.id, number, fields);
-		const item = await blockItemService(project.id, number, note);
+		const item = await blockItemService(project.id, number);
 		if (!item) return err('Item not found');
+		const noteError = await appendNote();
+		if (noteError) return noteError;
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
-		return ok({ updated: { key: item.key, status: item.status, note: item.note, ...blockers }, message: 'Item blocked' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers }, message: 'Item blocked' });
 	}
-	if (status === 'ready' && !hasFields && note === undefined) {
+	if (status === 'ready' && !hasFields && !note) {
 		const item = await unblockItemService(project.id, number);
 		if (!item) return err('Item not found');
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
-		return ok({ updated: { key: item.key, status: item.status, ...blockers }, message: 'Item unblocked' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers }, message: 'Item unblocked' });
 	}
 
 	// General field update.
 	const updateData: UpdateItemInput = { ...fields };
 	if (status !== undefined) updateData.status = status;
-	if (note !== undefined) updateData.note = note;
 
 	const item = await updateItemService(project.id, number, updateData);
 	if (!item) return err('Item not found');
+	const noteError = await appendNote();
+	if (noteError) return noteError;
 
 	// Replace the full set of typed spec links when provided.
 	let specs;
@@ -356,6 +388,7 @@ export async function updateItem(
 			subStatus: item.subStatus,
 			branchName: item.branchName,
 			prUrl: item.prUrl,
+			...movedParent,
 			blocked: blockers ? blockers.length > 0 || item.status === 'blocked' : item.blocked,
 			...(specs ? { specs } : {}),
 			...(blockers ? { blockers } : {}),

@@ -249,8 +249,6 @@ export interface Item {
 	due_date: Date | null;
 	pr_url: string | null;
 	branch_name: string | null;
-	notes: string | null;
-	note: string | null;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -292,11 +290,13 @@ export interface ItemWorker {
 	ended_at: Date | null;
 }
 
-export interface ProgressNote {
+// One entry in an item's append-only activity log. actor NULL means the entry
+// predates actor capture (backfilled by 027).
+export interface ItemNote {
 	id: string;
 	item_id: string;
 	note: string;
-	created_by: string;
+	actor: Actor | null;
 	created_at: Date;
 }
 
