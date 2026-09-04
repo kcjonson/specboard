@@ -261,11 +261,26 @@ export async function updateItem(
 	const status = args.status as ItemStatus | undefined;
 	const note = args.note as string | undefined;
 
+	// Every field the status shortcuts below don't write themselves. They return
+	// early, so anything not applied here is dropped while the call still reports
+	// success. Applied before the transition, so the lifecycle status wins and the
+	// item the shortcut re-reads already carries them.
+	const fields: UpdateItemInput = {};
+	if (args.title !== undefined) fields.title = args.title as string;
+	if (args.description !== undefined) fields.description = args.description as string;
+	if (args.sub_status !== undefined) fields.subStatus = args.sub_status as SubStatus;
+	if (args.branch_name !== undefined) fields.branchName = args.branch_name as string;
+	if (args.pr_url !== undefined) fields.prUrl = args.pr_url as string;
+	if (args.notes !== undefined) fields.notes = args.notes as string;
+	const hasFields = Object.keys(fields).length > 0;
+
 	// Status-transition shortcuts. Worker episodes are recorded/ended inside the
 	// services (any transition out of in_progress ends them, whichever surface).
 	if (status === 'in_progress') {
+		// startItem doesn't take a note, so it rides along with the other fields.
+		if (note !== undefined) fields.note = note;
+		if (Object.keys(fields).length > 0) await updateItemService(project.id, number, fields);
 		const item = await startItemService(project.id, number);
-		if (note !== undefined) await updateItemService(project.id, number, { note });
 		if (!item) return err('Item not found');
 		await recordWorkerActivity(project.id, number, actor, args.branch_name as string | undefined);
 		const blockers = await applyBlockers();
@@ -273,6 +288,7 @@ export async function updateItem(
 		return ok({ updated: { key: item.key, status: item.status, ...blockers }, message: 'Item started' });
 	}
 	if (status === 'done') {
+		if (hasFields) await updateItemService(project.id, number, fields);
 		const item = await completeItemService(project.id, number, note);
 		if (!item) return err('Item not found');
 		// No applyBlockers here: completion just cleared every open row, and
@@ -285,13 +301,14 @@ export async function updateItem(
 	}
 	if (status === 'blocked') {
 		if (!note) return err('note is required when blocking an item');
+		if (hasFields) await updateItemService(project.id, number, fields);
 		const item = await blockItemService(project.id, number, note);
 		if (!item) return err('Item not found');
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
 		return ok({ updated: { key: item.key, status: item.status, note: item.note, ...blockers }, message: 'Item blocked' });
 	}
-	if (status === 'ready' && args.title === undefined && args.description === undefined && note === undefined) {
+	if (status === 'ready' && !hasFields && note === undefined) {
 		const item = await unblockItemService(project.id, number);
 		if (!item) return err('Item not found');
 		const blockers = await applyBlockers();
@@ -300,14 +317,8 @@ export async function updateItem(
 	}
 
 	// General field update.
-	const updateData: UpdateItemInput = {};
-	if (args.title !== undefined) updateData.title = args.title as string;
-	if (args.description !== undefined) updateData.description = args.description as string;
+	const updateData: UpdateItemInput = { ...fields };
 	if (status !== undefined) updateData.status = status;
-	if (args.sub_status !== undefined) updateData.subStatus = args.sub_status as SubStatus;
-	if (args.branch_name !== undefined) updateData.branchName = args.branch_name as string;
-	if (args.pr_url !== undefined) updateData.prUrl = args.pr_url as string;
-	if (args.notes !== undefined) updateData.notes = args.notes as string;
 	if (note !== undefined) updateData.note = note;
 
 	const item = await updateItemService(project.id, number, updateData);
