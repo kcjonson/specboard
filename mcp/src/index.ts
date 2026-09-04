@@ -302,7 +302,10 @@ app.delete('/mcp', async (c) => {
 	const mcpToken = c.get('mcpToken');
 	const userId = mcpToken.userId;
 
-	if (!sessionId || !sessions.has(sessionId)) {
+	if (!sessionId) {
+		return c.json({ error: 'Session ID required for DELETE requests' }, 400);
+	}
+	if (!sessions.has(sessionId)) {
 		return c.json(SESSION_NOT_FOUND, 404);
 	}
 
