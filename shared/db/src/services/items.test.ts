@@ -42,8 +42,6 @@ function makeItem(overrides: Partial<ItemRow> = {}): ItemRow {
 		due_date: null,
 		pr_url: null,
 		branch_name: null,
-		notes: null,
-		note: null,
 		created_at: new Date('2026-01-01'),
 		updated_at: new Date('2026-01-01'),
 		...overrides,
@@ -196,6 +194,46 @@ describe('getItems', () => {
 		expect(sql).toContain(`AND NOT (i.status = 'blocked' OR ob.item_id IS NOT NULL)`);
 	});
 
+	it('includeNotes hydrates each item with its activity-log entries, newest first', async () => {
+		const parent = {
+			...makeItem(),
+			child_count: '0',
+			done_count: '0',
+			in_progress_count: '0',
+			blocked_count: '0',
+		};
+		mockQuery
+			.mockResolvedValueOnce({ rows: [parent], rowCount: 1 } as never)
+			.mockResolvedValueOnce({ rows: [
+				{ id: 'note-2', item_id: 'item-1', note: 'newer', actor: null, created_at: new Date('2026-02-02') },
+				{ id: 'note-1', item_id: 'item-1', note: 'older', actor: { type: 'user', userId: 'user-1' }, created_at: new Date('2026-02-01') },
+			], rowCount: 2 } as never);
+
+		const [item] = await getItems({ projectId: 'proj-1', includeNotes: true });
+
+		const [notesSql] = mockQuery.mock.calls[1]!;
+		expect(notesSql).toContain('FROM item_notes WHERE item_id = ANY($1) ORDER BY created_at DESC');
+		expect(item!.notes).toEqual([
+			{ id: 'note-2', note: 'newer', actor: null, createdAt: new Date('2026-02-02') },
+			{ id: 'note-1', note: 'older', actor: { type: 'user', userId: 'user-1' }, createdAt: new Date('2026-02-01') },
+		]);
+	});
+
+	it('omits notes entirely when they were not requested', async () => {
+		const parent = {
+			...makeItem(),
+			child_count: '0',
+			done_count: '0',
+			in_progress_count: '0',
+			blocked_count: '0',
+		};
+		mockQuery.mockResolvedValueOnce({ rows: [parent], rowCount: 1 } as never);
+
+		const [item] = await getItems({ projectId: 'proj-1' });
+
+		expect(item!).not.toHaveProperty('notes');
+	});
+
 	it('orders children by rank with created_at and id tiebreakers', async () => {
 		const parent = {
 			...makeItem(),
@@ -279,7 +317,7 @@ describe('reaching done', () => {
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never)
 			.mockResolvedValueOnce({ rows: [detailRow], rowCount: 1 } as never);
 
-		await completeItem('proj-1', 1, 'shipped');
+		await completeItem('proj-1', 1);
 
 		expect(mockTransaction).toHaveBeenCalledTimes(1);
 		const [updateSql] = mockClientQuery.mock.calls[0]!;

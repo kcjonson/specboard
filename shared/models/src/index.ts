@@ -15,7 +15,7 @@ export { SyncModel } from './SyncModel';
 export { createCollection } from './Collection';
 export type { Collection } from './Collection';
 export { SyncCollection } from './SyncCollection';
-export type { CollectionMeta } from './SyncCollection';
+export type { CollectionMeta, FetchOptions } from './SyncCollection';
 
 // Hooks
 export { useModel } from './hooks';
@@ -28,7 +28,7 @@ export type { ChangeCallback, ModelMeta, ModelData, Observable } from './types';
 export type { ModelConstructor } from './Collection';
 
 // Planning models
-export { ChildModel, ItemModel, ItemsCollection, SpecModel, SpecsCollection, BlockerModel, BlockersCollection } from './planning';
+export { ChildModel, ItemModel, ItemsCollection, SpecModel, SpecsCollection, BlockerModel, BlockersCollection, NoteModel, NotesCollection } from './planning';
 export type { Status, ItemStatus, SubStatus, ItemType, SpecType, ChildStats, Actor, ItemOrigin, ItemWorker } from './planning';
 
 // Document models

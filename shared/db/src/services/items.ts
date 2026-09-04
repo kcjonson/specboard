@@ -10,6 +10,7 @@ import { formatItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin } from '../types.ts';
 import { clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
+import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
 
 /**
@@ -51,14 +52,6 @@ export interface ItemSummary {
 	/** Derived: status is 'blocked' OR an open blocker row exists. */
 	blocked: boolean;
 	description: string | null;
-	note: string | null;
-}
-
-export interface ProgressNoteSummary {
-	id: string;
-	note: string;
-	createdBy: string;
-	createdAt: Date;
 }
 
 export interface ItemResponse {
@@ -84,8 +77,6 @@ export interface ItemResponse {
 	dueDate: Date | null;
 	prUrl: string | null;
 	branchName: string | null;
-	notes: string | null;
-	note: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 	childStats: ChildStats;
@@ -96,14 +87,15 @@ export interface ItemWithChildren extends ItemResponse {
 }
 
 export interface ItemWithDetails extends ItemWithChildren {
-	progressNotes: ProgressNoteSummary[];
 	specs: SpecSummary[];
 	/**
-	 * Open blockers / active agent-session episodes. Present only when requested
-	 * (includeBlockers / includeWorkers) — deliberately absent otherwise, so a
-	 * client model applying an update response doesn't wipe state the response
-	 * simply didn't load.
+	 * Activity-log entries (newest first) / open blockers / active agent-session
+	 * episodes. Present only when requested (includeNotes / includeBlockers /
+	 * includeWorkers) — deliberately absent otherwise, so a client model applying
+	 * an update response doesn't wipe state the response simply didn't load, and
+	 * so an agent that didn't ask for the log doesn't read `[]` as "no history".
 	 */
+	notes?: ItemNoteSummary[];
 	blockers?: BlockerSummary[];
 	workers?: WorkerSummary[];
 }
@@ -130,8 +122,6 @@ export interface UpdateItemInput {
 	rank?: number;
 	prUrl?: string;
 	branchName?: string;
-	notes?: string;
-	note?: string;
 }
 
 /**
@@ -214,8 +204,6 @@ function transformItem(item: ItemRow): Omit<ItemResponse, 'childStats' | 'blocke
 		dueDate: item.due_date,
 		prUrl: item.pr_url,
 		branchName: item.branch_name,
-		notes: item.notes,
-		note: item.note,
 		createdAt: item.created_at,
 		updatedAt: item.updated_at,
 	};
@@ -231,7 +219,6 @@ function summarizeItem(item: Item & { blocked?: boolean }, projectKey: string): 
 		status: item.status,
 		blocked: item.blocked ?? item.status === 'blocked',
 		description: item.description,
-		note: item.note,
 	};
 }
 
@@ -286,7 +273,7 @@ type ItemWithCounts = ItemRow & {
 
 /**
  * Query top-level items (parent_id IS NULL) with child stats, or a single item by its
- * per-project number. Optionally include each item's children, progress notes, specs,
+ * per-project number. Optionally include each item's children, activity-log entries, specs,
  * blockers, and active workers.
  */
 export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[]> {
@@ -369,18 +356,9 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 		}
 	}
 
-	const notesByItem = new Map<string, ProgressNoteSummary[]>();
-	if (includeNotes && itemIds.length > 0) {
-		const notesResult = await query<{ id: string; item_id: string; note: string; created_by: string; created_at: Date }>(
-			'SELECT * FROM progress_notes WHERE item_id = ANY($1) ORDER BY created_at DESC',
-			[itemIds]
-		);
-		for (const n of notesResult.rows) {
-			const existing = notesByItem.get(n.item_id) || [];
-			existing.push({ id: n.id, note: n.note, createdBy: n.created_by, createdAt: n.created_at });
-			notesByItem.set(n.item_id, existing);
-		}
-	}
+	const notesByItem = includeNotes && itemIds.length > 0
+		? await listNotesByItems(itemIds)
+		: undefined;
 
 	const specsByItem = new Map<string, SpecSummary[]>();
 	if (includeSpecs && itemIds.length > 0) {
@@ -412,8 +390,8 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 			blocked: parseInt(row.blocked_count, 10),
 		},
 		children: (childrenByParent.get(row.id) || []).map((child) => summarizeItem(child, row.project_key)),
-		progressNotes: notesByItem.get(row.id) || [],
 		specs: specsByItem.get(row.id) || [],
+		...(notesByItem ? { notes: notesByItem.get(row.id) || [] } : {}),
 		...(blockersByItem ? { blockers: blockersByItem.get(row.id) || [] } : {}),
 		...(workersByItem ? { workers: workersByItem.get(row.id) || [] } : {}),
 	}));
@@ -566,14 +544,6 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 	if (data.rank !== undefined) set('rank', data.rank);
 	if (data.prUrl !== undefined) set('pr_url', data.prUrl);
 	if (data.branchName !== undefined) set('branch_name', data.branchName);
-	if (data.note !== undefined) set('note', data.note);
-	if (data.notes !== undefined) {
-		// Append a timestamped entry to the running notes log.
-		const entry = `[${new Date().toISOString().split('T')[0]}] ${data.notes}`;
-		updates.push(`notes = CASE WHEN notes IS NULL THEN $${i} ELSE notes || E'\\n' || $${i} END`);
-		values.push(entry);
-		i++;
-	}
 
 	if (updates.length === 0) {
 		const found = await getItems({ projectId, itemNumber });
@@ -698,14 +668,14 @@ export async function startItem(projectId: string, itemNumber: number): Promise<
 }
 
 /**
- * Complete an item, optionally recording an outcome note. Auto-clears blockers
- * (dependents' and its own, same transaction) and ends active worker episodes.
+ * Complete an item. Auto-clears blockers (dependents' and its own, same
+ * transaction) and ends active worker episodes.
  */
-export async function completeItem(projectId: string, itemNumber: number, note?: string): Promise<ItemResponse | null> {
+export async function completeItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const completed = await transaction(async (client) => {
 		const result = await client.query<{ id: string }>(
-			`UPDATE items SET status = 'done', note = COALESCE($3, note), updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
-			[itemNumber, projectId, note ?? null]
+			`UPDATE items SET status = 'done', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
+			[itemNumber, projectId]
 		);
 		const id = result.rows[0]?.id;
 		if (id) await clearBlockersForCompletion(client, id);
@@ -717,11 +687,11 @@ export async function completeItem(projectId: string, itemNumber: number, note?:
 	return found[0] ?? null;
 }
 
-/** Block an item with a required reason note. Ends worker episodes (no longer being worked). */
-export async function blockItem(projectId: string, itemNumber: number, note: string): Promise<ItemResponse | null> {
+/** Block an item (a manual status-level hold). Ends worker episodes (no longer being worked). */
+export async function blockItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const result = await query(
-		`UPDATE items SET status = 'blocked', note = $3, updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
-		[itemNumber, projectId, note]
+		`UPDATE items SET status = 'blocked', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id`,
+		[itemNumber, projectId]
 	);
 	if (result.rows.length === 0) return null;
 	await endWorkers(projectId, itemNumber);

@@ -1,7 +1,7 @@
 /**
  * Transform functions: service responses → API JSON (ISO date strings).
  *
- * Item/spec/progress responses already come back camelCase from the item service
+ * Item/spec/note responses already come back camelCase from the services
  * and are returned directly by their handlers; only projects need a transform here.
  */
 
