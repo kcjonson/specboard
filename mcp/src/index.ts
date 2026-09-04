@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Hono } from 'hono';
 import { serve, type HttpBindings } from '@hono/node-server';
+import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
@@ -28,19 +29,12 @@ import { installErrorHandlers, logRequest } from '@specboard/core';
 import { mcpAuthMiddleware, type McpAuthVariables } from '@specboard/auth';
 import type { AgentActor } from '@specboard/db';
 
-/**
- * Signal to @hono/node-server that the response was already written
- * directly to the Node.js ServerResponse by the MCP transport.
- * Without this, Hono's adapter tries to write headers again → ERR_HTTP_HEADERS_SENT.
- */
-function transportHandledResponse(): Response {
-	return new Response(null, {
-		headers: { 'x-hono-already-sent': '1' },
-	});
-}
-
 import { epicTools, handleEpicTool } from './tools/items/index.ts';
 import { projectTools, handleProjectTool } from './tools/projects.ts';
+
+// Sessions live in memory, so every deploy forgets them. The spec requires 404 for an
+// unknown session ID and tells clients to re-initialize on it; same body the SDK emits.
+const SESSION_NOT_FOUND = { jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null };
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('mcp');
@@ -188,9 +182,9 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 app.use('*', async (c, next) => {
 	const start = Date.now();
 	await next();
-	// For MCP routes, the transport writes directly to c.env.outgoing,
-	// so we need to get the status from there instead of c.res.status
-	const status = c.env.outgoing.statusCode || c.res.status;
+	// The MCP transport writes directly to c.env.outgoing; Node defaults statusCode to 200,
+	// so only trust it once headers have actually been sent.
+	const status = c.env.outgoing.headersSent ? c.env.outgoing.statusCode : c.res.status;
 	logRequest({
 		method: c.req.method,
 		path: c.req.path,
@@ -229,7 +223,11 @@ app.post('/mcp', async (c) => {
 
 		// Existing session - route to existing transport
 		await session.transport.handleRequest(req, res);
-		return transportHandledResponse();
+		return RESPONSE_ALREADY_SENT;
+	}
+
+	if (sessionId) {
+		return c.json(SESSION_NOT_FOUND, 404);
 	}
 
 	// New session - create transport and server. The identity object is shared with
@@ -267,7 +265,7 @@ app.post('/mcp', async (c) => {
 
 	// Handle the request
 	await transport.handleRequest(req, res);
-	return transportHandledResponse();
+	return RESPONSE_ALREADY_SENT;
 });
 
 // MCP GET - existing session (SSE streaming)
@@ -276,8 +274,11 @@ app.get('/mcp', async (c) => {
 	const mcpToken = c.get('mcpToken');
 	const userId = mcpToken.userId;
 
-	if (!sessionId || !sessions.has(sessionId)) {
+	if (!sessionId) {
 		return c.json({ error: 'Session ID required for GET requests' }, 400);
+	}
+	if (!sessions.has(sessionId)) {
+		return c.json(SESSION_NOT_FOUND, 404);
 	}
 
 	const session = sessions.get(sessionId)!;
@@ -292,7 +293,7 @@ app.get('/mcp', async (c) => {
 	const res = c.env.outgoing;
 
 	await session.transport.handleRequest(req, res);
-	return transportHandledResponse();
+	return RESPONSE_ALREADY_SENT;
 });
 
 // MCP DELETE - close session
@@ -302,7 +303,7 @@ app.delete('/mcp', async (c) => {
 	const userId = mcpToken.userId;
 
 	if (!sessionId || !sessions.has(sessionId)) {
-		return c.json({ error: 'Session not found' }, 404);
+		return c.json(SESSION_NOT_FOUND, 404);
 	}
 
 	const session = sessions.get(sessionId)!;
