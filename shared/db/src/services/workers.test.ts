@@ -19,6 +19,7 @@ const ACTOR: AgentActor = {
 	userId: 'user-1',
 	clientId: 'client-1',
 	deviceName: 'kevin-mbp',
+	sessionId: 'session-1',
 	client: { name: 'claude-code', version: '2.0.0' },
 };
 
@@ -33,7 +34,7 @@ describe('recordWorkerActivity', () => {
 
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('INSERT INTO item_workers');
-		expect(sql).toContain(`ON CONFLICT (item_id, (actor->>'clientId')) WHERE ended_at IS NULL`);
+		expect(sql).toContain(`ON CONFLICT (item_id, (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL`);
 		expect(sql).toContain('last_seen_at = now()');
 		expect(sql).toContain('COALESCE(EXCLUDED.branch, item_workers.branch)');
 		expect(params).toEqual(['proj-1', 1, JSON.stringify(ACTOR), 'feature-branch']);
