@@ -215,6 +215,12 @@ export function mcpAuthMiddleware(options: McpAuthMiddlewareOptions = {}) {
 	};
 }
 
+// Client-chosen text bound for a VARCHAR(n) column: control characters out (Postgres
+// rejects NUL outright), then cap by code point so a surrogate pair is never split.
+function storableText(value: string, max: number): string {
+	return Array.from(value.replace(/\p{Cc}/gu, '')).slice(0, max).join('');
+}
+
 /**
  * Remember the MCP protocol clientInfo a token holder sent at initialize. The MCP
  * transport is stateless, so this is what later tool calls read to stamp the
@@ -223,7 +229,7 @@ export function mcpAuthMiddleware(options: McpAuthMiddlewareOptions = {}) {
 export async function recordMcpClientInfo(tokenId: string, client: McpClientInfo): Promise<void> {
 	await query(
 		'UPDATE mcp_tokens SET client_name = $1, client_version = $2 WHERE id = $3',
-		[client.name.slice(0, 255), client.version?.slice(0, 64) ?? null, tokenId]
+		[storableText(client.name, 255), client.version ? storableText(client.version, 64) : null, tokenId]
 	);
 }
 

@@ -1,7 +1,7 @@
 # Item relationships and provenance
 
 Blockers (blocked-by), creation origin, and worker presence on planning items.
-Introduced by migrations 024-026; this records the design and the reasoning so
+Introduced by migrations 024-027; this records the design and the reasoning so
 the shapes don't get reinvented.
 
 ## The two shared shapes
@@ -24,8 +24,8 @@ Decided once, used everywhere:
    places — the API's `requireProjectAccess`-gated handlers and the MCP server's
    per-call actor — plus the system actor the services stamp on auto-clears and
    the user actor the seed script writes. Browser-facing responses strip actor
-   internals (user id, OAuth client id) down to what the UI renders: type,
-   device name, client info.
+   internals (user id, OAuth client id, MCP session id) down to what the UI
+   renders: type, device name, client info.
 
 No generic `item_links` table: origin is 1-per-item and immutable (a column, not
 a row), and blockers carry lifecycle (`cleared_at`/`cleared_by`) that would be
@@ -109,14 +109,16 @@ immutable because no update path maps it (the same enforcement as
 
 Observed agent presence: one row per (item, agent session) episode, keyed by the
 partial unique index on
-`(item_id, (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL`.
+`(item_id, (actor->>'userId'), (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL`.
 The MCP transport is stateless (migration 027): the server mints a session id at
-initialize as a pure correlation token, the client echoes it on every later
-request, and the server stores and validates nothing, so a deploy never strands a
-connected client and an episode continues across one. Because the id is
-client-echoed it is scoped under the OAuth client id (one registration per
-Claude Code install or connector), so a forged id can only reach that install's
-own rows. Two Claude Code windows on one machine are two sessions.
+initialize as a correlation token, the client echoes it on every later request,
+and the server holds no transport state for it and never rejects a request over
+it (a malformed id is dropped from provenance, nothing more), so a deploy never
+strands a connected client and an episode continues across one. Because the id
+is client-echoed, and a registered OAuth client id can be shared by many users (a
+claude.ai org connector registers once), the key includes the token-derived user
+id and client id, so a forged id can only reach rows the same token already
+owns. Two Claude Code windows on one machine are two sessions.
 
 - **No heartbeat or claim call.** Episodes open as a side effect of real MCP
   writes: a write that leaves an item `in_progress` upserts the episode

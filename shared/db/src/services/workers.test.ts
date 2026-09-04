@@ -34,10 +34,18 @@ describe('recordWorkerActivity', () => {
 
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('INSERT INTO item_workers');
-		expect(sql).toContain(`ON CONFLICT (item_id, (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL`);
+		expect(sql).toContain(`ON CONFLICT (item_id, (actor->>'userId'), (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL`);
 		expect(sql).toContain('last_seen_at = now()');
 		expect(sql).toContain('COALESCE(EXCLUDED.branch, item_workers.branch)');
 		expect(params).toEqual(['proj-1', 1, JSON.stringify(ACTOR), 'feature-branch']);
+	});
+
+	it('still records a session-less actor (COALESCE in the index folds those into one episode)', async () => {
+		const sessionless: AgentActor = { type: 'agent', userId: 'user-1', clientId: 'client-1', deviceName: 'kevin-mbp' };
+		await recordWorkerActivity('proj-1', 1, sessionless);
+
+		const [, params] = mockQuery.mock.calls[0]!;
+		expect(params![2]).toBe(JSON.stringify(sessionless));
 	});
 });
 
