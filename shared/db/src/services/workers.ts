@@ -29,7 +29,7 @@ export async function recordWorkerActivity(
 	await query(
 		`INSERT INTO item_workers (item_id, project_id, actor, branch)
 		 SELECT i.id, $1, $3::jsonb, $4 FROM items i WHERE i.project_id = $1 AND i.number = $2
-		 ON CONFLICT (item_id, (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL
+		 ON CONFLICT (item_id, (actor->>'userId'), (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL
 		 DO UPDATE SET last_seen_at = now(),
 			branch = COALESCE(EXCLUDED.branch, item_workers.branch),
 			actor = EXCLUDED.actor`,

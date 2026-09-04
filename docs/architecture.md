@@ -80,7 +80,7 @@ See [shared-app-shell.md](specs/shared-app-shell.md) for the full target matrix,
 - Hono server implementing the Model Context Protocol (MCP)
 - OAuth 2.1 + PKCE authentication for AI tool access
 - Exposes planning tools (epics, tasks, progress tracking) to Claude Code and similar clients
-- Streamable HTTP transport via the MCP SDK in stateless mode, so a deploy (or a second task) never strands connected clients. The session id is a correlation token minted at initialize and echoed by the client (never stored or validated server-side); the protocol clientInfo is recorded on the OAuth token at initialize. Both feed provenance.
+- Streamable HTTP transport via the MCP SDK in stateless mode, so a deploy (or a second task) never strands connected clients. The session id is a correlation token minted at initialize and echoed by the client (no transport state is held for it, and a request is never rejected over it); the protocol clientInfo is recorded on the OAuth token at initialize. Both feed provenance.
 
 ### Storage Container (internal only — not ALB-routed)
 - Hono server proxying file operations to S3
