@@ -3,8 +3,11 @@ import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
 import { StatusDot } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
-import { matchesFilters, type PlanningFilters } from '../Planning/filters';
+import { isFilterActive, matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Table.module.css';
+
+/** Rows a status section starts with, and how many each "show more" adds. */
+export const TABLE_PAGE_SIZE = 200;
 
 /**
  * Status sections, in display order (active work first). Blocked and In Review
@@ -55,6 +58,18 @@ export function Table({
 	onOpenChild,
 }: TableProps): JSX.Element {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+	// Which section is fetching its next page; its "show more" button shows a loading state.
+	const [loadingMore, setLoadingMore] = useState<ItemStatus | null>(null);
+	const filtersActive = isFilterActive(filters);
+
+	const handleLoadMore = useCallback(async (status: ItemStatus): Promise<void> => {
+		setLoadingMore(status);
+		try {
+			await items.loadMore(status, TABLE_PAGE_SIZE);
+		} finally {
+			setLoadingMore(null);
+		}
+	}, [items]);
 
 	const grouped = useMemo(() => {
 		const byStatus = {} as Record<ItemStatus, ItemModel[]>;
@@ -126,7 +141,9 @@ export function Table({
 								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={5}>
 									<StatusDot status={status} />
 									<span class={styles.groupLabel}>{label}</span>
-									<span class={styles.groupCount}>{groupItems.length}</span>
+									<span class={styles.groupCount}>
+									{filtersActive ? groupItems.length : items.totalFor(status)}
+								</span>
 								</span>
 							</div>
 
@@ -148,6 +165,24 @@ export function Table({
 										onOpenChild={onOpenChild}
 									/>
 								))
+							)}
+
+							{items.hasMore(status) && (
+								<div class={styles.showMoreRow} role="row">
+									<span class={styles.showMoreCell} role="cell">
+										<button
+											type="button"
+											class="text size-sm"
+											onClick={() => void handleLoadMore(status)}
+											disabled={loadingMore === status}
+										>
+											{loadingMore === status ? 'Loading…' : 'Show more'}
+										</button>
+										<span class={styles.showMoreCount}>
+											{items.byStatus(status).length} of {items.totalFor(status)}
+										</span>
+									</span>
+								</div>
 							)}
 						</div>
 					);

@@ -78,6 +78,40 @@
 	animation: pulse 1s ease-in-out infinite;
 }
 
+/* Ghost card at the foot of a windowed column: reads as "a card that isn't here yet". */
+.showMore {
+	width: 100%;
+	margin-bottom: var(--card-margin);
+	padding: 10px var(--card-padding);
+	border: 1px dashed var(--color-border);
+	border-radius: var(--card-radius);
+	background: transparent;
+	color: var(--color-text-muted);
+	font-size: 13px;
+	font-weight: 500;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.showMore:hover:not(:disabled) {
+	background: var(--color-surface-hover);
+	color: var(--color-text);
+	border-color: var(--color-text-muted);
+}
+
+.showMore:disabled {
+	cursor: default;
+	opacity: 0.7;
+}
+
+.showMoreCount {
+	font-size: 12px;
+	font-weight: 400;
+	font-variant-numeric: tabular-nums;
+}
+
 @keyframes pulse {
 	0%, 100% {
 		opacity: 1;

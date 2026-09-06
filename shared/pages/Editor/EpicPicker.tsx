@@ -4,6 +4,9 @@ import { useModel, ItemsCollection } from '@specboard/models';
 import { Dialog, Text } from '@specboard/ui';
 import styles from './EpicPicker.module.css';
 
+/** Rows loaded per status for the picker. */
+const PICKER_LIMIT = 200;
+
 const STATUS_LABELS: Record<string, string> = {
 	ready: 'Ready',
 	in_progress: 'In Progress',
@@ -23,7 +26,8 @@ export interface EpicPickerProps {
  * document to an existing one.
  */
 export function EpicPicker({ projectSlug, onSelect, onClose }: EpicPickerProps): JSX.Element {
-	const items = useMemo(() => new ItemsCollection({ projectSlug }), [projectSlug]);
+	// Per-status window; the picker's search only covers what is loaded.
+	const items = useMemo(() => new ItemsCollection({ projectSlug, limit: PICKER_LIMIT }), [projectSlug]);
 	useModel(items);
 
 	const [search, setSearch] = useState('');

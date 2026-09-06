@@ -42,6 +42,13 @@ export interface FetchOptions {
 	 * request cannot contain.
 	 */
 	force?: boolean;
+	/**
+	 * Whether rows new to the collection count as changes (the default). Pass false
+	 * when the request window itself grew (a "show more"): the rows it adds are
+	 * expected, not server-side changes worth flashing. Changes to rows already
+	 * held are still reported.
+	 */
+	reportAdded?: boolean;
 }
 
 /** Collection metadata */
@@ -136,7 +143,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	}
 
 	/** Get the URL, substituting params from instance properties */
-	private getUrl(): string {
+	protected getUrl(): string {
 		const template = (this.constructor as typeof SyncCollection).url;
 		return template.replace(/:(\w+)/g, (_, key) => {
 			const value = (this as Record<string, unknown>)[key];
@@ -292,7 +299,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 			// Coalesce concurrent calls so overlapping refetches can't race to a stale state.
 			return this.__fetchInFlight;
 		}
-		const run = this.__fetch();
+		const run = this.__fetch(options?.reportAdded ?? true);
 		this.__fetchInFlight = run;
 		try {
 			await run;
@@ -301,13 +308,22 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 		}
 	}
 
+	/**
+	 * The rows a fetch reconciles. Subclasses whose data does not come from one GET
+	 * of `url` (several requests, out-of-band metadata) override this; the reconcile
+	 * that follows is the same either way.
+	 */
+	protected async load(): Promise<Array<Record<string, unknown>>> {
+		return fetchClient.get<Array<Record<string, unknown>>>(this.getUrl());
+	}
+
 	/** The actual fetch + reconcile; serialized by `fetch()`. */
-	private async __fetch(): Promise<void> {
+	private async __fetch(reportAdded: boolean): Promise<void> {
 		const isInitial = this.$meta.lastFetched == null;
 		this.setMeta({ working: true, error: null });
 
 		try {
-			const data = await fetchClient.get<Array<Record<string, unknown>>>(this.getUrl());
+			const data = await this.load();
 			const ModelClass = this.getModelClass();
 			const idField = (this.constructor as typeof SyncCollection).Model.idField || 'id';
 			const changeKey = (this.constructor as typeof SyncCollection).changeKey;
@@ -344,7 +360,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 				if (!existing) {
 					const item = new ModelClass(mergedData);
 					this.__subscribeToChild(item);
-					if (!isInitial) changedIds.push(String(id));
+					if (!isInitial && reportAdded) changedIds.push(String(id));
 					nextItems.push(item);
 					continue;
 				}

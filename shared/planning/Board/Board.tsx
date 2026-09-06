@@ -1,10 +1,13 @@
-import { useMemo, useCallback } from 'preact/hooks';
+import { useMemo, useCallback, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type Status, type ItemStatus } from '@specboard/models';
-import { Column } from '../Column/Column';
+import { Column, type ColumnMore } from '../Column/Column';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
-import { matchesFilters, type PlanningFilters } from '../Planning/filters';
+import { isFilterActive, matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Board.module.css';
+
+/** Cards a column starts with, and how many each "show more" adds. */
+export const BOARD_PAGE_SIZE = 100;
 
 export interface BoardProps {
 	/** Shared collection owned by the Planning container. */
@@ -53,16 +56,46 @@ export function Board({
 	);
 	const blockedItems = itemsByStatus.blocked;
 
+	// Which column is fetching its next page; the ghost card in it shows a loading state.
+	const [loadingMore, setLoadingMore] = useState<ItemStatus | null>(null);
+	const handleLoadMore = useCallback(async (status: ItemStatus): Promise<void> => {
+		setLoadingMore(status);
+		try {
+			await items.loadMore(status, BOARD_PAGE_SIZE);
+		} finally {
+			setLoadingMore(null);
+		}
+	}, [items]);
+
+	// The header count is the server total for the status; a filter narrows it to
+	// what the column actually shows. The ghost card is always about the unfiltered
+	// status, since that's what "show more" loads.
+	const filtersActive = isFilterActive(filters);
+	const columnMore = (status: ItemStatus): ColumnMore | undefined => {
+		if (!items.hasMore(status)) return undefined;
+		return {
+			loaded: items.byStatus(status).length,
+			total: items.totalFor(status),
+			loading: loadingMore === status,
+			onLoadMore: () => void handleLoadMore(status),
+		};
+	};
+	const columnCount = (status: ItemStatus, shown: ItemModel[]): number =>
+		filtersActive ? shown.length : items.totalFor(status);
+
 	// Wrapper for Column (which only emits ItemModel, never undefined).
 	const handleColumnSelectItem = useCallback(
 		(item: ItemModel): void => onSelectItem(item),
 		[onSelectItem]
 	);
 
+	// Ranks are sparse (a new item takes the project-wide max + 1), so "after the last
+	// loaded card" is the last rank + 1, not the column length.
 	const handleMoveItem = useCallback(
 		(item: ItemModel, status: Status): void => {
+			const last = items.byStatus(status).filter((e) => e !== item).at(-1);
 			item.status = status;
-			item.rank = items.byStatus(status).length + 1;
+			item.rank = last ? last.rank + 1 : 1;
 			item.save();
 		},
 		[items]
@@ -176,6 +209,8 @@ export function Board({
 					status={status}
 					title={title}
 					items={columnItems}
+					count={columnCount(status, columnItems)}
+					more={columnMore(status)}
 					projectSlug={projectSlug}
 					selectedItemKey={selectedItemKey}
 					flashingIds={flashingIds}

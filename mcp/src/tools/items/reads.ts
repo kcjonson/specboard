@@ -29,7 +29,7 @@ export async function getItems(project: ResolvedProject, args: Record<string, un
 		itemNumber = parsed;
 	}
 
-	const items = await getItemsService({
+	const { items, total } = await getItemsService({
 		projectId: project.id,
 		itemNumber,
 		status: args.status as ItemStatus | undefined,
@@ -50,7 +50,8 @@ export async function getItems(project: ResolvedProject, args: Record<string, un
 		content: [
 			{
 				type: 'text',
-				text: JSON.stringify({ items, count: items.length }, null, 2),
+				// count is this page; total is every match, so an agent can see a limit cut the list.
+				text: JSON.stringify({ items, count: items.length, total }, null, 2),
 			},
 		],
 	};

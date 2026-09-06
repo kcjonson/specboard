@@ -5,10 +5,22 @@ import { StatusDot } from '@specboard/ui';
 import { ItemCard } from '../ItemCard/ItemCard';
 import styles from './Column.module.css';
 
+/** The part of a status the column hasn't loaded, and how to load the next page of it. */
+export interface ColumnMore {
+	loaded: number;
+	total: number;
+	loading: boolean;
+	onLoadMore: () => void;
+}
+
 interface ColumnProps {
 	status: ItemStatus;
 	title: string;
 	items: ItemModel[];
+	/** Number shown in the header: the server total, or the filtered count while a filter is active. */
+	count: number;
+	/** Present while the server holds more of this status than the column shows. */
+	more?: ColumnMore;
 	projectSlug: string;
 	selectedItemKey?: string;
 	flashingIds: Set<string>;
@@ -25,6 +37,8 @@ export function Column({
 	status,
 	title,
 	items,
+	count,
+	more,
 	projectSlug,
 	selectedItemKey,
 	flashingIds,
@@ -104,7 +118,7 @@ export function Column({
 					<StatusDot status={status} />
 					{title}
 				</h2>
-				<span class={styles.count}>{items.length}</span>
+				<span class={styles.count}>{count}</span>
 			</div>
 
 			<div class={styles.content}>
@@ -138,6 +152,19 @@ export function Column({
 					)}
 					{isDragOver && dropIndex === items.length && items.length > 0 && (
 						<div class={styles.dropIndicator} />
+					)}
+					{/* Ghost card: not a drop target and not an option, so it carries no data-item-card. */}
+					{more && (
+						<button
+							type="button"
+							class={styles.showMore}
+							onClick={more.onLoadMore}
+							disabled={more.loading}
+							aria-label={`Show more ${title} items, ${more.loaded} of ${more.total} shown`}
+						>
+							<span>{more.loading ? 'Loading…' : 'Show more'}</span>
+							<span class={styles.showMoreCount}>{more.loaded} of {more.total}</span>
+						</button>
 					)}
 				</div>
 			</div>

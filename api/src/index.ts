@@ -202,7 +202,8 @@ app.use('*', cors({
 	credentials: true,
 	allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 	allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
-	exposeHeaders: ['Location'], // Allow browser to read Location header for OAuth redirects
+	// Location: OAuth redirects. X-Total-Count: list endpoints report matches past the page.
+	exposeHeaders: ['Location', 'X-Total-Count'],
 }));
 
 // Request logging middleware

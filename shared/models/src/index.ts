@@ -28,7 +28,7 @@ export type { ChangeCallback, ModelMeta, ModelData, Observable } from './types';
 export type { ModelConstructor } from './Collection';
 
 // Planning models
-export { ChildModel, ItemModel, ItemsCollection, SpecModel, SpecsCollection, BlockerModel, BlockersCollection, NoteModel, NotesCollection } from './planning';
+export { ChildModel, ItemModel, ItemsCollection, ITEM_STATUSES, SpecModel, SpecsCollection, BlockerModel, BlockersCollection, NoteModel, NotesCollection } from './planning';
 export type { Status, ItemStatus, SubStatus, ItemType, SpecType, ChildStats, Actor, ItemOrigin, ItemWorker } from './planning';
 
 // Document models

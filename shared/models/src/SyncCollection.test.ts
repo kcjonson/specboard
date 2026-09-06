@@ -258,6 +258,39 @@ describe('SyncCollection reconciling fetch', () => {
 		expect(docs.toArray().map((doc) => doc.id)).toEqual([1, 2]);
 	});
 
+	it('does not report rows a window-growing fetch adds, but still reports changed ones', async () => {
+		vi.mocked(fetchClient.get).mockResolvedValue([{ id: 1, title: 'a', updatedAt: 't1' }]);
+		const docs = new Docs({});
+		await docs.fetch();
+
+		const events: string[][] = [];
+		docs.onItemsChanged((ids) => events.push(ids));
+
+		vi.mocked(fetchClient.get).mockResolvedValue([
+			{ id: 1, title: 'a2', updatedAt: 't2' }, // changed
+			{ id: 2, title: 'b', updatedAt: 't1' }, // added by the wider window
+		]);
+		await docs.fetch({ force: true, reportAdded: false });
+
+		expect(docs.length).toBe(2);
+		expect(events).toEqual([['1']]);
+	});
+
+	it('reconciles whatever rows a subclass load() supplies', async () => {
+		class Merged extends SyncCollection<Doc> {
+			static url = '/api/docs';
+			static Model = Doc;
+			protected override async load(): Promise<Array<Record<string, unknown>>> {
+				return [{ id: 7, title: 'from load', updatedAt: 't1' }];
+			}
+		}
+		const merged = new Merged({});
+		await merged.fetch();
+
+		expect(fetchClient.get).not.toHaveBeenCalled();
+		expect(merged.toArray().map((d) => d.id)).toEqual([7]);
+	});
+
 	it('still coalesces when force is not set', async () => {
 		vi.mocked(fetchClient.get).mockResolvedValue([{ id: 1, title: 'a', updatedAt: 't1' }]);
 		const docs = new Docs({});

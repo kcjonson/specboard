@@ -10,6 +10,7 @@
 
 import type {
 	FetchConfig,
+	FetchResponse,
 	RequestConfig,
 	RequestInterceptor,
 	ResponseInterceptor,
@@ -49,7 +50,7 @@ export class FetchClient {
 	private responseInterceptors: ResponseInterceptor[] = [];
 	private errorInterceptors: ErrorInterceptor[] = [];
 	/** In-flight GET requests for deduplication */
-	private inFlightRequests: Map<string, Promise<unknown>> = new Map();
+	private inFlightRequests: Map<string, Promise<FetchResponse<unknown>>> = new Map();
 
 	constructor(config?: FetchConfig) {
 		if (config?.baseURL) {
@@ -103,17 +104,27 @@ export class FetchClient {
 	}
 
 	async get<T>(url: string, config?: Partial<RequestConfig>): Promise<T> {
+		const { data } = await this.getResponse<T>(url, config);
+		return data;
+	}
+
+	/**
+	 * GET returning the parsed body together with the response headers, for endpoints
+	 * that carry metadata out of band (e.g. a list's `X-Total-Count`). Shares the
+	 * in-flight deduplication with `get`.
+	 */
+	async getResponse<T>(url: string, config?: Partial<RequestConfig>): Promise<FetchResponse<T>> {
 		// Build cache key from URL and params for deduplication
 		const cacheKey = this.buildCacheKey(url, config?.params);
 
 		// Check for in-flight request
 		const inFlight = this.inFlightRequests.get(cacheKey);
 		if (inFlight) {
-			return inFlight as Promise<T>;
+			return inFlight as Promise<FetchResponse<T>>;
 		}
 
 		// Create and track the request
-		const request = this.request<T>({ ...config, url, method: 'GET' }).finally(() => {
+		const request = this.send<T>({ ...config, url, method: 'GET' }).finally(() => {
 			this.inFlightRequests.delete(cacheKey);
 		});
 
@@ -150,6 +161,12 @@ export class FetchClient {
 	}
 
 	async request<T>(config: RequestConfig): Promise<T> {
+		const { data } = await this.send<T>(config);
+		return data;
+	}
+
+	/** Run one request through the interceptors; the parsed body plus the response's headers. */
+	private async send<T>(config: RequestConfig): Promise<FetchResponse<T>> {
 		let processedConfig = { ...config };
 
 		// Apply request interceptors
@@ -248,7 +265,7 @@ export class FetchClient {
 				data = await interceptor(data, response);
 			}
 
-			return data;
+			return { data, headers: response.headers };
 		} catch (error) {
 			if (error instanceof FetchError) {
 				throw error;

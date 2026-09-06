@@ -224,6 +224,24 @@
 	border-top: 1px solid var(--color-border);
 }
 
+/* Foot of a section whose status has rows past the loaded window. */
+.showMoreRow {
+	border-top: 1px solid var(--color-border);
+	padding: var(--space-1) var(--space-3);
+}
+
+.showMoreCell {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.showMoreCount {
+	color: var(--color-text-muted);
+	font-size: var(--text-xs);
+	font-variant-numeric: tabular-nums;
+}
+
 /* The item's key (SB-345) — the same string that addresses it in the URL. */
 .itemKey {
 	font-family: var(--font-mono, ui-monospace, monospace);

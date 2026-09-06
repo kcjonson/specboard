@@ -4,8 +4,8 @@ import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
 import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption } from '@specboard/ui';
-import { Board } from '../Board/Board';
-import { Table } from '../Table/Table';
+import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
+import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
 import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
@@ -67,11 +67,26 @@ export function Planning(props: RouteProps): JSX.Element {
 	const openItemKey = props.params.itemKey?.toUpperCase();
 
 	// Collection auto-fetches after projectSlug is set. Memoized so it survives view
-	// toggles (the route/entry is unchanged, only the ?view= param differs).
-	const items = useMemo(() => new ItemsCollection({ projectSlug }), [projectSlug]);
+	// toggles (the route/entry is unchanged, only the ?view= param differs). Its
+	// per-status windows start at the size of whichever view opens first.
+	const items = useMemo(
+		() => new ItemsCollection({
+			projectSlug,
+			limit: readView() === 'table' ? TABLE_PAGE_SIZE : BOARD_PAGE_SIZE,
+		}),
+		[projectSlug]
+	);
 	useModel(items);
 
 	const [view, setView] = useState<PlanningView>(readView);
+
+	// The table shows more per section than the board per column; switching to it
+	// widens the windows that had more. Windows never shrink, so board -> table ->
+	// board leaves the board showing the wider set.
+	useEffect(() => {
+		if (view === 'table') void items.ensureLimit(TABLE_PAGE_SIZE);
+	}, [view, items]);
+
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
 
 	// The board selection — the single source of truth for which card is marked.
@@ -236,9 +251,11 @@ export function Planning(props: RouteProps): JSX.Element {
 		setIsNewItemDialogOpen(true);
 	}, []);
 
+	// No rank: the server appends (project-wide max + 1). The collection's length is
+	// only what's loaded, so a rank derived from it would land mid-column.
 	const handleCreateItem = useCallback(
 		(data: { title: string; description?: string; status: Status; type?: ItemType }): void => {
-			items.add({ ...data, type: data.type || createType, rank: items.length + 1 });
+			items.add({ ...data, type: data.type || createType });
 			setIsNewItemDialogOpen(false);
 		},
 		[items, createType]
