@@ -20,6 +20,7 @@ const ACTOR: AgentActor = {
 	clientId: 'client-1',
 	deviceName: 'kevin-mbp',
 	sessionId: 'session-1',
+	client: { name: 'claude-code', version: '2.0.0' },
 };
 
 beforeEach(() => {
@@ -33,33 +34,28 @@ describe('recordWorkerActivity', () => {
 
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('INSERT INTO item_workers');
-		expect(sql).toContain(`ON CONFLICT (item_id, (actor->>'sessionId')) WHERE ended_at IS NULL`);
+		expect(sql).toContain(`ON CONFLICT (item_id, (actor->>'userId'), (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL`);
 		expect(sql).toContain('last_seen_at = now()');
 		expect(sql).toContain('COALESCE(EXCLUDED.branch, item_workers.branch)');
 		expect(params).toEqual(['proj-1', 1, JSON.stringify(ACTOR), 'feature-branch']);
 	});
 
-	it('is a no-op without a sessionId (NULLs would stack duplicate active rows)', async () => {
-		await recordWorkerActivity('proj-1', 1, { ...ACTOR, sessionId: undefined });
+	it('still records a session-less actor (COALESCE in the index folds those into one episode)', async () => {
+		const sessionless: AgentActor = { type: 'agent', userId: 'user-1', clientId: 'client-1', deviceName: 'kevin-mbp' };
+		await recordWorkerActivity('proj-1', 1, sessionless);
 
-		expect(mockQuery).not.toHaveBeenCalled();
+		const [, params] = mockQuery.mock.calls[0]!;
+		expect(params![2]).toBe(JSON.stringify(sessionless));
 	});
 });
 
 describe('endWorkers', () => {
-	it('ends only the given session when one is passed', async () => {
-		await endWorkers('proj-1', 1, 'session-1');
+	it('ends every active episode on the item', async () => {
+		await endWorkers('proj-1', 1);
 
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('SET ended_at = now()');
-		expect(sql).toContain(`($3::text IS NULL OR w.actor->>'sessionId' = $3)`);
-		expect(params).toEqual(['proj-1', 1, 'session-1']);
-	});
-
-	it('ends every active episode when no session is passed (item completed)', async () => {
-		await endWorkers('proj-1', 1);
-
-		const [, params] = mockQuery.mock.calls[0]!;
-		expect(params).toEqual(['proj-1', 1, null]);
+		expect(sql).toContain('w.ended_at IS NULL');
+		expect(params).toEqual(['proj-1', 1]);
 	});
 });
