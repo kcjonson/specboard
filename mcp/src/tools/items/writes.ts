@@ -272,6 +272,10 @@ export async function updateItem(
 	if (args.branch_name !== undefined) fields.branchName = args.branch_name as string;
 	if (args.pr_url !== undefined) fields.prUrl = args.pr_url as string;
 	if (args.notes !== undefined) fields.notes = args.notes as string;
+	// The service derives a status from sub_status only when none is given, and a
+	// derived 'done' clears blockers before the shortcut's own transition runs.
+	// Naming the shortcut status here keeps it authoritative.
+	if (fields.subStatus !== undefined && status !== undefined) fields.status = status;
 	const hasFields = Object.keys(fields).length > 0;
 
 	// Status-transition shortcuts. Worker episodes are recorded/ended inside the
