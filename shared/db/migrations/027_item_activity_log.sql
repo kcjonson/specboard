@@ -21,8 +21,10 @@
 
 ALTER TABLE progress_notes RENAME TO item_notes;
 
--- RENAME CONSTRAINT has no IF EXISTS form, and a pkey created under a different
--- name (an environment restored from a dump, say) would abort the transaction.
+-- RENAME CONSTRAINT has no IF EXISTS form, and a constraint created under a
+-- different name (an environment restored from a dump, say) would abort the
+-- transaction. 018 named the FK explicitly; the pkey name is whatever 004's
+-- CREATE TABLE generated. Both are guarded so neither can abort.
 DO $$
 BEGIN
 	IF EXISTS (
@@ -31,9 +33,13 @@ BEGIN
 	) THEN
 		ALTER TABLE item_notes RENAME CONSTRAINT progress_notes_pkey TO item_notes_pkey;
 	END IF;
+	IF EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'progress_notes_item_id_fkey' AND conrelid = 'item_notes'::regclass
+	) THEN
+		ALTER TABLE item_notes RENAME CONSTRAINT progress_notes_item_id_fkey TO item_notes_item_id_fkey;
+	END IF;
 END $$;
-
-ALTER TABLE item_notes RENAME CONSTRAINT progress_notes_item_id_fkey TO item_notes_item_id_fkey;
 
 ALTER TABLE item_notes ADD COLUMN actor JSONB;
 ALTER TABLE item_notes DROP COLUMN created_by;

@@ -169,9 +169,11 @@ first everywhere it is read.
   throws `NoteValidationError` when it is empty or over `MAX_NOTE_LENGTH`
   (10,000; an absurd-size guard, not an editorial limit, and entries are agent-written
   prose and the 027 backfill imports long ones). The API maps that to a 400 and
-  MCP to a tool error. Handlers do not pre-trim or pre-check. Appending also
-  bumps the item's `updated_at`, so polling boards and agents see that the item
-  changed.
+  MCP to a tool error. The API handler passes the text through untouched. The
+  MCP handler drops a whitespace-only `note` as nothing to say (see above) and
+  otherwise passes it through; it does not enforce the length or emptiness rules
+  itself. Appending also bumps the item's `updated_at`, so polling boards and
+  agents see that the item changed.
 - **`notes` is present on an item response only when it was requested**
   (`include_notes`), like `blockers` and `workers`. An absent key means "not
   loaded"; `[]` would tell an agent the item has no history.
