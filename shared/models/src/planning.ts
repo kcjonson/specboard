@@ -69,7 +69,6 @@ export class ChildModel extends Model {
 	/** Derived server-side: status is 'blocked' OR an open blocker exists. */
 	@prop accessor blocked!: boolean | undefined;
 	@prop accessor description!: string | undefined;
-	@prop accessor note!: string | undefined;
 }
 
 /**
@@ -116,7 +115,6 @@ export class ItemModel extends SyncModel {
 	@prop accessor rank!: number;
 	@prop accessor prUrl!: string | undefined;
 	@prop accessor branchName!: string | undefined;
-	@prop accessor note!: string | undefined;
 	@prop accessor createdAt!: string;
 	@prop accessor updatedAt!: string;
 
@@ -286,6 +284,41 @@ export class BlockerModel extends SyncModel {
 export class BlockersCollection extends SyncCollection<BlockerModel> {
 	static url = '/api/projects/:projectSlug/items/:itemKey/blockers';
 	static Model = BlockerModel;
+
+	// Set dynamically via constructor initialProps — do NOT declare as class fields.
+	declare projectSlug: string;
+	declare itemKey: string;
+}
+
+/**
+ * Activity-log entry — one appended note on an item. Entries are never edited
+ * or deleted, so this model only ever reads or POSTs.
+ * Syncs with /api/projects/:projectSlug/items/:itemKey/notes/:id
+ */
+export class NoteModel extends SyncModel {
+	static override url = '/api/projects/:projectSlug/items/:itemKey/notes/:id';
+
+	@prop accessor id!: string;
+	@prop accessor projectSlug!: string;
+	@prop accessor itemKey!: string;
+	@prop accessor note!: string;
+	/** Who wrote the entry. Null on entries that predate actor capture. Read-only. */
+	@prop accessor actor!: Actor | null;
+	@prop accessor createdAt!: string;
+}
+
+/**
+ * Activity log for one item, newest first as the server returns it.
+ * Syncs with /api/projects/:projectSlug/items/:itemKey/notes
+ *
+ * add({ note }) appends an entry; there is no remove — the log is append-only.
+ * Entries are immutable, so `createdAt` stands in for `updatedAt` as the
+ * change key that a reconciling fetch compares.
+ */
+export class NotesCollection extends SyncCollection<NoteModel> {
+	static url = '/api/projects/:projectSlug/items/:itemKey/notes';
+	static Model = NoteModel;
+	static changeKey = 'createdAt';
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
 	declare projectSlug: string;

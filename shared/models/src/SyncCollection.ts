@@ -34,6 +34,16 @@ export interface SyncModelConstructor<T extends SyncModel> {
 	new (initialData?: Record<string, unknown>): T;
 }
 
+/** Options for `SyncCollection.fetch` */
+export interface FetchOptions {
+	/**
+	 * Start a fresh request even when one is already in flight, instead of
+	 * coalescing onto it. Needed after a write, whose effect an already-issued
+	 * request cannot contain.
+	 */
+	force?: boolean;
+}
+
 /** Collection metadata */
 export interface CollectionMeta {
 	working: boolean;
@@ -265,10 +275,23 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	 * and lazily-loaded children survive a poll — and lets the collection report exactly
 	 * which items changed. On any fetch after the first, the changed/added ids are
 	 * emitted via `itemsChanged` so callers can flash them.
+	 *
+	 * Pass `{ force: true }` when the caller has just written through this collection
+	 * and needs the response to reflect that write. Coalescing onto an in-flight GET
+	 * would resolve against a payload the server built before the write, and the
+	 * reconcile would rebuild the collection without the new row.
 	 */
-	async fetch(): Promise<void> {
-		// Coalesce concurrent calls so overlapping refetches can't race to a stale state.
-		if (this.__fetchInFlight) return this.__fetchInFlight;
+	async fetch(options?: FetchOptions): Promise<void> {
+		if (options?.force) {
+			// Let the in-flight request finish first: its reconcile would otherwise land
+			// after ours and roll the collection back to the pre-write payload.
+			while (this.__fetchInFlight) {
+				await this.__fetchInFlight;
+			}
+		} else if (this.__fetchInFlight) {
+			// Coalesce concurrent calls so overlapping refetches can't race to a stale state.
+			return this.__fetchInFlight;
+		}
 		const run = this.__fetch();
 		this.__fetchInFlight = run;
 		try {

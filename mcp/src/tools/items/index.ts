@@ -5,7 +5,7 @@
  * - get_items: Query items with flexible filtering, search, and optional includes
  * - create_item: Create epic/bug/task
  * - create_items: Bulk create tasks under a parent
- * - update_item: Update any item (status, sub_status, notes, etc.)
+ * - update_item: Update any item (status, sub_status, note, etc.)
  * - delete_item: Delete any item
  */
 

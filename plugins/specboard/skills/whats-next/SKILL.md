@@ -187,9 +187,13 @@ complete -> done), so drive the board through sub_status, not the raw `status` f
 - Block: `update_item(project_slug, task_key, 'task', { status: 'blocked', note: 'Need auth spec clarification' })`
 - Unblock: `update_item(project_slug, task_key, 'task', { status: 'ready' })`
 
+Blocking needs a reason. A `note` is one way; a non-empty `blockers: [{ text: '...' }]` (or
+`[{ item_key: 'SB-12' }]`) is the other, and satisfies the rule on its own.
+
 Write a short note on every task completion, those notes are the human-readable work log. Add an
-epic-level note at real decision points: `update_item(project_slug, epic_key, 'epic', { notes: '...' })`
-(notes are timestamped and appended, not overwritten).
+epic-level note at real decision points: `update_item(project_slug, epic_key, 'epic', { note: '...' })`.
+`note` appends an entry to the item's activity log with a timestamp and your session as the author;
+it never overwrites an earlier entry, and it rides along with whatever else the same call changes.
 
 **The discipline:**
 - Update status at the transition, not later. Start a task, mark it in_progress. Hit a wall, mark
