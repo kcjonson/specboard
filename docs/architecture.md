@@ -201,6 +201,8 @@ All infrastructure is defined in TypeScript using AWS CDK, deployed to a single 
 - **Secrets Manager** — database credentials, OAuth secrets, encryption keys
 - **GitHub OIDC** — keyless authentication for CI/CD deployments
 - **WAF** — AWS managed rules for production (OWASP Top 10, SQL injection, rate limiting)
+  - Rules overridden to count because they block real traffic: `NoUserAgent_HEADER` (Codex's MCP OAuth login sends no User-Agent) and `RestrictedExtensions_QUERYARGUMENTS` (editor file endpoints pass the file name in `?path=`; `.log`/`.ini`/`.conf` are legitimate docs)
+  - Blocked requests are logged to `aws-waf-logs-specboard` (30 days) with the Authorization and Cookie headers redacted; allowed requests are not logged
 
 ### CI/CD
 - **GitHub Actions** — build, test, deploy pipeline

@@ -1224,11 +1224,15 @@ export class SpecboardStack extends cdk.Stack {
 							managedRuleGroupStatement: {
 								vendorName: 'AWS',
 								name: 'AWSManagedRulesCommonRuleSet',
-								excludedRules: [
-									{ name: 'SizeRestrictions_BODY' },
-									{ name: 'CrossSiteScripting_BODY' },
-									{ name: 'EC2MetaDataSSRF_BODY' },
-									{ name: 'EC2MetaDataSSRF_QUERYARGUMENTS' },
+								ruleActionOverrides: [
+									{ name: 'SizeRestrictions_BODY', actionToUse: { count: {} } },
+									{ name: 'CrossSiteScripting_BODY', actionToUse: { count: {} } },
+									{ name: 'EC2MetaDataSSRF_BODY', actionToUse: { count: {} } },
+									{ name: 'EC2MetaDataSSRF_QUERYARGUMENTS', actionToUse: { count: {} } },
+									// MCP clients' OAuth login paths (Codex) send no User-Agent
+									{ name: 'NoUserAgent_HEADER', actionToUse: { count: {} } },
+									// Editor file endpoints take the file name in ?path=; .log/.ini/.conf are legitimate docs
+									{ name: 'RestrictedExtensions_QUERYARGUMENTS', actionToUse: { count: {} } },
 								],
 							},
 						},
@@ -1308,6 +1312,36 @@ export class SpecboardStack extends cdk.Stack {
 			new wafv2.CfnWebACLAssociation(this, 'WebAclAssociation', {
 				resourceArn: alb.loadBalancerArn,
 				webAclArn: webAcl.attrArn,
+			});
+
+			// WAF requires the log group name to start with aws-waf-logs-
+			const wafLogGroup = new logs.LogGroup(this, 'WafLogGroup', {
+				logGroupName: `aws-waf-logs-${config.resourcePrefix}`,
+				retention: logs.RetentionDays.ONE_MONTH,
+				removalPolicy: cdk.RemovalPolicy.DESTROY,
+			});
+
+			// loggingFilter and the FieldToMatch entries are untyped in CDK, so their keys use CloudFormation casing
+			new wafv2.CfnLoggingConfiguration(this, 'WafLogging', {
+				resourceArn: webAcl.attrArn,
+				// GetAtt returns the ARN with a :* suffix, which WAF rejects; splitting it rather than
+				// building the ARN from the name keeps the dependency on the log group
+				logDestinationConfigs: [cdk.Fn.select(0, cdk.Fn.split(':*', wafLogGroup.logGroupArn))],
+				// Blocked requests from logged-in users would otherwise land here with live credentials
+				redactedFields: [
+					{ singleHeader: { Name: 'authorization' } },
+					{ singleHeader: { Name: 'cookie' } },
+				],
+				loggingFilter: {
+					DefaultBehavior: 'DROP',
+					Filters: [
+						{
+							Behavior: 'KEEP',
+							Requirement: 'MEETS_ANY',
+							Conditions: [{ ActionCondition: { Action: 'BLOCK' } }],
+						},
+					],
+				},
 			});
 		}
 
