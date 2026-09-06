@@ -1229,6 +1229,10 @@ export class SpecboardStack extends cdk.Stack {
 									{ name: 'CrossSiteScripting_BODY' },
 									{ name: 'EC2MetaDataSSRF_BODY' },
 									{ name: 'EC2MetaDataSSRF_QUERYARGUMENTS' },
+									// MCP clients' OAuth login paths (Codex via rmcp/reqwest) send no User-Agent
+									{ name: 'NoUserAgent_HEADER' },
+									// Editor file reads carry the file name in ?path=; .log/.ini/.conf are legitimate docs
+									{ name: 'RestrictedExtensions_QUERYARGUMENTS' },
 								],
 							},
 						},
@@ -1308,6 +1312,28 @@ export class SpecboardStack extends cdk.Stack {
 			new wafv2.CfnWebACLAssociation(this, 'WebAclAssociation', {
 				resourceArn: alb.loadBalancerArn,
 				webAclArn: webAcl.attrArn,
+			});
+
+			// WAF requires the log group name to start with aws-waf-logs- and the ARN without the :* suffix
+			const wafLogGroup = new logs.LogGroup(this, 'WafLogGroup', {
+				logGroupName: `aws-waf-logs-${config.resourcePrefix}`,
+				retention: logs.RetentionDays.ONE_MONTH,
+				removalPolicy: cdk.RemovalPolicy.DESTROY,
+			});
+
+			new wafv2.CfnLoggingConfiguration(this, 'WafLogging', {
+				resourceArn: webAcl.attrArn,
+				logDestinationConfigs: [cdk.Fn.select(0, cdk.Fn.split(':*', wafLogGroup.logGroupArn))],
+				loggingFilter: {
+					DefaultBehavior: 'DROP',
+					Filters: [
+						{
+							Behavior: 'KEEP',
+							Requirement: 'MEETS_ANY',
+							Conditions: [{ ActionCondition: { Action: 'BLOCK' } }],
+						},
+					],
+				},
 			});
 		}
 
