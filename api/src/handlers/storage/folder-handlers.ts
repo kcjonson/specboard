@@ -11,15 +11,14 @@ import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/
 import { getUserId } from './utils.ts';
 
 /**
- * Folder routes point a project at a directory on the API host's filesystem and shell out to
- * git there. Only the local storage provider works that way (dev compose with the host repo
- * mounted, the desktop shell). The cloud build never mounts a repository, so the routes are
- * not registered there and the paths 404 like any other unknown route.
+ * Adding a folder stats an arbitrary path on the API host and runs git there, so the route
+ * only exists where a repository is mounted (dev compose). Removing one is a plain DB write.
  */
 export function registerFolderRoutes<E extends Env>(app: Hono<E>, redis: Redis): void {
-	if (process.env.LOCAL_STORAGE_ENABLED !== 'true') return;
-	app.post('/api/projects/:projectSlug/folders', (context) => handleAddFolder(context, redis));
 	app.delete('/api/projects/:projectSlug/folders', (context) => handleRemoveFolder(context, redis));
+	if (process.env.LOCAL_STORAGE_ENABLED === 'true') {
+		app.post('/api/projects/:projectSlug/folders', (context) => handleAddFolder(context, redis));
+	}
 }
 
 /**
