@@ -190,16 +190,16 @@ export const epicTools: Tool[] = [
 				},
 				description: {
 					type: 'string',
-					description: 'New description (work items) or details (tasks)',
+					description: 'New description',
 				},
 				status: {
 					type: 'string',
-					description: 'New status. Work items: ready/in_progress/in_review/done. Tasks: ready/in_progress/blocked/done.',
+					description: 'New status: ready/in_progress/blocked/in_review/done. Any item type.',
 				},
 				sub_status: {
 					type: 'string',
 					enum: ['not_started', 'scoping', 'in_development', 'paused', 'needs_input', 'pr_open', 'complete'],
-					description: 'Detailed work state (work items only). Auto-updates board status at key transitions.',
+					description: 'Detailed work state. Auto-updates board status at key transitions.',
 				},
 				specs: {
 					type: 'array',
@@ -215,19 +215,19 @@ export const epicTools: Tool[] = [
 				},
 				branch_name: {
 					type: 'string',
-					description: 'Git branch name linked to this item (work items only)',
+					description: 'Git branch name linked to this item',
 				},
 				pr_url: {
 					type: 'string',
-					description: 'Pull request URL (work items only)',
+					description: 'Pull request URL',
 				},
 				notes: {
 					type: 'string',
-					description: 'Append a note to the item (work items only). Auto-prepends timestamp.',
+					description: 'Append an entry to the item\'s running notes log. Auto-prepends the date. Any item type.',
 				},
 				note: {
 					type: 'string',
-					description: 'Set note on a task — context for any outcome (completion, blocked, cut, etc.)',
+					description: 'Set the item\'s single note — context for any outcome (completion, blocked, cut, etc.). Any item type; replaces the previous value, unlike notes.',
 				},
 				blockers: {
 					type: 'array',
