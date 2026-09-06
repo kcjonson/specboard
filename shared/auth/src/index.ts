@@ -55,6 +55,7 @@ export {
 	requireScope,
 	getMcpToken,
 	recordMcpClientInfo,
+	sanitizeMcpClientInfo,
 	type McpClientInfo,
 	type McpTokenPayload,
 	type McpAuthVariables,

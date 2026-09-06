@@ -20,6 +20,10 @@ vi.mock('@specboard/auth', () => ({
 		await next();
 	},
 	recordMcpClientInfo: vi.fn(async () => {}),
+	sanitizeMcpClientInfo: vi.fn((client: { name: string; version?: string }) => {
+		const name = client.name.split('\u0000').join('');
+		return name ? { name, ...(client.version ? { version: client.version } : {}) } : undefined;
+	}),
 }));
 vi.mock('./tools/items/index.ts', () => ({ epicTools: [], handleEpicTool: vi.fn(async () => ({ content: [] })) }));
 vi.mock('./tools/projects.ts', () => ({ projectTools: [], handleProjectTool: vi.fn(async () => ({ content: [] })) }));
@@ -143,6 +147,18 @@ describe('POST /mcp', () => {
 		state.token.client = { name: 'claude-code', version: '2.0.0' };
 		await post(INITIALIZE);
 		expect(recordMcpClientInfo).not.toHaveBeenCalled();
+	});
+
+	it('stamps and records the sanitized clientInfo, and records nothing for an unusable name', async () => {
+		await post({ ...INITIALIZE, params: { ...INITIALIZE.params, clientInfo: { name: 'cc\u0000', version: '1' } } });
+		expect(recordMcpClientInfo).toHaveBeenCalledWith('token-1', { name: 'cc', version: '1' });
+		expect(await lastActor()).toMatchObject({ client: { name: 'cc', version: '1' } });
+
+		vi.mocked(recordMcpClientInfo).mockClear();
+		const { outgoing } = await post({ ...INITIALIZE, params: { ...INITIALIZE.params, clientInfo: { name: '\u0000', version: '1' } } });
+		expect(recordMcpClientInfo).not.toHaveBeenCalled();
+		expect(outgoing.headers['mcp-session-id']).toMatch(UUID);
+		expect(await lastActor()).not.toHaveProperty('client');
 	});
 
 	it('ignores initialize inside a batch (the transport rejects it) and mints nothing for it', async () => {

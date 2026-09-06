@@ -113,7 +113,7 @@ immutable because no update path maps it (the same enforcement as
 Observed agent presence: one row per (item, agent session) episode, keyed by the
 partial unique index on
 `(item_id, (actor->>'userId'), (actor->>'clientId'), (COALESCE(actor->>'sessionId', ''))) WHERE ended_at IS NULL`.
-The MCP transport is stateless (migration 027): the server mints a session id at
+The MCP transport is stateless (migration 028): the server mints a session id at
 initialize as a correlation token, the client echoes it on every later request,
 and the server holds no transport state for it and never rejects a request over
 it (a malformed id is dropped from provenance, nothing more), so a deploy never

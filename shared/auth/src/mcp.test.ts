@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import { createHash } from 'node:crypto';
-import { mcpAuthMiddleware, requireScope, getMcpToken, recordMcpClientInfo, type McpAuthVariables } from './mcp.ts';
+import { mcpAuthMiddleware, requireScope, getMcpToken, recordMcpClientInfo, sanitizeMcpClientInfo, type McpAuthVariables } from './mcp.ts';
 
 // Mock database
 vi.mock('@specboard/db', () => ({
@@ -716,29 +716,37 @@ describe('MCP auth middleware', () => {
 				.toEqual({ name: 'claude-code', version: '2.1.0' });
 		});
 
-		it('recordMcpClientInfo strips control characters and caps to the column widths by code point', async () => {
-			vi.mocked(query).mockResolvedValue({ rows: [], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] });
+		it('sanitizeMcpClientInfo strips control characters and caps to the column widths by code point', () => {
 			const astral = '\u{1F600}';
-			await recordMcpClientInfo('token-id', {
+			const client = sanitizeMcpClientInfo({
 				name: `bad\u0000name${astral.repeat(300)}`,
 				version: `v\u0007${'x'.repeat(100)}`,
-			});
+			})!;
 
-			const [sql, params] = vi.mocked(query).mock.calls[0]!;
-			expect(sql).toContain('SET client_name = $1, client_version = $2 WHERE id = $3');
-			const [name, version, id] = params as [string, string, string];
-			expect(name.startsWith('badname')).toBe(true);
-			expect(Array.from(name)).toHaveLength(255);
-			expect(name.endsWith(astral)).toBe(true);
-			expect(version).toBe(`v${'x'.repeat(63)}`);
-			expect(id).toBe('token-id');
+			expect(client.name.startsWith('badname')).toBe(true);
+			expect(Array.from(client.name)).toHaveLength(255);
+			expect(client.name.endsWith(astral)).toBe(true);
+			expect(client.version).toBe(`v${'x'.repeat(63)}`);
 		});
 
-		it('recordMcpClientInfo writes NULL for a missing version', async () => {
+		it('sanitizeMcpClientInfo yields nothing for an unusable name and omits an empty version', () => {
+			expect(sanitizeMcpClientInfo({ name: '\u0000\u0007' })).toBeUndefined();
+			expect(sanitizeMcpClientInfo({ name: '' })).toBeUndefined();
+			expect(sanitizeMcpClientInfo({ name: 'claude-code', version: '\u0000' })).toEqual({ name: 'claude-code' });
+		});
+
+		it('an empty stored client_name still round-trips (explicit null checks, not truthiness)', async () => {
+			expect((await payloadFor({ ...tokenRow, client_name: '', client_version: '' })).client)
+				.toEqual({ name: '', version: '' });
+		});
+
+		it('recordMcpClientInfo writes the values as given, NULL for a missing version', async () => {
 			vi.mocked(query).mockResolvedValue({ rows: [], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] });
 			await recordMcpClientInfo('token-id', { name: 'claude-code' });
 
-			expect(vi.mocked(query).mock.calls[0]![1]).toEqual(['claude-code', null, 'token-id']);
+			const [sql, params] = vi.mocked(query).mock.calls[0]!;
+			expect(sql).toContain('SET client_name = $1, client_version = $2 WHERE id = $3');
+			expect(params).toEqual(['claude-code', null, 'token-id']);
 		});
 	});
 });

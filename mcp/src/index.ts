@@ -7,7 +7,7 @@
  * - Discover projects (list_projects)
  * - Read epics and specs (human-defined work)
  * - Create and manage items and tasks (unified CRUD)
- * - Track progress via sub-status and notes
+ * - Track progress via sub-status and the item activity log
  *
  * Runs as an HTTP server using Hono with the MCP Streamable HTTP transport (see
  * app.ts). Requires an OAuth 2.1 Bearer token for /mcp endpoints.

@@ -206,8 +206,8 @@ export function mcpAuthMiddleware(options: McpAuthMiddlewareOptions = {}) {
 			clientId: tokenRecord.client_id,
 			deviceName: tokenRecord.device_name,
 			scopes: tokenRecord.scopes,
-			...(tokenRecord.client_name
-				? { client: { name: tokenRecord.client_name, ...(tokenRecord.client_version ? { version: tokenRecord.client_version } : {}) } }
+			...(tokenRecord.client_name !== null
+				? { client: { name: tokenRecord.client_name, ...(tokenRecord.client_version !== null ? { version: tokenRecord.client_version } : {}) } }
 				: {}),
 		});
 
@@ -222,14 +222,27 @@ function storableText(value: string, max: number): string {
 }
 
 /**
+ * The storable form of a protocol clientInfo, or undefined when nothing usable
+ * survives (a name that is empty or all control characters). Callers stamp,
+ * compare, and record this value, so what the token row hands back later is
+ * identical to it.
+ */
+export function sanitizeMcpClientInfo(client: { name: string; version?: string }): McpClientInfo | undefined {
+	const name = storableText(client.name, 255);
+	if (!name) return undefined;
+	const version = client.version ? storableText(client.version, 64) : '';
+	return version ? { name, version } : { name };
+}
+
+/**
  * Remember the MCP protocol clientInfo a token holder sent at initialize. The MCP
  * transport is stateless, so this is what later tool calls read to stamp the
- * client on provenance actors.
+ * client on provenance actors. Expects a value from sanitizeMcpClientInfo.
  */
 export async function recordMcpClientInfo(tokenId: string, client: McpClientInfo): Promise<void> {
 	await query(
 		'UPDATE mcp_tokens SET client_name = $1, client_version = $2 WHERE id = $3',
-		[storableText(client.name, 255), client.version ? storableText(client.version, 64) : null, tokenId]
+		[client.name, client.version ?? null, tokenId]
 	);
 }
 
