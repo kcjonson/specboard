@@ -33,10 +33,11 @@ vi.mock('@specboard/db', () => ({
 }));
 
 import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, NoteValidationError } from '@specboard/db';
+import type { AgentActor } from '@specboard/db';
 import { updateItem } from './writes.ts';
 
 const PROJECT = { id: 'proj-1', slug: 'specboard', key: 'SB' };
-const ACTOR = { type: 'agent', userId: 'user-1', sessionId: 's-1' } as never;
+const ACTOR: AgentActor = { type: 'agent', userId: 'user-1', clientId: 'client-1', sessionId: 's-1' };
 
 const mockUpdate = vi.mocked(updateItemService);
 const mockAddNote = vi.mocked(addItemNote);
@@ -51,6 +52,13 @@ describe('update_item status shortcuts', () => {
 
 		expect(vi.mocked(startItem)).toHaveBeenCalled();
 		expect(mockAddNote).toHaveBeenCalledWith('proj-1', 1, 'picked this up', ACTOR);
+	});
+
+	it('names the shortcut status when sub_status rides along, so nothing is derived', async () => {
+		await updateItem(PROJECT, { item_key: 'SB-1', status: 'in_progress', sub_status: 'complete' }, ACTOR);
+
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { subStatus: 'complete', status: 'in_progress' });
+		expect(vi.mocked(startItem)).toHaveBeenCalled();
 	});
 
 	it('applies branch_name sent with status in_progress', async () => {

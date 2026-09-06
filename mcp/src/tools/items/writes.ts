@@ -262,6 +262,10 @@ export async function updateItem(
 	if (args.sub_status !== undefined) fields.subStatus = args.sub_status as SubStatus;
 	if (args.branch_name !== undefined) fields.branchName = args.branch_name as string;
 	if (args.pr_url !== undefined) fields.prUrl = args.pr_url as string;
+	// The service derives a status from sub_status only when none is given, and a
+	// derived 'done' clears blockers before the shortcut's own transition runs.
+	// Naming the shortcut status here keeps it authoritative.
+	if (fields.subStatus !== undefined && status !== undefined) fields.status = status;
 	const hasFields = Object.keys(fields).length > 0;
 
 	// A block has to say why: either a log entry or the blocker rows themselves.
