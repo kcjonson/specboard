@@ -158,6 +158,8 @@ Developer running the **Electron desktop app** for:
 
 **Note:** Local mode is not available in the browser. Browser users must use cloud mode.
 
+The API only registers the folder routes when it starts with `LOCAL_STORAGE_ENABLED=true`. The dev compose stack sets it (the host repo is mounted at `/host/specboard`); the cloud build does not, so a web user cannot point a project at a path on the API container.
+
 ### Add Folder Flow
 
 ```

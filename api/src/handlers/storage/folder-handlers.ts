@@ -2,7 +2,7 @@
  * Folder management handlers
  */
 
-import type { Context } from 'hono';
+import type { Context, Env, Hono } from 'hono';
 import type { Redis } from 'ioredis';
 import fs from 'fs/promises';
 import { addFolder, removeFolder, resolveProjectSlug } from '@specboard/db';
@@ -11,10 +11,22 @@ import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/
 import { getUserId } from './utils.ts';
 
 /**
+ * Folder routes point a project at a directory on the API host's filesystem and shell out to
+ * git there. Only the local storage provider works that way (dev compose with the host repo
+ * mounted, the desktop shell). The cloud build never mounts a repository, so the routes are
+ * not registered there and the paths 404 like any other unknown route.
+ */
+export function registerFolderRoutes<E extends Env>(app: Hono<E>, redis: Redis): void {
+	if (process.env.LOCAL_STORAGE_ENABLED !== 'true') return;
+	app.post('/api/projects/:projectSlug/folders', (context) => handleAddFolder(context, redis));
+	app.delete('/api/projects/:projectSlug/folders', (context) => handleRemoveFolder(context, redis));
+}
+
+/**
  * POST /api/projects/:projectSlug/folders
  * Add a folder to the project (validates git repository)
  */
-export async function handleAddFolder(context: Context, redis: Redis): Promise<Response> {
+async function handleAddFolder(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
 	if (!userId) {
 		return context.json({ error: 'Unauthorized' }, 401);
@@ -143,7 +155,7 @@ export async function handleAddFolder(context: Context, redis: Redis): Promise<R
  * DELETE /api/projects/:projectSlug/folders?path=...
  * Remove a folder from the project (doesn't delete files)
  */
-export async function handleRemoveFolder(context: Context, redis: Redis): Promise<Response> {
+async function handleRemoveFolder(context: Context, redis: Redis): Promise<Response> {
 	const userId = await getUserId(context, redis);
 	if (!userId) {
 		return context.json({ error: 'Unauthorized' }, 401);
