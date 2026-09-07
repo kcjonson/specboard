@@ -79,15 +79,15 @@ export function UIDemo(): JSX.Element {
 
 					<div class={styles.subsection}>
 						<h3 class={styles.subsectionTitle}>Pressed toggle (secondary + aria-pressed)</h3>
-						<p class={styles.sectionDesc}>A setting that lives in a row of utility buttons, like the table's "Show done". Show a check while it is on.</p>
+						<p class={styles.sectionDesc}>A setting that lives in a row of utility buttons, like the table's "Show done". Lead with a checkbox icon in both states so the width never shifts on toggle.</p>
 						<div class={styles.row}>
 							<Button class="secondary size-sm" aria-pressed={pressed} onClick={() => setPressed(!pressed)}>
-								{pressed && <Icon name="check" class="size-sm" />}
+								<Icon name={pressed ? 'checkbox-checked' : 'checkbox-unchecked'} class="size-sm" />
 								Show done
 							</Button>
-							<Button class="secondary" aria-pressed={true}><Icon name="check" class="size-sm" /> On</Button>
-							<Button class="secondary" aria-pressed={false}>Off</Button>
-							<Button class="secondary" aria-pressed={true} disabled><Icon name="check" class="size-sm" /> Disabled on</Button>
+							<Button class="secondary" aria-pressed={true}><Icon name="checkbox-checked" class="size-sm" /> On</Button>
+							<Button class="secondary" aria-pressed={false}><Icon name="checkbox-unchecked" class="size-sm" /> Off</Button>
+							<Button class="secondary" aria-pressed={true} disabled><Icon name="checkbox-checked" class="size-sm" /> Disabled on</Button>
 						</div>
 					</div>
 				</section>

@@ -133,7 +133,8 @@ export function Table({
 					Collapse all
 				</button>
 				<Button class={`secondary size-sm ${styles.toggle}`} aria-pressed={showDone} onClick={toggleShowDone}>
-					{showDone && <Icon name="check" class="size-sm" />}
+					{/* Both states carry a box so the button's width never shifts on toggle. */}
+					<Icon name={showDone ? 'checkbox-checked' : 'checkbox-unchecked'} class="size-sm" />
 					Show done
 				</Button>
 			</div>
