@@ -44,6 +44,24 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		fetchProjects();
 	}, [fetchProjects]);
 
+	// A deep link (?edit=<slug>) opens that project's settings dialog once the list is
+	// in, then drops the param so a reload or Back doesn't reopen it.
+	useEffect(() => {
+		if (loading) return;
+		const params = new URLSearchParams(window.location.search);
+		const editSlug = params.get('edit');
+		if (!editSlug) return;
+		params.delete('edit');
+		const search = params.toString();
+		window.history.replaceState(
+			window.history.state,
+			'',
+			window.location.pathname + (search ? `?${search}` : '') + window.location.hash
+		);
+		const project = projects.find((p) => p.slug === editSlug);
+		if (project) setDialogProject(project);
+	}, [loading, projects]);
+
 	function handleProjectClick(project: Project): void {
 		// Store last project in cookie
 		setCookie('lastProjectSlug', project.slug, 30);

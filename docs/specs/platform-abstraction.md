@@ -264,6 +264,10 @@ FileDialogOptions:
     extensions: string[]
 ```
 
+### Runtime detection today
+
+The desktop shells load the same web bundle and their preload exposes a `PlatformBridge` on `window.platform` (`openExternal`, `showOpenDialog`). `@specboard/platform` exports `getPlatformBridge()`, which returns that object or `null` in the browser. Shared code that must behave differently on the desktop (offering a local folder, for example) asks for the bridge rather than sniffing the user agent; this is the seed of the `platform` / `isNative` / `isWeb` operations above until the full provider lands.
+
 ### Electron Implementation
 
 Uses Electron's `dialog` and `shell` modules:

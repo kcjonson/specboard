@@ -38,6 +38,7 @@ export default defineConfig({
 			{ find: /^@specboard\/ui$/, replacement: at('shared/ui/src') },
 			{ find: /^@specboard\/router$/, replacement: at('shared/router/src') },
 			{ find: /^@specboard\/models$/, replacement: at('shared/models/src') },
+			{ find: /^@specboard\/platform$/, replacement: at('shared/platform/src') },
 			{ find: /^@specboard\/fetch$/, replacement: at('shared/fetch/src') },
 			{ find: /^@specboard\/core(\/.*)?$/, replacement: `${at('shared/core/src')}$1` },
 			{ find: /^@specboard\/telemetry$/, replacement: at('shared/telemetry/src') },

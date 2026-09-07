@@ -26,3 +26,25 @@ export interface System {
 	showOpenDialog(options: { directory?: boolean }): Promise<string | null>;
 	showSaveDialog(options: { defaultPath?: string }): Promise<string | null>;
 }
+
+/**
+ * What the desktop preload exposes on `window.platform` (see docs-desktop/src/preload.ts).
+ * The browser has no bridge, so its absence is how shared code knows it is running on the
+ * web rather than inside a shell with filesystem access.
+ */
+export interface PlatformBridge {
+	openExternal(url: string): Promise<void>;
+	showOpenDialog(options: { directory?: boolean }): Promise<string | null>;
+}
+
+declare global {
+	interface Window {
+		platform?: PlatformBridge;
+	}
+}
+
+/** The desktop bridge, or null in the browser. */
+export function getPlatformBridge(): PlatformBridge | null {
+	if (typeof window === 'undefined') return null;
+	return window.platform ?? null;
+}
