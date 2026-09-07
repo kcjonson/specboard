@@ -165,6 +165,11 @@ docker compose run --rm api npm test
 docker compose run --rm api npm run lint
 ```
 
+`npm test` runs each workspace's own `vitest run`, then the component tests under
+`shared/planning` and `shared/projects` from the root `vitest.config.ts`. Those two
+directories are not workspaces (web consumes them through the `@shared/*` path aliases),
+so nothing else would pick their tests up.
+
 ### Branch Strategy
 - `main` - stable, deployable code
 - Feature branches off `main`
