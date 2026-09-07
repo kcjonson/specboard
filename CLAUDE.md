@@ -232,6 +232,12 @@ infra/                     # AWS CDK infrastructure
 - ESLint for code quality
 - No Prettier
 
+**Dependencies:**
+- Every external dependency is hard-pinned to an exact version. No `^`, no `~`, no ranges.
+- `save-exact=true` in `.npmrc` keeps `npm install <pkg>` from writing a caret back.
+- Workspace-internal `@specboard/*` deps stay `"*"`; npm links those locally, they never resolve from the registry.
+- Upgrades are deliberate: bump the version in `package.json`, run `npm install --package-lock-only`, and ship the version bump and the lockfile in the same PR. A lockfile diff in a PR that isn't about dependencies means something re-resolved by accident.
+
 ## Documentation System
 
 ### When Asked "What are we working on?" or "Where are we?"

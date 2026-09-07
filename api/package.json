@@ -11,21 +11,21 @@
 		"lint:fix": "eslint src --fix"
 	},
 	"dependencies": {
-		"@anthropic-ai/sdk": "^0.71.2",
-		"@aws-sdk/client-lambda": "^3.1119.0",
-		"@hono/node-server": "^2.1.1",
-		"@simplewebauthn/server": "^13.3.2",
+		"@anthropic-ai/sdk": "0.71.2",
+		"@aws-sdk/client-lambda": "3.1119.0",
+		"@hono/node-server": "2.1.1",
+		"@simplewebauthn/server": "13.3.3",
 		"@specboard/auth": "*",
 		"@specboard/core": "*",
 		"@specboard/db": "*",
 		"@specboard/email": "*",
 		"@specboard/sync-lambda": "*",
-		"hono": "^4.13.3",
-		"ioredis": "^5.4.2"
+		"hono": "4.13.5",
+		"ioredis": "5.11.1"
 	},
 	"devDependencies": {
-		"@types/node": "^22.10.2",
-		"tsx": "^4.23.12",
-		"typescript": "^5.7.2"
+		"@types/node": "22.19.5",
+		"tsx": "4.23.12",
+		"typescript": "5.9.3"
 	}
 }

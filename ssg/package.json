@@ -11,13 +11,13 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
-		"preact": "^10.25.4",
-		"preact-render-to-string": "^6.5.11"
+		"preact": "10.29.8",
+		"preact-render-to-string": "6.7.0"
 	},
 	"devDependencies": {
 		"@specboard/web": "*",
-		"@types/node": "^22.10.2",
-		"tsx": "^4.23.12",
-		"typescript": "^5.7.2"
+		"@types/node": "22.19.5",
+		"tsx": "4.23.12",
+		"typescript": "5.9.3"
 	}
 }

@@ -19,17 +19,17 @@
 		"@specboard/router": "*",
 		"@specboard/telemetry": "*",
 		"@specboard/ui": "*",
-		"is-hotkey": "^0.2.0",
-		"preact": "^10.25.4",
-		"slate": "^0.120.0",
-		"slate-history": "^0.113.1",
-		"slate-react": "^0.120.0"
+		"is-hotkey": "0.2.0",
+		"preact": "10.29.8",
+		"slate": "0.120.0",
+		"slate-history": "0.113.1",
+		"slate-react": "0.120.0"
 	},
 	"devDependencies": {
-		"@babel/plugin-proposal-decorators": "^7.28.0",
-		"@preact/preset-vite": "^2.10.6",
-		"@types/is-hotkey": "^0.1.10",
-		"typescript": "^5.7.2",
-		"vite": "^7.3.6"
+		"@babel/plugin-proposal-decorators": "7.29.7",
+		"@preact/preset-vite": "2.10.6",
+		"@types/is-hotkey": "0.1.10",
+		"typescript": "5.9.3",
+		"vite": "7.3.6"
 	}
 }

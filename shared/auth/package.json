@@ -16,13 +16,13 @@
 	},
 	"dependencies": {
 		"@specboard/db": "*",
-		"bcrypt": "^6.0.0",
-		"hono": "^4.13.3",
-		"ioredis": "^5.6.1"
+		"bcrypt": "6.0.0",
+		"hono": "4.13.5",
+		"ioredis": "5.11.1"
 	},
 	"devDependencies": {
-		"@types/bcrypt": "^6.0.0",
-		"@types/node": "^22.10.2",
-		"typescript": "^5.7.2"
+		"@types/bcrypt": "6.0.0",
+		"@types/node": "22.19.5",
+		"typescript": "5.9.3"
 	}
 }
