@@ -17,10 +17,12 @@ vi.mock('@specboard/db', () => ({
 	createProject: vi.fn(),
 	updateProject: vi.fn(),
 	deleteProject: vi.fn(),
-	ProjectIdentifierTakenError: class extends Error {
-		field = 'slug';
+	ProjectIdentifierTakenError: class extends Error {},
+	ProjectHasRepositoryError: class extends Error {
+		constructor() {
+			super('Project already has a repository');
+		}
 	},
-	ProjectHasRepositoryError: class extends Error {},
 }));
 
 vi.mock('@specboard/auth', () => ({
@@ -30,11 +32,12 @@ vi.mock('@specboard/auth', () => ({
 
 vi.mock('./github-sync.ts', () => ({
 	startGitHubInitialSync: vi.fn(async () => undefined),
+	markSyncStartFailed: vi.fn(async () => undefined),
 }));
 
 import { getSession } from '@specboard/auth';
 import { resolveProjectSlug, createProject, updateProject, ProjectHasRepositoryError } from '@specboard/db';
-import { startGitHubInitialSync } from './github-sync.ts';
+import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
 import { handleCreateProject, handleUpdateProject } from './projects.ts';
 
 const REPOSITORY = {
@@ -120,12 +123,26 @@ describe('handleUpdateProject', () => {
 		expect(body.storageMode).toBe('cloud');
 	});
 
-	it('leaves the repository alone and starts no sync when the body has none', async () => {
-		const res = await put({ name: 'Renamed' });
+	it.each([
+		['omitted', { name: 'Renamed' }],
+		['null', { name: 'Renamed', repository: null }],
+	])('leaves the repository alone and starts no sync when the body\'s repository is %s', async (_label, body) => {
+		const res = await put(body);
 
 		expect(res.status).toBe(200);
 		expect(vi.mocked(updateProject)).toHaveBeenCalledWith('proj-1', 'user-1', expect.objectContaining({ repository: undefined }));
 		expect(vi.mocked(startGitHubInitialSync)).not.toHaveBeenCalled();
+	});
+
+	it('records a sync that could not start on the project instead of failing the request', async () => {
+		vi.mocked(startGitHubInitialSync).mockRejectedValueOnce(new Error('GitHub not connected'));
+
+		const res = await put({ repository: REPOSITORY });
+
+		expect(res.status).toBe(200);
+		await vi.waitFor(() => {
+			expect(vi.mocked(markSyncStartFailed)).toHaveBeenCalledWith('proj-1', 'GitHub not connected');
+		});
 	});
 
 	it('returns 409 when the project already has a repository', async () => {
@@ -134,7 +151,7 @@ describe('handleUpdateProject', () => {
 		const res = await put({ repository: REPOSITORY });
 
 		expect(res.status).toBe(409);
-		expect(await res.json()).toMatchObject({ code: 'REPOSITORY_ALREADY_SET' });
+		expect(await res.json()).toEqual({ error: 'Project already has a repository', code: 'REPOSITORY_ALREADY_SET' });
 		expect(vi.mocked(startGitHubInitialSync)).not.toHaveBeenCalled();
 	});
 
@@ -152,6 +169,7 @@ describe('handleUpdateProject', () => {
 
 		expect(res.status).toBe(400);
 		expect(await res.json()).toEqual({ error });
+		expect(vi.mocked(resolveProjectSlug)).not.toHaveBeenCalled();
 		expect(vi.mocked(updateProject)).not.toHaveBeenCalled();
 		expect(vi.mocked(startGitHubInitialSync)).not.toHaveBeenCalled();
 	});
@@ -164,7 +182,7 @@ describe('handleUpdateProject', () => {
 		}));
 	});
 
-	it('returns 404 without validating anything else when the slug is not the caller\'s', async () => {
+	it('returns 404 and never reaches updateProject when the slug is not the caller\'s', async () => {
 		vi.mocked(resolveProjectSlug).mockResolvedValue(null);
 
 		const res = await put({ repository: REPOSITORY });

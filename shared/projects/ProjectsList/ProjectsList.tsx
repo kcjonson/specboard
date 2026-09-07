@@ -24,8 +24,9 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [error, setError] = useState<string | null>(null);
 	// Dialog state: null = closed, undefined = create mode, Project = edit mode
 	const [dialogProject, setDialogProject] = useState<Project | null | undefined>(null);
-	// Sync progress dialog state: shown after a save that attached a repository
-	const [syncingProject, setSyncingProject] = useState<{ slug: string; name: string } | null>(null);
+	// Sync progress dialog state: shown after a save that attached a repository. A new
+	// project is opened on dismiss; an existing one leaves the user where they were.
+	const [syncingProject, setSyncingProject] = useState<{ slug: string; name: string; isNew: boolean } | null>(null);
 
 	const fetchProjects = useCallback(async (): Promise<void> => {
 		try {
@@ -86,7 +87,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 				if (isCloudRepository(project.repository)) {
 					// Repository configured — show sync progress dialog
-					setSyncingProject({ slug: project.slug, name: project.name });
+					setSyncingProject({ slug: project.slug, name: project.name, isNew: true });
 				} else {
 					// No repository — navigate immediately
 					setCookie('lastProjectSlug', project.slug, 30);
@@ -96,8 +97,9 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			} else if (dialogProject) {
 				// Edit mode
 				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.slug}`, apiData);
+				// Merge rather than replace: the update response carries no item counts.
 				setProjects((prev) =>
-					prev.map((p) => (p.id === updated.id ? { ...updated } : p))
+					prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
 				);
 				// Refresh the cookies if this is the current project. Compare against the
 				// slug we edited, not the returned one — the slug is user-editable now, so
@@ -111,8 +113,8 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 				// Attaching a repository starts the initial clone, so follow it the same way
 				// a create with a repository does.
-				if (!isCloudRepository(dialogProject.repository) && isCloudRepository(updated.repository)) {
-					setSyncingProject({ slug: updated.slug, name: updated.name });
+				if (data.repository !== undefined) {
+					setSyncingProject({ slug: updated.slug, name: updated.name, isNew: false });
 				}
 			}
 		} catch (err) {
@@ -149,9 +151,14 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 	function handleSyncDismiss(): void {
 		if (!syncingProject) return;
+		setSyncingProject(null);
+		if (!syncingProject.isNew) {
+			// Refetch so the card picks up the sync status the server set after replying.
+			void fetchProjects();
+			return;
+		}
 		setCookie('lastProjectSlug', syncingProject.slug, 30);
 		setCookie('lastProjectName', syncingProject.name, 30);
-		setSyncingProject(null);
 		navigate(`/projects/${syncingProject.slug}/planning`);
 	}
 

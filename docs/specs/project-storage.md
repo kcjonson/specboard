@@ -55,7 +55,7 @@ The frontend is storage-agnostic—it uses the same API regardless of mode.
 Frontend (browser)
     │
     ├── POST /api/projects/:projectSlug/folders     ← Add folder (local mode)
-    ├── POST /api/projects/:projectSlug/repository  ← Connect GitHub (cloud mode)
+    ├── PUT  /api/projects/:projectSlug {repository} ← Connect GitHub (cloud mode)
     ├── GET  /api/projects/:projectSlug/tree        ← List files
     ├── GET  /api/projects/:projectSlug/files?path= ← Read file
     └── PUT  /api/projects/:projectSlug/files?path= ← Write file
@@ -88,7 +88,7 @@ interface Project {
   ownerId: string
 
   // Storage configuration
-  storageMode: 'local' | 'cloud'
+  storageMode: 'none' | 'local' | 'cloud'
   repository: RepositoryConfig
   rootPaths: string[]  // Paths within repo to show, e.g., ['/docs', '/specs']
 
@@ -142,7 +142,7 @@ ALTER TABLE projects
 --   },
 --   "branch": "main"
 -- }
--- root_paths: ["/docs"]
+-- root_paths: ["/"]  (cloud projects always expose the whole checkout)
 ```
 
 ---
@@ -243,7 +243,7 @@ async function addFolder(projectId: string, folderPath: string): Promise<void> {
 
 A repository is attached either when the project is created or later from the Edit
 Project dialog, which shows the repository picker whenever the project has no
-repository yet (the Pages tab's empty state links there).
+repository yet.
 
 ```
 1. User opens Create Project, or Edit Project on a project with no repository
@@ -365,7 +365,10 @@ along in the same request.
 }
 ```
 
-The initial sync starts as a side effect after the response is sent; poll
+The response does not wait for or report on the initial sync. It is started as a side
+effect; if it cannot start (GitHub not connected, sync invoke failed) the project's
+`syncStatus` becomes `failed` with the reason in `syncError`, and
+`POST /api/projects/:projectSlug/sync/initial` retries. Poll
 `GET /api/projects/:projectSlug/sync/status` for progress.
 
 **Error Responses:**
@@ -520,6 +523,10 @@ To prevent performance issues and abuse, the following limits are enforced:
 ---
 
 ## Cloud Mode: Sparse Checkout
+
+Not implemented: cloud projects are always attached with `rootPaths: ['/']` today, so the
+whole repository is cloned. This section describes the intended design once narrower
+roots are supported.
 
 For cloud mode, when a user connects a repository with specific root paths (e.g., `/docs`), the backend should use **git sparse-checkout** to avoid cloning the entire repository. This is especially important for large monorepos.
 

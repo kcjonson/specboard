@@ -247,7 +247,7 @@ async function insertProject(
 }
 
 /** Cloud projects always expose the whole checkout; root paths are a local-mode concept. */
-const CLOUD_ROOT_PATHS = ['/'];
+const CLOUD_ROOT_PATHS: readonly string[] = ['/'];
 
 function toCloudRepository(input: RepositoryConfigInput): RepositoryConfigCloud {
 	return {
@@ -360,7 +360,18 @@ export async function updateProject(
 		values.push(data.key);
 	}
 	if (data.repository !== undefined) {
-		updates.push("storage_mode = 'cloud'", `repository = $${paramIndex++}`, `root_paths = $${paramIndex++}`);
+		updates.push(
+			"storage_mode = 'cloud'",
+			`repository = $${paramIndex++}`,
+			`root_paths = $${paramIndex++}`,
+			// A project can return to 'none' via removeFolder without touching its sync
+			// columns; a stale pending status or commit sha must not leak into the new repo.
+			'last_synced_commit_sha = NULL',
+			'sync_status = NULL',
+			'sync_started_at = NULL',
+			'sync_completed_at = NULL',
+			'sync_error = NULL'
+		);
 		values.push(JSON.stringify(toCloudRepository(data.repository)), JSON.stringify(CLOUD_ROOT_PATHS));
 		// The guard lives in the WHERE clause so two concurrent attaches can't both win.
 		conditions.push("storage_mode = 'none'");

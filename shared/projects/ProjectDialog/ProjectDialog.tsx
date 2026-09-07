@@ -381,7 +381,7 @@ export function ProjectDialog({
 					<div class={styles.repositorySection}>
 						<div class={styles.sectionHeader}>
 							<span class={styles.labelText}>Repository (optional)</span>
-							<span class={styles.hint}>Connect a GitHub repository to store documents</span>
+							<span class={styles.hint}>Connect a GitHub repository to store documents. Once connected it can't be changed.</span>
 						</div>
 
 						{githubLoading ? (

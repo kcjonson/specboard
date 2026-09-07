@@ -20,7 +20,7 @@ import {
 import { isValidProjectSlug, isValidProjectKey } from '@specboard/core/identifiers';
 import { projectResponseToApi } from '../transform.ts';
 import { isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
-import { startGitHubInitialSync } from './github-sync.ts';
+import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
@@ -82,10 +82,18 @@ function validateRepository(repository: unknown): RepositoryValidation {
 	return { repository: { provider: 'github', owner, repo, branch, url } };
 }
 
-/** Kick off the first clone of a newly attached repository without holding the response. */
+/**
+ * Kick off the first clone of a newly attached repository without holding the response.
+ * The project is already in cloud mode, so a start failure is written to its sync
+ * status; otherwise nothing in the UI would offer a retry.
+ */
 function queueInitialSync(projectId: string, userId: string): void {
-	void startGitHubInitialSync(projectId, userId).catch((err) => {
+	void startGitHubInitialSync(projectId, userId).catch(async (err: unknown) => {
 		console.error('Failed to start GitHub initial sync:', err);
+		const message = err instanceof Error ? err.message : 'Failed to start sync';
+		await markSyncStartFailed(projectId, message).catch((markErr) => {
+			console.error('Failed to record sync start failure:', markErr);
+		});
 	});
 }
 
