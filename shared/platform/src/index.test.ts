@@ -15,10 +15,7 @@ describe('getPlatformBridge', () => {
 	});
 
 	it('returns the bridge the desktop preload exposes', () => {
-		const bridge = {
-			openExternal: async () => {},
-			showOpenDialog: async () => '/repo/docs',
-		};
+		const bridge = { openExternal: async () => {} };
 		window.platform = bridge;
 		expect(getPlatformBridge()).toBe(bridge);
 	});

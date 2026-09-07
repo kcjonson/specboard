@@ -45,9 +45,10 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	}, [fetchProjects]);
 
 	// A deep link (?edit=<slug>) opens that project's settings dialog once the list is
-	// in, then drops the param so a reload or Back doesn't reopen it.
+	// in, then drops the param so a reload or Back doesn't reopen it. A failed load keeps
+	// the param so Retry can still honour it.
 	useEffect(() => {
-		if (loading) return;
+		if (loading || error) return;
 		const params = new URLSearchParams(window.location.search);
 		const editSlug = params.get('edit');
 		if (!editSlug) return;
@@ -60,7 +61,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		);
 		const project = projects.find((p) => p.slug === editSlug);
 		if (project) setDialogProject(project);
-	}, [loading, projects]);
+	}, [loading, error, projects]);
 
 	function handleProjectClick(project: Project): void {
 		// Store last project in cookie

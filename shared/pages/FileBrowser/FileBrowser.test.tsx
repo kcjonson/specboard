@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render } from '@testing-library/preact';
+import { render, fireEvent, waitFor } from '@testing-library/preact';
 import { FileBrowser } from './FileBrowser';
 
 const post = vi.fn();
@@ -43,14 +43,26 @@ describe('FileBrowser with no repository', () => {
 		);
 	});
 
-	it('offers Add Folder inside the desktop shell', async () => {
-		window.platform = {
-			openExternal: async () => {},
-			showOpenDialog: async () => null,
-		};
+	it('still points at settings when the shell exposes no folder picker', async () => {
+		window.platform = { openExternal: async () => {} };
 		const { findByText, queryByText } = render(<FileBrowser projectSlug="specboard" />);
 
-		await findByText('+ Add Folder');
+		await findByText('No repository connected');
+		expect(queryByText('+ Add Folder')).toBeNull();
+	});
+
+	it('offers Add Folder when the shell has a folder picker, and adds what it picks', async () => {
+		const showOpenDialog = vi.fn(async () => '/repo/docs');
+		window.platform = { showOpenDialog };
+		const { findByText, queryByText } = render(<FileBrowser projectSlug="specboard" />);
+
+		const button = await findByText('+ Add Folder');
 		expect(queryByText('No repository connected')).toBeNull();
+
+		fireEvent.click(button);
+		await waitFor(() =>
+			expect(post).toHaveBeenCalledWith('/api/projects/specboard/folders', { path: '/repo/docs' })
+		);
+		expect(showOpenDialog).toHaveBeenCalledWith({ directory: true });
 	});
 });

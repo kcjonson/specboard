@@ -158,7 +158,7 @@ Developer running the **Electron desktop app** for:
 
 **Note:** Local mode is not available in the browser. Browser users must use cloud mode.
 
-The file browser decides which empty state to show by asking `@specboard/platform` for the desktop bridge (`getPlatformBridge()`). Inside the desktop shell it offers "Add Folder"; in the browser, where there is no bridge, a project without a repository gets a note that pages live in a GitHub repository and a link to the project's settings dialog (`/projects?edit=<slug>`).
+The file browser decides which empty state to show by asking `@specboard/platform` for the desktop bridge (`getPlatformBridge()`) and checking for `showOpenDialog`. With it, the browser offers "Add Folder" and opens that picker; without it (the browser, or a shell that exposes no picker) a project without a repository gets a note that pages come from a GitHub repository and a link to the project's settings dialog (`/projects?edit=<slug>`).
 
 ### Add Folder Flow
 

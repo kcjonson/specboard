@@ -113,9 +113,10 @@ export function FileBrowser({
 	// Guard against rapid retry clicks
 	const [retryingSync, setRetryingSync] = useState(false);
 
-	// Local mode (pointing a project at a folder on this machine) only exists inside the
-	// desktop shell. In the browser the only way to get files is a GitHub repository.
-	const canAddLocalFolder = getPlatformBridge() !== null;
+	// Local mode (pointing a project at a folder on this machine) needs the desktop
+	// shell's folder picker. The browser has no bridge, and the planning shell's bridge
+	// has no picker; for both, the only way to get files is a GitHub repository.
+	const showOpenDialog = getPlatformBridge()?.showOpenDialog;
 
 	// Track previous selectedPath to avoid unnecessary expandToFile calls
 	const prevSelectedPathRef = useRef<string | undefined>(undefined);
@@ -340,7 +341,8 @@ export function FileBrowser({
 
 	// Handle add folder
 	const handleAddFolder = async (): Promise<void> => {
-		const path = window.prompt('Enter folder path (absolute path to a git repository folder):');
+		if (!showOpenDialog) return;
+		const path = await showOpenDialog({ directory: true });
 		if (!path) return;
 
 		try {
@@ -504,7 +506,7 @@ export function FileBrowser({
 								{retryingSync ? 'Retrying...' : 'Retry Sync'}
 							</Button>
 						</>
-					) : canAddLocalFolder ? (
+					) : showOpenDialog ? (
 						<>
 							<div class={styles.emptyIcon}><Icon name="folder" class="size-2xl" /></div>
 							<div class={styles.emptyTitle}>No folders added</div>
@@ -520,7 +522,7 @@ export function FileBrowser({
 							<div class={styles.emptyIcon}><Icon name="github" class="size-2xl" /></div>
 							<div class={styles.emptyTitle}>No repository connected</div>
 							<div class={styles.emptyHint}>
-								Pages live in a GitHub repository. Connect one in this project's settings.
+								Pages come from a GitHub repository. This project doesn't have one yet.
 							</div>
 							<a href={`/projects?edit=${projectSlug}`} class={styles.settingsLink}>
 								Open project settings

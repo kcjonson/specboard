@@ -28,23 +28,20 @@ export interface System {
 }
 
 /**
- * What the desktop preload exposes on `window.platform` (see docs-desktop/src/preload.ts).
- * The browser has no bridge, so its absence is how shared code knows it is running on the
- * web rather than inside a shell with filesystem access.
+ * The desktop preload exposes part of `System` on `window.platform` (see
+ * docs-desktop/src/preload.ts and planning-desktop/src/preload.ts; each shell exposes
+ * only what it needs). The browser has no bridge, so its absence is how shared code
+ * knows it is running on the web, and a missing method is how it knows a shell lacks
+ * that capability.
  */
-export interface PlatformBridge {
-	openExternal(url: string): Promise<void>;
-	showOpenDialog(options: { directory?: boolean }): Promise<string | null>;
-}
-
 declare global {
 	interface Window {
-		platform?: PlatformBridge;
+		platform?: Partial<System>;
 	}
 }
 
 /** The desktop bridge, or null in the browser. */
-export function getPlatformBridge(): PlatformBridge | null {
+export function getPlatformBridge(): Partial<System> | null {
 	if (typeof window === 'undefined') return null;
 	return window.platform ?? null;
 }
