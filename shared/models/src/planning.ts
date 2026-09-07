@@ -227,6 +227,8 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	private declare __limits: Map<ItemStatus, number> | undefined;
 	/** Per status, how many rows the server holds past what the collection has. */
 	private declare __remaining: Map<ItemStatus, number> | undefined;
+	/** Per status, the rank of the first row past the window (absent when the window holds it all). */
+	private declare __boundaries: Map<ItemStatus, number> | undefined;
 
 	private __getLimits(): Map<ItemStatus, number> {
 		if (!this.__limits) {
@@ -241,24 +243,32 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	 * rank marks where the window ends, which is what tells an item this client moved
 	 * or created beyond the window (still on the server, just not in the page) apart
 	 * from one the server dropped. Such items are handed back to the reconcile as
-	 * identity-only rows so it keeps them untouched instead of removing them.
+	 * identity-only rows so it keeps them untouched instead of removing them. They
+	 * stay until a wider window returns them for real or the page reloads; a poll
+	 * cannot see another client delete or move one, since it never pages that far.
 	 */
 	protected override async load(): Promise<Array<Record<string, unknown>>> {
 		const limits = this.__getLimits();
 		const pages = await Promise.all(ITEM_STATUSES.map((status) => this.__loadPage(status, limits.get(status)!)));
 
+		// Any page wins over a held item: the server may have moved it to another
+		// status since, and the reconcile keeps the first row per key, so the full
+		// rows go first and identity rows only cover keys no page returned.
+		const rows: Array<Record<string, unknown>> = pages.flatMap((page) => page.rows);
+		const inAnyPage = new Set(rows.map((row) => row.key));
+
 		const remaining = new Map<ItemStatus, number>();
-		const rows: Array<Record<string, unknown>> = [];
+		const boundaries = new Map<ItemStatus, number>();
 		for (const page of pages) {
-			const inWindow = new Set(page.rows.map((row) => row.key));
 			const beyondWindow = page.boundaryRank === undefined
 				? []
-				: this.filter((item) => item.status === page.status && !inWindow.has(item.key) && item.rank >= page.boundaryRank!);
-			rows.push(...page.rows);
+				: this.filter((item) => item.status === page.status && !inAnyPage.has(item.key) && item.rank >= page.boundaryRank!);
 			for (const item of beyondWindow) rows.push({ key: item.key, updatedAt: item.updatedAt });
 			remaining.set(page.status, Math.max(0, page.total - page.rows.length - beyondWindow.length));
+			if (page.boundaryRank !== undefined) boundaries.set(page.status, page.boundaryRank);
 		}
 		this.__remaining = remaining;
+		this.__boundaries = boundaries;
 		return rows;
 	}
 
@@ -299,6 +309,15 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	/** Whether the server holds items in this status past the loaded window. */
 	hasMore(status: ItemStatus): boolean {
 		return (this.__remaining?.get(status) ?? 0) > 0;
+	}
+
+	/**
+	 * Rank of the first item past this status's window, or undefined when the window
+	 * holds the whole status. A locally re-ranked item must sort at or past it to
+	 * survive the next poll (see load), so "the end of the column" starts here.
+	 */
+	firstUnloadedRank(status: ItemStatus): number | undefined {
+		return this.__boundaries?.get(status);
 	}
 
 	/** Widen one status window by `count` rows and refetch. The rows it adds are not flashed. */

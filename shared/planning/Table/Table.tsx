@@ -141,9 +141,9 @@ export function Table({
 								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={5}>
 									<StatusDot status={status} />
 									<span class={styles.groupLabel}>{label}</span>
-									<span class={styles.groupCount}>
-									{filtersActive ? groupItems.length : items.totalFor(status)}
-								</span>
+										<span class={styles.groupCount}>
+										{filtersActive ? groupItems.length : items.totalFor(status)}
+									</span>
 								</span>
 							</div>
 
@@ -169,7 +169,7 @@ export function Table({
 
 							{items.hasMore(status) && (
 								<div class={styles.showMoreRow} role="row">
-									<span class={styles.showMoreCell} role="cell">
+									<span class={styles.showMoreCell} role="cell" aria-colspan={5}>
 										<button
 											type="button"
 											class="text size-sm"

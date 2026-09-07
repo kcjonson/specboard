@@ -276,6 +276,29 @@ describe('SyncCollection reconciling fetch', () => {
 		expect(events).toEqual([['1']]);
 	});
 
+	it('a poll that coalesces onto a window-growing fetch still gets its added rows reported', async () => {
+		vi.mocked(fetchClient.get).mockResolvedValue([{ id: 1, title: 'a', updatedAt: 't1' }]);
+		const docs = new Docs({});
+		await docs.fetch();
+		const events: string[][] = [];
+		docs.onItemsChanged((ids) => events.push(ids));
+
+		let release: (rows: Array<Record<string, unknown>>) => void = () => {};
+		vi.mocked(fetchClient.get).mockImplementationOnce(
+			() => new Promise((resolve) => { release = resolve; }) as never
+		);
+		const growing = docs.fetch({ force: true, reportAdded: false });
+		const poll = docs.fetch(); // coalesces onto the growing run
+
+		release([
+			{ id: 1, title: 'a', updatedAt: 't1' },
+			{ id: 2, title: 'b', updatedAt: 't1' },
+		]);
+		await Promise.all([growing, poll]);
+
+		expect(events).toEqual([['2']]);
+	});
+
 	it('reconciles whatever rows a subclass load() supplies', async () => {
 		class Merged extends SyncCollection<Doc> {
 			static url = '/api/docs';

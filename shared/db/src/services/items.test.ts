@@ -254,6 +254,18 @@ describe('getItems', () => {
 		expect(total).toBe(842);
 	});
 
+	it('clamps the page size into [1, 5000] and defaults unparseable values', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', limit: 0 });
+		await getItems({ projectId: 'proj-1', limit: 99_999 });
+		await getItems({ projectId: 'proj-1', limit: '10' as unknown as number });
+		await getItems({ projectId: 'proj-1', limit: Number.NaN });
+
+		const limits = mockQuery.mock.calls.map(([, params]) => (params as unknown[]).at(-1));
+		expect(limits).toEqual([1, 5000, 10, 25]);
+	});
+
 	it('reports total 0 for an empty page', async () => {
 		mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never);
 

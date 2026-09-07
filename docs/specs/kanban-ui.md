@@ -70,7 +70,7 @@ A lightweight, keyboard-first kanban board with:
 - Scrollable content area
 - Drop zone highlight on drag over
 - Optional WIP limit indicator
-- Ghost card (dashed outline, muted text) at the foot of a column when the server holds more of that status than is loaded: "Show more" plus "100 of 842". Clicking it loads the next page into the column. It is not a drop target and not part of keyboard traversal.
+- Ghost card (dashed outline, muted text) at the foot of a column when the server holds more of that status than is loaded: "Show more" plus "100 of 842". Clicking it loads the next page into the column. It sits below the drop zone (a drop over it lands at the end of the column) and is not part of keyboard traversal.
 
 ### Epic Card
 
@@ -332,8 +332,9 @@ Two consequences worth knowing:
 - Each window request asks for one row past its limit. That row's rank marks where
   the window ends, and lets the client tell an item it moved or created past the
   window (still on the server, just outside the page) from one the server dropped.
-  Locally moved items are kept, not removed, by the next poll; a page reload shows
-  the window as the server sees it.
+  Locally moved items are kept, not removed, by the next poll, until a wider window
+  returns them for real or the page reloads. A poll cannot see another client delete
+  or move such an item, so a card can outlive the server row until then.
 - Search and the type filter still apply client-side, to what is loaded. Server-side
   filtering of the windows is a follow-up.
 

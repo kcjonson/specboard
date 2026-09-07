@@ -57,9 +57,6 @@ export function apiActor(context: Context): UserActor {
 
 const project = requireResolvedProject;
 
-/** Upper bound on one list page. A board that keeps asking for more stops here. */
-const MAX_LIST_LIMIT = 5000;
-
 /**
  * The :itemKey path segment as a number, or an error Response.
  *
@@ -90,8 +87,9 @@ export async function handleListItems(context: Context): Promise<Response> {
 	const type = context.req.query('type');
 	const search = context.req.query('search');
 	const specPath = context.req.query('specPath');
+	// The service clamps to [1, MAX_LIST_LIMIT]; only the default is this handler's.
 	const limitParam = Number.parseInt(context.req.query('limit') ?? '', 10);
-	const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), MAX_LIST_LIMIT) : 500;
+	const limit = Number.isFinite(limitParam) ? limitParam : 500;
 
 	try {
 		// Reverse lookup: items linking a given spec path (used by the doc editor).

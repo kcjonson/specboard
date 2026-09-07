@@ -185,8 +185,23 @@ export interface GetItemsParams {
 	includeSpecs?: boolean;
 	includeBlockers?: boolean;
 	includeWorkers?: boolean;
-	/** Max rows in the page (lists only). The result's `total` counts past it. */
+	/** Max rows in the page (lists only), clamped to [1, MAX_LIST_LIMIT]. The result's `total` counts past it. */
 	limit?: number;
+}
+
+/** Upper bound on one list page. A client growing its window stops here. */
+export const MAX_LIST_LIMIT = 5000;
+const DEFAULT_LIST_LIMIT = 25;
+
+/**
+ * The page size a caller asked for, made safe for SQL: callers hand through
+ * query strings and MCP args, so this is the one place that turns "0", -1,
+ * "abc", or 10^9 into a limit Postgres will accept and the total can stand behind.
+ */
+function pageLimit(requested: number | undefined): number {
+	const n = typeof requested === 'number' ? requested : Number.parseInt(String(requested), 10);
+	if (!Number.isFinite(n)) return DEFAULT_LIST_LIMIT;
+	return Math.min(Math.max(Math.trunc(n), 1), MAX_LIST_LIMIT);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,7 +303,8 @@ type ItemWithCounts = ItemRow & {
  * `limit` cut it; it is what lets a client show a bounded window and know more exists.
  */
 export async function getItems(params: GetItemsParams): Promise<ItemList> {
-	const { projectId, itemNumber, status, type, search, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers, limit = 25 } = params;
+	const { projectId, itemNumber, status, type, search, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers } = params;
+	const limit = pageLimit(params.limit);
 
 	// The project join supplies the key that every item key is built from.
 	// open_blocks joins are one-to-one (DISTINCT), so they don't inflate the

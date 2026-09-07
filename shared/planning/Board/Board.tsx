@@ -89,16 +89,24 @@ export function Board({
 		[onSelectItem]
 	);
 
-	// Ranks are sparse (a new item takes the project-wide max + 1), so "after the last
-	// loaded card" is the last rank + 1, not the column length.
+	// A rank that puts `item` after every card in the column. Ranks are sparse (a new
+	// item takes the project-wide max + 1), so this is the last loaded rank + 1, not
+	// the column length; and when the column has cards past its window it must be at
+	// least the first unloaded rank, or the next poll would read the card as dropped.
+	const endRank = useCallback((item: ItemModel, status: ItemStatus): number => {
+		const last = items.byStatus(status).filter((e) => e !== item).at(-1);
+		const afterLoaded = last ? last.rank + 1 : 1;
+		const unloaded = items.firstUnloadedRank(status);
+		return unloaded === undefined ? afterLoaded : Math.max(afterLoaded, unloaded);
+	}, [items]);
+
 	const handleMoveItem = useCallback(
 		(item: ItemModel, status: Status): void => {
-			const last = items.byStatus(status).filter((e) => e !== item).at(-1);
+			item.rank = endRank(item, status);
 			item.status = status;
-			item.rank = last ? last.rank + 1 : 1;
 			item.save();
 		},
-		[items]
+		[endRank]
 	);
 
 	useKeyboardNavigation({
@@ -145,7 +153,7 @@ export function Board({
 		} else if (dropIndex === 0) {
 			newRank = firstItem.rank - 1;
 		} else if (dropIndex >= targetColumnItems.length) {
-			newRank = lastItem.rank + 1;
+			newRank = endRank(item, newStatus);
 		} else {
 			const prevItem = targetColumnItems[dropIndex - 1];
 			const nextItem = targetColumnItems[dropIndex];
@@ -160,8 +168,10 @@ export function Board({
 		item.rank = newRank;
 		item.save();
 
-		// If ranks get too close (fractional precision issues), normalize the column
-		if (shouldNormalizeRanks(targetColumnItems, newRank)) {
+		// If ranks get too close (fractional precision issues), normalize the column.
+		// Not while it has cards past its window: renumbering only the loaded ones
+		// could put them behind ranks the board can't see.
+		if (!items.hasMore(newStatus) && shouldNormalizeRanks(targetColumnItems, newRank)) {
 			normalizeColumnRanks(newStatus);
 		}
 	}

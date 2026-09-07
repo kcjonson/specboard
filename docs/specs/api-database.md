@@ -311,8 +311,8 @@ Authorization: Bearer <access_token>
 
 ### Pagination
 
-List endpoints are windowed, not cursor-paged: a request asks for the first `limit`
-rows in the endpoint's order, and the response reports how many rows matched in the
+The item list is windowed, not cursor-paged: a request asks for the first `limit`
+rows in rank order, and the response reports how many rows matched in the
 `X-Total-Count` header (exposed through CORS). The body stays a plain array.
 
 ```

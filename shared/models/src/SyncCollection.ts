@@ -96,6 +96,13 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	private __fetchInFlight: Promise<void> | null = null;
 
 	/**
+	 * Whether the in-flight run reports rows new to the collection as changes. Kept
+	 * on the instance rather than the run so a caller that coalesces onto a
+	 * window-growing fetch can raise it: the poll still wants its flashes.
+	 */
+	private __reportAdded = true;
+
+	/**
 	 * Bumped on every change emit (add/remove/item mutation). Lets memoized derived
 	 * state (e.g. status grouping) recompute on in-place mutations even though the
 	 * collection reference is stable — include `version` in the memo deps.
@@ -297,9 +304,13 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 			}
 		} else if (this.__fetchInFlight) {
 			// Coalesce concurrent calls so overlapping refetches can't race to a stale state.
+			// A caller that wants additions reported gets them even if the run it joins
+			// didn't ask for them; the flag is read only when the reconcile runs.
+			if (options?.reportAdded ?? true) this.__reportAdded = true;
 			return this.__fetchInFlight;
 		}
-		const run = this.__fetch(options?.reportAdded ?? true);
+		this.__reportAdded = options?.reportAdded ?? true;
+		const run = this.__fetch();
 		this.__fetchInFlight = run;
 		try {
 			await run;
@@ -311,19 +322,23 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	/**
 	 * The rows a fetch reconciles. Subclasses whose data does not come from one GET
 	 * of `url` (several requests, out-of-band metadata) override this; the reconcile
-	 * that follows is the same either way.
+	 * that follows is the same either way. It runs before the reconcile touches
+	 * `__items`, so an override may read the collection's current contents to decide
+	 * what to return (ItemsCollection does, to keep items held past its windows).
 	 */
 	protected async load(): Promise<Array<Record<string, unknown>>> {
 		return fetchClient.get<Array<Record<string, unknown>>>(this.getUrl());
 	}
 
 	/** The actual fetch + reconcile; serialized by `fetch()`. */
-	private async __fetch(reportAdded: boolean): Promise<void> {
+	private async __fetch(): Promise<void> {
 		const isInitial = this.$meta.lastFetched == null;
 		this.setMeta({ working: true, error: null });
 
 		try {
 			const data = await this.load();
+			// Read after load(): a coalescing caller may have raised it meanwhile.
+			const reportAdded = this.__reportAdded;
 			const ModelClass = this.getModelClass();
 			const idField = (this.constructor as typeof SyncCollection).Model.idField || 'id';
 			const changeKey = (this.constructor as typeof SyncCollection).changeKey;

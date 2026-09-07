@@ -112,7 +112,7 @@ export function Column({
 	].filter(Boolean).join(' ');
 
 	return (
-		<div class={styles.column} role="listbox" aria-label={`${title} column`}>
+		<div class={styles.column}>
 			<div class={styles.header}>
 				<h2 class={styles.title}>
 					<StatusDot status={status} />
@@ -125,6 +125,8 @@ export function Column({
 				<div
 					ref={dropZoneRef}
 					class={dropZoneClass}
+					role="listbox"
+					aria-label={`${title} column`}
 					onDragOver={handleDragOver}
 					onDragLeave={handleDragLeave}
 					onDrop={handleDrop}
@@ -153,20 +155,20 @@ export function Column({
 					{isDragOver && dropIndex === items.length && items.length > 0 && (
 						<div class={styles.dropIndicator} />
 					)}
-					{/* Ghost card: not a drop target and not an option, so it carries no data-item-card. */}
-					{more && (
-						<button
-							type="button"
-							class={styles.showMore}
-							onClick={more.onLoadMore}
-							disabled={more.loading}
-							aria-label={`Show more ${title} items, ${more.loaded} of ${more.total} shown`}
-						>
-							<span>{more.loading ? 'Loading…' : 'Show more'}</span>
-							<span class={styles.showMoreCount}>{more.loaded} of {more.total}</span>
-						</button>
-					)}
 				</div>
+				{/* Ghost card: outside the listbox (not an option) and the drop zone (not a target). */}
+				{more && (
+					<button
+						type="button"
+						class={styles.showMore}
+						onClick={more.onLoadMore}
+						disabled={more.loading}
+						aria-label={`Show more ${title} items, ${more.loaded} of ${more.total} shown`}
+					>
+						<span>{more.loading ? 'Loading…' : 'Show more'}</span>
+						<span class={styles.showMoreCount}>{more.loaded} of {more.total}</span>
+					</button>
+				)}
 			</div>
 		</div>
 	);

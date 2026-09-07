@@ -4,8 +4,8 @@ import { useModel, ItemsCollection } from '@specboard/models';
 import { Dialog, Text } from '@specboard/ui';
 import styles from './EpicPicker.module.css';
 
-/** Rows loaded per status for the picker. */
-const PICKER_LIMIT = 200;
+/** Rows loaded per status. The picker has no show-more, so this matches the old whole-project cap. */
+const PICKER_LIMIT = 1000;
 
 const STATUS_LABELS: Record<string, string> = {
 	ready: 'Ready',
