@@ -8,12 +8,8 @@ import {
 	useModel,
 } from '@specboard/models';
 import { isValidProjectSlug, isValidProjectKey, MAX_PROJECT_SLUG_LENGTH } from '@specboard/core/identifiers';
-import type { Project, RepositoryConfigCloud } from '../ProjectCard/ProjectCard';
+import { isCloudRepository, type Project } from '../ProjectCard/ProjectCard';
 import styles from './ProjectDialog.module.css';
-
-function isCloudRepository(repo: unknown): repo is RepositoryConfigCloud {
-	return typeof repo === 'object' && repo !== null && 'type' in repo && (repo as RepositoryConfigCloud).type === 'cloud';
-}
 
 export interface RepositoryConfig {
 	provider: 'github';
@@ -41,6 +37,10 @@ export function ProjectDialog({
 	onDelete,
 }: ProjectDialogProps): JSX.Element {
 	const isEditMode = project !== null;
+	// A repository can be attached once, so the picker shows for new projects and for
+	// existing ones that have none; a connected repository is shown read-only instead.
+	const cloudRepository = project !== null && isCloudRepository(project.repository) ? project.repository : null;
+	const canAttachRepository = cloudRepository === null;
 	const [name, setName] = useState(project?.name ?? '');
 	const [description, setDescription] = useState(project?.description ?? '');
 	const [systemPrompt, setSystemPrompt] = useState(project?.systemPrompt ?? '');
@@ -61,17 +61,16 @@ export function ProjectDialog({
 		};
 	}, []);
 
-	// GitHub models - only create for new projects
+	// GitHub models - only needed while a repository can still be attached
 	const githubConnection = useMemo(
-		() => (!isEditMode ? new GitHubConnectionModel() : null),
-		[isEditMode]
+		() => (canAttachRepository ? new GitHubConnectionModel() : null),
+		[canAttachRepository]
 	);
 	const githubRepos = useMemo(
-		() => (!isEditMode ? new GitHubReposCollection() : null),
-		[isEditMode]
+		() => (canAttachRepository ? new GitHubReposCollection() : null),
+		[canAttachRepository]
 	);
 
-	// Subscribe to models (conditional - only for create mode)
 	useModel(githubConnection);
 	useModel(githubRepos);
 
@@ -333,8 +332,7 @@ export function ProjectDialog({
 					</label>
 				</div>
 
-				{/* Repository info - read-only display for edit mode with existing repo */}
-				{isEditMode && project?.repository && isCloudRepository(project.repository) && (
+				{project && cloudRepository && (
 					<div class={styles.repositoryInfo}>
 						<div class={styles.sectionHeader}>
 							<span class={styles.labelText}>Repository</span>
@@ -342,16 +340,16 @@ export function ProjectDialog({
 						<div class={styles.repoDisplay}>
 							<Icon name="github" class="size-sm" />
 							<a
-								href={project.repository.remote.url}
+								href={cloudRepository.remote.url}
 								target="_blank"
 								rel="noopener noreferrer"
 								class={styles.repoLink}
 							>
-								{project.repository.remote.owner}/{project.repository.remote.repo}
+								{cloudRepository.remote.owner}/{cloudRepository.remote.repo}
 							</a>
 							<span class={styles.branchBadge}>
 								<Icon name="git-branch" class="size-xs" />
-								{project.repository.branch}
+								{cloudRepository.branch}
 							</span>
 						</div>
 						{/* Sync status */}
@@ -379,8 +377,7 @@ export function ProjectDialog({
 					</div>
 				)}
 
-				{/* Repository section - only for new projects or projects without repo */}
-				{!isEditMode && (
+				{canAttachRepository && (
 					<div class={styles.repositorySection}>
 						<div class={styles.sectionHeader}>
 							<span class={styles.labelText}>Repository (optional)</span>

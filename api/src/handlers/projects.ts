@@ -14,6 +14,8 @@ import {
 	updateProject,
 	deleteProject,
 	ProjectIdentifierTakenError,
+	ProjectHasRepositoryError,
+	type RepositoryConfigInput,
 } from '@specboard/db';
 import { isValidProjectSlug, isValidProjectKey } from '@specboard/core/identifiers';
 import { projectResponseToApi } from '../transform.ts';
@@ -26,6 +28,65 @@ async function getUserId(context: Context, redis: Redis): Promise<string | null>
 
 	const session = await getSession(redis, sessionId);
 	return session?.userId ?? null;
+}
+
+// GitHub owner and repo names: 1 to 100 alphanumerics, dots, underscores, and hyphens,
+// starting and ending with an alphanumeric (no leading/trailing dots).
+const GITHUB_NAME_REGEX = /^[a-zA-Z0-9](?:[a-zA-Z0-9._-]{0,98}[a-zA-Z0-9])?$/;
+// Branch names must start with an alphanumeric
+const BRANCH_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,254}$/;
+
+type RepositoryValidation =
+	| { repository: RepositoryConfigInput }
+	| { error: string };
+
+/** Check a repository config from a request body, keeping only the fields we store. */
+function validateRepository(repository: unknown): RepositoryValidation {
+	if (
+		typeof repository !== 'object' ||
+		repository === null ||
+		(repository as Record<string, unknown>).provider !== 'github'
+	) {
+		return { error: 'Invalid repository configuration' };
+	}
+	const { owner, repo, branch, url } = repository as Record<string, unknown>;
+	if (typeof owner !== 'string' || typeof repo !== 'string' || typeof branch !== 'string' || typeof url !== 'string') {
+		return { error: 'Invalid repository configuration' };
+	}
+
+	if (!GITHUB_NAME_REGEX.test(owner)) {
+		return { error: 'Invalid repository owner format' };
+	}
+	if (!GITHUB_NAME_REGEX.test(repo)) {
+		return { error: 'Invalid repository name format' };
+	}
+	if (!BRANCH_REGEX.test(branch)) {
+		return { error: 'Invalid branch name format' };
+	}
+
+	let parsedUrl: URL;
+	try {
+		parsedUrl = new URL(url);
+	} catch {
+		return { error: 'Invalid repository URL' };
+	}
+	if (parsedUrl.hostname !== 'github.com') {
+		return { error: 'Repository URL must be a GitHub URL' };
+	}
+	// Path must be /{owner}/{repo}[.git][/]
+	const pathParts = parsedUrl.pathname.replace(/\.git\/?$/, '').replace(/\/+$/, '').split('/').filter(Boolean);
+	if (pathParts.length !== 2) {
+		return { error: 'Repository URL must be in format https://github.com/{owner}/{repo}' };
+	}
+
+	return { repository: { provider: 'github', owner, repo, branch, url } };
+}
+
+/** Kick off the first clone of a newly attached repository without holding the response. */
+function queueInitialSync(projectId: string, userId: string): void {
+	void startGitHubInitialSync(projectId, userId).catch((err) => {
+		console.error('Failed to start GitHub initial sync:', err);
+	});
 }
 
 export async function handleListProjects(context: Context, redis: Redis): Promise<Response> {
@@ -124,61 +185,13 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 			);
 		}
 
-		// Validate repository config if provided
-		let validatedRepository: { provider: 'github'; owner: string; repo: string; branch: string; url: string } | undefined;
-		if (repository) {
-			// Basic type validation
-			if (
-				typeof repository !== 'object' ||
-				repository.provider !== 'github' ||
-				typeof repository.owner !== 'string' ||
-				typeof repository.repo !== 'string' ||
-				typeof repository.branch !== 'string' ||
-				typeof repository.url !== 'string'
-			) {
-				return context.json({ error: 'Invalid repository configuration' }, 400);
+		let validatedRepository: RepositoryConfigInput | undefined;
+		if (repository !== undefined && repository !== null) {
+			const validation = validateRepository(repository);
+			if ('error' in validation) {
+				return context.json({ error: validation.error }, 400);
 			}
-
-			// Validate GitHub naming conventions:
-			// - 1 to 100 characters
-			// - may contain alphanumerics, dots, underscores, and hyphens
-			// - must start and end with an alphanumeric character (no leading/trailing dots)
-			const GITHUB_NAME_REGEX = /^[a-zA-Z0-9](?:[a-zA-Z0-9._-]{0,98}[a-zA-Z0-9])?$/;
-			// Branch names must start with alphanumeric
-			const BRANCH_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,254}$/;
-
-			if (!GITHUB_NAME_REGEX.test(repository.owner)) {
-				return context.json({ error: 'Invalid repository owner format' }, 400);
-			}
-			if (!GITHUB_NAME_REGEX.test(repository.repo)) {
-				return context.json({ error: 'Invalid repository name format' }, 400);
-			}
-			if (!repository.branch || !BRANCH_REGEX.test(repository.branch)) {
-				return context.json({ error: 'Invalid branch name format' }, 400);
-			}
-
-			// Validate URL is a GitHub URL with correct path format
-			try {
-				const url = new URL(repository.url);
-				if (url.hostname !== 'github.com') {
-					return context.json({ error: 'Repository URL must be a GitHub URL' }, 400);
-				}
-				// Validate path format: must be /{owner}/{repo}[.git][/]
-				const pathParts = url.pathname.replace(/\.git\/?$/, '').replace(/\/+$/, '').split('/').filter(Boolean);
-				if (pathParts.length !== 2) {
-					return context.json({ error: 'Repository URL must be in format https://github.com/{owner}/{repo}' }, 400);
-				}
-			} catch {
-				return context.json({ error: 'Invalid repository URL' }, 400);
-			}
-
-			validatedRepository = {
-				provider: 'github',
-				owner: repository.owner,
-				repo: repository.repo,
-				branch: repository.branch,
-				url: repository.url,
-			};
+			validatedRepository = validation.repository;
 		}
 
 		// Validate and sanitize system_prompt for create
@@ -201,11 +214,8 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 			repository: validatedRepository,
 		});
 
-		// Trigger initial sync for cloud projects (fire-and-forget)
 		if (validatedRepository) {
-			void startGitHubInitialSync(project.id, userId).catch((err) => {
-				console.error('Failed to start GitHub initial sync:', err);
-			});
+			queueInitialSync(project.id, userId);
 		}
 
 		return context.json(projectResponseToApi(project), 201);
@@ -229,7 +239,7 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 
 	try {
 		const body = await context.req.json();
-		const { name, description, system_prompt, slug, key } = body;
+		const { name, description, system_prompt, slug, key, repository } = body;
 
 		if (slug !== undefined && !isValidProjectSlug(slug)) {
 			return context.json(
@@ -283,6 +293,17 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 			? system_prompt.replace(CONTROL_CHAR_REGEX, '')
 			: undefined;
 
+		// A repository can only be attached to a project that has none; the service
+		// rejects anything else with ProjectHasRepositoryError.
+		let validatedRepository: RepositoryConfigInput | undefined;
+		if (repository !== undefined && repository !== null) {
+			const validation = validateRepository(repository);
+			if ('error' in validation) {
+				return context.json({ error: validation.error }, 400);
+			}
+			validatedRepository = validation.repository;
+		}
+
 		const resolved = await resolveProjectSlug(currentSlug, userId);
 		if (!resolved) {
 			return context.json({ error: 'Project not found' }, 404);
@@ -294,16 +315,24 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 			systemPrompt: sanitizedSystemPrompt,
 			slug,
 			key,
+			repository: validatedRepository,
 		});
 
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
+		if (validatedRepository) {
+			queueInitialSync(project.id, userId);
+		}
+
 		return context.json(projectResponseToApi(project));
 	} catch (error) {
 		if (error instanceof ProjectIdentifierTakenError) {
 			return context.json({ error: error.message, code: 'IDENTIFIER_TAKEN', field: error.field }, 409);
+		}
+		if (error instanceof ProjectHasRepositoryError) {
+			return context.json({ error: error.message, code: 'REPOSITORY_ALREADY_SET' }, 409);
 		}
 		console.error('Failed to update project:', error);
 		return context.json({ error: 'Database error' }, 500);

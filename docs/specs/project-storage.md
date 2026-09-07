@@ -241,18 +241,24 @@ async function addFolder(projectId: string, folderPath: string): Promise<void> {
 
 ### Connect Repository Flow
 
+A repository is attached either when the project is created or later from the Edit
+Project dialog, which shows the repository picker whenever the project has no
+repository yet (the Pages tab's empty state links there).
+
 ```
-1. User goes to Project Settings → "Connect Repository"
+1. User opens Create Project, or Edit Project on a project with no repository
 2. User authenticates with GitHub (if not already)
-3. User selects repository from list
-4. User optionally selects root path(s) to display
+3. User selects repository and branch from the list
 
-5. Backend:
-   a. Clones repository to managed storage (EFS or container volume)
-   b. Stores repository config in project
+4. Backend:
+   a. Stores repository config in project, storageMode = 'cloud', rootPaths = ['/']
+   b. Starts the initial sync, which clones the repository to managed storage
 
-6. Project is now in cloud mode
+5. Project is now in cloud mode; the client shows sync progress until the clone lands
 ```
+
+A project that already has a repository cannot swap or remove it in v1; the API answers
+`409 REPOSITORY_ALREADY_SET`.
 
 ### Managed Checkout Location
 
@@ -320,44 +326,53 @@ Remove a root path from the project (does not delete files).
 
 ### Repository Connection (Cloud Mode)
 
-#### POST /api/projects/:projectSlug/repository
+There is no separate repository endpoint. The `repository` field of the project body
+connects one, on `POST /api/projects` at creation or on `PUT /api/projects/:projectSlug`
+afterwards. On update it is accepted only while the project has no storage configured
+(`storage_mode = 'none'`).
 
-Connect a GitHub repository.
-
-**Request:**
+**Request (`PUT /api/projects/:projectSlug`):**
 ```json
 {
-  "provider": "github",
-  "owner": "acme-corp",
-  "repo": "documentation",
-  "branch": "main",
-  "rootPaths": ["/docs"]
-}
-```
-
-**Success Response (200):**
-```json
-{
-  "data": {
-    "projectId": "proj-123",
-    "storageMode": "cloud",
-    "repository": {
-      "remote": {
-        "provider": "github",
-        "owner": "acme-corp",
-        "repo": "documentation",
-        "url": "https://github.com/acme-corp/documentation"
-      },
-      "branch": "main"
-    },
-    "rootPaths": ["/docs"]
+  "repository": {
+    "provider": "github",
+    "owner": "acme-corp",
+    "repo": "documentation",
+    "branch": "main",
+    "url": "https://github.com/acme-corp/documentation"
   }
 }
 ```
 
-#### DELETE /api/projects/:projectSlug/repository
+Other project fields (`name`, `description`, `system_prompt`, `slug`, `key`) may ride
+along in the same request.
 
-Disconnect repository (switches to no storage configured).
+**Success Response (200):** the full project, now with
+```json
+{
+  "storageMode": "cloud",
+  "repository": {
+    "type": "cloud",
+    "remote": {
+      "provider": "github",
+      "owner": "acme-corp",
+      "repo": "documentation",
+      "url": "https://github.com/acme-corp/documentation"
+    },
+    "branch": "main"
+  },
+  "rootPaths": ["/"]
+}
+```
+
+The initial sync starts as a side effect after the response is sent; poll
+`GET /api/projects/:projectSlug/sync/status` for progress.
+
+**Error Responses:**
+- `400` - Repository config fails validation (provider, GitHub owner/repo/branch naming, or a URL that is not `https://github.com/{owner}/{repo}`)
+- `409 REPOSITORY_ALREADY_SET` - The project already has a repository (cloud or local)
+
+Disconnecting or replacing a repository is not supported in v1.
 
 ### File Operations
 
@@ -429,6 +444,8 @@ Users may start with local mode during initial setup, then transition to cloud m
 - Local changes should be committed and pushed before transitioning
 - Backend could warn if there are uncommitted local changes
 - The transition is one-way in v1 (cloud → local not supported via UI)
+- Not implemented yet: the API only attaches a repository to a project with no storage
+  configured, so a local-mode project answers `409` until this flow exists
 
 ---
 

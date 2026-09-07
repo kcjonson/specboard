@@ -5,7 +5,7 @@ import { navigate } from '@specboard/router';
 import { getCookie, setCookie } from '@specboard/core/cookies';
 import { fetchClient, FetchError } from '@specboard/fetch';
 import { Button, Page } from '@specboard/ui';
-import { ProjectCard, type Project } from '../ProjectCard/ProjectCard';
+import { ProjectCard, isCloudRepository, type Project } from '../ProjectCard/ProjectCard';
 import { ProjectDialog, type RepositoryConfig } from '../ProjectDialog/ProjectDialog';
 import { SyncProgressDialog } from '../SyncProgressDialog/SyncProgressDialog';
 import styles from './ProjectsList.module.css';
@@ -24,7 +24,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [error, setError] = useState<string | null>(null);
 	// Dialog state: null = closed, undefined = create mode, Project = edit mode
 	const [dialogProject, setDialogProject] = useState<Project | null | undefined>(null);
-	// Sync progress dialog state: shown after creating a project with a repo
+	// Sync progress dialog state: shown after a save that attached a repository
 	const [syncingProject, setSyncingProject] = useState<{ slug: string; name: string } | null>(null);
 
 	const fetchProjects = useCallback(async (): Promise<void> => {
@@ -84,7 +84,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				setProjects((prev) => [projectWithStats, ...prev]);
 				setDialogProject(null);
 
-				if (project.repository && 'type' in project.repository && project.repository.type === 'cloud') {
+				if (isCloudRepository(project.repository)) {
 					// Repository configured — show sync progress dialog
 					setSyncingProject({ slug: project.slug, name: project.name });
 				} else {
@@ -108,6 +108,12 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 					setCookie('lastProjectName', updated.name, 30);
 				}
 				setDialogProject(null);
+
+				// Attaching a repository starts the initial clone, so follow it the same way
+				// a create with a repository does.
+				if (!isCloudRepository(dialogProject.repository) && isCloudRepository(updated.repository)) {
+					setSyncingProject({ slug: updated.slug, name: updated.name });
+				}
 			}
 		} catch (err) {
 			// Rethrow so the dialog renders the failure inline and keeps the user's edits.
