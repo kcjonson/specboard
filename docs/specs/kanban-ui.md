@@ -321,6 +321,10 @@ as `GET /items?status=<s>&limit=<N>`, one request per status. The response's
 | Board | 100 cards per column | Ghost card at the foot of the column |
 | Table | 200 rows per section | "Show more" row at the foot of the section |
 
+The table also has a "Show done" checkbox beside Expand all / Collapse all. It is off
+by default, which hides the Done section (usually the largest and least interesting),
+and the choice is remembered per browser alongside the active view.
+
 This is additive, not paged: "show more" widens that status's window by one page
 and refetches it, so the loaded set only ever grows. The background poll re-requests
 every window at its current width, which is what stops a refresh from shrinking a

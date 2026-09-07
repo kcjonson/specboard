@@ -10,6 +10,7 @@ import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
 import { CATEGORY_ALL, CATEGORY_OPTIONS, isFilterActive, type PlanningFilters } from './filters';
+import { VIEW_PREF, readPref, writePref } from './prefs';
 import styles from './Planning.module.css';
 
 /** Duration to flash an item that was just created or changed by a refresh (ms) */
@@ -22,16 +23,9 @@ const POLL_INTERVAL = 10000;
 const DRAWER_MIN_WIDTH = 320;
 const BOARD_MIN_WIDTH = 360;
 
-/** Where the last explicitly chosen view is remembered between visits. */
-const VIEW_STORAGE_KEY = 'specboard.planning.view';
-
 function readStoredView(): PlanningView | undefined {
-	try {
-		const stored = globalThis.localStorage?.getItem(VIEW_STORAGE_KEY);
-		return stored === 'table' || stored === 'board' ? stored : undefined;
-	} catch {
-		return undefined;
-	}
+	const stored = readPref(VIEW_PREF);
+	return stored === 'table' || stored === 'board' ? stored : undefined;
 }
 
 /**
@@ -185,11 +179,7 @@ export function Planning(props: RouteProps): JSX.Element {
 
 	const handleChangeView = useCallback((next: PlanningView): void => {
 		setView(next);
-		try {
-			globalThis.localStorage?.setItem(VIEW_STORAGE_KEY, next);
-		} catch {
-			// Storage can be blocked (private mode); the URL still carries the view.
-		}
+		writePref(VIEW_PREF, next);
 		// Both views are written explicitly so a history entry is never ambiguous.
 		const params = new URLSearchParams(window.location.search);
 		params.set('view', next);

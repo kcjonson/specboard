@@ -4,6 +4,7 @@ import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/mod
 import { StatusDot } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
 import { isFilterActive, matchesFilters, type PlanningFilters } from '../Planning/filters';
+import { SHOW_DONE_PREF, readPref, writePref } from '../Planning/prefs';
 import styles from './Table.module.css';
 
 /** Rows a status section starts with, and how many each "show more" adds. */
@@ -58,6 +59,15 @@ export function Table({
 	onOpenChild,
 }: TableProps): JSX.Element {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+	// The Done section is usually the biggest and the least interesting, so it is
+	// hidden unless asked for; the choice sticks per browser like the view does.
+	const [showDone, setShowDone] = useState<boolean>(() => readPref(SHOW_DONE_PREF) === 'true');
+	const handleShowDoneChange = useCallback((e: Event): void => {
+		const next = (e.target as HTMLInputElement).checked;
+		setShowDone(next);
+		writePref(SHOW_DONE_PREF, String(next));
+	}, []);
+	const groups = showDone ? GROUPS : GROUPS.filter((group) => group.status !== 'done');
 	// Which section is fetching its next page; its "show more" button shows a loading state.
 	const [loadingMore, setLoadingMore] = useState<ItemStatus | null>(null);
 	const filtersActive = isFilterActive(filters);
@@ -97,7 +107,7 @@ export function Table({
 
 	const expandAll = useCallback((): void => {
 		const ids = new Set<string>();
-		for (const group of GROUPS) {
+		for (const group of groups) {
 			for (const item of grouped[group.status]) {
 				if (item.childStats.total > 0) {
 					ids.add(item.id);
@@ -106,7 +116,7 @@ export function Table({
 			}
 		}
 		setExpanded(ids);
-	}, [grouped]);
+	}, [grouped, groups]);
 
 	const collapseAll = useCallback((): void => {
 		setExpanded(new Set());
@@ -121,6 +131,10 @@ export function Table({
 				<button type="button" class="secondary size-sm" onClick={collapseAll}>
 					Collapse all
 				</button>
+				<label class={styles.toggle}>
+					<input type="checkbox" checked={showDone} onChange={handleShowDoneChange} />
+					Show done
+				</label>
 			</div>
 
 			<div class={styles.table} role="table">
@@ -132,7 +146,7 @@ export function Table({
 					<span class={styles.colAssignee} role="columnheader">Assignee</span>
 				</div>
 
-				{GROUPS.map(({ status, label, whenNonEmpty }) => {
+				{groups.map(({ status, label, whenNonEmpty }) => {
 					const groupItems = grouped[status];
 					if (whenNonEmpty && groupItems.length === 0) return null;
 					return (
