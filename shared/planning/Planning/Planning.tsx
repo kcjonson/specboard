@@ -49,9 +49,11 @@ function readView(): PlanningView {
  * presentational consumers of this state.
  *
  * Which item the drawer shows is not local state — it's the `:itemKey` route param.
- * Opening and closing the drawer are navigations, so the open item has a shareable
- * URL and Back closes it. The router re-renders this same component (no remount) on
- * those navigations, so the board, filters, and scroll position all survive.
+ * Opening and closing the drawer are navigations, so Back closes it. The router
+ * re-renders this same component (no remount) on those navigations, so the board,
+ * filters, and scroll position all survive. The drawer URL is in-app only: a
+ * document load of it is redirected to the standalone item page by the frontend
+ * service, so this entry only ever mounts with an `:itemKey` via in-app navigation.
  */
 export function Planning(props: RouteProps): JSX.Element {
 	const projectSlug = props.params.projectSlug || 'demo';
@@ -84,8 +86,8 @@ export function Planning(props: RouteProps): JSX.Element {
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
 
 	// The board selection — the single source of truth for which card is marked.
-	// Seeded from the route so a deep link lands with its card selected, and kept in
-	// step below whenever the route changes under it (deep link, Back/Forward).
+	// Seeded from the route so an in-app navigation to an item URL lands with its
+	// card selected, and kept in step below whenever the route changes under it.
 	const [selectedItemKey, setSelectedItemKey] = useState<string | undefined>(openItemKey);
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
@@ -187,8 +189,8 @@ export function Planning(props: RouteProps): JSX.Element {
 		navigate(window.location.pathname + (search ? `?${search}` : '') + window.location.hash);
 	}, []);
 
-	// Selection follows the route whenever the route moves on its own — a deep link,
-	// or the user hitting Back/Forward across item URLs.
+	// Selection follows the route whenever the route moves on its own — a navigation
+	// from elsewhere in the app, or the user hitting Back/Forward across item URLs.
 	useEffect(() => {
 		if (openItemKey) setSelectedItemKey(openItemKey);
 		else openedByPush.current = false;
@@ -258,7 +260,8 @@ export function Planning(props: RouteProps): JSX.Element {
 	// Closing undoes our own push where there is one, which leaves the history exactly
 	// as it was before the drawer opened. Replacing instead would strand a duplicate
 	// board entry, making the next Back appear to do nothing; pushing would make Back
-	// reopen the drawer. On a deep link there is nothing of ours to pop, so replace.
+	// reopen the drawer. When the drawer was opened by a navigation from elsewhere in
+	// the app there is nothing of ours to pop, so replace.
 	const handleCloseDrawer = useCallback((): void => {
 		if (openedByPush.current) {
 			openedByPush.current = false;
