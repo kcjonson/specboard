@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
-import { StatusDot } from '@specboard/ui';
+import { Button, Icon, StatusDot } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
 import { isFilterActive, matchesFilters, type PlanningFilters } from '../Planning/filters';
 import { SHOW_DONE_PREF, readPref, writePref } from '../Planning/prefs';
@@ -62,10 +62,11 @@ export function Table({
 	// The Done section is usually the biggest and the least interesting, so it is
 	// hidden unless asked for; the choice sticks per browser like the view does.
 	const [showDone, setShowDone] = useState<boolean>(() => readPref(SHOW_DONE_PREF) === 'true');
-	const handleShowDoneChange = useCallback((e: Event): void => {
-		const next = (e.target as HTMLInputElement).checked;
-		setShowDone(next);
-		writePref(SHOW_DONE_PREF, String(next));
+	const toggleShowDone = useCallback((): void => {
+		setShowDone((prev) => {
+			writePref(SHOW_DONE_PREF, String(!prev));
+			return !prev;
+		});
 	}, []);
 	const groups = showDone ? GROUPS : GROUPS.filter((group) => group.status !== 'done');
 	// Which section is fetching its next page; its "show more" button shows a loading state.
@@ -131,10 +132,10 @@ export function Table({
 				<button type="button" class="secondary size-sm" onClick={collapseAll}>
 					Collapse all
 				</button>
-				<label class={styles.toggle}>
-					<input type="checkbox" checked={showDone} onChange={handleShowDoneChange} />
+				<Button class={`secondary size-sm ${styles.toggle}`} aria-pressed={showDone} onClick={toggleShowDone}>
+					{showDone && <Icon name="check" class="size-sm" />}
 					Show done
-				</label>
+				</Button>
 			</div>
 
 			<div class={styles.table} role="table">

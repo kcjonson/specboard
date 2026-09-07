@@ -12,6 +12,7 @@ import {
 	StatusDot,
 	Icon,
 	SplitButton,
+	Checkbox,
 } from '@specboard/ui';
 import styles from './UIDemo.module.css';
 
@@ -26,6 +27,8 @@ export function UIDemo(): JSX.Element {
 	const [errorTextValue, setErrorTextValue] = useState('');
 	const [disabledTextareaValue] = useState('');
 	const [errorTextareaValue, setErrorTextareaValue] = useState('');
+	const [pressed, setPressed] = useState(true);
+	const [checked, setChecked] = useState(true);
 
 	const selectOptions = [
 		{ value: 'ready', label: 'Ready' },
@@ -71,6 +74,20 @@ export function UIDemo(): JSX.Element {
 						<div class={styles.row}>
 							<Button>Default</Button>
 							<Button disabled>Disabled</Button>
+						</div>
+					</div>
+
+					<div class={styles.subsection}>
+						<h3 class={styles.subsectionTitle}>Pressed toggle (secondary + aria-pressed)</h3>
+						<p class={styles.sectionDesc}>A setting that lives in a row of utility buttons, like the table's "Show done". Show a check while it is on.</p>
+						<div class={styles.row}>
+							<Button class="secondary size-sm" aria-pressed={pressed} onClick={() => setPressed(!pressed)}>
+								{pressed && <Icon name="check" class="size-sm" />}
+								Show done
+							</Button>
+							<Button class="secondary" aria-pressed={true}><Icon name="check" class="size-sm" /> On</Button>
+							<Button class="secondary" aria-pressed={false}>Off</Button>
+							<Button class="secondary" aria-pressed={true} disabled><Icon name="check" class="size-sm" /> Disabled on</Button>
 						</div>
 					</div>
 				</section>
@@ -186,6 +203,31 @@ export function UIDemo(): JSX.Element {
 							<Select options={selectOptions} value={selectValue} onChange={(e) => setSelectValue((e.target as HTMLSelectElement).value)} />
 							<Select options={selectOptions} value="" disabled />
 							<Select class="error" options={selectOptions} value="" />
+						</div>
+					</div>
+				</section>
+
+				{/* Checkbox */}
+				<section class={styles.section}>
+					<h2 class={styles.sectionTitle}>Checkbox</h2>
+					<p class={styles.sectionDesc}>A labelled checkbox in the field vocabulary. Controlled component (requires checked). Use it in forms and settings; for a toggle inside a row of buttons, use a pressed Button instead.</p>
+
+					<div class={styles.subsection}>
+						<h3 class={styles.subsectionTitle}>States</h3>
+						<div class={styles.row}>
+							<Checkbox label="Controlled" checked={checked} onChange={() => setChecked(!checked)} />
+							<Checkbox label="Unchecked" checked={false} />
+							<Checkbox label="Checked" checked={true} />
+							<Checkbox label="Disabled" checked={false} disabled />
+							<Checkbox label="Disabled checked" checked={true} disabled />
+						</div>
+					</div>
+
+					<div class={styles.subsection}>
+						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
+						<div class={styles.row}>
+							<Checkbox label="Default" checked={true} />
+							<Checkbox class="size-sm" label="Small (toolbar density)" checked={true} />
 						</div>
 					</div>
 				</section>

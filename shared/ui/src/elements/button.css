@@ -51,6 +51,18 @@ button.secondary:hover:not(:disabled) {
 	background: var(--color-surface-hover);
 }
 
+/* A toggle: a secondary button carrying aria-pressed. On, it takes the subtle
+   primary fill so the row of utility buttons stays one strip. */
+button.secondary[aria-pressed="true"] {
+	background: var(--color-primary-subtle);
+	border-color: var(--color-primary);
+	color: var(--color-primary);
+}
+
+button.secondary[aria-pressed="true"]:hover:not(:disabled) {
+	background: var(--color-primary-subtle);
+}
+
 button.text {
 	background: none;
 	color: var(--color-primary);
