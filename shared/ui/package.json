@@ -27,9 +27,9 @@
 		"@specboard/core": "*",
 		"@specboard/fetch": "*",
 		"@specboard/models": "*",
-		"preact": "^10.25.4"
+		"preact": "10.29.8"
 	},
 	"devDependencies": {
-		"typescript": "^5.7.2"
+		"typescript": "5.9.3"
 	}
 }

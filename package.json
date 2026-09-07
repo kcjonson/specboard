@@ -23,24 +23,24 @@
 		"clean": "npm run --workspaces --if-present clean && rm -rf node_modules"
 	},
 	"devDependencies": {
-		"@eslint/js": "^10.0.1",
-		"@swc/core": "^1.15.7",
-		"@typescript-eslint/eslint-plugin": "^8.67.0",
-		"@typescript-eslint/parser": "^8.67.0",
-		"esbuild": "^0.28.2",
-		"eslint": "^10.8.1",
-		"jsdom": "^27.3.0",
-		"tsconfig-paths": "^4.2.0",
-		"typescript": "^5.7.2",
-		"unplugin-swc": "^1.5.9",
-		"vite": "^7.3.6",
-		"vitest": "^4.1.10"
+		"@eslint/js": "10.0.1",
+		"@swc/core": "1.15.8",
+		"@typescript-eslint/eslint-plugin": "8.67.0",
+		"@typescript-eslint/parser": "8.67.0",
+		"esbuild": "0.28.2",
+		"eslint": "10.9.0",
+		"jsdom": "27.4.0",
+		"tsconfig-paths": "4.2.0",
+		"typescript": "5.9.3",
+		"unplugin-swc": "1.5.9",
+		"vite": "7.3.6",
+		"vitest": "4.1.11"
 	},
 	"dependencies": {
-		"polyfill-symbol-metadata": "^0.0.2"
+		"polyfill-symbol-metadata": "0.0.2"
 	},
 	"overrides": {
-		"react": "npm:@preact/compat@^18.3.1",
-		"react-dom": "npm:@preact/compat@^18.3.1"
+		"react": "npm:@preact/compat@18.3.1",
+		"react-dom": "npm:@preact/compat@18.3.1"
 	}
 }
