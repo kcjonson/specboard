@@ -57,9 +57,9 @@ function readView(): PlanningView {
  */
 export function Planning(props: RouteProps): JSX.Element {
 	const projectSlug = props.params.projectSlug || 'demo';
-	// Normalized because the server accepts a hand-typed `sb-345`; without this the
-	// route key would miss the collection's canonical `SB-345` and open a duplicate,
-	// detached model instead of the live one the board is rendering.
+	// Normalized so a lower-case key from any caller can't miss the collection's
+	// canonical `SB-345` and open a duplicate, detached model instead of the live
+	// one the board is rendering.
 	const openItemKey = props.params.itemKey?.toUpperCase();
 
 	// Collection auto-fetches after projectSlug is set. Memoized so it survives view
@@ -261,7 +261,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	// as it was before the drawer opened. Replacing instead would strand a duplicate
 	// board entry, making the next Back appear to do nothing; pushing would make Back
 	// reopen the drawer. When the drawer was opened by a navigation from elsewhere in
-	// the app there is nothing of ours to pop, so replace.
+	// the app, or restored by Back/Forward, there is nothing of ours to pop, so replace.
 	const handleCloseDrawer = useCallback((): void => {
 		if (openedByPush.current) {
 			openedByPush.current = false;
@@ -371,7 +371,8 @@ export function Planning(props: RouteProps): JSX.Element {
 	);
 	const openItem = collectionItem ?? standaloneItem;
 
-	// A key that resolves to nothing (a stale link, an item someone else deleted) must
+	// A key that resolves to nothing (an item someone else deleted, an epic link in the
+	// editor pointing at a deleted epic) must
 	// not render an empty but editable drawer — that offers a Save and a Delete against
 	// an item that does not exist. Surface it instead.
 	const openItemMissing = Boolean(standaloneItem?.$meta.error);

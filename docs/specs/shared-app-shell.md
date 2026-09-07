@@ -80,7 +80,7 @@ What Capacitor still adds on top of a layout that already responds is the native
 
 **Session and auth.** Sessions are cookie-based against Redis, which assumes a served HTTP origin. Capacitor serves from `capacitor://localhost` and Electron from a file or custom protocol, so the cookie path does not carry over unchanged. Either the native shells hold a token in secure storage, or they load from a real origin and keep cookies. This is decided once, in the auth task, and applies to both shells.
 
-**Deep links.** OAuth callbacks, magic links, and item links (`/SPE-107`) all need to reach a running app: custom URL scheme plus universal links on iOS, app links on Android, protocol handler on desktop.
+**Deep links.** OAuth callbacks, magic links, and item links (canonical form `/projects/:slug/items/:key`, see [kanban-ui.md](kanban-ui.md#item-urls)) all need to reach a running app: custom URL scheme plus universal links on iOS, app links on Android, protocol handler on desktop.
 
 **Viewport chrome.** Dynamic viewport units and keyboard handling are already in place from the small-screen work. What is left is native-specific: safe-area insets for the notch and home indicator, status-bar styling, and the Android hardware back button beyond the `CloseWatcher` wiring the takeovers already use.
 

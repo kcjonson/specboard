@@ -39,7 +39,8 @@ export interface MissingItemDrawerProps {
 
 /**
  * Shown in place of the drawer when the route names an item that doesn't resolve —
- * a stale link, or one deleted while the page was open. Rendering the normal drawer
+ * one deleted while the page was open, or a dangling reference from the editor.
+ * Rendering the normal drawer
  * for a failed fetch gives an empty but *editable* panel, whose Save and Delete act
  * on an item that isn't there.
  */
