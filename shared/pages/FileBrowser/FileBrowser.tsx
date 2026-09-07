@@ -342,10 +342,10 @@ export function FileBrowser({
 	// Handle add folder
 	const handleAddFolder = async (): Promise<void> => {
 		if (!showOpenDialog) return;
-		const path = await showOpenDialog({ directory: true });
-		if (!path) return;
 
 		try {
+			const path = await showOpenDialog({ directory: true });
+			if (!path) return;
 			await fetchClient.post<ProjectStorage>(
 				`/api/projects/${projectSlug}/folders`,
 				{ path }

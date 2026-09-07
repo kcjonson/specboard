@@ -65,4 +65,12 @@ describe('FileBrowser with no repository', () => {
 		);
 		expect(showOpenDialog).toHaveBeenCalledWith({ directory: true });
 	});
+
+	it('shows a rejected picker as an error instead of throwing', async () => {
+		window.platform = { showOpenDialog: vi.fn(async () => { throw new Error('No handler registered'); }) };
+		const { findByText } = render(<FileBrowser projectSlug="specboard" />);
+
+		fireEvent.click(await findByText('+ Add Folder'));
+		await findByText('No handler registered');
+	});
 });
