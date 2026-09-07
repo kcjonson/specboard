@@ -4,7 +4,12 @@ import { useModel, ItemsCollection } from '@specboard/models';
 import { Dialog, Text } from '@specboard/ui';
 import styles from './EpicPicker.module.css';
 
-/** Rows loaded per status. The picker has no show-more, so this matches the old whole-project cap. */
+/**
+ * Rows loaded per status (so up to five times this on a board that big). The
+ * picker has no show-more, and it exists to find an item to link, so reach
+ * matters more than a light open: a linkable item past the window would just
+ * be missing. Before windowing the picker loaded the first 1000 project-wide.
+ */
 const PICKER_LIMIT = 1000;
 
 const STATUS_LABELS: Record<string, string> = {

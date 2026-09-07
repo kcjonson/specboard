@@ -56,14 +56,19 @@ export function Board({
 	);
 	const blockedItems = itemsByStatus.blocked;
 
-	// Which column is fetching its next page; the ghost card in it shows a loading state.
-	const [loadingMore, setLoadingMore] = useState<ItemStatus | null>(null);
+	// Which columns are fetching their next page; each ghost card shows its own
+	// loading state, so two clicks in flight at once don't clear each other.
+	const [loadingMore, setLoadingMore] = useState<ReadonlySet<ItemStatus>>(() => new Set());
 	const handleLoadMore = useCallback(async (status: ItemStatus): Promise<void> => {
-		setLoadingMore(status);
+		setLoadingMore((prev) => new Set(prev).add(status));
 		try {
 			await items.loadMore(status, BOARD_PAGE_SIZE);
 		} finally {
-			setLoadingMore(null);
+			setLoadingMore((prev) => {
+				const next = new Set(prev);
+				next.delete(status);
+				return next;
+			});
 		}
 	}, [items]);
 
@@ -74,9 +79,9 @@ export function Board({
 	const columnMore = (status: ItemStatus): ColumnMore | undefined => {
 		if (!items.hasMore(status)) return undefined;
 		return {
-			loaded: items.byStatus(status).length,
+			loaded: items.loadedFor(status),
 			total: items.totalFor(status),
-			loading: loadingMore === status,
+			loading: loadingMore.has(status),
 			onLoadMore: () => void handleLoadMore(status),
 		};
 	};

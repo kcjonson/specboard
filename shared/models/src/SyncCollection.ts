@@ -42,13 +42,6 @@ export interface FetchOptions {
 	 * request cannot contain.
 	 */
 	force?: boolean;
-	/**
-	 * Whether rows new to the collection count as changes (the default). Pass false
-	 * when the request window itself grew (a "show more"): the rows it adds are
-	 * expected, not server-side changes worth flashing. Changes to rows already
-	 * held are still reported.
-	 */
-	reportAdded?: boolean;
 }
 
 /** Collection metadata */
@@ -96,11 +89,13 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	private __fetchInFlight: Promise<void> | null = null;
 
 	/**
-	 * Whether the in-flight run reports rows new to the collection as changes. Kept
-	 * on the instance rather than the run so a caller that coalesces onto a
-	 * window-growing fetch can raise it: the poll still wants its flashes.
+	 * Ids that `load()` knows will be new to the collection for a reason that is
+	 * not a server-side change (a request window that grew, say). The reconcile
+	 * leaves them out of `itemsChanged` and clears the set, so a subclass fills it
+	 * inside `load()` on each fetch that needs it. Keyed by the model's id field
+	 * as a string.
 	 */
-	private __reportAdded = true;
+	protected readonly expectedNew = new Set<string>();
 
 	/**
 	 * Bumped on every change emit (add/remove/item mutation). Lets memoized derived
@@ -304,12 +299,8 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 			}
 		} else if (this.__fetchInFlight) {
 			// Coalesce concurrent calls so overlapping refetches can't race to a stale state.
-			// A caller that wants additions reported gets them even if the run it joins
-			// didn't ask for them; the flag is read only when the reconcile runs.
-			if (options?.reportAdded ?? true) this.__reportAdded = true;
 			return this.__fetchInFlight;
 		}
-		this.__reportAdded = options?.reportAdded ?? true;
 		const run = this.__fetch();
 		this.__fetchInFlight = run;
 		try {
@@ -324,7 +315,8 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	 * of `url` (several requests, out-of-band metadata) override this; the reconcile
 	 * that follows is the same either way. It runs before the reconcile touches
 	 * `__items`, so an override may read the collection's current contents to decide
-	 * what to return (ItemsCollection does, to keep items held past its windows).
+	 * what to return (ItemsCollection does, to keep items held past its windows), and
+	 * may add to `expectedNew` for rows that are new for reasons of its own.
 	 */
 	protected async load(): Promise<Array<Record<string, unknown>>> {
 		return fetchClient.get<Array<Record<string, unknown>>>(this.getUrl());
@@ -337,8 +329,6 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 
 		try {
 			const data = await this.load();
-			// Read after load(): a coalescing caller may have raised it meanwhile.
-			const reportAdded = this.__reportAdded;
 			const ModelClass = this.getModelClass();
 			const idField = (this.constructor as typeof SyncCollection).Model.idField || 'id';
 			const changeKey = (this.constructor as typeof SyncCollection).changeKey;
@@ -375,7 +365,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 				if (!existing) {
 					const item = new ModelClass(mergedData);
 					this.__subscribeToChild(item);
-					if (!isInitial && reportAdded) changedIds.push(String(id));
+					if (!isInitial && !this.expectedNew.has(String(id))) changedIds.push(String(id));
 					nextItems.push(item);
 					continue;
 				}
@@ -412,6 +402,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 			}
 
 			this.__items = nextItems;
+			this.expectedNew.clear();
 			for (const { item, data: updateData } of pendingUpdates) {
 				item.set(updateData as Partial<ModelData<T>>);
 			}
@@ -424,6 +415,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 				}
 			}
 		} catch (error) {
+			this.expectedNew.clear();
 			this.setMeta({
 				working: false,
 				error: error instanceof Error ? error : new Error(String(error)),

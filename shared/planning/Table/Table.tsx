@@ -69,16 +69,21 @@ export function Table({
 		});
 	}, []);
 	const groups = showDone ? GROUPS : GROUPS.filter((group) => group.status !== 'done');
-	// Which section is fetching its next page; its "show more" button shows a loading state.
-	const [loadingMore, setLoadingMore] = useState<ItemStatus | null>(null);
+	// Which sections are fetching their next page; each "Show more" shows its own
+	// loading state, so two clicks in flight at once don't clear each other.
+	const [loadingMore, setLoadingMore] = useState<ReadonlySet<ItemStatus>>(() => new Set());
 	const filtersActive = isFilterActive(filters);
 
 	const handleLoadMore = useCallback(async (status: ItemStatus): Promise<void> => {
-		setLoadingMore(status);
+		setLoadingMore((prev) => new Set(prev).add(status));
 		try {
 			await items.loadMore(status, TABLE_PAGE_SIZE);
 		} finally {
-			setLoadingMore(null);
+			setLoadingMore((prev) => {
+				const next = new Set(prev);
+				next.delete(status);
+				return next;
+			});
 		}
 	}, [items]);
 
@@ -157,9 +162,7 @@ export function Table({
 								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={5}>
 									<StatusDot status={status} />
 									<span class={styles.groupLabel}>{label}</span>
-										<span class={styles.groupCount}>
-										{filtersActive ? groupItems.length : items.totalFor(status)}
-									</span>
+										<span class={styles.groupCount}>{filtersActive ? groupItems.length : items.totalFor(status)}</span>
 								</span>
 							</div>
 
@@ -190,13 +193,11 @@ export function Table({
 											type="button"
 											class="text size-sm"
 											onClick={() => void handleLoadMore(status)}
-											disabled={loadingMore === status}
+											disabled={loadingMore.has(status)}
 										>
-											{loadingMore === status ? 'Loading…' : 'Show more'}
+											{loadingMore.has(status) ? 'Loading…' : 'Show more'}
 										</button>
-										<span class={styles.showMoreCount}>
-											{items.byStatus(status).length} of {items.totalFor(status)}
-										</span>
+										<span class={styles.showMoreCount}>{items.loadedFor(status)} of {items.totalFor(status)}</span>
 									</span>
 								</div>
 							)}

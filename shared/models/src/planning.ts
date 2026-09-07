@@ -229,6 +229,8 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	private declare __remaining: Map<ItemStatus, number> | undefined;
 	/** Per status, the rank of the first row past the window (absent when the window holds it all). */
 	private declare __boundaries: Map<ItemStatus, number> | undefined;
+	/** Per status, the limit the last successful load was served at; rows past it are window growth, not changes. */
+	private declare __served: Map<ItemStatus, number> | undefined;
 
 	private __getLimits(): Map<ItemStatus, number> {
 		if (!this.__limits) {
@@ -259,6 +261,7 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 
 		const remaining = new Map<ItemStatus, number>();
 		const boundaries = new Map<ItemStatus, number>();
+		const served = this.__served ?? new Map<ItemStatus, number>();
 		for (const page of pages) {
 			const beyondWindow = page.boundaryRank === undefined
 				? []
@@ -266,9 +269,14 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 			for (const item of beyondWindow) rows.push({ key: item.key, updatedAt: item.updatedAt });
 			remaining.set(page.status, Math.max(0, page.total - page.rows.length - beyondWindow.length));
 			if (page.boundaryRank !== undefined) boundaries.set(page.status, page.boundaryRank);
+			// Rows past the width this status was last served at are the window
+			// growing, not something the server changed: they must not flash.
+			for (const row of page.rows.slice(served.get(page.status) ?? 0)) this.expectedNew.add(String(row.key));
+			served.set(page.status, limits.get(page.status)!);
 		}
 		this.__remaining = remaining;
 		this.__boundaries = boundaries;
+		this.__served = served;
 		return rows;
 	}
 
@@ -278,8 +286,11 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 		);
 		const rows = data.slice(0, limit);
 		const boundary = data[limit];
-		// A stripped header degrades to "everything loaded" rather than a bogus count.
-		const total = Number(headers.get('X-Total-Count')) || data.length;
+		// A missing or unparseable header degrades to "everything loaded" (the page
+		// alone) rather than to a count that includes the boundary row.
+		const header = headers.get('X-Total-Count');
+		const parsed = header === null ? Number.NaN : Number(header);
+		const total = Number.isFinite(parsed) ? parsed : rows.length;
 		return { status, rows, boundaryRank: boundary ? Number(boundary.rank) : undefined, total };
 	}
 
@@ -297,13 +308,20 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 		return this.filter((e) => e.type === type);
 	}
 
+	/** How many items in this status the collection holds (a count, no sorting). */
+	loadedFor(status: ItemStatus): number {
+		let count = 0;
+		for (const item of this) if (item.status === status) count++;
+		return count;
+	}
+
 	/**
 	 * How many items the project holds in this status: what is loaded plus what the
 	 * server reported past the window. Tracks local adds, removes, and moves at once,
 	 * since those change the loaded part and leave the remainder alone.
 	 */
 	totalFor(status: ItemStatus): number {
-		return this.filter((e) => e.status === status).length + (this.__remaining?.get(status) ?? 0);
+		return this.loadedFor(status) + (this.__remaining?.get(status) ?? 0);
 	}
 
 	/** Whether the server holds items in this status past the loaded window. */
@@ -324,7 +342,7 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	async loadMore(status: ItemStatus, count: number): Promise<void> {
 		const limits = this.__getLimits();
 		limits.set(status, limits.get(status)! + count);
-		await this.fetch({ force: true, reportAdded: false });
+		await this.fetch({ force: true });
 	}
 
 	/**
@@ -345,7 +363,7 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 			if (this.hasMore(status)) hasMore = true;
 		}
 		if (grew && (hasMore || this.$meta.lastFetched == null)) {
-			await this.fetch({ force: true, reportAdded: false });
+			await this.fetch({ force: true });
 		}
 	}
 }

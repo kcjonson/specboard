@@ -90,6 +90,51 @@ describe('ItemsCollection windows', () => {
 		expect(items.hasMore('ready')).toBe(false);
 	});
 
+	it('a poll that lands during a show-more flashes what the server added, not the grown rows', async () => {
+		serve({ ready: 250 });
+		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		await items.fetch();
+		const events: string[][] = [];
+		items.onItemsChanged((ids) => events.push(ids));
+
+		// Someone else creates an item at the top of Ready while the window grows.
+		vi.mocked(fetchClient.getResponse).mockImplementation(async (url: string) => {
+			const params = new URL(url, 'http://x').searchParams;
+			const status = params.get('status') as ItemStatus;
+			const limit = Number(params.get('limit'));
+			const total = status === 'ready' ? 251 : 0;
+			const data = status === 'ready'
+				? [row('ready', 900, 0), ...Array.from({ length: Math.min(limit - 1, 250) }, (_, i) => row('ready', i + 1))]
+				: [];
+			return { data, headers: new Headers({ 'X-Total-Count': String(total) }) };
+		});
+		const growing = items.loadMore('ready', 100);
+		const poll = items.fetch();
+		await Promise.all([growing, poll]);
+
+		expect(items.loadedFor('ready')).toBe(200);
+		expect(events).toEqual([['SB-ready-900']]);
+	});
+
+	it('reads a total of 0 as 0 and a missing header as "everything loaded"', async () => {
+		vi.mocked(fetchClient.getResponse).mockImplementation(async (url: string) => {
+			const status = new URL(url, 'http://x').searchParams.get('status') as ItemStatus;
+			if (status === 'ready') return { data: [], headers: new Headers({ 'X-Total-Count': '0' }) };
+			if (status === 'done') {
+				// 101 rows back for limit 100 and no header: the boundary row must not count.
+				return { data: Array.from({ length: 101 }, (_, i) => row('done', i + 1)), headers: new Headers() };
+			}
+			return { data: [], headers: new Headers({ 'X-Total-Count': '0' }) };
+		});
+		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		await items.fetch();
+
+		expect(items.totalFor('ready')).toBe(0);
+		expect(items.hasMore('ready')).toBe(false);
+		expect(items.totalFor('done')).toBe(100);
+		expect(items.hasMore('done')).toBe(false);
+	});
+
 	it('a poll re-requests the widened window, so it never shrinks', async () => {
 		serve({ ready: 250 });
 		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });

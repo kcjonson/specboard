@@ -258,45 +258,40 @@ describe('SyncCollection reconciling fetch', () => {
 		expect(docs.toArray().map((doc) => doc.id)).toEqual([1, 2]);
 	});
 
-	it('does not report rows a window-growing fetch adds, but still reports changed ones', async () => {
-		vi.mocked(fetchClient.get).mockResolvedValue([{ id: 1, title: 'a', updatedAt: 't1' }]);
-		const docs = new Docs({});
-		await docs.fetch();
-
-		const events: string[][] = [];
-		docs.onItemsChanged((ids) => events.push(ids));
-
-		vi.mocked(fetchClient.get).mockResolvedValue([
-			{ id: 1, title: 'a2', updatedAt: 't2' }, // changed
-			{ id: 2, title: 'b', updatedAt: 't1' }, // added by the wider window
-		]);
-		await docs.fetch({ force: true, reportAdded: false });
-
-		expect(docs.length).toBe(2);
-		expect(events).toEqual([['1']]);
-	});
-
-	it('a poll that coalesces onto a window-growing fetch still gets its added rows reported', async () => {
-		vi.mocked(fetchClient.get).mockResolvedValue([{ id: 1, title: 'a', updatedAt: 't1' }]);
-		const docs = new Docs({});
+	it('leaves ids that load() marked expected out of itemsChanged, and clears the mark', async () => {
+		class Windowed extends SyncCollection<Doc> {
+			static url = '/api/docs';
+			static Model = Doc;
+			// Set via initialProps: the base constructor fetches before field initializers run.
+			declare rows: Array<Record<string, unknown>>;
+			declare expected: number[];
+			protected override async load(): Promise<Array<Record<string, unknown>>> {
+				for (const id of this.expected) this.expectedNew.add(String(id));
+				return this.rows;
+			}
+		}
+		const docs = new Windowed({ rows: [{ id: 1, title: 'a', updatedAt: 't1' }], expected: [] });
 		await docs.fetch();
 		const events: string[][] = [];
 		docs.onItemsChanged((ids) => events.push(ids));
 
-		let release: (rows: Array<Record<string, unknown>>) => void = () => {};
-		vi.mocked(fetchClient.get).mockImplementationOnce(
-			() => new Promise((resolve) => { release = resolve; }) as never
-		);
-		const growing = docs.fetch({ force: true, reportAdded: false });
-		const poll = docs.fetch(); // coalesces onto the growing run
-
-		release([
-			{ id: 1, title: 'a', updatedAt: 't1' },
+		// The window grew to include 2; the server also changed 1 and added 3.
+		docs.rows = [
+			{ id: 1, title: 'a2', updatedAt: 't2' },
 			{ id: 2, title: 'b', updatedAt: 't1' },
-		]);
-		await Promise.all([growing, poll]);
+			{ id: 3, title: 'c', updatedAt: 't1' },
+		];
+		docs.expected = [2];
+		await docs.fetch({ force: true });
+		expect(events).toEqual([['1', '3']]);
 
-		expect(events).toEqual([['2']]);
+		// The mark does not survive into the next fetch: 2 dropped and re-added is a change.
+		docs.rows = [{ id: 1, title: 'a2', updatedAt: 't2' }];
+		docs.expected = [];
+		await docs.fetch();
+		docs.rows = [{ id: 1, title: 'a2', updatedAt: 't2' }, { id: 2, title: 'b', updatedAt: 't1' }];
+		await docs.fetch();
+		expect(events).toEqual([['1', '3'], ['2']]);
 	});
 
 	it('reconciles whatever rows a subclass load() supplies', async () => {
