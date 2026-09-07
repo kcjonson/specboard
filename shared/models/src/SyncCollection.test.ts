@@ -258,6 +258,57 @@ describe('SyncCollection reconciling fetch', () => {
 		expect(docs.toArray().map((doc) => doc.id)).toEqual([1, 2]);
 	});
 
+	it('leaves ids that load() marked expected out of itemsChanged, and clears the mark', async () => {
+		class Windowed extends SyncCollection<Doc> {
+			static url = '/api/docs';
+			static Model = Doc;
+			// Set via initialProps: the base constructor fetches before field initializers run.
+			declare rows: Array<Record<string, unknown>>;
+			declare expected: number[];
+			protected override async load(): Promise<Array<Record<string, unknown>>> {
+				for (const id of this.expected) this.expectedNew.add(String(id));
+				return this.rows;
+			}
+		}
+		const docs = new Windowed({ rows: [{ id: 1, title: 'a', updatedAt: 't1' }], expected: [] });
+		await docs.fetch();
+		const events: string[][] = [];
+		docs.onItemsChanged((ids) => events.push(ids));
+
+		// The window grew to include 2; the server also changed 1 and added 3.
+		docs.rows = [
+			{ id: 1, title: 'a2', updatedAt: 't2' },
+			{ id: 2, title: 'b', updatedAt: 't1' },
+			{ id: 3, title: 'c', updatedAt: 't1' },
+		];
+		docs.expected = [2];
+		await docs.fetch({ force: true });
+		expect(events).toEqual([['1', '3']]);
+
+		// The mark does not survive into the next fetch: 2 dropped and re-added is a change.
+		docs.rows = [{ id: 1, title: 'a2', updatedAt: 't2' }];
+		docs.expected = [];
+		await docs.fetch();
+		docs.rows = [{ id: 1, title: 'a2', updatedAt: 't2' }, { id: 2, title: 'b', updatedAt: 't1' }];
+		await docs.fetch();
+		expect(events).toEqual([['1', '3'], ['2']]);
+	});
+
+	it('reconciles whatever rows a subclass load() supplies', async () => {
+		class Merged extends SyncCollection<Doc> {
+			static url = '/api/docs';
+			static Model = Doc;
+			protected override async load(): Promise<Array<Record<string, unknown>>> {
+				return [{ id: 7, title: 'from load', updatedAt: 't1' }];
+			}
+		}
+		const merged = new Merged({});
+		await merged.fetch();
+
+		expect(fetchClient.get).not.toHaveBeenCalled();
+		expect(merged.toArray().map((d) => d.id)).toEqual([7]);
+	});
+
 	it('still coalesces when force is not set', async () => {
 		vi.mocked(fetchClient.get).mockResolvedValue([{ id: 1, title: 'a', updatedAt: 't1' }]);
 		const docs = new Docs({});

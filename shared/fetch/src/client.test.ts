@@ -54,6 +54,20 @@ describe('FetchClient', () => {
 			expect(result).toEqual({ data: 'test' });
 		});
 
+		it('should expose response headers via getResponse', async () => {
+			mockFetch.mockResolvedValue({
+				ok: true,
+				status: 200,
+				headers: new Headers({ 'content-type': 'application/json', 'x-total-count': '842' }),
+				json: async () => [{ id: 1 }],
+			});
+
+			const { data, headers } = await client.getResponse<Array<{ id: number }>>('/api/items');
+
+			expect(data).toEqual([{ id: 1 }]);
+			expect(headers.get('x-total-count')).toBe('842');
+		});
+
 		it('should make POST requests with body', async () => {
 			await client.post('/test', { name: 'John' });
 

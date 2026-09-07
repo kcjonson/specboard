@@ -1,10 +1,14 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
-import { StatusDot } from '@specboard/ui';
+import { Button, Icon, StatusDot } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
-import { matchesFilters, type PlanningFilters } from '../Planning/filters';
+import { isFilterActive, matchesFilters, type PlanningFilters } from '../Planning/filters';
+import { SHOW_DONE_PREF, readPref, writePref } from '../Planning/prefs';
 import styles from './Table.module.css';
+
+/** Rows a status section starts with, and how many each "show more" adds. */
+export const TABLE_PAGE_SIZE = 200;
 
 /**
  * Status sections, in display order (active work first). Blocked and In Review
@@ -55,6 +59,33 @@ export function Table({
 	onOpenChild,
 }: TableProps): JSX.Element {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+	// The Done section is usually the biggest and the least interesting, so it is
+	// hidden unless asked for; the choice sticks per browser like the view does.
+	const [showDone, setShowDone] = useState<boolean>(() => readPref(SHOW_DONE_PREF) === 'true');
+	const toggleShowDone = useCallback((): void => {
+		setShowDone((prev) => {
+			writePref(SHOW_DONE_PREF, String(!prev));
+			return !prev;
+		});
+	}, []);
+	const groups = showDone ? GROUPS : GROUPS.filter((group) => group.status !== 'done');
+	// Which sections are fetching their next page; each "Show more" shows its own
+	// loading state, so two clicks in flight at once don't clear each other.
+	const [loadingMore, setLoadingMore] = useState<ReadonlySet<ItemStatus>>(() => new Set());
+	const filtersActive = isFilterActive(filters);
+
+	const handleLoadMore = useCallback(async (status: ItemStatus): Promise<void> => {
+		setLoadingMore((prev) => new Set(prev).add(status));
+		try {
+			await items.loadMore(status, TABLE_PAGE_SIZE);
+		} finally {
+			setLoadingMore((prev) => {
+				const next = new Set(prev);
+				next.delete(status);
+				return next;
+			});
+		}
+	}, [items]);
 
 	const grouped = useMemo(() => {
 		const byStatus = {} as Record<ItemStatus, ItemModel[]>;
@@ -82,7 +113,7 @@ export function Table({
 
 	const expandAll = useCallback((): void => {
 		const ids = new Set<string>();
-		for (const group of GROUPS) {
+		for (const group of groups) {
 			for (const item of grouped[group.status]) {
 				if (item.childStats.total > 0) {
 					ids.add(item.id);
@@ -91,7 +122,7 @@ export function Table({
 			}
 		}
 		setExpanded(ids);
-	}, [grouped]);
+	}, [grouped, groups]);
 
 	const collapseAll = useCallback((): void => {
 		setExpanded(new Set());
@@ -106,6 +137,11 @@ export function Table({
 				<button type="button" class="secondary size-sm" onClick={collapseAll}>
 					Collapse all
 				</button>
+				<Button class={`secondary size-sm ${styles.toggle}`} aria-pressed={showDone} onClick={toggleShowDone}>
+					{/* Both states carry a box so the button's width never shifts on toggle. */}
+					<Icon name={showDone ? 'checkbox-checked' : 'checkbox-unchecked'} class="size-sm" />
+					Show done
+				</Button>
 			</div>
 
 			<div class={styles.table} role="table">
@@ -117,7 +153,7 @@ export function Table({
 					<span class={styles.colAssignee} role="columnheader">Assignee</span>
 				</div>
 
-				{GROUPS.map(({ status, label, whenNonEmpty }) => {
+				{groups.map(({ status, label, whenNonEmpty }) => {
 					const groupItems = grouped[status];
 					if (whenNonEmpty && groupItems.length === 0) return null;
 					return (
@@ -126,7 +162,7 @@ export function Table({
 								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={5}>
 									<StatusDot status={status} />
 									<span class={styles.groupLabel}>{label}</span>
-									<span class={styles.groupCount}>{groupItems.length}</span>
+										<span class={styles.groupCount}>{filtersActive ? groupItems.length : items.totalFor(status)}</span>
 								</span>
 							</div>
 
@@ -148,6 +184,22 @@ export function Table({
 										onOpenChild={onOpenChild}
 									/>
 								))
+							)}
+
+							{items.hasMore(status) && (
+								<div class={styles.showMoreRow} role="row">
+									<span class={styles.showMoreCell} role="cell" aria-colspan={5}>
+										<button
+											type="button"
+											class="text size-sm"
+											onClick={() => void handleLoadMore(status)}
+											disabled={loadingMore.has(status)}
+										>
+											{loadingMore.has(status) ? 'Loading…' : 'Show more'}
+										</button>
+										<span class={styles.showMoreCount}>{items.loadedFor(status)} of {items.totalFor(status)}</span>
+									</span>
+								</div>
 							)}
 						</div>
 					);

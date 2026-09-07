@@ -13,6 +13,8 @@ export interface ButtonProps {
 	class?: string;
 	/** Aria label for icon buttons */
 	'aria-label'?: string;
+	/** Toggle state; a secondary button renders pressed when true */
+	'aria-pressed'?: boolean;
 	/** Tooltip text */
 	title?: string;
 	/** Button style variant */
@@ -26,6 +28,7 @@ export function Button({
 	type = 'button',
 	class: className,
 	'aria-label': ariaLabel,
+	'aria-pressed': ariaPressed,
 	title,
 	variant,
 }: ButtonProps): JSX.Element {
@@ -37,6 +40,7 @@ export function Button({
 			onClick={onClick}
 			disabled={disabled}
 			aria-label={ariaLabel}
+			aria-pressed={ariaPressed}
 			title={title}
 		>
 			{children}

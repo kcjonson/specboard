@@ -100,6 +100,12 @@ export interface ItemWithDetails extends ItemWithChildren {
 	workers?: WorkerSummary[];
 }
 
+/** A page of items plus how many rows matched before `limit` cut the page. */
+export interface ItemList {
+	items: ItemWithDetails[];
+	total: number;
+}
+
 export interface CreateItemInput {
 	title: string;
 	type?: ItemType;
@@ -179,7 +185,23 @@ export interface GetItemsParams {
 	includeSpecs?: boolean;
 	includeBlockers?: boolean;
 	includeWorkers?: boolean;
+	/** Max rows in the page (lists only), clamped to [1, MAX_LIST_LIMIT]. The result's `total` counts past it. */
 	limit?: number;
+}
+
+/** Upper bound on one list page. A client growing its window stops here. */
+export const MAX_LIST_LIMIT = 5000;
+const DEFAULT_LIST_LIMIT = 25;
+
+/**
+ * The page size a caller asked for, made safe for SQL: callers hand through
+ * query strings and MCP args, so this is the one place that turns "0", -1,
+ * "abc", or 10^9 into a limit Postgres will accept and the total can stand behind.
+ */
+function pageLimit(requested: number | undefined): number {
+	const n = typeof requested === 'number' ? requested : Number.parseInt(String(requested), 10);
+	if (!Number.isFinite(n)) return DEFAULT_LIST_LIMIT;
+	return Math.min(Math.max(Math.trunc(n), 1), MAX_LIST_LIMIT);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -269,25 +291,33 @@ type ItemWithCounts = ItemRow & {
 	done_count: string;
 	in_progress_count: string;
 	blocked_count: string;
+	total_count: string;
 };
 
 /**
  * Query top-level items (parent_id IS NULL) with child stats, or a single item by its
  * per-project number. Optionally include each item's children, activity-log entries, specs,
  * blockers, and active workers.
+ *
+ * `total` is the number of rows the filters matched, which can exceed the page when
+ * `limit` cut it; it is what lets a client show a bounded window and know more exists.
  */
-export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[]> {
-	const { projectId, itemNumber, status, type, search, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers, limit = 25 } = params;
+export async function getItems(params: GetItemsParams): Promise<ItemList> {
+	const { projectId, itemNumber, status, type, search, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers } = params;
+	const limit = pageLimit(params.limit);
 
 	// The project join supplies the key that every item key is built from.
 	// open_blocks joins are one-to-one (DISTINCT), so they don't inflate the
 	// child aggregate the way a direct join on item_blockers would.
+	// COUNT(*) OVER() runs after GROUP BY and before LIMIT, so it counts matching
+	// items, not child rows, and is not cut by the page.
 	let sql = `
 		WITH open_blocks AS (
 			SELECT DISTINCT item_id FROM item_blockers WHERE project_id = $1 AND cleared_at IS NULL
 		)
 		SELECT i.*, p.key as project_key, parent.number as parent_number,
 			(i.status = 'blocked' OR ob.item_id IS NOT NULL) as blocked,
+			COUNT(*) OVER() as total_count,
 			COUNT(c.id) as child_count,
 			COUNT(c.id) FILTER (WHERE c.status = 'done') as done_count,
 			COUNT(c.id) FILTER (WHERE c.status = 'in_progress') as in_progress_count,
@@ -380,7 +410,10 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 		? await listActiveWorkersByItems(itemIds)
 		: undefined;
 
-	return result.rows.map((row) => ({
+	// An empty page means nothing matched: with no offset there is no row to carry the count.
+	const total = result.rows[0] ? parseInt(result.rows[0].total_count, 10) : 0;
+
+	const items = result.rows.map((row) => ({
 		...transformItem(row),
 		blocked: row.blocked,
 		childStats: {
@@ -395,6 +428,14 @@ export async function getItems(params: GetItemsParams): Promise<ItemWithDetails[
 		...(blockersByItem ? { blockers: blockersByItem.get(row.id) || [] } : {}),
 		...(workersByItem ? { workers: workersByItem.get(row.id) || [] } : {}),
 	}));
+
+	return { items, total };
+}
+
+/** One item by its per-project number, as the write paths return it. */
+async function getItemByNumber(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
+	const { items } = await getItems({ projectId, itemNumber });
+	return items[0] ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -546,8 +587,7 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 	if (data.branchName !== undefined) set('branch_name', data.branchName);
 
 	if (updates.length === 0) {
-		const found = await getItems({ projectId, itemNumber });
-		return found[0] ?? null;
+		return getItemByNumber(projectId, itemNumber);
 	}
 
 	updates.push('updated_at = NOW()');
@@ -575,8 +615,7 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 		await endWorkers(projectId, itemNumber);
 	}
 
-	const found = await getItems({ projectId, itemNumber });
-	return found[0] ?? null;
+	return getItemByNumber(projectId, itemNumber);
 }
 
 /**
@@ -640,8 +679,7 @@ export async function moveItem(projectId: string, itemNumber: number, newParentN
 		}
 		return null;
 	}
-	const found = await getItems({ projectId, itemNumber });
-	return found[0] ?? null;
+	return getItemByNumber(projectId, itemNumber);
 }
 
 /** Delete an item (its children cascade via the parent_id FK). */
@@ -663,8 +701,7 @@ export async function startItem(projectId: string, itemNumber: number): Promise<
 	if (parentId) {
 		await query(`UPDATE items SET status = 'in_progress', updated_at = NOW() WHERE id = $1 AND status = 'ready'`, [parentId]);
 	}
-	const found = await getItems({ projectId, itemNumber });
-	return found[0] ?? null;
+	return getItemByNumber(projectId, itemNumber);
 }
 
 /**
@@ -683,8 +720,7 @@ export async function completeItem(projectId: string, itemNumber: number): Promi
 	});
 	if (!completed) return null;
 	await endWorkers(projectId, itemNumber);
-	const found = await getItems({ projectId, itemNumber });
-	return found[0] ?? null;
+	return getItemByNumber(projectId, itemNumber);
 }
 
 /** Block an item (a manual status-level hold). Ends worker episodes (no longer being worked). */
@@ -695,8 +731,7 @@ export async function blockItem(projectId: string, itemNumber: number): Promise<
 	);
 	if (result.rows.length === 0) return null;
 	await endWorkers(projectId, itemNumber);
-	const found = await getItems({ projectId, itemNumber });
-	return found[0] ?? null;
+	return getItemByNumber(projectId, itemNumber);
 }
 
 /** Unblock an item back to ready. Ends worker episodes (no longer being worked). */
@@ -707,6 +742,5 @@ export async function unblockItem(projectId: string, itemNumber: number): Promis
 	);
 	if (result.rows.length === 0) return null;
 	await endWorkers(projectId, itemNumber);
-	const found = await getItems({ projectId, itemNumber });
-	return found[0] ?? null;
+	return getItemByNumber(projectId, itemNumber);
 }

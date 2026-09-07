@@ -13,6 +13,12 @@ export interface RequestConfig extends Omit<RequestInit, 'body'> {
 	body?: unknown;
 }
 
+/** A parsed body plus the headers it arrived with (see `FetchClient.getResponse`). */
+export interface FetchResponse<T> {
+	data: T;
+	headers: Headers;
+}
+
 export type RequestInterceptor = (config: RequestConfig) => RequestConfig | Promise<RequestConfig>;
 export type ResponseInterceptor = <T>(data: T, response: Response) => T | Promise<T>;
 export type ErrorInterceptor = (error: FetchError) => void | Promise<void>;
