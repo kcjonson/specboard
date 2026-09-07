@@ -128,47 +128,40 @@ export function getRelativePath(repoRoot: string, absolutePath: string): string 
  * Uses realpath to resolve symlinks and prevent symlink-based attacks
  */
 export async function validatePath(repoRoot: string, relativePath: string): Promise<string> {
-	const absolutePath = path.resolve(repoRoot, relativePath.replace(/^\//, ''));
+	const absolutePath = path.resolve(repoRoot, relativePath.replace(/^[\\/]+/, ''));
 
-	// Resolve symlinks in both paths for secure comparison
 	let realRepoRoot: string;
-	let realAbsolutePath: string;
-
 	try {
 		realRepoRoot = await fs.realpath(repoRoot);
 	} catch {
 		throw new Error('Repository root not accessible');
 	}
 
-	try {
-		realAbsolutePath = await fs.realpath(absolutePath);
-	} catch {
-		// Path doesn't exist yet (e.g., for write operations)
-		// Fall back to checking the parent directory
-		const parentPath = path.dirname(absolutePath);
-		try {
-			const realParent = await fs.realpath(parentPath);
-			// Ensure path separator boundary to prevent /repo matching /repo-other
-			const repoRootWithSep = realRepoRoot.endsWith(path.sep) ? realRepoRoot : realRepoRoot + path.sep;
-			if (realParent !== realRepoRoot && !realParent.startsWith(repoRootWithSep)) {
-				throw new Error('Path traversal detected');
-			}
-		} catch {
-			// Parent doesn't exist either - just do the basic check
-			const normalizedRepo = path.normalize(repoRoot);
-			const normalizedRepoWithSep = normalizedRepo.endsWith(path.sep) ? normalizedRepo : normalizedRepo + path.sep;
-			if (absolutePath !== normalizedRepo && !absolutePath.startsWith(normalizedRepoWithSep)) {
-				throw new Error('Path traversal detected');
-			}
-		}
-		return absolutePath;
-	}
+	// The path may not exist yet (write operations), so resolve the deepest
+	// existing ancestor and check that instead. path.resolve has already
+	// collapsed any '..', so the components below it are plain names.
+	const realAncestor = await realpathDeepestExistingAncestor(absolutePath);
 
 	// Ensure path separator boundary to prevent /repo matching /repo-other
 	const repoRootWithSep = realRepoRoot.endsWith(path.sep) ? realRepoRoot : realRepoRoot + path.sep;
-	if (realAbsolutePath !== realRepoRoot && !realAbsolutePath.startsWith(repoRootWithSep)) {
+	if (realAncestor !== realRepoRoot && !realAncestor.startsWith(repoRootWithSep)) {
 		throw new Error('Path traversal detected');
 	}
 
 	return absolutePath;
+}
+
+async function realpathDeepestExistingAncestor(absolutePath: string): Promise<string> {
+	let current = absolutePath;
+	for (;;) {
+		try {
+			return await fs.realpath(current);
+		} catch {
+			const parent = path.dirname(current);
+			if (parent === current) {
+				throw new Error('Repository root not accessible');
+			}
+			current = parent;
+		}
+	}
 }

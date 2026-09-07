@@ -92,7 +92,7 @@ export default [
 			'no-var': 'error',
 		},
 	},
-	// Node.js files (api, mcp, storage, infra, desktop, frontend server, shared server packages, lambda)
+	// Node.js files (api, mcp, storage, infra, desktop, frontend server, ssg build, shared server packages, lambda)
 	{
 		files: [
 			'api/**/*.ts',
@@ -106,6 +106,7 @@ export default [
 			'shared/auth/**/*.ts',
 			'shared/core/**/*.ts',
 			'shared/email/**/*.ts',
+			'ssg/**/*.ts',
 		],
 		languageOptions: {
 			globals: {

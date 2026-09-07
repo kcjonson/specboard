@@ -54,7 +54,7 @@ The frontend is storage-agnostic—it uses the same API regardless of mode.
 ```
 Frontend (browser)
     │
-    ├── POST /api/projects/:projectSlug/folders     ← Add folder (local mode)
+    ├── POST /api/projects/:projectSlug/folders     ← Add folder (only with LOCAL_STORAGE_ENABLED=true)
     ├── PUT  /api/projects/:projectSlug {repository} ← Connect GitHub (cloud mode)
     ├── GET  /api/projects/:projectSlug/tree        ← List files
     ├── GET  /api/projects/:projectSlug/files?path= ← Read file
@@ -157,6 +157,10 @@ Developer running the **Electron desktop app** for:
 - Testing before pushing to cloud
 
 **Note:** Local mode is not available in the browser. Browser users must use cloud mode.
+
+The API only registers `POST /api/projects/:projectSlug/folders` when it starts with `LOCAL_STORAGE_ENABLED=true`. Today only the dev compose stack sets it (the host repo is mounted at `/host/specboard`); the cloud build never does, so a web user cannot point a project at a path on the API container. A desktop shell that runs its own API process will need to set it too.
+
+The file browser decides which empty state to show by asking `@specboard/platform` for the desktop bridge (`getPlatformBridge()`) and checking for `showOpenDialog`. With it, the browser offers "Add Folder" and opens that picker; without it (the browser, or a shell that exposes no picker) a project without a repository gets a note that pages come from a GitHub repository and a link to the project's settings dialog (`/projects?edit=<slug>`).
 
 ### Add Folder Flow
 
@@ -284,7 +288,7 @@ A project that already has a repository cannot swap or remove it in v1; the API 
 
 #### POST /api/projects/:projectSlug/folders
 
-Add a local folder to the project.
+Add a local folder to the project. Registered only when the API starts with `LOCAL_STORAGE_ENABLED=true`; 404 otherwise.
 
 **Request:**
 ```json

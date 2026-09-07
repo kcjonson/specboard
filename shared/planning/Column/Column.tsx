@@ -5,10 +5,22 @@ import { StatusDot } from '@specboard/ui';
 import { ItemCard } from '../ItemCard/ItemCard';
 import styles from './Column.module.css';
 
+/** The part of a status the column hasn't loaded, and how to load the next page of it. */
+export interface ColumnMore {
+	loaded: number;
+	total: number;
+	loading: boolean;
+	onLoadMore: () => void;
+}
+
 interface ColumnProps {
 	status: ItemStatus;
 	title: string;
 	items: ItemModel[];
+	/** Number shown in the header: the server total, or the filtered count while a filter is active. */
+	count: number;
+	/** Present while the server holds more of this status than the column shows. */
+	more?: ColumnMore;
 	projectSlug: string;
 	selectedItemKey?: string;
 	flashingIds: Set<string>;
@@ -25,6 +37,8 @@ export function Column({
 	status,
 	title,
 	items,
+	count,
+	more,
 	projectSlug,
 	selectedItemKey,
 	flashingIds,
@@ -98,19 +112,21 @@ export function Column({
 	].filter(Boolean).join(' ');
 
 	return (
-		<div class={styles.column} role="listbox" aria-label={`${title} column`}>
+		<div class={styles.column}>
 			<div class={styles.header}>
 				<h2 class={styles.title}>
 					<StatusDot status={status} />
 					{title}
 				</h2>
-				<span class={styles.count}>{items.length}</span>
+				<span class={styles.count}>{count}</span>
 			</div>
 
 			<div class={styles.content}>
 				<div
 					ref={dropZoneRef}
 					class={dropZoneClass}
+					role="listbox"
+					aria-label={`${title} column`}
 					onDragOver={handleDragOver}
 					onDragLeave={handleDragLeave}
 					onDrop={handleDrop}
@@ -140,6 +156,19 @@ export function Column({
 						<div class={styles.dropIndicator} />
 					)}
 				</div>
+				{/* Ghost card: outside the listbox (not an option) and the drop zone (not a target). */}
+				{more && (
+					<button
+						type="button"
+						class={styles.showMore}
+						onClick={more.onLoadMore}
+						disabled={more.loading}
+						aria-label={`Show more ${title} items, ${more.loaded} of ${more.total} shown`}
+					>
+						<span>{more.loading ? 'Loading…' : 'Show more'}</span>
+						<span class={styles.showMoreCount}>{more.loaded} of {more.total}</span>
+					</button>
+				)}
 			</div>
 		</div>
 	);

@@ -69,6 +69,8 @@ services:
 
 The host volume mount (`- .:/host/specboard`) enables local file operations from within the API container. This is required for Git operations on local repositories.
 
+The route that attaches such a directory to a project (`POST /api/projects/:projectSlug/folders`) is only registered when the API starts with `LOCAL_STORAGE_ENABLED=true`. `docker-compose.yml` sets it; the cloud task definitions do not, so that route 404s on staging and production.
+
 #### API Key Encryption
 
 The `API_KEY_ENCRYPTION_KEY` is required for the AI chat feature, which stores user Anthropic API keys encrypted in the database.

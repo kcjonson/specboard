@@ -66,10 +66,11 @@ A lightweight, keyboard-first kanban board with:
 
 **Visual Design:**
 - Fixed width: 320px
-- Header: Status name + count badge
+- Header: Status name + count badge. The count is the server's total for the status, not how many cards are loaded; while a search or type filter is active it is the filtered count instead.
 - Scrollable content area
 - Drop zone highlight on drag over
 - Optional WIP limit indicator
+- Ghost card (dashed outline, muted text) at the foot of a column when the server holds more of that status than is loaded: "Show more" plus "100 of 842". Clicking it loads the next page into the column. It sits below the drop zone (a drop over it lands at the end of the column) and is not part of keyboard traversal.
 
 ### Epic Card
 
@@ -295,8 +296,7 @@ In epic detail modal, press `C` or click "+ Add Task":
    - Code-split modal components
    - Tree-shake unused code
 
-2. **Efficient rendering**
-   - Virtualize if >50 epics (unlikely but prepare)
+2. **Bounded loading windows** (see "Loading windows" below)
    - Memoize epic cards
    - Batch state updates
 
@@ -308,6 +308,40 @@ In epic detail modal, press `C` or click "+ Add Task":
 4. **Prefetch**
    - Prefetch epic details on hover
    - Cache API responses
+
+### Loading windows
+
+A project can hold thousands of items, so neither view loads the whole project. The
+items collection keeps one window per status: the first N items by rank, requested
+as `GET /items?status=<s>&limit=<N>`, one request per status. The response's
+`X-Total-Count` header is how the client knows a status has more.
+
+| View | Window per status | Affordance |
+|------|-------------------|------------|
+| Board | 100 cards per column | Ghost card at the foot of the column |
+| Table | 200 rows per section | "Show more" row at the foot of the section |
+
+The table also has a "Show done" toggle beside Expand all / Collapse all: a secondary
+size-sm button with `aria-pressed`, showing a check while on. It is off by default,
+which hides the Done section (usually the largest and least interesting), and the
+choice is remembered per browser alongside the active view.
+
+This is additive, not paged: "show more" widens that status's window by one page
+and refetches it, so the loaded set only ever grows. The background poll re-requests
+every window at its current width, which is what stops a refresh from shrinking a
+column the user expanded. Switching from the board to the table widens every window
+to the table's size; switching back leaves them wide.
+
+Two consequences worth knowing:
+
+- Each window request asks for one row past its limit. That row's rank marks where
+  the window ends, and lets the client tell an item it moved or created past the
+  window (still on the server, just outside the page) from one the server dropped.
+  Locally moved items are kept, not removed, by the next poll, until a wider window
+  returns them for real or the page reloads. A poll cannot see another client delete
+  or move such an item, so a card can outlive the server row until then.
+- Search and the type filter still apply client-side, to what is loaded. Server-side
+  filtering of the windows is a follow-up.
 
 ---
 

@@ -1,10 +1,13 @@
-import { useMemo, useCallback } from 'preact/hooks';
+import { useMemo, useCallback, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type Status, type ItemStatus } from '@specboard/models';
-import { Column } from '../Column/Column';
+import { Column, type ColumnMore } from '../Column/Column';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
-import { matchesFilters, type PlanningFilters } from '../Planning/filters';
+import { isFilterActive, matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Board.module.css';
+
+/** Cards a column starts with, and how many each "show more" adds. */
+export const BOARD_PAGE_SIZE = 100;
 
 export interface BoardProps {
 	/** Shared collection owned by the Planning container. */
@@ -53,19 +56,62 @@ export function Board({
 	);
 	const blockedItems = itemsByStatus.blocked;
 
+	// Which columns are fetching their next page; each ghost card shows its own
+	// loading state, so two clicks in flight at once don't clear each other.
+	const [loadingMore, setLoadingMore] = useState<ReadonlySet<ItemStatus>>(() => new Set());
+	const handleLoadMore = useCallback(async (status: ItemStatus): Promise<void> => {
+		setLoadingMore((prev) => new Set(prev).add(status));
+		try {
+			await items.loadMore(status, BOARD_PAGE_SIZE);
+		} finally {
+			setLoadingMore((prev) => {
+				const next = new Set(prev);
+				next.delete(status);
+				return next;
+			});
+		}
+	}, [items]);
+
+	// The header count is the server total for the status; a filter narrows it to
+	// what the column actually shows. The ghost card is always about the unfiltered
+	// status, since that's what "show more" loads.
+	const filtersActive = isFilterActive(filters);
+	const columnMore = (status: ItemStatus): ColumnMore | undefined => {
+		if (!items.hasMore(status)) return undefined;
+		return {
+			loaded: items.loadedFor(status),
+			total: items.totalFor(status),
+			loading: loadingMore.has(status),
+			onLoadMore: () => void handleLoadMore(status),
+		};
+	};
+	const columnCount = (status: ItemStatus, shown: ItemModel[]): number =>
+		filtersActive ? shown.length : items.totalFor(status);
+
 	// Wrapper for Column (which only emits ItemModel, never undefined).
 	const handleColumnSelectItem = useCallback(
 		(item: ItemModel): void => onSelectItem(item),
 		[onSelectItem]
 	);
 
+	// A rank that puts `item` after every card in the column. Ranks are sparse (a new
+	// item takes the project-wide max + 1), so this is the last loaded rank + 1, not
+	// the column length; and when the column has cards past its window it must be at
+	// least the first unloaded rank, or the next poll would read the card as dropped.
+	const endRank = useCallback((item: ItemModel, status: ItemStatus): number => {
+		const last = items.byStatus(status).filter((e) => e !== item).at(-1);
+		const afterLoaded = last ? last.rank + 1 : 1;
+		const unloaded = items.firstUnloadedRank(status);
+		return unloaded === undefined ? afterLoaded : Math.max(afterLoaded, unloaded);
+	}, [items]);
+
 	const handleMoveItem = useCallback(
 		(item: ItemModel, status: Status): void => {
+			item.rank = endRank(item, status);
 			item.status = status;
-			item.rank = items.byStatus(status).length + 1;
 			item.save();
 		},
-		[items]
+		[endRank]
 	);
 
 	useKeyboardNavigation({
@@ -112,7 +158,7 @@ export function Board({
 		} else if (dropIndex === 0) {
 			newRank = firstItem.rank - 1;
 		} else if (dropIndex >= targetColumnItems.length) {
-			newRank = lastItem.rank + 1;
+			newRank = endRank(item, newStatus);
 		} else {
 			const prevItem = targetColumnItems[dropIndex - 1];
 			const nextItem = targetColumnItems[dropIndex];
@@ -127,8 +173,10 @@ export function Board({
 		item.rank = newRank;
 		item.save();
 
-		// If ranks get too close (fractional precision issues), normalize the column
-		if (shouldNormalizeRanks(targetColumnItems, newRank)) {
+		// If ranks get too close (fractional precision issues), normalize the column.
+		// Not while it has cards past its window: renumbering only the loaded ones
+		// could put them behind ranks the board can't see.
+		if (!items.hasMore(newStatus) && shouldNormalizeRanks(targetColumnItems, newRank)) {
 			normalizeColumnRanks(newStatus);
 		}
 	}
@@ -176,6 +224,8 @@ export function Board({
 					status={status}
 					title={title}
 					items={columnItems}
+					count={columnCount(status, columnItems)}
+					more={columnMore(status)}
 					projectSlug={projectSlug}
 					selectedItemKey={selectedItemKey}
 					flashingIds={flashingIds}

@@ -209,7 +209,7 @@ describe('getItems', () => {
 				{ id: 'note-1', item_id: 'item-1', note: 'older', actor: { type: 'user', userId: 'user-1' }, created_at: new Date('2026-02-01') },
 			], rowCount: 2 } as never);
 
-		const [item] = await getItems({ projectId: 'proj-1', includeNotes: true });
+		const { items: [item] } = await getItems({ projectId: 'proj-1', includeNotes: true });
 
 		const [notesSql] = mockQuery.mock.calls[1]!;
 		expect(notesSql).toContain('FROM item_notes WHERE item_id = ANY($1) ORDER BY created_at DESC');
@@ -229,9 +229,50 @@ describe('getItems', () => {
 		};
 		mockQuery.mockResolvedValueOnce({ rows: [parent], rowCount: 1 } as never);
 
-		const [item] = await getItems({ projectId: 'proj-1' });
+		const { items: [item] } = await getItems({ projectId: 'proj-1' });
 
 		expect(item!).not.toHaveProperty('notes');
+	});
+
+	it('reports the number of matches past the page as total, from a window count', async () => {
+		const row = {
+			...makeItem(),
+			child_count: '0',
+			done_count: '0',
+			in_progress_count: '0',
+			blocked_count: '0',
+			total_count: '842',
+		};
+		mockQuery.mockResolvedValueOnce({ rows: [row], rowCount: 1 } as never);
+
+		const { items, total } = await getItems({ projectId: 'proj-1', status: 'done', limit: 1 });
+
+		const [sql, params] = mockQuery.mock.calls[0]!;
+		expect(sql).toContain('COUNT(*) OVER() as total_count');
+		expect(params).toEqual(['proj-1', 'done', 1]);
+		expect(items).toHaveLength(1);
+		expect(total).toBe(842);
+	});
+
+	it('clamps the page size into [1, 5000] and defaults unparseable values', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', limit: 0 });
+		await getItems({ projectId: 'proj-1', limit: 99_999 });
+		await getItems({ projectId: 'proj-1', limit: '10' as unknown as number });
+		await getItems({ projectId: 'proj-1', limit: Number.NaN });
+
+		const limits = mockQuery.mock.calls.map(([, params]) => (params as unknown[]).at(-1));
+		expect(limits).toEqual([1, 5000, 10, 25]);
+	});
+
+	it('reports total 0 for an empty page', async () => {
+		mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never);
+
+		const { items, total } = await getItems({ projectId: 'proj-1', status: 'in_review' });
+
+		expect(items).toEqual([]);
+		expect(total).toBe(0);
 	});
 
 	it('orders children by rank with created_at and id tiebreakers', async () => {

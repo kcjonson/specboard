@@ -73,7 +73,13 @@ function pathItemNumber(context: Context): number | Response {
 	return number;
 }
 
-/** GET /items — top-level items with child stats, filterable by status/type/search. `limit` caps rows (default 500, max 1000). */
+/**
+ * GET /items — top-level items with child stats, filterable by status/type/search.
+ *
+ * `limit` caps the page (default 500, max 5000). The body stays a plain array; the
+ * number of rows the filters matched is sent as `X-Total-Count`, so a client showing a
+ * bounded window can tell whether more exists without a second request.
+ */
 export async function handleListItems(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 
@@ -81,8 +87,9 @@ export async function handleListItems(context: Context): Promise<Response> {
 	const type = context.req.query('type');
 	const search = context.req.query('search');
 	const specPath = context.req.query('specPath');
+	// The service clamps to [1, MAX_LIST_LIMIT]; only the default is this handler's.
 	const limitParam = Number.parseInt(context.req.query('limit') ?? '', 10);
-	const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 1000) : 500;
+	const limit = Number.isFinite(limitParam) ? limitParam : 500;
 
 	try {
 		// Reverse lookup: items linking a given spec path (used by the doc editor).
@@ -90,13 +97,14 @@ export async function handleListItems(context: Context): Promise<Response> {
 			const keys = await getItemKeysBySpecPath(projectId, specPath);
 			return context.json(keys.map((key) => ({ key })));
 		}
-		const items = await getItems({
+		const { items, total } = await getItems({
 			projectId,
 			status: isValidStatus(status) ? status : undefined,
 			type: isValidType(type) ? type : undefined,
 			search: search || undefined,
 			limit,
 		});
+		context.header('X-Total-Count', String(total));
 		return context.json(items.map(apiItem));
 	} catch (error) {
 		console.error('Failed to list items:', error);
@@ -111,7 +119,7 @@ export async function handleGetItem(context: Context): Promise<Response> {
 	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
-		const items = await getItems({ projectId, itemNumber, includeChildren: true, includeSpecs: true, includeBlockers: true, includeWorkers: true });
+		const { items } = await getItems({ projectId, itemNumber, includeChildren: true, includeSpecs: true, includeBlockers: true, includeWorkers: true });
 		const item = items[0];
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(apiItem(item));
@@ -127,11 +135,11 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 
 	try {
 		const [inProgress, inReview, ready] = await Promise.all([
-			getItems({ projectId, status: 'in_progress', includeChildren: true }),
-			getItems({ projectId, status: 'in_review', includeChildren: true }),
+			getItems({ projectId, status: 'in_progress', includeChildren: true }).then((r) => r.items),
+			getItems({ projectId, status: 'in_review', includeChildren: true }).then((r) => r.items),
 			// Ready means actually startable: row-blocked items are excluded
 			// (status='blocked' is already excluded by the equality filter).
-			getItems({ projectId, status: 'ready', excludeBlocked: true }),
+			getItems({ projectId, status: 'ready', excludeBlocked: true }).then((r) => r.items),
 		]);
 		return context.json({ active: [...inProgress, ...inReview].map(apiItem), ready: ready.map(apiItem) });
 	} catch (error) {

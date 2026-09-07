@@ -311,22 +311,21 @@ Authorization: Bearer <access_token>
 
 ### Pagination
 
-Request with cursor:
+The item list is windowed, not cursor-paged: a request asks for the first `limit`
+rows in rank order, and the response reports how many rows matched in the
+`X-Total-Count` header (exposed through CORS). The body stays a plain array.
+
 ```
-GET /api/tasks?limit=20&cursor=eyJpZCI6MTIzfQ
+GET /api/projects/:projectSlug/items?status=done&limit=100
+
+X-Total-Count: 842
+[ ...100 items, by rank... ]
 ```
 
-Response includes pagination info:
-```json
-{
-	"data": [...],
-	"pagination": {
-		"limit": 20,
-		"hasMore": true,
-		"nextCursor": "eyJpZCI6MTQ0fQ"
-	}
-}
-```
+A client that wants more re-requests with a larger `limit`; the item list caps it at
+5000 (default 500). This suits the planning views, which grow a per-status window
+and re-request it on every poll, and keeps the client from needing a second count
+request. Filters (`status`, `type`, `search`) apply before the count.
 
 ---
 
@@ -372,7 +371,7 @@ Response includes pagination info:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/projects/:projectSlug/folders | Add local folder (local mode) |
+| POST | /api/projects/:projectSlug/folders | Add local folder (only with `LOCAL_STORAGE_ENABLED=true`) |
 | DELETE | /api/projects/:projectSlug/folders | Remove folder from view |
 | POST | /api/projects/:projectSlug/sync | Sync a cloud project from GitHub |
 | POST | /api/projects/:projectSlug/sync/initial | First sync after connecting a repo |

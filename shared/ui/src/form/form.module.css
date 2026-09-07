@@ -21,6 +21,29 @@
 	visibility: visible;
 }
 
+/* Checkbox row: box + label on one line, the whole row clickable. Overrides
+   the block `label` element rule, which is for labels above a field. */
+.check {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0;
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	color: var(--color-text);
+	cursor: pointer;
+	user-select: none;
+}
+
+.check:global(.size-sm) {
+	font-size: var(--text-xs);
+}
+
+.check:has(input:disabled) {
+	cursor: not-allowed;
+	color: var(--color-text-muted);
+}
+
 /* Select wrapper — positions the custom dropdown arrow via ::after */
 .selectWrapper {
 	position: relative;

@@ -37,6 +37,9 @@ export type { TextareaProps } from './form/Textarea';
 export { Select } from './form/Select';
 export type { SelectProps, SelectOption } from './form/Select';
 
+export { Checkbox } from './form/Checkbox';
+export type { CheckboxProps } from './form/Checkbox';
+
 // Card
 export { Card } from './Card/Card';
 export type { CardProps } from './Card/Card';

@@ -89,6 +89,15 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	private __fetchInFlight: Promise<void> | null = null;
 
 	/**
+	 * Ids that `load()` knows will be new to the collection for a reason that is
+	 * not a server-side change (a request window that grew, say). The reconcile
+	 * leaves them out of `itemsChanged` and clears the set, so a subclass fills it
+	 * inside `load()` on each fetch that needs it. Keyed by the model's id field
+	 * as a string.
+	 */
+	protected readonly expectedNew = new Set<string>();
+
+	/**
 	 * Bumped on every change emit (add/remove/item mutation). Lets memoized derived
 	 * state (e.g. status grouping) recompute on in-place mutations even though the
 	 * collection reference is stable — include `version` in the memo deps.
@@ -136,7 +145,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 	}
 
 	/** Get the URL, substituting params from instance properties */
-	private getUrl(): string {
+	protected getUrl(): string {
 		const template = (this.constructor as typeof SyncCollection).url;
 		return template.replace(/:(\w+)/g, (_, key) => {
 			const value = (this as Record<string, unknown>)[key];
@@ -301,13 +310,25 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 		}
 	}
 
+	/**
+	 * The rows a fetch reconciles. Subclasses whose data does not come from one GET
+	 * of `url` (several requests, out-of-band metadata) override this; the reconcile
+	 * that follows is the same either way. It runs before the reconcile touches
+	 * `__items`, so an override may read the collection's current contents to decide
+	 * what to return (ItemsCollection does, to keep items held past its windows), and
+	 * may add to `expectedNew` for rows that are new for reasons of its own.
+	 */
+	protected async load(): Promise<Array<Record<string, unknown>>> {
+		return fetchClient.get<Array<Record<string, unknown>>>(this.getUrl());
+	}
+
 	/** The actual fetch + reconcile; serialized by `fetch()`. */
 	private async __fetch(): Promise<void> {
 		const isInitial = this.$meta.lastFetched == null;
 		this.setMeta({ working: true, error: null });
 
 		try {
-			const data = await fetchClient.get<Array<Record<string, unknown>>>(this.getUrl());
+			const data = await this.load();
 			const ModelClass = this.getModelClass();
 			const idField = (this.constructor as typeof SyncCollection).Model.idField || 'id';
 			const changeKey = (this.constructor as typeof SyncCollection).changeKey;
@@ -344,7 +365,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 				if (!existing) {
 					const item = new ModelClass(mergedData);
 					this.__subscribeToChild(item);
-					if (!isInitial) changedIds.push(String(id));
+					if (!isInitial && !this.expectedNew.has(String(id))) changedIds.push(String(id));
 					nextItems.push(item);
 					continue;
 				}
@@ -381,6 +402,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 			}
 
 			this.__items = nextItems;
+			this.expectedNew.clear();
 			for (const { item, data: updateData } of pendingUpdates) {
 				item.set(updateData as Partial<ModelData<T>>);
 			}
@@ -393,6 +415,7 @@ export class SyncCollection<T extends SyncModel> implements Observable {
 				}
 			}
 		} catch (error) {
+			this.expectedNew.clear();
 			this.setMeta({
 				working: false,
 				error: error instanceof Error ? error : new Error(String(error)),

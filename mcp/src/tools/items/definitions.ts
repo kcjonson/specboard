@@ -10,7 +10,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'get_items',
 		description:
-			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats. Optionally include each item\'s children and activity-log entries. Use item_key for a single item, or filter by status/type/search for lists.',
+			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats, plus `total`: how many items matched, which exceeds `count` when `limit` cut the list. Optionally include each item\'s children and activity-log entries. Use item_key for a single item, or filter by status/type/search for lists.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -51,7 +51,7 @@ export const epicTools: Tool[] = [
 				},
 				limit: {
 					type: 'number',
-					description: 'Max items to return (default: 25)',
+					description: 'Max items to return (default: 25, max: 5000). Compare the response\'s `total` to `count` to see whether it cut the list.',
 				},
 			},
 			required: [],

@@ -31,7 +31,7 @@ See [Project Storage](./project-storage.md) for validation rules and API details
 
 ### Layout
 
-**Empty State (no folders added):**
+**Empty State (desktop shell with a folder picker):**
 ```
 ┌──────────────────────┐
 │  FILES               │
@@ -44,6 +44,27 @@ See [Project Storage](./project-storage.md) for validation rules and API details
 │   Add a folder from  │
 │   a git repository   │
 │   to get started.    │
+│                      │
+└──────────────────────┘
+```
+
+**Empty State (browser, project has no repository):**
+```
+┌──────────────────────┐
+│  FILES               │
+│  ────────────────────│
+│                      │
+│   No repository      │
+│   connected          │
+│                      │
+│   Pages come from a  │
+│   GitHub repository. │
+│   This project       │
+│   doesn't have one   │
+│   yet.               │
+│                      │
+│   Open project       │
+│   settings           │
 │                      │
 └──────────────────────┘
 ```

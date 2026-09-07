@@ -4,12 +4,13 @@ import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
 import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption } from '@specboard/ui';
-import { Board } from '../Board/Board';
-import { Table } from '../Table/Table';
+import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
+import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
 import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
 import { CATEGORY_ALL, CATEGORY_OPTIONS, isFilterActive, type PlanningFilters } from './filters';
+import { VIEW_PREF, readPref, writePref } from './prefs';
 import styles from './Planning.module.css';
 
 /** Duration to flash an item that was just created or changed by a refresh (ms) */
@@ -22,16 +23,9 @@ const POLL_INTERVAL = 10000;
 const DRAWER_MIN_WIDTH = 320;
 const BOARD_MIN_WIDTH = 360;
 
-/** Where the last explicitly chosen view is remembered between visits. */
-const VIEW_STORAGE_KEY = 'specboard.planning.view';
-
 function readStoredView(): PlanningView | undefined {
-	try {
-		const stored = globalThis.localStorage?.getItem(VIEW_STORAGE_KEY);
-		return stored === 'table' || stored === 'board' ? stored : undefined;
-	} catch {
-		return undefined;
-	}
+	const stored = readPref(VIEW_PREF);
+	return stored === 'table' || stored === 'board' ? stored : undefined;
 }
 
 /**
@@ -67,11 +61,26 @@ export function Planning(props: RouteProps): JSX.Element {
 	const openItemKey = props.params.itemKey?.toUpperCase();
 
 	// Collection auto-fetches after projectSlug is set. Memoized so it survives view
-	// toggles (the route/entry is unchanged, only the ?view= param differs).
-	const items = useMemo(() => new ItemsCollection({ projectSlug }), [projectSlug]);
+	// toggles (the route/entry is unchanged, only the ?view= param differs). Its
+	// per-status windows start at the size of whichever view opens first.
+	const items = useMemo(
+		() => new ItemsCollection({
+			projectSlug,
+			limit: readView() === 'table' ? TABLE_PAGE_SIZE : BOARD_PAGE_SIZE,
+		}),
+		[projectSlug]
+	);
 	useModel(items);
 
 	const [view, setView] = useState<PlanningView>(readView);
+
+	// The table shows more per section than the board per column; switching to it
+	// widens the windows that had more. Windows never shrink, so board -> table ->
+	// board leaves the board showing the wider set.
+	useEffect(() => {
+		if (view === 'table') void items.ensureLimit(TABLE_PAGE_SIZE);
+	}, [view, items]);
+
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
 
 	// The board selection — the single source of truth for which card is marked.
@@ -170,11 +179,7 @@ export function Planning(props: RouteProps): JSX.Element {
 
 	const handleChangeView = useCallback((next: PlanningView): void => {
 		setView(next);
-		try {
-			globalThis.localStorage?.setItem(VIEW_STORAGE_KEY, next);
-		} catch {
-			// Storage can be blocked (private mode); the URL still carries the view.
-		}
+		writePref(VIEW_PREF, next);
 		// Both views are written explicitly so a history entry is never ambiguous.
 		const params = new URLSearchParams(window.location.search);
 		params.set('view', next);
@@ -236,9 +241,11 @@ export function Planning(props: RouteProps): JSX.Element {
 		setIsNewItemDialogOpen(true);
 	}, []);
 
+	// No rank: the server appends (project-wide max + 1). The collection's length is
+	// only what's loaded, so a rank derived from it would land mid-column.
 	const handleCreateItem = useCallback(
 		(data: { title: string; description?: string; status: Status; type?: ItemType }): void => {
-			items.add({ ...data, type: data.type || createType, rank: items.length + 1 });
+			items.add({ ...data, type: data.type || createType });
 			setIsNewItemDialogOpen(false);
 		},
 		[items, createType]
