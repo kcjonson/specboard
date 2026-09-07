@@ -117,7 +117,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	);
 
 	// State
-	const [titleDraft, setTitleDraft] = useState(item?.title || '');
+	const [titleDraft, setTitleDraft] = useState(stripNewlines(item?.title || ''));
 	const titleRef = useRef<HTMLTextAreaElement>(null);
 	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
 	const [statusDraft, setStatusDraft] = useState<Status>((item?.status as Status) || 'ready');
@@ -132,7 +132,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// the title so switching to an item whose title hasn't arrived yet clears the
 	// field instead of leaving the previous item's title sitting in it.
 	useEffect(() => {
-		setTitleDraft(item?.title || '');
+		setTitleDraft(stripNewlines(item?.title || ''));
 	}, [item, item?.title]);
 
 	// A textarea won't grow on its own, so drive its height from the content.
@@ -182,12 +182,15 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	const handleTitleBlur = (): void => {
 		if (!item || isNew) return;
 		const trimmed = titleDraft.trim();
-		if (trimmed && trimmed !== item.title) {
+		// Compare against the normalized stored title: a title that arrived with
+		// newlines would otherwise look edited the moment the field is focused, and
+		// merely tabbing through it would write.
+		if (trimmed && trimmed !== stripNewlines(item.title).trim()) {
 			const previousTitle = item.title;
 			item.title = trimmed;
 			item.save().catch(() => {
 				item.title = previousTitle;
-				setTitleDraft(previousTitle);
+				setTitleDraft(stripNewlines(previousTitle));
 			});
 		}
 	};
