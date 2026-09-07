@@ -10,8 +10,10 @@ import { render, fireEvent } from '@testing-library/preact';
 import { ItemModel } from '@specboard/models';
 import { ItemView } from './ItemView';
 
+// SyncModel.fetch ingests an object payload; nothing here should reach it, but a
+// stray call should fail loudly rather than on a shape mismatch.
 vi.mock('@specboard/fetch', () => ({
-	fetchClient: { get: vi.fn().mockResolvedValue([]), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
+	fetchClient: { get: vi.fn().mockResolvedValue({}), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }));
 
 // The sections below the title each fetch and render their own trees; none of
@@ -33,6 +35,9 @@ function makeItem(title: string): ItemModel {
 		type: 'task',
 		status: 'ready',
 	});
+	// ItemView fetches full detail on mount while lastFetched is null. These tests
+	// are about the title field, so hand it an item that looks already loaded.
+	item.$meta.lastFetched = Date.now();
 	vi.spyOn(item, 'save').mockResolvedValue(undefined);
 	return item;
 }
