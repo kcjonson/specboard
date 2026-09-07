@@ -10,11 +10,22 @@ import { render, fireEvent } from '@testing-library/preact';
 import { ItemModel } from '@specboard/models';
 import { ItemView } from './ItemView';
 
-// SyncModel.fetch ingests an object payload; nothing here should reach it, but a
-// stray call should fail loudly rather than on a shape mismatch.
-vi.mock('@specboard/fetch', () => ({
-	fetchClient: { get: vi.fn().mockResolvedValue({}), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
-}));
+// Nothing in these tests should reach the network. Throwing beats a silent
+// resolve: a stray call names itself instead of surfacing later as a confusing
+// downstream error.
+vi.mock('@specboard/fetch', () => {
+	const unexpected = (method: string): ReturnType<typeof vi.fn> => vi.fn((url: unknown) => {
+		throw new Error(`Unexpected ${method} ${String(url)} in a title-field test`);
+	});
+	return {
+		fetchClient: {
+			get: unexpected('GET'),
+			post: unexpected('POST'),
+			put: unexpected('PUT'),
+			delete: unexpected('DELETE'),
+		},
+	};
+});
 
 // The sections below the title each fetch and render their own trees; none of
 // them are what these tests are about.
@@ -43,7 +54,13 @@ function makeItem(title: string): ItemModel {
 }
 
 function titleField(container: Element): HTMLTextAreaElement {
-	return container.querySelector('textarea[aria-label="Task title"]') as HTMLTextAreaElement;
+	const field = container.querySelector('textarea[aria-label="Task title"]');
+	// An accessibility or markup change should say so here, not throw on a null
+	// property access three lines later.
+	if (!(field instanceof HTMLTextAreaElement)) {
+		throw new Error('No textarea labelled "Task title" in the rendered ItemView');
+	}
+	return field;
 }
 
 describe('ItemView title', () => {
