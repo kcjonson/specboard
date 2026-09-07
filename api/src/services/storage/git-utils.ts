@@ -128,7 +128,7 @@ export function getRelativePath(repoRoot: string, absolutePath: string): string 
  * Uses realpath to resolve symlinks and prevent symlink-based attacks
  */
 export async function validatePath(repoRoot: string, relativePath: string): Promise<string> {
-	const absolutePath = path.resolve(repoRoot, relativePath.replace(/^\//, ''));
+	const absolutePath = path.resolve(repoRoot, relativePath.replace(/^[\\/]+/, ''));
 
 	let realRepoRoot: string;
 	try {
@@ -138,8 +138,8 @@ export async function validatePath(repoRoot: string, relativePath: string): Prom
 	}
 
 	// The path may not exist yet (write operations), so resolve the deepest
-	// existing ancestor and check that instead. Every component below it is
-	// a plain name that cannot leave the resolved ancestor.
+	// existing ancestor and check that instead. path.resolve has already
+	// collapsed any '..', so the components below it are plain names.
 	const realAncestor = await realpathDeepestExistingAncestor(absolutePath);
 
 	// Ensure path separator boundary to prevent /repo matching /repo-other

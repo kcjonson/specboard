@@ -19,7 +19,7 @@ beforeEach(async () => {
 	outside = path.join(sandbox, 'outside');
 	await fs.mkdir(repo);
 	await fs.mkdir(outside);
-	await fs.symlink(outside, path.join(repo, 'link'));
+	await fs.symlink(outside, path.join(repo, 'link'), 'dir');
 });
 
 afterEach(async () => {
@@ -46,6 +46,10 @@ describe('validatePath', () => {
 
 	it('resolves a new file directly under the repo', async () => {
 		await expect(validatePath(repo, '/newfile.md')).resolves.toBe(path.join(repo, 'newfile.md'));
+	});
+
+	it('treats repeated leading separators as repo-relative', async () => {
+		await expect(validatePath(repo, '//newfile.md')).resolves.toBe(path.join(repo, 'newfile.md'));
 	});
 
 	it('resolves a new file under directories that do not exist yet', async () => {
