@@ -77,6 +77,9 @@ export function ItemRow({
 					if (e.key === 'Enter') handleOpen();
 				}}
 			>
+				<span class={styles.colType} role="cell">
+					<TypeBadge type={item.type} />
+				</span>
 				<span class={styles.colTitle} role="cell">
 					{hasChildren ? (
 						<button
@@ -93,16 +96,13 @@ export function ItemRow({
 					)}
 					<span class={styles.itemKey}>{item.key}</span>
 					<span class={styles.title}>{item.title}</span>
-				</span>
-				<span class={styles.colType} role="cell">
-					<TypeBadge type={item.type} />
+					{item.blocked && item.status !== 'blocked' && (
+						<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
+					)}
 				</span>
 				<span class={styles.colStatus} role="cell">
 					<StatusDot status={DOT_STATUS[item.status]} />
 					{STATUS_LABELS[item.status]}
-					{item.blocked && item.status !== 'blocked' && (
-						<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
-					)}
 				</span>
 				<span class={styles.colTasks} role="cell">{hasChildren ? `${done}/${total}` : '—'}</span>
 				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>
@@ -110,6 +110,7 @@ export function ItemRow({
 
 			{expanded && loadingChildren && (
 				<div class={`${styles.row} ${styles.taskRow}`} role="row">
+					<span class={styles.colType} role="cell" />
 					<span class={`${styles.colTitle} ${styles.loadingTasks}`} role="cell">Loading…</span>
 				</div>
 			)}
