@@ -70,13 +70,18 @@ function validateRepository(repository: unknown): RepositoryValidation {
 	} catch {
 		return { error: 'Invalid repository URL' };
 	}
-	if (parsedUrl.hostname !== 'github.com') {
+	if (parsedUrl.protocol !== 'https:' || parsedUrl.hostname !== 'github.com') {
 		return { error: 'Repository URL must be a GitHub URL' };
 	}
-	// Path must be /{owner}/{repo}[.git][/]
+	// Path must be /{owner}/{repo}[.git][/], and must name the same repository as the
+	// owner/repo fields: sync clones from those, the UI links to the URL.
 	const pathParts = parsedUrl.pathname.replace(/\.git\/?$/, '').replace(/\/+$/, '').split('/').filter(Boolean);
 	if (pathParts.length !== 2) {
 		return { error: 'Repository URL must be in format https://github.com/{owner}/{repo}' };
+	}
+	const [urlOwner, urlRepo] = pathParts as [string, string];
+	if (urlOwner.toLowerCase() !== owner.toLowerCase() || urlRepo.toLowerCase() !== repo.toLowerCase()) {
+		return { error: 'Repository URL does not match the repository owner and name' };
 	}
 
 	return { repository: { provider: 'github', owner, repo, branch, url } };

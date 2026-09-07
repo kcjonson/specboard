@@ -162,6 +162,8 @@ describe('handleUpdateProject', () => {
 		['a repo name with a space', { ...REPOSITORY, repo: 'my docs' }, 'Invalid repository name format'],
 		['a branch starting with a hyphen', { ...REPOSITORY, branch: '-main' }, 'Invalid branch name format'],
 		['a non-GitHub URL', { ...REPOSITORY, url: 'https://gitlab.com/acme-corp/documentation' }, 'Repository URL must be a GitHub URL'],
+		['a plain-http GitHub URL', { ...REPOSITORY, url: 'http://github.com/acme-corp/documentation' }, 'Repository URL must be a GitHub URL'],
+		['a URL naming a different repository', { ...REPOSITORY, url: 'https://github.com/acme-corp/other' }, 'Repository URL does not match the repository owner and name'],
 		['a URL without a repo path', { ...REPOSITORY, url: 'https://github.com/acme-corp' }, 'Repository URL must be in format https://github.com/{owner}/{repo}'],
 		['an unparseable URL', { ...REPOSITORY, url: 'not a url' }, 'Invalid repository URL'],
 	])('rejects %s with 400 before touching the database', async (_label, repository, error) => {
@@ -174,11 +176,11 @@ describe('handleUpdateProject', () => {
 		expect(vi.mocked(startGitHubInitialSync)).not.toHaveBeenCalled();
 	});
 
-	it('accepts a .git URL and passes only the stored fields through', async () => {
-		await put({ repository: { ...REPOSITORY, url: 'https://github.com/acme-corp/documentation.git', extra: 'ignored' } });
+	it('accepts a .git URL that differs only in case and passes only the stored fields through', async () => {
+		await put({ repository: { ...REPOSITORY, url: 'https://github.com/Acme-Corp/Documentation.git', extra: 'ignored' } });
 
 		expect(vi.mocked(updateProject)).toHaveBeenCalledWith('proj-1', 'user-1', expect.objectContaining({
-			repository: { ...REPOSITORY, url: 'https://github.com/acme-corp/documentation.git' },
+			repository: { ...REPOSITORY, url: 'https://github.com/Acme-Corp/Documentation.git' },
 		}));
 	});
 
