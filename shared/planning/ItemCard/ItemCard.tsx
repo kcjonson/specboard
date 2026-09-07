@@ -18,6 +18,8 @@ interface ItemCardProps {
 	projectSlug: string;
 	isSelected?: boolean;
 	isHighlighted?: boolean;
+	/** Whether the card can be dragged to rank it. Off for a child row (see Column). */
+	draggable?: boolean;
 	onSelect?: (item: ItemModel) => void;
 	onOpen?: (item: ItemModel) => void;
 	onDragStart?: (e: DragEvent, item: ItemModel) => void;
@@ -38,6 +40,7 @@ export function ItemCard({
 	projectSlug,
 	isSelected = false,
 	isHighlighted = false,
+	draggable = true,
 	onSelect,
 	onOpen,
 	onDragStart,
@@ -80,9 +83,9 @@ export function ItemCard({
 			data-item-card
 			onClick={handleClick}
 			onKeyDown={handleKeyDown}
-			onDragStart={handleDragStart}
-			onDragEnd={onDragEnd}
-			draggable
+			onDragStart={draggable ? handleDragStart : undefined}
+			onDragEnd={draggable ? onDragEnd : undefined}
+			draggable={draggable}
 			tabIndex={0}
 			role="option"
 			aria-selected={isSelected}
@@ -90,6 +93,10 @@ export function ItemCard({
 			<div class={styles.header}>
 				<div class={styles.titleRow}>
 					<TypeBadge type={item.type} />
+					{/* Set on a child item a search turned up: says where the card lives. */}
+					{item.parentKey && (
+						<span class={styles.parentKey} title={`Child of ${item.parentKey}`}>{item.parentKey} /</span>
+					)}
 					<h3 class={styles.title}>{item.title}</h3>
 				</div>
 				<div class={styles.headerActions}>

@@ -65,6 +65,25 @@ describe('handleListItems', () => {
 		expect(getItems).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj-1', status: 'done', limit: 100 }));
 	});
 
+	it('hands search through with status, and counts the deep match set in X-Total-Count', async () => {
+		const child = { id: 'i-2', key: 'SB-42', parentKey: 'SB-7', title: 'Login form', origin: null };
+		vi.mocked(getItems).mockResolvedValue({ items: [child as never], total: 31 });
+
+		const response = await list('?search=SB-12&status=ready');
+
+		expect(response.headers.get('X-Total-Count')).toBe('31');
+		expect(await response.json()).toEqual([expect.objectContaining({ key: 'SB-42', parentKey: 'SB-7' })]);
+		expect(getItems).toHaveBeenCalledWith(expect.objectContaining({ search: 'SB-12', status: 'ready' }));
+	});
+
+	it('sends no search at all for an empty one', async () => {
+		vi.mocked(getItems).mockResolvedValue({ items: [], total: 0 });
+
+		await list('?search=');
+
+		expect(getItems).toHaveBeenCalledWith(expect.objectContaining({ search: undefined }));
+	});
+
 	it('defaults limit to 500 and hands any explicit value to the service unclamped', async () => {
 		vi.mocked(getItems).mockResolvedValue({ items: [], total: 0 });
 

@@ -3,13 +3,12 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
-import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption } from '@specboard/ui';
+import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption, type SelectOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
 import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
-import { CATEGORY_ALL, CATEGORY_OPTIONS, isFilterActive, type PlanningFilters } from './filters';
 import { VIEW_PREF, readPref, writePref } from './prefs';
 import styles from './Planning.module.css';
 
@@ -18,6 +17,31 @@ const HIGHLIGHT_DURATION = 2000;
 
 /** How often to poll the server for item changes while the page is visible (ms) */
 const POLL_INTERVAL = 10000;
+
+/**
+ * How long the search box sits still before its text becomes a new query. Each
+ * change costs one request per status window, so keystrokes are collapsed; the
+ * type Select is a single deliberate choice and applies immediately.
+ */
+const SEARCH_DEBOUNCE = 250;
+
+/** Sentinel value meaning "no type filter applied". */
+const CATEGORY_ALL = 'all';
+
+/** Options for the type <Select> in the toolbar. */
+const CATEGORY_OPTIONS: SelectOption[] = [
+	{ value: CATEGORY_ALL, label: 'All types' },
+	{ value: 'epic', label: 'Epic' },
+	{ value: 'task', label: 'Task' },
+	{ value: 'bug', label: 'Bug' },
+];
+
+/** Toolbar filter state. The server does the filtering; this is only what the toolbar shows. */
+interface PlanningFilters {
+	search: string;
+	/** A value from CATEGORY_OPTIONS, or CATEGORY_ALL for no filter. */
+	category: string;
+}
 
 /** Drawer min width (matches ItemDrawer) and the board's reserved minimum. */
 const DRAWER_MIN_WIDTH = 320;
@@ -44,9 +68,13 @@ function readView(): PlanningView {
  * and `/projects/:projectSlug/planning/items/:itemKey`.
  *
  * Owns all state shared between the Board and Table views (the items collection,
- * selection, create/edit dialog, highlight, active view, and filters) and renders
- * the shared toolbar plus whichever view is active. The two views are purely
- * presentational consumers of this state.
+ * selection, create/edit dialog, highlight, and active view) and renders the shared
+ * toolbar plus whichever view is active. The two views are purely presentational
+ * consumers of this state.
+ *
+ * The toolbar's filters are the exception: they stop here. The server filters the
+ * collection's windows, so the views never see filter state at all — they render
+ * whatever the collection currently holds, which under a search includes child items.
  *
  * Which item the drawer shows is not local state — it's the `:itemKey` route param.
  * Opening and closing the drawer are navigations, so the open item has a shareable
@@ -81,7 +109,29 @@ export function Planning(props: RouteProps): JSX.Element {
 		if (view === 'table') void items.ensureLimit(TABLE_PAGE_SIZE);
 	}, [view, items]);
 
+	// The toolbar's filter state, and the search text once it has settled. Filtering
+	// happens on the server (the views render whatever the collection holds), so the
+	// settled text plus the type go to the collection, which reissues its windows.
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
+	const [settledSearch, setSettledSearch] = useState('');
+	useEffect(() => {
+		if (filters.search === settledSearch) return;
+		// Emptying the box (Clear filters, or deleting the text) is one deliberate act,
+		// not a keystroke on the way to another: settle it now, so the results the user
+		// just cleared don't sit there for another quarter second.
+		if (filters.search.trim() === '') {
+			setSettledSearch(filters.search);
+			return;
+		}
+		const timer = setTimeout(() => setSettledSearch(filters.search), SEARCH_DEBOUNCE);
+		return () => clearTimeout(timer);
+	}, [filters.search, settledSearch]);
+	useEffect(() => {
+		void items.setFilter({
+			search: settledSearch,
+			type: filters.category === CATEGORY_ALL ? undefined : (filters.category as ItemType),
+		});
+	}, [items, settledSearch, filters.category]);
 
 	// The board selection — the single source of truth for which card is marked.
 	// Seeded from the route so a deep link lands with its card selected, and kept in
@@ -318,7 +368,7 @@ export function Planning(props: RouteProps): JSX.Element {
 		setFilters((prev) => ({ ...prev, category: value }));
 	}, []);
 
-	const filtersActive = isFilterActive(filters);
+	const filtersActive = filters.search.trim() !== '' || filters.category !== CATEGORY_ALL;
 
 	const handleClearFilters = useCallback((): void => {
 		setFilters({ search: '', category: CATEGORY_ALL });
@@ -392,8 +442,10 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, []);
 	const drawerMaxWidth = workspaceWidth > 0 ? Math.max(DRAWER_MIN_WIDTH, workspaceWidth - BOARD_MIN_WIDTH) : undefined;
 
-	// Loading state
-	if (items.$meta.working && items.length === 0) {
+	// Loading state — the first load only. Every later fetch (a poll, a widened
+	// window, a new search) keeps the toolbar mounted: swapping it for a spinner
+	// would tear the search input out from under the keystroke that caused it.
+	if (items.$meta.working && items.$meta.lastFetched === null) {
 		return (
 			<Page projectSlug={projectSlug} activeTab="Planning">
 				<div class={styles.loading}>Loading...</div>
@@ -443,7 +495,6 @@ export function Planning(props: RouteProps): JSX.Element {
 					{view === 'table' ? (
 						<Table
 							items={items}
-							filters={filters}
 							selectedItemKey={selectedItemKey}
 							flashingIds={flashingIds}
 							onSelectItem={handleSelectItem}
@@ -454,7 +505,6 @@ export function Planning(props: RouteProps): JSX.Element {
 						<Board
 							items={items}
 							projectSlug={projectSlug}
-							filters={filters}
 							selectedItemKey={selectedItemKey}
 							flashingIds={flashingIds}
 							dialogOpen={isNewItemDialogOpen}

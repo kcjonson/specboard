@@ -327,6 +327,17 @@ A client that wants more re-requests with a larger `limit`; the item list caps i
 and re-request it on every poll, and keeps the client from needing a second count
 request. Filters (`status`, `type`, `search`) apply before the count.
 
+Without `search` the list is top-level items only. With one, it spans every depth:
+`search` matches title and description as a case-insensitive substring, with `%`/`_`
+taken literally, and a matched child comes back with `parentKey` set. A term shaped
+like a full key (`SB-345`) or a bare number (`345`) additionally matches that one
+item exactly, ORed with the text match. Key matching is never a substring match: as
+one, `SAM-42` would also match on `s`, `sam`, and `-`, so every keystroke on the way
+to typing a key would return the whole project.
+`status` and `type` still test the matched item's own row, so a `ready` task under a
+`done` epic is returned by `?status=ready&search=...`, and `X-Total-Count` counts the
+same deep set as the body.
+
 ---
 
 ## Endpoints
