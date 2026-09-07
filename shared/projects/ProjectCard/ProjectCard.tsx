@@ -23,6 +23,10 @@ export interface RepositoryConfigCloud {
 	branch: string;
 }
 
+export function isCloudRepository(repo: Project['repository']): repo is RepositoryConfigCloud {
+	return repo !== undefined && 'type' in repo && repo.type === 'cloud';
+}
+
 export interface Project {
 	id: string;
 	/** URL identifier for this project (e.g. "specboard"). */

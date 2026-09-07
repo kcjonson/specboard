@@ -8,7 +8,14 @@ import {
 	withSuffix,
 } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
-import { type Project, type StorageMode, type RepositoryConfig, type SyncStatus, isLocalRepository } from '../types.ts';
+import {
+	type Project,
+	type StorageMode,
+	type RepositoryConfig,
+	type RepositoryConfigCloud,
+	type SyncStatus,
+	isLocalRepository,
+} from '../types.ts';
 
 /** Postgres unique-violation SQLSTATE, raised when a slug or key is already taken. */
 const UNIQUE_VIOLATION = '23505';
@@ -239,29 +246,34 @@ async function insertProject(
 	throw new Error(`Could not find a free slug or key for project name "${name}"`);
 }
 
+/** Cloud projects always expose the whole checkout; root paths are a local-mode concept. */
+const CLOUD_ROOT_PATHS: readonly string[] = ['/'];
+
+function toCloudRepository(input: RepositoryConfigInput): RepositoryConfigCloud {
+	return {
+		type: 'cloud',
+		remote: {
+			provider: input.provider,
+			owner: input.owner,
+			repo: input.repo,
+			url: input.url,
+		},
+		branch: input.branch,
+	};
+}
+
 export async function createProject(
 	userId: string,
 	data: CreateProjectInput
 ): Promise<ProjectResponse> {
 	// If repository is provided, set up cloud mode
 	if (data.repository) {
-		const repoConfig = {
-			type: 'cloud' as const,
-			remote: {
-				provider: data.repository.provider,
-				owner: data.repository.owner,
-				repo: data.repository.repo,
-				url: data.repository.url,
-			},
-			branch: data.repository.branch,
-		};
-
 		const project = await insertProject(
 			data.name,
 			'name, description, owner_id, storage_mode, repository, root_paths, system_prompt',
 			"$1, $2, $3, 'cloud', $4, $5, $6",
 			// Empty string or undefined → NULL in DB
-			[data.name, data.description || null, userId, JSON.stringify(repoConfig), JSON.stringify(['/']), data.systemPrompt || null]
+			[data.name, data.description || null, userId, JSON.stringify(toCloudRepository(data.repository)), JSON.stringify(CLOUD_ROOT_PATHS), data.systemPrompt || null]
 		);
 
 		return transformProject(project);
@@ -288,6 +300,12 @@ export interface UpdateProjectInput {
 	systemPrompt?: string;
 	slug?: string;
 	key?: string;
+	/**
+	 * Attach a GitHub repository to a project that has no storage yet, switching it to
+	 * cloud mode. Only accepted while storage_mode is 'none': changing or removing a
+	 * configured repository is not supported.
+	 */
+	repository?: RepositoryConfigInput;
 }
 
 /** Raised when a requested slug or key is already used by another of the owner's projects. */
@@ -301,6 +319,14 @@ export class ProjectIdentifierTakenError extends Error {
 	}
 }
 
+/** Raised when a repository is attached to a project that already has one. */
+export class ProjectHasRepositoryError extends Error {
+	constructor() {
+		super('Project already has a repository');
+		this.name = 'ProjectHasRepositoryError';
+	}
+}
+
 export async function updateProject(
 	projectId: string,
 	userId: string,
@@ -309,6 +335,7 @@ export async function updateProject(
 	const updates: string[] = [];
 	const values: unknown[] = [];
 	let paramIndex = 1;
+	const conditions: string[] = [];
 
 	if (data.name !== undefined) {
 		updates.push(`name = $${paramIndex++}`);
@@ -332,6 +359,23 @@ export async function updateProject(
 		updates.push(`key = $${paramIndex++}`);
 		values.push(data.key);
 	}
+	if (data.repository !== undefined) {
+		updates.push(
+			"storage_mode = 'cloud'",
+			`repository = $${paramIndex++}`,
+			`root_paths = $${paramIndex++}`,
+			// A project can return to 'none' via removeFolder without touching its sync
+			// columns; a stale pending status or commit sha must not leak into the new repo.
+			'last_synced_commit_sha = NULL',
+			'sync_status = NULL',
+			'sync_started_at = NULL',
+			'sync_completed_at = NULL',
+			'sync_error = NULL'
+		);
+		values.push(JSON.stringify(toCloudRepository(data.repository)), JSON.stringify(CLOUD_ROOT_PATHS));
+		// The guard lives in the WHERE clause so two concurrent attaches can't both win.
+		conditions.push("storage_mode = 'none'");
+	}
 
 	if (updates.length === 0) {
 		return getProject(projectId, userId);
@@ -339,12 +383,13 @@ export async function updateProject(
 
 	updates.push('updated_at = NOW()');
 	values.push(projectId, userId);
+	conditions.unshift(`id = $${paramIndex++}`, `owner_id = $${paramIndex}`);
 
 	let result;
 	try {
 		result = await query<Project>(
 			`UPDATE projects SET ${updates.join(', ')}
-			 WHERE id = $${paramIndex++} AND owner_id = $${paramIndex}
+			 WHERE ${conditions.join(' AND ')}
 			 RETURNING *`,
 			values
 		);
@@ -357,6 +402,11 @@ export async function updateProject(
 	}
 
 	if (result.rows.length === 0) {
+		// Nothing matched: either the project isn't theirs, or the storage_mode guard
+		// held because it already has a repository. Tell those two apart.
+		if (data.repository !== undefined && (await getProject(projectId, userId))) {
+			throw new ProjectHasRepositoryError();
+		}
 		return null;
 	}
 

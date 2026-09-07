@@ -211,6 +211,20 @@ export async function trySetSyncPending(projectId: string): Promise<boolean> {
 }
 
 /**
+ * Record that a sync could not be started, so the project shows "Sync failed" with a
+ * Retry instead of sitting in cloud mode with no status. Only applies when nothing is
+ * tracking the sync (status NULL): a pending or running sync keeps its own status.
+ */
+export async function markSyncStartFailed(projectId: string, message: string): Promise<void> {
+	await query(
+		`UPDATE projects
+		 SET sync_status = 'failed', sync_error = $2, sync_completed_at = NOW()
+		 WHERE id = $1 AND sync_status IS NULL`,
+		[projectId, message]
+	);
+}
+
+/**
  * Start initial sync programmatically (non-HTTP, for use from other handlers).
  * Fire-and-forget - invokes Lambda asynchronously.
  */
