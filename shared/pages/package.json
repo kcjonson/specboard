@@ -18,6 +18,7 @@
 	"dependencies": {
 		"@specboard/fetch": "*",
 		"@specboard/models": "*",
+		"@specboard/platform": "*",
 		"@specboard/router": "*",
 		"@specboard/telemetry": "*",
 		"@specboard/ui": "*",

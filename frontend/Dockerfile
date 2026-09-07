@@ -34,6 +34,7 @@ COPY frontend/package.json ./frontend/
 # SPA and SSG dependencies
 COPY shared/ui/package.json ./shared/ui/
 COPY shared/models/package.json ./shared/models/
+COPY shared/platform/package.json ./shared/platform/
 COPY shared/router/package.json ./shared/router/
 COPY shared/fetch/package.json ./shared/fetch/
 COPY shared/telemetry/package.json ./shared/telemetry/
@@ -51,6 +52,7 @@ COPY shared/db ./shared/db
 COPY shared/auth ./shared/auth
 COPY shared/ui ./shared/ui
 COPY shared/models ./shared/models
+COPY shared/platform ./shared/platform
 COPY shared/router ./shared/router
 COPY shared/fetch ./shared/fetch
 COPY shared/telemetry ./shared/telemetry

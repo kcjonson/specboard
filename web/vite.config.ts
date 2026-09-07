@@ -76,6 +76,7 @@ export default defineConfig({
 			'@specboard/ui/shared.css': resolve(__dirname, '../shared/ui/src/shared.css'),
 			'@specboard/router': resolve(__dirname, '../shared/router/src'),
 			'@specboard/models': resolve(__dirname, '../shared/models/src'),
+			'@specboard/platform': resolve(__dirname, '../shared/platform/src'),
 			'@specboard/fetch': resolve(__dirname, '../shared/fetch/src'),
 			'@specboard/core': resolve(__dirname, '../shared/core/src'),
 			'@specboard/telemetry': resolve(__dirname, '../shared/telemetry/src'),

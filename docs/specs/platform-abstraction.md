@@ -264,6 +264,10 @@ FileDialogOptions:
     extensions: string[]
 ```
 
+### Runtime detection today
+
+The desktop shells are built to load the same web bundle (today their entry points are placeholders), and their preload exposes a partial `System` on `window.platform`; each shell exposes only what it needs (the docs shell has `showOpenDialog`, the planning shell does not). `@specboard/platform` exports `getPlatformBridge()`, which returns that object or `null` in the browser. Shared code that must behave differently on the desktop asks for the method it needs (the file browser offers a local folder only when `showOpenDialog` is present) rather than sniffing the user agent; this is the seed of the `platform` / `isNative` / `isWeb` operations above until the full provider lands.
+
 ### Electron Implementation
 
 Uses Electron's `dialog` and `shell` modules:

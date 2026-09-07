@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import { FileTreeModel, useModel, type GitStatusModel } from '@specboard/models';
 import { Badge, Button, Icon } from '@specboard/ui';
 import { fetchClient, FetchError } from '@specboard/fetch';
+import { getPlatformBridge } from '@specboard/platform';
 import { GitStatusBar } from './GitStatusBar';
 import { ConfirmDialog } from './ConfirmDialog';
 import { FileItem } from './FileItem';
@@ -111,6 +112,11 @@ export function FileBrowser({
 
 	// Guard against rapid retry clicks
 	const [retryingSync, setRetryingSync] = useState(false);
+
+	// Local mode (pointing a project at a folder on this machine) needs the desktop
+	// shell's folder picker. The browser has no bridge, and the planning shell's bridge
+	// has no picker; for both, the only way to get files is a GitHub repository.
+	const showOpenDialog = getPlatformBridge()?.showOpenDialog;
 
 	// Track previous selectedPath to avoid unnecessary expandToFile calls
 	const prevSelectedPathRef = useRef<string | undefined>(undefined);
@@ -335,10 +341,11 @@ export function FileBrowser({
 
 	// Handle add folder
 	const handleAddFolder = async (): Promise<void> => {
-		const path = window.prompt('Enter folder path (absolute path to a git repository folder):');
-		if (!path) return;
+		if (!showOpenDialog) return;
 
 		try {
+			const path = await showOpenDialog({ directory: true });
+			if (!path) return;
 			await fetchClient.post<ProjectStorage>(
 				`/api/projects/${projectSlug}/folders`,
 				{ path }
@@ -499,7 +506,7 @@ export function FileBrowser({
 								{retryingSync ? 'Retrying...' : 'Retry Sync'}
 							</Button>
 						</>
-					) : (
+					) : showOpenDialog ? (
 						<>
 							<div class={styles.emptyIcon}><Icon name="folder" class="size-2xl" /></div>
 							<div class={styles.emptyTitle}>No folders added</div>
@@ -509,6 +516,17 @@ export function FileBrowser({
 							<div class={styles.emptyHint}>
 								Add a folder from a git repository to get started.
 							</div>
+						</>
+					) : (
+						<>
+							<div class={styles.emptyIcon}><Icon name="github" class="size-2xl" /></div>
+							<div class={styles.emptyTitle}>No repository connected</div>
+							<div class={styles.emptyHint}>
+								Pages come from a GitHub repository. This project doesn't have one yet.
+							</div>
+							<a href={`/projects?edit=${projectSlug}`} class={styles.settingsLink}>
+								Open project settings
+							</a>
 						</>
 					)}
 					{model.error && <div class={styles.error}>{model.error}</div>}
