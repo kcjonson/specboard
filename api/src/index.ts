@@ -110,8 +110,7 @@ import {
 	handleDeleteProject,
 } from './handlers/projects.ts';
 import {
-	handleAddFolder,
-	handleRemoveFolder,
+	registerFolderRoutes,
 	handleListFiles,
 	handleReadFile,
 	handleWriteFile,
@@ -497,8 +496,7 @@ app.put('/api/projects/:projectSlug', (context) => handleUpdateProject(context, 
 app.delete('/api/projects/:projectSlug', (context) => handleDeleteProject(context, redis));
 
 // Project storage routes (folders, files)
-app.post('/api/projects/:projectSlug/folders', (context) => handleAddFolder(context, redis));
-app.delete('/api/projects/:projectSlug/folders', (context) => handleRemoveFolder(context, redis));
+registerFolderRoutes(app, redis);
 app.get('/api/projects/:projectSlug/tree', (context) => handleListFiles(context, redis));
 app.post('/api/projects/:projectSlug/tree', (context) => handleListFiles(context, redis));
 app.get('/api/projects/:projectSlug/files', (context) => handleReadFile(context, redis));
