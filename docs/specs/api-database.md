@@ -372,7 +372,7 @@ Response includes pagination info:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/projects/:projectSlug/folders | Add local folder (local mode) |
+| POST | /api/projects/:projectSlug/folders | Add local folder (only with `LOCAL_STORAGE_ENABLED=true`) |
 | DELETE | /api/projects/:projectSlug/folders | Remove folder from view |
 | POST | /api/projects/:projectSlug/sync | Sync a cloud project from GitHub |
 | POST | /api/projects/:projectSlug/sync/initial | First sync after connecting a repo |
