@@ -40,20 +40,20 @@ export function ChildRow({ child, onOpen }: ChildRowProps): JSX.Element {
 				if (e.key === 'Enter') handleOpen();
 			}}
 		>
+			<span class={styles.colType} role="cell">
+				<TypeBadge type={child.type} />
+			</span>
 			<span class={styles.colTitle} role="cell">
 				<span class={styles.chevronSpacer} />
 				<span class={styles.itemKey}>{child.key}</span>
 				<span class={styles.taskTitle}>{child.title}</span>
-			</span>
-			<span class={styles.colType} role="cell">
-				<TypeBadge type={child.type} />
+				{child.blocked && child.status !== 'blocked' && (
+					<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
+				)}
 			</span>
 			<span class={styles.colStatus} role="cell">
 				<StatusDot status={DOT_STATUS[child.status]} />
 				{STATUS_LABELS[child.status]}
-				{child.blocked && child.status !== 'blocked' && (
-					<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
-				)}
 			</span>
 			<span class={styles.colTasks} role="cell" />
 			<span class={styles.colAssignee} role="cell" />
