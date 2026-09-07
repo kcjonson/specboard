@@ -13,6 +13,11 @@ import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTex
 import { formatTimeAgo } from '../utils/time';
 import styles from './ItemView.module.css';
 
+/** Titles stay one line of text; the textarea is only there so it wraps visually. */
+function stripNewlines(value: string): string {
+	return value.replace(/[\r\n]+/g, ' ');
+}
+
 const TYPE_LABELS: Record<ItemType, string> = {
 	epic: 'Epic',
 	task: 'Task',
@@ -144,7 +149,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// very different widths, so the fitted height has to be recomputed.
 	useEffect(() => {
 		const el = titleRef.current;
-		if (!el) return;
+		if (!el || typeof ResizeObserver === 'undefined') return;
 		let lastWidth = el.clientWidth;
 		const observer = new ResizeObserver(() => {
 			if (el.clientWidth === lastWidth) return;
@@ -303,7 +308,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 							rows={1}
 							class={styles.titleInput}
 							value={titleDraft}
-							onInput={(e) => setTitleDraft((e.target as HTMLTextAreaElement).value)}
+							onInput={(e) => setTitleDraft(stripNewlines((e.target as HTMLTextAreaElement).value))}
 							onBlur={handleTitleBlur}
 							onKeyDown={handleTitleKeyDown}
 							placeholder={`${typeLabel} title...`}
