@@ -39,28 +39,48 @@ const COUNT: wafv2.CfnWebACL.RuleActionProperty = { count: {} };
 
 interface ManagedRuleGroup {
 	readonly name: string;
-	/** Every rule the group ships. */
-	readonly rules: readonly string[];
-	/** Rules downgraded to count because the signature matches legitimate traffic. */
+	/** Rules the group ships with a Block action. */
+	readonly blocking: readonly string[];
+	/** The subset of `blocking` we downgrade to count. */
 	readonly counted: readonly string[];
+	/** Rules the group already ships as Count. Listed to keep the tables exhaustive; never overridden. */
+	readonly countOnly?: readonly string[];
 }
 
 /**
  * The managed rule groups on the production ACL, with every rule they ship listed by name.
  *
- * The lists are exhaustive on purpose. An override can only carry the custom block response if
- * it names a rule, so anything missing here keeps the group's default bare 403 — which is the
- * failure mode that made this bug undiagnosable. Enumerating also fails safe: a rule AWS adds
- * later still blocks, it just blocks with the unhelpful response until it is added here.
+ * The dividing line is the field a rule inspects, not the attack it names:
  *
- * Refresh the lists with:
+ *   The firewall inspects the envelope. The application validates the payload.
+ *
+ * URI path, headers, cookies, method, source IP, and size are envelope: nothing a user types
+ * lands there, so a signature match is a real signal and those rules block. Request bodies and
+ * query arguments are payload, and on a tool for tracking software development they carry prose
+ * about code. A signature reading that prose is reading content, not an attack. Someone
+ * documenting an XSS bug searches for a script tag, someone describing a migration pastes SQL,
+ * someone writing up log4j names the lookup syntax. Each is a legitimate request the payload
+ * rules reject, and there are production log records of the last two doing exactly that.
+ *
+ * What backs the payload half is the application, not the absence of a check: every query in
+ * shared/db and api passes user values as $n placeholders (interpolation is confined to column
+ * names and placeholder indices), the app has no HTML sink for user content, and the inputs that
+ * really are filesystem paths reject '..' in validateSpecInput and normalizePath. WAF body
+ * inspection could not be that backstop anyway, since the ALB hands it only the first 8 KB of a
+ * body and item descriptions routinely run longer.
+ *
+ * The lists are exhaustive because an override can only carry the custom block response if it
+ * names a rule. That also fails safe: a rule AWS adds later still blocks, it just blocks with
+ * the default bare 403 until it is classified here.
+ *
+ * Refresh a group, including each rule's shipped action, with:
  *   aws wafv2 describe-managed-rule-group --vendor-name AWS --scope REGIONAL \
- *     --region us-west-2 --name <group> --query 'Rules[].Name'
+ *     --region us-west-2 --name <group> --query 'Rules[].{Name:Name,Action:Action}'
  */
 export const MANAGED_RULE_GROUPS: readonly ManagedRuleGroup[] = [
 	{
 		name: 'AWSManagedRulesCommonRuleSet',
-		rules: [
+		blocking: [
 			'NoUserAgent_HEADER',
 			'UserAgent_BadBots_HEADER',
 			'SizeRestrictions_QUERYSTRING',
@@ -85,26 +105,26 @@ export const MANAGED_RULE_GROUPS: readonly ManagedRuleGroup[] = [
 			'CrossSiteScripting_URIPATH',
 		],
 		counted: [
-			// Item descriptions run long, and the ALB only hands WAF the first 8 KB regardless
-			'SizeRestrictions_BODY',
-			// Specs and comments quote markup; the API stores request bodies, it never renders them
+			// Payload: item titles, descriptions, notes, and the search box, which is a query argument
+			'GenericLFI_BODY',
+			'GenericLFI_QUERYARGUMENTS',
+			'GenericRFI_BODY',
+			'GenericRFI_QUERYARGUMENTS',
 			'CrossSiteScripting_BODY',
+			'CrossSiteScripting_QUERYARGUMENTS',
 			'EC2MetaDataSSRF_BODY',
 			'EC2MetaDataSSRF_QUERYARGUMENTS',
-			// MCP clients' OAuth login paths (Codex) send no User-Agent
-			'NoUserAgent_HEADER',
 			// Editor file endpoints take the file name in ?path=; .log/.ini/.conf are legitimate docs
 			'RestrictedExtensions_QUERYARGUMENTS',
-			// Path traversal in a request body is a URL signature applied to free text. Specboard
-			// tracks software, so a relative import or a pasted file path in a title, description,
-			// or note is ordinary content, and none of it reaches a filesystem. Path inputs that do
-			// (spec links, storage file operations) reject '..' in the handlers instead.
-			'GenericLFI_BODY',
+			// Bodies are long by design, and the ALB truncates at 8 KB before WAF sees them
+			'SizeRestrictions_BODY',
+			// MCP clients' OAuth login paths (Codex) send no User-Agent
+			'NoUserAgent_HEADER',
 		],
 	},
 	{
 		name: 'AWSManagedRulesKnownBadInputsRuleSet',
-		rules: [
+		blocking: [
 			'JavaDeserializationRCE_BODY',
 			'JavaDeserializationRCE_URIPATH',
 			'JavaDeserializationRCE_QUERYSTRING',
@@ -118,26 +138,48 @@ export const MANAGED_RULE_GROUPS: readonly ManagedRuleGroup[] = [
 			'Log4JRCE_HEADER',
 			'ReactJSRCE_BODY',
 		],
-		counted: [],
+		counted: [
+			// Log4JRCE_BODY blocked the item filed to track this audit, for naming the lookup
+			// syntax. There is no JNDI in Node, and no Java anywhere in the stack
+			'Log4JRCE_BODY',
+			'Log4JRCE_QUERYSTRING',
+			'JavaDeserializationRCE_BODY',
+			'JavaDeserializationRCE_QUERYSTRING',
+			// The app has no HTML sink for user content: the only dangerouslySetInnerHTML is a
+			// static constant in NotFound, Preact escapes by default, and the editor renders
+			// through Slate components. This is the counted rule with the least direct evidence
+			// behind it, never having been observed firing either way
+			'ReactJSRCE_BODY',
+		],
 	},
 	{
 		name: 'AWSManagedRulesSQLiRuleSet',
-		rules: [
-			'SQLiExtendedPatterns_HEADER_RC_COUNT',
-			'SQLiExtendedPatterns_URIPATH_RC_COUNT',
-			'SQLiExtendedPatterns_BODY_RC_COUNT',
-			'SQLiExtendedPatterns_QUERYARGUMENTS_RC_COUNT',
+		blocking: [
 			'SQLiExtendedPatterns_QUERYARGUMENTS',
 			'SQLi_QUERYARGUMENTS',
 			'SQLi_BODY',
 			'SQLi_COOKIE',
 			'SQLi_URIPATH',
 		],
-		counted: [],
+		counted: [
+			// SQLi_BODY terminated two production /mcp writes on 2026-09-08. Descriptions quote
+			// queries and migrations, and the search box is where you go looking for them
+			'SQLi_BODY',
+			'SQLi_QUERYARGUMENTS',
+			'SQLiExtendedPatterns_QUERYARGUMENTS',
+		],
+		// AWS ships these as Count. They stay unoverridden: an override would turn telemetry
+		// rules into blocking ones, which is why the shipped action is recorded here at all
+		countOnly: [
+			'SQLiExtendedPatterns_HEADER_RC_COUNT',
+			'SQLiExtendedPatterns_URIPATH_RC_COUNT',
+			'SQLiExtendedPatterns_BODY_RC_COUNT',
+			'SQLiExtendedPatterns_QUERYARGUMENTS_RC_COUNT',
+		],
 	},
 	{
 		name: 'AWSManagedRulesAmazonIpReputationList',
-		rules: [
+		blocking: [
 			'AWSManagedIPReputationList',
 			'AWSManagedReconnaissanceList',
 			'AWSManagedIPDDoSList',
@@ -150,13 +192,17 @@ export const MANAGED_RULE_GROUPS: readonly ManagedRuleGroup[] = [
 export function managedRuleActionOverrides(
 	group: ManagedRuleGroup
 ): wafv2.CfnWebACL.RuleActionOverrideProperty[] {
-	const unknown = group.counted.filter((name) => !group.rules.includes(name));
+	const unknown = group.counted.filter((name) => !group.blocking.includes(name));
 	if (unknown.length > 0) {
 		// An override naming a rule the group doesn't ship is accepted and does nothing, so a
 		// typo would silently restore blocking on traffic we meant to let through
-		throw new Error(`${group.name} counts rules it does not contain: ${unknown.join(', ')}`);
+		throw new Error(`${group.name} counts rules it does not block: ${unknown.join(', ')}`);
 	}
-	return group.rules.map((name) => ({
+	const overridden = (group.countOnly ?? []).filter((name) => group.blocking.includes(name));
+	if (overridden.length > 0) {
+		throw new Error(`${group.name} lists count-only rules as blocking: ${overridden.join(', ')}`);
+	}
+	return group.blocking.map((name) => ({
 		name,
 		actionToUse: group.counted.includes(name) ? COUNT : BLOCK_WITH_RESPONSE,
 	}));
