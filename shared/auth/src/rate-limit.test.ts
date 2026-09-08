@@ -291,6 +291,51 @@ describe('rate limit middleware (coarse cap)', () => {
 		expect((await call()).status).toBe(429);
 	});
 
+	it('composes a mid-path wildcard with a trailing wildcard', async () => {
+		const redis = createFakeRedis();
+		const app = new Hono();
+		app.use(
+			'*',
+			rateLimitMiddleware(redis, {
+				rules: [
+					{
+						path: '/api/projects/*/items/*',
+						method: 'GET',
+						config: { maxRequests: 2, windowSeconds: 60, message: 'Too many' },
+					},
+				],
+				defaultLimit: { maxRequests: 1, windowSeconds: 60 },
+			})
+		);
+		app.get('/api/projects/:slug/items/:id', (c) => c.json({ ok: true }));
+		app.get('/api/projects/:slug/items/:id/children', (c) => c.json({ ok: true }));
+		app.get('/api/projects/:slug/items', (c) => c.json({ ok: true }));
+		app.get('/api/projects/:slug/members', (c) => c.json({ ok: true }));
+
+		const call = (path: string): Promise<Response> =>
+			Promise.resolve(app.request(path, { headers: { 'X-Forwarded-For': '1.2.3.4' } }));
+
+		// Both an item and a child of an item match the rule, each getting its
+		// own two-request budget (they're separate keys, but both keyed off the
+		// rule's limit of 2, not the default's 1).
+		for (let i = 0; i < 2; i++) {
+			expect((await call('/api/projects/foo/items/ABC-1')).status).toBe(200);
+		}
+		expect((await call('/api/projects/foo/items/ABC-1')).status).toBe(429);
+
+		for (let i = 0; i < 2; i++) {
+			expect((await call('/api/projects/foo/items/ABC-1/children')).status).toBe(200);
+		}
+		expect((await call('/api/projects/foo/items/ABC-1/children')).status).toBe(429);
+
+		// Stopping short of the trailing wildcard, or taking a different branch,
+		// falls through to the default limit of 1 instead.
+		expect((await call('/api/projects/foo/items')).status).toBe(200);
+		expect((await call('/api/projects/foo/items')).status).toBe(429);
+		expect((await call('/api/projects/foo/members')).status).toBe(200);
+		expect((await call('/api/projects/foo/members')).status).toBe(429);
+	});
+
 	it('fails open when Redis rejects (outage must not 500 requests)', async () => {
 		const brokenRedis = {
 			pipeline() {

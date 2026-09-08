@@ -86,29 +86,31 @@ function getClientIp(c: Context): string {
 /**
  * Check if a path matches a pattern
  *
- * Three forms: an exact path, a trailing `/*` prefix match, and `*` as a
- * whole-segment wildcard anywhere else, matching exactly one segment: a
- * pattern of `/api/projects/<any>/items` matches one project slug, and
- * nothing longer or shorter.
+ * Three forms: an exact path; a pattern ending in a trailing `*` segment, a
+ * prefix match where every segment before that trailing wildcard must match
+ * literally or via `*` for one path segment, and the path must extend beyond
+ * that prefix (so a pattern of "/api/docs/" plus a trailing `*` matches
+ * "/api/docs/" and "/api/docs/guide/setup" but not "/api/docs"); and
+ * otherwise `*` as a whole-segment wildcard anywhere in the pattern,
+ * requiring equal segment counts, so "/api/projects/", a wildcard segment,
+ * then "/items" matches one project slug and nothing longer or shorter. The
+ * two wildcard forms compose, so a pattern with a wildcard project segment
+ * and a trailing wildcard item segment matches any item under any project.
  */
 function pathMatches(path: string, pattern: string): boolean {
 	if (pattern === path) return true;
+	if (!pattern.includes('*')) return false;
 
-	if (pattern.endsWith('/*')) {
-		const prefix = pattern.slice(0, -1);
-		return path.startsWith(prefix);
-	}
+	const isPrefix = pattern.endsWith('/*');
+	const patternSegments = (isPrefix ? pattern.slice(0, -2) : pattern).split('/');
+	const pathSegments = path.split('/');
 
-	if (pattern.includes('*')) {
-		const patternSegments = pattern.split('/');
-		const pathSegments = path.split('/');
-		if (patternSegments.length !== pathSegments.length) return false;
-		return patternSegments.every(
-			(segment, index) => segment === '*' || segment === pathSegments[index]
-		);
-	}
+	const lengthOk = isPrefix
+		? pathSegments.length > patternSegments.length
+		: pathSegments.length === patternSegments.length;
+	if (!lengthOk) return false;
 
-	return false;
+	return patternSegments.every((segment, index) => segment === '*' || segment === pathSegments[index]);
 }
 
 /**
