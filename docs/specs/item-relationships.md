@@ -1,8 +1,8 @@
 # Item relationships and provenance
 
-Blockers (blocked-by), creation origin, worker presence, and the activity log on
-planning items. Introduced by migrations 024-028; this records the design and the
-reasoning so the shapes don't get reinvented.
+Blockers (blocked-by), creation origin, worker presence, the activity log, and
+the checklist on planning items. Introduced by migrations 024-029; this records
+the design and the reasoning so the shapes don't get reinvented.
 
 ## The two shared shapes
 
@@ -29,8 +29,10 @@ Decided once, used everywhere:
 
 No generic `item_links` table: origin is 1-per-item and immutable (a column, not
 a row), and blockers carry lifecycle (`cleared_at`/`cleared_by`) that would be
-meaningless for other relation kinds. If relation types multiply later, a
-generic table is a mechanical `INSERT…SELECT` away.
+meaningless for other relation kinds. The checklist (029) lands on the column
+side of the same line: 1-per-item, no actor, no timestamps, nothing to clear.
+If relation types multiply later, a generic table is a mechanical
+`INSERT…SELECT` away.
 
 ## Blockers (`item_blockers`, migration 024)
 
@@ -191,3 +193,73 @@ first everywhere it is read.
 - **027 keeps `items_notes_backup_027`**, the raw `notes`/`note` text per item.
   The blob parse is irreversible and the columns drop in the same transaction;
   a later migration drops the backup once the log is verified in prod.
+
+## Checklist (`items.checklist`, migration 029)
+
+Ordered scratch todos on one item: a JSONB array of `{ id, text, status }`, and
+nothing more.
+
+- **A checklist entry is not a child item.** A child is first-class work: a key,
+  a board status with a lifecycle behind it, blockers, an activity log,
+  provenance, and a row other items can point at. An entry has none of that. A
+  step you want tracked, assigned, or referenced is a task; a loose end inside
+  one item is an entry.
+- **`status`, not a boolean.** An entry's state is `'todo' | 'done'`, a string
+  union so further states can be added without breaking every reader and writer
+  of the column; the union stays narrow until one is actually needed. The set
+  lives in the service (`CHECKLIST_STATUSES`), deliberately not in the CHECK
+  constraint: widening it must not require a table-scanning revalidation. An
+  entry's `status` is a label on a todo, not the item lifecycle, which is what
+  `done` on a board item means.
+- **Column, not a table**, on the test the section above states: `item_notes`
+  and `item_blockers` earn rows because they carry actors, `created_at`, and
+  `cleared_at`. A checklist entry has no actor, no timestamps, and no lifecycle,
+  and there is exactly one checklist per item — the same reasoning that makes
+  `items.origin` a column. `CHECK (jsonb_typeof(checklist) = 'array')` pins the
+  shape; per-entry rules live in the service.
+- **Array order is display order.** No rank column, no sort key: reordering is a
+  rewrite of the array. There is no index either — the checklist is read by item
+  and never queried by its content.
+- **Entry-level writes don't clobber.** Add, update, and remove each rewrite
+  only the element they matched, in a single statement, so a UI ticking entry A
+  cannot lose a concurrent rename of entry B. Update and remove guard on
+  `checklist @> [{"id": …}]`, which reads the OLD row (the entry must have
+  existed) while `RETURNING` reports the NEW one; add enforces the cap inside its
+  `WHERE` (`jsonb_array_length(checklist) < 100`) so it still holds when two
+  appends race, and diagnoses its zero-row case as full-vs-missing afterwards.
+  `setChecklist` is the deliberate full replace: it mints ids for entries lacking
+  one and **preserves** supplied ids, so an MCP round-trip doesn't invalidate the
+  ids a browser is holding.
+- **Entries are addressed by id, never by array position.** Position is not
+  stable: another agent editing the same list inserts, removes, or reorders
+  entries, so a tick aimed at index 2 lands on whatever moved into index 2. That
+  is the whole reason entries carry ids at all, and the reason `update_item`'s
+  `checklist` array accepts `id` — an agent that means to keep an entry sends its
+  id back rather than minting a new one.
+- **No provenance, on purpose.** Nothing records who ticked a box or when.
+  Ticking is not a fact about the past worth keeping; if it were, the step
+  belonged in the activity log or as a child item.
+- **Caps and per-entry shape**: 100 entries, 500 characters each, and a `status`
+  inside the union, all enforced in the service, which throws
+  `ChecklistValidationError` (400 from the API, a tool error from MCP). Text is
+  trimmed and may not be empty; an absent `status` defaults to `todo`.
+- **Completion does not clear it.** Unlike blockers, a `done` transition leaves
+  the checklist alone — ticking a box is not a state the lifecycle owns.
+- **Two read paths, like the activity log.** Agents get the checklist inline:
+  always on a single-item `get_items item_key` read, and on lists behind
+  `include_checklist`. The browser will read a sub-resource in a later PR, so the
+  item response stays small and the item model has no `checklist` prop to PUT
+  back — `handleGetItem` must **not** enable `includeChecklist`.
+- **MCP: two writes, one tool.** `update_item` takes `checklist` (the full
+  replace, for setting the list up) and `checklist_status` (`{ "<id>": "done" }`,
+  for ticking entries off as the work happens). Both apply on every update path,
+  the status shortcuts and the reparent move included; when a call carries both,
+  the replace runs first and the patch lands on the list it produced. An id in
+  `checklist_status` that no longer exists is a tool error naming it, not a
+  silent no-op — an agent ticking a stale id has to find out. They are parameters
+  on `update_item` rather than tools of their own because a tool schema is
+  resident context on every request an agent makes; a new tool would be a
+  permanent cost to serve one operation. `create_item` takes neither; a new item
+  has nothing to check off yet.
+- **Present only when requested**, like `notes`/`blockers`/`workers`. An absent
+  key means "not loaded"; `[]` means the item genuinely has no todos.

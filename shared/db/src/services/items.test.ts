@@ -44,6 +44,7 @@ function makeItem(overrides: Partial<ItemRow> = {}): ItemRow {
 		branch_name: null,
 		created_at: new Date('2026-01-01'),
 		updated_at: new Date('2026-01-01'),
+		checklist: [],
 		...overrides,
 	} as ItemRow;
 }
@@ -232,6 +233,36 @@ describe('getItems', () => {
 		const { items: [item] } = await getItems({ projectId: 'proj-1' });
 
 		expect(item!).not.toHaveProperty('notes');
+	});
+
+	it('includeChecklist hydrates each item with its scratch todos', async () => {
+		const parent = {
+			...makeItem({ checklist: [{ id: 'c-1', text: 'wire the drawer', status: 'todo' }] }),
+			child_count: '0',
+			done_count: '0',
+			in_progress_count: '0',
+			blocked_count: '0',
+		};
+		mockQuery.mockResolvedValueOnce({ rows: [parent], rowCount: 1 } as never);
+
+		const { items: [item] } = await getItems({ projectId: 'proj-1', includeChecklist: true });
+
+		expect(item!.checklist).toEqual([{ id: 'c-1', text: 'wire the drawer', status: 'todo' }]);
+	});
+
+	it('omits the checklist entirely when it was not requested', async () => {
+		const parent = {
+			...makeItem({ checklist: [{ id: 'c-1', text: 'wire the drawer', status: 'todo' }] }),
+			child_count: '0',
+			done_count: '0',
+			in_progress_count: '0',
+			blocked_count: '0',
+		};
+		mockQuery.mockResolvedValueOnce({ rows: [parent], rowCount: 1 } as never);
+
+		const { items: [item] } = await getItems({ projectId: 'proj-1' });
+
+		expect(item!).not.toHaveProperty('checklist');
 	});
 
 	it('reports the number of matches past the page as total, from a window count', async () => {

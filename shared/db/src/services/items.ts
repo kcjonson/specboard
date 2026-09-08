@@ -8,7 +8,7 @@
 
 import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
-import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin } from '../types.ts';
+import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin, ChecklistEntry } from '../types.ts';
 import { clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
 import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
@@ -90,14 +90,17 @@ export interface ItemWithDetails extends ItemWithChildren {
 	specs: SpecSummary[];
 	/**
 	 * Activity-log entries (newest first) / open blockers / active agent-session
-	 * episodes. Present only when requested (includeNotes / includeBlockers /
-	 * includeWorkers) — deliberately absent otherwise, so a client model applying
-	 * an update response doesn't wipe state the response simply didn't load, and
-	 * so an agent that didn't ask for the log doesn't read `[]` as "no history".
+	 * episodes / scratch todos. Present only when requested (includeNotes /
+	 * includeBlockers / includeWorkers / includeChecklist) — deliberately absent
+	 * otherwise, so a client model applying an update response doesn't wipe state
+	 * the response simply didn't load, and so an agent that didn't ask for the log
+	 * doesn't read `[]` as "no history". Absent means "not loaded"; `[]` means
+	 * genuinely empty.
 	 */
 	notes?: ItemNoteSummary[];
 	blockers?: BlockerSummary[];
 	workers?: WorkerSummary[];
+	checklist?: ChecklistEntry[];
 }
 
 /** A page of items plus how many rows matched before `limit` cut the page. */
@@ -185,6 +188,7 @@ export interface GetItemsParams {
 	includeSpecs?: boolean;
 	includeBlockers?: boolean;
 	includeWorkers?: boolean;
+	includeChecklist?: boolean;
 	/** Max rows in the page (lists only), clamped to [1, MAX_LIST_LIMIT]. The result's `total` counts past it. */
 	limit?: number;
 }
@@ -332,7 +336,7 @@ type ItemWithCounts = ItemRow & {
  * `limit` cut it; it is what lets a client show a bounded window and know more exists.
  */
 export async function getItems(params: GetItemsParams): Promise<ItemList> {
-	const { projectId, itemNumber, status, type, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers } = params;
+	const { projectId, itemNumber, status, type, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers, includeChecklist } = params;
 	const search = params.search?.trim() || undefined;
 	const limit = pageLimit(params.limit);
 
@@ -472,6 +476,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 		...(notesByItem ? { notes: notesByItem.get(row.id) || [] } : {}),
 		...(blockersByItem ? { blockers: blockersByItem.get(row.id) || [] } : {}),
 		...(workersByItem ? { workers: workersByItem.get(row.id) || [] } : {}),
+		...(includeChecklist ? { checklist: row.checklist } : {}),
 	}));
 
 	return { items, total };

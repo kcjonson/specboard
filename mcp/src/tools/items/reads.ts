@@ -43,6 +43,7 @@ export async function getItems(project: ResolvedProject, args: Record<string, un
 		includeSpecs: true,
 		includeBlockers: itemNumber !== undefined,
 		includeWorkers: itemNumber !== undefined,
+		includeChecklist: itemNumber !== undefined || args.include_checklist === true,
 		limit: args.limit as number | undefined,
 	});
 

@@ -51,3 +51,19 @@ describe('get_items search', () => {
 		expect(search.description).toContain('item key');
 	});
 });
+
+describe('get_items checklist', () => {
+	it('always includes the checklist for a single-item read', async () => {
+		await getItems(PROJECT, { item_key: 'SB-12' });
+
+		expect(mockGetItems).toHaveBeenCalledWith(expect.objectContaining({ itemNumber: 12, includeChecklist: true }));
+	});
+
+	it('leaves the checklist off a list unless include_checklist asks for it', async () => {
+		await getItems(PROJECT, { status: 'ready' });
+		expect(mockGetItems).toHaveBeenCalledWith(expect.objectContaining({ includeChecklist: false }));
+
+		await getItems(PROJECT, { status: 'ready', include_checklist: true });
+		expect(mockGetItems).toHaveBeenLastCalledWith(expect.objectContaining({ includeChecklist: true }));
+	});
+});

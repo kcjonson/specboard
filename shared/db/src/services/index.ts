@@ -1,7 +1,7 @@
 /**
  * Service exports
  *
- * These services provide shared business logic for items, specs, notes, blockers, and workers.
+ * These services provide shared business logic for items, specs, notes, blockers, workers, and checklists.
  * Used by both API handlers and MCP tools.
  */
 
@@ -11,3 +11,4 @@ export * from './notes.ts';
 export * from './projects.ts';
 export * from './blockers.ts';
 export * from './workers.ts';
+export * from './checklist.ts';
