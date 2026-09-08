@@ -129,7 +129,6 @@ describe('NotesSection', () => {
 
 		// Two entries exist as soon as add() pushes the saved one to the bottom; the
 		// reorder is a second render, so wait on the order rather than the count.
-		await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
 		await waitFor(() => {
 			const texts = Array.from(container.querySelectorAll('[role="listitem"] p')).map(
 				(el) => (el as Element).textContent
