@@ -265,7 +265,7 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 		const rawPath = body.path;
 
 		if (!rawPath || typeof rawPath !== 'string') {
-			return context.json({ error: 'Path is required' }, 400);
+			return context.json({ error: 'Path is required', code: 'PATH_REQUIRED' }, 400);
 		}
 
 		const filePath = normalizePath(rawPath);
