@@ -10,6 +10,8 @@ export { ItemDrawer } from './ItemDrawer/ItemDrawer';
 export type { ItemDrawerProps } from './ItemDrawer/ItemDrawer';
 export { NewItemDialog } from './NewItemDialog/NewItemDialog';
 export type { NewItemDialogProps } from './NewItemDialog/NewItemDialog';
+export { NewItemForm } from './NewItemForm/NewItemForm';
+export type { NewItemFormProps, NewItemData } from './NewItemForm/NewItemForm';
 export { ItemDetail } from './ItemDetail/ItemDetail';
 export { ItemView } from './ItemView/ItemView';
 export { TaskCard } from './TaskCard/TaskCard';

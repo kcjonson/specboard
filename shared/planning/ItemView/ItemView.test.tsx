@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/preact';
+import { render, fireEvent, act } from '@testing-library/preact';
 import { ItemModel } from '@specboard/models';
 import { ItemView } from './ItemView';
 
@@ -32,8 +32,14 @@ vi.mock('@specboard/fetch', () => {
 vi.mock('../SpecsSection/SpecsSection', () => ({ SpecsSection: () => null }));
 vi.mock('../BlockersSection/BlockersSection', () => ({ BlockersSection: () => null }));
 vi.mock('../NotesSection/NotesSection', () => ({ NotesSection: () => null }));
+// Captured so a test can see which value ItemView hands the editor, and drive
+// its onChange without a real Slate tree.
+let editorProps: { value: unknown; onChange: (value: unknown) => void } | null = null;
 vi.mock('../RichTextEditor', () => ({
-	RichTextEditor: () => null,
+	RichTextEditor: (props: { value: unknown; onChange: (value: unknown) => void }) => {
+		editorProps = props;
+		return null;
+	},
 	serializeToText: () => '',
 	deserializeFromText: () => [],
 }));
@@ -48,6 +54,20 @@ function makeItem(title: string): ItemModel {
 	});
 	// ItemView fetches full detail on mount while lastFetched is null. These tests
 	// are about the title field, so hand it an item that looks already loaded.
+	item.$meta.lastFetched = Date.now();
+	vi.spyOn(item, 'save').mockResolvedValue(undefined);
+	return item;
+}
+
+function makeItemWith(key: string, description: string): ItemModel {
+	const item = new ItemModel({
+		key,
+		projectSlug: 'specboard',
+		title: 'T',
+		type: 'task',
+		status: 'ready',
+		description,
+	});
 	item.$meta.lastFetched = Date.now();
 	vi.spyOn(item, 'save').mockResolvedValue(undefined);
 	return item;
@@ -116,5 +136,26 @@ describe('ItemView title', () => {
 
 		expect(prevented).toBe(true);
 		expect(blur).toHaveBeenCalled();
+	});
+});
+
+describe('ItemView description', () => {
+	// Two items with the same description text memoized to one identity, so the
+	// reset effect never fired: the next item opened showing the previous one's
+	// unsaved draft, with the dirty flag still set, and blurring saved that text
+	// onto the wrong item. Empty descriptions make this the ordinary case.
+	it('drops an unsaved draft when switching to an item whose description matches', () => {
+		const first = makeItemWith('SB-1', '');
+		const { rerender } = render(<ItemView item={first} />);
+
+		const pristine = editorProps?.value;
+		// Driving onChange directly is not an event, so it needs its own flush.
+		act(() => editorProps?.onChange([{ type: 'paragraph', children: [{ text: 'unsaved draft' }] }]));
+		expect(editorProps?.value).not.toBe(pristine);
+
+		rerender(<ItemView item={makeItemWith('SB-2', '')} />);
+
+		expect(editorProps?.value).not.toBe(pristine);
+		expect(editorProps?.value).toEqual([]);
 	});
 });

@@ -27,9 +27,8 @@ export interface ItemDrawerProps {
  * replacement for the old centered ItemDialog. Shared by both the Board and the
  * Table views (Planning renders one drawer for the currently selected item).
  *
- * The content is the same {@link ItemView} used by the create modal and the
- * full-screen item route; only the surrounding chrome (resize handle, header)
- * differs.
+ * The content is the same {@link ItemView} used by the full-screen item route;
+ * only the surrounding chrome (resize handle, header) differs.
  */
 export interface MissingItemDrawerProps {
 	/** The key from the route that didn't resolve. */

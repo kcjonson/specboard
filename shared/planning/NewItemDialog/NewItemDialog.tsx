@@ -1,32 +1,28 @@
 import type { JSX } from 'preact';
-import type { Status, ItemType } from '@specboard/models';
+import type { ItemType } from '@specboard/models';
 import { Dialog } from '@specboard/ui';
-import { ItemView } from '../ItemView/ItemView';
-
-const TYPE_LABELS: Record<ItemType, string> = {
-	epic: 'Epic',
-	task: 'Task',
-	bug: 'Bug',
-};
+import { NewItemForm, type NewItemData } from '../NewItemForm/NewItemForm';
+import { TYPE_LABELS } from '../utils/itemType';
 
 export interface NewItemDialogProps {
 	createType?: ItemType;
+	/** Pre-set parent for the new item, when creation was started from a parent's children. */
+	parentKey?: string;
 	onClose: () => void;
-	onCreate: (data: { title: string; description?: string; status: Status; type?: ItemType }) => void;
+	onCreate: (data: NewItemData) => void;
 }
 
 /**
  * Centered modal for creating a new item. Creation is a focused, transient task
  * with no item id (so none of the drawer's resize/persistence/open-in-new-window
  * semantics apply), so it stays a modal while detail/edit uses the ItemDrawer.
- * The body is the same shared {@link ItemView}, here in create mode.
  */
-export function NewItemDialog({ createType, onClose, onCreate }: NewItemDialogProps): JSX.Element {
+export function NewItemDialog({ createType, parentKey, onClose, onCreate }: NewItemDialogProps): JSX.Element {
 	const title = `New ${TYPE_LABELS[createType || 'epic']}`;
 
 	return (
 		<Dialog onClose={onClose} title={title}>
-			<ItemView isNew createType={createType} onCreate={onCreate} />
+			<NewItemForm createType={createType} parentKey={parentKey} onCreate={onCreate} />
 		</Dialog>
 	);
 }

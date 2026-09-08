@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { useModel, ItemModel, type ChildModel, type Status, type ItemStatus, type SubStatus, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type ChildModel, type ItemStatus, type SubStatus } from '@specboard/models';
 import { Button, DialogFooter, Select, Text } from '@specboard/ui';
 import { TaskCard } from '../TaskCard/TaskCard';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
@@ -9,6 +9,7 @@ import { SpecsSection } from '../SpecsSection/SpecsSection';
 import { BlockersSection } from '../BlockersSection/BlockersSection';
 import { NotesSection } from '../NotesSection/NotesSection';
 import { actorLabel } from '../utils/actor';
+import { TYPE_LABELS } from '../utils/itemType';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import { formatTimeAgo } from '../utils/time';
 import styles from './ItemView.module.css';
@@ -18,34 +19,12 @@ function stripNewlines(value: string): string {
 	return value.replace(/[\r\n]+/g, ' ');
 }
 
-const TYPE_LABELS: Record<ItemType, string> = {
-	epic: 'Epic',
-	task: 'Task',
-	bug: 'Bug',
-};
-
-/** Props for viewing/editing an existing item */
-interface ItemViewExistingProps {
+export interface ItemViewProps {
 	item: ItemModel;
-	isNew?: false;
-	createType?: never;
 	onDelete?: (item: ItemModel) => void;
-	onCreate?: never;
 	/** Open a child's detail by key (clicking a child card). */
 	onOpenChild?: (itemKey: string) => void;
 }
-
-/** Props for creating a new item */
-interface ItemViewCreateProps {
-	item?: never;
-	isNew: true;
-	createType?: ItemType;
-	onDelete?: never;
-	onCreate: (data: { title: string; description?: string; status: Status; type?: ItemType }) => void;
-	onOpenChild?: never;
-}
-
-export type ItemViewProps = ItemViewExistingProps | ItemViewCreateProps;
 
 const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
 	{ value: 'ready', label: 'Ready' },
@@ -54,9 +33,6 @@ const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
 	{ value: 'in_review', label: 'In Review' },
 	{ value: 'done', label: 'Done' },
 ];
-
-// Creating an item already blocked or in review makes no sense; those states are entered later.
-const CREATE_STATUS_OPTIONS = STATUS_OPTIONS.filter((o) => o.value !== 'blocked' && o.value !== 'in_review');
 
 /**
  * Mirror of the server's sub-status -> status derive. The server only applies
@@ -90,50 +66,48 @@ const SUB_STATUS_OPTIONS: { value: SubStatus; label: string }[] = [
 	{ value: 'complete', label: 'Complete' },
 ];
 
-export function ItemView(props: ItemViewProps): JSX.Element {
-	const { isNew = false } = props;
-	const item = isNew ? undefined : props.item;
-	const onDelete = isNew ? undefined : props.onDelete;
-	const onOpenChild = isNew ? undefined : props.onOpenChild;
-	const onCreate = isNew ? props.onCreate : undefined;
-	const itemType: ItemType = isNew ? (props.createType || 'epic') : (item?.type || 'epic');
+export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.Element {
+	// Fields can still be unpopulated on a list summary whose detail fetch is in flight.
+	const itemType = item.type || 'epic';
 	const typeLabel = TYPE_LABELS[itemType];
 
-	// Always call hook unconditionally (hook now handles undefined)
 	useModel(item);
 
-	// Load the full detail (children) for an existing item that only has the list
-	// summary so far. The table fetches on expand; opening the drawer needs them too.
+	// Load the full detail (children) for an item that only has the list summary
+	// so far. The table fetches on expand; opening the drawer needs them too.
 	useEffect(() => {
-		if (item && item.$meta.lastFetched == null && !item.$meta.working) {
+		if (item.$meta.lastFetched == null && !item.$meta.working) {
 			void item.fetch();
 		}
 	}, [item]);
 
-	// Initialize description AST from plain text (recomputed when item description changes)
+	// Keyed on the model as well as the text, for the reason the title draft is:
+	// two items with the same description (empty is the common case) would other-
+	// wise memoize to one identity, the reset effect below would never fire, and
+	// the previous item's unsaved draft would carry over — and save onto the new
+	// item on blur, because the dirty flag carries over with it.
 	const initialDescriptionAst = useMemo(
-		() => deserializeFromText(item?.description || ''),
-		[item?.description]
+		() => deserializeFromText(item.description || ''),
+		[item, item.description]
 	);
 
 	// State
-	const [titleDraft, setTitleDraft] = useState(stripNewlines(item?.title || ''));
+	const [titleDraft, setTitleDraft] = useState(stripNewlines(item.title || ''));
 	const titleRef = useRef<HTMLTextAreaElement>(null);
 	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
-	const [statusDraft, setStatusDraft] = useState<Status>((item?.status as Status) || 'ready');
 	const [newTaskTitle, setNewTaskTitle] = useState('');
 
 	// Track whether description has unsaved changes
 	const descriptionDirtyRef = useRef(false);
 
-	const taskStats = item?.childStats || { total: 0, done: 0, blocked: 0 };
+	const taskStats = item.childStats || { total: 0, done: 0, blocked: 0 };
 
 	// Sync the title draft to whichever item is open. Keyed on the model as well as
 	// the title so switching to an item whose title hasn't arrived yet clears the
 	// field instead of leaving the previous item's title sitting in it.
 	useEffect(() => {
-		setTitleDraft(stripNewlines(item?.title || ''));
-	}, [item, item?.title]);
+		setTitleDraft(stripNewlines(item.title || ''));
+	}, [item, item.title]);
 
 	// A textarea won't grow on its own, so drive its height from the content.
 	const fitTitle = (): void => {
@@ -143,7 +117,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		el.style.height = `${el.scrollHeight}px`;
 	};
 
-	useEffect(fitTitle, [titleDraft, isNew]);
+	useEffect(fitTitle, [titleDraft]);
 
 	// Width changes rewrap the text, and the drawer and the full-screen view are
 	// very different widths, so the fitted height has to be recomputed.
@@ -158,17 +132,16 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		});
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, [isNew]);
+	}, []);
 
 	// Sync description AST state when item changes (for navigation between items)
 	useEffect(() => {
 		setDescriptionAst(initialDescriptionAst);
 		descriptionDirtyRef.current = false;
-	}, [initialDescriptionAst]);
+	}, [item, initialDescriptionAst]);
 
 	// Task status toggle
 	const handleToggleTaskStatus = (task: ChildModel): void => {
-		if (!item) return;
 		const prev = task.status;
 		const next = prev === 'done' ? 'ready' : 'done';
 		task.status = next; // optimistic; childStats reflects it immediately
@@ -180,7 +153,6 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 	// Title — save on blur
 	const handleTitleBlur = (): void => {
-		if (!item || isNew) return;
 		const trimmed = titleDraft.trim();
 		// Compare against the normalized stored title: a title that arrived with
 		// newlines would otherwise look edited the moment the field is focused, and
@@ -210,7 +182,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	};
 
 	const handleDescriptionBlur = (): void => {
-		if (!item || isNew || !descriptionDirtyRef.current) return;
+		if (!descriptionDirtyRef.current) return;
 		const previousDescription = item.description;
 		item.description = serializeToText(descriptionAst);
 		item.save().then(() => {
@@ -222,7 +194,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 
 	// Add task
 	const handleAddTask = (): void => {
-		if (!item || !newTaskTitle.trim()) return;
+		if (!newTaskTitle.trim()) return;
 		const title = newTaskTitle.trim();
 		setNewTaskTitle('');
 		// Create a child task under this item, then reload so it appears in the list.
@@ -238,24 +210,17 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		}
 	};
 
-	// Status change (for create mode, just update the draft)
 	const handleStatusChange = (e: Event): void => {
 		const target = e.target as HTMLSelectElement;
-		const newStatus = target.value as ItemStatus;
-		if (isNew) {
-			setStatusDraft(newStatus as Status);
-		} else if (item) {
-			const previousStatus = item.status;
-			item.status = newStatus;
-			item.save().catch(() => {
-				item.status = previousStatus;
-			});
-		}
+		const previousStatus = item.status;
+		item.status = target.value as ItemStatus;
+		item.save().catch(() => {
+			item.status = previousStatus;
+		});
 	};
 
 	// Sub-status change (moves status too at the key transitions)
 	const handleSubStatusChange = (e: Event): void => {
-		if (!item || isNew) return;
 		const target = e.target as HTMLSelectElement;
 		const newSubStatus = target.value as SubStatus;
 		const previousSubStatus = item.subStatus;
@@ -269,21 +234,9 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		});
 	};
 
-	// Create item
-	const handleCreate = (): void => {
-		if (!titleDraft.trim()) return;
-		const descriptionText = serializeToText(descriptionAst);
-		onCreate?.({
-			title: titleDraft.trim(),
-			description: descriptionText || undefined,
-			status: statusDraft,
-			type: itemType,
-		});
-	};
-
 	// Delete item
 	const handleDelete = (): void => {
-		if (item && confirm(`Are you sure you want to delete this ${typeLabel.toLowerCase()}?`)) {
+		if (confirm(`Are you sure you want to delete this ${typeLabel.toLowerCase()}?`)) {
 			onDelete?.(item);
 		}
 	};
@@ -292,65 +245,46 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 		<div class={styles.container}>
 			{/* Header: Title, Type, and Metadata */}
 			<div class={styles.header}>
-				{isNew ? (
-					<div class={styles.titleEdit}>
-						<Text
-							value={titleDraft}
-							onInput={(e) => setTitleDraft((e.target as HTMLInputElement).value)}
-							placeholder={`${typeLabel} title...`}
-							label="Title"
-						/>
-					</div>
-				) : (
-					<div class={styles.titleRow}>
-						<span class={styles.titleBadge}>
-							<TypeBadge type={itemType} />
-						</span>
-						<textarea
-							ref={titleRef}
-							rows={1}
-							class={styles.titleInput}
-							value={titleDraft}
-							onInput={(e) => setTitleDraft(stripNewlines((e.target as HTMLTextAreaElement).value))}
-							onBlur={handleTitleBlur}
-							onKeyDown={handleTitleKeyDown}
-							placeholder={`${typeLabel} title...`}
-							aria-label={`${typeLabel} title`}
-						/>
-					</div>
-				)}
+				<div class={styles.titleRow}>
+					<span class={styles.titleBadge}>
+						<TypeBadge type={itemType} />
+					</span>
+					<textarea
+						ref={titleRef}
+						rows={1}
+						class={styles.titleInput}
+						value={titleDraft}
+						onInput={(e) => setTitleDraft(stripNewlines((e.target as HTMLTextAreaElement).value))}
+						onBlur={handleTitleBlur}
+						onKeyDown={handleTitleKeyDown}
+						placeholder={`${typeLabel} title...`}
+						aria-label={`${typeLabel} title`}
+					/>
+				</div>
 				<div class={styles.fields}>
 					<div class={styles.field}>
 						<Select
 							id="item-status"
-							// Create mode clamps to its own options: a stale draft of
-							// 'blocked'/'in_review' would otherwise leave the select valueless.
-							value={isNew
-								? (CREATE_STATUS_OPTIONS.some((o) => o.value === statusDraft) ? statusDraft : 'ready')
-								: (item?.status || 'ready')}
-							options={isNew ? CREATE_STATUS_OPTIONS : STATUS_OPTIONS}
+							value={item.status || 'ready'}
+							options={STATUS_OPTIONS}
 							onChange={handleStatusChange}
 							label="Status"
 						/>
 					</div>
-					{!isNew && (
-						<div class={styles.field}>
-							<Select
-								id="item-sub-status"
-								value={item?.subStatus || 'not_started'}
-								options={SUB_STATUS_OPTIONS}
-								onChange={handleSubStatusChange}
-								label="Sub-Status"
-							/>
-						</div>
-					)}
-					{!isNew && (
-						<div class={styles.field}>
-							<label class={styles.fieldLabel}>Assignee</label>
-							<span class={styles.fieldValue}>{item?.assignee || 'Unassigned'}</span>
-						</div>
-					)}
-					{!isNew && item?.prUrl && (
+					<div class={styles.field}>
+						<Select
+							id="item-sub-status"
+							value={item.subStatus || 'not_started'}
+							options={SUB_STATUS_OPTIONS}
+							onChange={handleSubStatusChange}
+							label="Sub-Status"
+						/>
+					</div>
+					<div class={styles.field}>
+						<label class={styles.fieldLabel}>Assignee</label>
+						<span class={styles.fieldValue}>{item.assignee || 'Unassigned'}</span>
+					</div>
+					{item.prUrl && (
 						<div class={styles.field}>
 							<label class={styles.fieldLabel}>Pull Request</label>
 							<a
@@ -363,7 +297,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 							</a>
 						</div>
 					)}
-					{!isNew && item?.origin && (
+					{item.origin && (
 						<div class={styles.field}>
 							<label class={styles.fieldLabel}>Created by</label>
 							<span class={styles.fieldValue}>
@@ -383,7 +317,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 							</span>
 						</div>
 					)}
-					{!isNew && item?.workers && item.workers.length > 0 && (
+					{item.workers && item.workers.length > 0 && (
 						<div class={styles.field}>
 							<label class={styles.fieldLabel}>Working now</label>
 							<span class={styles.fieldValue}>
@@ -415,8 +349,7 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 				</div>
 			</section>
 
-			{/* Tasks — only show for existing items */}
-			{!isNew && item && item.type === 'epic' && (
+			{item.type === 'epic' && (
 				<section class={styles.section}>
 					<h3 class={styles.sectionTitle}>
 						Tasks ({taskStats.done}/{taskStats.total})
@@ -446,36 +379,21 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 				</section>
 			)}
 
-			{/* Blockers — for any existing work item */}
-			{!isNew && item && (
-				<BlockersSection
-					projectSlug={item.projectSlug}
-					itemKey={item.key}
-					onOpenItem={onOpenChild}
-					onChange={() => void item.fetch()}
-				/>
-			)}
+			<BlockersSection
+				projectSlug={item.projectSlug}
+				itemKey={item.key}
+				onOpenItem={onOpenChild}
+				onChange={() => void item.fetch()}
+			/>
 
-			{/* Specifications — for any existing work item */}
-			{!isNew && item && (
-				<SpecsSection projectSlug={item.projectSlug} itemKey={item.key} />
-			)}
+			<SpecsSection projectSlug={item.projectSlug} itemKey={item.key} />
 
-			{/* Activity log — for any existing work item */}
-			{!isNew && item && (
-				<NotesSection projectSlug={item.projectSlug} itemKey={item.key} />
-			)}
+			<NotesSection projectSlug={item.projectSlug} itemKey={item.key} />
 
 			<DialogFooter divider>
-				{isNew ? (
-					<Button onClick={handleCreate} disabled={!titleDraft.trim()}>
-						Create {typeLabel}
-					</Button>
-				) : (
-					<Button class="danger" onClick={handleDelete}>
-						Delete {typeLabel}
-					</Button>
-				)}
+				<Button class="danger" onClick={handleDelete}>
+					Delete {typeLabel}
+				</Button>
 			</DialogFooter>
 		</div>
 	);
