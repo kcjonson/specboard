@@ -2,13 +2,14 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
-import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
+import { useModel, ItemsCollection, ItemModel, type ItemType } from '@specboard/models';
 import { FetchError } from '@specboard/fetch';
 import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption, type SelectOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
 import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
+import type { NewItemData } from '../NewItemForm/NewItemForm';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
 import { VIEW_PREF, readPref, writePref } from './prefs';
 import styles from './Planning.module.css';
@@ -314,7 +315,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	// No rank: the server appends (project-wide max + 1). The collection's length is
 	// only what's loaded, so a rank derived from it would land mid-column.
 	const handleCreateItem = useCallback(
-		(data: { title: string; description?: string; status: Status; type?: ItemType }): void => {
+		(data: NewItemData): void => {
 			items.add({ ...data, type: data.type || createType });
 			setIsNewItemDialogOpen(false);
 		},
