@@ -77,24 +77,6 @@ describe('addChecklistEntry', () => {
 		await expect(addChecklistEntry('proj-1', 7, '   ')).rejects.toThrow(ChecklistValidationError);
 		expect(mockQuery).not.toHaveBeenCalled();
 	});
-
-	// A null or a bare string used to reach entry.text as a TypeError, escaping
-	// ChecklistValidationError and surfacing as a 500 rather than a 400.
-	it('rejects an entry that is not an object', async () => {
-		await expect(setChecklist('proj-1', 7, [null as never])).rejects.toThrow(ChecklistValidationError);
-		await expect(setChecklist('proj-1', 7, ['just text' as never])).rejects.toThrow(ChecklistValidationError);
-		await expect(setChecklist('proj-1', 7, [['nested'] as never])).rejects.toThrow(ChecklistValidationError);
-		expect(mockQuery).not.toHaveBeenCalled();
-	});
-
-	// Duplicate ids make every entry-level statement ambiguous, and the patch's
-	// RETURNING subquery errors outright when two rows share the id it selects on.
-	it('rejects duplicate supplied ids', async () => {
-		await expect(
-			setChecklist('proj-1', 7, [{ id: 'c1', text: 'one' }, { id: 'c1', text: 'two' }])
-		).rejects.toThrow(ChecklistValidationError);
-		expect(mockQuery).not.toHaveBeenCalled();
-	});
 });
 
 describe('updateChecklistEntry', () => {

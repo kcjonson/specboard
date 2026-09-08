@@ -36,7 +36,7 @@ vi.mock('@specboard/db', () => ({
 	ItemCycleError: class extends Error {},
 }));
 
-import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, setChecklist, getChecklist, updateChecklistEntry, NoteValidationError } from '@specboard/db';
+import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, setChecklist, getChecklist, updateChecklistEntry, setSpecs, NoteValidationError } from '@specboard/db';
 import type { AgentActor } from '@specboard/db';
 import { updateItem } from './writes.ts';
 
@@ -297,5 +297,16 @@ describe('update_item checklist_status', () => {
 
 		expect(result.isError).toBe(true);
 		expect(vi.mocked(setChecklist)).not.toHaveBeenCalled();
+	});
+
+	// specs used to reach only the general update path, so pairing it with any
+	// status shortcut dropped it silently while the tool reported success.
+	// The note is only there for `blocked`, which refuses to block without a
+	// reason; it is inert on the other three.
+	it.each(['in_progress', 'done', 'blocked', 'ready'] as const)('applies specs alongside status %s', async (status) => {
+		const specs = [{ path: '/docs/specs/thing.md', type: 'technical' as const }];
+		await updateItem(PROJECT, { item_key: 'SB-1', status, specs, note: 'why' }, ACTOR);
+
+		expect(vi.mocked(setSpecs)).toHaveBeenCalledWith('proj-1', 1, specs);
 	});
 });

@@ -45,6 +45,7 @@ import {
 	type AgentActor,
 	type BlockerInput,
 	type BlockerSummary,
+	type SpecSummary,
 	type ChecklistEntry,
 	type ChecklistEntryInput,
 	type ChecklistStatus,
@@ -225,6 +226,20 @@ export async function updateItem(
 		return err('Access denied: item does not belong to this project');
 	}
 
+	// Spec links replace in full on EVERY update path, for the same reason blockers
+	// and the checklist do: the schema offers `specs` unconditionally, so a call
+	// pairing it with a status shortcut must not have it silently dropped.
+	const applySpecs = async (): Promise<{ specs?: SpecSummary[] } | ToolResult> => {
+		if (!Array.isArray(args.specs)) return {};
+		try {
+			const specs = await setSpecsService(project.id, number, args.specs as Array<{ path: string; type: SpecType }>);
+			return specs ? { specs } : {};
+		} catch (error) {
+			if (error instanceof SpecValidationError) return err(error.message);
+			throw error;
+		}
+	};
+
 	// The blockers full-replace applies on EVERY update path — the schema promises
 	// it unconditionally, so the status shortcuts and the move path may not drop it.
 	const applyBlockers = async (): Promise<{ blockers?: BlockerSummary[] } | ToolResult> => {
@@ -368,7 +383,9 @@ export async function updateItem(
 		if ('content' in blockers) return blockers;
 		const checklist = await applyChecklist();
 		if ('content' in checklist) return checklist;
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist }, message: 'Item started' });
+		const specs = await applySpecs();
+		if ('content' in specs) return specs;
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item started' });
 	}
 	if (status === 'done') {
 		if (hasFields) await updateItemService(project.id, number, fields);
@@ -378,13 +395,15 @@ export async function updateItem(
 		if (noteError) return noteError;
 		const checklist = await applyChecklist();
 		if ('content' in checklist) return checklist;
+		const specs = await applySpecs();
+		if ('content' in specs) return specs;
 		// No applyBlockers here: completion just cleared every open row, and
 		// blocking a done item is refused anyway — report that instead of a
 		// confusing validation error when the arg is present.
 		if (Array.isArray(args.blockers) && args.blockers.length > 0) {
-			return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
+			return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist, ...specs }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
 		}
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist }, message: 'Item completed' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist, ...specs }, message: 'Item completed' });
 	}
 	if (status === 'blocked') {
 		if (hasFields) await updateItemService(project.id, number, fields);
@@ -396,7 +415,9 @@ export async function updateItem(
 		if ('content' in blockers) return blockers;
 		const checklist = await applyChecklist();
 		if ('content' in checklist) return checklist;
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist }, message: 'Item blocked' });
+		const specs = await applySpecs();
+		if ('content' in specs) return specs;
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item blocked' });
 	}
 	if (status === 'ready' && !hasFields && !note) {
 		const item = await unblockItemService(project.id, number);
@@ -405,7 +426,9 @@ export async function updateItem(
 		if ('content' in blockers) return blockers;
 		const checklist = await applyChecklist();
 		if ('content' in checklist) return checklist;
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist }, message: 'Item unblocked' });
+		const specs = await applySpecs();
+		if ('content' in specs) return specs;
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item unblocked' });
 	}
 
 	// General field update.
@@ -417,16 +440,9 @@ export async function updateItem(
 	const noteError = await appendNote();
 	if (noteError) return noteError;
 
-	// Replace the full set of typed spec links when provided.
-	let specs;
-	if (Array.isArray(args.specs)) {
-		try {
-			specs = await setSpecsService(project.id, number, args.specs as Array<{ path: string; type: SpecType }>);
-		} catch (error) {
-			if (error instanceof SpecValidationError) return err(error.message);
-			throw error;
-		}
-	}
+	const specsResult = await applySpecs();
+	if ('content' in specsResult) return specsResult;
+	const specs = specsResult.specs;
 
 	// Replace the full set of OPEN blockers when provided. Item blockers auto-clear
 	// when the blocking item completes; text blockers only clear by leaving this list.
