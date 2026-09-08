@@ -393,10 +393,12 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	}
 
 	/**
-	 * Whether a filter is narrowing the windows. Views need it because a filtered
-	 * collection is a flat list of matches at any depth: an item's own `children`
-	 * are the unfiltered set, so anything that would render them alongside the
-	 * matched rows (the table's expand) has to stand down while this is true.
+	 * Whether a search or type filter is narrowing the windows. Views need it
+	 * because an item's own `children` are always the unfiltered set, so anything
+	 * that renders them next to the filtered rows (the table's expand) has to stand
+	 * down while this is true. A type filter alone still returns top-level items; a
+	 * non-empty search also returns matched children as rows of their own, which is
+	 * the case where expanding would show the same item twice.
 	 */
 	get filterActive(): boolean {
 		const { search, type } = normalizeFilter(this.__filter);

@@ -12,8 +12,8 @@
 		"test": "vitest run"
 	},
 	"devDependencies": {
-		"@types/is-hotkey": "^0.1.10",
-		"vitest": "^4.1.10"
+		"@types/is-hotkey": "0.1.10",
+		"vitest": "4.1.11"
 	},
 	"dependencies": {
 		"@specboard/fetch": "*",
@@ -22,15 +22,15 @@
 		"@specboard/router": "*",
 		"@specboard/telemetry": "*",
 		"@specboard/ui": "*",
-		"is-hotkey": "^0.2.0",
-		"preact": "^10.25.4",
-		"remark-gfm": "^4.0.1",
-		"remark-parse": "^11.0.0",
-		"remark-slate-transformer": "^0.9.0",
-		"remark-stringify": "^11.0.0",
-		"slate": "^0.120.0",
-		"slate-history": "^0.113.1",
-		"slate-react": "^0.120.0",
-		"unified": "^11.0.5"
+		"is-hotkey": "0.2.0",
+		"preact": "10.29.8",
+		"remark-gfm": "4.0.1",
+		"remark-parse": "11.0.0",
+		"remark-slate-transformer": "0.9.0",
+		"remark-stringify": "11.0.0",
+		"slate": "0.120.0",
+		"slate-history": "0.113.1",
+		"slate-react": "0.120.0",
+		"unified": "11.0.5"
 	}
 }

@@ -234,7 +234,9 @@ Browser                        API                      PostgreSQL
 **Onboarding**: the first magic-link login creates a session with
 `profile_complete: false` (username still NULL). The frontend service
 redirects every SPA document load to `/onboarding` while that session flag is
-false — enforcement is server-side; the SPA has no route guards. Onboarding
+false — enforcement is server-side; the SPA has no route guards. (The same
+handler also redirects document loads of the board-with-drawer item URL to the
+standalone item page; see [kanban-ui.md](kanban-ui.md#item-urls).) Onboarding
 requires claiming a username (`PUT /api/auth/me`, settable only while NULL,
 409 on conflict) and first/last name, then offers an optional password
 (`PUT /api/auth/change-password` accepts a missing `current_password` only

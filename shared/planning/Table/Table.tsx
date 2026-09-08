@@ -46,10 +46,11 @@ function ensureTasksLoaded(item: ItemModel): void {
  * Table view — items grouped by status into divided sections, each an expandable
  * tree row whose children load lazily on first expand.
  *
- * Expansion is off entirely while a filter is active: the collection then holds the
- * matches at any depth as rows of their own, and an item's `children` are the
- * unfiltered set, so expanding would render a matched child a second time as a
- * separate model. The matched child rows are the answer; there is nothing to open.
+ * Expansion is off while any filter is active, because an item's `children` load
+ * from the unfiltered children endpoint and would show rows the filter excluded.
+ * With a search on, it would be worse: matched children are already rows of their
+ * own, so expanding their parent would render each a second time as a separate
+ * model. A type-only filter still lists top-level items; the rule is the same.
  */
 export function Table({
 	items,
@@ -155,8 +156,8 @@ export function Table({
 
 			<div class={styles.table} role="table">
 				<div class={`${styles.row} ${styles.columnHeader}`} role="row">
-					<span class={styles.colTitle} role="columnheader">Title</span>
 					<span class={styles.colType} role="columnheader">Type</span>
+					<span class={styles.colTitle} role="columnheader">Title</span>
 					<span class={styles.colStatus} role="columnheader">Status</span>
 					<span class={styles.colTasks} role="columnheader">Tasks</span>
 					<span class={styles.colAssignee} role="columnheader">Assignee</span>

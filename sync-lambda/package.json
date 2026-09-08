@@ -13,19 +13,19 @@
 		"lint:fix": "eslint src --fix"
 	},
 	"dependencies": {
-		"@aws-sdk/client-lambda": "^3.1119.0",
-		"@aws-sdk/client-s3": "^3.1119.0",
-		"@aws-sdk/client-secrets-manager": "^3.1119.0",
-		"@aws-sdk/lib-storage": "^3.1119.0",
+		"@aws-sdk/client-lambda": "3.1119.0",
+		"@aws-sdk/client-s3": "3.1119.0",
+		"@aws-sdk/client-secrets-manager": "3.1119.0",
+		"@aws-sdk/lib-storage": "3.1119.0",
 		"@specboard/auth": "*",
 		"@specboard/db": "*",
-		"isbinaryfile": "^6.0.0",
-		"unzipper": "^0.12.3"
+		"isbinaryfile": "6.0.0",
+		"unzipper": "0.12.5"
 	},
 	"devDependencies": {
-		"@types/node": "^22.10.2",
-		"@types/unzipper": "^0.10.10",
-		"esbuild": "^0.28.2",
-		"typescript": "^5.7.2"
+		"@types/node": "22.19.5",
+		"@types/unzipper": "0.10.11",
+		"esbuild": "0.28.2",
+		"typescript": "5.9.3"
 	}
 }

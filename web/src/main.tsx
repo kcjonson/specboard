@@ -98,8 +98,9 @@ const routes = [
 	{ route: '/projects', entry: ProjectsList },
 
 	// Project-scoped routes. The board and the board-with-an-item-selected share the
-	// Planning entry, so selecting a card is a navigation (shareable URL, working Back)
-	// rather than hidden state; ItemDetail is the standalone full-page view.
+	// Planning entry, so selecting a card is a navigation (working Back) rather than
+	// hidden state; ItemDetail is the standalone full-page view, and a document load
+	// of the drawer URL is redirected there by the frontend service.
 	{ route: '/projects/:projectSlug/planning', entry: Planning },
 	{ route: '/projects/:projectSlug/planning/items/:itemKey', entry: Planning },
 	{ route: '/projects/:projectSlug/items/:itemKey', entry: ItemDetail },

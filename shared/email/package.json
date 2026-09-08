@@ -12,10 +12,10 @@
 		"lint:fix": "eslint src --fix"
 	},
 	"dependencies": {
-		"@aws-sdk/client-ses": "^3.1119.0"
+		"@aws-sdk/client-ses": "3.1119.0"
 	},
 	"devDependencies": {
-		"@types/node": "^22.10.2",
-		"typescript": "^5.7.2"
+		"@types/node": "22.19.5",
+		"typescript": "5.9.3"
 	}
 }

@@ -15,14 +15,14 @@
 	"dependencies": {
 		"@specboard/auth": "*",
 		"@specboard/core": "*",
-		"@hono/node-server": "^2.1.1",
-		"hono": "^4.13.3",
-		"ioredis": "^5.6.1"
+		"@hono/node-server": "2.1.1",
+		"hono": "4.13.5",
+		"ioredis": "5.11.1"
 	},
 	"devDependencies": {
-		"@types/node": "^22.10.2",
-		"esbuild": "^0.28.2",
-		"tsx": "^4.23.12",
-		"typescript": "^5.7.2"
+		"@types/node": "22.19.5",
+		"esbuild": "0.28.2",
+		"tsx": "4.23.12",
+		"typescript": "5.9.3"
 	}
 }

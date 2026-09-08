@@ -375,7 +375,7 @@ same deep set as the body.
 | GET | /api/projects | List user's projects |
 | POST | /api/projects | Create project |
 | GET | /api/projects/:projectSlug | Get project |
-| PUT | /api/projects/:projectSlug | Update project (name, description, slug, key, system prompt) |
+| PUT | /api/projects/:projectSlug | Update project (name, description, slug, key, system prompt, repository: attach once) |
 | DELETE | /api/projects/:projectSlug | Delete project |
 
 ### Project Storage (see [project-storage.md](./project-storage.md))

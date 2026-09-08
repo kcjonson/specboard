@@ -127,11 +127,14 @@ describe('NotesSection', () => {
 		fireEvent.input(input, { target: { value: 'Typed entry' } });
 		fireEvent.keyDown(input, { key: 'Enter' });
 
-		await waitFor(() => expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2));
-		const texts = Array.from(container.querySelectorAll('[role="listitem"] p')).map(
-			(el) => (el as Element).textContent
-		);
-		expect(texts).toEqual(['Typed entry', 'Older']);
+		// Two entries exist as soon as add() pushes the saved one to the bottom; the
+		// reorder is a second render, so wait on the order rather than the count.
+		await waitFor(() => {
+			const texts = Array.from(container.querySelectorAll('[role="listitem"] p')).map(
+				(el) => (el as Element).textContent
+			);
+			expect(texts).toEqual(['Typed entry', 'Older']);
+		});
 	});
 
 	it('does not post twice when Enter is pressed again mid-request', async () => {

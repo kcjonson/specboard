@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
+import { FetchError } from '@specboard/fetch';
 import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption, type SelectOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
@@ -77,15 +78,17 @@ function readView(): PlanningView {
  * whatever the collection currently holds, which under a search includes child items.
  *
  * Which item the drawer shows is not local state — it's the `:itemKey` route param.
- * Opening and closing the drawer are navigations, so the open item has a shareable
- * URL and Back closes it. The router re-renders this same component (no remount) on
- * those navigations, so the board, filters, and scroll position all survive.
+ * Opening and closing the drawer are navigations, so Back closes it. The router
+ * re-renders this same component (no remount) on those navigations, so the board,
+ * filters, and scroll position all survive. The drawer URL is in-app only: a
+ * document load of it is redirected to the standalone item page by the frontend
+ * service, so this entry only ever mounts with an `:itemKey` via in-app navigation.
  */
 export function Planning(props: RouteProps): JSX.Element {
 	const projectSlug = props.params.projectSlug || 'demo';
-	// Normalized because the server accepts a hand-typed `sb-345`; without this the
-	// route key would miss the collection's canonical `SB-345` and open a duplicate,
-	// detached model instead of the live one the board is rendering.
+	// Normalized so a lower-case key from any caller can't miss the collection's
+	// canonical `SB-345` and open a duplicate, detached model instead of the live
+	// one the board is rendering.
 	const openItemKey = props.params.itemKey?.toUpperCase();
 
 	// Collection auto-fetches after projectSlug is set. Memoized so it survives view
@@ -134,8 +137,8 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, [items, settledSearch, filters.category]);
 
 	// The board selection — the single source of truth for which card is marked.
-	// Seeded from the route so a deep link lands with its card selected, and kept in
-	// step below whenever the route changes under it (deep link, Back/Forward).
+	// Seeded from the route so an in-app navigation to an item URL lands with its
+	// card selected, and kept in step below whenever the route changes under it.
 	const [selectedItemKey, setSelectedItemKey] = useState<string | undefined>(openItemKey);
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
@@ -247,8 +250,8 @@ export function Planning(props: RouteProps): JSX.Element {
 		navigate(window.location.pathname + (search ? `?${search}` : '') + window.location.hash);
 	}, []);
 
-	// Selection follows the route whenever the route moves on its own — a deep link,
-	// or the user hitting Back/Forward across item URLs.
+	// Selection follows the route whenever the route moves on its own — a navigation
+	// from elsewhere in the app, or the user hitting Back/Forward across item URLs.
 	useEffect(() => {
 		if (openItemKey) setSelectedItemKey(openItemKey);
 		else openedByPush.current = false;
@@ -318,7 +321,8 @@ export function Planning(props: RouteProps): JSX.Element {
 	// Closing undoes our own push where there is one, which leaves the history exactly
 	// as it was before the drawer opened. Replacing instead would strand a duplicate
 	// board entry, making the next Back appear to do nothing; pushing would make Back
-	// reopen the drawer. On a deep link there is nothing of ours to pop, so replace.
+	// reopen the drawer. When the drawer was opened by a navigation from elsewhere in
+	// the app, or restored by Back/Forward, there is nothing of ours to pop, so replace.
 	const handleCloseDrawer = useCallback((): void => {
 		if (openedByPush.current) {
 			openedByPush.current = false;
@@ -428,15 +432,15 @@ export function Planning(props: RouteProps): JSX.Element {
 	);
 	const openItem = collectionItem ?? standaloneItem;
 
-	// A key that resolves to nothing (a stale link, an item someone else deleted) must
+	// A key that resolves to nothing (an item someone else deleted, an epic link in the
+	// editor pointing at a deleted epic) must
 	// not render an empty but editable drawer — that offers a Save and a Delete against
 	// an item that does not exist. Surface it instead.
 	const openItemMissing = Boolean(standaloneItem?.$meta.error);
 
 	// Measure the workspace so the drawer can't widen past leaving the board a
-	// usable minimum. A callback ref (not useRef + mount effect) is required
-	// because the workspace mounts only after the loading/error early-returns
-	// below resolve — a one-shot effect would attach before the node exists.
+	// usable minimum. A callback ref keeps the observer bound to whichever node
+	// is current rather than to the one present at mount.
 	const [workspaceWidth, setWorkspaceWidth] = useState(0);
 	const observerRef = useRef<ResizeObserver | null>(null);
 	const workspaceRefCallback = useCallback((node: HTMLDivElement | null): void => {
@@ -452,25 +456,65 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, []);
 	const drawerMaxWidth = workspaceWidth > 0 ? Math.max(DRAWER_MIN_WIDTH, workspaceWidth - BOARD_MIN_WIDTH) : undefined;
 
-	// Loading state — the first load only. Every later fetch (a poll, a widened
-	// window, a new search) keeps the toolbar mounted: swapping it for a spinner
-	// would tear the search input out from under the keystroke that caused it.
-	if (items.$meta.working && items.$meta.lastFetched === null) {
-		return (
-			<Page projectSlug={projectSlug} activeTab="Planning">
-				<div class={styles.loading}>Loading...</div>
-			</Page>
-		);
-	}
+	// Loading and load failures render where the board goes, so the toolbar stays
+	// put. While the page is in error every automatic fetch is suppressed, so
+	// recovery is always something the user does: Retry, a filter change, or
+	// signing back in. Replacing the page would unmount the search box and give a
+	// signed-out user nothing to act on.
+	const loadError = items.$meta.error;
+	const sessionExpired = loadError instanceof FetchError && loadError.status === 401;
+	const handleSignIn = useCallback((): void => {
+		const next = window.location.pathname + window.location.search + window.location.hash;
+		window.location.href = `/login?next=${encodeURIComponent(next)}`;
+	}, []);
+	const handleRetry = useCallback((): void => {
+		void items.fetch({ force: true });
+	}, [items]);
 
-	// Error state from collection's $meta
-	if (items.$meta.error) {
-		return (
-			<Page projectSlug={projectSlug} activeTab="Planning">
-				<div class={styles.error}>Error: {items.$meta.error.message}</div>
-			</Page>
+	const renderViewArea = (): JSX.Element => {
+		if (sessionExpired) {
+			return (
+				<div class={styles.error} role="alert">
+					<p>Your session has expired. Sign in to keep working.</p>
+					<Button class="secondary" onClick={handleSignIn}>Sign in</Button>
+				</div>
+			);
+		}
+		if (loadError) {
+			return (
+				<div class={styles.error} role="alert">
+					<p>Error: {loadError.message}</p>
+					<Button class="secondary" onClick={handleRetry}>Retry</Button>
+				</div>
+			);
+		}
+		// First load only: a later fetch that returns nothing (an empty search, a poll
+		// after one) keeps the empty columns rather than swapping in a spinner.
+		if (items.$meta.working && items.$meta.lastFetched === null) {
+			return <div class={styles.loading}>Loading...</div>;
+		}
+		return view === 'table' ? (
+			<Table
+				items={items}
+				selectedItemKey={selectedItemKey}
+				flashingIds={flashingIds}
+				onSelectItem={handleSelectItem}
+				onOpenItem={handleOpenItem}
+				onOpenChild={handleOpenItemByKey}
+			/>
+		) : (
+			<Board
+				items={items}
+				projectSlug={projectSlug}
+				selectedItemKey={selectedItemKey}
+				flashingIds={flashingIds}
+				dialogOpen={isNewItemDialogOpen}
+				onSelectItem={handleSelectItem}
+				onOpenItem={handleOpenItem}
+				onCreateItem={() => handleOpenNewItemDialog('epic')}
+			/>
 		);
-	}
+	};
 
 	return (
 		<Page projectSlug={projectSlug} activeTab="Planning">
@@ -501,29 +545,7 @@ export function Planning(props: RouteProps): JSX.Element {
 			</div>
 
 			<div class={styles.workspace} ref={workspaceRefCallback}>
-				<div class={styles.viewArea}>
-					{view === 'table' ? (
-						<Table
-							items={items}
-							selectedItemKey={selectedItemKey}
-							flashingIds={flashingIds}
-							onSelectItem={handleSelectItem}
-							onOpenItem={handleOpenItem}
-							onOpenChild={handleOpenItemByKey}
-						/>
-					) : (
-						<Board
-							items={items}
-							projectSlug={projectSlug}
-							selectedItemKey={selectedItemKey}
-							flashingIds={flashingIds}
-							dialogOpen={isNewItemDialogOpen}
-							onSelectItem={handleSelectItem}
-							onOpenItem={handleOpenItem}
-							onCreateItem={() => handleOpenNewItemDialog('epic')}
-						/>
-					)}
-				</div>
+				<div class={styles.viewArea}>{renderViewArea()}</div>
 
 				{openItem && !openItemMissing && (
 					<ItemDrawer

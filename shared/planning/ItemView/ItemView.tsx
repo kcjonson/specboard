@@ -13,6 +13,11 @@ import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTex
 import { formatTimeAgo } from '../utils/time';
 import styles from './ItemView.module.css';
 
+/** Titles stay one line of text; the textarea is only there so it wraps visually. */
+function stripNewlines(value: string): string {
+	return value.replace(/[\r\n]+/g, ' ');
+}
+
 const TYPE_LABELS: Record<ItemType, string> = {
 	epic: 'Epic',
 	task: 'Task',
@@ -112,7 +117,8 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	);
 
 	// State
-	const [titleDraft, setTitleDraft] = useState(item?.title || '');
+	const [titleDraft, setTitleDraft] = useState(stripNewlines(item?.title || ''));
+	const titleRef = useRef<HTMLTextAreaElement>(null);
 	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
 	const [statusDraft, setStatusDraft] = useState<Status>((item?.status as Status) || 'ready');
 	const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -126,8 +132,33 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	// the title so switching to an item whose title hasn't arrived yet clears the
 	// field instead of leaving the previous item's title sitting in it.
 	useEffect(() => {
-		setTitleDraft(item?.title || '');
+		setTitleDraft(stripNewlines(item?.title || ''));
 	}, [item, item?.title]);
+
+	// A textarea won't grow on its own, so drive its height from the content.
+	const fitTitle = (): void => {
+		const el = titleRef.current;
+		if (!el) return;
+		el.style.height = 'auto';
+		el.style.height = `${el.scrollHeight}px`;
+	};
+
+	useEffect(fitTitle, [titleDraft, isNew]);
+
+	// Width changes rewrap the text, and the drawer and the full-screen view are
+	// very different widths, so the fitted height has to be recomputed.
+	useEffect(() => {
+		const el = titleRef.current;
+		if (!el || typeof ResizeObserver === 'undefined') return;
+		let lastWidth = el.clientWidth;
+		const observer = new ResizeObserver(() => {
+			if (el.clientWidth === lastWidth) return;
+			lastWidth = el.clientWidth;
+			fitTitle();
+		});
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [isNew]);
 
 	// Sync description AST state when item changes (for navigation between items)
 	useEffect(() => {
@@ -151,19 +182,24 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 	const handleTitleBlur = (): void => {
 		if (!item || isNew) return;
 		const trimmed = titleDraft.trim();
-		if (trimmed && trimmed !== item.title) {
+		// Compare against the normalized stored title: a title that arrived with
+		// newlines would otherwise look edited the moment the field is focused, and
+		// merely tabbing through it would write.
+		if (trimmed && trimmed !== stripNewlines(item.title).trim()) {
 			const previousTitle = item.title;
 			item.title = trimmed;
 			item.save().catch(() => {
 				item.title = previousTitle;
-				setTitleDraft(previousTitle);
+				setTitleDraft(stripNewlines(previousTitle));
 			});
 		}
 	};
 
 	const handleTitleKeyDown = (e: KeyboardEvent): void => {
+		// The title is a textarea only so it can wrap; Enter still commits.
 		if (e.key === 'Enter') {
-			(e.target as HTMLInputElement).blur();
+			e.preventDefault();
+			(e.target as HTMLTextAreaElement).blur();
 		}
 	};
 
@@ -267,11 +303,15 @@ export function ItemView(props: ItemViewProps): JSX.Element {
 					</div>
 				) : (
 					<div class={styles.titleRow}>
-						<TypeBadge type={itemType} />
-						<input
+						<span class={styles.titleBadge}>
+							<TypeBadge type={itemType} />
+						</span>
+						<textarea
+							ref={titleRef}
+							rows={1}
 							class={styles.titleInput}
 							value={titleDraft}
-							onInput={(e) => setTitleDraft((e.target as HTMLInputElement).value)}
+							onInput={(e) => setTitleDraft(stripNewlines((e.target as HTMLTextAreaElement).value))}
 							onBlur={handleTitleBlur}
 							onKeyDown={handleTitleKeyDown}
 							placeholder={`${typeLabel} title...`}
