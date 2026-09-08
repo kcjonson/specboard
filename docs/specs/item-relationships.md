@@ -247,9 +247,13 @@ nothing more.
   the checklist alone — ticking a box is not a state the lifecycle owns.
 - **Two read paths, like the activity log.** Agents get the checklist inline:
   always on a single-item `get_items item_key` read, and on lists behind
-  `include_checklist`. The browser will read a sub-resource in a later PR, so the
-  item response stays small and the item model has no `checklist` prop to PUT
-  back — `handleGetItem` must **not** enable `includeChecklist`.
+  `include_checklist`. The browser reads and writes the sub-resource
+  (`GET`/`POST /items/:itemKey/checklist`, `PUT`/`DELETE
+  /items/:itemKey/checklist/:id`), so the item response stays small and the item
+  model has no `checklist` prop to PUT back — `handleGetItem` must **not** enable
+  `includeChecklist`. `SyncModel.save()` PUTs the whole model, so a prop would
+  echo the browser's array back on every unrelated edit; and a per-entry toggle
+  needs an entry-addressable write, which a whole-array PUT is not.
 - **MCP: two writes, one tool.** `update_item` takes `checklist` (the full
   replace, for setting the list up) and `checklist_status` (`{ "<id>": "done" }`,
   for ticking entries off as the work happens). Both apply on every update path,

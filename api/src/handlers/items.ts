@@ -64,7 +64,7 @@ const project = requireResolvedProject;
  * project's prefix is a 404 — the same answer as a number that doesn't exist here,
  * so the response can't be used to discover which prefixes are real.
  */
-function pathItemNumber(context: Context): number | Response {
+export function pathItemNumber(context: Context): number | Response {
 	const key = context.req.param('itemKey');
 	if (!key || !parseItemKey(key)) return context.json({ error: 'Invalid item key' }, 400);
 
@@ -114,7 +114,13 @@ export async function handleListItems(context: Context): Promise<Response> {
 	}
 }
 
-/** GET /items/:itemKey — a single item with its children, specs, blockers, and workers. Activity-log entries are their own sub-resource. */
+/**
+ * GET /items/:itemKey — a single item with its children, specs, blockers, and workers.
+ *
+ * Activity-log entries and checklist entries are deliberately absent: they are their
+ * own sub-resources, so the item model carries no prop for them and SyncModel.save()
+ * can't PUT a stale copy back over a concurrent write.
+ */
 export async function handleGetItem(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
