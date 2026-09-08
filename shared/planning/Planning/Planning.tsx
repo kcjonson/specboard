@@ -189,10 +189,20 @@ export function Planning(props: RouteProps): JSX.Element {
 		const handleItemsChanged = (ids: string[]): void => flashItems(ids);
 		items.onItemsChanged(handleItemsChanged);
 
+		// Once the collection is in an error state (429, expired session, network
+		// drop) automatic fetches stop: retrying on a timer is how a rate limit
+		// stays tripped. The interval keeps running and stays guarded, so a
+		// user-driven fetch that succeeds clears $meta.error and polling resumes
+		// with no extra bookkeeping.
+		const poll = (): void => {
+			if (items.$meta.error) return;
+			void items.fetch();
+		};
+
 		let interval: ReturnType<typeof setInterval> | undefined;
 		const start = (): void => {
 			if (interval === undefined) {
-				interval = setInterval(() => void items.fetch(), POLL_INTERVAL);
+				interval = setInterval(poll, POLL_INTERVAL);
 			}
 		};
 		const stop = (): void => {
@@ -202,7 +212,7 @@ export function Planning(props: RouteProps): JSX.Element {
 			}
 		};
 		const onFocus = (): void => {
-			void items.fetch();
+			poll();
 			start();
 		};
 

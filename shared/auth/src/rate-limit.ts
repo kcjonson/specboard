@@ -26,7 +26,7 @@ export interface RateLimitConfig {
 }
 
 export interface RateLimitRule {
-	/** Path pattern to match (exact or wildcard with *) */
+	/** Path pattern: exact, a trailing `/*` prefix, or `*` as a whole segment */
 	path: string;
 	/**
 	 * Restrict the rule to one HTTP method. Omit to match any method.
@@ -85,6 +85,11 @@ function getClientIp(c: Context): string {
 
 /**
  * Check if a path matches a pattern
+ *
+ * Three forms: an exact path, a trailing `/*` prefix match, and `*` as a
+ * whole-segment wildcard anywhere else, matching exactly one segment: a
+ * pattern of `/api/projects/<any>/items` matches one project slug, and
+ * nothing longer or shorter.
  */
 function pathMatches(path: string, pattern: string): boolean {
 	if (pattern === path) return true;
@@ -92,6 +97,15 @@ function pathMatches(path: string, pattern: string): boolean {
 	if (pattern.endsWith('/*')) {
 		const prefix = pattern.slice(0, -1);
 		return path.startsWith(prefix);
+	}
+
+	if (pattern.includes('*')) {
+		const patternSegments = pattern.split('/');
+		const pathSegments = path.split('/');
+		if (patternSegments.length !== pathSegments.length) return false;
+		return patternSegments.every(
+			(segment, index) => segment === '*' || segment === pathSegments[index]
+		);
 	}
 
 	return false;
@@ -448,6 +462,18 @@ export const RATE_LIMIT_CONFIGS = {
 	/** General API: 100 requests per minute */
 	api: {
 		maxRequests: 100,
+		windowSeconds: 60,
+		message: 'Rate limit exceeded, please slow down',
+	} satisfies RateLimitConfig,
+
+	/**
+	 * GET /api/projects/:slug/items: 600 per minute. The planning board fetches
+	 * one window per status column, so a single poll (every 10s while focused)
+	 * and every settled search query each cost five requests, not one. That
+	 * puts a normal session several times over the general API limit.
+	 */
+	itemsList: {
+		maxRequests: 600,
 		windowSeconds: 60,
 		message: 'Rate limit exceeded, please slow down',
 	} satisfies RateLimitConfig,

@@ -661,6 +661,14 @@ Improve selected text.
 | Write operations | 30/minute |
 | Search | 20/minute |
 | AI | 10/minute |
+| `GET /api/projects/:slug/items` | 600/minute |
+
+The items list gets its own budget because the planning board doesn't fetch it
+once per view: it fetches one window per status column, so a single poll (every
+10s while the window is focused) and every settled search query each cost five
+requests. A normal session therefore runs several times the general read rate,
+and the 100/minute cap trips within a minute of typing in the search box. Only
+GET is raised; writes to the same path stay on the default.
 
 ---
 

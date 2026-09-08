@@ -264,6 +264,8 @@ app.use(
 			{ path: '/api/chat', config: RATE_LIMIT_CONFIGS.chat },
 			// POST only: the admin GET on this same path stays on the default limit
 			{ path: '/api/waitlist', method: 'POST', config: RATE_LIMIT_CONFIGS.waitlist },
+			// GET only: the board reads one window per status column, so writes stay on the default
+			{ path: '/api/projects/*/items', method: 'GET', config: RATE_LIMIT_CONFIGS.itemsList },
 		],
 		defaultLimit: RATE_LIMIT_CONFIGS.api,
 		excludePaths: ['/health', '/api/health', '/api/metrics'],

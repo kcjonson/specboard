@@ -228,6 +228,69 @@ describe('rate limit middleware (coarse cap)', () => {
 		}
 	});
 
+	it('matches a whole-segment wildcard in the middle of a pattern', async () => {
+		const redis = createFakeRedis();
+		const app = new Hono();
+		app.use(
+			'*',
+			rateLimitMiddleware(redis, {
+				rules: [
+					{
+						path: '/api/projects/*/items',
+						method: 'GET',
+						config: { maxRequests: 3, windowSeconds: 60, message: 'Too many' },
+					},
+				],
+				defaultLimit: { maxRequests: 1, windowSeconds: 60 },
+			})
+		);
+		app.get('/api/projects/:slug/items', (c) => c.json({ ok: true }));
+		app.get('/api/projects/:slug/items/:id/children', (c) => c.json({ ok: true }));
+		app.get('/api/projects/:slug/members', (c) => c.json({ ok: true }));
+
+		const call = (path: string): Promise<Response> =>
+			Promise.resolve(app.request(path, { headers: { 'X-Forwarded-For': '1.2.3.4' } }));
+
+		for (let i = 0; i < 3; i++) {
+			expect((await call('/api/projects/sample-project/items')).status).toBe(200);
+		}
+		expect((await call('/api/projects/sample-project/items')).status).toBe(429);
+
+		// Extra segments and a different tail both fall through to the default,
+		// which here is one request each.
+		expect((await call('/api/projects/sample-project/items/ABC-1/children')).status).toBe(200);
+		expect((await call('/api/projects/sample-project/items/ABC-1/children')).status).toBe(429);
+		expect((await call('/api/projects/sample-project/members')).status).toBe(200);
+		expect((await call('/api/projects/sample-project/members')).status).toBe(429);
+	});
+
+	it('still treats a trailing /* as a prefix match', async () => {
+		const redis = createFakeRedis();
+		const app = new Hono();
+		app.use(
+			'*',
+			rateLimitMiddleware(redis, {
+				rules: [
+					{
+						path: '/api/docs/*',
+						config: { maxRequests: 2, windowSeconds: 60, message: 'Too many' },
+					},
+				],
+				defaultLimit: { maxRequests: 50, windowSeconds: 60 },
+			})
+		);
+		app.get('/api/docs/:a/:b', (c) => c.json({ ok: true }));
+
+		const call = (): Promise<Response> =>
+			Promise.resolve(
+				app.request('/api/docs/guide/setup', { headers: { 'X-Forwarded-For': '1.2.3.4' } })
+			);
+
+		expect((await call()).status).toBe(200);
+		expect((await call()).status).toBe(200);
+		expect((await call()).status).toBe(429);
+	});
+
 	it('fails open when Redis rejects (outage must not 500 requests)', async () => {
 		const brokenRedis = {
 			pipeline() {
