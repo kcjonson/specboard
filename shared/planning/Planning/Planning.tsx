@@ -403,7 +403,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	const loadError = items.$meta.error;
 	const sessionExpired = loadError instanceof FetchError && loadError.status === 401;
 	const handleSignIn = useCallback((): void => {
-		const next = window.location.pathname + window.location.search;
+		const next = window.location.pathname + window.location.search + window.location.hash;
 		window.location.href = `/login?next=${encodeURIComponent(next)}`;
 	}, []);
 
