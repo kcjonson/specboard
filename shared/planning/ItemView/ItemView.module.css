@@ -110,23 +110,6 @@
 	margin: 0;
 }
 
-/* Task list */
-.taskList {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-}
-
-.addTask {
-	display: flex;
-	gap: 8px;
-	align-items: center;
-}
-
-.addTask > :first-child {
-	flex: 1;
-}
-
 /* Pull request link */
 .prLink {
 	font-size: 13px;

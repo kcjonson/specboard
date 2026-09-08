@@ -49,18 +49,23 @@ export function SplitButton({
 		return () => document.removeEventListener('mousedown', handleClick);
 	}, [open]);
 
-	// Close on Escape
+	// Close on Escape. Escape closes the innermost thing with something to dismiss,
+	// so with the menu open it must not also reach an ancestor that closes on the
+	// same key (the drawer this can sit inside). That needs the capture phase:
+	// bubbling reaches document last, after the ancestor's own handler has already
+	// run, so stopping propagation there would be too late to save the drawer.
 	useEffect(() => {
 		if (!open) return;
 
 		const handleKeyDown = (e: KeyboardEvent): void => {
 			if (e.key === 'Escape') {
+				e.stopPropagation();
 				setOpen(false);
 			}
 		};
 
-		document.addEventListener('keydown', handleKeyDown);
-		return () => document.removeEventListener('keydown', handleKeyDown);
+		document.addEventListener('keydown', handleKeyDown, true);
+		return () => document.removeEventListener('keydown', handleKeyDown, true);
 	}, [open]);
 
 	const handleMainClick = useCallback((): void => {
