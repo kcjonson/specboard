@@ -24,6 +24,14 @@ import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import * as path from 'path';
 import { type EnvironmentConfig, getFullDomain } from './environment-config';
+import {
+	MANAGED_RULE_GROUPS,
+	WAF_BLOCK_RESPONSE_BODY,
+	WAF_BLOCK_RESPONSE_KEY,
+	WAF_RATE_LIMIT_RESPONSE_BODY,
+	WAF_RATE_LIMIT_RESPONSE_KEY,
+	managedRuleActionOverrides,
+} from './waf-rules';
 
 export interface SpecboardStackProps extends cdk.StackProps {
 	config: EnvironmentConfig;
@@ -1207,106 +1215,68 @@ export class SpecboardStack extends cdk.Stack {
 		// WAF (production only)
 		// ===========================================
 		if (config.waf) {
+			const wafRules: wafv2.CfnWebACL.RuleProperty[] = [
+				...MANAGED_RULE_GROUPS.map((group, index) => ({
+					name: group.name,
+					priority: index + 1,
+					overrideAction: { none: {} },
+					statement: {
+						managedRuleGroupStatement: {
+							vendorName: 'AWS',
+							name: group.name,
+							ruleActionOverrides: managedRuleActionOverrides(group),
+						},
+					},
+					visibilityConfig: {
+						cloudWatchMetricsEnabled: true,
+						metricName: group.name,
+						sampledRequestsEnabled: true,
+					},
+				})),
+				{
+					name: 'RateLimitRule',
+					priority: MANAGED_RULE_GROUPS.length + 1,
+					action: {
+						block: {
+							customResponse: {
+								responseCode: 429,
+								customResponseBodyKey: WAF_RATE_LIMIT_RESPONSE_KEY,
+							},
+						},
+					},
+					statement: {
+						rateBasedStatement: {
+							limit: 2000,
+							aggregateKeyType: 'IP',
+						},
+					},
+					visibilityConfig: {
+						cloudWatchMetricsEnabled: true,
+						metricName: `${config.resourcePrefix}-rate-limit`,
+						sampledRequestsEnabled: true,
+					},
+				},
+			];
+
 			const webAcl = new wafv2.CfnWebACL(this, 'WebAcl', {
 				defaultAction: { allow: {} },
 				scope: 'REGIONAL',
+				customResponseBodies: {
+					[WAF_BLOCK_RESPONSE_KEY]: {
+						contentType: 'APPLICATION_JSON',
+						content: WAF_BLOCK_RESPONSE_BODY,
+					},
+					[WAF_RATE_LIMIT_RESPONSE_KEY]: {
+						contentType: 'APPLICATION_JSON',
+						content: WAF_RATE_LIMIT_RESPONSE_BODY,
+					},
+				},
 				visibilityConfig: {
 					cloudWatchMetricsEnabled: true,
 					metricName: `${config.resourcePrefix}-waf`,
 					sampledRequestsEnabled: true,
 				},
-				rules: [
-					{
-						name: 'AWSManagedRulesCommonRuleSet',
-						priority: 1,
-						overrideAction: { none: {} },
-						statement: {
-							managedRuleGroupStatement: {
-								vendorName: 'AWS',
-								name: 'AWSManagedRulesCommonRuleSet',
-								ruleActionOverrides: [
-									{ name: 'SizeRestrictions_BODY', actionToUse: { count: {} } },
-									{ name: 'CrossSiteScripting_BODY', actionToUse: { count: {} } },
-									{ name: 'EC2MetaDataSSRF_BODY', actionToUse: { count: {} } },
-									{ name: 'EC2MetaDataSSRF_QUERYARGUMENTS', actionToUse: { count: {} } },
-									// MCP clients' OAuth login paths (Codex) send no User-Agent
-									{ name: 'NoUserAgent_HEADER', actionToUse: { count: {} } },
-									// Editor file endpoints take the file name in ?path=; .log/.ini/.conf are legitimate docs
-									{ name: 'RestrictedExtensions_QUERYARGUMENTS', actionToUse: { count: {} } },
-								],
-							},
-						},
-						visibilityConfig: {
-							cloudWatchMetricsEnabled: true,
-							metricName: 'AWSManagedRulesCommonRuleSet',
-							sampledRequestsEnabled: true,
-						},
-					},
-					{
-						name: 'AWSManagedRulesKnownBadInputsRuleSet',
-						priority: 2,
-						overrideAction: { none: {} },
-						statement: {
-							managedRuleGroupStatement: {
-								vendorName: 'AWS',
-								name: 'AWSManagedRulesKnownBadInputsRuleSet',
-							},
-						},
-						visibilityConfig: {
-							cloudWatchMetricsEnabled: true,
-							metricName: 'AWSManagedRulesKnownBadInputsRuleSet',
-							sampledRequestsEnabled: true,
-						},
-					},
-					{
-						name: 'AWSManagedRulesSQLiRuleSet',
-						priority: 3,
-						overrideAction: { none: {} },
-						statement: {
-							managedRuleGroupStatement: {
-								vendorName: 'AWS',
-								name: 'AWSManagedRulesSQLiRuleSet',
-							},
-						},
-						visibilityConfig: {
-							cloudWatchMetricsEnabled: true,
-							metricName: 'AWSManagedRulesSQLiRuleSet',
-							sampledRequestsEnabled: true,
-						},
-					},
-					{
-						name: 'AWSManagedRulesAmazonIpReputationList',
-						priority: 4,
-						overrideAction: { none: {} },
-						statement: {
-							managedRuleGroupStatement: {
-								vendorName: 'AWS',
-								name: 'AWSManagedRulesAmazonIpReputationList',
-							},
-						},
-						visibilityConfig: {
-							cloudWatchMetricsEnabled: true,
-							metricName: 'AWSManagedRulesAmazonIpReputationList',
-							sampledRequestsEnabled: true,
-						},
-					},
-					{
-						name: 'RateLimitRule',
-						priority: 5,
-						action: { block: {} },
-						statement: {
-							rateBasedStatement: {
-								limit: 2000,
-								aggregateKeyType: 'IP',
-							},
-						},
-						visibilityConfig: {
-							cloudWatchMetricsEnabled: true,
-							metricName: `${config.resourcePrefix}-rate-limit`,
-							sampledRequestsEnabled: true,
-						},
-					},
-				],
+				rules: wafRules,
 			});
 
 			new wafv2.CfnWebACLAssociation(this, 'WebAclAssociation', {

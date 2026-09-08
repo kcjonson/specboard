@@ -202,9 +202,12 @@ All infrastructure is defined in TypeScript using AWS CDK, deployed to a single 
 ### Security
 - **Secrets Manager** — database credentials, OAuth secrets, encryption keys
 - **GitHub OIDC** — keyless authentication for CI/CD deployments
-- **WAF** — AWS managed rules for production (OWASP Top 10, SQL injection, rate limiting)
-  - Rules overridden to count because they block real traffic: `NoUserAgent_HEADER` (Codex's MCP OAuth login sends no User-Agent) and `RestrictedExtensions_QUERYARGUMENTS` (editor file endpoints pass the file name in `?path=`; `.log`/`.ini`/`.conf` are legitimate docs)
-  - Blocked requests are logged to `aws-waf-logs-specboard` (30 days) with the Authorization and Cookie headers redacted; allowed requests are not logged
+- **WAF** — AWS managed rules for production (OWASP Top 10, SQL injection, rate limiting). Rule tables and the block response live in `infra/lib/waf-rules.ts`
+  - Every rule in every managed group is named explicitly, either counted (allowed through) or blocking with a custom response. The lists are exhaustive because an override can only carry a custom response if it names a rule; a rule AWS adds later still blocks, it just blocks with the default bare 403 until it is added. Refresh a list with `aws wafv2 describe-managed-rule-group --vendor-name AWS --scope REGIONAL --name <group> --query 'Rules[].Name'`
+  - A block answers **400** with a JSON body naming the firewall, not the default 403. A 403 on an authenticated request reads as a credential problem — Claude Code reports it as "this connector requires additional permissions" — which sends the caller off to reconnect something that was never broken. Rate-limit blocks answer 429 the same way
+  - Rules counted because they match legitimate traffic: `NoUserAgent_HEADER` (Codex's MCP OAuth login sends no User-Agent), `RestrictedExtensions_QUERYARGUMENTS` (editor file endpoints pass the file name in `?path=`; `.log`/`.ini`/`.conf` are legitimate docs), `SizeRestrictions_BODY`, `CrossSiteScripting_BODY`, `EC2MetaDataSSRF_BODY`/`_QUERYARGUMENTS`, and `GenericLFI_BODY`
+  - `GenericLFI_BODY` is a path-traversal signature applied to the whole request body. Specboard tracks software development, so a relative import or a pasted file path in an item title, description, or note is ordinary content, and none of it reaches a filesystem. The inputs that *are* paths reject `..` in the handlers instead (`validateSpecInput`, `normalizePath`), which is where that check belongs — the ALB hands WAF only the first 8 KB of a body, so the rule never covered a long one anyway
+  - Blocked requests are logged to `aws-waf-logs-specboard` (30 days) with the Authorization and Cookie headers redacted; allowed requests are not logged. `terminatingRule` in those records names the rule, which is the fastest way to diagnose a false positive
 
 ### CI/CD
 - **GitHub Actions** — build, test, deploy pipeline
