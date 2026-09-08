@@ -2,7 +2,9 @@ import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { useModel, type ItemModel, type ItemStatus, type SubStatus } from '@specboard/models';
+import { FetchError } from '@specboard/fetch';
 import { Button, DialogFooter, Select } from '@specboard/ui';
+import { ItemPicker } from '@specboard/pages';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { ChildrenSection } from '../ChildrenSection/ChildrenSection';
 import { ChecklistSection } from '../ChecklistSection/ChecklistSection';
@@ -23,8 +25,8 @@ function stripNewlines(value: string): string {
 export interface ItemViewProps {
 	item: ItemModel;
 	onDelete?: (item: ItemModel) => void;
-	/** Open a child's detail by key (clicking a child row). */
-	onOpenChild?: (itemKey: string) => void;
+	/** Open another item's detail by key — a child, this item's parent, or where it was discovered. */
+	onOpenItem?: (itemKey: string) => void;
 }
 
 const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
@@ -67,7 +69,7 @@ const SUB_STATUS_OPTIONS: { value: SubStatus; label: string }[] = [
 	{ value: 'complete', label: 'Complete' },
 ];
 
-export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.Element {
+export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Element {
 	// Fields can still be unpopulated on a list summary whose detail fetch is in flight.
 	const itemType = item.type || 'epic';
 	const typeLabel = TYPE_LABELS[itemType];
@@ -99,6 +101,9 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 
 	// Track whether description has unsaved changes
 	const descriptionDirtyRef = useRef(false);
+
+	const [parentPickerOpen, setParentPickerOpen] = useState(false);
+	const [parentError, setParentError] = useState<string | null>(null);
 
 	// Sync the title draft to whichever item is open. Keyed on the model as well as
 	// the title so switching to an item whose title hasn't arrived yet clears the
@@ -203,6 +208,32 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 		});
 	};
 
+	const movingRef = useRef(false);
+
+	// Reparenting goes through the move route, not save(): PUT drops parentKey.
+	// The server owns the cycle check (it runs inside the UPDATE, so a rejected
+	// move leaves the item attached to the parent it had), so nothing is
+	// validated here — the message it sends back is the message shown.
+	const handleMove = (parentKey: string | null): void => {
+		// One move at a time. move() applies the response it gets back, so two in
+		// flight can settle out of order and leave the field showing the parent from
+		// the earlier request. Guarded on its own flag rather than $meta.working,
+		// which a title or description save also raises — those should not block a
+		// reparent.
+		if (movingRef.current) return;
+		movingRef.current = true;
+		setParentPickerOpen(false);
+		setParentError(null);
+		item.move(parentKey)
+			.catch((err: unknown) => {
+				const data = err instanceof FetchError ? (err.data as { error?: string } | undefined) : undefined;
+				setParentError(data?.error ?? 'Could not change the parent.');
+			})
+			.finally(() => {
+				movingRef.current = false;
+			});
+	};
+
 	// Delete item
 	const handleDelete = (): void => {
 		if (confirm(`Are you sure you want to delete this ${typeLabel.toLowerCase()}?`)) {
@@ -249,13 +280,41 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 							label="Sub-Status"
 						/>
 					</div>
+					{/* A parented epic is legal, so an epic that has one still shows it; an
+					    epic without one is the ordinary top-level case and gets no row. */}
+					{(itemType !== 'epic' || item.parentKey) && (
+						<div class={styles.field}>
+							{/* Not a <label>: the parent is a link plus a button, not a form
+							    control, and a label with nothing to point at announces nothing. */}
+							<span class={styles.fieldLabel}>Parent</span>
+							<span class={styles.fieldValue}>
+								{item.parentKey ? (
+									<button
+										type="button"
+										class={styles.inlineLink}
+										onClick={() => item.parentKey && onOpenItem?.(item.parentKey)}
+									>
+										{item.parentKey}{item.parentTitle ? ` · ${item.parentTitle}` : ''}
+									</button>
+								) : 'None'}
+							</span>
+							<button
+								type="button"
+								class={styles.inlineLink}
+								onClick={() => setParentPickerOpen(true)}
+								aria-label="Change parent"
+							>
+								Change
+							</button>
+						</div>
+					)}
 					<div class={styles.field}>
-						<label class={styles.fieldLabel}>Assignee</label>
+						<span class={styles.fieldLabel}>Assignee</span>
 						<span class={styles.fieldValue}>{item.assignee || 'Unassigned'}</span>
 					</div>
 					{item.prUrl && (
 						<div class={styles.field}>
-							<label class={styles.fieldLabel}>Pull Request</label>
+							<span class={styles.fieldLabel}>Pull Request</span>
 							<a
 								class={styles.prLink}
 								href={item.prUrl}
@@ -268,7 +327,7 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 					)}
 					{item.origin && (
 						<div class={styles.field}>
-							<label class={styles.fieldLabel}>Created by</label>
+							<span class={styles.fieldLabel}>Created by</span>
 							<span class={styles.fieldValue}>
 								{actorLabel(item.origin.actor)}
 								{item.origin.discoveredFrom && (
@@ -277,7 +336,7 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 										<button
 											type="button"
 											class={styles.inlineLink}
-											onClick={() => item.origin?.discoveredFrom && onOpenChild?.(item.origin.discoveredFrom.itemKey)}
+											onClick={() => item.origin?.discoveredFrom && onOpenItem?.(item.origin.discoveredFrom.itemKey)}
 										>
 											{item.origin.discoveredFrom.itemKey}
 										</button>
@@ -288,7 +347,7 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 					)}
 					{item.workers && item.workers.length > 0 && (
 						<div class={styles.field}>
-							<label class={styles.fieldLabel}>Working now</label>
+							<span class={styles.fieldLabel}>Working now</span>
 							<span class={styles.fieldValue}>
 								{item.workers.map((worker, i) => {
 									const stale = Date.now() - new Date(worker.lastSeenAt).getTime() > WORKER_STALE_MS;
@@ -303,8 +362,24 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 							</span>
 						</div>
 					)}
+					{parentError && <div class={styles.fieldError} role="alert">{parentError}</div>}
 				</div>
 			</div>
+
+			{parentPickerOpen && (
+				<ItemPicker
+					projectSlug={item.projectSlug}
+					title="Choose a parent"
+					// A UI choice, not a model rule: the schema puts no type restriction on
+					// parenting (a task under a bug, an epic under an epic all validate, on
+					// create and on move). Offering only epics keeps the ordinary shape
+					// obvious — do not "fix" the model to match this.
+					type="epic"
+					clearOption={item.parentKey ? { label: 'No parent', onSelect: () => handleMove(null) } : undefined}
+					onSelect={handleMove}
+					onClose={() => setParentPickerOpen(false)}
+				/>
+			)}
 
 			{/* Description — always editable */}
 			<section class={styles.section}>
@@ -318,14 +393,14 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 				</div>
 			</section>
 
-			<ChildrenSection item={item} onOpenChild={onOpenChild} />
+			<ChildrenSection item={item} onOpenItem={onOpenItem} />
 
 			<ChecklistSection projectSlug={item.projectSlug} itemKey={item.key} />
 
 			<BlockersSection
 				projectSlug={item.projectSlug}
 				itemKey={item.key}
-				onOpenItem={onOpenChild}
+				onOpenItem={onOpenItem}
 				onChange={() => void item.fetch()}
 			/>
 

@@ -1,13 +1,14 @@
 /**
- * @specboard/models - ItemsCollection tests
+ * @specboard/models - ItemsCollection and ItemModel tests
  *
  * The collection loads one bounded window per status and reports what the server
- * holds past each; these cover the window arithmetic and what a refetch keeps.
+ * holds past each; these cover the window arithmetic and what a refetch keeps,
+ * plus the one write ItemModel does outside save() — reparenting.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchClient } from '@specboard/fetch';
-import { ItemsCollection, ITEM_STATUSES, type ItemStatus } from './planning';
+import { ItemsCollection, ItemModel, ITEM_STATUSES, type ItemStatus } from './planning';
 
 vi.mock('@specboard/fetch', () => ({
 	fetchClient: {
@@ -551,5 +552,61 @@ describe('ItemsCollection filters', () => {
 
 		expect(seen).toEqual(before);
 		expect(items.byStatus('ready').map((i) => i.key)).toEqual(['SB-ready-700']);
+	});
+});
+
+describe('ItemModel parent', () => {
+	function child(): ItemModel {
+		return new ItemModel({
+			key: 'SB-42',
+			projectSlug: 'demo',
+			title: 'Login form',
+			parentKey: 'SB-7',
+			parentTitle: 'Auth System',
+		});
+	}
+
+	it('carries the parent title through construction and set()', () => {
+		const item = child();
+		expect(item.parentTitle).toBe('Auth System');
+
+		item.set({ parentKey: 'SB-4', parentTitle: 'UI Library' });
+
+		expect(item.parentTitle).toBe('UI Library');
+	});
+
+	it('moves through the move route and applies the item it gets back', async () => {
+		const item = child();
+		vi.mocked(fetchClient.post).mockResolvedValue({ key: 'SB-42', parentKey: 'SB-4', parentTitle: 'UI Library', rank: 9 });
+
+		await item.move('SB-4');
+
+		expect(fetchClient.post).toHaveBeenCalledWith('/api/projects/demo/items/SB-42/move', { parentKey: 'SB-4' });
+		expect(item.parentKey).toBe('SB-4');
+		expect(item.parentTitle).toBe('UI Library');
+		// The server always re-ranks to the bottom of the new sibling group.
+		expect(item.rank).toBe(9);
+	});
+
+	it('promotes to top-level by sending null, not by omitting the key', async () => {
+		const item = child();
+		vi.mocked(fetchClient.post).mockResolvedValue({ key: 'SB-42', parentKey: null, parentTitle: null });
+
+		await item.move(null);
+
+		expect(fetchClient.post).toHaveBeenCalledWith('/api/projects/demo/items/SB-42/move', { parentKey: null });
+		expect(item.parentKey).toBeNull();
+	});
+
+	it('records a rejected move as the model error and rethrows it', async () => {
+		const item = child();
+		vi.mocked(fetchClient.post).mockRejectedValue(new Error('HTTP 400: Bad Request'));
+
+		await expect(item.move('SB-99')).rejects.toThrow('HTTP 400: Bad Request');
+
+		expect(item.$meta.error?.message).toBe('HTTP 400: Bad Request');
+		expect(item.$meta.working).toBe(false);
+		// Nothing optimistic: the item still reads as the server last had it.
+		expect(item.parentKey).toBe('SB-7');
 	});
 });

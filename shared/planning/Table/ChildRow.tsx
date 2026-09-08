@@ -1,8 +1,7 @@
 import type { JSX } from 'preact';
 import type { ChildModel } from '@specboard/models';
-import { StatusDot } from '@specboard/ui';
+import { StatusDot, STATUS_LABELS, DOT_STATUS } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
-import { STATUS_LABELS, DOT_STATUS } from '../utils/status';
 import styles from './Table.module.css';
 
 export interface ChildRowProps {

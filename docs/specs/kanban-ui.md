@@ -111,11 +111,51 @@ Epic:
 | Selected | Border highlight |
 | Dragging | Elevated shadow, slight rotation |
 
+### Parent field (in the item detail)
+
+Sits in the header's field row between Sub-Status and Assignee, reading
+`SB-4 · UI Library & Design System` — key and title, joined server-side onto the
+item as `parentKey` / `parentTitle`, so the row costs no extra request. Clicking
+it opens the parent, the same callback every other item link in the view uses.
+
+Tasks and bugs always show the field, reading `None` when they have no parent, so
+one can be given where there is none. An epic shows it only when it actually has
+a parent: a parented epic is legal but unusual, and every top-level epic carrying
+an empty row would be noise.
+
+`Change` opens the item picker below. It is a modal, not an inline combobox: the
+field row is a compact 13px flex-wrap strip that has to survive a ~320px drawer,
+and an expanding listbox inside it would reflow every other field. A "No parent"
+row appears in the picker when the item has one, and promotes it to top-level.
+
+Reparenting goes through the move route, never through a save of the item; the
+server owns the cycle check and re-ranks the item to the bottom of its new
+sibling group. A refusal ("Cannot move an item under itself or one of its
+descendants") renders inline under the field row, in the server's own words.
+
+### Item picker
+
+One modal list of the project's items, used both here and by the documentation
+editor to link a document to an item. Search runs on the server, one request per
+settled keystroke (250ms), across every status at once — not through the board's
+items collection, which would fire one request per status window per keystroke
+and would move the board's own windows besides.
+
+The opening list is the top-level set; a non-empty search widens the server's
+query to every depth, so a nested item is one search away rather than
+unreachable. Results are ordered by rank, not by relevance, so the page limit is
+deliberately generous (100).
+
+Where it picks a parent, the list is filtered to epics. That is a product choice
+about the ordinary shape of a board, **not** a model rule: the schema puts no
+type restriction on parenting at all (see
+[item-relationships.md](item-relationships.md)).
+
 ### Child Row (in the item detail)
 
 **Properties:**
 - item: the parent item
-- onOpenChild: opens a child's detail by key
+- onOpenItem: opens a child's detail by key
 
 Every item's detail lists its children, whatever the item's own type: a bug can
 hold children too, and before this the detail view gave no way to see or add
@@ -333,6 +373,14 @@ Epic from the dropdown) and opens the create dialog with this item pre-set as th
 parent. There is no one-field inline version: a child item is first-class work
 with a type, a status, and a description, and creating one should look like it.
 A failure surfaces in the section rather than being swallowed.
+
+The create dialog carries its own Parent field, pre-filled that way and changed
+through the same item picker. So the parent is not fixed by where creation
+started: `+ New` from the toolbar can create a child, and `+ Add` under an epic
+can create something that lands elsewhere (in which case it will not appear in
+the list it was started from, which is the honest result). Creation passes the
+parent in the payload — a different write path from the move route, which only
+exists once the item does.
 
 Loose ends that are not worth an item of their own go in the Checklist instead.
 

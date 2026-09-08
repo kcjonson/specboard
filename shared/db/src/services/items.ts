@@ -14,12 +14,13 @@ import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
 
 /**
- * An items row joined to its project's key and its parent's number, so responses can
- * carry both its own key and its parent's.
+ * An items row joined to its project's key and its parent's number and title, so
+ * responses can carry both its own key and its parent's key and title.
  */
 interface ItemRow extends Item {
 	project_key: string;
 	parent_number: number | null;
+	parent_title: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,6 +64,8 @@ export interface ItemResponse {
 	parentId: string | null;
 	/** Key of the parent item, or null for a top-level item. The form every write accepts. */
 	parentKey: string | null;
+	/** Title of the parent item, or null for a top-level item. Read-only; joined for display. */
+	parentTitle: string | null;
 	type: ItemType;
 	title: string;
 	description: string | null;
@@ -244,6 +247,7 @@ function transformItem(item: ItemRow): Omit<ItemResponse, 'childStats' | 'blocke
 		key: formatItemKey(item.project_key, item.number!),
 		parentId: item.parent_id,
 		parentKey: item.parent_number === null ? null : formatItemKey(item.project_key, item.parent_number),
+		parentTitle: item.parent_title,
 		type: item.type,
 		title: item.title,
 		description: item.description,
@@ -349,7 +353,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 		WITH open_blocks AS (
 			SELECT DISTINCT item_id FROM item_blockers WHERE project_id = $1 AND cleared_at IS NULL
 		)
-		SELECT i.*, p.key as project_key, parent.number as parent_number,
+		SELECT i.*, p.key as project_key, parent.number as parent_number, parent.title as parent_title,
 			(i.status = 'blocked' OR ob.item_id IS NOT NULL) as blocked,
 			COUNT(*) OVER() as total_count,
 			COUNT(c.id) as child_count,
@@ -409,7 +413,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 		}
 	}
 
-	sql += ` GROUP BY i.id, p.key, parent.number, ob.item_id ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
+	sql += ` GROUP BY i.id, p.key, parent.number, parent.title, ob.item_id ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
 	if (itemNumber === undefined) {
 		sql += ` LIMIT $${paramIndex}`;
 		queryParams.push(limit);
@@ -525,7 +529,7 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 	// in autocommit, so the insert would already be durable by the time JS saw it.
 	const result = await query<ItemRow>(
 		`WITH parent AS (
-			SELECT id FROM items WHERE project_id = $1 AND number = $2
+			SELECT id, title FROM items WHERE project_id = $1 AND number = $2
 		), allocated AS (
 			UPDATE projects SET item_seq = item_seq + 1
 			WHERE id = $1 AND ($2::int IS NULL OR EXISTS (SELECT 1 FROM parent))
@@ -536,7 +540,9 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 			FROM allocated a
 			RETURNING *
 		)
-		SELECT inserted.*, (SELECT key FROM allocated) AS project_key, $2::int AS parent_number FROM inserted`,
+		SELECT inserted.*, (SELECT key FROM allocated) AS project_key,
+			$2::int AS parent_number, (SELECT title FROM parent) AS parent_title
+		FROM inserted`,
 		values
 	);
 
@@ -591,7 +597,7 @@ export async function createItems(
 	// one bump of the project allocator, split across the batch by the same ordinal.
 	const result = await query<ItemRow>(
 		`WITH parent AS (
-			SELECT id FROM items WHERE project_id = $1 AND number = $2
+			SELECT id, title FROM items WHERE project_id = $1 AND number = $2
 		), allocated AS (
 			UPDATE projects SET item_seq = item_seq + $6
 			WHERE id = $1 AND EXISTS (SELECT 1 FROM parent)
@@ -605,7 +611,9 @@ export async function createItems(
 			CROSS JOIN allocated a
 			RETURNING *
 		)
-		SELECT inserted.*, (SELECT key FROM allocated) AS project_key, $2::int AS parent_number FROM inserted`,
+		SELECT inserted.*, (SELECT key FROM allocated) AS project_key,
+			$2::int AS parent_number, (SELECT title FROM parent) AS parent_title
+		FROM inserted`,
 		[projectId, parentNumber, items.map((d) => d.type || 'task'), items.map((d) => d.title), items.map((d) => d.description || null), items.length, JSON.stringify(resolvedOrigin)]
 	);
 

@@ -78,6 +78,14 @@
 	color: var(--color-text);
 }
 
+/* Full-width inside the wrapping .fields row, so a long message doesn't stretch
+   the field it belongs to. */
+.fieldError {
+	flex-basis: 100%;
+	font-size: 13px;
+	color: var(--color-error);
+}
+
 .inlineLink {
 	appearance: none;
 	border: none;

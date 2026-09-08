@@ -209,6 +209,26 @@ describe('ChecklistSection', () => {
 		expect(body).toEqual({ text: 'Rename the status column' });
 	});
 
+	// patch() applies whatever response it gets, so two overlapping toggles can
+	// land out of order and leave the box showing the older answer.
+	it('ignores a second toggle while the first is still in flight', async () => {
+		const { container } = renderSection([entry({ status: 'todo' })]);
+		await waitFor(() => expect(boxes(container)).toHaveLength(1));
+
+		let release: (value: EntryPayload) => void = () => {};
+		put.mockReturnValue(new Promise<EntryPayload>((resolve) => {
+			release = resolve;
+		}));
+
+		const box = boxes(container)[0] as HTMLInputElement;
+		fireEvent.click(box);
+		fireEvent.click(box);
+
+		await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+		release(entry({ status: 'done' }));
+		await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+	});
+
 	// Blanking the field is not a delete, and a rename to the same text is not an edit.
 	it('writes nothing when the field is blanked or unchanged', async () => {
 		const { container } = renderSection([entry({ text: 'Rename the column' })]);
