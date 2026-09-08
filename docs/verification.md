@@ -222,6 +222,36 @@ For any release containing a schema migration:
    - a signed-in click-through of real data, or at minimum the unauthenticated
      smoke checks in [deployment.md](deployment.md#verifying-a-deploy).
 
+## Verifying a WAF change
+
+Staging runs with `waf: false`, so a firewall change synths clean, diffs clean, and
+proves nothing until it is in production. Budget for that: the first real test is prod.
+
+1. **`cdk diff` against production before merging.** The resource list should be
+   `AWS::WAFv2::WebACL` and nothing else. Anything extra means the branch is carrying
+   drift, not a WAF fix.
+2. **After deploy, trip a rule you expect to pass.** For a rule downgraded to count,
+   send the request that used to fail (a `../` in an item description, say) and confirm
+   it succeeds.
+3. **Trip a rule you expect to block**, and read the response, not just the status: it
+   should be the WAF's own JSON body, so a firewall rejection is never mistaken for an
+   expired credential.
+4. **Read `aws-waf-logs-specboard`.** `terminatingRule` names the rule that fired and
+   `labels` names every rule that matched, including counted ones. This is the only
+   place a false positive is legible; the sampled-requests console view is a three-hour
+   window with no per-request detail:
+   ```bash
+   aws logs get-log-events --region us-west-2 \
+     --log-group-name aws-waf-logs-specboard \
+     --log-stream-name "$(aws logs describe-log-streams --region us-west-2 \
+       --log-group-name aws-waf-logs-specboard --order-by LastEventTime --descending \
+       --max-items 1 --query 'logStreams[0].logStreamName' --output text)"
+   ```
+
+A managed rule matching legitimate traffic is not a rare event, and it does not announce
+itself as one. The signatures are written for URLs and form posts; on a JSON API whose
+bodies are prose about software, `../`, SQL keywords, and angle brackets are content.
+
 ## Rollback stance
 
 Fix forward. For a bad release without schema damage, `prod-rollback.yml` redeploys

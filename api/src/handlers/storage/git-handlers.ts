@@ -5,7 +5,7 @@
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { isValidProjectSlug } from '@specboard/core/identifiers';
-import { getUserId, getStorageProvider } from './utils.ts';
+import { getUserId, getStorageProvider, normalizePath } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
 import { getProjectBySlug, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
@@ -262,10 +262,15 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 
 	try {
 		const body = await context.req.json() as { path?: string };
-		const filePath = body.path;
+		const rawPath = body.path;
 
-		if (!filePath || typeof filePath !== 'string') {
-			return context.json({ error: 'Path is required' }, 400);
+		if (!rawPath || typeof rawPath !== 'string') {
+			return context.json({ error: 'Path is required', code: 'PATH_REQUIRED' }, 400);
+		}
+
+		const filePath = normalizePath(rawPath);
+		if (!filePath) {
+			return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
 		}
 
 		await provider.restore(filePath);
