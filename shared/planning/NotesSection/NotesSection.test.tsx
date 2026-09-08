@@ -199,6 +199,19 @@ describe('NotesSection', () => {
 		expect(onAncestorKeyDown).toHaveBeenCalledTimes(1);
 	});
 
+	// Whitespace is empty everywhere else in this component, so it is empty here too.
+	it('lets Escape through when the draft is only whitespace', async () => {
+		const onAncestorKeyDown = vi.fn();
+		const { container } = renderInDrawer([], onAncestorKeyDown);
+		await waitFor(() => expect(get).toHaveBeenCalledWith(URL));
+
+		const input = container.querySelector('input') as HTMLInputElement;
+		fireEvent.input(input, { target: { value: '   ' } });
+		fireEvent.keyDown(input, { key: 'Escape' });
+
+		expect(onAncestorKeyDown).toHaveBeenCalledTimes(1);
+	});
+
 	// A log that failed to load is not an empty log.
 	it('shows an error instead of the empty state when the fetch fails', async () => {
 		get.mockRejectedValue(new Error('nope'));

@@ -52,7 +52,7 @@ export function NotesSection({ projectSlug, itemKey }: NotesSectionProps): JSX.E
 	const handleKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === 'Enter') {
 			void handleAdd();
-		} else if (e.key === 'Escape' && draft !== '') {
+		} else if (e.key === 'Escape' && draft.trim() !== '') {
 			// The drawer this can sit inside closes on Escape, which would take a
 			// half-typed note with it. Only a draft is worth swallowing the key for:
 			// with the field already empty it falls through and the drawer closes, so
