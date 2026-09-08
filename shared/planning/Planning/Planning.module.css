@@ -197,9 +197,15 @@
 
 .error {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
+	gap: 12px;
 	flex: 1;
 	color: var(--color-error);
 	font-size: 16px;
+}
+
+.error p {
+	margin: 0;
 }
