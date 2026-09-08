@@ -17,6 +17,17 @@ pipeline reported success while ECS silently rolled it back.
   syntax class, but only booting the server proves the wiring. If a branch merged
   without anyone loading the app in a browser, treat it as unverified regardless of
   test count.
+- **Migrations whose backfill has never matched a row.** Same shape as the trap
+  above, different subject. Staging is not a rehearsal for a data migration: it
+  holds one project and a handful of fixture items, so when the item activity log
+  migration ran there, no item had a notes value, the backup table captured
+  nothing, and both backfill INSERTs matched zero rows. It reported success and
+  verified nothing, and reading that green as clearance for production is reading
+  an empty test suite as a passing one (SPE-184). The check that works: run the
+  migration's **verbatim** backfill expression as a read-only SELECT against
+  production before the release, and reconcile character counts. Characters
+  dropped should equal the number of internal separators the parse consumes, and
+  anything beyond that is data the migration is losing.
 
 The unit of verification is a **runbook**: a short doc listing test areas ordered by
 risk, each test with concrete steps and an expected result specific enough to fail.
@@ -28,6 +39,20 @@ Do this before any UI testing. If the deploy didn't land, every UI result is noi
 
 **Don't trust `/api/health`** — it returns a static `{"status":"ok"}` without
 touching the database, so it reports green even when every write fails.
+
+**Read `/version.txt` first.** It is the cheapest oracle available. The SHA is
+baked into the frontend image at build time from the `GIT_SHA` build arg
+(`frontend/Dockerfile`), so it attests the bytes the browser actually
+downloaded, a stronger claim than a task-definition revision or a green
+pipeline:
+
+```bash
+curl -s https://staging.specboard.io/version.txt   # must equal the SHA you shipped
+```
+
+Its limit is that it attests the **frontend** build only, and there is no
+unauthenticated way to read the API task's SHA, so it narrows the question
+rather than closing it. Follow it with the ECS check.
 
 **Check what ECS is actually running.** A deploy "succeeding" and the new code
 serving are different claims; the circuit breaker can roll a service back to the
@@ -42,6 +67,12 @@ aws ecs describe-services --cluster specboard-staging \
 
 Every `rollout` must be `COMPLETED` and the task definitions must be the revisions
 the deploy just registered — not older ones.
+
+**Wait for the rollout to settle before clicking anything.** A deploy still
+rolling is worse than one that failed outright, because it serves a mix of old
+and new tasks and every result is unattributable. On the last pass staging did
+not settle until roughly nineteen minutes after the run started, well after the
+pipeline had gone green.
 
 **Run integrity SQL with a one-off Fargate task.** The RDS instances are private;
 the same pattern CI uses for migrations runs ad-hoc scripts against the live
@@ -65,6 +96,23 @@ constraints hold, formats match what the app validates, backfilled columns have 
 NULLs, allocators/sequences are not behind the data they allocate for. Every check
 should expect **zero rows**.
 
+Two traps in that pattern, both of which have cost real time:
+
+- **The container override is capped at 8 KiB.** Split the work across several
+  plaintext runs when a script won't fit. Don't compress or base64 it down to
+  size: a packed payload reads as obfuscated shell to a permission classifier and
+  gets stopped, correctly.
+- **The stack's `ApiTaskDefinitionArn` output can point at a revision whose image
+  is gone.** It names revision 1, while the live api service runs a much later
+  one, so a helper that resolves the task definition family without pinning a
+  revision picks up that latest revision, whose ECR image the lifecycle policy has
+  already pruned, and the run dies with `CannotPullContainerError` (SPE-175). Pin
+  revision 1, which stays pullable because it uses the floating `:init` tag, or
+  push a fresh tag first. Note that `:init` floating is the same thing that makes
+  the prod migrate job run `main` HEAD's migrations (see the release ritual
+  below), and it means revision 1's image content changes under you between
+  deploys.
+
 ## The UI pass
 
 Principles that found real bugs, in descending order of yield:
@@ -74,7 +122,11 @@ Principles that found real bugs, in descending order of yield:
   save debounce, hard-reload, confirm the content came back from the server.
 - **Assert on the Network tab, not the pixels.** The worst slug-migration bug was a
   save that PUT to a UUID path and 404'd while the editor looked fine. The check is
-  the request line: method, path shape, status.
+  the request line: method, path shape, status. Redirects need the same treatment,
+  because a settled URL could equally be a client-side rewrite: `fetch(url,
+  {redirect: 'manual'})` returning type `opaqueredirect` rather than `basic`,
+  together with `performance.getEntriesByType('navigation')[0].redirectCount`,
+  proves a real 302 crossed the wire.
 - **Race async initialization deliberately.** Hard-reload and click as fast as
   possible; anything that reads an id fetched after mount is suspect.
 - **Walk the error paths.** Nonexistent keys in URLs, taken names in forms, invalid
@@ -85,6 +137,51 @@ Principles that found real bugs, in descending order of yield:
   all test cases.
 - **Order areas by risk and start at the top.** Risk = (writes to the server) ×
   (how recently the code changed) × (whether it has ever run before).
+
+### Probing routes without a session
+
+`requireProjectAccess` validates the project slug before it checks the session,
+so `GET /api/projects/Bad_Slug/<path>` answers `400 Invalid project slug format`
+on a mounted route and `404 Not found` on an unmounted one. That distinguishes
+"route removed" from "route gated" with no credentials at all, which is how you
+prove a deleted endpoint is genuinely gone rather than merely unreachable. The
+two 404 bodies are worth telling apart as well: `{"error":"Not found"}` comes
+from `app.notFound` and means nothing matched, while `{"error":"Project not
+found"}` means the route ran and the resource was missing.
+
+Middleware ordering puts some checks out of reach unauthenticated, and knowing
+which ones in advance keeps you from filing correct behavior as a failure. The
+global `csrfMiddleware` 403s every unauthenticated POST, PUT and DELETE, so a
+registered route and an unregistered one return identical `403 Forbidden` and
+route registration simply cannot be probed for write methods. Likewise
+`app.use('/mcp', mcpAuthMiddleware)` covers every method, so the auth gate always
+precedes the 405 handler and `405 Allow: POST` is reachable only with a valid
+token. Plan both for the authenticated pass.
+
+### Driving the browser
+
+Automation traps, roughly in the order they bite:
+
+- **A native `confirm()` freezes all CDP automation on that tab.** Clicks,
+  screenshots, and key presses all time out, and the only recovery is closing the
+  tab. Plan delete flows, and anything else behind a native dialog, as manual
+  steps.
+- **`curl -I` sends HEAD.** Rate-limit rules string-compare the method, so a HEAD
+  request falls through to the default bucket and a perfectly good rule looks
+  broken. Use real GETs when reading `X-RateLimit-*`.
+- **CDP `left_click_drag` does not initiate an HTML5 drag.** No `dragstart`, no
+  PUT. Dispatch real `DragEvent`s carrying a live `DataTransfer` against the app's
+  own handlers instead, which exercises the app's drag path but not Chrome's
+  native drag machinery.
+- **`resize_window` can report success while doing nothing**, when the browser
+  window is fullscreen or shared with another session. Mounting the page in a
+  same-origin iframe gives a genuine narrow viewport, since media queries resolve
+  against the iframe's own box.
+- **A background tab is timer-throttled**, which stretches debounces
+  unpredictably; a 250ms debounce ran anywhere from 800ms to about a minute on the
+  last pass. Structural assertions (which requests fired, with what params, and
+  what rendered) survive that untouched. Absolute timings do not, so measure
+  differentially or not at all.
 
 Staging etiquette: test data is fine, but clean up after the pass — deleted items
 leave numbering gaps by design, and the git-backed file store keeps pending changes
