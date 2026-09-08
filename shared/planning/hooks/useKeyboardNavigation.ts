@@ -9,7 +9,8 @@ interface KeyboardNavigationOptions {
 	/**
 	 * Column traversal order (the board's rendered columns). Selection moves
 	 * through these; the 1/2/3 move shortcuts stay ready/in_progress/done —
-	 * blocking needs a reason, so there's no move-to-blocked key.
+	 * blocking needs a reason and review needs its sub-status, so there is no
+	 * move-to-blocked or move-to-in_review key.
 	 */
 	columns?: ItemStatus[];
 	/** Key of the currently selected item */

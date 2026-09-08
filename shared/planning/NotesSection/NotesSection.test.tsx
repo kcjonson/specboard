@@ -42,6 +42,19 @@ function renderSection(entries: NotePayload[]): ReturnType<typeof render> {
 	return render(<NotesSection projectSlug="specboard" itemKey="SB-12" />);
 }
 
+/** The section under an ancestor that closes on Escape, the way the drawer wraps it. */
+function renderInDrawer(
+	entries: NotePayload[],
+	onKeyDown: (e: KeyboardEvent) => void
+): ReturnType<typeof render> {
+	get.mockResolvedValue(entries);
+	return render(
+		<div onKeyDown={onKeyDown}>
+			<NotesSection projectSlug="specboard" itemKey="SB-12" />
+		</div>
+	);
+}
+
 const URL = '/api/projects/specboard/items/SB-12/notes';
 
 describe('NotesSection', () => {
@@ -158,8 +171,11 @@ describe('NotesSection', () => {
 		expect(post).toHaveBeenCalledTimes(1);
 	});
 
-	it('clears the draft on Escape', async () => {
-		const { container } = renderSection([]);
+	// The drawer that holds this section closes on Escape, so a half-typed note
+	// would go down with the panel if the key kept bubbling.
+	it('clears the draft on Escape without reaching the drawer', async () => {
+		const onAncestorKeyDown = vi.fn();
+		const { container } = renderInDrawer([], onAncestorKeyDown);
 		await waitFor(() => expect(get).toHaveBeenCalledWith(URL));
 
 		const input = container.querySelector('input') as HTMLInputElement;
@@ -167,7 +183,33 @@ describe('NotesSection', () => {
 		fireEvent.keyDown(input, { key: 'Escape' });
 
 		await waitFor(() => expect((container.querySelector('input') as HTMLInputElement).value).toBe(''));
+		expect(onAncestorKeyDown).not.toHaveBeenCalled();
 		expect(post).not.toHaveBeenCalled();
+	});
+
+	// Nothing left to protect: Escape on an empty field is the user asking for the
+	// drawer to close, so it goes through.
+	it('lets Escape through when the draft is already empty', async () => {
+		const onAncestorKeyDown = vi.fn();
+		const { container } = renderInDrawer([], onAncestorKeyDown);
+		await waitFor(() => expect(get).toHaveBeenCalledWith(URL));
+
+		fireEvent.keyDown(container.querySelector('input') as HTMLInputElement, { key: 'Escape' });
+
+		expect(onAncestorKeyDown).toHaveBeenCalledTimes(1);
+	});
+
+	// Whitespace is empty everywhere else in this component, so it is empty here too.
+	it('lets Escape through when the draft is only whitespace', async () => {
+		const onAncestorKeyDown = vi.fn();
+		const { container } = renderInDrawer([], onAncestorKeyDown);
+		await waitFor(() => expect(get).toHaveBeenCalledWith(URL));
+
+		const input = container.querySelector('input') as HTMLInputElement;
+		fireEvent.input(input, { target: { value: '   ' } });
+		fireEvent.keyDown(input, { key: 'Escape' });
+
+		expect(onAncestorKeyDown).toHaveBeenCalledTimes(1);
 	});
 
 	// A log that failed to load is not an empty log.

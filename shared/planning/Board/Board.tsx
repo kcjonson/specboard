@@ -40,12 +40,13 @@ export function Board({
 	// matched, so there is nothing to filter here; a search also matches child items,
 	// and those sit in the column of their own status like any other card.
 	// 'blocked' holds the status-level manual holds (row-blocked items stay in
-	// their real column with a chip); its column renders only when non-empty.
+	// their real column with a chip); it and 'in_review' render only when non-empty.
 	const itemsByStatus = useMemo(
 		() => ({
 			ready: items.byStatus('ready'),
 			in_progress: items.byStatus('in_progress'),
 			blocked: items.byStatus('blocked'),
+			in_review: items.byStatus('in_review'),
 			done: items.byStatus('done'),
 		}),
 		// items.version changes on add/remove/status change so the grouping recomputes
@@ -53,6 +54,7 @@ export function Board({
 		[items, items.version]
 	);
 	const blockedItems = itemsByStatus.blocked;
+	const inReviewItems = itemsByStatus.in_review;
 
 	// Which columns are fetching their next page; each ghost card shows its own
 	// loading state, so two clicks in flight at once don't clear each other.
@@ -111,12 +113,28 @@ export function Board({
 		[endRank]
 	);
 
+	// Blocked and In Review sit between In Progress and Done, each only while
+	// something is held there — the same rule and the same order the table view
+	// groups its sections by. Neither is a drop target: an item reaches those
+	// statuses through the drawer, where blocking takes a reason and review takes
+	// the sub-status that goes with it, and a drop writes status alone. Built as a
+	// flat list so every column is keyed at the top level of the map, and so
+	// keyboard traversal below reads the columns that actually render.
+	const columns: { status: ItemStatus; title: string; items: ItemModel[]; droppable: boolean }[] = [
+		{ status: 'ready', title: 'Ready', items: itemsByStatus.ready, droppable: true },
+		{ status: 'in_progress', title: 'In Progress', items: itemsByStatus.in_progress, droppable: true },
+		...(blockedItems.length > 0
+			? [{ status: 'blocked' as const, title: 'Blocked', items: blockedItems, droppable: false }]
+			: []),
+		...(inReviewItems.length > 0
+			? [{ status: 'in_review' as const, title: 'In Review', items: inReviewItems, droppable: false }]
+			: []),
+		{ status: 'done', title: 'Done', items: itemsByStatus.done, droppable: true },
+	];
+
 	useKeyboardNavigation({
 		itemsByStatus,
-		// Traversal follows the rendered column order, Blocked included when shown.
-		columns: blockedItems.length > 0
-			? ['ready', 'in_progress', 'blocked', 'done']
-			: ['ready', 'in_progress', 'done'],
+		columns: columns.map((column) => column.status),
 		selectedItemKey,
 		dialogOpen,
 		onSelectItem,
@@ -201,18 +219,6 @@ export function Board({
 			item.save();
 		});
 	}
-
-	// The Blocked column appears after In Progress, only while something is held
-	// there. Not a drop target: blocking needs a reason (use the drawer). Built as
-	// a flat list so every column is keyed at the top level of the map.
-	const columns: { status: ItemStatus; title: string; items: ItemModel[]; droppable: boolean }[] = [
-		{ status: 'ready', title: 'Ready', items: itemsByStatus.ready, droppable: true },
-		{ status: 'in_progress', title: 'In Progress', items: itemsByStatus.in_progress, droppable: true },
-		...(blockedItems.length > 0
-			? [{ status: 'blocked' as const, title: 'Blocked', items: blockedItems, droppable: false }]
-			: []),
-		{ status: 'done', title: 'Done', items: itemsByStatus.done, droppable: true },
-	];
 
 	return (
 		<div class={styles.board}>
