@@ -169,7 +169,7 @@ specboard/
 
 ### Package Types
 
-**Feature source** (`shared/planning/`, `shared/projects/`) — Preact components with co-located CSS Modules and tests. No independent build step and no `package.json`; compiled by consuming apps via Vite and imported as `@shared/planning` and `@shared/projects`. Because these directories are not workspaces, the `npm test` workspace fan-out never reaches them: the root `test` script follows it with a `vitest run` over both directories from the root `vitest.config.ts`, which carries the aliases their component tests need.
+**Feature source** (`shared/planning/`, `shared/projects/`) — Preact components with co-located CSS Modules and, where written, tests. No independent build step and no `package.json`; compiled by consuming apps via Vite and imported as `@shared/planning` and `@shared/projects`. Because these directories are not workspaces, the `npm test` workspace fan-out never reaches them: the root `test` script follows it with a `vitest run` over both directories from the root `vitest.config.ts`, which carries the aliases their component tests need.
 
 **Source-only workspace packages** (`shared/pages/`, `shared/ui/`) — the same shape, but with a `package.json`, so they are workspaces: imported by package name (`@specboard/pages`, `@specboard/ui`), and their tests ride the workspace fan-out.
 
