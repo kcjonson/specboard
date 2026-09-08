@@ -748,7 +748,7 @@ For each tool:
 
 ## Implementation Status
 
-### Current State (December 2024)
+### Current State
 
 The MCP server is implemented for **planning/task management** with the following features:
 
@@ -756,7 +756,7 @@ The MCP server is implemented for **planning/task management** with the followin
 
 - **HTTP Transport**: Uses `StreamableHTTPServerTransport` (not stdio)
 - **Project Scoping**: All API endpoints are project-scoped via URL path
-- **API Routes**: `GET/POST /api/projects/:projectSlug/items`, and the item sub-resources (`/specs`, `/blockers`, `/notes`)
+- **API Routes**: `GET/POST /api/projects/:projectSlug/items`, and the item sub-resources (`/specs`, `/blockers`, `/notes`, `/checklist`)
 - **MCP Tools**: `list_projects`, `get_items`, `create_item`, `create_items`, `update_item`, `delete_item`
 - **Docker Deployment**: MCP runs as separate ECS Fargate service
 - **CI/CD**: Automated build and deployment

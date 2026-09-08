@@ -99,6 +99,12 @@ import {
 	handleClearBlocker,
 } from './handlers/blockers.ts';
 import {
+	handleListChecklist,
+	handleAddChecklistEntry,
+	handleUpdateChecklistEntry,
+	handleDeleteChecklistEntry,
+} from './handlers/checklist.ts';
+import {
 	handleListItemNotes,
 	handleAddItemNote,
 } from './handlers/notes.ts';
@@ -583,6 +589,12 @@ app.delete('/api/projects/:projectSlug/items/:itemKey/specs/:id', requireProject
 app.get('/api/projects/:projectSlug/items/:itemKey/blockers', requireProjectAccess(handleListBlockers));
 app.post('/api/projects/:projectSlug/items/:itemKey/blockers', requireProjectAccess(handleAddBlocker));
 app.delete('/api/projects/:projectSlug/items/:itemKey/blockers/:id', requireProjectAccess(handleClearBlocker));
+
+// Project-scoped checklist routes (scratch todos, not child items)
+app.get('/api/projects/:projectSlug/items/:itemKey/checklist', requireProjectAccess(handleListChecklist));
+app.post('/api/projects/:projectSlug/items/:itemKey/checklist', requireProjectAccess(handleAddChecklistEntry));
+app.put('/api/projects/:projectSlug/items/:itemKey/checklist/:id', requireProjectAccess(handleUpdateChecklistEntry));
+app.delete('/api/projects/:projectSlug/items/:itemKey/checklist/:id', requireProjectAccess(handleDeleteChecklistEntry));
 
 // Project-scoped item activity-log routes
 app.get('/api/projects/:projectSlug/items/:itemKey/notes', requireProjectAccess(handleListItemNotes));
