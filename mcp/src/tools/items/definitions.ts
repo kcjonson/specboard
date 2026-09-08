@@ -49,6 +49,10 @@ export const epicTools: Tool[] = [
 					type: 'boolean',
 					description: 'Include the item\'s activity-log entries, newest first (default: false)',
 				},
+				include_checklist: {
+					type: 'boolean',
+					description: 'Include each item\'s checklist — its scratch todos, NOT its child items (default: false). Always included for a single-item item_key read.',
+				},
 				limit: {
 					type: 'number',
 					description: 'Max items to return (default: 25, max: 5000). Compare the response\'s `total` to `count` to see whether it cut the list.',
@@ -162,7 +166,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'update_item',
 		description:
-			'Update an item: title, description, status, sub_status, specs, blockers, branch_name, pr_url, note. note appends an entry to the item\'s activity log, never overwrites. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). blockers replaces the item\'s open blockers (item refs auto-clear when the blocking item completes; text clears only when removed).',
+			'Update an item: title, description, status, sub_status, specs, blockers, checklist, checklist_status, branch_name, pr_url, note. note appends an entry to the item\'s activity log, never overwrites. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). blockers replaces the item\'s open blockers (item refs auto-clear when the blocking item completes; text clears only when removed). checklist replaces the item\'s scratch todos, which are not child items; checklist_status ticks individual entries off by id as you work.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -235,6 +239,24 @@ export const epicTools: Tool[] = [
 							text: { type: 'string', description: 'Free-text reason' },
 						},
 					},
+				},
+				checklist: {
+					type: 'array',
+					description: 'Replace the item\'s whole checklist — its scratch todos, NOT its child items. Send every entry that should remain, or [] to clear; array order is display order. Use a checklist for what is left on this one item (no key, no board status, no history). Use create_items or create_item with parent_key when a step deserves to be tracked in its own right. Max 100 entries, 500 chars each.',
+					items: {
+						type: 'object',
+						properties: {
+							id: { type: 'string', description: 'Omit for a new entry; send it back to keep an existing one stable.' },
+							text: { type: 'string', description: 'What the todo says' },
+							status: { type: 'string', enum: ['todo', 'done'], description: 'Entry state (default: todo)' },
+						},
+						required: ['text'],
+					},
+				},
+				checklist_status: {
+					type: 'object',
+					description: 'Set checklist entry statuses by id, e.g. { "<id>": "done" }. This is how you tick things off as you work; `checklist` replaces the whole list and is for setting it up.',
+					additionalProperties: { type: 'string', enum: ['todo', 'done'] },
 				},
 			},
 			required: ['item_key'],

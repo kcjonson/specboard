@@ -21,18 +21,22 @@ vi.mock('@specboard/db', () => ({
 	verifyItemOwnership: vi.fn(async () => true),
 	setSpecs: vi.fn(),
 	setBlockers: vi.fn(async () => []),
+	setChecklist: vi.fn(async () => [{ id: 'c-1', text: 'draft the migration', status: 'todo' }]),
+	getChecklist: vi.fn(async () => [{ id: 'c-1', text: 'draft the migration', status: 'done' }]),
+	updateChecklistEntry: vi.fn(async () => ({ id: 'c-1', text: 'draft the migration', status: 'done' })),
 	recordWorkerActivity: vi.fn(),
 	SpecValidationError: class extends Error {},
 	NoteValidationError: class extends Error {},
 	BlockerValidationError: class extends Error {},
 	BlockerConflictError: class extends Error {},
 	BlockerTargetError: class extends Error {},
+	ChecklistValidationError: class extends Error {},
 	ParentItemNotFoundError: class extends Error {},
 	DiscoveredFromNotFoundError: class extends Error {},
 	ItemCycleError: class extends Error {},
 }));
 
-import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, NoteValidationError } from '@specboard/db';
+import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, setChecklist, getChecklist, updateChecklistEntry, setSpecs, NoteValidationError } from '@specboard/db';
 import type { AgentActor } from '@specboard/db';
 import { updateItem } from './writes.ts';
 
@@ -186,5 +190,123 @@ describe('update_item note handling', () => {
 
 		expect(result.isError).toBe(true);
 		expect(result.content[0]!.text).toBe('Note text must be at most 10000 characters');
+	});
+});
+
+describe('update_item checklist', () => {
+	const payload = (result: Awaited<ReturnType<typeof updateItem>>): { updated: Record<string, unknown> } =>
+		JSON.parse(result.content[0]!.text);
+
+	const CHECKLIST = [{ text: 'draft the migration' }, { text: 'wire the drawer', status: 'done' }];
+
+	it('replaces the checklist on a general update', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', title: 'Renamed', checklist: CHECKLIST }, ACTOR);
+
+		expect(vi.mocked(setChecklist)).toHaveBeenCalledWith('proj-1', 1, CHECKLIST);
+		expect(payload(result).updated).toMatchObject({ checklist: [{ id: 'c-1', text: 'draft the migration', status: 'todo' }] });
+	});
+
+	it.each([
+		['in_progress', {}],
+		['done', {}],
+		['blocked', { note: 'waiting on review' }],
+		['ready', {}],
+	])('replaces the checklist alongside status %s', async (status, extra) => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', status, checklist: CHECKLIST, ...extra }, ACTOR);
+
+		expect(vi.mocked(setChecklist)).toHaveBeenCalledWith('proj-1', 1, CHECKLIST);
+		expect(payload(result).updated).toMatchObject({ checklist: [{ id: 'c-1', text: 'draft the migration', status: 'todo' }] });
+	});
+
+	it('does not take the bare-move early return when a checklist rides along', async () => {
+		await updateItem(PROJECT, { item_key: 'SB-1', parent_key: 'SB-9', checklist: CHECKLIST }, ACTOR);
+
+		expect(vi.mocked(moveItem)).toHaveBeenCalledWith('proj-1', 1, 9);
+		expect(vi.mocked(setChecklist)).toHaveBeenCalledWith('proj-1', 1, CHECKLIST);
+	});
+
+	it('leaves the checklist alone when the arg is absent', async () => {
+		await updateItem(PROJECT, { item_key: 'SB-1', title: 'Renamed' }, ACTOR);
+
+		expect(vi.mocked(setChecklist)).not.toHaveBeenCalled();
+		expect(vi.mocked(updateChecklistEntry)).not.toHaveBeenCalled();
+	});
+});
+
+describe('update_item checklist_status', () => {
+	const payload = (result: Awaited<ReturnType<typeof updateItem>>): { updated: Record<string, unknown> } =>
+		JSON.parse(result.content[0]!.text);
+
+	it('patches each entry by id and reports the refreshed checklist', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', checklist_status: { 'c-1': 'done', 'c-2': 'todo' } }, ACTOR);
+
+		expect(vi.mocked(updateChecklistEntry)).toHaveBeenCalledWith('proj-1', 1, 'c-1', { status: 'done' });
+		expect(vi.mocked(updateChecklistEntry)).toHaveBeenCalledWith('proj-1', 1, 'c-2', { status: 'todo' });
+		expect(vi.mocked(setChecklist)).not.toHaveBeenCalled();
+		expect(payload(result).updated).toMatchObject({ checklist: [{ id: 'c-1', status: 'done' }] });
+	});
+
+	it.each([
+		['in_progress', {}],
+		['done', {}],
+		['blocked', { note: 'waiting on review' }],
+		['ready', {}],
+	])('patches statuses alongside status %s', async (status, extra) => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', status, checklist_status: { 'c-1': 'done' }, ...extra }, ACTOR);
+
+		expect(vi.mocked(updateChecklistEntry)).toHaveBeenCalledWith('proj-1', 1, 'c-1', { status: 'done' });
+		expect(payload(result).updated).toMatchObject({ checklist: [{ id: 'c-1', status: 'done' }] });
+	});
+
+	it('does not take the bare-move early return when checklist_status rides along', async () => {
+		await updateItem(PROJECT, { item_key: 'SB-1', parent_key: 'SB-9', checklist_status: { 'c-1': 'done' } }, ACTOR);
+
+		expect(vi.mocked(moveItem)).toHaveBeenCalledWith('proj-1', 1, 9);
+		expect(vi.mocked(updateChecklistEntry)).toHaveBeenCalledWith('proj-1', 1, 'c-1', { status: 'done' });
+	});
+
+	it('replaces the list before patching it, so the ticks survive', async () => {
+		await updateItem(PROJECT, { item_key: 'SB-1', checklist: [{ text: 'draft the migration' }], checklist_status: { 'c-1': 'done' } }, ACTOR);
+
+		const replaced = vi.mocked(setChecklist).mock.invocationCallOrder[0]!;
+		const patched = vi.mocked(updateChecklistEntry).mock.invocationCallOrder[0]!;
+		expect(replaced).toBeLessThan(patched);
+	});
+
+	it('errors on an unknown entry id, naming it', async () => {
+		vi.mocked(updateChecklistEntry).mockResolvedValueOnce(null);
+
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', checklist_status: { 'gone-1': 'done' } }, ACTOR);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]!.text).toContain('gone-1');
+		expect(vi.mocked(getChecklist)).not.toHaveBeenCalled();
+	});
+
+	it('rejects a checklist_status that is not an id-to-status object', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', checklist_status: ['c-1'] }, ACTOR);
+
+		expect(result.isError).toBe(true);
+		expect(vi.mocked(updateChecklistEntry)).not.toHaveBeenCalled();
+	});
+
+	// A non-array checklist used to fall through as a no-op, reporting success
+	// while dropping the write entirely.
+	it('rejects a checklist that is not an array', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', checklist: 'tidy up' }, ACTOR);
+
+		expect(result.isError).toBe(true);
+		expect(vi.mocked(setChecklist)).not.toHaveBeenCalled();
+	});
+
+	// specs used to reach only the general update path, so pairing it with any
+	// status shortcut dropped it silently while the tool reported success.
+	// The note is only there for `blocked`, which refuses to block without a
+	// reason; it is inert on the other three.
+	it.each(['in_progress', 'done', 'blocked', 'ready'] as const)('applies specs alongside status %s', async (status) => {
+		const specs = [{ path: '/docs/specs/thing.md', type: 'technical' as const }];
+		await updateItem(PROJECT, { item_key: 'SB-1', status, specs, note: 'why' }, ACTOR);
+
+		expect(vi.mocked(setSpecs)).toHaveBeenCalledWith('proj-1', 1, specs);
 	});
 });

@@ -138,10 +138,17 @@ the human sees.
 The three layers, so you don't duplicate:
 - **Spec**, the why/what. Shared. Human or Claude authored. Lives wherever the project keeps docs; the epic links it.
 - **Plan file**, the detailed how. Private reasoning. Claude authored. Lives wherever your setup keeps plan files.
-- **MCP tasks**, the human-readable checklist, derived from the plan's steps. Shared, status-tracked.
+- **MCP tasks**, the human-readable breakdown — one tracked item per step, derived from the plan. Shared, status-tracked.
 
-Keep detail and reasoning in the plan file; keep the trackable checklist in MCP. Don't pour fine
-reasoning into task titles, and don't hide the checklist from the board.
+Keep detail and reasoning in the plan file; keep the trackable breakdown in MCP. Don't pour fine
+reasoning into task titles, and don't hide the breakdown from the board.
+
+"Checklist" means something narrower on the board: the scratch todos on a single item, set with
+`update_item`'s `checklist` array. An entry is text and a state (`todo`/`done`) — no key, no lifecycle, no
+history, nothing that can block or be blocked. Tick entries off as you work with `update_item`'s
+`checklist_status` ({ "<entry id>": "done" }). If a line needs an owner, a PR, or a mention from
+another item, it's a child item; if it's a loose end inside the item you're already working, it's a
+checklist entry.
 
 The plan file is scratch, not an archive. It's private, and often in an ignored directory, so
 anything recorded only there is invisible to everyone else. When the work closes, `/specboard:complete`

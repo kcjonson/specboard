@@ -17,8 +17,13 @@ on:
       - 'docs/**'
       - '*.md'
       - '**/README.md'
+  # No branch filter: a pull request is checked whatever it targets. Filtering to
+  # main meant a PR based on another PR's branch reported no checks at all — not a
+  # failure, just an empty check list, which reads as "nothing wrong" rather than
+  # "nothing ran". CD is unaffected: it triggers on this workflow's completion
+  # filtered to branches [main], and that matches the triggering run's own branch,
+  # so a feature-branch run cannot reach a staging deploy.
   pull_request:
-    branches: [main]
     paths-ignore:
       - 'docs/**'
       - '*.md'

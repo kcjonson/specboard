@@ -16,8 +16,8 @@
 -- Expand/contract: the old index stays for this release so the previous image's
 -- upsert (which names it) keeps working during the rolling swap and on image
 -- rollback. Existing active rows already satisfy the new key (old code never wrote a
--- NULL sessionId), so open episodes continue across the deploy. Migration 029 drops
--- idx_item_workers_active once no task from the previous release can run.
+-- NULL sessionId), so open episodes continue across the deploy. A later migration
+-- drops idx_item_workers_active once no task from the previous release can run.
 
 ALTER TABLE mcp_tokens
 	ADD COLUMN client_name VARCHAR(255),

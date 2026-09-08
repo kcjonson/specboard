@@ -23,12 +23,16 @@ import {
 	verifyItemOwnership,
 	setSpecs as setSpecsService,
 	setBlockers as setBlockersService,
+	setChecklist as setChecklistService,
+	getChecklist as getChecklistService,
+	updateChecklistEntry as updateChecklistEntryService,
 	recordWorkerActivity,
 	SpecValidationError,
 	NoteValidationError,
 	BlockerValidationError,
 	BlockerConflictError,
 	BlockerTargetError,
+	ChecklistValidationError,
 	ParentItemNotFoundError,
 	DiscoveredFromNotFoundError,
 	ItemCycleError,
@@ -41,6 +45,10 @@ import {
 	type AgentActor,
 	type BlockerInput,
 	type BlockerSummary,
+	type SpecSummary,
+	type ChecklistEntry,
+	type ChecklistEntryInput,
+	type ChecklistStatus,
 } from '@specboard/db';
 import { itemNumberInProject } from '@specboard/core/identifiers';
 
@@ -218,6 +226,20 @@ export async function updateItem(
 		return err('Access denied: item does not belong to this project');
 	}
 
+	// Spec links replace in full on EVERY update path, for the same reason blockers
+	// and the checklist do: the schema offers `specs` unconditionally, so a call
+	// pairing it with a status shortcut must not have it silently dropped.
+	const applySpecs = async (): Promise<{ specs?: SpecSummary[] } | ToolResult> => {
+		if (!Array.isArray(args.specs)) return {};
+		try {
+			const specs = await setSpecsService(project.id, number, args.specs as Array<{ path: string; type: SpecType }>);
+			return specs ? { specs } : {};
+		} catch (error) {
+			if (error instanceof SpecValidationError) return err(error.message);
+			throw error;
+		}
+	};
+
 	// The blockers full-replace applies on EVERY update path — the schema promises
 	// it unconditionally, so the status shortcuts and the move path may not drop it.
 	const applyBlockers = async (): Promise<{ blockers?: BlockerSummary[] } | ToolResult> => {
@@ -233,6 +255,48 @@ export async function updateItem(
 			}
 			throw error;
 		}
+	};
+
+	// The checklist writes apply on EVERY update path as well — and unlike
+	// blockers, a completion does NOT clear them: ticking a box is not a state the
+	// lifecycle owns, so a done item keeps the todos it finished with.
+	//
+	// Order matters when a call carries both: `checklist` replaces the list, then
+	// `checklist_status` patches entries in the list that replace produced. The
+	// other order would have the replace discard the ticks.
+	const applyChecklist = async (): Promise<{ checklist?: ChecklistEntry[] } | ToolResult> => {
+		const statuses = args.checklist_status;
+		const hasStatuses = statuses != null;
+		if (hasStatuses && (typeof statuses !== 'object' || Array.isArray(statuses))) {
+			return err('checklist_status must be an object mapping entry id to status, e.g. { "<id>": "done" }');
+		}
+		// A non-array `checklist` would otherwise fall through as a no-op and report
+		// success while dropping the write, the same trap checklist_status guards above.
+		if (args.checklist !== undefined && !Array.isArray(args.checklist)) {
+			return err('checklist must be an array of entries; use checklist_status to tick individual entries off');
+		}
+		if (!Array.isArray(args.checklist) && !hasStatuses) return {};
+
+		let checklist: ChecklistEntry[] | null = null;
+		try {
+			if (Array.isArray(args.checklist)) {
+				checklist = await setChecklistService(project.id, number, args.checklist as ChecklistEntryInput[]);
+			}
+			if (hasStatuses) {
+				for (const [entryId, status] of Object.entries(statuses as Record<string, ChecklistStatus>)) {
+					const entry = await updateChecklistEntryService(project.id, number, entryId, { status });
+					// Ownership was verified above, so a miss is a stale entry id, not a
+					// missing item. Report it: an agent ticking an id that no longer
+					// exists has to find out, not read success.
+					if (!entry) return err(`No checklist entry ${entryId} on this item — read it with get_items to see the current entry ids.`);
+				}
+				checklist = await getChecklistService(project.id, number);
+			}
+		} catch (error) {
+			if (error instanceof ChecklistValidationError) return err(error.message);
+			throw error;
+		}
+		return checklist ? { checklist } : {};
 	};
 
 	// An entry for the item's activity log, appended on every path that can carry
@@ -302,7 +366,7 @@ export async function updateItem(
 
 	// A move on its own: nothing below would write anything, and the general
 	// update's re-read would only restate what the move already returned.
-	if (moved && status === undefined && !hasFields && !note && !Array.isArray(args.specs) && !Array.isArray(args.blockers)) {
+	if (moved && status === undefined && !hasFields && !note && !Array.isArray(args.specs) && !Array.isArray(args.blockers) && !Array.isArray(args.checklist) && args.checklist_status == null) {
 		return ok({ updated: { key: moved.key, parentKey: moved.parentKey }, message: newParentNumber !== null ? 'Item moved' : 'Item promoted to top-level' });
 	}
 
@@ -317,7 +381,11 @@ export async function updateItem(
 		await recordWorkerActivity(project.id, number, actor, args.branch_name as string | undefined);
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers }, message: 'Item started' });
+		const checklist = await applyChecklist();
+		if ('content' in checklist) return checklist;
+		const specs = await applySpecs();
+		if ('content' in specs) return specs;
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item started' });
 	}
 	if (status === 'done') {
 		if (hasFields) await updateItemService(project.id, number, fields);
@@ -325,13 +393,17 @@ export async function updateItem(
 		if (!item) return err('Item not found');
 		const noteError = await appendNote();
 		if (noteError) return noteError;
+		const checklist = await applyChecklist();
+		if ('content' in checklist) return checklist;
+		const specs = await applySpecs();
+		if ('content' in specs) return specs;
 		// No applyBlockers here: completion just cleared every open row, and
 		// blocking a done item is refused anyway — report that instead of a
 		// confusing validation error when the arg is present.
 		if (Array.isArray(args.blockers) && args.blockers.length > 0) {
-			return ok({ updated: { key: item.key, status: item.status, ...movedParent }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
+			return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist, ...specs }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
 		}
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent }, message: 'Item completed' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist, ...specs }, message: 'Item completed' });
 	}
 	if (status === 'blocked') {
 		if (hasFields) await updateItemService(project.id, number, fields);
@@ -341,14 +413,22 @@ export async function updateItem(
 		if (noteError) return noteError;
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers }, message: 'Item blocked' });
+		const checklist = await applyChecklist();
+		if ('content' in checklist) return checklist;
+		const specs = await applySpecs();
+		if ('content' in specs) return specs;
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item blocked' });
 	}
 	if (status === 'ready' && !hasFields && !note) {
 		const item = await unblockItemService(project.id, number);
 		if (!item) return err('Item not found');
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers }, message: 'Item unblocked' });
+		const checklist = await applyChecklist();
+		if ('content' in checklist) return checklist;
+		const specs = await applySpecs();
+		if ('content' in specs) return specs;
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item unblocked' });
 	}
 
 	// General field update.
@@ -360,22 +440,21 @@ export async function updateItem(
 	const noteError = await appendNote();
 	if (noteError) return noteError;
 
-	// Replace the full set of typed spec links when provided.
-	let specs;
-	if (Array.isArray(args.specs)) {
-		try {
-			specs = await setSpecsService(project.id, number, args.specs as Array<{ path: string; type: SpecType }>);
-		} catch (error) {
-			if (error instanceof SpecValidationError) return err(error.message);
-			throw error;
-		}
-	}
+	const specsResult = await applySpecs();
+	if ('content' in specsResult) return specsResult;
+	const specs = specsResult.specs;
 
 	// Replace the full set of OPEN blockers when provided. Item blockers auto-clear
 	// when the blocking item completes; text blockers only clear by leaving this list.
 	const blockersResult = await applyBlockers();
 	if ('content' in blockersResult) return blockersResult;
 	const blockers = blockersResult.blockers;
+
+	// Replace the whole checklist and/or patch entry statuses; the entries are
+	// scratch todos on this item, never its child items.
+	const checklistResult = await applyChecklist();
+	if ('content' in checklistResult) return checklistResult;
+	const checklist = checklistResult.checklist;
 
 	// Observed worker presence: a write that leaves the item in_progress marks this
 	// session active on it. Transitions out of in_progress end episodes inside the
@@ -396,6 +475,7 @@ export async function updateItem(
 			blocked: blockers ? blockers.length > 0 || item.status === 'blocked' : item.blocked,
 			...(specs ? { specs } : {}),
 			...(blockers ? { blockers } : {}),
+			...(checklist ? { checklist } : {}),
 		},
 		message: 'Item updated',
 	});

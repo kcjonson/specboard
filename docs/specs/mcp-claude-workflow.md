@@ -41,13 +41,17 @@ Claude's internal planning tools coexist with the board; they operate at differe
 | Layer | Where | Purpose | Visibility |
 |-------|-------|---------|------------|
 | **Spec** | `docs/specs/` | The why and what | Shared |
-| **MCP tasks** | Specboard | The human-readable checklist | Shared |
+| **MCP tasks** | Specboard | The human-readable breakdown — one tracked item per step | Shared |
 | **Plan file** | `.claude/plans/` | Claude's detailed reasoning (the how) | Private |
 | **Plan mode** | Claude Code | The scoping activity that produces the plan file | Session |
 
 The plan file is the source; the board is the projection. Plan mode *is* the epic's `scoping`
 sub_status, exploring the code and designing the approach. Its steps become the MCP tasks the human
-tracks. Keep reasoning and detail in the plan file; keep the trackable checklist on the board.
+tracks. Keep reasoning and detail in the plan file; keep the trackable breakdown on the board.
+
+"Checklist" now means something narrower: the scratch todos on a single item, which carry no key, no
+lifecycle, and no history. A step you want tracked is a task; a loose end inside one task is a checklist
+entry.
 
 ---
 

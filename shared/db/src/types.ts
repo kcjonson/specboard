@@ -255,6 +255,8 @@ export interface Item {
 	branch_name: string | null;
 	created_at: Date;
 	updated_at: Date;
+	/** Ordered scratch todos; array order is display order. Distinct from child items. */
+	checklist: ChecklistEntry[];
 }
 
 export interface ItemSpec {
@@ -292,6 +294,18 @@ export interface ItemWorker {
 	started_at: Date;
 	last_seen_at: Date;
 	ended_at: Date | null;
+}
+
+// A checklist entry's state. A union rather than a boolean so further states can
+// be added without breaking every reader; keep it narrow until one is needed.
+export type ChecklistStatus = 'todo' | 'done';
+
+// One scratch todo on an item (items.checklist). No actor, no timestamps, no
+// lifecycle -- a step that needs any of those is a child item instead.
+export interface ChecklistEntry {
+	id: string;
+	text: string;
+	status: ChecklistStatus;
 }
 
 // One entry in an item's append-only activity log. actor NULL means the entry
