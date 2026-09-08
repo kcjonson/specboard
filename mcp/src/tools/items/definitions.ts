@@ -10,7 +10,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'get_items',
 		description:
-			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats, plus `total`: how many items matched, which exceeds `count` when `limit` cut the list. Optionally include each item\'s children and activity-log entries. Use item_key for a single item, or filter by status/type/search for lists.',
+			'Query items (epics, tasks, bugs) with flexible filtering. Lists return top-level items with child stats (a `search` also returns matching children), plus `total`: how many items matched, which exceeds `count` when `limit` cut the list. Optionally include each item\'s children and activity-log entries. Use item_key for a single item, or filter by status/type/search for lists.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -35,7 +35,7 @@ export const epicTools: Tool[] = [
 				},
 				search: {
 					type: 'string',
-					description: 'Search title and description (case-insensitive)',
+					description: 'Case-insensitive substring search of title and description; a term that is a full item key (e.g. SB-345) or a bare number (345) also matches that item exactly. Matches items at any depth, not just top-level ones — a matched child carries `parentKey`, and with include_children it can appear both as its own row and inside its parent\'s children.',
 				},
 				include_blocked: {
 					type: 'boolean',

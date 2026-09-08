@@ -75,6 +75,8 @@ function pathItemNumber(context: Context): number | Response {
 
 /**
  * GET /items — top-level items with child stats, filterable by status/type/search.
+ * A `search` widens it to every depth (matching children carry `parentKey`); status
+ * and type still test the matched item's own row.
  *
  * `limit` caps the page (default 500, max 5000). The body stays a plain array; the
  * number of rows the filters matched is sent as `X-Total-Count`, so a client showing a

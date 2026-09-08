@@ -4,13 +4,12 @@ import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
 import { FetchError } from '@specboard/fetch';
-import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption } from '@specboard/ui';
+import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption, type SelectOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
 import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
-import { CATEGORY_ALL, CATEGORY_OPTIONS, isFilterActive, type PlanningFilters } from './filters';
 import { VIEW_PREF, readPref, writePref } from './prefs';
 import styles from './Planning.module.css';
 
@@ -19,6 +18,38 @@ const HIGHLIGHT_DURATION = 2000;
 
 /** How often to poll the server for item changes while the page is visible (ms) */
 const POLL_INTERVAL = 10000;
+
+/**
+ * How long the search box sits still before its text becomes a new query. Each
+ * change costs one request per status window, so keystrokes are collapsed; the
+ * type Select is a single deliberate choice and applies immediately.
+ */
+const SEARCH_DEBOUNCE = 250;
+
+/** Sentinel value meaning "no type filter applied". */
+const CATEGORY_ALL = 'all';
+
+/** Options for the type <Select> in the toolbar. */
+const CATEGORY_OPTIONS: SelectOption[] = [
+	{ value: CATEGORY_ALL, label: 'All types' },
+	{ value: 'epic', label: 'Epic' },
+	{ value: 'task', label: 'Task' },
+	{ value: 'bug', label: 'Bug' },
+];
+
+/** The real item types among CATEGORY_OPTIONS, excluding the CATEGORY_ALL sentinel. */
+const ITEM_TYPES = new Set(CATEGORY_OPTIONS.map((option) => option.value).filter((value) => value !== CATEGORY_ALL));
+
+function isItemType(value: string): value is ItemType {
+	return ITEM_TYPES.has(value);
+}
+
+/** Toolbar filter state. The server does the filtering; this is only what the toolbar shows. */
+interface PlanningFilters {
+	search: string;
+	/** A value from CATEGORY_OPTIONS, or CATEGORY_ALL for no filter. */
+	category: string;
+}
 
 /** Drawer min width (matches ItemDrawer) and the board's reserved minimum. */
 const DRAWER_MIN_WIDTH = 320;
@@ -45,9 +76,13 @@ function readView(): PlanningView {
  * and `/projects/:projectSlug/planning/items/:itemKey`.
  *
  * Owns all state shared between the Board and Table views (the items collection,
- * selection, create/edit dialog, highlight, active view, and filters) and renders
- * the shared toolbar plus whichever view is active. The two views are purely
- * presentational consumers of this state.
+ * selection, create/edit dialog, highlight, and active view) and renders the shared
+ * toolbar plus whichever view is active. The two views are purely presentational
+ * consumers of this state.
+ *
+ * The toolbar's filters are the exception: they stop here. The server filters the
+ * collection's windows, so the views never see filter state at all — they render
+ * whatever the collection currently holds, which under a search includes child items.
  *
  * Which item the drawer shows is not local state — it's the `:itemKey` route param.
  * Opening and closing the drawer are navigations, so Back closes it. The router
@@ -84,7 +119,29 @@ export function Planning(props: RouteProps): JSX.Element {
 		if (view === 'table') void items.ensureLimit(TABLE_PAGE_SIZE);
 	}, [view, items]);
 
+	// The toolbar's filter state, and the search text once it has settled. Filtering
+	// happens on the server (the views render whatever the collection holds), so the
+	// settled text plus the type go to the collection, which reissues its windows.
 	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
+	const [settledSearch, setSettledSearch] = useState('');
+	useEffect(() => {
+		if (filters.search === settledSearch) return;
+		// Emptying the box (Clear filters, or deleting the text) is one deliberate act,
+		// not a keystroke on the way to another: settle it now, so the results the user
+		// just cleared don't sit there for another quarter second.
+		if (filters.search.trim() === '') {
+			setSettledSearch(filters.search);
+			return;
+		}
+		const timer = setTimeout(() => setSettledSearch(filters.search), SEARCH_DEBOUNCE);
+		return () => clearTimeout(timer);
+	}, [filters.search, settledSearch]);
+	useEffect(() => {
+		void items.setFilter({
+			search: settledSearch,
+			type: isItemType(filters.category) ? filters.category : undefined,
+		});
+	}, [items, settledSearch, filters.category]);
 
 	// The board selection — the single source of truth for which card is marked.
 	// Seeded from the route so an in-app navigation to an item URL lands with its
@@ -142,10 +199,20 @@ export function Planning(props: RouteProps): JSX.Element {
 		const handleItemsChanged = (ids: string[]): void => flashItems(ids);
 		items.onItemsChanged(handleItemsChanged);
 
+		// Once the collection is in an error state (429, expired session, network
+		// drop) automatic fetches stop: retrying on a timer is how a rate limit
+		// stays tripped. The interval keeps running and stays guarded, so a
+		// user-driven fetch that succeeds clears $meta.error and polling resumes
+		// with no extra bookkeeping.
+		const poll = (): void => {
+			if (items.$meta.error) return;
+			void items.fetch();
+		};
+
 		let interval: ReturnType<typeof setInterval> | undefined;
 		const start = (): void => {
 			if (interval === undefined) {
-				interval = setInterval(() => void items.fetch(), POLL_INTERVAL);
+				interval = setInterval(poll, POLL_INTERVAL);
 			}
 		};
 		const stop = (): void => {
@@ -155,7 +222,7 @@ export function Planning(props: RouteProps): JSX.Element {
 			}
 		};
 		const onFocus = (): void => {
-			void items.fetch();
+			poll();
 			start();
 		};
 
@@ -322,7 +389,7 @@ export function Planning(props: RouteProps): JSX.Element {
 		setFilters((prev) => ({ ...prev, category: value }));
 	}, []);
 
-	const filtersActive = isFilterActive(filters);
+	const filtersActive = filters.search.trim() !== '' || filters.category !== CATEGORY_ALL;
 
 	const handleClearFilters = useCallback((): void => {
 		setFilters({ search: '', category: CATEGORY_ALL });
@@ -397,15 +464,19 @@ export function Planning(props: RouteProps): JSX.Element {
 	const drawerMaxWidth = workspaceWidth > 0 ? Math.max(DRAWER_MIN_WIDTH, workspaceWidth - BOARD_MIN_WIDTH) : undefined;
 
 	// Loading and load failures render where the board goes, so the toolbar stays
-	// put: a poll or focus refetch retries on its own, and the filters are still
-	// there to clear. Replacing the page would unmount the search box on every
-	// retry and give a signed-out user nothing to act on.
+	// put. While the page is in error every automatic fetch is suppressed, so
+	// recovery is always something the user does: Retry, a filter change, or
+	// signing back in. Replacing the page would unmount the search box and give a
+	// signed-out user nothing to act on.
 	const loadError = items.$meta.error;
 	const sessionExpired = loadError instanceof FetchError && loadError.status === 401;
 	const handleSignIn = useCallback((): void => {
 		const next = window.location.pathname + window.location.search + window.location.hash;
 		window.location.href = `/login?next=${encodeURIComponent(next)}`;
 	}, []);
+	const handleRetry = useCallback((): void => {
+		void items.fetch({ force: true });
+	}, [items]);
 
 	const renderViewArea = (): JSX.Element => {
 		if (sessionExpired) {
@@ -417,15 +488,21 @@ export function Planning(props: RouteProps): JSX.Element {
 			);
 		}
 		if (loadError) {
-			return <div class={styles.error} role="alert">Error: {loadError.message}</div>;
+			return (
+				<div class={styles.error} role="alert">
+					<p>Error: {loadError.message}</p>
+					<Button class="secondary" onClick={handleRetry}>Retry</Button>
+				</div>
+			);
 		}
-		if (items.$meta.working && items.length === 0) {
+		// First load only: a later fetch that returns nothing (an empty search, a poll
+		// after one) keeps the empty columns rather than swapping in a spinner.
+		if (items.$meta.working && items.$meta.lastFetched === null) {
 			return <div class={styles.loading}>Loading...</div>;
 		}
 		return view === 'table' ? (
 			<Table
 				items={items}
-				filters={filters}
 				selectedItemKey={selectedItemKey}
 				flashingIds={flashingIds}
 				onSelectItem={handleSelectItem}
@@ -436,7 +513,6 @@ export function Planning(props: RouteProps): JSX.Element {
 			<Board
 				items={items}
 				projectSlug={projectSlug}
-				filters={filters}
 				selectedItemKey={selectedItemKey}
 				flashingIds={flashingIds}
 				dialogOpen={isNewItemDialogOpen}

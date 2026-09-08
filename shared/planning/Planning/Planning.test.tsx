@@ -56,7 +56,7 @@ describe('Planning load failures', () => {
 		const { container, findByRole, queryByTestId } = renderPlanning();
 
 		const alert = await findByRole('alert');
-		expect(alert.textContent).toBe('Error: HTTP 500: Internal Server Error');
+		expect(alert.querySelector('p')?.textContent).toBe('Error: HTTP 500: Internal Server Error');
 		expect(container.querySelector('input[type="search"]')).not.toBeNull();
 		expect(queryByTestId('board')).toBeNull();
 	});
@@ -70,17 +70,32 @@ describe('Planning load failures', () => {
 		expect(await findByRole('button', { name: 'Sign in' })).toBeTruthy();
 	});
 
-	// The collection clears its error when a fetch starts, so the focus refetch is
-	// the recovery path; nothing on the page has to be remounted for it.
-	it('renders the board again once a refetch succeeds', async () => {
+	// Automatic fetches are off while the collection holds an error, so Retry is the
+	// recovery path; nothing on the page has to be remounted for it.
+	it('renders the board again once Retry succeeds', async () => {
 		failWith(new FetchError('HTTP 500: Internal Server Error', 500));
 		const { findByRole, findByTestId, queryByRole } = renderPlanning();
 		await findByRole('alert');
 
 		succeedEmpty();
-		fireEvent(window, new Event('focus'));
+		fireEvent.click(await findByRole('button', { name: 'Retry' }));
 
 		expect(await findByTestId('board')).toBeTruthy();
 		await waitFor(() => expect(queryByRole('alert')).toBeNull());
+	});
+
+	// Refocusing a failed board must not retry on its own — that is how a rate limit
+	// stays tripped.
+	it('does not refetch on window focus while the error stands', async () => {
+		failWith(new FetchError('HTTP 429: Too Many Requests', 429));
+		const { findByRole } = renderPlanning();
+		await findByRole('alert');
+
+		const callsBefore = getResponse.mock.calls.length;
+		fireEvent(window, new Event('focus'));
+		// A fetch that did start would reach the client within a tick.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(getResponse.mock.calls.length).toBe(callsBefore);
 	});
 });

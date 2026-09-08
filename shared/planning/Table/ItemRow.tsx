@@ -24,6 +24,8 @@ const DOT_STATUS: Record<ItemStatus, StatusType> = {
 
 export interface ItemRowProps {
 	item: ItemModel;
+	/** Whether rows may reveal their children at all (off while a filter is active). */
+	expandable: boolean;
 	expanded: boolean;
 	selected: boolean;
 	/** Briefly pulse the row (newly created, or changed by a background refresh). */
@@ -38,9 +40,15 @@ export interface ItemRowProps {
 /**
  * A single item row in the table. Expands to reveal its children, which are lazily
  * fetched on first expand — `useModel` re-renders this row when they land.
+ *
+ * A search matches items at any depth, so this also renders child items, in the
+ * section for their own status. Those carry `parentKey`, shown as a breadcrumb
+ * before the title. No row expands while a filter is active (see Table): the
+ * children endpoint is unfiltered, so it would duplicate the rows already matched.
  */
 export function ItemRow({
 	item,
+	expandable,
 	expanded,
 	selected,
 	flashing,
@@ -54,6 +62,8 @@ export function ItemRow({
 
 	const { total, done } = item.childStats;
 	const hasChildren = total > 0;
+	const canExpand = hasChildren && expandable;
+	const showChildren = canExpand && expanded;
 	const loadingChildren = item.$meta.working && item.children.length === 0;
 
 	const handleToggle = (e: MouseEvent): void => {
@@ -81,7 +91,7 @@ export function ItemRow({
 					<TypeBadge type={item.type} />
 				</span>
 				<span class={styles.colTitle} role="cell">
-					{hasChildren ? (
+					{canExpand ? (
 						<button
 							type="button"
 							class={styles.chevron}
@@ -93,6 +103,9 @@ export function ItemRow({
 						</button>
 					) : (
 						<span class={styles.chevronSpacer} />
+					)}
+					{item.parentKey && (
+						<span class={styles.parentKey} title={`Child of ${item.parentKey}`}>{item.parentKey} /</span>
 					)}
 					<span class={styles.itemKey}>{item.key}</span>
 					<span class={styles.title}>{item.title}</span>
@@ -108,14 +121,14 @@ export function ItemRow({
 				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>
 			</div>
 
-			{expanded && loadingChildren && (
+			{showChildren && loadingChildren && (
 				<div class={`${styles.row} ${styles.taskRow}`} role="row">
 					<span class={styles.colType} role="cell" />
 					<span class={`${styles.colTitle} ${styles.loadingTasks}`} role="cell">Loading…</span>
 				</div>
 			)}
 
-			{expanded &&
+			{showChildren &&
 				!loadingChildren &&
 				item.children.map((child) => <ChildRow key={child.id} child={child} onOpen={onOpenChild} />)}
 		</>

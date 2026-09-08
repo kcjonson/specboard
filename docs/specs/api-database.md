@@ -327,6 +327,17 @@ A client that wants more re-requests with a larger `limit`; the item list caps i
 and re-request it on every poll, and keeps the client from needing a second count
 request. Filters (`status`, `type`, `search`) apply before the count.
 
+Without `search` the list is top-level items only. With one, it spans every depth:
+`search` matches title and description as a case-insensitive substring, with `%`/`_`
+taken literally, and a matched child comes back with `parentKey` set. A term shaped
+like a full key (`SB-345`) or a bare number (`345`) additionally matches that one
+item exactly, ORed with the text match. Key matching is never a substring match: as
+one, `SAM-42` would also match on `s`, `sam`, and `-`, so every keystroke on the way
+to typing a key would return the whole project.
+`status` and `type` still test the matched item's own row, so a `ready` task under a
+`done` epic is returned by `?status=ready&search=...`, and `X-Total-Count` counts the
+same deep set as the body.
+
 ---
 
 ## Endpoints
@@ -650,6 +661,14 @@ Improve selected text.
 | Write operations | 30/minute |
 | Search | 20/minute |
 | AI | 10/minute |
+| `GET /api/projects/:slug/items` | 600/minute |
+
+The items list gets its own budget because the planning board doesn't fetch it
+once per view: it fetches one window per status column, so a single poll (every
+10s while the window is focused) and every settled search query each cost five
+requests. A normal session therefore runs several times the general read rate,
+and the 100/minute cap trips within a minute of typing in the search box. Only
+GET is raised; writes to the same path stay on the default.
 
 ---
 

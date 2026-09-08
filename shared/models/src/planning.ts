@@ -99,7 +99,11 @@ export class ItemModel extends SyncModel {
 	@prop accessor number!: number;
 	@prop accessor projectSlug!: string;
 	@prop accessor parentId!: string | undefined;
-	/** Key of the parent to nest under. Write-only: set it when creating a child. */
+	/**
+	 * Key of the item this one hangs under, absent on a top-level item. Set it when
+	 * creating a child; the list endpoint also sends it on the child rows a search
+	 * matches, which is how a view knows to label where the item lives.
+	 */
 	@prop accessor parentKey!: string | undefined;
 	@prop accessor title!: string;
 	@prop accessor type!: ItemType;
@@ -190,7 +194,24 @@ interface StatusPage {
 }
 
 /**
- * Collection of top-level items - syncs with /api/projects/:projectSlug/items
+ * Server-side filter on the windows a collection loads. Both fields narrow every
+ * status window; `type` matches an item's own type, and a non-empty `search` also
+ * matches items at any depth, so child rows (which carry `parentKey`) come back too.
+ */
+export interface ItemsFilter {
+	/** Free text; the server matches it against title, description, and item key. */
+	search?: string;
+	/** One item type, or undefined for all of them. */
+	type?: ItemType;
+}
+
+/** The filter as the query string carries it: trimmed search, no undefined-vs-empty ambiguity. */
+function normalizeFilter(filter: ItemsFilter | undefined): { search: string; type: ItemType | undefined } {
+	return { search: filter?.search?.trim() ?? '', type: filter?.type };
+}
+
+/**
+ * Collection of items - syncs with /api/projects/:projectSlug/items
  *
  * Loaded as one bounded window per status (the first `limit` rows by rank, one
  * request each) rather than the whole project, so a board with thousands of items
@@ -198,6 +219,11 @@ interface StatusPage {
  * widen them, and every refetch re-requests the current width, so a poll never
  * shrinks what the user expanded. `totalFor` / `hasMore` come from the server's
  * `X-Total-Count`, which is what the views use for counts and "show more".
+ *
+ * Filtering is the server's job, not the caller's: `setFilter` puts `search=` /
+ * `type=` on every window request, and `X-Total-Count` comes back narrowed to
+ * match. A filter change is a different question rather than a wider window, so
+ * it starts the windows over at `limit` (see setFilter).
  *
  * @example
  * ```tsx
@@ -207,6 +233,7 @@ interface StatusPage {
  * if (items.$meta.working) return <Loading />;
  *
  * items.add({ title: 'New Item' });
+ * await items.setFilter({ search: 'oauth', type: 'bug' });
  * const readyItems = items.byStatus('ready');
  * if (items.hasMore('ready')) await items.loadMore('ready', 100);
  * ```
@@ -220,6 +247,18 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	declare projectSlug: string;
 	/** Rows each status window starts with. */
 	declare limit: number;
+	/**
+	 * Server-side filter on every window request; `setFilter` is the only way in.
+	 * Deliberately not named `filter`, which is the collection's own array method.
+	 */
+	private declare __filter: ItemsFilter | undefined;
+
+	/**
+	 * Which query the windows belong to, bumped by every filter change. A response
+	 * that resolves against an older one is answering a question the user has left,
+	 * so `load` discards it (see there).
+	 */
+	private declare __generation: number | undefined;
 
 	// Created lazily inside load() for the same reason: the base constructor fetches
 	// before a field initializer here would run, so an initializer would wipe what
@@ -250,8 +289,21 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	 * cannot see another client delete or move one, since it never pages that far.
 	 */
 	protected override async load(): Promise<Array<Record<string, unknown>>> {
-		const limits = this.__getLimits();
+		const generation = this.__generation ?? 0;
+		// A copy, not the live map: a loadMore/ensureLimit landing while these requests
+		// are out widens it, and recording the wider width as served would make the next
+		// load read rows it never got as unchanged — and flash them when they arrive.
+		const limits = new Map(this.__getLimits());
 		const pages = await Promise.all(ITEM_STATUSES.map((status) => this.__loadPage(status, limits.get(status)!)));
+
+		// A response to a query the user has already typed past ("ab" landing after
+		// "abc" went out) answers the wrong question, rows and window bookkeeping
+		// alike. Identity rows for what is loaded are the reconcile's "change
+		// nothing" input, so the collection holds still until the refetch that the
+		// filter change queued brings the real answer.
+		if (generation !== (this.__generation ?? 0)) {
+			return this.map((item) => ({ key: item.key, updatedAt: item.updatedAt }));
+		}
 
 		// Any page wins over a held item: the server may have moved it to another
 		// status since, and the reconcile keeps the first row per key, so the full
@@ -263,7 +315,10 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 		const boundaries = new Map<ItemStatus, number>();
 		const served = this.__served ?? new Map<ItemStatus, number>();
 		for (const page of pages) {
-			const beyondWindow = page.boundaryRank === undefined
+			// Nothing is held past a window this query has not served yet: whatever sits
+			// out there was put there by the previous question and may not even match
+			// this one, so a filter change (which clears `served`) lets it go.
+			const beyondWindow = page.boundaryRank === undefined || served.get(page.status) === undefined
 				? []
 				: this.filter((item) => item.status === page.status && !inAnyPage.has(item.key) && item.rank >= page.boundaryRank!);
 			for (const item of beyondWindow) rows.push({ key: item.key, updatedAt: item.updatedAt });
@@ -280,9 +335,22 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 		return rows;
 	}
 
+	/**
+	 * One status window's query string. The extra row past `limit` is the window
+	 * boundary (see load); the filter params are omitted when they hold nothing,
+	 * so an unfiltered board issues exactly the request it always did.
+	 */
+	private __pageUrl(status: ItemStatus, limit: number): string {
+		const params = new URLSearchParams({ status, limit: String(limit + 1) });
+		const { search, type } = normalizeFilter(this.__filter);
+		if (search) params.set('search', search);
+		if (type) params.set('type', type);
+		return `${this.getUrl()}?${params.toString()}`;
+	}
+
 	private async __loadPage(status: ItemStatus, limit: number): Promise<StatusPage> {
 		const { data, headers } = await fetchClient.getResponse<Array<Record<string, unknown>>>(
-			`${this.getUrl()}?status=${status}&limit=${limit + 1}`
+			this.__pageUrl(status, limit)
 		);
 		const rows = data.slice(0, limit);
 		const boundary = data[limit];
@@ -324,6 +392,19 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 		return this.loadedFor(status) + (this.__remaining?.get(status) ?? 0);
 	}
 
+	/**
+	 * Whether a search or type filter is narrowing the windows. Views need it
+	 * because an item's own `children` are always the unfiltered set, so anything
+	 * that renders them next to the filtered rows (the table's expand) has to stand
+	 * down while this is true. A type filter alone still returns top-level items; a
+	 * non-empty search also returns matched children as rows of their own, which is
+	 * the case where expanding would show the same item twice.
+	 */
+	get filterActive(): boolean {
+		const { search, type } = normalizeFilter(this.__filter);
+		return search !== '' || type !== undefined;
+	}
+
 	/** Whether the server holds items in this status past the loaded window. */
 	hasMore(status: ItemStatus): boolean {
 		return (this.__remaining?.get(status) ?? 0) > 0;
@@ -338,6 +419,28 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 		return this.__boundaries?.get(status);
 	}
 
+	/**
+	 * Point the collection at a different query. Unlike a widened window this is not
+	 * more of what is loaded, so every window starts over at the base `limit` and the
+	 * bookkeeping of the old query goes with it — including the items it was holding
+	 * past its windows, which have no standing under a filter they may not even match.
+	 * Callers debounce free text; a no-op change (the same trimmed search and type)
+	 * doesn't refetch, which is what keeps a keystroke-per-render caller cheap.
+	 */
+	async setFilter(filter: ItemsFilter): Promise<void> {
+		const next = normalizeFilter(filter);
+		const current = normalizeFilter(this.__filter);
+		if (next.search === current.search && next.type === current.type) return;
+
+		this.__filter = next;
+		this.__generation = (this.__generation ?? 0) + 1;
+		this.__limits = undefined;
+		this.__remaining = undefined;
+		this.__boundaries = undefined;
+		this.__served = undefined;
+		await this.fetch({ force: true });
+	}
+
 	/** Widen one status window by `count` rows and refetch. The rows it adds are not flashed. */
 	async loadMore(status: ItemStatus, count: number): Promise<void> {
 		const limits = this.__getLimits();
@@ -346,14 +449,18 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	}
 
 	/**
-	 * Make every window at least `limit` rows wide. Refetches only when that can
-	 * change anything: some status has rows past its window, or the first load is
-	 * still in flight (it went out at the old width; `force` waits for it and then
-	 * re-requests at the new one). Used when a view with a larger page size takes
-	 * over the collection.
+	 * Make every window at least `limit` rows wide, now and for the windows any later
+	 * query starts with. Refetches only when that can change anything: some status has
+	 * rows past its window, or the first load is still in flight (it went out at the
+	 * old width; `force` waits for it and then re-requests at the new one). Used when
+	 * a view with a larger page size takes over the collection.
 	 */
 	async ensureLimit(limit: number): Promise<void> {
 		const limits = this.__getLimits();
+		// A floor for the collection, not just for the windows it holds now: a later
+		// filter change starts its windows over at `limit`, and the view that asked
+		// for this width still needs it.
+		this.limit = Math.max(this.limit, limit);
 		let grew = false;
 		let hasMore = false;
 		for (const status of ITEM_STATUSES) {

@@ -6,7 +6,7 @@
  * are themselves items, so the same operations apply at every level.
  */
 
-import { formatItemKey } from '@specboard/core/identifiers';
+import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin } from '../types.ts';
 import { clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
@@ -204,6 +204,31 @@ function pageLimit(requested: number | undefined): number {
 	return Math.min(Math.max(Math.trunc(n), 1), MAX_LIST_LIMIT);
 }
 
+/**
+ * A search term as a literal ILIKE pattern. `%`, `_`, and the backslash escape itself
+ * are wildcards to Postgres, so an unescaped `foo_bar` would also match `fooXbar`.
+ * Backslash is LIKE's default escape character, so no ESCAPE clause is needed.
+ */
+function likeLiteral(term: string): string {
+	return term.replace(/[\\%_]/g, '\\$&');
+}
+
+const BARE_NUMBER = /^[0-9]{1,9}$/;
+
+/**
+ * The key half of a search term, or null when the term doesn't name a key. A key is
+ * matched exactly: as a substring, `SAM-42` would also match on `s`, `sam`, and `-`,
+ * so every keystroke on the way to typing a key returns the whole project.
+ * The full-key branch defers to `parseItemKey` for the canonical `SB-345` format
+ * (2-10 char project key, 1-9 digit number) rather than a looser local regex.
+ */
+function keyTerm(term: string): { projectKey?: string; number: number } | null {
+	const full = parseItemKey(term.toUpperCase());
+	if (full) return { projectKey: full.projectKey, number: full.number };
+	if (BARE_NUMBER.test(term)) return { number: Number(term) };
+	return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -299,11 +324,16 @@ type ItemWithCounts = ItemRow & {
  * per-project number. Optionally include each item's children, activity-log entries, specs,
  * blockers, and active workers.
  *
+ * A search is the exception to top-level-only: it matches at any depth, so a child task
+ * is findable without knowing which parent holds it. Matched children carry `parentKey`.
+ * Every other filter applies to the matched item's own row, whatever its parent's state.
+ *
  * `total` is the number of rows the filters matched, which can exceed the page when
  * `limit` cut it; it is what lets a client show a bounded window and know more exists.
  */
 export async function getItems(params: GetItemsParams): Promise<ItemList> {
-	const { projectId, itemNumber, status, type, search, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers } = params;
+	const { projectId, itemNumber, status, type, excludeBlocked, includeChildren, includeNotes, includeSpecs, includeBlockers, includeWorkers } = params;
+	const search = params.search?.trim() || undefined;
 	const limit = pageLimit(params.limit);
 
 	// The project join supplies the key that every item key is built from.
@@ -338,8 +368,10 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 		queryParams.push(itemNumber);
 		paramIndex++;
 	} else {
-		// Lists show top-level items only; children surface via includeChildren.
-		sql += ` AND i.parent_id IS NULL`;
+		// Lists show top-level items only; children surface via includeChildren. A search
+		// lifts that: it spans every depth, because an item you can name is an item you
+		// should be able to find without first knowing its parent.
+		if (!search) sql += ` AND i.parent_id IS NULL`;
 		if (status) {
 			sql += ` AND i.status = $${paramIndex}`;
 			queryParams.push(status);
@@ -351,9 +383,22 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 			paramIndex++;
 		}
 		if (search) {
-			sql += ` AND (i.title ILIKE $${paramIndex} OR i.description ILIKE $${paramIndex})`;
-			queryParams.push(`%${search}%`);
+			// Text is matched as a substring, a key only in full: `SB-345` or a bare `345`.
+			// Both are ORed with the text match, so a title that mentions a key still hits.
+			sql += ` AND (i.title ILIKE $${paramIndex} OR i.description ILIKE $${paramIndex}`;
+			queryParams.push(`%${likeLiteral(search)}%`);
 			paramIndex++;
+			const key = keyTerm(search);
+			if (key?.projectKey !== undefined) {
+				sql += ` OR (UPPER(p.key) = $${paramIndex} AND i.number = $${paramIndex + 1})`;
+				queryParams.push(key.projectKey, key.number);
+				paramIndex += 2;
+			} else if (key) {
+				sql += ` OR i.number = $${paramIndex}`;
+				queryParams.push(key.number);
+				paramIndex++;
+			}
+			sql += `)`;
 		}
 		if (excludeBlocked) {
 			sql += ` AND NOT (i.status = 'blocked' OR ob.item_id IS NOT NULL)`;

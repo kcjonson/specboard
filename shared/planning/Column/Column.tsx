@@ -142,6 +142,10 @@ export function Column({
 								<ItemCard
 									item={item}
 									projectSlug={projectSlug}
+									// A child row a search turned up is ranked among its parent's
+									// children, not among this column's cards, so there is no
+									// position here to drag it into. It still opens and selects.
+									draggable={!item.parentKey}
 									isSelected={item.key === selectedItemKey}
 									isHighlighted={flashingIds.has(item.key)}
 									onSelect={onSelectItem}

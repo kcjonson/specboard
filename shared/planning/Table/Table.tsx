@@ -3,7 +3,6 @@ import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
 import { Button, Icon, StatusDot } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
-import { isFilterActive, matchesFilters, type PlanningFilters } from '../Planning/filters';
 import { SHOW_DONE_PREF, readPref, writePref } from '../Planning/prefs';
 import styles from './Table.module.css';
 
@@ -26,8 +25,6 @@ const GROUPS: { status: ItemStatus; label: string; whenNonEmpty?: boolean }[] = 
 export interface TableProps {
 	/** Shared collection owned by the Planning container. */
 	items: ItemsCollection;
-	/** Active toolbar filters (applied to the epics shown). */
-	filters: PlanningFilters;
 	selectedItemKey?: string;
 	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
@@ -46,12 +43,17 @@ function ensureTasksLoaded(item: ItemModel): void {
 }
 
 /**
- * Table view — epics grouped by status into divided sections, each epic an
- * expandable tree row whose task children load lazily on first expand.
+ * Table view — items grouped by status into divided sections, each an expandable
+ * tree row whose children load lazily on first expand.
+ *
+ * Expansion is off while any filter is active, because an item's `children` load
+ * from the unfiltered children endpoint and would show rows the filter excluded.
+ * With a search on, it would be worse: matched children are already rows of their
+ * own, so expanding their parent would render each a second time as a separate
+ * model. A type-only filter still lists top-level items; the rule is the same.
  */
 export function Table({
 	items,
-	filters,
 	selectedItemKey,
 	flashingIds,
 	onSelectItem,
@@ -72,7 +74,6 @@ export function Table({
 	// Which sections are fetching their next page; each "Show more" shows its own
 	// loading state, so two clicks in flight at once don't clear each other.
 	const [loadingMore, setLoadingMore] = useState<ReadonlySet<ItemStatus>>(() => new Set());
-	const filtersActive = isFilterActive(filters);
 
 	const handleLoadMore = useCallback(async (status: ItemStatus): Promise<void> => {
 		setLoadingMore((prev) => new Set(prev).add(status));
@@ -87,15 +88,20 @@ export function Table({
 		}
 	}, [items]);
 
+	// The collection holds exactly what the current query matched, so sections are a
+	// plain grouping; a search also matches child items, which appear as rows in the
+	// section for their own status, labelled with the parent they hang under.
 	const grouped = useMemo(() => {
 		const byStatus = {} as Record<ItemStatus, ItemModel[]>;
 		for (const group of GROUPS) {
-			byStatus[group.status] = items.byStatus(group.status).filter((i) => matchesFilters(i, filters));
+			byStatus[group.status] = items.byStatus(group.status);
 		}
 		return byStatus;
 		// items.version changes on add/remove/status change so the grouping recomputes
 		// even though the collection reference is stable.
-	}, [items, items.version, filters]);
+	}, [items, items.version]);
+
+	const expandable = !items.filterActive;
 
 	const toggleExpand = useCallback((item: ItemModel): void => {
 		const willExpand = !expanded.has(item.id);
@@ -131,12 +137,16 @@ export function Table({
 	return (
 		<div class={styles.wrapper}>
 			<div class={styles.actions}>
-				<button type="button" class="secondary size-sm" onClick={expandAll}>
-					Expand all
-				</button>
-				<button type="button" class="secondary size-sm" onClick={collapseAll}>
-					Collapse all
-				</button>
+				{expandable && (
+					<>
+						<button type="button" class="secondary size-sm" onClick={expandAll}>
+							Expand all
+						</button>
+						<button type="button" class="secondary size-sm" onClick={collapseAll}>
+							Collapse all
+						</button>
+					</>
+				)}
 				<Button class={`secondary size-sm ${styles.toggle}`} aria-pressed={showDone} onClick={toggleShowDone}>
 					{/* Both states carry a box so the button's width never shifts on toggle. */}
 					<Icon name={showDone ? 'checkbox-checked' : 'checkbox-unchecked'} class="size-sm" />
@@ -162,7 +172,7 @@ export function Table({
 								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={5}>
 									<StatusDot status={status} />
 									<span class={styles.groupLabel}>{label}</span>
-										<span class={styles.groupCount}>{filtersActive ? groupItems.length : items.totalFor(status)}</span>
+									<span class={styles.groupCount}>{items.totalFor(status)}</span>
 								</span>
 							</div>
 
@@ -175,6 +185,7 @@ export function Table({
 									<ItemRow
 										key={item.id}
 										item={item}
+										expandable={expandable}
 										expanded={expanded.has(item.id)}
 										selected={item.key === selectedItemKey}
 										flashing={flashingIds.has(item.key)}

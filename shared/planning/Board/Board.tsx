@@ -3,7 +3,6 @@ import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type Status, type ItemStatus } from '@specboard/models';
 import { Column, type ColumnMore } from '../Column/Column';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
-import { isFilterActive, matchesFilters, type PlanningFilters } from '../Planning/filters';
 import styles from './Board.module.css';
 
 /** Cards a column starts with, and how many each "show more" adds. */
@@ -13,8 +12,6 @@ export interface BoardProps {
 	/** Shared collection owned by the Planning container. */
 	items: ItemsCollection;
 	projectSlug: string;
-	/** Active toolbar filters (applied to the cards shown in each column). */
-	filters: PlanningFilters;
 	selectedItemKey?: string;
 	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
@@ -32,7 +29,6 @@ export interface BoardProps {
 export function Board({
 	items,
 	projectSlug,
-	filters,
 	selectedItemKey,
 	flashingIds,
 	dialogOpen,
@@ -40,19 +36,21 @@ export function Board({
 	onOpenItem,
 	onCreateItem,
 }: BoardProps): JSX.Element {
-	// Items grouped by status, with the toolbar filters applied to the cards shown.
+	// Items grouped by status. The collection holds exactly what the current query
+	// matched, so there is nothing to filter here; a search also matches child items,
+	// and those sit in the column of their own status like any other card.
 	// 'blocked' holds the status-level manual holds (row-blocked items stay in
 	// their real column with a chip); its column renders only when non-empty.
 	const itemsByStatus = useMemo(
 		() => ({
-			ready: items.byStatus('ready').filter((i) => matchesFilters(i, filters)),
-			in_progress: items.byStatus('in_progress').filter((i) => matchesFilters(i, filters)),
-			blocked: items.byStatus('blocked').filter((i) => matchesFilters(i, filters)),
-			done: items.byStatus('done').filter((i) => matchesFilters(i, filters)),
+			ready: items.byStatus('ready'),
+			in_progress: items.byStatus('in_progress'),
+			blocked: items.byStatus('blocked'),
+			done: items.byStatus('done'),
 		}),
 		// items.version changes on add/remove/status change so the grouping recomputes
 		// even though the collection reference is stable.
-		[items, items.version, filters]
+		[items, items.version]
 	);
 	const blockedItems = itemsByStatus.blocked;
 
@@ -72,10 +70,8 @@ export function Board({
 		}
 	}, [items]);
 
-	// The header count is the server total for the status; a filter narrows it to
-	// what the column actually shows. The ghost card is always about the unfiltered
-	// status, since that's what "show more" loads.
-	const filtersActive = isFilterActive(filters);
+	// The header count is the server total for the status — already narrowed by
+	// whatever filter is active, since the server counts what it matched.
 	const columnMore = (status: ItemStatus): ColumnMore | undefined => {
 		if (!items.hasMore(status)) return undefined;
 		return {
@@ -85,8 +81,6 @@ export function Board({
 			onLoadMore: () => void handleLoadMore(status),
 		};
 	};
-	const columnCount = (status: ItemStatus, shown: ItemModel[]): number =>
-		filtersActive ? shown.length : items.totalFor(status);
 
 	// Wrapper for Column (which only emits ItemModel, never undefined).
 	const handleColumnSelectItem = useCallback(
@@ -99,7 +93,7 @@ export function Board({
 	// the column length; and when the column has cards past its window it must be at
 	// least the first unloaded rank, or the next poll would read the card as dropped.
 	const endRank = useCallback((item: ItemModel, status: ItemStatus): number => {
-		const last = items.byStatus(status).filter((e) => e !== item).at(-1);
+		const last = items.byStatus(status).filter((e) => e !== item && !e.parentKey).at(-1);
 		const afterLoaded = last ? last.rank + 1 : 1;
 		const unloaded = items.firstUnloadedRank(status);
 		return unloaded === undefined ? afterLoaded : Math.max(afterLoaded, unloaded);
@@ -107,6 +101,9 @@ export function Board({
 
 	const handleMoveItem = useCallback(
 		(item: ItemModel, status: Status): void => {
+			// Same reason drag is off for it (see below): a child's rank belongs to its
+			// parent's sibling group, and a column rank would shove it to the end of that.
+			if (item.parentKey) return;
 			item.rank = endRank(item, status);
 			item.status = status;
 			item.save();
@@ -142,31 +139,29 @@ export function Board({
 	function handleDropItem(itemId: string, newStatus: Status, dropIndex: number): void {
 		const item = items.find((e) => e.id === itemId);
 		if (!item) return;
+		// A child row (a search match) has no top-level position to be dropped into;
+		// its card isn't draggable, so this only guards a drop from elsewhere.
+		if (item.parentKey) return;
 
-		// Items in the target column (excluding the dragged item if same column)
-		const targetColumnItems = items
-			.filter((e) => e.status === newStatus && e.id !== itemId)
-			.sort((a, b) => a.rank - b.rank);
+		// The column exactly as the drop index was measured against — Column counts
+		// rendered cards, so the dragged card and any child rows are in that index
+		// too. The ranks around the drop are the neighbouring siblings: children rank
+		// among their own parent's children, so they are no reference point here.
+		const rendered = items.byStatus(newStatus);
+		const siblings = (rows: ItemModel[]): ItemModel[] =>
+			rows.filter((e) => !e.parentKey && e.id !== itemId);
+		const before = siblings(rendered.slice(0, dropIndex)).at(-1);
+		const after = siblings(rendered.slice(dropIndex))[0];
 
-		// Calculate new rank based on drop position
 		let newRank: number;
-		const firstItem = targetColumnItems[0];
-		const lastItem = targetColumnItems[targetColumnItems.length - 1];
-
-		if (targetColumnItems.length === 0 || !firstItem || !lastItem) {
-			newRank = 1;
-		} else if (dropIndex === 0) {
-			newRank = firstItem.rank - 1;
-		} else if (dropIndex >= targetColumnItems.length) {
+		if (before && after) {
+			newRank = (before.rank + after.rank) / 2;
+		} else if (after) {
+			newRank = after.rank - 1;
+		} else if (before) {
 			newRank = endRank(item, newStatus);
 		} else {
-			const prevItem = targetColumnItems[dropIndex - 1];
-			const nextItem = targetColumnItems[dropIndex];
-			if (prevItem && nextItem) {
-				newRank = (prevItem.rank + nextItem.rank) / 2;
-			} else {
-				newRank = dropIndex + 1;
-			}
+			newRank = 1;
 		}
 
 		item.status = newStatus;
@@ -176,7 +171,7 @@ export function Board({
 		// If ranks get too close (fractional precision issues), normalize the column.
 		// Not while it has cards past its window: renumbering only the loaded ones
 		// could put them behind ranks the board can't see.
-		if (!items.hasMore(newStatus) && shouldNormalizeRanks(targetColumnItems, newRank)) {
+		if (!items.hasMore(newStatus) && shouldNormalizeRanks(siblings(rendered), newRank)) {
 			normalizeColumnRanks(newStatus);
 		}
 	}
@@ -194,8 +189,11 @@ export function Board({
 	}
 
 	function normalizeColumnRanks(status: Status): void {
+		// Top-level cards only: a child's rank numbers it against its parent's other
+		// children, so renumbering it 1..n against this column would rewrite the order
+		// of an unrelated parent's list.
 		const columnItems = items
-			.filter((e) => e.status === status)
+			.filter((e) => e.status === status && !e.parentKey)
 			.sort((a, b) => a.rank - b.rank);
 
 		columnItems.forEach((item, index) => {
@@ -224,7 +222,7 @@ export function Board({
 					status={status}
 					title={title}
 					items={columnItems}
-					count={columnCount(status, columnItems)}
+					count={items.totalFor(status)}
 					more={columnMore(status)}
 					projectSlug={projectSlug}
 					selectedItemKey={selectedItemKey}

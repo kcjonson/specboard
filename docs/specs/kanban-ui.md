@@ -340,8 +340,16 @@ Two consequences worth knowing:
   Locally moved items are kept, not removed, by the next poll, until a wider window
   returns them for real or the page reloads. A poll cannot see another client delete
   or move such an item, so a card can outlive the server row until then.
-- Search and the type filter still apply client-side, to what is loaded. Server-side
-  filtering of the windows is a follow-up.
+- Search and the type filter are the server's job, not the client's. They ride on
+  every window request as `search=` / `type=`, and `X-Total-Count` comes back
+  narrowed to match, so counts and "show more" go on meaning the same thing. A
+  filter change is a different question rather than a wider window: it resets every
+  window to its base size and drops what the old query was holding past them. The
+  search box is debounced before it becomes a query; the type Select applies at once.
+- A search matches items at any depth, so child items come back alongside top-level
+  ones, carrying the `parentKey` they hang under. Both views render such a row in
+  the section or column of the child's own status, labelled with that parent key,
+  and clicking it opens the child like any other item.
 
 ---
 

@@ -275,6 +275,103 @@ describe('getItems', () => {
 		expect(total).toBe(0);
 	});
 
+	it('restricts a plain list to top-level items', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', status: 'ready', type: 'task' });
+
+		const [sql] = mockQuery.mock.calls[0]!;
+		expect(sql).toContain('AND i.parent_id IS NULL');
+	});
+
+	it('searches every depth, matching a full item key exactly alongside title and description', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', search: 'sb-12' });
+
+		const [sql, params] = mockQuery.mock.calls[0]!;
+		expect(sql).not.toContain('i.parent_id IS NULL');
+		expect(sql).toContain('AND (i.title ILIKE $2 OR i.description ILIKE $2 OR (UPPER(p.key) = $3 AND i.number = $4))');
+		expect(params).toEqual(['proj-1', '%sb-12%', 'SB', 12, 25]);
+	});
+
+	it('matches a bare number against the item number', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', search: '42' });
+
+		const [sql, params] = mockQuery.mock.calls[0]!;
+		expect(sql).toContain('AND (i.title ILIKE $2 OR i.description ILIKE $2 OR i.number = $3)');
+		expect(params).toEqual(['proj-1', '%42%', 42, 25]);
+	});
+
+	it('emits no key clause for a term that is not a key, including the project key alone', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', search: 'sam' });
+		await getItems({ projectId: 'proj-1', search: '-' });
+		await getItems({ projectId: 'proj-1', search: 's-42' }); // project key too short
+		await getItems({ projectId: 'proj-1', search: '1234567890' }); // number too long
+
+		for (const [sql, params] of mockQuery.mock.calls) {
+			expect(sql).toContain('AND (i.title ILIKE $2 OR i.description ILIKE $2)');
+			expect(sql).not.toContain('UPPER(p.key)');
+			expect(sql).not.toContain('i.number =');
+			expect((params as unknown[]).length).toBe(3);
+		}
+	});
+
+	it('treats a whitespace-only search as no search at all', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', search: '   ' });
+
+		const [sql, params] = mockQuery.mock.calls[0]!;
+		expect(sql).toContain('AND i.parent_id IS NULL');
+		expect(sql).not.toContain('ILIKE');
+		expect(params).toEqual(['proj-1', 25]);
+	});
+
+	it('applies status and type to the matched item itself, whatever its parent is doing', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', status: 'ready', type: 'task', search: 'login' });
+
+		const [sql, params] = mockQuery.mock.calls[0]!;
+		expect(sql).not.toContain('i.parent_id IS NULL');
+		expect(sql).toContain('AND i.status = $2');
+		expect(sql).toContain('AND i.type = $3');
+		expect(sql).toContain('i.title ILIKE $4');
+		expect(params).toEqual(['proj-1', 'ready', 'task', '%login%', 25]);
+	});
+
+	it('escapes ILIKE wildcards so a literal _ or % in a term stays literal', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1', search: 'a_b%c\\d' });
+
+		const [, params] = mockQuery.mock.calls[0]!;
+		expect(params![1]).toBe('%a\\_b\\%c\\\\d%');
+	});
+
+	it('counts the deep match set in total and gives a matched child its parentKey', async () => {
+		const child = {
+			...makeItem({ id: 'child-1', number: 42, parent_id: 'item-1', type: 'task' }),
+			parent_number: 7,
+			child_count: '0',
+			done_count: '0',
+			in_progress_count: '0',
+			blocked_count: '0',
+			total_count: '31',
+		};
+		mockQuery.mockResolvedValueOnce({ rows: [child], rowCount: 1 } as never);
+
+		const { items, total } = await getItems({ projectId: 'proj-1', search: 'login' });
+
+		expect(total).toBe(31);
+		expect(items[0]).toMatchObject({ key: 'SB-42', parentKey: 'SB-7' });
+	});
+
 	it('orders children by rank with created_at and id tiebreakers', async () => {
 		const parent = {
 			...makeItem(),
