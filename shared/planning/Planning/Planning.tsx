@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type Status, type ItemType } from '@specboard/models';
+import { FetchError } from '@specboard/fetch';
 import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
@@ -378,9 +379,8 @@ export function Planning(props: RouteProps): JSX.Element {
 	const openItemMissing = Boolean(standaloneItem?.$meta.error);
 
 	// Measure the workspace so the drawer can't widen past leaving the board a
-	// usable minimum. A callback ref (not useRef + mount effect) is required
-	// because the workspace mounts only after the loading/error early-returns
-	// below resolve — a one-shot effect would attach before the node exists.
+	// usable minimum. A callback ref keeps the observer bound to whichever node
+	// is current rather than to the one present at mount.
 	const [workspaceWidth, setWorkspaceWidth] = useState(0);
 	const observerRef = useRef<ResizeObserver | null>(null);
 	const workspaceRefCallback = useCallback((node: HTMLDivElement | null): void => {
@@ -396,23 +396,56 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, []);
 	const drawerMaxWidth = workspaceWidth > 0 ? Math.max(DRAWER_MIN_WIDTH, workspaceWidth - BOARD_MIN_WIDTH) : undefined;
 
-	// Loading state
-	if (items.$meta.working && items.length === 0) {
-		return (
-			<Page projectSlug={projectSlug} activeTab="Planning">
-				<div class={styles.loading}>Loading...</div>
-			</Page>
-		);
-	}
+	// Loading and load failures render where the board goes, so the toolbar stays
+	// put: a poll or focus refetch retries on its own, and the filters are still
+	// there to clear. Replacing the page would unmount the search box on every
+	// retry and give a signed-out user nothing to act on.
+	const loadError = items.$meta.error;
+	const sessionExpired = loadError instanceof FetchError && loadError.status === 401;
+	const handleSignIn = useCallback((): void => {
+		const next = window.location.pathname + window.location.search + window.location.hash;
+		window.location.href = `/login?next=${encodeURIComponent(next)}`;
+	}, []);
 
-	// Error state from collection's $meta
-	if (items.$meta.error) {
-		return (
-			<Page projectSlug={projectSlug} activeTab="Planning">
-				<div class={styles.error}>Error: {items.$meta.error.message}</div>
-			</Page>
+	const renderViewArea = (): JSX.Element => {
+		if (sessionExpired) {
+			return (
+				<div class={styles.error} role="alert">
+					<p>Your session has expired. Sign in to keep working.</p>
+					<Button class="secondary" onClick={handleSignIn}>Sign in</Button>
+				</div>
+			);
+		}
+		if (loadError) {
+			return <div class={styles.error} role="alert">Error: {loadError.message}</div>;
+		}
+		if (items.$meta.working && items.length === 0) {
+			return <div class={styles.loading}>Loading...</div>;
+		}
+		return view === 'table' ? (
+			<Table
+				items={items}
+				filters={filters}
+				selectedItemKey={selectedItemKey}
+				flashingIds={flashingIds}
+				onSelectItem={handleSelectItem}
+				onOpenItem={handleOpenItem}
+				onOpenChild={handleOpenItemByKey}
+			/>
+		) : (
+			<Board
+				items={items}
+				projectSlug={projectSlug}
+				filters={filters}
+				selectedItemKey={selectedItemKey}
+				flashingIds={flashingIds}
+				dialogOpen={isNewItemDialogOpen}
+				onSelectItem={handleSelectItem}
+				onOpenItem={handleOpenItem}
+				onCreateItem={() => handleOpenNewItemDialog('epic')}
+			/>
 		);
-	}
+	};
 
 	return (
 		<Page projectSlug={projectSlug} activeTab="Planning">
@@ -443,31 +476,7 @@ export function Planning(props: RouteProps): JSX.Element {
 			</div>
 
 			<div class={styles.workspace} ref={workspaceRefCallback}>
-				<div class={styles.viewArea}>
-					{view === 'table' ? (
-						<Table
-							items={items}
-							filters={filters}
-							selectedItemKey={selectedItemKey}
-							flashingIds={flashingIds}
-							onSelectItem={handleSelectItem}
-							onOpenItem={handleOpenItem}
-							onOpenChild={handleOpenItemByKey}
-						/>
-					) : (
-						<Board
-							items={items}
-							projectSlug={projectSlug}
-							filters={filters}
-							selectedItemKey={selectedItemKey}
-							flashingIds={flashingIds}
-							dialogOpen={isNewItemDialogOpen}
-							onSelectItem={handleSelectItem}
-							onOpenItem={handleOpenItem}
-							onCreateItem={() => handleOpenNewItemDialog('epic')}
-						/>
-					)}
-				</div>
+				<div class={styles.viewArea}>{renderViewArea()}</div>
 
 				{openItem && !openItemMissing && (
 					<ItemDrawer

@@ -127,9 +127,8 @@ describe('NotesSection', () => {
 		fireEvent.input(input, { target: { value: 'Typed entry' } });
 		fireEvent.keyDown(input, { key: 'Enter' });
 
-		// add() appends the saved entry before the refetch lands, so the log passes
-		// through ['Older', 'Typed entry'] on its way to the server's order. Two
-		// entries is not the settled state; the order is.
+		// Two entries exist as soon as add() pushes the saved one to the bottom; the
+		// reorder is a second render, so wait on the order rather than the count.
 		await waitFor(() => {
 			const texts = Array.from(container.querySelectorAll('[role="listitem"] p')).map(
 				(el) => (el as Element).textContent
