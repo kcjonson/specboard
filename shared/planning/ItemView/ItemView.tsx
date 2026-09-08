@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { useModel, ItemModel, type ChildModel, type ItemStatus, type SubStatus } from '@specboard/models';
-import { Button, DialogFooter, Select, Text } from '@specboard/ui';
-import { TaskCard } from '../TaskCard/TaskCard';
+import { useModel, type ItemModel, type ItemStatus, type SubStatus } from '@specboard/models';
+import { Button, DialogFooter, Select } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
+import { ChildrenSection } from '../ChildrenSection/ChildrenSection';
 import { SpecsSection } from '../SpecsSection/SpecsSection';
 import { BlockersSection } from '../BlockersSection/BlockersSection';
 import { NotesSection } from '../NotesSection/NotesSection';
@@ -22,7 +22,7 @@ function stripNewlines(value: string): string {
 export interface ItemViewProps {
 	item: ItemModel;
 	onDelete?: (item: ItemModel) => void;
-	/** Open a child's detail by key (clicking a child card). */
+	/** Open a child's detail by key (clicking a child row). */
 	onOpenChild?: (itemKey: string) => void;
 }
 
@@ -95,12 +95,9 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 	const [titleDraft, setTitleDraft] = useState(stripNewlines(item.title || ''));
 	const titleRef = useRef<HTMLTextAreaElement>(null);
 	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
-	const [newTaskTitle, setNewTaskTitle] = useState('');
 
 	// Track whether description has unsaved changes
 	const descriptionDirtyRef = useRef(false);
-
-	const taskStats = item.childStats || { total: 0, done: 0, blocked: 0 };
 
 	// Sync the title draft to whichever item is open. Keyed on the model as well as
 	// the title so switching to an item whose title hasn't arrived yet clears the
@@ -139,17 +136,6 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 		setDescriptionAst(initialDescriptionAst);
 		descriptionDirtyRef.current = false;
 	}, [item, initialDescriptionAst]);
-
-	// Task status toggle
-	const handleToggleTaskStatus = (task: ChildModel): void => {
-		const prev = task.status;
-		const next = prev === 'done' ? 'ready' : 'done';
-		task.status = next; // optimistic; childStats reflects it immediately
-		const target = new ItemModel({ key: task.key, projectSlug: item.projectSlug, status: next });
-		target.save().catch(() => {
-			task.status = prev;
-		});
-	};
 
 	// Title — save on blur
 	const handleTitleBlur = (): void => {
@@ -190,24 +176,6 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 		}).catch(() => {
 			item.description = previousDescription;
 		});
-	};
-
-	// Add task
-	const handleAddTask = (): void => {
-		if (!newTaskTitle.trim()) return;
-		const title = newTaskTitle.trim();
-		setNewTaskTitle('');
-		// Create a child task under this item, then reload so it appears in the list.
-		const child = new ItemModel({ projectSlug: item.projectSlug, parentKey: item.key, title, type: 'task' });
-		child.save().then(() => item.fetch()).catch(() => {});
-	};
-
-	const handleAddTaskKeyDown = (e: KeyboardEvent): void => {
-		if (e.key === 'Enter') {
-			handleAddTask();
-		} else if (e.key === 'Escape') {
-			setNewTaskTitle('');
-		}
 	};
 
 	const handleStatusChange = (e: Event): void => {
@@ -349,35 +317,7 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 				</div>
 			</section>
 
-			{item.type === 'epic' && (
-				<section class={styles.section}>
-					<h3 class={styles.sectionTitle}>
-						Tasks ({taskStats.done}/{taskStats.total})
-					</h3>
-					<div class={styles.taskList} role="list">
-						{item.children.map((task) => (
-							<TaskCard key={task.id} task={task} onToggleStatus={handleToggleTaskStatus} onOpen={(child) => onOpenChild?.(child.key)} />
-						))}
-					</div>
-					<div class={styles.addTask}>
-						<Text
-							value={newTaskTitle}
-							onInput={(e) => setNewTaskTitle((e.target as HTMLInputElement).value)}
-							onKeyDown={handleAddTaskKeyDown}
-							placeholder="Add a task..."
-							ariaLabel="Add a task"
-							compact
-						/>
-						<Button
-							class="text"
-							onClick={handleAddTask}
-							disabled={!newTaskTitle.trim()}
-						>
-							+ Add
-						</Button>
-					</div>
-				</section>
-			)}
+			<ChildrenSection item={item} onOpenChild={onOpenChild} />
 
 			<BlockersSection
 				projectSlug={item.projectSlug}

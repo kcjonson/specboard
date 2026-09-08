@@ -1,25 +1,9 @@
 import type { JSX } from 'preact';
-import type { ChildModel, ItemStatus } from '@specboard/models';
-import { StatusDot, type StatusType } from '@specboard/ui';
+import type { ChildModel } from '@specboard/models';
+import { StatusDot } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
+import { STATUS_LABELS, DOT_STATUS } from '../utils/status';
 import styles from './Table.module.css';
-
-const STATUS_LABELS: Record<ItemStatus, string> = {
-	ready: 'Ready',
-	in_progress: 'In Progress',
-	blocked: 'Blocked',
-	in_review: 'In Review',
-	done: 'Done',
-};
-
-// 'in_review' has no dedicated StatusDot color — fall back to the neutral dot.
-const DOT_STATUS: Record<ItemStatus, StatusType> = {
-	ready: 'ready',
-	in_progress: 'in_progress',
-	blocked: 'blocked',
-	in_review: 'default',
-	done: 'done',
-};
 
 export interface ChildRowProps {
 	child: ChildModel;

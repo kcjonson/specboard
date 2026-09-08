@@ -111,34 +111,37 @@ Epic:
 | Selected | Border highlight |
 | Dragging | Elevated shadow, slight rotation |
 
-### Task Card (in Epic Detail Modal)
+### Child Row (in the item detail)
 
 **Properties:**
-- task: Task data
-- onToggleStatus: status toggle handler
-- onEdit: edit handler
+- item: the parent item
+- onOpenChild: opens a child's detail by key
 
-**Data Structure:**
-```
-Task:
-  id: string
-  title: string
-  status: 'ready' | 'in_progress' | 'done'
-  assignee: User (optional)
-  dueDate: Date (optional)
-```
+Every item's detail lists its children, whatever the item's own type: a bug can
+hold children too, and before this the detail view gave no way to see or add
+them. A childless task or bug collapses to the header line alone.
+
+**Data Structure:** the same child summary the table renders — `{ id, key, type,
+title, status, blocked }`.
 
 **Visual Design:**
 ```
-┌────────────────────────────────────────┐
-│ ☐ Implement login form             👤  │
-│   Due: Dec 25                          │
-└────────────────────────────────────────┘
-
-┌────────────────────────────────────────┐
-│ ☑ Design login UI                  👤  │  ← Completed (strikethrough)
-└────────────────────────────────────────┘
+◆ SB-41  Implement login form            ● In Progress
+▲ SB-42  Session cookie is dropped   Blocked   ● Ready
 ```
+
+There is deliberately no checkbox. A child is a first-class item with a status,
+a sub-status, blockers, spec links, and an activity log; a checkbox writes
+`status` alone and silently discards the rest, and it reads as a to-do that can
+be ticked off in place when the honest action is to open the item. Loose,
+unnumbered to-dos belong in the item's Checklist, which is what that affordance
+was really being used for.
+
+Only the first ten children render, with a "Show all N" line revealing the rest
+in place (they are already loaded with the item). A forty-child epic is over a
+thousand pixels of drawer ahead of Blockers, Specs, and the activity log — the
+sections that answer why the work is stuck. The table shows every child, which
+is right there: it has the horizontal room and no sections below to bury.
 
 ### Epic Detail Modal
 
@@ -154,20 +157,13 @@ Task:
 │                                                                 │
 │  ──────────────────────────────────────────────────────────────│
 │                                                                 │
-│  Tasks (3/7)                                    [+ Add Task]    │
+│  Children (3/7)                                  [+ Add ▾]      │
 │                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │ ☑ Design login UI                                    👤 │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │ ☑ Implement login API                                👤 │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │ ☐ Implement login form                               👤 │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │ ☐ Add form validation                                👤 │   │
-│  └─────────────────────────────────────────────────────────┘   │
+│  ◆ SB-38  Design login UI                          ● Done       │
+│  ◆ SB-39  Implement login API                      ● Done       │
+│  ◆ SB-40  Implement login form              Blocked  ● Ready    │
+│  ▲ SB-41  Session cookie is dropped                ● Ready      │
+│  Show all 7                                                     │
 │                                                                 │
 │  ──────────────────────────────────────────────────────────────│
 │                                                                 │
@@ -275,15 +271,15 @@ Press `N` anywhere:
 - Enter creates and focuses the new card
 - Tab to add description before creating
 
-### Task Quick Create
+### Child Quick Create
 
-In epic detail modal, press `C` or click "+ Add Task":
+In the item detail, `+ Add ▾` picks the child's type (Task by default, Bug or
+Epic from the dropdown) and opens the create dialog with this item pre-set as the
+parent. There is no one-field inline version: a child item is first-class work
+with a type, a status, and a description, and creating one should look like it.
+A failure surfaces in the section rather than being swallowed.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│ ☐ |                                                          │  ← Inline input
-└──────────────────────────────────────────────────────────────┘
-```
+Loose ends that are not worth an item of their own go in the Checklist instead.
 
 ---
 

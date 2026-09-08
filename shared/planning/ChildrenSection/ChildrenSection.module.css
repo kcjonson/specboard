@@ -1,0 +1,112 @@
+.section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-2);
+}
+
+.sectionTitle {
+	margin: 0;
+	font-size: var(--text-sm);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+}
+
+.list {
+	display: flex;
+	flex-direction: column;
+}
+
+/* Flex, not a grid: this renders from ~320px of drawer up to the full-screen
+   view, where a fixed status track would either wrap the row or crowd the title. */
+.row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-2) 0;
+	border-top: 1px solid var(--color-border);
+	font-size: var(--text-sm);
+}
+
+.row:first-child {
+	border-top: none;
+}
+
+/* Only a row that opens something looks and behaves clickable. */
+.clickable {
+	cursor: pointer;
+}
+
+.clickable:hover {
+	background: var(--color-surface-hover);
+}
+
+.key {
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 12px;
+	color: var(--color-text-muted);
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+
+.title {
+	flex: 1;
+	min-width: 0;
+	color: var(--color-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.status {
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	flex-shrink: 0;
+	color: var(--color-text-muted);
+	white-space: nowrap;
+}
+
+.blockedChip {
+	flex-shrink: 0;
+	font-size: var(--text-xs);
+	font-weight: var(--font-medium);
+	padding: 1px 6px;
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--color-error) 15%, transparent);
+	color: var(--color-error);
+	white-space: nowrap;
+}
+
+.showAll {
+	appearance: none;
+	border: none;
+	background: transparent;
+	align-self: flex-start;
+	padding: var(--space-1) 0;
+	font: inherit;
+	font-size: var(--text-sm);
+	color: var(--color-primary);
+	cursor: pointer;
+}
+
+.showAll:hover {
+	text-decoration: underline;
+}
+
+.placeholder {
+	margin: 0;
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+}
+
+.error {
+	color: var(--color-error);
+	font-size: var(--text-sm);
+}

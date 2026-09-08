@@ -46,8 +46,8 @@ export function ItemCard({
 	onDragStart,
 	onDragEnd,
 }: ItemCardProps): JSX.Element {
-	const taskStats = item.childStats;
-	const progressPercent = taskStats.total > 0 ? (taskStats.done / taskStats.total) * 100 : 0;
+	const childStats = item.childStats;
+	const progressPercent = childStats.total > 0 ? (childStats.done / childStats.total) * 100 : 0;
 	const subStatusLabel = item.subStatus ? SUB_STATUS_LABELS[item.subStatus] : undefined;
 
 	// A single click selects the card and opens it in the detail drawer.
@@ -121,7 +121,7 @@ export function ItemCard({
 				<p class={styles.description}>{item.description}</p>
 			)}
 
-			{taskStats.total > 0 && (
+			{childStats.total > 0 && (
 				<div class={styles.progress}>
 					<div class={styles.progressBar}>
 						<div
@@ -130,8 +130,8 @@ export function ItemCard({
 						/>
 					</div>
 					<div class={styles.progressText}>
-						{taskStats.done}/{taskStats.total} tasks
-						{taskStats.blocked > 0 && ` · ${taskStats.blocked} blocked`}
+						{childStats.done}/{childStats.total} children
+						{childStats.blocked > 0 && ` · ${childStats.blocked} blocked`}
 					</div>
 				</div>
 			)}

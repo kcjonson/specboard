@@ -14,7 +14,6 @@ export { NewItemForm } from './NewItemForm/NewItemForm';
 export type { NewItemFormProps, NewItemData } from './NewItemForm/NewItemForm';
 export { ItemDetail } from './ItemDetail/ItemDetail';
 export { ItemView } from './ItemView/ItemView';
-export { TaskCard } from './TaskCard/TaskCard';
 export { TypeBadge } from './TypeBadge/TypeBadge';
 
 // Hooks
