@@ -19,6 +19,12 @@ export type Status = 'ready' | 'in_progress' | 'done';
 /** Full item status (children may be blocked; epics may be in_review) */
 export type ItemStatus = 'ready' | 'in_progress' | 'blocked' | 'in_review' | 'done';
 
+/**
+ * State of one checklist entry. Deliberately a union rather than a boolean: more
+ * states are expected, and a boolean cannot grow into them without an API break.
+ */
+export type ChecklistStatus = 'todo' | 'done';
+
 /** Sub-status for detailed work state tracking */
 export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
 
@@ -541,6 +547,59 @@ export class BlockerModel extends SyncModel {
 export class BlockersCollection extends SyncCollection<BlockerModel> {
 	static url = '/api/projects/:projectSlug/items/:itemKey/blockers';
 	static Model = BlockerModel;
+
+	// Set dynamically via constructor initialProps — do NOT declare as class fields.
+	declare projectSlug: string;
+	declare itemKey: string;
+}
+
+/**
+ * Checklist entry — one scratch todo on an item: text and a status, nothing
+ * more. Deliberately not a child item: no key, no status, no history.
+ * Syncs with /api/projects/:projectSlug/items/:itemKey/checklist/:id
+ */
+export class ChecklistEntryModel extends SyncModel {
+	static override url = '/api/projects/:projectSlug/items/:itemKey/checklist/:id';
+
+	@prop accessor id!: string;
+	@prop accessor projectSlug!: string;
+	@prop accessor itemKey!: string;
+	@prop accessor text!: string;
+	@prop accessor status!: ChecklistStatus;
+
+	/**
+	 * Write ONLY the named fields. save() would PUT the whole model, so a status
+	 * toggle would carry this client's copy of `text` and overwrite a rename made
+	 * somewhere else in between — the exact clobbering the sub-resource exists to
+	 * avoid. The handler patches whatever it is sent, so sending one field changes
+	 * one field.
+	 */
+	async patch(fields: Partial<Pick<ChecklistEntryData, 'text' | 'status'>>): Promise<void> {
+		const result = await fetchClient.put<Record<string, unknown>>(this.buildUrl(), fields);
+		this.set(result as Partial<ModelData<this>>);
+	}
+}
+
+/** The writable fields of a checklist entry. */
+interface ChecklistEntryData {
+	text: string;
+	status: ChecklistStatus;
+}
+
+/**
+ * An item's checklist, in display order.
+ * Syncs with /api/projects/:projectSlug/items/:itemKey/checklist
+ *
+ * add({ text }) appends an entry; entry.save() writes that ONE entry in place
+ * (the server rewrites only the matched element, so ticking one box can't
+ * clobber a concurrent edit to a different one); remove(entry) deletes it.
+ * There is no checklist prop on ItemModel for the same reason: SyncModel.save()
+ * PUTs the whole model, so the array would ride along on every title or status
+ * edit and overwrite whatever an agent wrote in between.
+ */
+export class ChecklistCollection extends SyncCollection<ChecklistEntryModel> {
+	static url = '/api/projects/:projectSlug/items/:itemKey/checklist';
+	static Model = ChecklistEntryModel;
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
 	declare projectSlug: string;
