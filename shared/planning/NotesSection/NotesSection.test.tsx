@@ -127,11 +127,15 @@ describe('NotesSection', () => {
 		fireEvent.input(input, { target: { value: 'Typed entry' } });
 		fireEvent.keyDown(input, { key: 'Enter' });
 
-		await waitFor(() => expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2));
-		const texts = Array.from(container.querySelectorAll('[role="listitem"] p')).map(
-			(el) => (el as Element).textContent
-		);
-		expect(texts).toEqual(['Typed entry', 'Older']);
+		// add() appends the saved entry before the refetch lands, so the log passes
+		// through ['Older', 'Typed entry'] on its way to the server's order. Two
+		// entries is not the settled state; the order is.
+		await waitFor(() => {
+			const texts = Array.from(container.querySelectorAll('[role="listitem"] p')).map(
+				(el) => (el as Element).textContent
+			);
+			expect(texts).toEqual(['Typed entry', 'Older']);
+		});
 	});
 
 	it('does not post twice when Enter is pressed again mid-request', async () => {
