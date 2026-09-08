@@ -1,7 +1,7 @@
 import type { ItemStatus } from '@specboard/models';
-import type { StatusType } from '@specboard/ui';
+import type { StatusType } from './StatusDot/StatusDot';
 
-/** Status labels shared by every view that renders a child item. */
+/** Status labels shared by every view that renders an item's status. */
 export const STATUS_LABELS: Record<ItemStatus, string> = {
 	ready: 'Ready',
 	in_progress: 'In Progress',

@@ -33,17 +33,23 @@ export interface ItemDrawerProps {
 export interface MissingItemDrawerProps {
 	/** The key from the route that didn't resolve. */
 	itemKey: string;
+	/**
+	 * HTTP status of the failed first load. 404 means the item is gone; anything
+	 * else means the load failed and we cannot say whether it exists.
+	 */
+	status?: number;
 	onClose: () => void;
 }
 
 /**
- * Shown in place of the drawer when the route names an item that doesn't resolve —
- * one deleted while the page was open, or a dangling reference from the editor.
- * Rendering the normal drawer
- * for a failed fetch gives an empty but *editable* panel, whose Save and Delete act
- * on an item that isn't there.
+ * Shown in place of the drawer when the route names an item we cannot display —
+ * one deleted while the page was open, a dangling reference from the editor, or a
+ * first load that simply failed. Rendering the normal drawer for a failed fetch
+ * gives an empty but *editable* panel, whose Save and Delete act on an item that
+ * may not be there. The message distinguishes gone from unreachable; the panel is
+ * inert either way, which is the part that matters.
  */
-export function MissingItemDrawer({ itemKey, onClose }: MissingItemDrawerProps): JSX.Element {
+export function MissingItemDrawer({ itemKey, status, onClose }: MissingItemDrawerProps): JSX.Element {
 	return (
 		<ResizablePanel
 			storageKey="planning-drawer"
@@ -64,7 +70,11 @@ export function MissingItemDrawer({ itemKey, onClose }: MissingItemDrawerProps):
 				</div>
 				<div class={styles.content}>
 					<p class={styles.missing}>
-						{itemKey} couldn&apos;t be found. It may have been deleted, or the link may be wrong.
+						{/* Only a real 404 claims the item is gone. Without a status the
+						    failure was not an HTTP response at all, so we cannot say. */}
+						{status === 404
+							? `${itemKey} couldn't be found. It may have been deleted, or the link may be wrong.`
+							: `${itemKey} couldn't be loaded. Close this and try again.`}
 					</p>
 				</div>
 			</div>
@@ -129,7 +139,7 @@ export function ItemDrawer({ item, projectSlug, maxWidth, onClose, onDelete, onO
 					</div>
 				</div>
 				<div class={styles.content}>
-					<ItemView item={item} onDelete={onDelete} onOpenChild={onOpenItem} />
+					<ItemView item={item} onDelete={onDelete} onOpenItem={onOpenItem} />
 				</div>
 			</div>
 		</ResizablePanel>

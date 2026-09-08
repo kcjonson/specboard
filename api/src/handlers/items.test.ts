@@ -1,7 +1,7 @@
 /**
- * Item list handler tests — the window contract the planning views rely on:
- * the body stays an array, the match count rides in X-Total-Count, and `limit`
- * passes through to the service (which clamps it).
+ * Item handler tests — the window contract the planning views rely on (the body
+ * stays an array, the match count rides in X-Total-Count, `limit` passes through
+ * to the service, which clamps it), and the move route's rejection contract.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -27,8 +27,8 @@ vi.mock('@specboard/db', () => ({
 	ItemCycleError: class extends Error {},
 }));
 
-import { getItems } from '@specboard/db';
-import { handleListItems } from './items.ts';
+import { getItems, moveItem, wouldCreateCycle, verifyItemOwnership, ItemCycleError } from '@specboard/db';
+import { handleListItems, handleMoveItem } from './items.ts';
 
 const PROJECT: ResolvedProject = { id: 'proj-1', slug: 'specboard', key: 'SB' };
 
@@ -40,7 +40,16 @@ function createApp(): Hono<{ Variables: { userId: string; project: ResolvedProje
 		await next();
 	});
 	app.get('/api/projects/:projectSlug/items', handleListItems);
+	app.post('/api/projects/:projectSlug/items/:itemKey/move', handleMoveItem);
 	return app;
+}
+
+function move(itemKey: string, body: unknown): Promise<Response> {
+	return Promise.resolve(createApp().request(`http://localhost/api/projects/specboard/items/${itemKey}/move`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(body),
+	}));
 }
 
 function list(query: string): Promise<Response> {
@@ -51,6 +60,11 @@ const ITEM = { id: 'i-1', key: 'SB-1', title: 'One', origin: null };
 
 beforeEach(() => {
 	vi.mocked(getItems).mockReset();
+	vi.mocked(moveItem).mockReset();
+	vi.mocked(wouldCreateCycle).mockReset();
+	vi.mocked(wouldCreateCycle).mockResolvedValue(false);
+	vi.mocked(verifyItemOwnership).mockReset();
+	vi.mocked(verifyItemOwnership).mockResolvedValue(true);
 });
 
 describe('handleListItems', () => {
@@ -93,5 +107,71 @@ describe('handleListItems', () => {
 
 		const limits = vi.mocked(getItems).mock.calls.map(([params]) => params.limit);
 		expect(limits).toEqual([500, 99999, 500]);
+	});
+});
+
+describe('handleMoveItem', () => {
+	it('reparents by key and returns the moved item', async () => {
+		vi.mocked(moveItem).mockResolvedValue({ key: 'SB-42', parentKey: 'SB-7', parentTitle: 'Auth System', origin: null } as never);
+
+		const response = await move('SB-42', { parentKey: 'SB-7' });
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ key: 'SB-42', parentKey: 'SB-7', parentTitle: 'Auth System' });
+		expect(moveItem).toHaveBeenCalledWith('proj-1', 42, 7);
+	});
+
+	it('promotes to top-level on a null parentKey', async () => {
+		vi.mocked(moveItem).mockResolvedValue({ key: 'SB-42', parentKey: null, parentTitle: null, origin: null } as never);
+
+		const response = await move('SB-42', { parentKey: null });
+
+		expect(response.status).toBe(200);
+		expect(moveItem).toHaveBeenCalledWith('proj-1', 42, null);
+	});
+
+	it('rejects a cycle-forming move without writing, so the item keeps the parent it had', async () => {
+		vi.mocked(wouldCreateCycle).mockResolvedValue(true);
+
+		const response = await move('SB-7', { parentKey: 'SB-42' });
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'Cannot move an item under itself or one of its descendants' });
+		// The invariant the guard exists for: nothing was detached on the way to the refusal.
+		expect(moveItem).not.toHaveBeenCalled();
+	});
+
+	it('reports a cycle the service caught inside its UPDATE as a 400, not a 500', async () => {
+		// The pre-check and the UPDATE's own guard are separate: a concurrent move can
+		// close the cycle between them, and the service is the one that must win.
+		vi.mocked(moveItem).mockRejectedValue(new ItemCycleError());
+
+		const response = await move('SB-7', { parentKey: 'SB-42' });
+
+		expect(response.status).toBe(400);
+	});
+
+	it('refuses to make an item its own parent', async () => {
+		const response = await move('SB-42', { parentKey: 'SB-42' });
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'An item cannot be its own parent' });
+		expect(moveItem).not.toHaveBeenCalled();
+	});
+
+	it('404s a parent key that names nothing in this project', async () => {
+		vi.mocked(verifyItemOwnership).mockImplementation(async (_projectId: string, number: number) => number !== 99);
+
+		const response = await move('SB-42', { parentKey: 'SB-99' });
+
+		expect(response.status).toBe(404);
+		expect(moveItem).not.toHaveBeenCalled();
+	});
+
+	it('400s a parentKey that is not a key at all', async () => {
+		const response = await move('SB-42', { parentKey: 'not-a-key' });
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'Invalid parentKey' });
 	});
 });

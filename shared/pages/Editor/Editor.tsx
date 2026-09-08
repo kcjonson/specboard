@@ -17,10 +17,10 @@ import {
 import { fetchClient, FetchError } from '@specboard/fetch';
 import { captureError } from '@specboard/telemetry';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
+import { ItemPicker } from '../ItemPicker/ItemPicker';
 import { MarkdownEditor, fromMarkdown, toMarkdown, type MarkdownEditorHandle } from '../MarkdownEditor';
 import { ChatSidebar } from '../ChatSidebar';
 import { EditorHeader } from './EditorHeader';
-import { EpicPicker } from './EpicPicker';
 import { RecoveryDialog } from './RecoveryDialog';
 import { SaveErrorBanner } from './SaveErrorBanner';
 import styles from './Editor.module.css';
@@ -173,7 +173,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Epic linking state
 	const [linkedEpicKey, setLinkedEpicKey] = useState<string | undefined>();
 	const [creatingEpic, setCreatingEpic] = useState(false);
-	const [epicPickerOpen, setEpicPickerOpen] = useState(false);
+	const [itemPickerOpen, setItemPickerOpen] = useState(false);
 	const creatingEpicRef = useRef(false);
 
 	// Restore file state
@@ -487,7 +487,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Link the current document to an existing epic (as a product spec)
 	const handleLinkEpic = useCallback(async (epicKey: string) => {
 		const filePath = documentModel.filePath;
-		setEpicPickerOpen(false);
+		setItemPickerOpen(false);
 		if (!filePath) return;
 		try {
 			await fetchClient.post(
@@ -874,7 +874,7 @@ export function Editor(props: RouteProps): JSX.Element {
 								creatingEpic={creatingEpic}
 								onCreateEpic={handleCreateEpic}
 								onViewEpic={handleViewEpic}
-								onLinkEpic={() => setEpicPickerOpen(true)}
+								onLinkEpic={() => setItemPickerOpen(true)}
 								onToggleChat={() => setChatOpen(true)}
 							/>
 							<div class={styles.mainContent}>
@@ -934,11 +934,12 @@ export function Editor(props: RouteProps): JSX.Element {
 					onDiscard={handleDiscard}
 				/>
 			)}
-			{epicPickerOpen && (
-				<EpicPicker
+			{itemPickerOpen && (
+				<ItemPicker
 					projectSlug={projectSlug}
+					title="Link to an existing item"
 					onSelect={handleLinkEpic}
-					onClose={() => setEpicPickerOpen(false)}
+					onClose={() => setItemPickerOpen(false)}
 				/>
 			)}
 		</Page>

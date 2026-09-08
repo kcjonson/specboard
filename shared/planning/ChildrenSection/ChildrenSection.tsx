@@ -1,11 +1,10 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { useModel, ItemModel, type ChildModel, type ItemType } from '@specboard/models';
-import { SplitButton, StatusDot, type SplitButtonOption } from '@specboard/ui';
+import { SplitButton, StatusDot, STATUS_LABELS, DOT_STATUS, type SplitButtonOption } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import type { NewItemData } from '../NewItemForm/NewItemForm';
-import { STATUS_LABELS, DOT_STATUS } from '../utils/status';
 import { TYPE_LABELS } from '../utils/itemType';
 import styles from './ChildrenSection.module.css';
 
@@ -20,7 +19,7 @@ const VISIBLE_LIMIT = 10;
 export interface ChildrenSectionProps {
 	item: ItemModel;
 	/** Open a child's detail by key; children are first-class items. */
-	onOpenChild?: (itemKey: string) => void;
+	onOpenItem?: (itemKey: string) => void;
 }
 
 /**
@@ -29,7 +28,7 @@ export interface ChildrenSectionProps {
  * blockers, and an activity log, and a checkbox writing `status` alone would
  * quietly discard the rest. Loose to-dos belong in the checklist.
  */
-export function ChildrenSection({ item, onOpenChild }: ChildrenSectionProps): JSX.Element {
+export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX.Element {
 	useModel(item);
 
 	const [createType, setCreateType] = useState<ItemType | undefined>(undefined);
@@ -48,28 +47,42 @@ export function ChildrenSection({ item, onOpenChild }: ChildrenSectionProps): JS
 
 	const handleCreate = useCallback(async (data: NewItemData): Promise<void> => {
 		setError(null);
-		const child = new ItemModel({ ...data, projectSlug: item.projectSlug, parentKey: item.key });
+		// The dialog opens on this item as the parent but the user can change it, so the
+		// payload's parentKey wins. Repointing it elsewhere means the new item doesn't
+		// land in this list, which is what was asked for.
+		const child = new ItemModel({ ...data, projectSlug: item.projectSlug });
 		try {
 			await child.save();
-			// FetchClient coalesces concurrent GETs by URL, so a read issued now can
-			// hand back one that started before the POST and miss the child we just
-			// made. Drain any in-flight read first, then take a fresh one.
-			if (item.$meta.working) await item.fetch();
-			await item.fetch();
 		} catch {
 			setError(`Could not create that ${TYPE_LABELS[data.type || 'task'].toLowerCase()}.`);
+			return;
 		} finally {
 			// Closed either way. The dialog is a native modal in the top layer, so an
 			// error left behind it would be invisible until the user gave up and closed
 			// it; the draft is the price of putting the message where they're looking.
 			setCreateType(undefined);
 		}
+
+		// The item exists from here on, so nothing below may report a failure to
+		// create it. A refresh that fails leaves the list a poll behind, which is
+		// recoverable; telling someone their item was not created when it was would
+		// have them make it twice.
+		if (data.parentKey !== item.key) return;
+		try {
+			// FetchClient coalesces concurrent GETs by URL, so a read issued now can
+			// hand back one that started before the POST and miss the child we just
+			// made. Drain any in-flight read first, then take a fresh one.
+			if (item.$meta.working) await item.fetch();
+			await item.fetch();
+		} catch {
+			setError('Created, but the list could not be refreshed.');
+		}
 	}, [item]);
 
 	const renderRow = (child: ChildModel): JSX.Element => {
 		// Without a way to open a child, a row is text. Keeping it focusable and
 		// clickable would only add a tab stop that does nothing.
-		const open = onOpenChild ? (): void => onOpenChild(child.key) : undefined;
+		const open = onOpenItem ? (): void => onOpenItem(child.key) : undefined;
 		return (
 			<div
 				key={child.id}
@@ -129,6 +142,7 @@ export function ChildrenSection({ item, onOpenChild }: ChildrenSectionProps): JS
 
 			{createType && (
 				<NewItemDialog
+					projectSlug={item.projectSlug}
 					createType={createType}
 					parentKey={item.key}
 					onClose={() => setCreateType(undefined)}

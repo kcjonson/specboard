@@ -116,13 +116,13 @@ describe('ChildrenSection', () => {
 	});
 
 	it('opens a child by key when its row is clicked', () => {
-		const onOpenChild = vi.fn();
+		const onOpenItem = vi.fn();
 		const item = makeItem('epic', [child({ key: 'SB-9' })]);
-		const { getByText } = render(<ChildrenSection item={item} onOpenChild={onOpenChild} />);
+		const { getByText } = render(<ChildrenSection item={item} onOpenItem={onOpenItem} />);
 
 		fireEvent.click(getByText('A child'));
 
-		expect(onOpenChild).toHaveBeenCalledWith('SB-9');
+		expect(onOpenItem).toHaveBeenCalledWith('SB-9');
 	});
 
 	it('caps the list at ten rows and reveals the rest on Show all', () => {
@@ -169,6 +169,20 @@ describe('ChildrenSection', () => {
 		expect(dialog.props?.parentKey).toBe('SB-1');
 	});
 
+	it('creates under the parent the form returned, not the item the dialog opened from', async () => {
+		post.mockResolvedValue({ id: 'c9', key: 'SB-9', number: 9, type: 'task', title: 'Moved work', status: 'ready' });
+		get.mockResolvedValue({ key: 'SB-1', children: [] });
+		const item = makeItem('epic', []);
+		const { getByText } = render(<ChildrenSection item={item} />);
+
+		fireEvent.click(getByText('Task'));
+		// The dialog opens on SB-1 but its parent field is editable, so the payload wins.
+		dialog.props?.onCreate({ title: 'Moved work', status: 'ready', type: 'task', parentKey: 'SB-4' });
+
+		await vi.waitFor(() => expect(post).toHaveBeenCalled());
+		expect(post.mock.calls[0]?.[1]).toMatchObject({ parentKey: 'SB-4' });
+	});
+
 	it('surfaces a failed create instead of swallowing it', async () => {
 		post.mockRejectedValue(new Error('nope'));
 		const item = makeItem('epic', []);
@@ -181,7 +195,36 @@ describe('ChildrenSection', () => {
 		expect(get).not.toHaveBeenCalled();
 	});
 
-	// onOpenChild is optional. A row that cannot open anything should not be a
+	// The item exists once the POST lands. Reporting a refresh failure as a create
+	// failure would have someone make it a second time.
+	it('does not call a created item a failure when only the refresh fails', async () => {
+		const item = makeItem('epic', [child()]);
+		post.mockResolvedValue({ key: 'SB-9', title: 'New work' });
+		get.mockRejectedValue(new Error('offline'));
+		const { getByText, findByText } = render(<ChildrenSection item={item} />);
+
+		fireEvent.click(getByText('Task'));
+		dialog.props?.onCreate({ title: 'New work', status: 'ready', type: 'task', parentKey: 'SB-1' });
+
+		expect(await findByText('Created, but the list could not be refreshed.')).toBeTruthy();
+	});
+
+	// A child pointed somewhere else never joins this list, so there is nothing here
+	// to refresh.
+	it('skips the refresh when the new item was pointed at another parent', async () => {
+		const item = makeItem('epic', [child()]);
+		post.mockResolvedValue({ key: 'SB-9', title: 'Elsewhere' });
+		get.mockClear();
+		const { getByText } = render(<ChildrenSection item={item} />);
+
+		fireEvent.click(getByText('Task'));
+		dialog.props?.onCreate({ title: 'Elsewhere', status: 'ready', type: 'task', parentKey: 'SB-99' });
+
+		await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+		expect(get).not.toHaveBeenCalled();
+	});
+
+	// onOpenItem is optional. A row that cannot open anything should not be a
 	// tab stop that does nothing when you land on it.
 	it('leaves rows inert when there is nothing to open them with', () => {
 		const item = makeItem('epic', [child()]);
@@ -194,7 +237,7 @@ describe('ChildrenSection', () => {
 
 	it('makes rows focusable when they can open a child', () => {
 		const item = makeItem('epic', [child()]);
-		const { container } = render(<ChildrenSection item={item} onOpenChild={vi.fn()} />);
+		const { container } = render(<ChildrenSection item={item} onOpenItem={vi.fn()} />);
 
 		expect(container.querySelector('[role="listitem"]')?.getAttribute('tabindex')).toBe('0');
 	});

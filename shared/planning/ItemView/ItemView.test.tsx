@@ -1,6 +1,6 @@
 /**
- * ItemView title field — a textarea so long titles wrap, but the value stays
- * one line.
+ * ItemView's header: the title field (a textarea so long titles wrap, but the
+ * value stays one line) and the Parent field.
  *
  * @vitest-environment jsdom
  */
@@ -24,16 +24,29 @@ vi.mock('@specboard/fetch', () => {
 			put: unexpected('PUT'),
 			delete: unexpected('DELETE'),
 		},
+		FetchError: class extends Error {},
 	};
 });
 
-// The sections below the title each fetch and render their own trees; none of
-// them are what these tests are about.
+// The sections below the header each fetch and render their own trees; none of
+// them are what these tests are about. The parent picker fetches on open, and
+// nothing here opens it; it is stubbed through its package barrel, which also
+// keeps Editor's slate-react (and with it preact/compat) out of this file. compat
+// rebinds onBlur to a focusout listener, so loading it would make fireEvent.blur
+// below reach nothing.
 vi.mock('../ChildrenSection/ChildrenSection', () => ({ ChildrenSection: () => null }));
 vi.mock('../ChecklistSection/ChecklistSection', () => ({ ChecklistSection: () => null }));
 vi.mock('../SpecsSection/SpecsSection', () => ({ SpecsSection: () => null }));
 vi.mock('../BlockersSection/BlockersSection', () => ({ BlockersSection: () => null }));
 vi.mock('../NotesSection/NotesSection', () => ({ NotesSection: () => null }));
+// Captured so a test can drive the picker's onSelect without rendering a modal.
+const picker: { props?: { onSelect: (key: string) => void } } = {};
+vi.mock('@specboard/pages', () => ({
+	ItemPicker: (props: { onSelect: (key: string) => void }) => {
+		picker.props = props;
+		return null;
+	},
+}));
 // Captured so a test can see which value ItemView hands the editor, and drive
 // its onChange without a real Slate tree.
 let editorProps: { value: unknown; onChange: (value: unknown) => void } | null = null;
@@ -46,13 +59,14 @@ vi.mock('../RichTextEditor', () => ({
 	deserializeFromText: () => [],
 }));
 
-function makeItem(title: string): ItemModel {
+function makeItem(title: string, extra: Record<string, unknown> = {}): ItemModel {
 	const item = new ItemModel({
 		key: 'SB-1',
 		projectSlug: 'specboard',
 		title,
 		type: 'task',
 		status: 'ready',
+		...extra,
 	});
 	// ItemView fetches full detail on mount while lastFetched is null. These tests
 	// are about the title field, so hand it an item that looks already loaded.
@@ -159,5 +173,54 @@ describe('ItemView description', () => {
 
 		expect(editorProps?.value).not.toBe(pristine);
 		expect(editorProps?.value).toEqual([]);
+	});
+});
+
+describe('ItemView parent', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('reads as key and title, and opens the parent when clicked', () => {
+		const item = makeItem('Child', { parentKey: 'SB-4', parentTitle: 'UI Library & Design System' });
+		const onOpenItem = vi.fn();
+		const { getByText } = render(<ItemView item={item} onOpenItem={onOpenItem} />);
+
+		fireEvent.click(getByText('SB-4 · UI Library & Design System'));
+
+		expect(onOpenItem).toHaveBeenCalledWith('SB-4');
+	});
+
+	it('shows a parentless task as None, so it can still be given one', () => {
+		const item = makeItem('Orphan');
+		const { container } = render(<ItemView item={item} />);
+
+		expect(container.textContent).toContain('None');
+	});
+
+	// move() applies the response it receives, so two in flight can settle out of
+	// order and leave the field showing the parent from the earlier request.
+	it('issues one move at a time', async () => {
+		const item = makeItem('Child', { parentKey: 'SB-4' });
+		let settleMove: () => void = () => {};
+		const move = vi.spyOn(item, 'move').mockReturnValue(new Promise<void>((resolve) => {
+			settleMove = resolve;
+		}));
+		const { getByText } = render(<ItemView item={item} onOpenItem={vi.fn()} />);
+
+		fireEvent.click(getByText('Change'));
+		picker.props?.onSelect('SB-7');
+		picker.props?.onSelect('SB-8');
+
+		expect(move).toHaveBeenCalledTimes(1);
+		expect(move).toHaveBeenCalledWith('SB-7');
+		settleMove();
+	});
+
+	it('leaves the field off a top-level epic', () => {
+		const item = makeItem('Epic', { type: 'epic' });
+		const { container } = render(<ItemView item={item} />);
+
+		expect(container.textContent).not.toContain('Parent');
 	});
 });

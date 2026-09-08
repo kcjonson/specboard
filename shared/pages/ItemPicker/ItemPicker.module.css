@@ -2,6 +2,12 @@
 	margin-bottom: var(--space-2);
 }
 
+.error {
+	margin-bottom: var(--space-2);
+	color: var(--color-error);
+	font-size: var(--text-sm);
+}
+
 .list {
 	display: flex;
 	flex-direction: column;
@@ -21,7 +27,6 @@
 .row {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
 	gap: var(--space-3);
 	padding: var(--space-2) var(--space-3);
 	appearance: none;
@@ -43,10 +48,23 @@
 	background: var(--color-surface-hover);
 }
 
+.key {
+	flex-shrink: 0;
+	color: var(--color-text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
 .title {
+	flex: 1;
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.clear {
+	flex: 1;
+	color: var(--color-text-muted);
 }
 
 .status {

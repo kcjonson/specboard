@@ -58,7 +58,7 @@ export function ItemDetail({ params }: RouteProps): JSX.Element {
 					<ItemView
 						item={item}
 						onDelete={handleDelete}
-						onOpenChild={(childKey) => navigate(`/projects/${projectSlug}/items/${childKey}`)}
+						onOpenItem={(childKey) => navigate(`/projects/${projectSlug}/items/${childKey}`)}
 					/>
 				</div>
 			</div>

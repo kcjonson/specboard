@@ -444,7 +444,19 @@ export function Planning(props: RouteProps): JSX.Element {
 	// editor pointing at a deleted epic) must
 	// not render an empty but editable drawer — that offers a Save and a Delete against
 	// an item that does not exist. Surface it instead.
-	const openItemMissing = Boolean(standaloneItem?.$meta.error);
+	//
+	// Only the item's FIRST load counts: `$meta.error` is also where a later failed
+	// write lands (a rejected move, a save that 409s), and swapping a loaded item's
+	// drawer for an error panel would misreport what happened.
+	const openItemError = standaloneItem?.$meta.lastFetched === null ? standaloneItem?.$meta.error : undefined;
+
+	// EVERY first-load failure gets the inert panel, not just a 404. The hazard
+	// being avoided is an empty but editable drawer whose Save and Delete act on an
+	// item we could not read — equally true of a 500, a timeout, or an expired
+	// session. Narrowing this to 404 would bring that back; the status decides only
+	// what the panel says.
+	const openItemMissing = Boolean(openItemError);
+	const openItemStatus = openItemError instanceof FetchError ? openItemError.status : undefined;
 
 	// Measure the workspace so the drawer can't widen past leaving the board a
 	// usable minimum. A callback ref keeps the observer bound to whichever node
@@ -566,12 +578,13 @@ export function Planning(props: RouteProps): JSX.Element {
 					/>
 				)}
 				{openItemMissing && (
-					<MissingItemDrawer itemKey={openItemKey!} onClose={handleCloseDrawer} />
+					<MissingItemDrawer itemKey={openItemKey!} status={openItemStatus} onClose={handleCloseDrawer} />
 				)}
 			</div>
 
 			{isNewItemDialogOpen && (
 				<NewItemDialog
+					projectSlug={projectSlug}
 					createType={createType}
 					onClose={handleCloseNewItemDialog}
 					onCreate={handleCreateItem}

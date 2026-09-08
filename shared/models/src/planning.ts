@@ -104,13 +104,17 @@ export class ItemModel extends SyncModel {
 	@prop accessor key!: string;
 	@prop accessor number!: number;
 	@prop accessor projectSlug!: string;
-	@prop accessor parentId!: string | undefined;
+	// null from the API for a top-level item, undefined before the field is set.
+	// Model.set stores what it is given, so the type has to admit both.
+	@prop accessor parentId!: string | null | undefined;
 	/**
 	 * Key of the item this one hangs under, absent on a top-level item. Set it when
 	 * creating a child; the list endpoint also sends it on the child rows a search
 	 * matches, which is how a view knows to label where the item lives.
 	 */
-	@prop accessor parentKey!: string | undefined;
+	@prop accessor parentKey!: string | null | undefined;
+	/** Title of the parent item, absent on a top-level item. Read-only; joined by the server. */
+	@prop accessor parentTitle!: string | null | undefined;
 	@prop accessor title!: string;
 	@prop accessor type!: ItemType;
 	@prop accessor description!: string | undefined;
@@ -184,6 +188,30 @@ export class ItemModel extends SyncModel {
 			return { total, done, blocked };
 		}
 		return this.childStatsSummary ?? { total: 0, done: 0, blocked: 0 };
+	}
+
+	/**
+	 * Reparent this item, or promote it to top-level with null. There is no
+	 * "leave unchanged": the route takes the destination, and null is a destination.
+	 *
+	 * Assigning `parentKey` and saving does nothing — the PUT handler picks a fixed
+	 * set of fields off the body and drops the rest — so this route is the only path.
+	 * The server re-ranks the item to the bottom of its new sibling group and rejects
+	 * a move that would close a cycle, which is why nothing is checked here first.
+	 */
+	async move(parentKey: string | null): Promise<void> {
+		this.setMeta({ working: true, error: null });
+		try {
+			const result = await fetchClient.post<Record<string, unknown>>(`${this.buildUrl()}/move`, { parentKey });
+			this.set(result as Partial<ModelData<this>>);
+			this.setMeta({ working: false });
+		} catch (error) {
+			this.setMeta({
+				working: false,
+				error: error instanceof Error ? error : new Error(String(error)),
+			});
+			throw error;
+		}
 	}
 }
 
@@ -590,9 +618,12 @@ interface ChecklistEntryData {
  * An item's checklist, in display order.
  * Syncs with /api/projects/:projectSlug/items/:itemKey/checklist
  *
- * add({ text }) appends an entry; entry.save() writes that ONE entry in place
- * (the server rewrites only the matched element, so ticking one box can't
- * clobber a concurrent edit to a different one); remove(entry) deletes it.
+ * add({ text }) appends an entry; entry.patch({ status }) or entry.patch({ text })
+ * writes that ONE field of that ONE entry (the server rewrites only the matched
+ * element, so ticking one box can't clobber a concurrent edit to a different
+ * one); remove(entry) deletes it. Do NOT reach for entry.save() here: it PUTs
+ * the whole model, so a tick would carry this client's copy of the text and
+ * overwrite a rename made in between.
  * There is no checklist prop on ItemModel for the same reason: SyncModel.save()
  * PUTs the whole model, so the array would ride along on every title or status
  * edit and overwrite whatever an agent wrote in between.

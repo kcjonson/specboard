@@ -183,7 +183,7 @@ describe('getItems', () => {
 		expect(sql).toContain('SELECT DISTINCT item_id FROM item_blockers WHERE project_id = $1 AND cleared_at IS NULL');
 		expect(sql).toContain(`(i.status = 'blocked' OR ob.item_id IS NOT NULL) as blocked`);
 		expect(sql).toContain(`FILTER (WHERE c.status = 'blocked' OR cob.item_id IS NOT NULL) as blocked_count`);
-		expect(sql).toContain('GROUP BY i.id, p.key, parent.number, ob.item_id');
+		expect(sql).toContain('GROUP BY i.id, p.key, parent.number, parent.title, ob.item_id');
 	});
 
 	it('excludeBlocked drops status-blocked and row-blocked items from lists', async () => {
@@ -385,10 +385,11 @@ describe('getItems', () => {
 		expect(params![1]).toBe('%a\\_b\\%c\\\\d%');
 	});
 
-	it('counts the deep match set in total and gives a matched child its parentKey', async () => {
+	it('counts the deep match set in total and gives a matched child its parent key and title', async () => {
 		const child = {
 			...makeItem({ id: 'child-1', number: 42, parent_id: 'item-1', type: 'task' }),
 			parent_number: 7,
+			parent_title: 'Auth System',
 			child_count: '0',
 			done_count: '0',
 			in_progress_count: '0',
@@ -400,7 +401,34 @@ describe('getItems', () => {
 		const { items, total } = await getItems({ projectId: 'proj-1', search: 'login' });
 
 		expect(total).toBe(31);
-		expect(items[0]).toMatchObject({ key: 'SB-42', parentKey: 'SB-7' });
+		expect(items[0]).toMatchObject({ key: 'SB-42', parentKey: 'SB-7', parentTitle: 'Auth System' });
+	});
+
+	it('joins the parent title in the same pass as its number, and groups by it', async () => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await getItems({ projectId: 'proj-1' });
+
+		const [sql] = mockQuery.mock.calls[0]!;
+		expect(sql).toContain('parent.number as parent_number, parent.title as parent_title');
+		expect(sql).toContain('LEFT JOIN items parent ON parent.id = i.parent_id');
+	});
+
+	it('reports a top-level item as having no parent title', async () => {
+		mockQuery.mockResolvedValueOnce({ rows: [{
+			...makeItem(),
+			parent_number: null,
+			parent_title: null,
+			child_count: '0',
+			done_count: '0',
+			in_progress_count: '0',
+			blocked_count: '0',
+			total_count: '1',
+		}], rowCount: 1 } as never);
+
+		const { items } = await getItems({ projectId: 'proj-1' });
+
+		expect(items[0]).toMatchObject({ parentKey: null, parentTitle: null });
 	});
 
 	it('orders children by rank with created_at and id tiebreakers', async () => {

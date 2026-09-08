@@ -31,6 +31,31 @@
 	gap: 8px;
 }
 
+.fieldLabel {
+	font-size: 13px;
+	color: var(--color-text-muted);
+}
+
+.fieldValue {
+	font-size: 13px;
+	color: var(--color-text);
+}
+
+.inlineLink {
+	appearance: none;
+	border: none;
+	background: transparent;
+	padding: 0;
+	font: inherit;
+	font-size: 13px;
+	color: var(--color-primary);
+	cursor: pointer;
+}
+
+.inlineLink:hover {
+	text-decoration: underline;
+}
+
 .section {
 	display: flex;
 	flex-direction: column;

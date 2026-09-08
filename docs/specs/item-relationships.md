@@ -92,6 +92,39 @@ drawer's status select is not interrogated. On that path the reason is either a
 `note` (which lands in the activity log below) or a non-empty `blockers` array,
 since blocker rows already say what the item is waiting on.
 
+## Parent (`items.parent_id`)
+
+The one relationship that predates all of these: an item's optional parent, a
+real FK on the items table rather than a row anywhere else. Top-level items have
+`parent_id` NULL. Reads carry both `parentKey` and `parentTitle`, joined off the
+same `LEFT JOIN items parent` in `getItems`, so a view can render `SB-4 · UI
+Library` without a second request.
+
+- **The model puts no type restriction on parenting.** A task under a bug, a bug
+  under a task, an epic under an epic: all of them validate, on create and on
+  move. The UI's parent picker offers only epics, which is a product choice about
+  the ordinary shape of a board, not a rule the schema enforces. Do not
+  "reconcile" the model to the picker — agents over MCP build deeper and mixed
+  trees on purpose, and tightening the model would break them.
+- **Reparenting has its own route**, `POST /items/:itemKey/move` (`moveItem`,
+  `ItemModel.move`). The PUT update path deliberately ignores `parentKey`: it
+  picks a fixed set of columns off the body, so assigning the key and saving is a
+  silent no-op rather than a move.
+- **`null` promotes to top-level, and there is no "leave unchanged".** The route
+  takes a destination, and no parent is a destination; an absent `parentKey` means
+  top-level, not "don't touch it".
+- **A move always re-ranks the item to the bottom of its destination sibling
+  group.** Rank is scoped to the sibling group, so the old value means nothing in
+  the new one; appending is the only answer that doesn't collide.
+- **The cycle guard runs inside the UPDATE, not as a check before it.** The
+  statement's WHERE holds a recursive `descendants` CTE, so a cycle-forming move
+  writes nothing at all; the zero-row result is diagnosed afterwards (missing
+  parent vs. cycle) on that rare path only. Checking first and writing second
+  would have already detached the item from its real parent and reset its rank by
+  the time the refusal was known — the item would survive the "rejection"
+  orphaned. The API handler's pre-check is a nicety for a clean 400, not the
+  guarantee; the statement is.
+
 ## Origin (`items.origin`, migration 025)
 
 `{ actor: Actor, discoveredFrom?: { itemId, itemKey } }`, set at creation,

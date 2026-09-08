@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'preact/hooks';
+import { useState, useMemo, useCallback, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { useModel, ChecklistCollection, type ChecklistEntryModel } from '@specboard/models';
 import { Button, Checkbox, Text } from '@specboard/ui';
@@ -62,7 +62,16 @@ export function ChecklistSection({ projectSlug, itemKey }: ChecklistSectionProps
 		}
 	};
 
+	// Entries with a toggle in flight. patch() applies the response it gets back,
+	// so two overlapping writes can land out of order and leave the box showing
+	// the older answer. One at a time per entry; the second click is dropped
+	// rather than queued, because the user is looking at an optimistic box that
+	// already shows what they asked for.
+	const togglingRef = useRef<Set<string>>(new Set());
+
 	const handleToggle = useCallback(async (entry: ChecklistEntryModel): Promise<void> => {
+		if (togglingRef.current.has(entry.id)) return;
+		togglingRef.current.add(entry.id);
 		setError(null);
 		// Optimistic: the box moves under the pointer, and reverts if the write fails.
 		const previous = entry.status;
@@ -74,6 +83,8 @@ export function ChecklistSection({ projectSlug, itemKey }: ChecklistSectionProps
 		} catch {
 			entry.status = previous;
 			setError('Could not save that item.');
+		} finally {
+			togglingRef.current.delete(entry.id);
 		}
 	}, []);
 
