@@ -37,6 +37,13 @@ const CATEGORY_OPTIONS: SelectOption[] = [
 	{ value: 'bug', label: 'Bug' },
 ];
 
+/** The real item types among CATEGORY_OPTIONS, excluding the CATEGORY_ALL sentinel. */
+const ITEM_TYPES = new Set(CATEGORY_OPTIONS.map((option) => option.value).filter((value) => value !== CATEGORY_ALL));
+
+function isItemType(value: string): value is ItemType {
+	return ITEM_TYPES.has(value);
+}
+
 /** Toolbar filter state. The server does the filtering; this is only what the toolbar shows. */
 interface PlanningFilters {
 	search: string;
@@ -132,7 +139,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	useEffect(() => {
 		void items.setFilter({
 			search: settledSearch,
-			type: filters.category === CATEGORY_ALL ? undefined : (filters.category as ItemType),
+			type: isItemType(filters.category) ? filters.category : undefined,
 		});
 	}, [items, settledSearch, filters.category]);
 

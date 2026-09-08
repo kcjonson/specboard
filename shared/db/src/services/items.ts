@@ -6,7 +6,7 @@
  * are themselves items, so the same operations apply at every level.
  */
 
-import { formatItemKey } from '@specboard/core/identifiers';
+import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin } from '../types.ts';
 import { clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
@@ -213,26 +213,19 @@ function likeLiteral(term: string): string {
 	return term.replace(/[\\%_]/g, '\\$&');
 }
 
-const FULL_KEY = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
-const BARE_NUMBER = /^\d+$/;
-const MAX_ITEM_NUMBER = 2_147_483_647; // items.number is INTEGER
+const BARE_NUMBER = /^[0-9]{1,9}$/;
 
 /**
  * The key half of a search term, or null when the term doesn't name a key. A key is
  * matched exactly: as a substring, `SAM-42` would also match on `s`, `sam`, and `-`,
  * so every keystroke on the way to typing a key returns the whole project.
- * `projectKey` is upper-cased for comparison against `UPPER(p.key)`.
+ * The full-key branch defers to `parseItemKey` for the canonical `SB-345` format
+ * (2-10 char project key, 1-9 digit number) rather than a looser local regex.
  */
 function keyTerm(term: string): { projectKey?: string; number: number } | null {
-	const full = FULL_KEY.exec(term);
-	if (full) {
-		const number = Number(full[2]);
-		return number <= MAX_ITEM_NUMBER ? { projectKey: full[1]!.toUpperCase(), number } : null;
-	}
-	if (BARE_NUMBER.test(term)) {
-		const number = Number(term);
-		return number <= MAX_ITEM_NUMBER ? { number } : null;
-	}
+	const full = parseItemKey(term.toUpperCase());
+	if (full) return { projectKey: full.projectKey, number: full.number };
+	if (BARE_NUMBER.test(term)) return { number: Number(term) };
 	return null;
 }
 

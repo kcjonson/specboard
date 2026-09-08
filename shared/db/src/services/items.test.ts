@@ -310,6 +310,8 @@ describe('getItems', () => {
 
 		await getItems({ projectId: 'proj-1', search: 'sam' });
 		await getItems({ projectId: 'proj-1', search: '-' });
+		await getItems({ projectId: 'proj-1', search: 's-42' }); // project key too short
+		await getItems({ projectId: 'proj-1', search: '1234567890' }); // number too long
 
 		for (const [sql, params] of mockQuery.mock.calls) {
 			expect(sql).toContain('AND (i.title ILIKE $2 OR i.description ILIKE $2)');
