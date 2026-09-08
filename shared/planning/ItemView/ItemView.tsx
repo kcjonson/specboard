@@ -5,6 +5,7 @@ import { useModel, type ItemModel, type ItemStatus, type SubStatus } from '@spec
 import { Button, DialogFooter, Select } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { ChildrenSection } from '../ChildrenSection/ChildrenSection';
+import { ChecklistSection } from '../ChecklistSection/ChecklistSection';
 import { SpecsSection } from '../SpecsSection/SpecsSection';
 import { BlockersSection } from '../BlockersSection/BlockersSection';
 import { NotesSection } from '../NotesSection/NotesSection';
@@ -318,6 +319,8 @@ export function ItemView({ item, onDelete, onOpenChild }: ItemViewProps): JSX.El
 			</section>
 
 			<ChildrenSection item={item} onOpenChild={onOpenChild} />
+
+			<ChecklistSection projectSlug={item.projectSlug} itemKey={item.key} />
 
 			<BlockersSection
 				projectSlug={item.projectSlug}

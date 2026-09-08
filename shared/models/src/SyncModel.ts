@@ -91,7 +91,7 @@ export class SyncModel extends Model {
 	/**
 	 * Builds the URL for this model instance by substituting params from instance properties.
 	 */
-	private buildUrl(): string {
+	protected buildUrl(): string {
 		const ctor = this.constructor as unknown as SyncModelConstructor;
 		const template = ctor.url || '';
 

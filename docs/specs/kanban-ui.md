@@ -143,6 +143,52 @@ thousand pixels of drawer ahead of Blockers, Specs, and the activity log — the
 sections that answer why the work is stuck. The table shows every child, which
 is right there: it has the horizontal room and no sections below to bury.
 
+### Checklist (in the item detail)
+
+**Properties:**
+- projectSlug, itemKey
+
+Scratch todos on one item, on every item type, sitting between Children and
+Blockers. An entry is `{ id, text, status }` and nothing more, where `status` is
+`todo` or `done` — a checklist status, not the board status a child item carries.
+It is a union rather than a boolean because more states are expected, and a
+boolean cannot grow into them without breaking the API.
+
+Beyond that an entry has nothing: no key, no sub-status, no blockers, no spec
+links, no activity log, nobody recorded as having ticked it. That is the whole
+point of the primitive. A line that deserves any of those is not a checklist
+entry, it is a child item, and it should be created as one.
+
+Each write carries only the field it changes — a tick sends `{ status }`, a
+rename sends `{ text }` — so ticking a box cannot overwrite a rename someone
+made in between.
+
+**Visual Design:**
+```
+Checklist (1/3)
+
+[x] Drop the backup table                          Remove
+[ ] Re-run the migration against a prod snapshot   Remove
+[ ] Ask about the 500-char cap                     Remove
+
+[ Add a checklist item...                     ]   + Add
+```
+
+The box toggles optimistically and reverts with an error if the write fails.
+The row's text is an editable field that saves on blur, so a typo is fixable in
+place; because the text is that field rather than the checkbox's label, the
+box carries its accessible name in `aria-label` instead. Blanking the field
+reverts rather than deleting, since Remove is the delete.
+
+Reads and writes go through the checklist sub-resource, one entry at a time,
+never as a `checklist` field on the item: an item PUT carries the whole model,
+so the array would ride along on every unrelated title or status edit and
+overwrite whatever an agent wrote in between. Ticking one box writes that one
+entry, and the server rewrites only the matched element.
+
+Escape in a draft or a half-typed rename dismisses that, not the drawer; with
+nothing to dismiss it falls through and the drawer closes.
+
 ### Epic Detail Modal
 
 ```
@@ -164,6 +210,15 @@ is right there: it has the horizontal room and no sections below to bury.
 │  ◆ SB-40  Implement login form              Blocked  ● Ready    │
 │  ▲ SB-41  Session cookie is dropped                ● Ready      │
 │  Show all 7                                                     │
+│                                                                 │
+│  ──────────────────────────────────────────────────────────────│
+│                                                                 │
+│  Checklist (1/2)                                                │
+│                                                                 │
+│  [x] Drop the backup table                        Remove        │
+│  [ ] Ask about the 500-char cap                   Remove        │
+│                                                                 │
+│  [ Add a checklist item...                ]       + Add         │
 │                                                                 │
 │  ──────────────────────────────────────────────────────────────│
 │                                                                 │

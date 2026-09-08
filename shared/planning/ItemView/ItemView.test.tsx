@@ -30,6 +30,7 @@ vi.mock('@specboard/fetch', () => {
 // The sections below the title each fetch and render their own trees; none of
 // them are what these tests are about.
 vi.mock('../ChildrenSection/ChildrenSection', () => ({ ChildrenSection: () => null }));
+vi.mock('../ChecklistSection/ChecklistSection', () => ({ ChecklistSection: () => null }));
 vi.mock('../SpecsSection/SpecsSection', () => ({ SpecsSection: () => null }));
 vi.mock('../BlockersSection/BlockersSection', () => ({ BlockersSection: () => null }));
 vi.mock('../NotesSection/NotesSection', () => ({ NotesSection: () => null }));

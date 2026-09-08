@@ -16,6 +16,12 @@ export interface CheckboxProps {
 	name?: string;
 	/** Input id */
 	id?: string;
+	/**
+	 * Accessible name for the box itself. For a row whose text is an editable
+	 * field beside the box rather than the box's own label, `label` is empty and
+	 * this carries the name instead.
+	 */
+	ariaLabel?: string;
 }
 
 /**
@@ -30,6 +36,7 @@ export function Checkbox({
 	class: className,
 	name,
 	id,
+	ariaLabel,
 }: CheckboxProps): JSX.Element {
 	const classes = [styles.check, className].filter(Boolean).join(' ');
 	return (
@@ -41,6 +48,7 @@ export function Checkbox({
 				disabled={disabled}
 				name={name}
 				id={id}
+				aria-label={ariaLabel}
 			/>
 			{label}
 		</label>

@@ -1,0 +1,75 @@
+.section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.sectionTitle {
+	margin: 0;
+	font-size: var(--text-sm);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+}
+
+.placeholder {
+	margin: 0;
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+}
+
+.list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+}
+
+.row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+/* Reads as the entry's text until it's focused; the border only appears then, so
+   the row doesn't look like a form. */
+.text {
+	flex: 1;
+	min-width: 0;
+	appearance: none;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: var(--radius-sm);
+	padding: 2px var(--space-1);
+	font-family: inherit;
+	font-size: var(--text-sm);
+	color: var(--color-text);
+}
+
+.text:hover {
+	border-color: var(--color-border);
+}
+
+.text:focus {
+	outline: none;
+	border-color: var(--color-primary);
+	background: var(--color-surface);
+}
+
+.doneText {
+	color: var(--color-text-muted);
+	text-decoration: line-through;
+}
+
+.error {
+	color: var(--color-error);
+	font-size: var(--text-sm);
+}
+
+.addRow {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.addRow > :first-child {
+	flex: 1;
+}
