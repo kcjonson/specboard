@@ -182,6 +182,11 @@ Automation traps, roughly in the order they bite:
   last pass. Structural assertions (which requests fired, with what params, and
   what rendered) survive that untouched. Absolute timings do not, so measure
   differentially or not at all.
+- **Patching `window.fetch` from the extension's evaluation context does not
+  intercept the app's traffic**, even though that context shares `window` with the
+  page. Injecting a `<script>` element into the main world does work, and there is
+  no CSP rule blocking it. Failure injection and request capture both depend on
+  this, so reach for it before concluding a fault cannot be induced.
 
 Staging etiquette: test data is fine, but clean up after the pass — deleted items
 leave numbering gaps by design, and the git-backed file store keeps pending changes
