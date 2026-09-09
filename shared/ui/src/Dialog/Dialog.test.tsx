@@ -4,21 +4,27 @@
  * @vitest-environment jsdom
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { render, fireEvent } from '@testing-library/preact';
 import { Dialog } from './Dialog';
 
-/** jsdom implements <dialog> unevenly across versions; the tests only need the DOM. */
+// Same stubbing ItemPicker.test.tsx does, for the same reason and with the same
+// lifetime: captured at module load so a restore can't put our own stubs back, and
+// restored once at the end because testing-library's cleanup unmounts between tests
+// and Dialog closes itself on unmount. Per-file is the isolation that matters — the
+// leak worth preventing is into other files sharing this worker.
+const realShowModal = HTMLDialogElement.prototype.showModal;
+const realClose = HTMLDialogElement.prototype.close;
+
 beforeEach(() => {
-	if (!HTMLDialogElement.prototype.showModal) {
-		HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement): void {
-			this.open = true;
-		};
-		HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement): void {
-			this.open = false;
-			this.dispatchEvent(new Event('close'));
-		};
-	}
+	// jsdom parses <dialog> but implements none of its methods, and Dialog is modal.
+	HTMLDialogElement.prototype.showModal = function showModal(): void { this.open = true; };
+	HTMLDialogElement.prototype.close = function close(): void { this.open = false; };
+});
+
+afterAll(() => {
+	HTMLDialogElement.prototype.showModal = realShowModal;
+	HTMLDialogElement.prototype.close = realClose;
 });
 
 /** The dialog inside an ancestor that closes on Escape, the way the item drawer wraps it. */
