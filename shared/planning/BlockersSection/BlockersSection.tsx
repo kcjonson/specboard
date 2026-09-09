@@ -76,41 +76,55 @@ export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: 
 		}
 	}, [blockers, onChange]);
 
+	// "Nothing blocking this item" is the answer to "why is this stuck", so it must
+	// never stand in for a failed or unfinished load: saying the opposite of the
+	// truth is worse here than admitting we don't know yet.
+	const renderList = (): JSX.Element => {
+		if (blockers.$meta.error) {
+			return <div class={styles.error}>Could not load the blockers.</div>;
+		}
+		if (!blockers.$meta.lastFetched) {
+			return <p class={styles.placeholder}>Loading...</p>;
+		}
+		if (blockers.length === 0) {
+			return <p class={styles.placeholder}>Nothing blocking this item</p>;
+		}
+		return (
+			<div class={styles.list} role="list">
+				{blockers.map((blocker) => (
+					<div key={blocker.id} class={styles.row} role="listitem">
+						{blocker.type === 'item' ? (
+							<>
+								<span class={`${styles.badge} ${styles.item}`}>Item</span>
+								<button
+									type="button"
+									class={styles.itemLink}
+									onClick={() => blocker.blockerKey && onOpenItem?.(blocker.blockerKey)}
+								>
+									{blocker.blockerKey}
+									{blocker.blockerTitle ? ` · ${blocker.blockerTitle}` : ''}
+								</button>
+							</>
+						) : (
+							<>
+								<span class={`${styles.badge} ${styles.text}`}>Note</span>
+								<span class={styles.reason}>{blocker.text}</span>
+							</>
+						)}
+						<Button class="text" onClick={() => handleClear(blocker)}>
+							Clear
+						</Button>
+					</div>
+				))}
+			</div>
+		);
+	};
+
 	return (
 		<section class={styles.section}>
 			<h3 class={styles.sectionTitle}>Blocked by</h3>
 
-			{blockers.length === 0 ? (
-				<p class={styles.placeholder}>Nothing blocking this item</p>
-			) : (
-				<div class={styles.list} role="list">
-					{blockers.map((blocker) => (
-						<div key={blocker.id} class={styles.row} role="listitem">
-							{blocker.type === 'item' ? (
-								<>
-									<span class={`${styles.badge} ${styles.item}`}>Item</span>
-									<button
-										type="button"
-										class={styles.itemLink}
-										onClick={() => blocker.blockerKey && onOpenItem?.(blocker.blockerKey)}
-									>
-										{blocker.blockerKey}
-										{blocker.blockerTitle ? ` · ${blocker.blockerTitle}` : ''}
-									</button>
-								</>
-							) : (
-								<>
-									<span class={`${styles.badge} ${styles.text}`}>Note</span>
-									<span class={styles.reason}>{blocker.text}</span>
-								</>
-							)}
-							<Button class="text" onClick={() => handleClear(blocker)}>
-								Clear
-							</Button>
-						</div>
-					))}
-				</div>
-			)}
+			{renderList()}
 
 			{error && <div class={styles.error}>{error}</div>}
 
