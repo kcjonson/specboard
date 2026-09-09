@@ -4,7 +4,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncModel } from './SyncModel';
+import { Model } from './Model';
 import { prop } from './prop';
+import { collection } from './collection-decorator';
+import type { Collection } from './Collection';
 import { fetchClient } from '@specboard/fetch';
 
 // Mock fetchClient
@@ -24,6 +27,20 @@ class Post extends SyncModel {
 	@prop accessor id!: number;
 	@prop accessor title!: string;
 	@prop accessor body!: string;
+}
+
+// Test model carrying a nested @collection, the way ItemModel carries `children`.
+class Tag extends Model {
+	@prop accessor id!: string;
+	@prop accessor name!: string;
+}
+
+class Article extends SyncModel {
+	static url = '/api/articles/:id';
+
+	@prop accessor id!: number;
+	@prop accessor title!: string;
+	@collection(Tag) accessor tags!: Collection<Tag>;
 }
 
 // Test model with custom idField
@@ -176,6 +193,31 @@ describe('SyncModel', () => {
 			await expect(post.save()).rejects.toThrow('Save failed');
 
 			expect(post.$meta.error).toBe(error);
+		});
+
+		// A @collection field holds a live Collection, listener registry and all.
+		// Serializing __data wholesale posted that object to the API.
+		it('should not send @collection fields in the POST body', async () => {
+			const article = new Article({ title: 'New' });
+			vi.mocked(fetchClient.post).mockResolvedValue({ id: 7, title: 'New' });
+
+			await article.save();
+
+			const [, body] = vi.mocked(fetchClient.post).mock.calls[0]!;
+			expect(body).toEqual({ title: 'New' });
+			expect(body).not.toHaveProperty('tags');
+		});
+
+		it('should not send @collection fields in the PUT body, loaded or not', async () => {
+			const article = new Article({ id: 7, title: 'Updated' });
+			article.tags.add({ id: 't1', name: 'preact' });
+			vi.mocked(fetchClient.put).mockResolvedValue({ id: 7, title: 'Updated' });
+
+			await article.save();
+
+			const [, body] = vi.mocked(fetchClient.put).mock.calls[0]!;
+			expect(body).toEqual({ id: 7, title: 'Updated' });
+			expect(JSON.stringify(body)).not.toContain('__listeners');
 		});
 	});
 
