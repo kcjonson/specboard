@@ -96,6 +96,18 @@ export function Dialog({
 		if (open) onClose();
 	};
 
+	// Escape closes the innermost thing that has something to dismiss, and while
+	// this dialog is open that is the dialog. The key arrives twice by two
+	// independent routes: as `cancel` on the element (handled above) and as a
+	// keydown bubbling out through whatever rendered us. A dialog opened from the
+	// item drawer sits inside the drawer's subtree, so without this the drawer's
+	// own Escape handler fires too and the user loses both. Bubble phase is enough
+	// because every such ancestor is above us in the tree; a listener on `document`
+	// still needs capture, which is what SplitButton does.
+	const handleKeyDown = (e: KeyboardEvent): void => {
+		if (open && e.key === 'Escape') e.stopPropagation();
+	};
+
 	// Clicks on ::backdrop retarget to the <dialog> itself. The dialog has
 	// padding: 0 and header/content fill it, so an inside click always targets a child.
 	const handleClick = (e: MouseEvent): void => {
@@ -121,6 +133,7 @@ export function Dialog({
 			onCancel={handleCancel}
 			onClose={handleNativeClose}
 			onClick={handleClick}
+			onKeyDown={handleKeyDown}
 			aria-labelledby={title ? titleId : undefined}
 		>
 			<div class={headerClasses}>
