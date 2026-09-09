@@ -29,6 +29,22 @@ interface SyncModelConstructor {
 	idField?: string;
 }
 
+/**
+ * Names of a model's `@collection` and `@model` fields. Both hold live objects in
+ * `__data` — a Collection with its listener registry, a child Model with its own —
+ * rather than plain values, so they are neither evidence the model carries real data
+ * nor anything the API should be sent.
+ */
+function nestedFieldNames(ctor: unknown): string[] {
+	const metadata = (ctor as { [Symbol.metadata]?: Record<symbol, unknown> })[Symbol.metadata];
+	const names: string[] = [];
+	for (const key of [COLLECTIONS, NESTED_MODELS]) {
+		const fields = metadata?.[key] as Map<string, unknown> | undefined;
+		if (fields) names.push(...fields.keys());
+	}
+	return names;
+}
+
 export class SyncModel extends Model {
 	/** URL template for API endpoint (e.g., '/api/users/:id') */
 	static url: string = '';
@@ -62,23 +78,10 @@ export class SyncModel extends Model {
 		// Build set of keys that don't count as "real data":
 		// - URL template params (e.g. :id, :projectId) — identity/routing only
 		// - Auto-initialized @collection and @model fields — empty defaults
-		const excludedKeys = new Set<string>();
+		const excludedKeys = new Set<string>(nestedFieldNames(this.constructor));
 		const urlTemplate = ctor.url || '';
 		for (const match of urlTemplate.matchAll(/:(\w+)/g)) {
 			if (match[1]) excludedKeys.add(match[1]);
-		}
-		const metadata = ctor[Symbol.metadata];
-		const collectionKeys = metadata?.[COLLECTIONS] as Map<string, unknown> | undefined;
-		const nestedModelKeys = metadata?.[NESTED_MODELS] as Map<string, unknown> | undefined;
-		if (collectionKeys) {
-			for (const key of collectionKeys.keys()) {
-				excludedKeys.add(key);
-			}
-		}
-		if (nestedModelKeys) {
-			for (const key of nestedModelKeys.keys()) {
-				excludedKeys.add(key);
-			}
 		}
 
 		const dataKeys = Object.keys(internalData).filter(k => !excludedKeys.has(k));
@@ -151,7 +154,15 @@ export class SyncModel extends Model {
 		const id = internalData[idField];
 
 		try {
+			// The body is the model's own fields, never its nested objects. A
+			// @collection field holds a live Collection, listener registry and all,
+			// and serializing __data wholesale put that on the wire — harmless to the
+			// server, which ignores it, but it lands in every request log and proxy
+			// capture between here and there.
 			const data = { ...internalData };
+			for (const name of nestedFieldNames(this.constructor)) {
+				delete data[name];
+			}
 
 			if (id) {
 				// Update existing
