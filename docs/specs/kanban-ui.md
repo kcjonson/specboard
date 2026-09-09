@@ -531,12 +531,12 @@ Drag-and-drop is native HTML5 DnD and does not fire on touch — status changes 
 
 ## Component Structure
 
-The board lives in `shared/planning/`. It and `shared/projects/` are the two `shared/`
-directories that are not npm workspaces (no `package.json`); apps reach them through a
-Vite alias and a tsconfig include, importing from `@shared/planning` rather than a
-package name. There is no `packages/` directory in this monorepo. Each component owns a
-directory, most with a CSS module beside the component, and `index.ts` re-exports the
-ones consumers mount.
+The board lives in `shared/planning/`, which is a feature directory rather than an npm
+workspace: it has no `package.json`, so apps reach it through a Vite alias and a tsconfig
+include and import from `@shared/planning`, not a package name. That is also why the root
+`test` script names it explicitly instead of picking it up with the workspaces. There is
+no `packages/` directory in this monorepo. Each component owns a directory, most with a
+CSS module beside the component, and `index.ts` re-exports the ones consumers mount.
 
 ```
 shared/planning/
