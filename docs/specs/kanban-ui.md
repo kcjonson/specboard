@@ -531,27 +531,40 @@ Drag-and-drop is native HTML5 DnD and does not fire on touch — status changes 
 
 ## Component Structure
 
+The board lives in `shared/planning/`, which is a feature directory rather than an npm
+workspace: it has no `package.json`, so apps reach it through a Vite alias and a tsconfig
+include and import from `@shared/planning`, not a package name. That is also why the root
+`test` script names it explicitly instead of picking it up with the workspaces. There is
+no `packages/` directory in this monorepo. Each component owns a directory, most with a
+CSS module beside the component, and `index.ts` re-exports the ones consumers mount.
+
 ```
-packages/kanban/
-├── src/
-│   ├── components/
-│   │   ├── Board.tsx
-│   │   ├── Column.tsx
-│   │   ├── EpicCard.tsx
-│   │   ├── TaskCard.tsx
-│   │   ├── EpicModal.tsx
-│   │   ├── QuickCreate.tsx
-│   │   ├── KeyboardHelp.tsx
-│   │   └── index.ts
-│   ├── hooks/
-│   │   ├── useKeyboardNavigation.ts
-│   │   ├── useDragDrop.ts
-│   │   └── useEpics.ts
-│   ├── styles/
-│   │   ├── board.module.css
-│   │   ├── column.module.css
-│   │   ├── epic-card.module.css
-│   │   └── tokens.css
-│   └── index.ts
-└── package.json
+shared/planning/
+├── Planning/            board shell: view toggle, windows, drawer routing (+ prefs.ts)
+├── Board/               the columns
+├── Column/              one status column
+├── ItemCard/            a card on the board
+├── Table/               table view (Table, ItemRow, ChildRow)
+├── ViewToggle/          board / table switch
+├── ItemView/            the item body: title, status, description, sections
+├── ItemDrawer/          side panel the board opens; renders ItemView
+├── ItemDetail/          full-page item route; loads the model, renders ItemView
+├── BlockersSection/     the item's sub-resources, one section each
+├── ChecklistSection/
+├── ChildrenSection/
+├── NotesSection/        (the activity log)
+├── SpecsSection/
+├── FilePicker/          spec-file browser the specs section opens
+├── NewItemDialog/       dialog wrapper around the create form (no styles of its own)
+├── NewItemForm/         the create form itself
+├── RichTextEditor/      description / note editor (+ Toolbar, types)
+├── TypeBadge/           epic / task / bug pill
+├── hooks/               useKeyboardNavigation
+├── utils/               actor, itemType, time
+└── index.ts
 ```
+
+State lives in `shared/models/src/planning.ts`, not in the component tree:
+`ItemModel` / `ItemsCollection` for the board itself, and `BlockerModel`,
+`ChecklistEntryModel`, `NoteModel`, `SpecModel` with their collections for the
+item's sections. `ChildModel` is the summary shape a parent carries for each child.
