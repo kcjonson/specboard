@@ -531,10 +531,11 @@ Drag-and-drop is native HTML5 DnD and does not fire on touch — status changes 
 
 ## Component Structure
 
-The board lives in `shared/planning/`. Unlike its siblings it is not an npm workspace
-(no `package.json`); apps reach it through a Vite alias and a tsconfig include, importing
-from `@shared/planning`. There is no `packages/` directory in this monorepo. Each
-component owns a directory with its CSS module beside it, and `index.ts` re-exports the
+The board lives in `shared/planning/`. It and `shared/projects/` are the two `shared/`
+directories that are not npm workspaces (no `package.json`); apps reach them through a
+Vite alias and a tsconfig include, importing from `@shared/planning` rather than a
+package name. There is no `packages/` directory in this monorepo. Each component owns a
+directory, most with a CSS module beside the component, and `index.ts` re-exports the
 ones consumers mount.
 
 ```
@@ -554,7 +555,7 @@ shared/planning/
 ├── NotesSection/        (the activity log)
 ├── SpecsSection/
 ├── FilePicker/          spec-file browser the specs section opens
-├── NewItemDialog/       dialog wrapper around the create form
+├── NewItemDialog/       dialog wrapper around the create form (no styles of its own)
 ├── NewItemForm/         the create form itself
 ├── RichTextEditor/      description / note editor (+ Toolbar, types)
 ├── TypeBadge/           epic / task / bug pill
