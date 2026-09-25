@@ -146,7 +146,7 @@ export function HomeContent(): JSX.Element {
 						<ul>
 							<li>Write requirements that agents can actually read</li>
 							<li>See what's being worked on and what's done</li>
-							<li>Stay in control—agents can't close epics without you</li>
+							<li>Stay in control: review any PR, or let verified work close itself</li>
 							<li>No more "that's not what I meant in the spec"</li>
 						</ul>
 					</div>
@@ -347,8 +347,8 @@ export function HomeContent(): JSX.Element {
 							<div class="step-role">Product</div>
 						</div>
 						<h3>Review & approve</h3>
-						<p>Review the PR. Mark epic complete. Agent can't close the loop—humans
-						stay in control.</p>
+						<p>Review the PR yourself, or let the agent merge and close the epic once
+						the work is verified. You decide where the gate sits.</p>
 					</div>
 				</div>
 				<div class="terminal" aria-hidden="true">
@@ -469,8 +469,8 @@ export function HomeContent(): JSX.Element {
 							</svg>
 						</div>
 						<div>
-							<h3>Humans approve completion</h3>
-							<p>Agents can't mark epics "done."</p>
+							<h3>Humans choose the gates</h3>
+							<p>Nothing closes until the work is verified.</p>
 						</div>
 					</div>
 					<div class="control-point home-card">
@@ -512,12 +512,12 @@ export function HomeContent(): JSX.Element {
 					<div class="mcp-capabilities home-card">
 						<h3>What your agent can do</h3>
 						<ul class="capability-list">
-							<li><code>get_epic</code> — Read epic details and linked specs</li>
-							<li><code>get_current_work</code> — See what's in progress</li>
-							<li><code>get_ready_epics</code> — Find prioritized work to pick up</li>
-							<li><code>create_task</code> — Break down work into subtasks</li>
-							<li><code>complete_task</code> — Mark tasks as done</li>
-							<li><code>add_progress_note</code> — Log activity for visibility</li>
+							<li><code>list_projects</code> — Find the projects you can work in</li>
+							<li><code>get_items</code> — Read epics, tasks, and bugs with their linked specs</li>
+							<li><code>create_item</code> — File an epic, task, or bug</li>
+							<li><code>create_items</code> — Break an epic into tasks in one call</li>
+							<li><code>update_item</code> — Move status, tick off checklists, log progress</li>
+							<li><code>delete_item</code> — Remove work that's no longer needed</li>
 						</ul>
 					</div>
 					<div class="mcp-note home-card">
