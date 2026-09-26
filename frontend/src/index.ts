@@ -9,7 +9,7 @@ import { Hono, type Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Redis } from 'ioredis';
-import { authMiddleware, getSession, SESSION_COOKIE_NAME, type AuthVariables } from '@specboard/auth';
+import { authMiddleware, getSession, requireAdminSession, SESSION_COOKIE_NAME, type AuthVariables } from '@specboard/auth';
 import { reportError, captureException, installErrorHandlers, logRequest } from '@specboard/core';
 import { pages, spaIndex, type CachedPage } from './static-pages.ts';
 
@@ -480,6 +480,23 @@ app.get('/email-logo-dark.png', serveStatic({ root: publicRoot, path: 'email-log
 app.get('/claude', serveStatic({ root: publicRoot, path: 'marketplace.json' }));
 app.get('/claude/marketplace.json', serveStatic({ root: publicRoot, path: 'marketplace.json' }));
 
+/**
+ * 404 page for requests the session may not see. Showing 404 rather than a
+ * login redirect or 403 avoids revealing which routes exist. Must be private
+ * no-cache since these URLs serve the SPA to sessions that may see them.
+ */
+function hiddenRouteResponse(): Response {
+	const headers: Record<string, string> = {
+		'Content-Type': 'text/html; charset=UTF-8',
+		'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+	};
+	// Only send preload headers in production
+	if (!VITE_DEV_SERVER && pages.notFound.preloadHeader) {
+		headers['Link'] = pages.notFound.preloadHeader;
+	}
+	return new Response(pages.notFound.html, { status: 404, headers });
+}
+
 // Auth middleware for all other routes
 // Unauthenticated users see 404 for any non-public path
 // They can find login from the 404 page or by going to /
@@ -487,23 +504,14 @@ app.use(
 	'*',
 	authMiddleware(redis, {
 		excludePaths: ['/health', '/login', '/signup', '/home', '/privacy', '/setup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
-		onUnauthenticated: () => {
-			// Show 404 for unauthenticated requests
-			// This avoids revealing which routes exist and eliminates route duplication
-			// Must use private no-cache since these URLs serve different content
-			// when authenticated (SPA) vs unauthenticated (404 page)
-			const headers: Record<string, string> = {
-				'Content-Type': 'text/html; charset=UTF-8',
-				'Cache-Control': 'private, no-cache, no-store, must-revalidate',
-			};
-			// Only send preload headers in production
-			if (!VITE_DEV_SERVER && pages.notFound.preloadHeader) {
-				headers['Link'] = pages.notFound.preloadHeader;
-			}
-			return new Response(pages.notFound.html, { status: 404, headers });
-		},
+		onUnauthenticated: hiddenRouteResponse,
 	})
 );
+
+// Admin pages are site-admin only, by the session's isAdmin flag. Like the
+// onboarding redirect below, this gates document loads, not in-app navigation;
+// the admin API endpoints check the role themselves.
+app.use('*', requireAdminSession({ prefix: '/admin', onDenied: hiddenRouteResponse }));
 
 // Serve remaining static files (SPA bundle, etc.) - requires auth
 app.use(

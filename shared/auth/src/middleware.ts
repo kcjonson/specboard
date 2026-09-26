@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession } from './session.ts';
-import type { AuthMiddlewareOptions, AuthUser, Session } from './types.ts';
+import type { AdminSessionOptions, AuthMiddlewareOptions, AuthUser, Session } from './types.ts';
 import { SESSION_COOKIE_NAME } from './types.ts';
 
 /**
@@ -100,6 +100,30 @@ export function authMiddleware(
 		});
 		c.set('sessionId', sessionId);
 		c.set('session', session);
+
+		return next();
+	};
+}
+
+/**
+ * Gate a path prefix on the session's isAdmin flag. Must run after
+ * authMiddleware; a request under the prefix with no session is denied too.
+ *
+ * Empty segments are dropped before comparing because the SPA router drops
+ * them as well, so `//admin/ui` still renders the /admin/ui route.
+ */
+export function requireAdminSession(
+	options: AdminSessionOptions
+): MiddlewareHandler<{ Variables: AuthVariables }> {
+	const prefixSegments = options.prefix.split('/').filter(Boolean);
+
+	return async (c: Context<{ Variables: AuthVariables }>, next) => {
+		const segments = c.req.path.split('/').filter(Boolean);
+		const underPrefix = prefixSegments.every((segment, i) => segments[i] === segment);
+
+		if (underPrefix && c.get('session')?.isAdmin !== true) {
+			return options.onDenied(new URL(c.req.url));
+		}
 
 		return next();
 	};

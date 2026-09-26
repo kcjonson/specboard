@@ -10,7 +10,7 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { hashPassword, validatePassword } from '@specboard/auth';
+import { hashPassword, validatePassword, updateUserSessions, deleteUserSessions } from '@specboard/auth';
 import { query, type User, type SignupMetadata } from '@specboard/db';
 import { isValidUUID, isValidEmail, isValidUsername } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
@@ -445,6 +445,11 @@ export async function handleUpdateUser(
 			}
 		}
 
+		// Live sessions carry the admin flag the frontend's /admin gate reads
+		if (roles !== undefined) {
+			await updateUserSessions(redis, id, { isAdmin: isAdmin(user) });
+		}
+
 		// Update password if superadmin is setting it (validated above)
 		// Use UPSERT to handle case where user_passwords record doesn't exist
 		if (canSetPassword) {
@@ -457,25 +462,8 @@ export async function handleUpdateUser(
 				[passwordHash, id]
 			);
 
-			// Invalidate all existing sessions for this user (force re-login)
-			let cursor = '0';
-			do {
-				const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'session:*', 'COUNT', 100);
-				cursor = nextCursor;
-				for (const key of keys) {
-					const sessionData = await redis.get(key);
-					if (sessionData) {
-						try {
-							const session = JSON.parse(sessionData);
-							if (session.userId === id) {
-								await redis.del(key);
-							}
-						} catch {
-							// Skip invalid session data
-						}
-					}
-				}
-			} while (cursor !== '0');
+			// Force re-login everywhere
+			await deleteUserSessions(redis, id);
 
 			console.log(`Password set for user ${id} by superadmin ${currentUser.id}`);
 		}

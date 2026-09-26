@@ -249,7 +249,7 @@ export async function handleWebauthnLoginVerify(context: Context, redis: Redis):
 			return fail('counter_race');
 		}
 
-		await establishSession(context, redis, user.id, 'passkey', user.username !== null);
+		await establishSession(context, redis, user, 'passkey');
 		logAuthEvent('passkey_login', { userId: user.id, result: 'success' });
 		return context.json({ user: userJson(user) });
 	} catch (error) {

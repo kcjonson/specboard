@@ -19,6 +19,12 @@ export interface Session {
 	 * to /onboarding while false. Absent on pre-feature sessions = complete.
 	 */
 	profileComplete?: boolean;
+	/**
+	 * True while the user holds the site-admin role; the frontend server 404s
+	 * /admin document loads unless it is. Absent on pre-feature sessions =
+	 * not admin, so those admins sign in again once.
+	 */
+	isAdmin?: boolean;
 }
 
 /**
@@ -36,6 +42,16 @@ export interface AuthMiddlewareOptions {
 	excludePaths?: string[];
 	/** Custom handler for unauthenticated requests. Receives the full request URL. */
 	onUnauthenticated?: (requestUrl: URL) => Response | Promise<Response>;
+}
+
+/**
+ * Admin session gate options
+ */
+export interface AdminSessionOptions {
+	/** Path prefix to gate, e.g. '/admin'; covers the prefix itself and everything under it */
+	prefix: string;
+	/** Response for a request under the prefix whose session isn't an admin's */
+	onDenied: (requestUrl: URL) => Response | Promise<Response>;
 }
 
 /**

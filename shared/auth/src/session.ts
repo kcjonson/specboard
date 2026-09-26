@@ -42,6 +42,7 @@ export async function createSession(
 		lastAccessedAt: now,
 		authMethod: data.authMethod,
 		profileComplete: data.profileComplete,
+		isAdmin: data.isAdmin,
 	};
 
 	await redis.setex(
@@ -128,6 +129,61 @@ export async function deleteSession(
 	sessionId: string
 ): Promise<void> {
 	await redis.del(sessionKey(sessionId));
+}
+
+/**
+ * Every session belonging to a user, with its Redis key. Sessions aren't
+ * indexed by user, so this scans the whole keyspace; keep it to rare admin
+ * actions.
+ */
+async function userSessions(
+	redis: Redis,
+	userId: string
+): Promise<Array<{ key: string; session: Session }>> {
+	const found: Array<{ key: string; session: Session }> = [];
+	let cursor = '0';
+	do {
+		const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', sessionKey('*'), 'COUNT', 100);
+		cursor = nextCursor;
+		for (const key of keys) {
+			const data = await redis.get(key);
+			if (!data) continue;
+			let session: Session;
+			try {
+				session = JSON.parse(data);
+			} catch {
+				// Corrupted session data belongs to no one
+				continue;
+			}
+			if (session.userId === userId) {
+				found.push({ key, session });
+			}
+		}
+	} while (cursor !== '0');
+	return found;
+}
+
+/**
+ * Apply updates to every live session of a user, e.g. after an admin changes
+ * their roles. KEEPTTL so an idle session's expiry isn't extended by it.
+ */
+export async function updateUserSessions(
+	redis: Redis,
+	userId: string,
+	updates: Partial<Omit<Session, 'userId' | 'createdAt' | 'lastAccessedAt'>>
+): Promise<void> {
+	for (const { key, session } of await userSessions(redis, userId)) {
+		await redis.set(key, JSON.stringify({ ...session, ...updates }), 'KEEPTTL');
+	}
+}
+
+/**
+ * Delete every session of a user, forcing re-login on all devices
+ */
+export async function deleteUserSessions(redis: Redis, userId: string): Promise<void> {
+	for (const { key } of await userSessions(redis, userId)) {
+		await redis.del(key);
+	}
 }
 
 /**

@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Redis } from 'ioredis';
 
-import { authMiddleware, type AuthVariables } from './middleware.ts';
+import { authMiddleware, requireAdminSession, type AuthVariables } from './middleware.ts';
 import { SESSION_COOKIE_NAME } from './types.ts';
 
 const SESSION_JSON = JSON.stringify({
@@ -66,5 +66,69 @@ describe('auth middleware', () => {
 		} finally {
 			errorSpy.mockRestore();
 		}
+	});
+});
+
+describe('requireAdminSession', () => {
+	function sessionRedis(fields: Record<string, unknown>): Redis {
+		const json = JSON.stringify({ ...JSON.parse(SESSION_JSON), ...fields });
+		return {
+			get: async () => json,
+			setex: async () => 'OK',
+		} as unknown as Redis;
+	}
+
+	function adminApp(redis: Redis): Hono<{ Variables: AuthVariables }> {
+		const app = new Hono<{ Variables: AuthVariables }>();
+		app.use('*', authMiddleware(redis));
+		app.use('*', requireAdminSession({
+			prefix: '/admin',
+			onDenied: () => new Response('not found', { status: 404 }),
+		}));
+		app.get('*', (c) => c.text('spa'));
+		return app;
+	}
+
+	function load(app: Hono<{ Variables: AuthVariables }>, path: string): Promise<Response> {
+		return Promise.resolve(
+			app.request(path, {
+				headers: { Cookie: `${SESSION_COOKIE_NAME}=abc123` },
+			})
+		);
+	}
+
+	const adminPaths = ['/admin', '/admin/', '/admin/ui', '/admin/users/some-id', '//admin/ui', '/admin//ui', '/%61dmin/ui'];
+
+	it.each(adminPaths)('serves %s to an admin session', async (path) => {
+		const res = await load(adminApp(sessionRedis({ isAdmin: true })), path);
+		expect(res.status).toBe(200);
+		expect(await res.text()).toBe('spa');
+	});
+
+	it.each(adminPaths)('denies %s to a non-admin session', async (path) => {
+		const res = await load(adminApp(sessionRedis({ isAdmin: false })), path);
+		expect(res.status).toBe(404);
+	});
+
+	it('denies a session created before the flag existed', async () => {
+		const res = await load(adminApp(sessionRedis({})), '/admin/ui');
+		expect(res.status).toBe(404);
+	});
+
+	it('denies a request that reached the gate without a session', async () => {
+		const app = new Hono<{ Variables: AuthVariables }>();
+		app.use('*', requireAdminSession({
+			prefix: '/admin',
+			onDenied: () => new Response('not found', { status: 404 }),
+		}));
+		app.get('*', (c) => c.text('spa'));
+
+		const res = await app.request('/admin/ui');
+		expect(res.status).toBe(404);
+	});
+
+	it.each(['/', '/projects', '/administrator', '/settings/admin'])('leaves %s alone for a non-admin', async (path) => {
+		const res = await load(adminApp(sessionRedis({ isAdmin: false })), path);
+		expect(res.status).toBe(200);
 	});
 });

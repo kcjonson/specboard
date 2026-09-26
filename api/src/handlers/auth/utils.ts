@@ -13,6 +13,8 @@ import {
 	SESSION_TTL_SECONDS,
 	type AuthMethod,
 } from '@specboard/auth';
+import type { User } from '@specboard/db';
+import { isAdmin } from '../auth-utils.ts';
 
 /**
  * Auth event types for logging
@@ -122,18 +124,22 @@ export function isValidInviteKey(key: string): boolean {
 /**
  * Create a Redis session and set the auth cookies on the response.
  * Shared by every successful-auth path (password, magic link, passkey).
- * profileComplete gates SPA document loads server-side (frontend service)
- * until onboarding claims a username.
+ * The session's profileComplete and isAdmin flags drive the frontend
+ * service's server-side gates (onboarding redirect, /admin 404).
  */
 export async function establishSession(
 	context: Context,
 	redis: Redis,
-	userId: string,
-	authMethod: AuthMethod,
-	profileComplete: boolean
+	user: User,
+	authMethod: AuthMethod
 ): Promise<void> {
 	const sessionId = generateSessionId();
-	const csrfToken = await createSession(redis, sessionId, { userId, authMethod, profileComplete });
+	const csrfToken = await createSession(redis, sessionId, {
+		userId: user.id,
+		authMethod,
+		profileComplete: user.username !== null,
+		isAdmin: isAdmin(user),
+	});
 	const secure = isSecureRequest(context);
 
 	// Session cookie is HttpOnly; CSRF cookie is readable by JS for the

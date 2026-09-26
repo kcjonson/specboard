@@ -90,7 +90,7 @@ export async function handleLogin(
 			}, 403);
 		}
 
-		await establishSession(context, redis, user.id, 'password', user.username !== null);
+		await establishSession(context, redis, user, 'password');
 
 		logAuthEvent('login_success', { userId: user.id, username: user.username });
 

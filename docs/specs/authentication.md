@@ -182,6 +182,7 @@ session:{session_id}:
   last_accessed: timestamp
   auth_method: password | magic_link | passkey (optional)
   profile_complete: boolean (optional; false gates SPA loads to /onboarding)
+  is_admin: boolean (optional; only true serves /admin pages)
 
 TTL: 30 days (sliding expiration)
 ```
@@ -357,6 +358,20 @@ Browser                     Frontend/API              Redis
    │◄───────────────────────────│                       │
    │ Response                   │                       │
 ```
+
+**Admin pages**: every path under `/admin` (the prefix itself included) is
+site-admin only. The frontend service runs `requireAdminSession` after
+`authMiddleware` and answers a session without `isAdmin: true` with the same
+private, no-cache 404 page an unauthenticated request gets, so non-admins
+can't tell the admin area exists. Path segments are compared with empty ones
+dropped, matching the SPA router, so `//admin/ui` is gated too. The flag is
+set from `users.roles` when a session is created, and `PUT /api/users/:id`
+rewrites it on all of that user's live sessions whenever roles change, so a
+grant or revoke takes effect on the next document load. Sessions from before
+the flag existed read as not admin until the user signs in again. Like the
+onboarding redirect, this gates document loads, not in-app navigation; the
+admin API endpoints (`/api/users`, `/api/waitlist`) check the role against
+the database on every call.
 
 ### 5. Password Reset
 

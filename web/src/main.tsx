@@ -114,6 +114,8 @@ const routes = [
 	{ route: '/oauth/consent', entry: OAuthConsent },
 
 	// Admin routes
+	// Role gating is server-side: the frontend service 404s document loads
+	// under /admin unless the session's isAdmin flag is set
 	{ route: '/admin', entry: Admin },
 	{ route: '/admin/users', entry: AdminUsers },
 	{ route: '/admin/users/:userId', entry: UserSettings },
