@@ -38,30 +38,6 @@ export async function getCurrentUser(context: Context, redis: Redis): Promise<Us
 /**
  * Check if user has admin role
  */
-export function isAdmin(user: Pick<User, 'roles'>): boolean {
+export function isAdmin(user: User): boolean {
 	return user.roles.includes('admin');
-}
-
-/**
- * Finish a write of session isAdmin flags (`written`, via `write`) by
- * re-reading the user's roles and rewriting until a read matches the last
- * write. Every writer of the flag ends this way and a role change commits
- * before it scans sessions, so the last write to any session comes from a
- * read no older than the last role commit: a read that missed that commit
- * preceded it, so that commit's own scan wrote the session afterwards.
- * A deleted user reads as not admin.
- */
-export async function settleAdminFlag(
-	userId: string,
-	written: boolean,
-	write: (isAdmin: boolean) => Promise<void>
-): Promise<void> {
-	let last = written;
-	for (;;) {
-		const result = await query<Pick<User, 'roles'>>('SELECT roles FROM users WHERE id = $1', [userId]);
-		const current = result.rows[0] !== undefined && isAdmin(result.rows[0]);
-		if (current === last) return;
-		await write(current);
-		last = current;
-	}
 }

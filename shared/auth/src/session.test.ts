@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Redis } from 'ioredis';
 
-import { deleteUserSessions, getSession, updateSession, updateUserSessions } from './session.ts';
+import { deleteUserSessions, getSession, updateSession } from './session.ts';
 import { SESSION_TTL_SECONDS } from './types.ts';
 
 interface FakeRedis {
@@ -15,17 +15,21 @@ interface FakeRedis {
 	writes: string[];
 }
 
-// Pages the scan two keys at a time so the cursor loop is exercised. eval
-// stands in for the merge script (a real Redis would run the Lua): it merges
-// the JSON updates into the stored session and sets it with the given TTL,
-// 0 meaning KEEPTTL.
+// Pages the scan two keys at a time so the cursor loop is exercised, over a
+// snapshot taken when the scan starts: like Redis SCAN, deleting keys mid-scan
+// doesn't skip the rest. eval stands in for the merge script (a real Redis
+// would run the Lua): it merges the JSON updates into the stored session and
+// sets it with the given TTL.
 function fakeRedis(entries: Record<string, string>): FakeRedis {
 	const store = new Map(Object.entries(entries));
 	const writes: string[] = [];
+	let keys: string[] = [];
 	const redis = {
 		scan: async (cursor: string, _match: 'MATCH', pattern: string) => {
-			const prefix = pattern.replace(/\*$/, '');
-			const keys = [...store.keys()].filter((key) => key.startsWith(prefix));
+			if (cursor === '0') {
+				const prefix = pattern.replace(/\*$/, '');
+				keys = [...store.keys()].filter((key) => key.startsWith(prefix));
+			}
 			const start = Number(cursor);
 			const next = start + 2 >= keys.length ? '0' : String(start + 2);
 			return [next, keys.slice(start, start + 2)];
@@ -39,7 +43,7 @@ function fakeRedis(entries: Record<string, string>): FakeRedis {
 			const raw = store.get(key);
 			if (raw === undefined) return 0;
 			store.set(key, JSON.stringify({ ...JSON.parse(raw), ...JSON.parse(updates) }));
-			writes.push(ttl > 0 ? `set ${key} ${ttl}` : `set ${key} KEEPTTL`);
+			writes.push(`set ${key} ${ttl}`);
 			return 1;
 		},
 		del: async (key: string) => {
@@ -55,9 +59,9 @@ function session(userId: string, extra: Record<string, unknown> = {}): string {
 }
 
 const ENTRIES = {
-	'session:a1': session('alice', { isAdmin: false }),
+	'session:a1': session('alice'),
 	'session:b1': session('bob'),
-	'session:a2': session('alice', { isAdmin: false, profileComplete: true }),
+	'session:a2': session('alice', { profileComplete: true }),
 	'session:bad': '{not json',
 	'rate:alice': session('alice'),
 };
@@ -107,21 +111,6 @@ describe('updateSession', () => {
 		expect(await updateSession(redis, 'gone', { profileComplete: true })).toBe(false);
 		expect(store.has('session:gone')).toBe(false);
 		expect(writes).toEqual([]);
-	});
-});
-
-describe('updateUserSessions', () => {
-	it('updates every session of the user and only theirs, keeping the TTL', async () => {
-		const { redis, store, writes } = fakeRedis(ENTRIES);
-
-		await updateUserSessions(redis, 'alice', { isAdmin: true });
-
-		expect(JSON.parse(store.get('session:a1')!)).toMatchObject({ userId: 'alice', isAdmin: true });
-		expect(JSON.parse(store.get('session:a2')!)).toMatchObject({ isAdmin: true, profileComplete: true });
-		expect(store.get('session:b1')).toBe(ENTRIES['session:b1']);
-		expect(store.get('session:bad')).toBe('{not json');
-		expect(store.get('rate:alice')).toBe(ENTRIES['rate:alice']);
-		expect(writes.sort()).toEqual(['set session:a1 KEEPTTL', 'set session:a2 KEEPTTL']);
 	});
 });
 

@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Redis } from 'ioredis';
 
-import { authMiddleware, requireAdminSession, type AuthVariables } from './middleware.ts';
+import { authMiddleware, requireAdminPath, type AuthVariables } from './middleware.ts';
 import { SESSION_COOKIE_NAME } from './types.ts';
 
 const SESSION_JSON = JSON.stringify({
@@ -68,20 +68,18 @@ describe('auth middleware', () => {
 	});
 });
 
-describe('requireAdminSession', () => {
-	function sessionRedis(fields: Record<string, unknown>): Redis {
-		const json = JSON.stringify({ ...JSON.parse(SESSION_JSON), ...fields });
-		return {
-			get: async () => json,
-			expire: async () => 1,
-		} as unknown as Redis;
-	}
+describe('requireAdminPath', () => {
+	const redis = {
+		get: async () => SESSION_JSON,
+		expire: async () => 1,
+	} as unknown as Redis;
 
-	function adminApp(redis: Redis): Hono<{ Variables: AuthVariables }> {
+	function adminApp(isAdmin: (sessionId: string) => Promise<boolean>): Hono<{ Variables: AuthVariables }> {
 		const app = new Hono<{ Variables: AuthVariables }>();
 		app.use('*', authMiddleware(redis));
-		app.use('*', requireAdminSession({
+		app.use('*', requireAdminPath({
 			prefix: '/admin',
+			isAdmin,
 			onDenied: () => new Response('not found', { status: 404 }),
 		}));
 		app.get('*', (c) => c.text('spa'));
@@ -98,14 +96,16 @@ describe('requireAdminSession', () => {
 
 	const adminPaths = ['/admin', '/admin/', '/admin/ui', '/admin/users/some-id', '//admin/ui', '/admin//ui', '/x/%2e%2e/admin/ui'];
 
-	it.each(adminPaths)('serves %s to an admin session', async (path) => {
-		const res = await load(adminApp(sessionRedis({ isAdmin: true })), path);
+	it.each(adminPaths)('serves %s when the check says admin', async (path) => {
+		const isAdmin = vi.fn(async () => true);
+		const res = await load(adminApp(isAdmin), path);
 		expect(res.status).toBe(200);
 		expect(await res.text()).toBe('spa');
+		expect(isAdmin).toHaveBeenCalledExactlyOnceWith('abc123');
 	});
 
-	it.each(adminPaths)('denies %s to a non-admin session', async (path) => {
-		const res = await load(adminApp(sessionRedis({ isAdmin: false })), path);
+	it.each(adminPaths)('denies %s when the check says not admin', async (path) => {
+		const res = await load(adminApp(async () => false), path);
 		expect(res.status).toBe(404);
 	});
 
@@ -113,30 +113,43 @@ describe('requireAdminSession', () => {
 	// malformed escape later in the path doesn't stop the prefix decoding.
 	// Encodings Hono keeps (%25, %2F) never render an admin page in the SPA
 	// router either; shared/router start-router.test.tsx pins that half.
-	it.each(['/%61dmin/ui', '/%61%64%6D%69%6E', '/%61dmin/%E0%A4%A'])('denies the encoded %s to a non-admin session', async (path) => {
-		const res = await load(adminApp(sessionRedis({ isAdmin: false })), path);
+	it.each(['/%61dmin/ui', '/%61%64%6D%69%6E', '/%61dmin/%E0%A4%A'])('gates the encoded %s', async (path) => {
+		const isAdmin = vi.fn(async () => false);
+		const res = await load(adminApp(isAdmin), path);
 		expect(res.status).toBe(404);
+		expect(isAdmin).toHaveBeenCalledOnce();
 	});
 
-	it('denies a session created before the flag existed', async () => {
-		const res = await load(adminApp(sessionRedis({})), '/admin/ui');
-		expect(res.status).toBe(404);
+	it('denies when the check rejects', async () => {
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const res = await load(adminApp(() => Promise.reject(new Error('The operation was aborted due to timeout'))), '/admin/ui');
+			expect(res.status).toBe(404);
+			expect(errorSpy).toHaveBeenCalled();
+		} finally {
+			errorSpy.mockRestore();
+		}
 	});
 
-	it('denies a request that reached the gate without a session', async () => {
+	it('denies a request that reached the gate without a session, without checking', async () => {
+		const isAdmin = vi.fn(async () => true);
 		const app = new Hono<{ Variables: AuthVariables }>();
-		app.use('*', requireAdminSession({
+		app.use('*', requireAdminPath({
 			prefix: '/admin',
+			isAdmin,
 			onDenied: () => new Response('not found', { status: 404 }),
 		}));
 		app.get('*', (c) => c.text('spa'));
 
 		const res = await app.request('/admin/ui');
 		expect(res.status).toBe(404);
+		expect(isAdmin).not.toHaveBeenCalled();
 	});
 
-	it.each(['/', '/projects', '/administrator', '/settings/admin'])('leaves %s alone for a non-admin', async (path) => {
-		const res = await load(adminApp(sessionRedis({ isAdmin: false })), path);
+	it.each(['/', '/projects', '/administrator', '/settings/admin'])('leaves %s alone without checking', async (path) => {
+		const isAdmin = vi.fn(async () => false);
+		const res = await load(adminApp(isAdmin), path);
 		expect(res.status).toBe(200);
+		expect(isAdmin).not.toHaveBeenCalled();
 	});
 });

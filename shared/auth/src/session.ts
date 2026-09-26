@@ -40,7 +40,6 @@ export async function createSession(
 		createdAt: Date.now(),
 		authMethod: data.authMethod,
 		profileComplete: data.profileComplete,
-		isAdmin: data.isAdmin,
 	};
 
 	await redis.setex(
@@ -54,8 +53,8 @@ export async function createSession(
 
 /**
  * Get a session from Redis and slide its expiry. Only the TTL is touched:
- * rewriting the body here would race updateSession/updateUserSessions (and
- * resurrect sessions deleted mid-request), since every request reads it.
+ * rewriting the body here would race updateSession (and resurrect sessions
+ * deleted mid-request), since every request reads it.
  */
 export async function getSession(
 	redis: Redis,
@@ -83,11 +82,11 @@ export async function getSession(
 }
 
 /**
- * Merges ARGV[1] (a JSON object) into the session at KEYS[1] in one atomic
- * step. ARGV[2] is the new TTL in seconds, or 0 to keep the current one.
- * Returns 0 if the session is gone; corrupted data is deleted. cjson encodes
- * numbers with at most 14 significant digits (Redis caps the precision), so
- * integers stay exact only below 1e14; ms timestamps like createdAt are 13.
+ * Merges ARGV[1] (a JSON object) into the session at KEYS[1] and resets its
+ * TTL to ARGV[2] seconds, in one atomic step. Returns 0 if the session is
+ * gone; corrupted data is deleted. cjson encodes numbers with at most 14
+ * significant digits (Redis caps the precision), so integers stay exact only
+ * below 1e14; ms timestamps like createdAt are 13.
  */
 const MERGE_SESSION_SCRIPT = `
 local raw = redis.call('GET', KEYS[1])
@@ -102,24 +101,9 @@ end
 for field, value in pairs(cjson.decode(ARGV[1])) do
 	session[field] = value
 end
-local ttl = tonumber(ARGV[2])
-if ttl > 0 then
-	redis.call('SET', KEYS[1], cjson.encode(session), 'EX', ttl)
-else
-	redis.call('SET', KEYS[1], cjson.encode(session), 'KEEPTTL')
-end
+redis.call('SET', KEYS[1], cjson.encode(session), 'EX', ARGV[2])
 return 1
 `;
-
-async function mergeSession(
-	redis: Redis,
-	key: string,
-	updates: Partial<Session>,
-	ttlSeconds: number
-): Promise<boolean> {
-	const merged = await redis.eval(MERGE_SESSION_SCRIPT, 1, key, JSON.stringify(updates), ttlSeconds);
-	return merged === 1;
-}
 
 /**
  * Update session data and refresh its TTL
@@ -129,7 +113,14 @@ export async function updateSession(
 	sessionId: string,
 	updates: Partial<Omit<Session, 'createdAt'>>
 ): Promise<boolean> {
-	return mergeSession(redis, sessionKey(sessionId), updates, SESSION_TTL_SECONDS);
+	const merged = await redis.eval(
+		MERGE_SESSION_SCRIPT,
+		1,
+		sessionKey(sessionId),
+		JSON.stringify(updates),
+		SESSION_TTL_SECONDS
+	);
+	return merged === 1;
 }
 
 /**
@@ -143,11 +134,11 @@ export async function deleteSession(
 }
 
 /**
- * Redis keys of every session belonging to a user. Sessions aren't indexed
- * by user, so this scans the whole keyspace; keep it to rare admin actions.
+ * Delete every session of a user, forcing re-login on all devices. Sessions
+ * aren't indexed by user, so this scans the whole keyspace; keep it to rare
+ * admin actions.
  */
-async function userSessionKeys(redis: Redis, userId: string): Promise<string[]> {
-	const found: string[] = [];
+export async function deleteUserSessions(redis: Redis, userId: string): Promise<void> {
 	let cursor = '0';
 	do {
 		const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', sessionKey('*'), 'COUNT', 100);
@@ -163,34 +154,10 @@ async function userSessionKeys(redis: Redis, userId: string): Promise<string[]> 
 				continue;
 			}
 			if (session.userId === userId) {
-				found.push(key);
+				await redis.del(key);
 			}
 		}
 	} while (cursor !== '0');
-	return found;
-}
-
-/**
- * Apply updates to every live session of a user, e.g. after an admin changes
- * their roles. The TTL is kept so an idle session's expiry isn't extended.
- */
-export async function updateUserSessions(
-	redis: Redis,
-	userId: string,
-	updates: Partial<Omit<Session, 'userId' | 'createdAt'>>
-): Promise<void> {
-	for (const key of await userSessionKeys(redis, userId)) {
-		await mergeSession(redis, key, updates, 0);
-	}
-}
-
-/**
- * Delete every session of a user, forcing re-login on all devices
- */
-export async function deleteUserSessions(redis: Redis, userId: string): Promise<void> {
-	for (const key of await userSessionKeys(redis, userId)) {
-		await redis.del(key);
-	}
 }
 
 /**

@@ -30,7 +30,7 @@ vi.mock('@specboard/auth', () => ({
 }));
 
 import { query } from '@specboard/db';
-import { createSession, verifyPassword, isFailureLimited, recordFailure, clearFailures } from '@specboard/auth';
+import { verifyPassword, isFailureLimited, recordFailure, clearFailures } from '@specboard/auth';
 import { handleLogin } from './login.ts';
 
 const redis = {} as Redis;
@@ -44,7 +44,6 @@ const mockUser = {
 	avatar_url: null,
 	email_verified: true,
 	is_active: true,
-	roles: [] as string[],
 	password_hash: 'hashed',
 };
 
@@ -98,20 +97,6 @@ describe('handleLogin failure limiting', () => {
 		expect(res.status).toBe(200);
 		expect(clearFailures).toHaveBeenCalledOnce();
 		expect(recordFailure).not.toHaveBeenCalled();
-		expect(createSession).toHaveBeenCalledWith(redis, 'session-id', {
-			userId: mockUser.id,
-			authMethod: 'password',
-			profileComplete: true,
-			isAdmin: false,
-		});
-	});
-
-	it('flags the session as admin for a site admin', async () => {
-		vi.mocked(query).mockResolvedValue({ rows: [{ ...mockUser, roles: ['admin'] }] } as never);
-		vi.mocked(verifyPassword).mockResolvedValue(true);
-		const res = await login();
-		expect(res.status).toBe(200);
-		expect(createSession).toHaveBeenCalledWith(redis, 'session-id', expect.objectContaining({ isAdmin: true }));
 	});
 
 	it('does not count a correct password on an unverified account as a failure', async () => {

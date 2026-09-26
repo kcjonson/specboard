@@ -1,8 +1,5 @@
 /**
- * User update handler tests
- *
- * Focus is keeping live sessions in step with role changes: the frontend's
- * /admin gate reads the session's isAdmin flag, not the database.
+ * User update handler tests: which updates sign the target out everywhere
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -17,7 +14,6 @@ vi.mock('@specboard/db', () => ({
 vi.mock('@specboard/auth', () => ({
 	hashPassword: vi.fn(async () => 'hashed'),
 	validatePassword: vi.fn(() => ({ valid: true, errors: [] })),
-	updateUserSessions: vi.fn(async () => undefined),
 	deleteUserSessions: vi.fn(async () => undefined),
 }));
 
@@ -27,7 +23,7 @@ vi.mock('./auth-utils.ts', async (importOriginal) => ({
 }));
 
 import { query } from '@specboard/db';
-import { updateUserSessions, deleteUserSessions } from '@specboard/auth';
+import { deleteUserSessions } from '@specboard/auth';
 import { getCurrentUser } from './auth-utils.ts';
 import { handleUpdateUser } from './users.ts';
 
@@ -74,37 +70,18 @@ function put(body: unknown): Promise<Response> {
 	);
 }
 
-describe('handleUpdateUser session sync', () => {
+describe('handleUpdateUser session invalidation', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(getCurrentUser).mockResolvedValue(admin);
 	});
 
-	it('flags the target\'s live sessions as admin when the role is granted', async () => {
-		mockTargetAfterUpdate(user({ roles: ['admin'] }));
-
-		const res = await put({ roles: ['admin'] });
-
-		expect(res.status).toBe(200);
-		expect(updateUserSessions).toHaveBeenCalledWith(redis, TARGET_ID, { isAdmin: true });
-	});
-
-	it('clears the flag on the target\'s live sessions when the role is revoked', async () => {
+	it('leaves sessions alone for a role change', async () => {
 		mockTargetAfterUpdate(user({ roles: [] }));
 
 		const res = await put({ roles: [] });
 
 		expect(res.status).toBe(200);
-		expect(updateUserSessions).toHaveBeenCalledWith(redis, TARGET_ID, { isAdmin: false });
-	});
-
-	it('leaves sessions alone when roles are not part of the update', async () => {
-		mockTargetAfterUpdate(user({ first_name: 'Robert' }));
-
-		const res = await put({ first_name: 'Robert' });
-
-		expect(res.status).toBe(200);
-		expect(updateUserSessions).not.toHaveBeenCalled();
 		expect(deleteUserSessions).not.toHaveBeenCalled();
 	});
 

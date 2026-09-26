@@ -92,7 +92,7 @@ const credRow = {
 	transports: ['internal'],
 };
 
-const activeUser = { id: USER_ID, username: 'alice', email: 'a@example.com', first_name: 'A', last_name: 'B', avatar_url: null, is_active: true, roles: [] as string[] };
+const activeUser = { id: USER_ID, username: 'alice', email: 'a@example.com', first_name: 'A', last_name: 'B', avatar_url: null, is_active: true };
 
 /**
  * AuthenticationResponseJSON-shaped body. Defaults to a userHandle that matches
@@ -221,7 +221,7 @@ describe('handleWebauthnLoginVerify', () => {
 			requireUserVerification: true,
 			credential: expect.objectContaining({ id: 'Y3JlZC1pZA', counter: 5 }),
 		}));
-		expect(createSession).toHaveBeenCalledWith(expect.anything(), 'session-id', { userId: USER_ID, authMethod: 'passkey', profileComplete: true, isAdmin: false });
+		expect(createSession).toHaveBeenCalledWith(expect.anything(), 'session-id', { userId: USER_ID, authMethod: 'passkey', profileComplete: true });
 		const update = vi.mocked(query).mock.calls.find((c) => (c[0] as string).includes('UPDATE webauthn_credentials SET counter'));
 		// CAS bound to the counter read at verify (5): [newCounter, id, oldCounter].
 		expect(update?.[1]).toEqual([6, 'cred-row-1', 5]);

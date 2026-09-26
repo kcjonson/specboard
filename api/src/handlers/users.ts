@@ -10,10 +10,10 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { hashPassword, validatePassword, updateUserSessions, deleteUserSessions } from '@specboard/auth';
+import { hashPassword, validatePassword, deleteUserSessions } from '@specboard/auth';
 import { query, type User, type SignupMetadata } from '@specboard/db';
 import { isValidUUID, isValidEmail, isValidUsername } from '../validation.ts';
-import { getCurrentUser, isAdmin, settleAdminFlag } from './auth-utils.ts';
+import { getCurrentUser, isAdmin } from './auth-utils.ts';
 
 /**
  * User response type for API
@@ -423,13 +423,6 @@ export async function handleUpdateUser(
 			}
 		}
 
-		// Clear the flag before a revoke commits so a Redis failure fails closed:
-		// the handler errors out with the role unchanged, and no session is left
-		// more privileged than the database
-		if (roles !== undefined && !isAdmin({ roles })) {
-			await updateUserSessions(redis, id, { isAdmin: false });
-		}
-
 		let user: User | undefined;
 
 		// Update user fields if any
@@ -450,19 +443,6 @@ export async function handleUpdateUser(
 			if (!user) {
 				return context.json({ error: 'User not found' }, 404);
 			}
-		}
-
-		// Live sessions carry the admin flag the frontend's /admin gate reads.
-		// The UPDATE above has committed, so this scan also reaches sessions
-		// from logins that read the old roles. A grant is written only now, so
-		// a failure here leaves sessions under-privileged, never over.
-		if (roles !== undefined) {
-			const writeFlag = async (flag: boolean): Promise<void> => {
-				await updateUserSessions(redis, id, { isAdmin: flag });
-			};
-			const flag = isAdmin(user);
-			await writeFlag(flag);
-			await settleAdminFlag(id, flag, writeFlag);
 		}
 
 		// Update password if superadmin is setting it (validated above)

@@ -181,18 +181,19 @@ session:{session_id}:
   created_at: timestamp
   auth_method: password | magic_link | passkey (optional)
   profile_complete: boolean (optional; false gates SPA loads to /onboarding)
-  is_admin: boolean (optional; only true serves /admin pages)
 
 TTL: 30 days (sliding expiration)
 ```
 
 Reading a session slides its expiry with `EXPIRE` and never rewrites the
 body, so a request in flight can't overwrite a concurrent flag change or
-bring back a session that was just deleted. Flag changes (`updateSession`,
-`updateUserSessions`) merge into the stored JSON with a Lua script, one
-atomic step in Redis; `updateSession` also refreshes the TTL, while
-`updateUserSessions` keeps it so an admin action doesn't extend an idle
-session.
+bring back a session that was just deleted. Flag changes (`updateSession`)
+merge into the stored JSON and refresh the TTL with a Lua script, one atomic
+step in Redis.
+
+Sessions don't carry roles. Anything that needs to know whether a user is an
+admin reads `users.roles`, so a grant or revoke applies on the next request
+without touching live sessions.
 
 Sessions are auth-only. User details (username, first_name, last_name, avatar, etc.) are fetched via `/api/auth/me` or `/api/users/:id`.
 
@@ -367,31 +368,25 @@ Browser                     Frontend/API              Redis
 ```
 
 **Admin pages**: every path under `/admin` (the prefix itself included) is
-site-admin only. The frontend service runs `requireAdminSession` after
-`authMiddleware` and answers a session without `isAdmin: true` with the same
+site-admin only. The frontend service runs `requireAdminPath` after
+`authMiddleware`, and on every document load under the prefix it asks the API
+whether the user is an admin right now: it calls `GET /api/auth/me` with the
+request's session cookie, and `/me` reads the user row (roles, `is_active`)
+from Postgres on every call. The frontend has no database access, so this is
+its route to the source of truth, one extra API round trip per `/admin`
+document load and none anywhere else. The gate fails closed: a non-2xx
+(deactivated, expired, rate limited, API error), a response without an
+`admin` role, a network error, or no answer within 5 seconds all get the same
 private, no-cache 404 page an unauthenticated request gets, so non-admins
-can't tell the admin area exists. Path segments are compared with empty ones
-dropped, matching the SPA router, so `//admin/ui` is gated too. The gate
-reads Hono's `c.req.path`, which is already percent-decoded (except `%25` and
-`%2F`), so `/%61dmin/ui` is gated as well; the SPA router compares raw
-segments and never renders an admin page for an encoded path. The flag is
-set from `users.roles` when a session is created, and `PUT /api/users/:id`
-rewrites it on all of that user's live sessions whenever roles change, so a
-grant or revoke takes effect on the next document load. A login can race a
-role change (it read the old roles, but its session lands after the role
-change's scan), so both sides finish the same way: after writing the flag they
-re-read `users.roles` and rewrite until a read matches what they last wrote
-(`settleAdminFlag`). The role change commits its UPDATE before scanning, so a
-login whose re-read missed the new roles wrote its session before that scan,
-and the scan fixes it; a login whose re-read saw them fixes itself. No lock
-or role version column is needed. Redis failures fail closed: a revoke clears
-the flag on the user's sessions before the UPDATE, so if that fails the request
-errors with the role unchanged, and a grant reaches sessions only after it
-commits, so a failure leaves them without the flag until the next login.
-The remaining gap needs a login to land between a revoke's early clear and
-its commit and the scan after the commit to fail; that request errors, and
-saving the revoke again clears the session. Sessions from before
-the flag existed read as not admin until the user signs in again. Like the
+can't tell the admin area exists. In production the frontend reaches the API
+through the public ALB, so every user's check arrives from the frontend's
+egress IP and they share one per-IP bucket of the API's default rate limit
+(100/min on `/api/auth/me`); past it, `/admin` document loads 404 until the
+window resets. Path segments are compared with empty ones dropped, matching
+the SPA router, so `//admin/ui` is gated too. The gate reads Hono's
+`c.req.path`, which is already percent-decoded (except `%25` and `%2F`), so
+`/%61dmin/ui` is gated as well; the SPA router compares raw segments and never
+renders an admin page for an encoded path. Like the
 onboarding redirect, this gates document loads, not in-app navigation; the
 admin API endpoints (`/api/users`, `/api/waitlist`) check the role against
 the database on every call.

@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession } from './session.ts';
-import type { AdminSessionOptions, AuthMiddlewareOptions, AuthUser, Session } from './types.ts';
+import type { AdminPathOptions, AuthMiddlewareOptions, AuthUser, Session } from './types.ts';
 import { SESSION_COOKIE_NAME } from './types.ts';
 
 /**
@@ -106,14 +106,15 @@ export function authMiddleware(
 }
 
 /**
- * Gate a path prefix on the session's isAdmin flag. Must run after
- * authMiddleware; a request under the prefix with no session is denied too.
+ * Gate a path prefix on a fresh admin check of the session's user. Must run
+ * after authMiddleware; a request under the prefix with no session, or whose
+ * check rejects, is denied too. Paths outside the prefix never run the check.
  *
  * Empty segments are dropped before comparing because the SPA router drops
  * them as well, so `//admin/ui` still renders the /admin/ui route.
  */
-export function requireAdminSession(
-	options: AdminSessionOptions
+export function requireAdminPath(
+	options: AdminPathOptions
 ): MiddlewareHandler<{ Variables: AuthVariables }> {
 	const prefixSegments = options.prefix.split('/').filter(Boolean);
 
@@ -121,9 +122,17 @@ export function requireAdminSession(
 		// c.req.path is already percent-decoded (all but %25 and %2F), so
 		// `/%61dmin/ui` arrives here as /admin/ui
 		const segments = c.req.path.split('/').filter(Boolean);
-		const underPrefix = prefixSegments.every((segment, i) => segments[i] === segment);
+		if (!prefixSegments.every((segment, i) => segments[i] === segment)) {
+			return next();
+		}
 
-		if (underPrefix && c.get('session')?.isAdmin !== true) {
+		const sessionId: string | undefined = c.get('sessionId');
+		const allowed = sessionId !== undefined && await options.isAdmin(sessionId).catch((error: unknown) => {
+			console.error('Admin check error:', error instanceof Error ? error.message : error);
+			return false;
+		});
+
+		if (!allowed) {
 			return options.onDenied(new URL(c.req.url));
 		}
 

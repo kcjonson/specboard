@@ -78,7 +78,6 @@ const mockUser = {
 	avatar_url: null,
 	email_verified: false,
 	is_active: true,
-	roles: [] as string[],
 };
 
 function futureDate(): Date {
@@ -263,7 +262,6 @@ describe('handleMagicLinkVerify', () => {
 			userId: mockUser.id,
 			authMethod: 'magic_link',
 			profileComplete: true,
-			isAdmin: false,
 		});
 
 		// Lookup must be by the token HASH, not the raw token

@@ -18,12 +18,6 @@ export interface Session {
 	 * to /onboarding while false. Absent on pre-feature sessions = complete.
 	 */
 	profileComplete?: boolean;
-	/**
-	 * True while the user holds the site-admin role; the frontend server 404s
-	 * /admin document loads unless it is. Absent on pre-feature sessions =
-	 * not admin, so those admins sign in again once.
-	 */
-	isAdmin?: boolean;
 }
 
 /**
@@ -44,12 +38,17 @@ export interface AuthMiddlewareOptions {
 }
 
 /**
- * Admin session gate options
+ * Admin path gate options
  */
-export interface AdminSessionOptions {
+export interface AdminPathOptions {
 	/** Path prefix to gate, e.g. '/admin'; covers the prefix itself and everything under it */
 	prefix: string;
-	/** Response for a request under the prefix whose session isn't an admin's */
+	/**
+	 * Whether the session's user is a site admin, read fresh from the source
+	 * of truth on every call. A rejection denies, same as false.
+	 */
+	isAdmin: (sessionId: string) => Promise<boolean>;
+	/** Response for a request under the prefix that isn't an admin's */
 	onDenied: (requestUrl: URL) => Response | Promise<Response>;
 }
 

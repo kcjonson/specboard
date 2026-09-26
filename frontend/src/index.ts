@@ -9,8 +9,9 @@ import { Hono, type Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Redis } from 'ioredis';
-import { authMiddleware, getSession, requireAdminSession, SESSION_COOKIE_NAME, type AuthVariables } from '@specboard/auth';
+import { authMiddleware, getSession, requireAdminPath, SESSION_COOKIE_NAME, type AuthVariables } from '@specboard/auth';
 import { reportError, captureException, installErrorHandlers, logRequest } from '@specboard/core';
+import { sessionIsAdmin } from './admin-check.ts';
 import { pages, spaIndex, type CachedPage } from './static-pages.ts';
 
 // Vite dev server URL for hot reloading (set in docker-compose for dev mode)
@@ -508,10 +509,14 @@ app.use(
 	})
 );
 
-// Admin pages are site-admin only, by the session's isAdmin flag. Like the
-// onboarding redirect below, this gates document loads, not in-app navigation;
-// the admin API endpoints check the role themselves.
-app.use('*', requireAdminSession({ prefix: '/admin', onDenied: hiddenRouteResponse }));
+// Admin pages are site-admin only, checked against the user's current roles on
+// every load. Like the onboarding redirect below, this gates document loads,
+// not in-app navigation; the admin API endpoints check the role themselves.
+app.use('*', requireAdminPath({
+	prefix: '/admin',
+	isAdmin: (sessionId) => sessionIsAdmin(apiUrl, sessionId),
+	onDenied: hiddenRouteResponse,
+}));
 
 // Serve remaining static files (SPA bundle, etc.) - requires auth
 app.use(

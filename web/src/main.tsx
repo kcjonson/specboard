@@ -115,7 +115,7 @@ const routes = [
 
 	// Admin routes
 	// Role gating is server-side: the frontend service 404s document loads
-	// under /admin unless the session's isAdmin flag is set
+	// under /admin unless the user currently holds the admin role
 	{ route: '/admin', entry: Admin },
 	{ route: '/admin/users', entry: AdminUsers },
 	{ route: '/admin/users/:userId', entry: UserSettings },
