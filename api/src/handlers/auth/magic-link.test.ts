@@ -123,7 +123,7 @@ describe('handleMagicLinkRequest', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(checkRateLimitKey).mockResolvedValue(true);
-		vi.mocked(sendEmail).mockResolvedValue(undefined);
+		vi.mocked(sendEmail).mockResolvedValue(true);
 	});
 
 	it('rejects invalid email addresses', async () => {

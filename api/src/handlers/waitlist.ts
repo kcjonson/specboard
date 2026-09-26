@@ -109,8 +109,9 @@ async function sendConfirmationIfUnsent(email: string): Promise<void> {
 	if (!signup) return;
 
 	const emailContent = getWaitlistConfirmationEmailContent();
+	let submitted: boolean;
 	try {
-		await sendEmail({
+		submitted = await sendEmail({
 			to: email,
 			subject: emailContent.subject,
 			textBody: emailContent.textBody,
@@ -118,18 +119,18 @@ async function sendConfirmationIfUnsent(email: string): Promise<void> {
 			replyTo: emailContent.replyTo,
 		});
 	} catch (sendError) {
-		// The lease would lapse on its own; releasing it lets the next
-		// submission retry now. Matching the token leaves a newer claim alone
-		// if ours lapsed mid-send. A failed release must not mask the SES error.
-		await query(
-			`UPDATE waitlist_signups SET confirmation_claimed_at = NULL
-			 WHERE id = $1 AND confirmation_claimed_at = $2::timestamptz
-			   AND confirmation_sent_at IS NULL`,
-			[signup.id, signup.claim]
-		).catch((releaseError: unknown) => {
+		// A failed release must not mask the SES error.
+		await releaseClaim(signup.id, signup.claim).catch((releaseError: unknown) => {
 			console.error(`Waitlist confirmation claim release failed for ${email}:`, releaseError);
 		});
 		throw sendError;
+	}
+
+	// Console mode, a staging allowlist block, or no SES client: nothing went
+	// out, so stamping would stop the address ever getting its confirmation.
+	if (!submitted) {
+		await releaseClaim(signup.id, signup.claim);
+		return;
 	}
 
 	// Deliberately not tied to the claim: SES accepted the message, so it went
@@ -139,6 +140,20 @@ async function sendConfirmationIfUnsent(email: string): Promise<void> {
 		`UPDATE waitlist_signups SET confirmation_sent_at = NOW()
 		 WHERE id = $1 AND confirmation_sent_at IS NULL`,
 		[signup.id]
+	);
+}
+
+/**
+ * The lease would lapse on its own; releasing it lets the next submission
+ * retry now. Matching the token leaves a newer claim alone if ours lapsed
+ * mid-send.
+ */
+async function releaseClaim(id: string, claim: string): Promise<void> {
+	await query(
+		`UPDATE waitlist_signups SET confirmation_claimed_at = NULL
+		 WHERE id = $1 AND confirmation_claimed_at = $2::timestamptz
+		   AND confirmation_sent_at IS NULL`,
+		[id, claim]
 	);
 }
 

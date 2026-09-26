@@ -15,7 +15,7 @@ vi.mock('@specboard/db', () => ({
 }));
 
 vi.mock('@specboard/email', () => ({
-	sendEmail: vi.fn(async () => undefined),
+	sendEmail: vi.fn(async () => true),
 	getWaitlistConfirmationEmailContent: vi.fn(() => ({
 		subject: 'Thanks for joining the Specboard waitlist',
 		textBody: 'text',
@@ -98,7 +98,7 @@ function releaseCalls(): unknown[][] {
 describe('handleWaitlistSignup', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(sendEmail).mockResolvedValue(undefined);
+		vi.mocked(sendEmail).mockResolvedValue(true);
 		mockDb();
 	});
 
@@ -227,6 +227,20 @@ describe('handleWaitlistSignup', () => {
 		expect(releaseSql).toMatch(/confirmation_claimed_at = \$2::timestamptz/);
 		expect(releaseParams).toEqual(['signup-uuid', CLAIM]);
 		consoleError.mockRestore();
+	});
+
+	it('releases the claim without stamping when the email was logged or blocked instead of sent', async () => {
+		// Console mode, a staging allowlist block, or no SES client: nothing
+		// went out, so the address must stay eligible for a real send later.
+		vi.mocked(sendEmail).mockResolvedValue(false);
+
+		const res = await post(createApp(), { email: 'alice@example.com' });
+		await settleSend();
+
+		expect(res.status).toBe(201);
+		expect(sendEmail).toHaveBeenCalledOnce();
+		expect(stampCalls()).toHaveLength(0);
+		expect(releaseCalls()).toEqual([[expect.stringMatching(/confirmation_claimed_at = \$2::timestamptz/), ['signup-uuid', CLAIM]]]);
 	});
 
 	it('still logs the SES error when releasing the claim also fails', async () => {
