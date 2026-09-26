@@ -1,22 +1,27 @@
 /**
- * Per-user session maintenance tests
+ * Session read/update tests
  */
 
 import { describe, it, expect } from 'vitest';
 import type { Redis } from 'ioredis';
 
-import { deleteUserSessions, updateUserSessions } from './session.ts';
+import { deleteUserSessions, getSession, updateSession, updateUserSessions } from './session.ts';
+import { SESSION_TTL_SECONDS } from './types.ts';
 
 interface FakeRedis {
 	redis: Redis;
 	store: Map<string, string>;
-	ttlWrites: string[];
+	/** Every write, in order, as `command key [ttl]` */
+	writes: string[];
 }
 
-// Pages the scan two keys at a time so the cursor loop is exercised
+// Pages the scan two keys at a time so the cursor loop is exercised. eval
+// stands in for the merge script (a real Redis would run the Lua): it merges
+// the JSON updates into the stored session and sets it with the given TTL,
+// 0 meaning KEEPTTL.
 function fakeRedis(entries: Record<string, string>): FakeRedis {
 	const store = new Map(Object.entries(entries));
-	const ttlWrites: string[] = [];
+	const writes: string[] = [];
 	const redis = {
 		scan: async (cursor: string, _match: 'MATCH', pattern: string) => {
 			const prefix = pattern.replace(/\*$/, '');
@@ -26,18 +31,27 @@ function fakeRedis(entries: Record<string, string>): FakeRedis {
 			return [next, keys.slice(start, start + 2)];
 		},
 		get: async (key: string) => store.get(key) ?? null,
-		set: async (key: string, value: string, mode: string) => {
-			if (mode !== 'KEEPTTL') ttlWrites.push(key);
-			store.set(key, value);
-			return 'OK';
+		expire: async (key: string, seconds: number) => {
+			writes.push(`expire ${key} ${seconds}`);
+			return store.has(key) ? 1 : 0;
 		},
-		del: async (key: string) => (store.delete(key) ? 1 : 0),
+		eval: async (_script: string, _numKeys: number, key: string, updates: string, ttl: number) => {
+			const raw = store.get(key);
+			if (raw === undefined) return 0;
+			store.set(key, JSON.stringify({ ...JSON.parse(raw), ...JSON.parse(updates) }));
+			writes.push(ttl > 0 ? `set ${key} ${ttl}` : `set ${key} KEEPTTL`);
+			return 1;
+		},
+		del: async (key: string) => {
+			writes.push(`del ${key}`);
+			return store.delete(key) ? 1 : 0;
+		},
 	} as unknown as Redis;
-	return { redis, store, ttlWrites };
+	return { redis, store, writes };
 }
 
 function session(userId: string, extra: Record<string, unknown> = {}): string {
-	return JSON.stringify({ userId, csrfToken: 't', createdAt: 1, lastAccessedAt: 1, ...extra });
+	return JSON.stringify({ userId, csrfToken: 't', createdAt: 1, ...extra });
 }
 
 const ENTRIES = {
@@ -48,9 +62,57 @@ const ENTRIES = {
 	'rate:alice': session('alice'),
 };
 
+describe('getSession', () => {
+	it('slides the expiry without rewriting the session body', async () => {
+		const { redis, store, writes } = fakeRedis(ENTRIES);
+
+		const found = await getSession(redis, 'a1');
+
+		expect(found).toEqual(JSON.parse(ENTRIES['session:a1']));
+		expect(store.get('session:a1')).toBe(ENTRIES['session:a1']);
+		expect(writes).toEqual([`expire session:a1 ${SESSION_TTL_SECONDS}`]);
+	});
+
+	it('returns null for a missing session without writing', async () => {
+		const { redis, writes } = fakeRedis(ENTRIES);
+
+		expect(await getSession(redis, 'gone')).toBeNull();
+		expect(writes).toEqual([]);
+	});
+
+	it('deletes corrupted session data', async () => {
+		const { redis, store } = fakeRedis(ENTRIES);
+
+		expect(await getSession(redis, 'bad')).toBeNull();
+		expect(store.has('session:bad')).toBe(false);
+	});
+});
+
+describe('updateSession', () => {
+	it('merges the updates and refreshes the TTL', async () => {
+		const { redis, store, writes } = fakeRedis(ENTRIES);
+
+		expect(await updateSession(redis, 'a1', { profileComplete: true })).toBe(true);
+
+		expect(JSON.parse(store.get('session:a1')!)).toEqual({
+			...JSON.parse(ENTRIES['session:a1']),
+			profileComplete: true,
+		});
+		expect(writes).toEqual([`set session:a1 ${SESSION_TTL_SECONDS}`]);
+	});
+
+	it('returns false and writes nothing when the session is gone', async () => {
+		const { redis, store, writes } = fakeRedis(ENTRIES);
+
+		expect(await updateSession(redis, 'gone', { profileComplete: true })).toBe(false);
+		expect(store.has('session:gone')).toBe(false);
+		expect(writes).toEqual([]);
+	});
+});
+
 describe('updateUserSessions', () => {
 	it('updates every session of the user and only theirs, keeping the TTL', async () => {
-		const { redis, store, ttlWrites } = fakeRedis(ENTRIES);
+		const { redis, store, writes } = fakeRedis(ENTRIES);
 
 		await updateUserSessions(redis, 'alice', { isAdmin: true });
 
@@ -59,7 +121,7 @@ describe('updateUserSessions', () => {
 		expect(store.get('session:b1')).toBe(ENTRIES['session:b1']);
 		expect(store.get('session:bad')).toBe('{not json');
 		expect(store.get('rate:alice')).toBe(ENTRIES['rate:alice']);
-		expect(ttlWrites).toEqual([]);
+		expect(writes.sort()).toEqual(['set session:a1 KEEPTTL', 'set session:a2 KEEPTTL']);
 	});
 });
 

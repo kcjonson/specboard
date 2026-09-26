@@ -64,7 +64,6 @@ describe('handleChangePassword', () => {
 			userId: 'user-uuid-123',
 			csrfToken: 'x',
 			createdAt: 0,
-			lastAccessedAt: 0,
 		});
 	});
 

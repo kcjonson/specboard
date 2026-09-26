@@ -179,13 +179,20 @@ CREATE TABLE webauthn_credentials (
 session:{session_id}:
   user_id: UUID
   created_at: timestamp
-  last_accessed: timestamp
   auth_method: password | magic_link | passkey (optional)
   profile_complete: boolean (optional; false gates SPA loads to /onboarding)
   is_admin: boolean (optional; only true serves /admin pages)
 
 TTL: 30 days (sliding expiration)
 ```
+
+Reading a session slides its expiry with `EXPIRE` and never rewrites the
+body, so a request in flight can't overwrite a concurrent flag change or
+bring back a session that was just deleted. Flag changes (`updateSession`,
+`updateUserSessions`) merge into the stored JSON with a Lua script, one
+atomic step in Redis; `updateSession` also refreshes the TTL, while
+`updateUserSessions` keeps it so an admin action doesn't extend an idle
+session.
 
 Sessions are auth-only. User details (username, first_name, last_name, avatar, etc.) are fetched via `/api/auth/me` or `/api/users/:id`.
 

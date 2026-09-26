@@ -96,7 +96,6 @@ beforeEach(() => {
 		userId: 'user-1',
 		csrfToken: 'csrf',
 		createdAt: Date.now(),
-		lastAccessedAt: Date.now(),
 	});
 	vi.mocked(resolveProjectSlug).mockResolvedValue({ id: 'proj-1', slug: 'docs', key: 'DOCS' });
 	vi.mocked(updateProject).mockResolvedValue(projectResponse());

@@ -10,7 +10,6 @@ export interface Session {
 	userId: string;
 	csrfToken: string;
 	createdAt: number;
-	lastAccessedAt: number;
 	/** Absent on sessions created before auth methods were recorded */
 	authMethod?: AuthMethod;
 	/**

@@ -13,7 +13,6 @@ const SESSION_JSON = JSON.stringify({
 	userId: 'user-1',
 	csrfToken: 'token',
 	createdAt: Date.now(),
-	lastAccessedAt: Date.now(),
 });
 
 function appWith(redis: Redis): Hono<{ Variables: AuthVariables }> {
@@ -36,7 +35,7 @@ describe('auth middleware', () => {
 	it('attaches the user for a valid session', async () => {
 		const redis = {
 			get: async () => SESSION_JSON,
-			setex: async () => 'OK',
+			expire: async () => 1,
 		} as unknown as Redis;
 
 		const res = await get(appWith(redis));
@@ -74,7 +73,7 @@ describe('requireAdminSession', () => {
 		const json = JSON.stringify({ ...JSON.parse(SESSION_JSON), ...fields });
 		return {
 			get: async () => json,
-			setex: async () => 'OK',
+			expire: async () => 1,
 		} as unknown as Redis;
 	}
 
