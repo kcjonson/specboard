@@ -125,9 +125,12 @@ Library` without a second request.
   orphaned. The API handler's pre-check is a nicety for a clean 400, not the
   guarantee; the statement is.
 - **A parent's status rolls up from its children, both ways.** Every write that
-  can change a child's status or the child set (create, update, start,
-  complete, block, unblock, move, delete) recomputes the parent from the
-  children it has now, in `rollUpParentStatus`. The rollup only moves a parent
+  can change a child's status or the child set (create, bulk create, update,
+  start, complete, block, unblock, move, delete) recomputes the parent from the
+  children it has now, in `rollUpParentStatus`. A create recomputes whatever
+  the new child's status, since a parent set to `in_progress` by hand, with no
+  active `sub_status`, has no started children to hold it there; a bulk create
+  recomputes its parent once for the whole batch. The rollup only moves a parent
   between `ready` and `in_progress`: a `ready` parent goes to `in_progress` once
   any child is `in_progress`, `in_review`, or `done`, and an `in_progress`
   parent goes back to `ready` once none is. A `done` child counts, so finishing

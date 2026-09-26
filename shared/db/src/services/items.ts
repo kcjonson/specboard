@@ -622,8 +622,7 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 
 	const row = result.rows[0];
 	if (!row) await throwCreateFailure(projectId, parentNumber);
-	// Only a child born started can change whether any child has started.
-	if (STARTED_CHILD_STATUSES.includes(row!.status)) await rollUpParentStatus(row!.parent_id);
+	await rollUpParentStatus(row!.parent_id);
 	return { ...transformItem(row!), blocked: row!.status === 'blocked', childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
 }
 
@@ -694,6 +693,7 @@ export async function createItems(
 	);
 
 	if (result.rows.length === 0) await throwCreateFailure(projectId, parentNumber);
+	await rollUpParentStatus(result.rows[0]!.parent_id);
 
 	return result.rows
 		.sort((a, b) => a.rank - b.rank)

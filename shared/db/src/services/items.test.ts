@@ -56,6 +56,7 @@ function insertResult(overrides: Partial<ItemRow> = {}): QueryResult<ItemRow> {
 beforeEach(() => {
 	mockQuery.mockReset();
 	mockClientQuery.mockReset();
+	mockClientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
 	mockTransaction.mockClear();
 });
 
@@ -798,11 +799,42 @@ describe('parent status rollup', () => {
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
 	});
 
-	it('creating a started child recomputes its parent; a ready one cannot change it', async () => {
+	it('creating a child recomputes its parent whatever the child\'s status', async () => {
 		route(makeItem({ parent_id: 'epic-1', status: 'in_progress', sub_status: 'in_development' }));
-
 		await createItem('proj-1', { title: 'Task', type: 'task', parentNumber: 7, status: 'in_progress', origin: ORIGIN });
-
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
+
+		mockClientQuery.mockClear();
+		route(makeItem({ parent_id: 'epic-1' }));
+		await createItem('proj-1', { title: 'Task', type: 'task', parentNumber: 7, origin: ORIGIN });
+		const [[sql, params]] = rollupCalls() as [[string, unknown[]]];
+		expect(sql).toContain(`(status = 'in_progress' AND NOT (SELECT started FROM children)`);
+		expect(params![0]).toBe('epic-1');
+	});
+
+	it('creating a top-level item recomputes nothing', async () => {
+		route(makeItem({ parent_id: null }));
+
+		await createItem('proj-1', { title: 'Epic', origin: ORIGIN });
+
+		expect(mockTransaction).not.toHaveBeenCalled();
+	});
+
+	it('a bulk create recomputes its parent once for the whole batch, after the insert', async () => {
+		route(null);
+		mockQuery.mockResolvedValueOnce({
+			rows: [
+				makeItem({ id: 'a', parent_id: 'epic-1', rank: 1 }),
+				makeItem({ id: 'b', parent_id: 'epic-1', rank: 2 }),
+				makeItem({ id: 'c', parent_id: 'epic-1', rank: 3 }),
+			],
+			rowCount: 3,
+		} as never);
+
+		await createItems('proj-1', 7, [{ title: 'A' }, { title: 'B' }, { title: 'C' }], ORIGIN);
+
+		expect(mockTransaction).toHaveBeenCalledTimes(1);
+		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
+		expect(mockQuery.mock.invocationCallOrder[0]!).toBeLessThan(mockClientQuery.mock.invocationCallOrder[0]!);
 	});
 });
