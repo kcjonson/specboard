@@ -38,19 +38,21 @@ const epicToolNames = new Set([
 const projectToolNames = new Set(['list_projects']);
 
 // Server-level instructions returned at MCP initialize. Reaches every connected client (no plugin
-// required). Kept under the ~2000-char client cap; critical content first. The Specboard plugin
-// carries the full guided workflow; this is the always-on summary that points users to it.
-const SERVER_INSTRUCTIONS = `You are connected to Specboard, the user's planning board: epics, tasks, and bugs. Use these tools whenever the user is planning, picking up work, or tracking development status.
+// required). Claude Code truncates server instructions past 2,048 characters by default
+// (code.claude.com/docs/en/mcp, "For MCP server authors"), silently dropping the tail, so critical
+// content goes first and app.test.ts holds the length under that limit. The Specboard plugin carries
+// the full guided workflow; this is the always-on summary that points users to it.
+const SERVER_INSTRUCTIONS = `You are connected to Specboard, the user's planning board of epics, tasks, and bugs. Use it whenever the user plans, picks up, or tracks work.
 
-Tools: list_projects finds the project and its slug (a repo bound via .mcp.json X-Specboard-Project auto-selects one, so project_slug can be omitted). Projects are addressed by slug ("specboard"), items by key ("SB-345"); never pass an item key or prefix as project_slug. get_items reads work by status (ready/in_progress/blocked/in_review/done), type, or search, or one item by item_key with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_key); create_items bulk-creates children. update_item changes title/description/status/sub_status/branch_name/pr_url, and note appends to the activity log (never overwrites); write one when you complete, block, or make a call worth remembering. Setting sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
+Tools: list_projects finds the project slug (omit project_slug when .mcp.json binds the repo via X-Specboard-Project). Projects are addressed by slug ("specboard"), items by key ("SB-345"); never pass an item key or prefix as project_slug. get_items lists by status, type, or search, or reads one item_key (with include_children/include_notes). create_item makes an epic, task, or bug (optionally under parent_key); create_items bulk-creates children. update_item edits an item, including branch_name/pr_url; its note appends to the activity log (never overwrites), so write one when you complete, block, or make a call worth remembering. sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
 
-A checklist is scratch todos on one item, not child items (first-class tracked work): update_item's checklist sets the list up, and checklist_status ({"<entry id>": "done"}) ticks entries off as you go.
+A checklist is scratch todos on one item; child items are tracked work. update_item's checklist sets it up, checklist_status ticks entries off by id.
 
-Blockers and provenance: an item is blocked while any blocker is open; set them explicitly via the blockers array ({item_key} auto-clears when that item completes, {text} clears only when removed) — never infer them. status=ready excludes blocked items (include_blocked to override). Blocking needs a reason: a note, or blockers saying what it waits on. When you file work discovered mid-task, pass discovered_from with the item you were on. Your session is recorded as creator and, while an item is in_progress, as an active worker.
+Blockers: an item is blocked while any is open. Set them explicitly ({item_key} auto-clears when that item completes, {text} only when removed); never infer them. status=ready excludes blocked items unless include_blocked. Blocking needs a reason: a note, or blockers. When filing work found mid-task, pass discovered_from with the item you were on.
 
-Role model: you can run the full loop (specs, epics, tasks, build, verify, merge, close); the human decides when to write specs or review PRs. One hard rule: verify the work (tests green, behavior confirmed) before marking anything done. Keep status accurate; never leave a stale in_progress item.
+You can run the full loop (specs, epics, tasks, build, verify, merge, close); the human decides when to write specs or review PRs. One hard rule: verify the work (tests green, behavior confirmed) before marking anything done. Keep status accurate: an in_progress item shows your session as its worker, so never leave one stale.
 
-For the full guided workflow, install the Specboard plugin: /plugin marketplace add https://specboard.io/claude then /plugin install specboard@specboard`;
+For the full workflow, install the Specboard plugin: /plugin marketplace add https://specboard.io/claude then /plugin install specboard@specboard`;
 
 // Same code and shape as the SDK transport's own parse error; the body has to be
 // parsed here, ahead of the transport, so initialize can be inspected.

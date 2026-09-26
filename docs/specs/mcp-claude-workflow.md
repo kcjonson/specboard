@@ -111,6 +111,9 @@ yet, the path is a stable reference, not a fetch.
 
 Server-level `instructions` (returned at MCP `initialize`) give every connected client a short
 summary of this model even without the plugin installed; the plugin carries the full workflow.
+Claude Code truncates server instructions past 2,048 characters by default, dropping the tail
+without warning, so the summary stays under that limit (a test in `mcp/src/app.test.ts` enforces
+it) and leads with the most important rules.
 
 ---
 
