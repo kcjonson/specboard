@@ -14,7 +14,7 @@ export interface ItemDrawerProps {
 	 * its detail arrives. Any other item is shown only once its own first fetch lands.
 	 */
 	listed: boolean;
-	projectSlug: string;
+	projectRef: string;
 	/** Upper bound for the drawer width, so it can't fully crowd out the board. */
 	maxWidth?: number;
 	onClose: () => void;
@@ -37,7 +37,7 @@ function unresolvedMessage(itemKey: string, error: Error | null): string {
  * Board and Table views. The content is the same {@link ItemView} used by the
  * full-screen item route; only the surrounding chrome differs.
  */
-export function ItemDrawer({ item, listed, projectSlug, maxWidth, onClose, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
+export function ItemDrawer({ item, listed, projectRef, maxWidth, onClose, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
 	useModel(item);
 
 	// An unlisted key has nothing behind it until its fetch lands, and may have
@@ -57,8 +57,8 @@ export function ItemDrawer({ item, listed, projectSlug, maxWidth, onClose, onDel
 	const title = resolved ? `${item.key} · ${TYPE_LABELS[item.type || 'epic']}` : item.key;
 
 	const handleOpenInNewWindow = useCallback((): void => {
-		window.open(`/projects/${projectSlug}/items/${item.key}`, '_blank', 'noopener,noreferrer');
-	}, [projectSlug, item.key]);
+		window.open(`/projects/${projectRef}/items/${item.key}`, '_blank', 'noopener,noreferrer');
+	}, [projectRef, item.key]);
 
 	// Close on Escape only when focus is within the drawer; stopPropagation keeps
 	// the board's Escape-to-deselect from also firing (so selection is preserved).

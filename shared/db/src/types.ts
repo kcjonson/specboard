@@ -14,6 +14,8 @@ export interface User {
 	id: string;
 	/** NULL until claimed during onboarding (email-only signup) */
 	username: string | null;
+	/** The owner half of project addresses (acme/roadmap). NULL exactly when username is. */
+	slug: string | null;
 	first_name: string | null;
 	last_name: string | null;
 	email: string;

@@ -88,22 +88,22 @@ export interface ChildStats {
 }
 
 /**
- * Item model - syncs with /api/projects/:projectSlug/items/:key
+ * Item model - syncs with /api/projects/:projectRef/items/:key
  *
  * Items are addressed by key (`SB-345`), so `key` is the model's id field: a model
  * without one is new and saves with POST. `id` is the server's internal UUID, carried
- * for reference but never used to build URLs; `projectSlug` comes from the collection's
+ * for reference but never used to build URLs; `projectRef` comes from the collection's
  * URL params (or is passed in for a standalone model) and addresses the project.
  */
 export class ItemModel extends SyncModel {
-	static override url = '/api/projects/:projectSlug/items/:key';
+	static override url = '/api/projects/:projectRef/items/:key';
 	static override idField = 'key';
 
 	@prop accessor id!: string;
 	/** The item's address, `<project key>-<number>` (e.g. SB-345). */
 	@prop accessor key!: string;
 	@prop accessor number!: number;
-	@prop accessor projectSlug!: string;
+	@prop accessor projectRef!: string;
 	// null from the API for a top-level item, undefined before the field is set.
 	// Model.set stores what it is given, so the type has to admit both.
 	@prop accessor parentId!: string | null | undefined;
@@ -245,7 +245,7 @@ function normalizeFilter(filter: ItemsFilter | undefined): { search: string; typ
 }
 
 /**
- * Collection of items - syncs with /api/projects/:projectSlug/items
+ * Collection of items - syncs with /api/projects/:projectRef/items
  *
  * Loaded as one bounded window per status (the first `limit` rows by rank, one
  * request each) rather than the whole project, so a board with thousands of items
@@ -261,7 +261,7 @@ function normalizeFilter(filter: ItemsFilter | undefined): { search: string; typ
  *
  * @example
  * ```tsx
- * const items = new ItemsCollection({ projectSlug, limit: 100 });
+ * const items = new ItemsCollection({ projectRef, limit: 100 });
  * useModel(items);
  *
  * if (items.$meta.working) return <Loading />;
@@ -273,12 +273,12 @@ function normalizeFilter(filter: ItemsFilter | undefined): { search: string; typ
  * ```
  */
 export class ItemsCollection extends SyncCollection<ItemModel> {
-	static url = '/api/projects/:projectSlug/items';
+	static url = '/api/projects/:projectRef/items';
 	static Model = ItemModel;
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields, or
 	// the initializer would overwrite the value after the base constructor's fetch.
-	declare projectSlug: string;
+	declare projectRef: string;
 	/** Rows each status window starts with. */
 	declare limit: number;
 	/**
@@ -511,13 +511,13 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 
 /**
  * Spec link model — a typed link from an item to a markdown spec document.
- * Syncs with /api/projects/:projectSlug/items/:itemKey/specs/:id
+ * Syncs with /api/projects/:projectRef/items/:itemKey/specs/:id
  */
 export class SpecModel extends SyncModel {
-	static override url = '/api/projects/:projectSlug/items/:itemKey/specs/:id';
+	static override url = '/api/projects/:projectRef/items/:itemKey/specs/:id';
 
 	@prop accessor id!: string;
-	@prop accessor projectSlug!: string;
+	@prop accessor projectRef!: string;
 	@prop accessor itemKey!: string;
 	@prop accessor path!: string;
 	@prop accessor type!: SpecType;
@@ -526,34 +526,34 @@ export class SpecModel extends SyncModel {
 
 /**
  * Collection of spec links for one item.
- * Syncs with /api/projects/:projectSlug/items/:itemKey/specs
+ * Syncs with /api/projects/:projectRef/items/:itemKey/specs
  *
  * @example
  * ```tsx
- * const specs = new SpecsCollection({ projectSlug, itemKey });
+ * const specs = new SpecsCollection({ projectRef, itemKey });
  * useModel(specs);
  * await specs.add({ path: '/docs/specs/x.md', type: 'product' }); // POSTs
  * await specs.remove(spec); // DELETEs
  * ```
  */
 export class SpecsCollection extends SyncCollection<SpecModel> {
-	static url = '/api/projects/:projectSlug/items/:itemKey/specs';
+	static url = '/api/projects/:projectRef/items/:itemKey/specs';
 	static Model = SpecModel;
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
-	declare projectSlug: string;
+	declare projectRef: string;
 	declare itemKey: string;
 }
 
 /**
  * Blocker model — one blocked-by row on an item: another item ({ itemKey }) XOR
- * free text ({ text }). Syncs with /api/projects/:projectSlug/items/:itemKey/blockers/:id
+ * free text ({ text }). Syncs with /api/projects/:projectRef/items/:itemKey/blockers/:id
  */
 export class BlockerModel extends SyncModel {
-	static override url = '/api/projects/:projectSlug/items/:itemKey/blockers/:id';
+	static override url = '/api/projects/:projectRef/items/:itemKey/blockers/:id';
 
 	@prop accessor id!: string;
-	@prop accessor projectSlug!: string;
+	@prop accessor projectRef!: string;
 	@prop accessor itemKey!: string;
 	@prop accessor type!: 'item' | 'text';
 	@prop accessor text!: string | undefined;
@@ -567,30 +567,30 @@ export class BlockerModel extends SyncModel {
 
 /**
  * Collection of open blockers for one item.
- * Syncs with /api/projects/:projectSlug/items/:itemKey/blockers
+ * Syncs with /api/projects/:projectRef/items/:itemKey/blockers
  *
  * add({ blockerKey }) blocks on another item; add({ text }) records a written
  * reason. remove(blocker) clears it (the server tombstones, never deletes).
  */
 export class BlockersCollection extends SyncCollection<BlockerModel> {
-	static url = '/api/projects/:projectSlug/items/:itemKey/blockers';
+	static url = '/api/projects/:projectRef/items/:itemKey/blockers';
 	static Model = BlockerModel;
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
-	declare projectSlug: string;
+	declare projectRef: string;
 	declare itemKey: string;
 }
 
 /**
  * Checklist entry — one scratch todo on an item: text and a status, nothing
  * more. Deliberately not a child item: no key, no status, no history.
- * Syncs with /api/projects/:projectSlug/items/:itemKey/checklist/:id
+ * Syncs with /api/projects/:projectRef/items/:itemKey/checklist/:id
  */
 export class ChecklistEntryModel extends SyncModel {
-	static override url = '/api/projects/:projectSlug/items/:itemKey/checklist/:id';
+	static override url = '/api/projects/:projectRef/items/:itemKey/checklist/:id';
 
 	@prop accessor id!: string;
-	@prop accessor projectSlug!: string;
+	@prop accessor projectRef!: string;
 	@prop accessor itemKey!: string;
 	@prop accessor text!: string;
 	@prop accessor status!: ChecklistStatus;
@@ -616,7 +616,7 @@ interface ChecklistEntryData {
 
 /**
  * An item's checklist, in display order.
- * Syncs with /api/projects/:projectSlug/items/:itemKey/checklist
+ * Syncs with /api/projects/:projectRef/items/:itemKey/checklist
  *
  * add({ text }) appends an entry; entry.patch({ status }) or entry.patch({ text })
  * writes that ONE field of that ONE entry (the server rewrites only the matched
@@ -629,24 +629,24 @@ interface ChecklistEntryData {
  * edit and overwrite whatever an agent wrote in between.
  */
 export class ChecklistCollection extends SyncCollection<ChecklistEntryModel> {
-	static url = '/api/projects/:projectSlug/items/:itemKey/checklist';
+	static url = '/api/projects/:projectRef/items/:itemKey/checklist';
 	static Model = ChecklistEntryModel;
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
-	declare projectSlug: string;
+	declare projectRef: string;
 	declare itemKey: string;
 }
 
 /**
  * Activity-log entry — one appended note on an item. Entries are never edited
  * or deleted, so this model only ever reads or POSTs.
- * Syncs with /api/projects/:projectSlug/items/:itemKey/notes/:id
+ * Syncs with /api/projects/:projectRef/items/:itemKey/notes/:id
  */
 export class NoteModel extends SyncModel {
-	static override url = '/api/projects/:projectSlug/items/:itemKey/notes/:id';
+	static override url = '/api/projects/:projectRef/items/:itemKey/notes/:id';
 
 	@prop accessor id!: string;
-	@prop accessor projectSlug!: string;
+	@prop accessor projectRef!: string;
 	@prop accessor itemKey!: string;
 	@prop accessor note!: string;
 	/** Who wrote the entry. Null on entries that predate actor capture. Read-only. */
@@ -656,18 +656,18 @@ export class NoteModel extends SyncModel {
 
 /**
  * Activity log for one item, newest first as the server returns it.
- * Syncs with /api/projects/:projectSlug/items/:itemKey/notes
+ * Syncs with /api/projects/:projectRef/items/:itemKey/notes
  *
  * add({ note }) appends an entry; there is no remove — the log is append-only.
  * Entries are immutable, so `createdAt` stands in for `updatedAt` as the
  * change key that a reconciling fetch compares.
  */
 export class NotesCollection extends SyncCollection<NoteModel> {
-	static url = '/api/projects/:projectSlug/items/:itemKey/notes';
+	static url = '/api/projects/:projectRef/items/:itemKey/notes';
 	static Model = NoteModel;
 	static changeKey = 'createdAt';
 
 	// Set dynamically via constructor initialProps — do NOT declare as class fields.
-	declare projectSlug: string;
+	declare projectRef: string;
 	declare itemKey: string;
 }

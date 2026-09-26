@@ -40,7 +40,7 @@ import { updateItem as updateItemService, moveItem, startItem, completeItem, blo
 import type { AgentActor } from '@specboard/db';
 import { updateItem } from './writes.ts';
 
-const PROJECT = { id: 'proj-1', slug: 'specboard', key: 'SB' };
+const PROJECT = { id: 'proj-1', slug: 'specboard', ownerSlug: 'acme', key: 'SB' };
 const ACTOR: AgentActor = { type: 'agent', userId: 'user-1', clientId: 'client-1', sessionId: 's-1' };
 
 const mockUpdate = vi.mocked(updateItemService);

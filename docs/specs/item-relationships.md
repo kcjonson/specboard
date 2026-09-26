@@ -162,7 +162,7 @@ Library` without a second request.
   `startItem` that only ever pushed a `ready` parent forward, so a child going
   back to `ready` left its epic stuck in In Progress.
 - **The rollup only demotes what it or a sub_status put there**
-  (`items.status_source`, migration 031). "Dragged epics should stay put": an
+  (`items.status_source`, migration 032). "Dragged epics should stay put": an
   explicit status write is the user's call, and the rollup must not undo it. An
   epic dragged to In Progress with no started children keeps `sub_status
   not_started`, so before 031 it looked exactly like one the rollup had promoted

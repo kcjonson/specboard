@@ -36,8 +36,8 @@ interface ProjectStorage {
 }
 
 export interface FileBrowserProps {
-	/** Project slug */
-	projectSlug: string;
+	/** Project ref (owner/project) */
+	projectRef: string;
 	/**
 	 * The same project's immutable id, keying the tree's stored expansion state.
 	 * Omit in transient contexts (the modal picker) to keep expansion in memory.
@@ -72,7 +72,7 @@ export interface FileBrowserProps {
 }
 
 export function FileBrowser({
-	projectSlug,
+	projectRef,
 	projectId,
 	selectedPath,
 	gitStatus,
@@ -123,8 +123,8 @@ export function FileBrowser({
 
 	// Initialize the model when the project changes.
 	useEffect(() => {
-		model.initialize(projectSlug, projectId ?? '');
-	}, [model, projectSlug, projectId]);
+		model.initialize(projectRef, projectId ?? '');
+	}, [model, projectRef, projectId]);
 
 	// Clean up poll timer on unmount
 	useEffect(() => {
@@ -168,7 +168,7 @@ export function FileBrowser({
 
 		// Call API directly (simpler than going through model for external calls)
 		await fetchClient.put<{ success: boolean }>(
-			`/api/projects/${projectSlug}/files/rename`,
+			`/api/projects/${projectRef}/files/rename`,
 			{ oldPath: path, newPath }
 		);
 
@@ -176,7 +176,7 @@ export function FileBrowser({
 		await model.reload();
 
 		return newPath;
-	}, [model, projectSlug]);
+	}, [model, projectRef]);
 
 	useEffect(() => {
 		onRenameFileRef?.(handleRenameFile);
@@ -347,7 +347,7 @@ export function FileBrowser({
 			const path = await showOpenDialog({ directory: true });
 			if (!path) return;
 			await fetchClient.post<ProjectStorage>(
-				`/api/projects/${projectSlug}/folders`,
+				`/api/projects/${projectRef}/folders`,
 				{ path }
 			);
 			// Reload the tree to pick up new folder
@@ -364,7 +364,7 @@ export function FileBrowser({
 		setRetryingSync(true);
 		model.error = null;
 		try {
-			await fetchClient.post(`/api/projects/${projectSlug}/sync/initial`);
+			await fetchClient.post(`/api/projects/${projectRef}/sync/initial`);
 			await model.reload();
 		} catch (err) {
 			console.error('Failed to retry sync:', err);
@@ -398,7 +398,7 @@ export function FileBrowser({
 
 		try {
 			await fetchClient.delete<ProjectStorage>(
-				`/api/projects/${projectSlug}/folders?path=${encodeURIComponent(folderPath)}`
+				`/api/projects/${projectRef}/folders?path=${encodeURIComponent(folderPath)}`
 			);
 			model.reload();
 		} catch (err) {
@@ -413,7 +413,7 @@ export function FileBrowser({
 
 		try {
 			await fetchClient.delete(
-				`/api/projects/${projectSlug}/files?path=${encodeURIComponent(path)}`
+				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}`
 			);
 			model.reload();
 			gitStatus?.refresh();
@@ -524,7 +524,7 @@ export function FileBrowser({
 							<div class={styles.emptyHint}>
 								Pages come from a GitHub repository. This project doesn't have one yet.
 							</div>
-							<a href={`/projects?edit=${projectSlug}`} class={styles.settingsLink}>
+							<a href={`/projects?edit=${projectRef}`} class={styles.settingsLink}>
 								Open project settings
 							</a>
 						</>

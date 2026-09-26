@@ -13,8 +13,13 @@ import {
 	parseItemKey,
 	itemNumberInProject,
 	withSuffix,
+	isValidUserSlug,
+	defaultUserSlug,
+	formatProjectRef,
+	parseProjectRef,
 	MAX_PROJECT_SLUG_LENGTH,
 	MAX_PROJECT_KEY_LENGTH,
+	MAX_USER_SLUG_LENGTH,
 } from './identifiers.ts';
 
 describe('slugifyProjectName', () => {
@@ -193,4 +198,69 @@ describe('itemNumberInProject', () => {
 	it.each([undefined, null, 42, {}, 'nonsense', 'SB-0'])('rejects %s', (key) => {
 		expect(itemNumberInProject(key, 'SB')).toBeNull();
 	});
+});
+
+describe('defaultUserSlug', () => {
+	it('lowercases the username and maps underscores to hyphens', () => {
+		expect(defaultUserSlug('Jane_Doe')).toBe('jane-doe');
+	});
+
+	it('collapses and trims underscores that would make invalid hyphens', () => {
+		expect(defaultUserSlug('__jane__doe_')).toBe('jane-doe');
+	});
+
+	it('falls back to "user" for an all-underscore username', () => {
+		expect(defaultUserSlug('___')).toBe('user');
+	});
+
+	it('always yields a valid user slug', () => {
+		for (const username of ['abc', 'A_B_C', '_x_', '123', 'a'.repeat(30)]) {
+			expect(isValidUserSlug(defaultUserSlug(username))).toBe(true);
+		}
+	});
+});
+
+describe('isValidUserSlug', () => {
+	it.each(['acme', 'jane-doe', 'a1', 'x'.repeat(MAX_USER_SLUG_LENGTH)])('accepts %s', (slug) => {
+		expect(isValidUserSlug(slug)).toBe(true);
+	});
+
+	it.each(['', 'Acme', 'jane_doe', '-acme', 'acme-', 'a--b', 'x'.repeat(MAX_USER_SLUG_LENGTH + 1), 42])(
+		'rejects %s',
+		(slug) => {
+			expect(isValidUserSlug(slug)).toBe(false);
+		}
+	);
+
+	it('suffixes within the user slug length cap', () => {
+		const slug = withSuffix('x'.repeat(MAX_USER_SLUG_LENGTH), 12, 'user-slug');
+		expect(slug.length).toBeLessThanOrEqual(MAX_USER_SLUG_LENGTH);
+		expect(slug.endsWith('-12')).toBe(true);
+		expect(isValidUserSlug(slug)).toBe(true);
+	});
+});
+
+describe('project refs', () => {
+	it('formats owner and project as owner/project', () => {
+		expect(formatProjectRef('acme', 'roadmap')).toBe('acme/roadmap');
+	});
+
+	it('parses a full ref', () => {
+		expect(parseProjectRef('acme/roadmap')).toEqual({ owner: 'acme', project: 'roadmap' });
+	});
+
+	it('parses a bare project slug with no owner', () => {
+		expect(parseProjectRef('roadmap')).toEqual({ owner: null, project: 'roadmap' });
+	});
+
+	it('trims and lowercases before parsing', () => {
+		expect(parseProjectRef('  Acme/Roadmap ')).toEqual({ owner: 'acme', project: 'roadmap' });
+	});
+
+	it.each([undefined, null, 42, '', '/', 'acme/', '/roadmap', 'a/b/c', 'acme_co/roadmap', 'acme/road map'])(
+		'rejects %s',
+		(raw) => {
+			expect(parseProjectRef(raw)).toBeNull();
+		}
+	);
 });

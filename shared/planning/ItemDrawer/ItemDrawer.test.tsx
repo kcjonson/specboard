@@ -44,11 +44,11 @@ const KEY = 'SPE-9999';
 
 /** Built the way Planning builds a standalone model, so its constructor starts the fetch. */
 function unlistedItem(): ItemModel {
-	return new ItemModel({ key: KEY, projectSlug: 'specboard' });
+	return new ItemModel({ key: KEY, projectRef: 'acme/specboard' });
 }
 
 function renderDrawer(item: ItemModel, listed: boolean): ReturnType<typeof render> {
-	return render(<ItemDrawer item={item} listed={listed} projectSlug="specboard" onClose={vi.fn()} onDelete={vi.fn()} />);
+	return render(<ItemDrawer item={item} listed={listed} projectRef="acme/specboard" onClose={vi.fn()} onDelete={vi.fn()} />);
 }
 
 function expectInert(view: ReturnType<typeof render>): void {
@@ -81,7 +81,7 @@ describe('ItemDrawer before the item resolves', () => {
 		expectInert(view);
 
 		await act(async () => {
-			land({ key: KEY, projectSlug: 'specboard', title: 'Found', type: 'task', status: 'ready' });
+			land({ key: KEY, projectRef: 'acme/specboard', title: 'Found', type: 'task', status: 'ready' });
 		});
 
 		expect(view.getByRole('button', { name: 'Delete Task' })).toBeTruthy();
@@ -119,7 +119,7 @@ describe('ItemDrawer before the item resolves', () => {
 	// A row from the board list exists already; waiting on its detail fetch would
 	// flash a placeholder over data that is on screen.
 	it('mounts the editor at once for an item from the board list', () => {
-		const item = new ItemModel({ key: 'SPE-1', projectSlug: 'specboard', title: 'Listed', type: 'epic', status: 'ready' });
+		const item = new ItemModel({ key: 'SPE-1', projectRef: 'acme/specboard', title: 'Listed', type: 'epic', status: 'ready' });
 		const view = renderDrawer(item, true);
 
 		expect(item.$meta.lastFetched).toBeNull();

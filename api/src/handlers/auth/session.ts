@@ -14,6 +14,7 @@ import {
 } from '@specboard/auth';
 import { query, type User } from '@specboard/db';
 
+import { isValidUserSlug, MAX_USER_SLUG_LENGTH } from '@specboard/core/identifiers';
 import { isValidUsername } from '../../validation.ts';
 import { logAuthEvent } from './utils.ts';
 
@@ -44,6 +45,21 @@ export async function handleLogout(
 	deleteCookie(context, SESSION_COOKIE_NAME, { path: '/' });
 	deleteCookie(context, CSRF_COOKIE_NAME, { path: '/' });
 	return context.json({ success: true });
+}
+
+/** The profile fields every /api/auth/me response carries. */
+function profileResponse(user: User): Record<string, unknown> {
+	return {
+		id: user.id,
+		username: user.username,
+		slug: user.slug,
+		email: user.email,
+		first_name: user.first_name,
+		last_name: user.last_name,
+		email_verified: user.email_verified,
+		phone_number: user.phone_number,
+		avatar_url: user.avatar_url,
+	};
 }
 
 /**
@@ -102,14 +118,7 @@ export async function handleGetMe(
 
 		return context.json({
 			user: {
-				id: user.id,
-				username: user.username,
-				email: user.email,
-				first_name: user.first_name,
-				last_name: user.last_name,
-				email_verified: user.email_verified,
-				phone_number: user.phone_number,
-				avatar_url: user.avatar_url,
+				...profileResponse(user),
 				roles: user.roles,
 				is_active: user.is_active,
 				has_password: user.has_password,
@@ -128,6 +137,8 @@ interface UpdateMeRequest {
 	last_name?: string;
 	/** Claimable exactly once, while still NULL from email-only signup */
 	username?: string;
+	/** Claimed together with username at onboarding; changed later through PUT /api/users/:id */
+	slug?: string;
 }
 
 /**
@@ -157,13 +168,24 @@ export async function handleUpdateMe(
 		return context.json({ error: 'Invalid JSON' }, 400);
 	}
 
-	const { first_name, last_name, username } = body;
+	const { first_name, last_name, username, slug } = body;
 
 	// typeof guard first: isValidUsername coerces non-strings, and a later
 	// .toLowerCase() on a non-string would throw a 500
 	if (username !== undefined && (typeof username !== 'string' || !isValidUsername(username))) {
 		return context.json(
 			{ error: 'Username must be 3-30 characters, alphanumeric and underscores only' },
+			400
+		);
+	}
+
+	if (slug !== undefined && username === undefined) {
+		return context.json({ error: 'Change the user slug with PUT /api/users/me' }, 400);
+	}
+
+	if (slug !== undefined && (typeof slug !== 'string' || !isValidUserSlug(slug))) {
+		return context.json(
+			{ error: `User slug must be up to ${MAX_USER_SLUG_LENGTH} lowercase letters, numbers, and single hyphens` },
 			400
 		);
 	}
@@ -207,7 +229,7 @@ export async function handleUpdateMe(
 			return context.json({ error: 'Account is deactivated' }, 403);
 		}
 
-		// Onboarding username claim: set username AND names in one atomic
+		// Onboarding claim: set username, user slug AND names in one atomic
 		// statement, guarded by `username IS NULL` so it's settable exactly
 		// once. Doing it as a single UPDATE (rather than claim-then-names)
 		// means a failure can't leave a claimed username with unsaved names,
@@ -219,34 +241,26 @@ export async function handleUpdateMe(
 			if (!firstTrimmed || !lastTrimmed) {
 				return context.json({ error: 'First name and last name are required' }, 400);
 			}
+			if (slug === undefined) {
+				return context.json({ error: 'A user slug is required with the username' }, 400);
+			}
 			try {
 				const claim = await query<User>(
-					`UPDATE users SET username = $1, first_name = $2, last_name = $3
-					 WHERE id = $4 AND username IS NULL
+					`UPDATE users SET username = $1, slug = $2, first_name = $3, last_name = $4
+					 WHERE id = $5 AND username IS NULL
 					 RETURNING *`,
-					[username.toLowerCase(), firstTrimmed, lastTrimmed, session.userId]
+					[username.toLowerCase(), slug, firstTrimmed, lastTrimmed, session.userId]
 				);
 				if ((claim.rowCount ?? 0) === 0) {
 					return context.json({ error: 'Username is already set and cannot be changed' }, 409);
 				}
 				// Unblock the frontend onboarding redirect for this session.
 				await updateSession(redis, sessionId, { profileComplete: true });
-				const user = claim.rows[0]!;
-				return context.json({
-					user: {
-						id: user.id,
-						username: user.username,
-						email: user.email,
-						first_name: user.first_name,
-						last_name: user.last_name,
-						email_verified: user.email_verified,
-						phone_number: user.phone_number,
-						avatar_url: user.avatar_url,
-					},
-				});
+				return context.json({ user: profileResponse(claim.rows[0]!) });
 			} catch (claimError) {
 				if (claimError instanceof Error && 'code' in claimError && claimError.code === '23505') {
-					return context.json({ error: 'Username already taken' }, 409);
+					const slugTaken = (claimError as { constraint?: string }).constraint === 'idx_users_slug';
+					return context.json({ error: slugTaken ? 'User slug already taken' : 'Username already taken' }, 409);
 				}
 				throw claimError;
 			}
@@ -283,18 +297,7 @@ export async function handleUpdateMe(
 			return context.json({ error: 'User not found' }, 404);
 		}
 
-		return context.json({
-			user: {
-				id: user.id,
-				username: user.username,
-				email: user.email,
-				first_name: user.first_name,
-				last_name: user.last_name,
-				email_verified: user.email_verified,
-				phone_number: user.phone_number,
-				avatar_url: user.avatar_url,
-			},
-		});
+		return context.json({ user: profileResponse(user) });
 	} catch (error) {
 		console.error('Failed to update user:', error instanceof Error ? error.message : 'Unknown error');
 		return context.json({ error: 'Failed to update profile' }, 500);

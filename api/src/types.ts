@@ -11,8 +11,8 @@ export interface ApiSpec {
 	id: string;
 	/** Key of the item this spec is linked to (e.g. SB-345). */
 	itemKey: string;
-	/** Slug of the project the item belongs to. */
-	projectSlug: string;
+	/** Address of the project the item belongs to (acme/roadmap). */
+	projectRef: string;
 	path: string;
 	type: SpecType;
 	createdAt: string;
@@ -90,8 +90,10 @@ export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
 
 export interface ApiProject {
 	id: string;
-	/** URL identifier for this project (e.g. "specboard"). */
+	/** URL identifier for this project, unique per owner (e.g. "roadmap"). */
 	slug: string;
+	/** The owner's user slug; the project's address is ownerSlug/slug (acme/roadmap). */
+	ownerSlug: string;
 	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
 	key: string;
 	name: string;

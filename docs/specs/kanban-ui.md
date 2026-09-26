@@ -186,7 +186,7 @@ is right there: it has the horizontal room and no sections below to bury.
 ### Checklist (in the item detail)
 
 **Properties:**
-- projectSlug, itemKey
+- projectRef (owner/project), itemKey
 
 Scratch todos on one item, on every item type, sitting between Children and
 Blockers. An entry is `{ id, text, status }` and nothing more, where `status` is
@@ -487,9 +487,9 @@ Two consequences worth knowing:
 
 ## Item URLs
 
-An item has two URLs. `/projects/:slug/items/:key` is the standalone full-page view
+An item has two URLs. `/projects/:owner/:project/items/:key` is the standalone full-page view
 and the canonical link for an item, the form any shared or copied link should take.
-`/projects/:slug/planning/items/:key` is the board with that item's
+`/projects/:owner/:project/planning/items/:key` is the board with that item's
 drawer open; it exists so opening a card is a history entry Back can undo and moving
 between cards replaces rather than piles up entries. The drawer URL is in-app only:
 a document load of it (pasted link, reload, new tab) is redirected by the frontend

@@ -5,7 +5,7 @@ import { NewItemForm, type NewItemData } from '../NewItemForm/NewItemForm';
 import { TYPE_LABELS } from '../utils/itemType';
 
 export interface NewItemDialogProps {
-	projectSlug: string;
+	projectRef: string;
 	createType?: ItemType;
 	/** Parent the form opens with, when creation was started from a parent's children. */
 	parentKey?: string;
@@ -18,12 +18,12 @@ export interface NewItemDialogProps {
  * with no item id (so none of the drawer's resize/persistence/open-in-new-window
  * semantics apply), so it stays a modal while detail/edit uses the ItemDrawer.
  */
-export function NewItemDialog({ projectSlug, createType, parentKey, onClose, onCreate }: NewItemDialogProps): JSX.Element {
+export function NewItemDialog({ projectRef, createType, parentKey, onClose, onCreate }: NewItemDialogProps): JSX.Element {
 	const title = `New ${TYPE_LABELS[createType || 'epic']}`;
 
 	return (
 		<Dialog onClose={onClose} title={title}>
-			<NewItemForm projectSlug={projectSlug} createType={createType} parentKey={parentKey} onCreate={onCreate} />
+			<NewItemForm projectRef={projectRef} createType={createType} parentKey={parentKey} onCreate={onCreate} />
 		</Dialog>
 	);
 }

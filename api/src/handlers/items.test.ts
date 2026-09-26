@@ -30,7 +30,7 @@ vi.mock('@specboard/db', () => ({
 import { getItems, moveItem, wouldCreateCycle, verifyItemOwnership, ItemCycleError } from '@specboard/db';
 import { handleListItems, handleMoveItem } from './items.ts';
 
-const PROJECT: ResolvedProject = { id: 'proj-1', slug: 'specboard', key: 'SB' };
+const PROJECT: ResolvedProject = { id: 'proj-1', slug: 'specboard', ownerSlug: 'acme', key: 'SB' };
 
 function createApp(): Hono<{ Variables: { userId: string; project: ResolvedProject } }> {
 	const app = new Hono<{ Variables: { userId: string; project: ResolvedProject } }>();
@@ -39,13 +39,13 @@ function createApp(): Hono<{ Variables: { userId: string; project: ResolvedProje
 		context.set('userId', 'user-1');
 		await next();
 	});
-	app.get('/api/projects/:projectSlug/items', handleListItems);
-	app.post('/api/projects/:projectSlug/items/:itemKey/move', handleMoveItem);
+	app.get('/api/projects/:owner/:project/items', handleListItems);
+	app.post('/api/projects/:owner/:project/items/:itemKey/move', handleMoveItem);
 	return app;
 }
 
 function move(itemKey: string, body: unknown): Promise<Response> {
-	return Promise.resolve(createApp().request(`http://localhost/api/projects/specboard/items/${itemKey}/move`, {
+	return Promise.resolve(createApp().request(`http://localhost/api/projects/acme/specboard/items/${itemKey}/move`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(body),
@@ -53,7 +53,7 @@ function move(itemKey: string, body: unknown): Promise<Response> {
 }
 
 function list(query: string): Promise<Response> {
-	return Promise.resolve(createApp().request(`http://localhost/api/projects/specboard/items${query}`));
+	return Promise.resolve(createApp().request(`http://localhost/api/projects/acme/specboard/items${query}`));
 }
 
 const ITEM = { id: 'i-1', key: 'SB-1', title: 'One', origin: null };

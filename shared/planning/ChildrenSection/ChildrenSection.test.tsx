@@ -61,7 +61,7 @@ function makeItem(type: string, children: ChildPayload[]): ItemModel {
 	const item = new ItemModel({
 		id: 'i1',
 		key: 'SB-1',
-		projectSlug: 'specboard',
+		projectRef: 'acme/specboard',
 		title: 'Parent',
 		type,
 		status: 'in_progress',

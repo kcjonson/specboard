@@ -469,7 +469,7 @@ export const RATE_LIMIT_CONFIGS = {
 	} satisfies RateLimitConfig,
 
 	/**
-	 * GET /api/projects/:slug/items: 600 per minute. The planning board fetches
+	 * GET /api/projects/:owner/:project/items: 600 per minute. The planning board fetches
 	 * one window per status column, so a single poll (every 10s while focused)
 	 * and every settled search query each cost five requests, not one. That
 	 * puts a normal session several times over the general API limit.

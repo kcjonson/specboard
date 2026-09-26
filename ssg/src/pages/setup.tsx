@@ -12,7 +12,7 @@ const mcpJson = `{
 		"specboard": {
 			"type": "http",
 			"url": "https://specboard.io/mcp",
-			"headers": { "X-Specboard-Project": "<project-slug>" }
+			"headers": { "X-Specboard-Project": "<owner>/<project>" }
 		}
 	}
 }`;
@@ -52,13 +52,18 @@ export function SetupContent(): JSX.Element {
 			<p>
 				To make every session in a repo target one Specboard project automatically,
 				commit a project-scoped <code>.mcp.json</code> at the repo root carrying that
-				project's slug, the same identifier you see in its Specboard URL
-				(<code>/projects/&lt;slug&gt;/planning</code>):
+				project's address, <code>owner/project</code>, the same pair you see in its
+				Specboard URL (<code>/projects/&lt;owner&gt;/&lt;project&gt;/planning</code>):
 			</p>
 			<pre><code>{mcpJson}</code></pre>
 			<p>
+				A bare <code>&lt;project&gt;</code> also works, but it means each caller's own
+				project of that slug, so anyone else who clones the repo gets "project not
+				found". Use the full form in any repo with collaborators.
+			</p>
+			<p>
 				This entry overrides the plugin's server in that repo, so expect a one-time
-				sign-in and trust prompt the first time it connects. The slug is a shared
+				sign-in and trust prompt the first time it connects. The address is a shared
 				reference, not a credential; each user still authenticates individually, and
 				access is checked per user against that project.
 			</p>

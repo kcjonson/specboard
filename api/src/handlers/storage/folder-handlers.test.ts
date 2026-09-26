@@ -11,7 +11,7 @@ import type { Redis } from 'ioredis';
 vi.mock('@specboard/db', () => ({
 	addFolder: vi.fn(),
 	removeFolder: vi.fn(),
-	resolveProjectSlug: vi.fn(),
+	resolveProject: vi.fn(),
 	getProject: vi.fn(),
 	isLocalRepository: vi.fn(() => false),
 	isCloudRepository: vi.fn(() => false),
@@ -29,10 +29,10 @@ vi.mock('../../services/storage/git-utils.ts', () => ({
 }));
 
 import { getSession } from '@specboard/auth';
-import { addFolder, removeFolder, resolveProjectSlug } from '@specboard/db';
+import { addFolder, removeFolder, resolveProject } from '@specboard/db';
 import { registerFolderRoutes } from './folder-handlers.ts';
 
-const FOLDERS_URL = 'http://localhost/api/projects/specboard/folders?path=/docs';
+const FOLDERS_URL = 'http://localhost/api/projects/acme/specboard/folders?path=/docs';
 const redis = {} as Redis;
 
 function createApp(): Hono {
@@ -65,7 +65,7 @@ describe('registerFolderRoutes', () => {
 		const app = createApp();
 
 		expect((await request(app, 'POST')).status).toBe(404);
-		expect(resolveProjectSlug).not.toHaveBeenCalled();
+		expect(resolveProject).not.toHaveBeenCalled();
 	});
 
 	it('treats any value other than "true" as disabled', async () => {
@@ -101,7 +101,7 @@ describe('folder routes on a cloud project', () => {
 		vi.clearAllMocks();
 		vi.stubEnv('LOCAL_STORAGE_ENABLED', 'true');
 		vi.mocked(getSession).mockResolvedValue({ userId: 'user-1' } as never);
-		vi.mocked(resolveProjectSlug).mockResolvedValue({ id: 'proj-1' } as never);
+		vi.mocked(resolveProject).mockResolvedValue({ id: 'proj-1' } as never);
 	});
 
 	afterEach(() => {

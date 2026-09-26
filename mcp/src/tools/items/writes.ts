@@ -50,9 +50,9 @@ import {
 	type ChecklistEntryInput,
 	type ChecklistStatus,
 } from '@specboard/db';
-import { itemNumberInProject } from '@specboard/core/identifiers';
+import { formatProjectRef, itemNumberInProject } from '@specboard/core/identifiers';
 
-import type { ToolResult } from './index.ts';
+import type { ToolResult } from '../project-ref.ts';
 
 function ok(payload: unknown): ToolResult {
 	return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
@@ -64,7 +64,7 @@ function err(text: string): ToolResult {
 
 /** The message for a key that doesn't address this project, so the fix is obvious. */
 function badKey(key: unknown, project: ResolvedProject, label: string): ToolResult {
-	return err(`${String(key)} is not a valid ${label} for project ${project.slug} (its items look like ${project.key}-1).`);
+	return err(`${String(key)} is not a valid ${label} for project ${formatProjectRef(project.ownerSlug, project.slug)} (its items look like ${project.key}-1).`);
 }
 
 /**

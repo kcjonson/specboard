@@ -17,7 +17,7 @@ vi.mock('@specboard/fetch', () => ({
 
 const get = vi.mocked(fetchClient.get);
 
-const STATUS_URL = '/api/projects/docs/sync/status';
+const STATUS_URL = '/api/projects/acme/docs/sync/status';
 
 function status(value: string | null, error: string | null = null): { status: string | null; error: string | null } {
 	return { status: value, error };
@@ -25,7 +25,7 @@ function status(value: string | null, error: string | null = null): { status: st
 
 function renderDialog(): ReturnType<typeof render> {
 	return render(
-		<SyncProgressDialog projectSlug="docs" projectName="Docs" onNavigate={vi.fn()} onDismiss={vi.fn()} />
+		<SyncProgressDialog projectRef="acme/docs" projectName="Docs" onNavigate={vi.fn()} onDismiss={vi.fn()} />
 	);
 }
 

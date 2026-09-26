@@ -8,6 +8,7 @@ import {
 	withSuffix,
 } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
+import { getUserSlug } from './users.ts';
 import {
 	type Project,
 	type StorageMode,
@@ -32,8 +33,10 @@ const MAX_ROOT_PATHS = 20;
 
 export interface ProjectResponse {
 	id: string;
-	/** URL identifier, unique per owner (e.g. "specboard"). */
+	/** URL identifier, unique per owner (e.g. "roadmap"). */
 	slug: string;
+	/** The owner's user slug, the other half of the project's address (acme/roadmap). */
+	ownerSlug: string;
 	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
 	key: string;
 	name: string;
@@ -65,10 +68,22 @@ export interface ProjectWithStats extends ProjectResponse {
 // Helper functions
 // ─────────────────────────────────────────────────────────────────────────────
 
-function transformProject(project: Project): ProjectResponse {
+/** A projects row plus its owner's slug, which every query that returns a project joins in. */
+interface ProjectRow extends Project {
+	owner_slug: string;
+}
+
+/** Select list and join for reads that return a ProjectResponse. */
+const PROJECT_SELECT = 'SELECT p.*, u.slug AS owner_slug FROM projects p JOIN users u ON u.id = p.owner_id';
+
+/** RETURNING clause for writes that return a ProjectResponse. */
+const PROJECT_RETURNING = 'RETURNING *, (SELECT u.slug FROM users u WHERE u.id = projects.owner_id) AS owner_slug';
+
+function transformProject(project: ProjectRow): ProjectResponse {
 	return {
 		id: project.id,
 		slug: project.slug,
+		ownerSlug: project.owner_slug,
 		key: project.key,
 		name: project.name,
 		description: project.description,
@@ -89,24 +104,35 @@ function transformProject(project: Project): ProjectResponse {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The identity a request needs once its project slug has been resolved: the internal
- * primary key for every downstream query, and the key that prefixes item keys.
+ * The identity a request needs once its project address has been resolved: the
+ * internal primary key for every downstream query, the key that prefixes item keys,
+ * and both halves of the address.
  */
 export interface ResolvedProject {
 	id: string;
 	slug: string;
 	key: string;
+	ownerSlug: string;
 }
 
 /**
- * Resolve a project slug to its internal id for a given user. Returns null when the
- * slug doesn't exist or isn't theirs — callers surface both as "not found" so the
- * slug namespace of other users isn't probeable.
+ * Resolve an `owner/project` address for a user. This is the one place a project
+ * address becomes a project: every REST route and MCP tool goes through it. Returns
+ * null when the address doesn't exist or the user can't reach it; callers surface
+ * both as "not found" so other users' projects aren't probeable. Access is still
+ * ownership here; phase 2 of multi-user grows this into resolveProjectAccess.
  */
-export async function resolveProjectSlug(slug: string, userId: string): Promise<ResolvedProject | null> {
+export async function resolveProject(
+	ownerSlug: string,
+	projectSlug: string,
+	userId: string
+): Promise<ResolvedProject | null> {
 	const result = await query<ResolvedProject>(
-		'SELECT id, slug, key FROM projects WHERE slug = $1 AND owner_id = $2',
-		[slug, userId]
+		`SELECT p.id, p.slug, p.key, u.slug AS "ownerSlug"
+		 FROM projects p
+		 JOIN users u ON u.id = p.owner_id
+		 WHERE u.slug = $1 AND p.slug = $2 AND p.owner_id = $3`,
+		[ownerSlug, projectSlug, userId]
 	);
 	return result.rows[0] ?? null;
 }
@@ -114,7 +140,7 @@ export async function resolveProjectSlug(slug: string, userId: string): Promise<
 /**
  * Get all projects for a user
  */
-interface ProjectQueryRow extends Project {
+interface ProjectQueryRow extends ProjectRow {
 	item_count: string;
 	ready_count: string;
 	in_progress_count: string;
@@ -125,16 +151,17 @@ interface ProjectQueryRow extends Project {
 export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
 	// Count top-level items (parent_id IS NULL) per project, by status.
 	const result = await query<ProjectQueryRow>(
-		`SELECT p.*,
+		`SELECT p.*, u.slug AS owner_slug,
 			COUNT(i.id)::text as item_count,
 			COUNT(CASE WHEN i.status = 'ready' THEN 1 END)::text as ready_count,
 			COUNT(CASE WHEN i.status = 'in_progress' THEN 1 END)::text as in_progress_count,
 			COUNT(CASE WHEN i.status = 'in_review' THEN 1 END)::text as in_review_count,
 			COUNT(CASE WHEN i.status = 'done' THEN 1 END)::text as done_count
 		FROM projects p
+		JOIN users u ON u.id = p.owner_id
 		LEFT JOIN items i ON i.project_id = p.id AND i.parent_id IS NULL
 		WHERE p.owner_id = $1
-		GROUP BY p.id
+		GROUP BY p.id, u.slug
 		ORDER BY p.updated_at DESC, p.created_at DESC, p.id`,
 		[userId]
 	);
@@ -152,34 +179,15 @@ export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
 }
 
 /**
- * Get a single project by its slug — the identifier every URL and API path uses.
- */
-export async function getProjectBySlug(
-	slug: string,
-	userId: string
-): Promise<ProjectResponse | null> {
-	const result = await query<Project>(
-		'SELECT * FROM projects WHERE slug = $1 AND owner_id = $2',
-		[slug, userId]
-	);
-
-	if (result.rows.length === 0) {
-		return null;
-	}
-
-	return transformProject(result.rows[0]!);
-}
-
-/**
- * Get a single project by its internal id. For callers that already hold the primary
- * key (a resolved request, a background job); slug callers want getProjectBySlug.
+ * Get a single project by its internal id. Callers holding an address resolve it
+ * with resolveProject first.
  */
 export async function getProject(
 	projectId: string,
 	userId: string
 ): Promise<ProjectResponse | null> {
-	const result = await query<Project>(
-		'SELECT * FROM projects WHERE id = $1 AND owner_id = $2',
+	const result = await query<ProjectRow>(
+		`${PROJECT_SELECT} WHERE p.id = $1 AND p.owner_id = $2`,
 		[projectId, userId]
 	);
 
@@ -220,7 +228,7 @@ async function insertProject(
 	columns: string,
 	placeholders: string,
 	values: unknown[]
-): Promise<Project> {
+): Promise<ProjectRow> {
 	const baseSlug = slugifyProjectName(name);
 	const baseKey = deriveProjectKey(name);
 	let slugAttempt = 1;
@@ -228,10 +236,10 @@ async function insertProject(
 
 	while (slugAttempt <= MAX_IDENTIFIER_ATTEMPTS && keyAttempt <= MAX_IDENTIFIER_ATTEMPTS) {
 		try {
-			const result = await query<Project>(
+			const result = await query<ProjectRow>(
 				`INSERT INTO projects (${columns}, slug, key)
 				 VALUES (${placeholders}, $${values.length + 1}, $${values.length + 2})
-				 RETURNING *`,
+				 ${PROJECT_RETURNING}`,
 				[...values, withSuffix(baseSlug, slugAttempt, 'slug'), withSuffix(baseKey, keyAttempt, 'key')]
 			);
 			return result.rows[0]!;
@@ -262,10 +270,22 @@ function toCloudRepository(input: RepositoryConfigInput): RepositoryConfigCloud 
 	};
 }
 
+/** Raised when a user who hasn't claimed a slug creates a project it could never be addressed by. */
+export class ProjectOwnerWithoutSlugError extends Error {
+	constructor() {
+		super('Finish onboarding before creating a project');
+		this.name = 'ProjectOwnerWithoutSlugError';
+	}
+}
+
 export async function createProject(
 	userId: string,
 	data: CreateProjectInput
 ): Promise<ProjectResponse> {
+	if (!(await getUserSlug(userId))) {
+		throw new ProjectOwnerWithoutSlugError();
+	}
+
 	// If repository is provided, set up cloud mode
 	if (data.repository) {
 		const project = await insertProject(
@@ -387,10 +407,10 @@ export async function updateProject(
 
 	let result;
 	try {
-		result = await query<Project>(
+		result = await query<ProjectRow>(
 			`UPDATE projects SET ${updates.join(', ')}
 			 WHERE ${conditions.join(' AND ')}
-			 RETURNING *`,
+			 ${PROJECT_RETURNING}`,
 			values
 		);
 	} catch (error) {
@@ -486,14 +506,14 @@ export async function addFolder(
 		};
 		const newRootPaths = [...project.root_paths, data.rootPath];
 
-		const result = await client.query<Project>(
+		const result = await client.query<ProjectRow>(
 			`UPDATE projects
 			 SET storage_mode = 'local',
 			     repository = $1,
 			     root_paths = $2,
 			     updated_at = NOW()
 			 WHERE id = $3 AND owner_id = $4
-			 RETURNING *`,
+			 ${PROJECT_RETURNING}`,
 			[JSON.stringify(newRepository), JSON.stringify(newRootPaths), projectId, userId]
 		);
 
@@ -535,14 +555,14 @@ export async function removeFolder(
 
 		const newRootPaths = project.root_paths.filter((p) => p !== rootPath);
 
-		const result = await client.query<Project>(
+		const result = await client.query<ProjectRow>(
 			`UPDATE projects
 			 SET root_paths = $1::jsonb,
 			     repository = CASE WHEN jsonb_array_length($1::jsonb) = 0 THEN '{}'::jsonb ELSE repository END,
 			     storage_mode = CASE WHEN jsonb_array_length($1::jsonb) = 0 THEN 'none' ELSE storage_mode END,
 			     updated_at = NOW()
 			 WHERE id = $2 AND owner_id = $3
-			 RETURNING *`,
+			 ${PROJECT_RETURNING}`,
 			[JSON.stringify(newRootPaths), projectId, userId]
 		);
 

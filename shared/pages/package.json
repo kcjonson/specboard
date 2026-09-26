@@ -16,6 +16,7 @@
 		"vitest": "4.1.11"
 	},
 	"dependencies": {
+		"@specboard/core": "*",
 		"@specboard/fetch": "*",
 		"@specboard/models": "*",
 		"@specboard/platform": "*",
