@@ -14,10 +14,10 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_slug: {
+				project: {
 					type: 'string',
 					description:
-						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
+						'The project as owner/project (e.g. "acme/roadmap"), the `ref` list_projects returns. A bare slug ("roadmap") means your own project of that slug. Optional when the repo is bound via .mcp.json (X-Specboard-Project): the binding supplies it, and naming a different project is refused.',
 				},
 				item_key: {
 					type: 'string',
@@ -68,10 +68,10 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_slug: {
+				project: {
 					type: 'string',
 					description:
-						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
+						'The project as owner/project (e.g. "acme/roadmap"), the `ref` list_projects returns. A bare slug ("roadmap") means your own project of that slug. Optional when the repo is bound via .mcp.json (X-Specboard-Project): the binding supplies it, and naming a different project is refused.',
 				},
 				title: {
 					type: 'string',
@@ -128,10 +128,10 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_slug: {
+				project: {
 					type: 'string',
 					description:
-						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
+						'The project as owner/project (e.g. "acme/roadmap"), the `ref` list_projects returns. A bare slug ("roadmap") means your own project of that slug. Optional when the repo is bound via .mcp.json (X-Specboard-Project): the binding supplies it, and naming a different project is refused.',
 				},
 				parent_key: {
 					type: 'string',
@@ -170,10 +170,10 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_slug: {
+				project: {
 					type: 'string',
 					description:
-						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
+						'The project as owner/project (e.g. "acme/roadmap"), the `ref` list_projects returns. A bare slug ("roadmap") means your own project of that slug. Optional when the repo is bound via .mcp.json (X-Specboard-Project): the binding supplies it, and naming a different project is refused.',
 				},
 				item_key: {
 					type: 'string',
@@ -269,10 +269,10 @@ export const epicTools: Tool[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				project_slug: {
+				project: {
 					type: 'string',
 					description:
-						'The project slug (e.g. "specboard"), as shown in Specboard URLs. Optional when the repo is bound via .mcp.json (X-Specboard-Project) — the binding supplies it, and passing a different slug is refused.',
+						'The project as owner/project (e.g. "acme/roadmap"), the `ref` list_projects returns. A bare slug ("roadmap") means your own project of that slug. Optional when the repo is bound via .mcp.json (X-Specboard-Project): the binding supplies it, and naming a different project is refused.',
 				},
 				item_key: {
 					type: 'string',

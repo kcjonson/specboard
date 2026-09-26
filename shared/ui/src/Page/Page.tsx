@@ -3,11 +3,11 @@ import { WebHeader, type NavTabLabel } from '../WebHeader/WebHeader';
 import styles from './Page.module.css';
 
 export interface PageProps {
-	/** Project slug - if provided, shows project name and nav tabs in header */
-	projectSlug?: string;
+	/** Project ref (owner/project) - if provided, shows project name and nav tabs in header */
+	projectRef?: string;
 	/** Currently active nav tab */
 	activeTab?: NavTabLabel;
-	/** Page title - shown when no projectSlug (for non-project pages like Settings) */
+	/** Page title - shown when no projectRef (for non-project pages like Settings) */
 	title?: string;
 	/** Page content */
 	children: ComponentChildren;
@@ -16,7 +16,7 @@ export interface PageProps {
 }
 
 export function Page({
-	projectSlug,
+	projectRef,
 	activeTab,
 	title,
 	children,
@@ -24,7 +24,7 @@ export function Page({
 }: PageProps): JSX.Element {
 	return (
 		<div class={styles.page}>
-			<WebHeader projectSlug={projectSlug} activeTab={activeTab} title={title} />
+			<WebHeader projectRef={projectRef} activeTab={activeTab} title={title} />
 			<main class={`${styles.content} ${className || ''}`}>
 				{children}
 			</main>

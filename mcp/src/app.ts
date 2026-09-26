@@ -27,6 +27,7 @@ import type { AgentActor } from '@specboard/db';
 
 import { epicTools, handleEpicTool } from './tools/items/index.ts';
 import { projectTools, handleProjectTool } from './tools/projects.ts';
+import { parseProjectBinding, type ProjectBinding } from './tools/project-ref.ts';
 
 const epicToolNames = new Set([
 	'get_items',
@@ -42,7 +43,7 @@ const projectToolNames = new Set(['list_projects']);
 // carries the full guided workflow; this is the always-on summary that points users to it.
 const SERVER_INSTRUCTIONS = `You are connected to Specboard, the user's planning board: epics, tasks, and bugs. Use these tools whenever the user is planning, picking up work, or tracking development status.
 
-Tools: list_projects finds the project and its slug (a repo bound via .mcp.json X-Specboard-Project auto-selects one, so project_slug can be omitted). Projects are addressed by slug ("specboard"), items by key ("SB-345"); never pass an item key or prefix as project_slug. get_items reads work by status (ready/in_progress/blocked/in_review/done), type, or search, or one item by item_key with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_key); create_items bulk-creates children. update_item changes title/description/status/sub_status/branch_name/pr_url, and note appends to the activity log (never overwrites); write one when you complete, block, or make a call worth remembering. Setting sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
+Tools: list_projects finds the project and its ref (a repo bound via .mcp.json X-Specboard-Project auto-selects one, so project can be omitted). Projects are addressed as owner/project ("acme/roadmap"; a bare "roadmap" means your own), items by key ("SB-345"); never pass an item key or prefix as project. get_items reads work by status (ready/in_progress/blocked/in_review/done), type, or search, or one item by item_key with include_children/include_notes. create_item makes an epic, task, or bug (optionally under a parent_key); create_items bulk-creates children. update_item changes title/description/status/sub_status/branch_name/pr_url, and note appends to the activity log (never overwrites); write one when you complete, block, or make a call worth remembering. Setting sub_status drives the board: scoping/in_development/pr_open -> in_progress, complete -> done.
 
 A checklist is scratch todos on one item, not child items (first-class tracked work): update_item's checklist sets the list up, and checklist_status ({"<entry id>": "done"}) ticks entries off as you go.
 
@@ -65,10 +66,10 @@ const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
  * request gets a fresh Server; the actor stamped on provenance comes entirely from
  * the OAuth token (user, client id, device name, the protocol clientInfo the token
  * holder sent at initialize) plus the echoed session id, never from tool arguments.
- * boundProjectSlug, when present, is the project slug from the X-Specboard-Project
- * request header (set by a repo's committed .mcp.json) and scopes tools to it.
+ * binding, when present, is the project from the X-Specboard-Project request header
+ * (set by a repo's committed .mcp.json) and scopes tools to it.
  */
-function createMcpServer(actor: AgentActor, boundProjectSlug?: string): Server {
+function createMcpServer(actor: AgentActor, binding: ProjectBinding): Server {
 	const server = new Server(
 		{
 			name: 'specboard',
@@ -93,11 +94,11 @@ function createMcpServer(actor: AgentActor, boundProjectSlug?: string): Server {
 
 		try {
 			if (projectToolNames.has(name)) {
-				return await handleProjectTool(name, args, actor.userId, boundProjectSlug);
+				return await handleProjectTool(name, actor.userId, binding);
 			}
 
 			if (epicToolNames.has(name)) {
-				return await handleEpicTool(name, args, actor, boundProjectSlug);
+				return await handleEpicTool(name, args, actor, binding);
 			}
 
 			return {
@@ -215,13 +216,13 @@ export function createApp(): Hono<{ Bindings: HttpBindings; Variables: McpAuthVa
 			...(client ? { client } : {}),
 		};
 
-		// A repo's committed .mcp.json carries the project slug in this header; the server scopes
-		// tools to that project (access is still gated per user when the slug is resolved). Trim +
-		// lowercase to tolerate stray whitespace/casing; absent/blank means "unscoped".
-		const boundProjectSlug = c.req.header('x-specboard-project')?.trim().toLowerCase() || undefined;
+		// A repo's committed .mcp.json carries owner/project (or a bare slug for the caller's own)
+		// in this header; the server scopes tools to that project (access is still gated per user
+		// when it is resolved). Absent/blank means "unscoped".
+		const binding = parseProjectBinding(c.req.header('x-specboard-project'));
 
 		const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-		const server = createMcpServer(actor, boundProjectSlug);
+		const server = createMcpServer(actor, binding);
 		// Closing the server closes its transport too.
 		res.on('close', () => {
 			void server.close();

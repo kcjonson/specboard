@@ -39,7 +39,7 @@ function note(overrides: Partial<NotePayload> = {}): NotePayload {
 
 function renderSection(entries: NotePayload[]): ReturnType<typeof render> {
 	get.mockResolvedValue(entries);
-	return render(<NotesSection projectSlug="specboard" itemKey="SB-12" />);
+	return render(<NotesSection projectRef="acme/specboard" itemKey="SB-12" />);
 }
 
 /** The section under an ancestor that closes on Escape, the way the drawer wraps it. */
@@ -50,12 +50,12 @@ function renderInDrawer(
 	get.mockResolvedValue(entries);
 	return render(
 		<div onKeyDown={onKeyDown}>
-			<NotesSection projectSlug="specboard" itemKey="SB-12" />
+			<NotesSection projectRef="acme/specboard" itemKey="SB-12" />
 		</div>
 	);
 }
 
-const URL = '/api/projects/specboard/items/SB-12/notes';
+const URL = '/api/projects/acme/specboard/items/SB-12/notes';
 
 describe('NotesSection', () => {
 	beforeEach(() => {
@@ -215,7 +215,7 @@ describe('NotesSection', () => {
 	// A log that failed to load is not an empty log.
 	it('shows an error instead of the empty state when the fetch fails', async () => {
 		get.mockRejectedValue(new Error('nope'));
-		const { container, findByText } = render(<NotesSection projectSlug="specboard" itemKey="SB-12" />);
+		const { container, findByText } = render(<NotesSection projectRef="acme/specboard" itemKey="SB-12" />);
 
 		expect(await findByText('Could not load the activity log.')).toBeTruthy();
 		expect(container.textContent).not.toContain('No activity yet');

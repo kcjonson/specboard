@@ -3,7 +3,7 @@
  * Thin wrappers over the @specboard/db item service (which returns camelCase responses).
  *
  * Items are addressed by their key (`SB-345`). requireProjectAccess has already
- * resolved `:projectSlug` to the project on the context; these handlers turn the
+ * resolved `:owner/:project` to the project on the context; these handlers turn the
  * `:itemKey` path segment into the per-project number the service works in.
  */
 
@@ -36,7 +36,7 @@ import { isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../v
 import { apiItem } from '../types.ts';
 
 /**
- * The project resolved from :projectSlug by requireProjectAccess.
+ * The project resolved from :owner/:project by requireProjectAccess.
  *
  * Throws rather than returning undefined: reaching here without it means the route
  * was registered without the wrapper, which would otherwise read as "authorized" and

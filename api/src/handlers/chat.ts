@@ -12,12 +12,12 @@ import { streamSSE } from 'hono/streaming';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
-import { getProjectBySlug } from '@specboard/db';
 import { getDecryptedApiKey } from './api-keys.ts';
 import { isValidProvider, getProvider, isValidModel, type ChatMessage } from '../providers/index.ts';
 import { composeSystemPrompt } from '../prompts/index.ts';
 import { readRepoConventions } from '../prompts/repo-conventions.ts';
-import { isValidProjectSlug } from '@specboard/core/identifiers';
+import { parseProjectRef } from '@specboard/core/identifiers';
+import { loadProject, type ProjectAddress } from '../project-address.ts';
 
 // Constants
 const MAX_MESSAGE_LENGTH = 10000;
@@ -75,12 +75,16 @@ export async function handleChat(
 	const message = typeof req.message === 'string' ? req.message : '';
 	const document_content = typeof req.document_content === 'string' ? req.document_content : undefined;
 	const document_path = typeof req.document_path === 'string' ? req.document_path : undefined;
-	const project_slug = typeof req.project_slug === 'string' ? req.project_slug : undefined;
 	const rawHistory = Array.isArray(req.conversation_history) ? req.conversation_history : [];
 
-	// Validate project_slug if provided
-	if (project_slug !== undefined && !isValidProjectSlug(project_slug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	// The open project, as owner/project, when the chat has one
+	let projectAddress: ProjectAddress | undefined;
+	if (req.project !== undefined) {
+		const parsed = parseProjectRef(req.project);
+		if (!parsed?.owner) {
+			return context.json({ error: 'Invalid project address' }, 400);
+		}
+		projectAddress = { owner: parsed.owner, project: parsed.project };
 	}
 
 	// Get provider and model from request (with defaults for backwards compatibility)
@@ -138,11 +142,11 @@ export async function handleChat(
 		conversation_history.push(msg);
 	}
 
-	// Fetch project data if project_slug is provided
+	// Fetch project data if a project is provided
 	let projectPrompt: string | undefined;
 	let repoConventions: string | null = null;
-	if (project_slug) {
-		const project = await getProjectBySlug(project_slug, session.userId);
+	if (projectAddress) {
+		const project = await loadProject(projectAddress, session.userId);
 		if (project) {
 			if (project.systemPrompt) {
 				projectPrompt = project.systemPrompt;

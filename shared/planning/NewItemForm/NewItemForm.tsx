@@ -24,7 +24,7 @@ export interface NewItemData {
 }
 
 export interface NewItemFormProps {
-	projectSlug: string;
+	projectRef: string;
 	createType?: ItemType;
 	/** Parent the form opens with; the user can change or clear it before creating. */
 	parentKey?: string;
@@ -32,7 +32,7 @@ export interface NewItemFormProps {
 }
 
 /** Composes a new item. Existing items are viewed and edited by ItemView. */
-export function NewItemForm({ projectSlug, createType, parentKey, onCreate }: NewItemFormProps): JSX.Element {
+export function NewItemForm({ projectRef, createType, parentKey, onCreate }: NewItemFormProps): JSX.Element {
 	const itemType: ItemType = createType || 'epic';
 	const typeLabel = TYPE_LABELS[itemType];
 
@@ -111,7 +111,7 @@ export function NewItemForm({ projectSlug, createType, parentKey, onCreate }: Ne
 
 			{parentPickerOpen && (
 				<ItemPicker
-					projectSlug={projectSlug}
+					projectRef={projectRef}
 					title="Choose a parent"
 					// A UI choice, not a model rule: the schema puts no type restriction on
 					// parenting (a task under a bug, an epic under an epic all validate, on

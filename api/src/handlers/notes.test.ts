@@ -34,7 +34,7 @@ vi.mock('@specboard/db', () => ({
 import { listItemNotes, addItemNote, NoteValidationError } from '@specboard/db';
 import { handleListItemNotes, handleAddItemNote } from './notes.ts';
 
-const PROJECT: ResolvedProject = { id: 'proj-1', slug: 'specboard', key: 'SB' };
+const PROJECT: ResolvedProject = { id: 'proj-1', slug: 'specboard', ownerSlug: 'acme', key: 'SB' };
 
 type TestVariables = { userId: string | undefined; project?: ResolvedProject };
 
@@ -45,14 +45,14 @@ function createApp(): Hono<{ Variables: TestVariables }> {
 		context.set('userId', 'user-1');
 		await next();
 	});
-	app.get('/api/projects/:projectSlug/items/:itemKey/notes', handleListItemNotes);
-	app.post('/api/projects/:projectSlug/items/:itemKey/notes', handleAddItemNote);
+	app.get('/api/projects/:owner/:project/items/:itemKey/notes', handleListItemNotes);
+	app.post('/api/projects/:owner/:project/items/:itemKey/notes', handleAddItemNote);
 	return app;
 }
 
 function post(body: unknown): Promise<Response> {
 	return Promise.resolve(
-		createApp().request('http://localhost/api/projects/specboard/items/SB-1/notes', {
+		createApp().request('http://localhost/api/projects/acme/specboard/items/SB-1/notes', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
@@ -107,7 +107,7 @@ describe('handleListItemNotes', () => {
 			{ id: 'n-2', note: 'backfilled', actor: null, createdAt: new Date('2026-01-01T00:00:00Z') },
 		]);
 
-		const res = await createApp().request('http://localhost/api/projects/specboard/items/SB-1/notes');
+		const res = await createApp().request('http://localhost/api/projects/acme/specboard/items/SB-1/notes');
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual([
 			{ id: 'n-1', note: 'agent entry', actor: { type: 'agent', deviceName: 'laptop' }, createdAt: '2026-01-02T00:00:00.000Z' },
@@ -118,7 +118,7 @@ describe('handleListItemNotes', () => {
 	it('404s when the item is not in this project', async () => {
 		vi.mocked(listItemNotes).mockResolvedValue(null);
 
-		const res = await createApp().request('http://localhost/api/projects/specboard/items/SB-1/notes');
+		const res = await createApp().request('http://localhost/api/projects/acme/specboard/items/SB-1/notes');
 		expect(res.status).toBe(404);
 	});
 });

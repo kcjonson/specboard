@@ -12,8 +12,8 @@ import type { ProjectResponse } from '@specboard/db';
 
 vi.mock('@specboard/db', () => ({
 	getProjects: vi.fn(),
-	getProjectBySlug: vi.fn(),
-	resolveProjectSlug: vi.fn(),
+	getProject: vi.fn(),
+	resolveProject: vi.fn(),
 	createProject: vi.fn(),
 	updateProject: vi.fn(),
 	deleteProject: vi.fn(),
@@ -21,6 +21,11 @@ vi.mock('@specboard/db', () => ({
 	ProjectHasRepositoryError: class extends Error {
 		constructor() {
 			super('Project already has a repository');
+		}
+	},
+	ProjectOwnerWithoutSlugError: class extends Error {
+		constructor() {
+			super('Finish onboarding before creating a project');
 		}
 	},
 }));
@@ -36,7 +41,7 @@ vi.mock('./github-sync.ts', () => ({
 }));
 
 import { getSession } from '@specboard/auth';
-import { resolveProjectSlug, createProject, updateProject, ProjectHasRepositoryError } from '@specboard/db';
+import { resolveProject, createProject, updateProject, ProjectHasRepositoryError, ProjectOwnerWithoutSlugError } from '@specboard/db';
 import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
 import { handleCreateProject, handleUpdateProject } from './projects.ts';
 
@@ -52,6 +57,7 @@ function projectResponse(overrides: Partial<ProjectResponse> = {}): ProjectRespo
 	return {
 		id: 'proj-1',
 		slug: 'docs',
+		ownerSlug: 'acme',
 		key: 'DOCS',
 		name: 'Docs',
 		description: null,
@@ -73,7 +79,7 @@ const redis = {} as Redis;
 function createApp(): Hono {
 	const app = new Hono();
 	app.post('/api/projects', (context) => handleCreateProject(context, redis));
-	app.put('/api/projects/:projectSlug', (context) => handleUpdateProject(context, redis));
+	app.put('/api/projects/:owner/:project', (context) => handleUpdateProject(context, redis));
 	return app;
 }
 
@@ -87,7 +93,7 @@ function request(method: 'POST' | 'PUT', path: string, body: unknown): Promise<R
 	);
 }
 
-const put = (body: unknown): Promise<Response> => request('PUT', '/api/projects/docs', body);
+const put = (body: unknown): Promise<Response> => request('PUT', '/api/projects/acme/docs', body);
 const post = (body: unknown): Promise<Response> => request('POST', '/api/projects', body);
 
 beforeEach(() => {
@@ -98,7 +104,7 @@ beforeEach(() => {
 		createdAt: Date.now(),
 		lastAccessedAt: Date.now(),
 	});
-	vi.mocked(resolveProjectSlug).mockResolvedValue({ id: 'proj-1', slug: 'docs', key: 'DOCS' });
+	vi.mocked(resolveProject).mockResolvedValue({ id: 'proj-1', slug: 'docs', key: 'DOCS', ownerSlug: 'acme' });
 	vi.mocked(updateProject).mockResolvedValue(projectResponse());
 	vi.mocked(createProject).mockResolvedValue(projectResponse());
 });
@@ -171,7 +177,7 @@ describe('handleUpdateProject', () => {
 
 		expect(res.status).toBe(400);
 		expect(await res.json()).toEqual({ error });
-		expect(vi.mocked(resolveProjectSlug)).not.toHaveBeenCalled();
+		expect(vi.mocked(resolveProject)).not.toHaveBeenCalled();
 		expect(vi.mocked(updateProject)).not.toHaveBeenCalled();
 		expect(vi.mocked(startGitHubInitialSync)).not.toHaveBeenCalled();
 	});
@@ -184,17 +190,38 @@ describe('handleUpdateProject', () => {
 		}));
 	});
 
-	it('returns 404 and never reaches updateProject when the slug is not the caller\'s', async () => {
-		vi.mocked(resolveProjectSlug).mockResolvedValue(null);
+	it('returns 404 and never reaches updateProject when the address is not the caller\'s', async () => {
+		vi.mocked(resolveProject).mockResolvedValue(null);
 
 		const res = await put({ repository: REPOSITORY });
 
 		expect(res.status).toBe(404);
 		expect(vi.mocked(updateProject)).not.toHaveBeenCalled();
 	});
+
+	it('resolves the owner/project address from the path', async () => {
+		await put({ name: 'Docs' });
+
+		expect(vi.mocked(resolveProject)).toHaveBeenCalledWith('acme', 'docs', 'user-1');
+	});
+
+	it('rejects a malformed address with 400 before resolving it', async () => {
+		const res = await request('PUT', '/api/projects/acme_co/docs', { name: 'Docs' });
+
+		expect(res.status).toBe(400);
+		expect(vi.mocked(resolveProject)).not.toHaveBeenCalled();
+	});
 });
 
 describe('handleCreateProject', () => {
+	it('refuses with 403 when the caller has no user slug to address the project by', async () => {
+		vi.mocked(createProject).mockRejectedValue(new ProjectOwnerWithoutSlugError());
+
+		const res = await post({ name: 'Docs' });
+
+		expect(res.status).toBe(403);
+	});
+
 	it('validates the repository with the same rules as update', async () => {
 		const res = await post({ name: 'Docs', repository: { ...REPOSITORY, owner: '.acme' } });
 

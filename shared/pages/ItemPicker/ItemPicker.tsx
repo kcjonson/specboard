@@ -28,7 +28,7 @@ interface PickerItem {
 }
 
 export interface ItemPickerProps {
-	projectSlug: string;
+	projectRef: string;
 	/** Dialog heading, since the same list answers different questions. */
 	title: string;
 	/** Restrict the list to one item type, or undefined for all of them. */
@@ -52,7 +52,7 @@ export interface ItemPickerProps {
  * request per status window (five per keystroke), and it is the board's model, not
  * a scratch list.
  */
-export function ItemPicker({ projectSlug, title, type, clearOption, onSelect, onClose }: ItemPickerProps): JSX.Element {
+export function ItemPicker({ projectRef, title, type, clearOption, onSelect, onClose }: ItemPickerProps): JSX.Element {
 	const [search, setSearch] = useState('');
 	const [settledSearch, setSettledSearch] = useState('');
 	const [items, setItems] = useState<PickerItem[]>([]);
@@ -88,7 +88,7 @@ export function ItemPicker({ projectSlug, title, type, clearOption, onSelect, on
 		// makes every attempt after the first look like it failed instantly.
 		setError(null);
 		fetchClient
-			.get<PickerItem[]>(`/api/projects/${projectSlug}/items?${params.toString()}`)
+			.get<PickerItem[]>(`/api/projects/${projectRef}/items?${params.toString()}`)
 			.then((rows) => {
 				if (cancelled) return;
 				setItems(rows);
@@ -103,7 +103,7 @@ export function ItemPicker({ projectSlug, title, type, clearOption, onSelect, on
 				if (!cancelled) setLoading(false);
 			});
 		return () => { cancelled = true; };
-	}, [projectSlug, type, settledSearch]);
+	}, [projectRef, type, settledSearch]);
 
 	return (
 		<Dialog onClose={onClose} title={title} maxWidth="md">

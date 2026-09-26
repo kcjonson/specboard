@@ -4,14 +4,14 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { isValidProjectSlug } from '@specboard/core/identifiers';
 import { getUserId, getStorageProvider, normalizePath } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
-import { getProjectBySlug, isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
+import { isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
+import { readProjectAddress, loadProject } from '../../project-address.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 
 /**
- * GET /api/projects/:projectSlug/git/status
+ * GET /api/projects/:owner/:project/git/status
  * Get git status including branch, ahead/behind, and changed files
  *
  * Works for both local and cloud mode projects:
@@ -24,15 +24,15 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Get project first to verify it exists and check mode
 	let project;
 	try {
-		project = await getProjectBySlug(projectSlug, userId);
+		project = await loadProject(address, userId);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -89,7 +89,7 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
 }
 
 /**
- * POST /api/projects/:projectSlug/git/commit
+ * POST /api/projects/:owner/:project/git/commit
  * Commit all changes with optional message
  * Auto-generates message if not provided
  *
@@ -101,15 +101,15 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Check project mode - must be either cloud or local, never ambiguous
 	let project;
 	try {
-		project = await getProjectBySlug(projectSlug, userId);
+		project = await loadProject(address, userId);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -216,7 +216,7 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 }
 
 /**
- * POST /api/projects/:projectSlug/git/restore
+ * POST /api/projects/:owner/:project/git/restore
  * Restore a file to its committed version.
  *
  * Local mode restores from git; cloud mode discards the file's pending
@@ -228,15 +228,15 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Get project and check mode - restore only works for local mode
 	let project;
 	try {
-		project = await getProjectBySlug(projectSlug, userId);
+		project = await loadProject(address, userId);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -292,7 +292,7 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 }
 
 /**
- * POST /api/projects/:projectSlug/git/pull
+ * POST /api/projects/:owner/:project/git/pull
  * Pull latest changes from remote
  *
  * For local mode: Runs git pull
@@ -304,15 +304,15 @@ export async function handlePull(context: Context, redis: Redis): Promise<Respon
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Get project and check mode
 	let project;
 	try {
-		project = await getProjectBySlug(projectSlug, userId);
+		project = await loadProject(address, userId);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);

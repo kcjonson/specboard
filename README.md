@@ -77,17 +77,20 @@ that a connector does not send the `X-Specboard-Project` header, so a repo bound
 not auto-select its project; `list_projects` returns every project and the skill asks which to use.
 
 **Bind a repo to a project (optional):** to make the skill always target one project in a given
-repo, commit a project-scoped `.mcp.json` at the repo root carrying that project's slug — the same
-identifier you see in its Specboard URL (`/projects/<slug>/planning`):
+repo, commit a project-scoped `.mcp.json` at the repo root carrying that project's address,
+`owner/project`, the same pair you see in its Specboard URL (`/projects/<owner>/<project>/planning`):
 
 ```json
-{ "mcpServers": { "specboard": { "type": "http", "url": "https://specboard.io/mcp", "headers": { "X-Specboard-Project": "<project-slug>" } } } }
+{ "mcpServers": { "specboard": { "type": "http", "url": "https://specboard.io/mcp", "headers": { "X-Specboard-Project": "<owner>/<project>" } } } }
 ```
+
+A bare `<project>` also works but means *each caller's own* project of that slug, so anyone else who
+clones the repo gets "project not found". Use the full form in any repo with collaborators.
 
 This project-scoped entry overrides the plugin's server in that repo, so reconnect the MCP after
 adding it. **On first connect it runs its own one-time OAuth** — the plugin server's token does not
 carry over to the project-scoped one, so expect a sign-in prompt (and a trust prompt for the new
-server). The slug is a shared reference, not a credential — each user still authenticates
+server). The address is a shared reference, not a credential — each user still authenticates
 individually, and access is checked per user against that project.
 
 ### Usage

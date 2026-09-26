@@ -42,13 +42,13 @@ function succeedEmpty(): void {
 }
 
 function renderPlanning(): ReturnType<typeof render> {
-	return render(<Planning params={{ projectSlug: 'specboard' }} />);
+	return render(<Planning params={{ owner: 'acme', project: 'specboard' }} />);
 }
 
 describe('Planning load failures', () => {
 	beforeEach(() => {
 		getResponse.mockReset();
-		window.history.replaceState({}, '', '/projects/specboard/planning');
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning');
 	});
 
 	it('keeps the toolbar and shows the error where the board goes', async () => {

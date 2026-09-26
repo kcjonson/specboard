@@ -5,7 +5,7 @@ import { Button, Text } from '@specboard/ui';
 import styles from './BlockersSection.module.css';
 
 export interface BlockersSectionProps {
-	projectSlug: string;
+	projectRef: string;
 	itemKey: string;
 	/** Open a blocking item's detail (clicking an item blocker). */
 	onOpenItem?: (itemKey: string) => void;
@@ -19,8 +19,8 @@ export interface BlockersSectionProps {
  * input shaped like one of THIS project's item keys (SB-12) links that item,
  * anything else (other prefixes included) is a written reason.
  */
-export function BlockersSection({ projectSlug, itemKey, onOpenItem, onChange }: BlockersSectionProps): JSX.Element {
-	const blockers = useMemo(() => new BlockersCollection({ projectSlug, itemKey }), [projectSlug, itemKey]);
+export function BlockersSection({ projectRef, itemKey, onOpenItem, onChange }: BlockersSectionProps): JSX.Element {
+	const blockers = useMemo(() => new BlockersCollection({ projectRef, itemKey }), [projectRef, itemKey]);
 	useModel(blockers);
 
 	const [draft, setDraft] = useState('');

@@ -15,7 +15,7 @@ const SUB_STATUS_LABELS: Partial<Record<SubStatus, string>> = {
 
 interface ItemCardProps {
 	item: ItemModel;
-	projectSlug: string;
+	projectRef: string;
 	isSelected?: boolean;
 	isHighlighted?: boolean;
 	/** Whether the card can be dragged to rank it. Off for a child row (see Column). */
@@ -37,7 +37,7 @@ function getInitials(name: string): string {
 
 export function ItemCard({
 	item,
-	projectSlug,
+	projectRef,
 	isSelected = false,
 	isHighlighted = false,
 	draggable = true,
@@ -68,7 +68,7 @@ export function ItemCard({
 
 	const handleOpenInNewWindow = (e: MouseEvent): void => {
 		e.stopPropagation();
-		window.open(`/projects/${projectSlug}/items/${item.key}`, '_blank', 'noopener,noreferrer');
+		window.open(`/projects/${projectRef}/items/${item.key}`, '_blank', 'noopener,noreferrer');
 	};
 
 	const cardClass = [

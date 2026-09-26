@@ -70,7 +70,7 @@ describe('ItemPicker', () => {
 	// A placeholder disappears on the first keystroke and is not a reliable label.
 	it('gives the search field an accessible name', async () => {
 		const { container } = render(
-			<ItemPicker projectSlug="specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
+			<ItemPicker projectRef="acme/specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
 		);
 		await settle();
 
@@ -79,7 +79,7 @@ describe('ItemPicker', () => {
 
 	it('asks the server once per settled keystroke, not once per keystroke', async () => {
 		const { container } = render(
-			<ItemPicker projectSlug="specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
+			<ItemPicker projectRef="acme/specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
 		);
 		await settle();
 		expect(get).toHaveBeenCalledTimes(1);
@@ -99,7 +99,7 @@ describe('ItemPicker', () => {
 
 	it('settles an emptied box at once rather than waiting out the debounce', async () => {
 		const { container } = render(
-			<ItemPicker projectSlug="specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
+			<ItemPicker projectRef="acme/specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
 		);
 		await settle();
 		const box = searchBox(container);
@@ -115,17 +115,17 @@ describe('ItemPicker', () => {
 
 	it('puts the type filter on the query string', async () => {
 		render(
-			<ItemPicker projectSlug="specboard" title="Choose a parent" type="epic" onSelect={vi.fn()} onClose={vi.fn()} />
+			<ItemPicker projectRef="acme/specboard" title="Choose a parent" type="epic" onSelect={vi.fn()} onClose={vi.fn()} />
 		);
 		await settle();
 
-		expect(requested()[0]).toBe('/api/projects/specboard/items?limit=100&type=epic');
+		expect(requested()[0]).toBe('/api/projects/acme/specboard/items?limit=100&type=epic');
 	});
 
 	it('renders an empty state when nothing matched', async () => {
 		get.mockResolvedValue([]);
 		const { container } = render(
-			<ItemPicker projectSlug="specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
+			<ItemPicker projectRef="acme/specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
 		);
 		await settle();
 
@@ -137,7 +137,7 @@ describe('ItemPicker', () => {
 	it('drops a stale error as soon as the next search starts', async () => {
 		get.mockRejectedValueOnce(new Error('offline'));
 		const { container } = render(
-			<ItemPicker projectSlug="specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
+			<ItemPicker projectRef="acme/specboard" title="Choose a parent" onSelect={vi.fn()} onClose={vi.fn()} />
 		);
 		await settle();
 		expect(container.textContent).toContain('Could not load items.');
@@ -159,7 +159,7 @@ describe('ItemPicker', () => {
 	it('hands the chosen row\'s key back', async () => {
 		const onSelect = vi.fn();
 		const { getByText } = render(
-			<ItemPicker projectSlug="specboard" title="Choose a parent" onSelect={onSelect} onClose={vi.fn()} />
+			<ItemPicker projectRef="acme/specboard" title="Choose a parent" onSelect={onSelect} onClose={vi.fn()} />
 		);
 		await settle();
 
@@ -172,7 +172,7 @@ describe('ItemPicker', () => {
 		const onSelect = vi.fn();
 		const { getByText } = render(
 			<ItemPicker
-				projectSlug="specboard"
+				projectRef="acme/specboard"
 				title="Choose a parent"
 				clearOption={{ label: 'No parent', onSelect }}
 				onSelect={vi.fn()}

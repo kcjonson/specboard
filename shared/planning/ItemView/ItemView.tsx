@@ -368,7 +368,7 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 
 			{parentPickerOpen && (
 				<ItemPicker
-					projectSlug={item.projectSlug}
+					projectRef={item.projectRef}
 					title="Choose a parent"
 					// A UI choice, not a model rule: the schema puts no type restriction on
 					// parenting (a task under a bug, an epic under an epic all validate, on
@@ -395,18 +395,18 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 
 			<ChildrenSection item={item} onOpenItem={onOpenItem} />
 
-			<ChecklistSection projectSlug={item.projectSlug} itemKey={item.key} />
+			<ChecklistSection projectRef={item.projectRef} itemKey={item.key} />
 
 			<BlockersSection
-				projectSlug={item.projectSlug}
+				projectRef={item.projectRef}
 				itemKey={item.key}
 				onOpenItem={onOpenItem}
 				onChange={() => void item.fetch()}
 			/>
 
-			<SpecsSection projectSlug={item.projectSlug} itemKey={item.key} />
+			<SpecsSection projectRef={item.projectRef} itemKey={item.key} />
 
-			<NotesSection projectSlug={item.projectSlug} itemKey={item.key} />
+			<NotesSection projectRef={item.projectRef} itemKey={item.key} />
 
 			<DialogFooter divider>
 				<Button class="danger" onClick={handleDelete}>

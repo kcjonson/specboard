@@ -29,8 +29,10 @@ export function isCloudRepository(repo: Project['repository']): repo is Reposito
 
 export interface Project {
 	id: string;
-	/** URL identifier for this project (e.g. "specboard"). */
+	/** URL identifier for this project, unique per owner (e.g. "roadmap"). */
 	slug: string;
+	/** The owner's user slug; the project's address is ownerSlug/slug (acme/roadmap). */
+	ownerSlug: string;
 	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
 	key: string;
 	name: string;

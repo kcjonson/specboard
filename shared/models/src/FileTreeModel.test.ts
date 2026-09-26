@@ -162,14 +162,14 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 
-			expect(model.projectSlug).toBe('project-1');
+			expect(model.projectRef).toBe('acme/project-1');
 			expect(model.rootPaths).toEqual(['/']);
 			expect(model.files).toHaveLength(2);
 			expect(mockPost).toHaveBeenCalledTimes(1);
 			expect(mockPost).toHaveBeenCalledWith(
-				'/api/projects/project-1/tree',
+				'/api/projects/acme/project-1/tree',
 				{ expanded: {} },
 				expect.objectContaining({ signal: expect.any(AbortSignal) })
 			);
@@ -178,20 +178,20 @@ describe('FileTreeModel', () => {
 		it('sets error on failure', async () => {
 			mockPost.mockRejectedValueOnce(new Error('Network error'));
 
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 
 			expect(model.error).toBe('Failed to load files');
 		});
 
-		it('skips reload if same projectSlug', async () => {
+		it('skips reload if same projectRef', async () => {
 			mockPost.mockResolvedValueOnce({
 				files: [],
 				expanded: {},
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1', PROJECT_ID);
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 
 			expect(mockPost).toHaveBeenCalledTimes(1);
 		});
@@ -212,10 +212,10 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 
 			expect(mockPost).toHaveBeenCalledWith(
-				'/api/projects/project-1/tree',
+				'/api/projects/acme/project-1/tree',
 				{ expanded: { docs: {} } },
 				expect.objectContaining({ signal: expect.any(AbortSignal) })
 			);
@@ -233,7 +233,7 @@ describe('FileTreeModel', () => {
 				expanded: {},
 				rootPaths: ['/'],
 			});
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 		});
 
 		it('reloads tree with new expanded path', async () => {
@@ -280,7 +280,7 @@ describe('FileTreeModel', () => {
 				expanded: { docs: {} },
 				rootPaths: ['/'],
 			});
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 		});
 
 		it('removes children from files', () => {
@@ -323,7 +323,7 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 
 			const stored = JSON.parse(localStorageMock.getItem('fileBrowser.expanded')!);
 			expect(stored[PROJECT_ID]).toEqual({ docs: {} });
@@ -343,7 +343,7 @@ describe('FileTreeModel', () => {
 				rootPaths: ['/'],
 			});
 
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 
 			const stored = JSON.parse(localStorageMock.getItem('fileBrowser.expanded')!);
 			expect(stored[PROJECT_ID]).toEqual({ docs: {} });
@@ -358,7 +358,7 @@ describe('FileTreeModel', () => {
 				expanded: {},
 				rootPaths: ['/docs', '/other'],
 			});
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 		});
 
 		it('returns true for root paths', () => {
@@ -379,7 +379,7 @@ describe('FileTreeModel', () => {
 				expanded: {},
 				rootPaths: ['/'],
 			});
-			await model.initialize('project-1', PROJECT_ID);
+			await model.initialize('acme/project-1', PROJECT_ID);
 		});
 
 		it('returns correct depth', () => {

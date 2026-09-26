@@ -26,6 +26,8 @@ export class UserModel extends SyncModel {
 	@prop accessor email!: string;
 	// NULL until claimed during onboarding (email-only signup)
 	@prop accessor username!: string | null;
+	/** The owner half of project addresses; NULL exactly when username is */
+	@prop accessor slug!: string | null;
 	@prop accessor first_name!: string | null;
 	@prop accessor last_name!: string | null;
 	@prop accessor email_verified!: boolean;

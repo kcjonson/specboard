@@ -4,8 +4,8 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { getProjectBySlug, renameSpecPath, deleteSpecsByPath } from '@specboard/db';
-import { isValidProjectSlug } from '@specboard/core/identifiers';
+import { renameSpecPath, deleteSpecsByPath } from '@specboard/db';
+import { readProjectAddress, loadProject } from '../../project-address.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 import type { FileEntry } from '../../services/storage/types.ts';
 import {
@@ -23,7 +23,7 @@ import {
 const MAX_EXPANDED_PATHS = 200;
 
 /**
- * POST /api/projects/:projectSlug/tree
+ * POST /api/projects/:owner/:project/tree
  * Load file tree with expanded paths
  */
 export async function handleListFiles(context: Context, redis: Redis): Promise<Response> {
@@ -32,13 +32,13 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	try {
-		const project = await getProjectBySlug(projectSlug, userId);
+		const project = await loadProject(address, userId);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -165,7 +165,7 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
 }
 
 /**
- * GET /api/projects/:projectSlug/files?path=/docs/file.md
+ * GET /api/projects/:owner/:project/files?path=/docs/file.md
  * Read a file
  */
 export async function handleReadFile(context: Context, redis: Redis): Promise<Response> {
@@ -174,9 +174,9 @@ export async function handleReadFile(context: Context, redis: Redis): Promise<Re
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Get file path from query parameter
@@ -192,7 +192,7 @@ export async function handleReadFile(context: Context, redis: Redis): Promise<Re
 	}
 
 	try {
-		const project = await getProjectBySlug(projectSlug, userId);
+		const project = await loadProject(address, userId);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -234,7 +234,7 @@ export async function handleReadFile(context: Context, redis: Redis): Promise<Re
 }
 
 /**
- * POST /api/projects/:projectSlug/files?path=/docs/file.md
+ * POST /api/projects/:owner/:project/files?path=/docs/file.md
  * Create a new file
  */
 export async function handleCreateFile(context: Context, redis: Redis): Promise<Response> {
@@ -243,9 +243,9 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Get file path from query parameter
@@ -266,7 +266,7 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 	}
 
 	try {
-		const project = await getProjectBySlug(projectSlug, userId);
+		const project = await loadProject(address, userId);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -307,7 +307,7 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 }
 
 /**
- * PUT /api/projects/:projectSlug/files/rename
+ * PUT /api/projects/:owner/:project/files/rename
  * Rename a file
  */
 export async function handleRenameFile(context: Context, redis: Redis): Promise<Response> {
@@ -316,9 +316,9 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	try {
@@ -337,7 +337,7 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
 		}
 
-		const project = await getProjectBySlug(projectSlug, userId);
+		const project = await loadProject(address, userId);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -403,7 +403,7 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 }
 
 /**
- * DELETE /api/projects/:projectSlug/files?path=/docs/file.md
+ * DELETE /api/projects/:owner/:project/files?path=/docs/file.md
  * Delete a file or folder
  */
 export async function handleDeleteFile(context: Context, redis: Redis): Promise<Response> {
@@ -412,9 +412,9 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Get file path from query parameter
@@ -430,7 +430,7 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 	}
 
 	try {
-		const project = await getProjectBySlug(projectSlug, userId);
+		const project = await loadProject(address, userId);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -479,7 +479,7 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 }
 
 /**
- * PUT /api/projects/:projectSlug/files?path=/docs/file.md
+ * PUT /api/projects/:owner/:project/files?path=/docs/file.md
  * Write a file
  */
 export async function handleWriteFile(context: Context, redis: Redis): Promise<Response> {
@@ -488,9 +488,9 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Get file path from query parameter
@@ -506,7 +506,7 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 	}
 
 	try {
-		const project = await getProjectBySlug(projectSlug, userId);
+		const project = await loadProject(address, userId);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}

@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { getCookie, setCookie } from '@specboard/core/cookies';
+import { formatProjectRef } from '@specboard/core/identifiers';
 import { fetchClient, FetchError } from '@specboard/fetch';
 import { Button, Page } from '@specboard/ui';
 import { ProjectCard, isCloudRepository, type Project } from '../ProjectCard/ProjectCard';
@@ -18,6 +19,10 @@ function apiErrorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error ? err.message : fallback;
 }
 
+function toProjectRef(project: Project): string {
+	return formatProjectRef(project.ownerSlug, project.slug);
+}
+
 export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -26,7 +31,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [dialogProject, setDialogProject] = useState<Project | null | undefined>(null);
 	// Sync progress dialog state: shown after a save that attached a repository. A new
 	// project is opened on dismiss; an existing one leaves the user where they were.
-	const [syncingProject, setSyncingProject] = useState<{ slug: string; name: string; isNew: boolean } | null>(null);
+	const [syncingProject, setSyncingProject] = useState<{ projectRef: string; name: string; isNew: boolean } | null>(null);
 
 	const fetchProjects = useCallback(async (): Promise<void> => {
 		try {
@@ -45,14 +50,14 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		fetchProjects();
 	}, [fetchProjects]);
 
-	// A deep link (?edit=<slug>) opens that project's settings dialog once the list is
+	// A deep link (?edit=<owner/project>) opens that project's settings dialog once the list is
 	// in, then drops the param so a reload or Back doesn't reopen it. A failed load keeps
 	// the param so Retry can still honour it.
 	useEffect(() => {
 		if (loading || error) return;
 		const params = new URLSearchParams(window.location.search);
-		const editSlug = params.get('edit');
-		if (!editSlug) return;
+		const editRef = params.get('edit');
+		if (!editRef) return;
 		params.delete('edit');
 		const search = params.toString();
 		window.history.replaceState(
@@ -60,15 +65,16 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			'',
 			window.location.pathname + (search ? `?${search}` : '') + window.location.hash
 		);
-		const project = projects.find((p) => p.slug === editSlug);
+		const project = projects.find((p) => toProjectRef(p) === editRef);
 		if (project) setDialogProject(project);
 	}, [loading, error, projects]);
 
 	function handleProjectClick(project: Project): void {
+		const projectRef = toProjectRef(project);
 		// Store last project in cookie
-		setCookie('lastProjectSlug', project.slug, 30);
+		setCookie('lastProjectRef', projectRef, 30);
 		setCookie('lastProjectName', project.name, 30);
-		navigate(`/projects/${project.slug}/planning`);
+		navigate(`/projects/${projectRef}/planning`);
 	}
 
 	function handleOpenCreateDialog(): void {
@@ -106,26 +112,25 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 				if (isCloudRepository(project.repository)) {
 					// Repository configured — show sync progress dialog
-					setSyncingProject({ slug: project.slug, name: project.name, isNew: true });
+					setSyncingProject({ projectRef: toProjectRef(project), name: project.name, isNew: true });
 				} else {
 					// No repository — navigate immediately
-					setCookie('lastProjectSlug', project.slug, 30);
-					setCookie('lastProjectName', project.name, 30);
-					navigate(`/projects/${project.slug}/planning`);
+					handleProjectClick(project);
 				}
 			} else if (dialogProject) {
 				// Edit mode
-				const updated = await fetchClient.put<Project>(`/api/projects/${dialogProject.slug}`, apiData);
+				const editedRef = toProjectRef(dialogProject);
+				const updated = await fetchClient.put<Project>(`/api/projects/${editedRef}`, apiData);
 				// Merge rather than replace: the update response carries no item counts.
 				setProjects((prev) =>
 					prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
 				);
 				// Refresh the cookies if this is the current project. Compare against the
-				// slug we edited, not the returned one — the slug is user-editable now, so
-				// a rename would otherwise never match and leave the cookie pointing at a
-				// slug that no longer resolves.
-				if (getCookie('lastProjectSlug') === dialogProject.slug) {
-					setCookie('lastProjectSlug', updated.slug, 30);
+				// address we edited, not the returned one — the slug is user-editable, so
+				// a rename would otherwise never match and leave the cookie pointing at an
+				// address that no longer resolves.
+				if (getCookie('lastProjectRef') === editedRef) {
+					setCookie('lastProjectRef', toProjectRef(updated), 30);
 					setCookie('lastProjectName', updated.name, 30);
 				}
 				setDialogProject(null);
@@ -133,7 +138,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				// Attaching a repository starts the initial clone, so follow it the same way
 				// a create with a repository does.
 				if (data.repository !== undefined) {
-					setSyncingProject({ slug: updated.slug, name: updated.name, isNew: false });
+					setSyncingProject({ projectRef: toProjectRef(updated), name: updated.name, isNew: false });
 				}
 			}
 		} catch (err) {
@@ -150,7 +155,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		if (!dialogProject) return;
 
 		try {
-			await fetchClient.delete(`/api/projects/${dialogProject.slug}`);
+			await fetchClient.delete(`/api/projects/${toProjectRef(dialogProject)}`);
 			setProjects((prev) => prev.filter((p) => p.id !== dialogProject.id));
 			setDialogProject(null);
 		} catch (err) {
@@ -162,10 +167,10 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 	function handleSyncNavigate(destination: 'planning' | 'pages'): void {
 		if (!syncingProject) return;
-		setCookie('lastProjectSlug', syncingProject.slug, 30);
+		setCookie('lastProjectRef', syncingProject.projectRef, 30);
 		setCookie('lastProjectName', syncingProject.name, 30);
 		setSyncingProject(null);
-		navigate(`/projects/${syncingProject.slug}/${destination}`);
+		navigate(`/projects/${syncingProject.projectRef}/${destination}`);
 	}
 
 	function handleSyncDismiss(): void {
@@ -176,9 +181,9 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			void fetchProjects();
 			return;
 		}
-		setCookie('lastProjectSlug', syncingProject.slug, 30);
+		setCookie('lastProjectRef', syncingProject.projectRef, 30);
 		setCookie('lastProjectName', syncingProject.name, 30);
-		navigate(`/projects/${syncingProject.slug}/planning`);
+		navigate(`/projects/${syncingProject.projectRef}/planning`);
 	}
 
 	async function handleRetrySync(project: Project): Promise<void> {
@@ -187,7 +192,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			setProjects((prev) =>
 				prev.map((p) => (p.id === project.id ? { ...p, syncStatus: 'pending' as const, syncError: null } : p))
 			);
-			await fetchClient.post(`/api/projects/${project.slug}/sync/initial`);
+			await fetchClient.post(`/api/projects/${toProjectRef(project)}/sync/initial`);
 			// Refetch projects to get updated sync status
 			await fetchProjects();
 		} catch (err) {
@@ -259,7 +264,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 			{syncingProject && (
 				<SyncProgressDialog
-					projectSlug={syncingProject.slug}
+					projectRef={syncingProject.projectRef}
 					projectName={syncingProject.name}
 					onNavigate={handleSyncNavigate}
 					onDismiss={handleSyncDismiss}

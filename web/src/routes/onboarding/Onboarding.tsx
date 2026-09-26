@@ -10,7 +10,9 @@ import {
 	passkeyErrorMessage,
 	type PublicKeyCredentialCreationOptionsJSON,
 } from '../../lib/webauthn';
+import { defaultUserSlug, isValidUserSlug } from '@specboard/core/identifiers';
 import { fetchErrorText } from '../../lib/errors';
+import { UserSlugField } from '../../components/UserSlugField/UserSlugField';
 import styles from './Onboarding.module.css';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,30}$/;
@@ -21,8 +23,8 @@ interface RegisterOptionsResponse {
 }
 
 /**
- * Post-first-login onboarding for email-only signups: claim a username and
- * names (required), then optionally create a password. Reached via the
+ * Post-first-login onboarding for email-only signups: claim a username, user
+ * slug and names (required), then optionally create a password. Reached via the
  * profile_complete guard in main.tsx.
  */
 export function Onboarding(): JSX.Element | null {
@@ -32,6 +34,9 @@ export function Onboarding(): JSX.Element | null {
 	const [step, setStep] = useState<'identity' | 'password' | 'passkey'>('identity');
 	const passkeySupported = browserSupportsWebAuthn();
 	const [username, setUsername] = useState('');
+	// Follows the username until the user types into the slug field themselves.
+	const [slug, setSlug] = useState('');
+	const [slugEdited, setSlugEdited] = useState(false);
 	const [firstName, setFirstName] = useState('');
 	const [lastName, setLastName] = useState('');
 	const [newPassword, setNewPassword] = useState('');
@@ -49,6 +54,7 @@ export function Onboarding(): JSX.Element | null {
 	const trimmedFirst = firstName.trim();
 	const trimmedLast = lastName.trim();
 	const identityValid = USERNAME_PATTERN.test(username.trim()) &&
+		isValidUserSlug(slug.trim()) &&
 		trimmedFirst.length > 0 && trimmedLast.length > 0;
 
 	const hasUppercase = /[A-Z]/.test(newPassword);
@@ -70,6 +76,7 @@ export function Onboarding(): JSX.Element | null {
 		try {
 			await fetchClient.put('/api/auth/me', {
 				username: username.trim(),
+				slug: slug.trim(),
 				first_name: trimmedFirst,
 				last_name: trimmedLast,
 			});
@@ -149,13 +156,23 @@ export function Onboarding(): JSX.Element | null {
 								<Text
 									id="username"
 									value={username}
-									onInput={(e) => { setUsername((e.target as HTMLInputElement).value); if (error) setError(null); }}
+									onInput={(e) => {
+										const value = (e.target as HTMLInputElement).value;
+										setUsername(value);
+										if (!slugEdited) setSlug(value.trim() ? defaultUserSlug(value.trim()) : '');
+										if (error) setError(null);
+									}}
 									autoComplete="username"
 									placeholder="username"
 									required
 								/>
 								<span class={styles.hint}>3-30 characters, letters, numbers, and underscores</span>
 							</div>
+
+							<UserSlugField
+								value={slug}
+								onInput={(value) => { setSlug(value); setSlugEdited(true); if (error) setError(null); }}
+							/>
 
 							<div class={styles.row}>
 								<div class={styles.field}>

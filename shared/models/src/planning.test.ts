@@ -56,16 +56,16 @@ beforeEach(() => {
 describe('ItemsCollection windows', () => {
 	it('requests one window per status, one row past the limit', async () => {
 		serve({ ready: 5 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		expect(fetchClient.getResponse).toHaveBeenCalledTimes(ITEM_STATUSES.length);
-		expect(fetchClient.getResponse).toHaveBeenCalledWith('/api/projects/demo/items?status=ready&limit=101');
+		expect(fetchClient.getResponse).toHaveBeenCalledWith('/api/projects/acme/demo/items?status=ready&limit=101');
 	});
 
 	it('shows the first `limit` rows and reports the rest from the total header', async () => {
 		serve({ ready: 250, done: 3 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		expect(items.byStatus('ready')).toHaveLength(100);
@@ -78,7 +78,7 @@ describe('ItemsCollection windows', () => {
 
 	it('loadMore widens one status window and refetches without flashing the new rows', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		const events: string[][] = [];
 		items.onItemsChanged((ids) => events.push(ids));
@@ -98,7 +98,7 @@ describe('ItemsCollection windows', () => {
 
 	it('a poll that lands during a show-more flashes what the server added, not the grown rows', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		const events: string[][] = [];
 		items.onItemsChanged((ids) => events.push(ids));
@@ -124,7 +124,7 @@ describe('ItemsCollection windows', () => {
 
 	it('records a load at the width it requested, not one a show-more widened mid-flight', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		const events: string[][] = [];
 		items.onItemsChanged((ids) => events.push(ids));
@@ -164,7 +164,7 @@ describe('ItemsCollection windows', () => {
 			}
 			return { data: [], headers: new Headers({ 'X-Total-Count': '0' }) };
 		});
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		expect(items.totalFor('ready')).toBe(0);
@@ -175,7 +175,7 @@ describe('ItemsCollection windows', () => {
 
 	it('a poll re-requests the widened window, so it never shrinks', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		await items.loadMore('ready', 100);
 
@@ -187,7 +187,7 @@ describe('ItemsCollection windows', () => {
 
 	it('ensureLimit widens every window, refetching only when some status has more', async () => {
 		serve({ ready: 250, done: 3 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		vi.mocked(fetchClient.getResponse).mockClear();
 
@@ -203,7 +203,7 @@ describe('ItemsCollection windows', () => {
 
 	it('ensureLimit is a no-op refetch when nothing has more', async () => {
 		serve({ ready: 5, done: 3 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		vi.mocked(fetchClient.getResponse).mockClear();
 
@@ -214,7 +214,7 @@ describe('ItemsCollection windows', () => {
 
 	it('keeps an item this client moved past the window instead of dropping it on the next poll', async () => {
 		serve({ ready: 1, done: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		// Complete the one Ready item: it lands after the loaded Done cards, ranked past
@@ -237,7 +237,7 @@ describe('ItemsCollection windows', () => {
 
 	it('lets a page from another status override an item held past a window', async () => {
 		serve({ ready: 250, in_progress: 1 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		// Created here on a full Ready column: server-appended, past the window.
@@ -267,7 +267,7 @@ describe('ItemsCollection windows', () => {
 
 	it('drops an item ranked inside the window that the page no longer returns', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		// Rank 50 sits inside the window (the boundary row carries rank 101), so its
@@ -288,7 +288,7 @@ describe('ItemsCollection windows', () => {
 
 	it('keeps an item that ties the boundary rank, and leaves its fields untouched', async () => {
 		serve({ ready: 1, done: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		const moved = items.byStatus('ready')[0]!;
@@ -304,7 +304,7 @@ describe('ItemsCollection windows', () => {
 
 	it('drops an item the server no longer returns inside the window', async () => {
 		serve({ ready: 3 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		serve({ ready: 2 }); // SB-ready-3 deleted elsewhere
@@ -316,7 +316,7 @@ describe('ItemsCollection windows', () => {
 
 	it('counts local adds and removes in the total without touching the remainder', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		vi.mocked(fetchClient.post).mockResolvedValue({ ...row('ready', 999, 999), updatedAt: 't1' });
@@ -329,7 +329,7 @@ describe('ItemsCollection windows', () => {
 
 	it('refuses to load without a window limit', async () => {
 		serve({});
-		const items = new ItemsCollection({ projectSlug: 'demo' });
+		const items = new ItemsCollection({ projectRef: 'acme/demo' });
 		await items.fetch();
 
 		expect(items.$meta.error?.message).toMatch(/limit/);
@@ -339,10 +339,10 @@ describe('ItemsCollection windows', () => {
 describe('ItemsCollection filters', () => {
 	it('leaves the query string alone until a filter holds something', async () => {
 		serve({ ready: 5 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
-		expect(fetchClient.getResponse).toHaveBeenCalledWith('/api/projects/demo/items?status=ready&limit=101');
+		expect(fetchClient.getResponse).toHaveBeenCalledWith('/api/projects/acme/demo/items?status=ready&limit=101');
 
 		// Blank search and no type are the absence of a filter, not an empty one.
 		vi.mocked(fetchClient.getResponse).mockClear();
@@ -362,37 +362,37 @@ describe('ItemsCollection filters', () => {
 
 	it('puts the search and the type on every window request, url-encoded', async () => {
 		serve({ ready: 5 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		await items.setFilter({ search: '  oauth login  ' });
-		expect(requestedFor('ready')).toBe('/api/projects/demo/items?status=ready&limit=101&search=oauth+login');
-		expect(requestedFor('done')).toBe('/api/projects/demo/items?status=done&limit=101&search=oauth+login');
+		expect(requestedFor('ready')).toBe('/api/projects/acme/demo/items?status=ready&limit=101&search=oauth+login');
+		expect(requestedFor('done')).toBe('/api/projects/acme/demo/items?status=done&limit=101&search=oauth+login');
 
 		await items.setFilter({ search: 'oauth login', type: 'bug' });
-		expect(requestedFor('ready')).toBe('/api/projects/demo/items?status=ready&limit=101&search=oauth+login&type=bug');
+		expect(requestedFor('ready')).toBe('/api/projects/acme/demo/items?status=ready&limit=101&search=oauth+login&type=bug');
 
 		await items.setFilter({ type: 'bug' });
-		expect(requestedFor('ready')).toBe('/api/projects/demo/items?status=ready&limit=101&type=bug');
+		expect(requestedFor('ready')).toBe('/api/projects/acme/demo/items?status=ready&limit=101&type=bug');
 	});
 
 	it('carries the filter through loadMore and ensureLimit', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		await items.setFilter({ search: 'auth' });
 
 		await items.loadMore('ready', 100);
-		expect(requestedFor('ready')).toBe('/api/projects/demo/items?status=ready&limit=201&search=auth');
+		expect(requestedFor('ready')).toBe('/api/projects/acme/demo/items?status=ready&limit=201&search=auth');
 		expect(items.byStatus('ready')).toHaveLength(200);
 
 		await items.ensureLimit(300);
-		expect(requestedFor('ready')).toBe('/api/projects/demo/items?status=ready&limit=301&search=auth');
+		expect(requestedFor('ready')).toBe('/api/projects/acme/demo/items?status=ready&limit=301&search=auth');
 	});
 
 	it('a filter change starts the windows over at the base limit', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		await items.loadMore('ready', 100);
 		expect(requestedLimit('ready')).toBe(201);
@@ -405,7 +405,7 @@ describe('ItemsCollection filters', () => {
 
 	it('starts a new query at the width the table asked ensureLimit for', async () => {
 		serve({ ready: 500 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		await items.ensureLimit(200); // the table view taking over from the board
 		await items.loadMore('ready', 200); // and the user widening one section past that
@@ -419,7 +419,7 @@ describe('ItemsCollection filters', () => {
 
 	it('drops the items the old query was holding past its windows', async () => {
 		serve({ ready: 1, done: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		// Completed here: ranked past Done's window, so the collection holds it as an
@@ -443,7 +443,7 @@ describe('ItemsCollection filters', () => {
 
 	it('reports the filtered total the server sends, not the unfiltered one', async () => {
 		serve({ ready: 250 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		expect(items.totalFor('ready')).toBe(250);
 
@@ -457,7 +457,7 @@ describe('ItemsCollection filters', () => {
 
 	it('keeps child rows a search matched, parent key and all', async () => {
 		serve({ ready: 0 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 
 		vi.mocked(fetchClient.getResponse).mockImplementation(async (url: string) => {
@@ -479,7 +479,7 @@ describe('ItemsCollection filters', () => {
 
 	it('ignores a poll in flight when the filter changes, rows and window counts alike', async () => {
 		serve({ ready: 3 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		const before = items.byStatus('ready').map((i) => i.key);
 		const events: string[][] = [];
@@ -523,7 +523,7 @@ describe('ItemsCollection filters', () => {
 
 	it('ignores a page that lands after the query moved on', async () => {
 		serve({ ready: 3 });
-		const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 		await items.fetch();
 		const before = items.byStatus('ready').map((i) => i.key);
 
@@ -559,7 +559,7 @@ describe('ItemModel parent', () => {
 	function child(): ItemModel {
 		return new ItemModel({
 			key: 'SB-42',
-			projectSlug: 'demo',
+			projectRef: 'acme/demo',
 			title: 'Login form',
 			parentKey: 'SB-7',
 			parentTitle: 'Auth System',
@@ -581,7 +581,7 @@ describe('ItemModel parent', () => {
 
 		await item.move('SB-4');
 
-		expect(fetchClient.post).toHaveBeenCalledWith('/api/projects/demo/items/SB-42/move', { parentKey: 'SB-4' });
+		expect(fetchClient.post).toHaveBeenCalledWith('/api/projects/acme/demo/items/SB-42/move', { parentKey: 'SB-4' });
 		expect(item.parentKey).toBe('SB-4');
 		expect(item.parentTitle).toBe('UI Library');
 		// The server always re-ranks to the bottom of the new sibling group.
@@ -594,7 +594,7 @@ describe('ItemModel parent', () => {
 
 		await item.move(null);
 
-		expect(fetchClient.post).toHaveBeenCalledWith('/api/projects/demo/items/SB-42/move', { parentKey: null });
+		expect(fetchClient.post).toHaveBeenCalledWith('/api/projects/acme/demo/items/SB-42/move', { parentKey: null });
 		expect(item.parentKey).toBeNull();
 	});
 

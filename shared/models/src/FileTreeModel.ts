@@ -234,7 +234,7 @@ export interface PendingRename {
 }
 
 export class FileTreeModel extends Model {
-	@prop accessor projectSlug!: string;
+	@prop accessor projectRef!: string;
 
 	/**
 	 * The project's immutable id. Used only as the localStorage key for expansion
@@ -259,7 +259,7 @@ export class FileTreeModel extends Model {
 
 	constructor() {
 		super({
-			projectSlug: '',
+			projectRef: '',
 			projectId: '',
 			rootPaths: [],
 			files: [],
@@ -275,27 +275,27 @@ export class FileTreeModel extends Model {
 
 	/**
 	 * Initialize the model with a project slug and load data
-	 * @param projectSlug - The project to load (addresses the API)
+	 * @param projectRef - The project to load (addresses the API)
 	 * @param projectId - The same project's immutable id, keying stored expansion
 	 *   state. Pass '' to keep expansion in memory only (the modal file picker).
 	 * @param currentFilePath - Optional path to currently open file (will expand to show it)
 	 */
-	async initialize(projectSlug: string, projectId: string, currentFilePath?: string): Promise<void> {
+	async initialize(projectRef: string, projectId: string, currentFilePath?: string): Promise<void> {
 		// The id is resolved asynchronously, so the first call often arrives with '' and a
-		// second follows with the real one. Comparing the slug alone would early-return on
+		// second follows with the real one. Comparing the ref alone would early-return on
 		// that second call and leave projectId empty, so expansion state would never
 		// persist — and the stored expansion would never be restored, because the first
 		// load read it under the empty key. Adopt the id and reload the tree with it.
-		if (this.projectSlug === projectSlug && this.projectId !== projectId) {
+		if (this.projectRef === projectRef && this.projectId !== projectId) {
 			this.projectId = projectId;
 			await this.loadTree(currentFilePath);
 			return;
 		}
 
-		if (this.projectSlug === projectSlug && !currentFilePath) return;
+		if (this.projectRef === projectRef && !currentFilePath) return;
 
 		// If same project but new file path, just expand to it
-		if (this.projectSlug === projectSlug && currentFilePath) {
+		if (this.projectRef === projectRef && currentFilePath) {
 			await this.expandToFile(currentFilePath);
 			return;
 		}
@@ -303,7 +303,7 @@ export class FileTreeModel extends Model {
 		// Abort any in-flight request for the old project
 		this._abortInflight();
 
-		this.projectSlug = projectSlug;
+		this.projectRef = projectRef;
 		this.projectId = projectId;
 		this.files = [];
 		this.expanded = emptyTree();
@@ -477,7 +477,7 @@ export class FileTreeModel extends Model {
 
 		try {
 			await fetchClient.post(
-				`/api/projects/${this.projectSlug}/files?path=${encodeURIComponent(fullPath)}`
+				`/api/projects/${this.projectRef}/files?path=${encodeURIComponent(fullPath)}`
 			);
 
 			this.pendingNewFile = null;
@@ -549,7 +549,7 @@ export class FileTreeModel extends Model {
 
 		try {
 			await fetchClient.put<{ success: boolean }>(
-				`/api/projects/${this.projectSlug}/files/rename`,
+				`/api/projects/${this.projectRef}/files/rename`,
 				{ oldPath, newPath }
 			);
 
@@ -608,7 +608,7 @@ export class FileTreeModel extends Model {
 
 			// Single request to server - returns ready-to-render data
 			const data = await fetchClient.post<FileTreeResponse>(
-				`/api/projects/${this.projectSlug}/tree`,
+				`/api/projects/${this.projectRef}/tree`,
 				{ expanded: expandedTree },
 				{ signal: controller.signal }
 			);

@@ -98,12 +98,18 @@ connected repo is private.
 - New column `users.slug`. It uses the project-slug alphabet
   (`shared/core/src/identifiers.ts`, `^[a-z0-9]+(-[a-z0-9]+)*$`) and is unique.
 - The default is the username, lowercased, with `_` mapped to `-` (usernames allow
-  `[A-Za-z0-9_]`).
+  `[A-Za-z0-9_]`); runs collapse and the ends trim, so `__jane_doe_` is `jane-doe`, and
+  a username with nothing else left falls back to `user`.
 - Claimed at onboarding next to the username, pre-filled from it and editable.
 - Editable later in Settings → Personal Info, with a preview of the resulting URL.
-- The migration backfills existing users. Collisions get a numeric suffix.
-- Users who haven't onboarded yet have a `NULL` slug. They can't own a project
-  until they onboard, which already holds, since onboarding precedes the app.
+  `PUT /api/users/:id` is the one way to change it; `PUT /api/auth/me` only takes a
+  slug as part of the one-time onboarding claim.
+- The migration backfills existing users. Collisions get a numeric suffix; the oldest
+  account keeps the bare slug, and a suffix that is already someone's natural slug is
+  skipped. Admin user create derives the same default and suffixes past collisions.
+- Users who haven't onboarded yet have a `NULL` slug, and the
+  `users_slug_matches_username` CHECK keeps slug `NULL` exactly when username is.
+  Project create refuses a user without a slug, so every project has an address.
 - Changing a slug moves every project URL the user owns and breaks
   `.mcp.json` bindings that name it. The settings field warns before saving. In v1
   the old URLs 404. Redirects for slug changes and for ownership transfers need
@@ -121,12 +127,19 @@ connected repo is private.
 | MCP header | `X-Specboard-Project: roadmap` | `X-Specboard-Project: acme/roadmap`, or `roadmap` for your own |
 | MCP args | `project_slug: "roadmap"` | `project: "acme/roadmap"`, or `"roadmap"` for your own |
 
+- The web app threads one `projectRef` string (`acme/roadmap`) through components and
+  models in place of the old `projectSlug`, and interpolates it straight into
+  `/projects/${projectRef}/...` and `/api/projects/${projectRef}/...`. The
+  `projectUrlBoundary` test fails any `/api/projects/${...}` interpolation not named as
+  a ref, which catches both a leftover bare slug and a UUID.
+
 Keeping the `/projects/` prefix means user slugs never compete with top-level
 routes (`/settings`, `/admin`, `/login`, `/invite`, ...). That avoids a reserved-word
 list, which would otherwise have to grow with every new route.
 
 - Item keys (`SPE-10`) stay unique per project and unchanged.
-- The `lastProjectSlug` cookie that `RootRedirect` reads stores `owner/project`.
+- The cookie `RootRedirect` reads is renamed `lastProjectRef` and stores
+  `owner/project`. An old `lastProjectSlug` cookie is simply ignored.
 - `list_projects` returns `owner`, `slug`, and the combined `ref`
   (`acme/roadmap`) that every other tool takes.
 - **Bare slugs in MCP mean "my own project".** The MCP server expands a
@@ -199,8 +212,8 @@ This is the bulk of the work and the place the BOLA class of bug (SPE-56) comes
 back if it's done piecemeal.
 
 - **One resolver.** `resolveProjectAccess(ownerSlug, projectSlug, userId)` returns
-  `{ project, grantedRole, effectiveRole } | null` and replaces
-  `resolveProjectSlug` in `shared/db/src/services/projects.ts`. It is one query:
+  `{ project, grantedRole, effectiveRole } | null` and replaces phase 1's
+  `resolveProject` in `shared/db/src/services/projects.ts`. It is one query:
   project by `(owner slug, project slug)`, joined to the caller's membership and
   to `github_connections` for the effective role. Every REST route and every MCP
   tool resolves through it. Nothing else reads `owner_id` to make an access
@@ -450,4 +463,11 @@ each one.
 
 ## Status
 
-Designed. Not built.
+Phase 1 (user slugs and owner-namespaced addressing, SPE-205) is built:
+`030_user_slugs.sql`, `resolveProject(ownerSlug, projectSlug, userId)` as the single
+resolver for REST and MCP (`getProjectBySlug` is gone; callers resolve, then load by
+id), `/projects/:owner/:project/...` on web and REST, and the MCP `project` argument
+with bare-slug expansion in `mcp/src/tools/project-ref.ts`. The migration backfill and
+the resolver are tested against real Postgres through PGlite
+(`shared/db/src/test-support/migrated-db.ts`), so CI needs no database service.
+Phases 2 to 6 are not built.

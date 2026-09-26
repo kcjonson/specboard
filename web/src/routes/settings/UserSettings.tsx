@@ -7,6 +7,9 @@ import { useModel, UserModel, AuthorizationsCollection } from '@specboard/models
 import { AuthorizedApps } from './AuthorizedApps';
 import { ApiKeys } from './ApiKeys';
 import { Passkeys } from './Passkeys';
+import { isValidUserSlug } from '@specboard/core/identifiers';
+import { UserSlugField } from '../../components/UserSlugField/UserSlugField';
+import { fetchErrorText } from '../../lib/errors';
 import { GitHubConnection } from './GitHubConnection';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 import { SetPasswordDialog } from './SetPasswordDialog';
@@ -15,6 +18,7 @@ import styles from './UserSettings.module.css';
 interface User {
 	id: string;
 	username: string | null;
+	slug: string | null;
 	email: string;
 	first_name: string | null;
 	last_name: string | null;
@@ -49,6 +53,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	const [firstName, setFirstName] = useState('');
 	const [lastName, setLastName] = useState('');
 	const [username, setUsername] = useState('');
+	const [slug, setSlug] = useState('');
 	const [email, setEmail] = useState('');
 	const [isAdmin, setIsAdmin] = useState(false);
 	const [isActive, setIsActive] = useState(true);
@@ -84,6 +89,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	const user = isViewingOther ? targetUser : (currentUser.id ? {
 		id: currentUser.id,
 		username: currentUser.username,
+		slug: currentUser.slug,
 		email: currentUser.email,
 		first_name: currentUser.first_name,
 		last_name: currentUser.last_name,
@@ -111,6 +117,7 @@ export function UserSettings(props: RouteProps): JSX.Element {
 			setFirstName(user.first_name || '');
 			setLastName(user.last_name || '');
 			setUsername(user.username || '');
+			setSlug(user.slug || '');
 			setEmail(user.email || '');
 			setIsAdmin(user.roles?.includes('admin') ?? false);
 			setIsActive(user.is_active ?? true);
@@ -129,14 +136,20 @@ export function UserSettings(props: RouteProps): JSX.Element {
 	const trimmedFirstName = firstName.trim();
 	const trimmedLastName = lastName.trim();
 	const trimmedUsername = username.trim();
+	const trimmedSlug = slug.trim();
 	const trimmedEmail = email.trim();
+	// Only onboarded users have a slug; onboarding is where one is first claimed.
+	const hasSlug = Boolean(user?.slug);
+	const slugChanged = hasSlug && trimmedSlug !== user?.slug;
 	const isValid = trimmedFirstName.length > 0 && trimmedLastName.length > 0 &&
+		(!hasSlug || isValidUserSlug(trimmedSlug)) &&
 		(isCurrentUserAdmin ? trimmedUsername.length > 0 && trimmedEmail.length > 0 : true);
 
 	// Change detection
 	const hasChanges = initialized && user && (
 		trimmedFirstName !== (user.first_name || '') ||
 		trimmedLastName !== (user.last_name || '') ||
+		slugChanged ||
 		(isCurrentUserAdmin && (
 			trimmedUsername !== (user.username || '') ||
 			trimmedEmail !== user.email ||
@@ -159,6 +172,9 @@ export function UserSettings(props: RouteProps): JSX.Element {
 				first_name: trimmedFirstName,
 				last_name: trimmedLastName,
 			};
+			if (slugChanged) {
+				data.slug = trimmedSlug;
+			}
 
 			// Admin can edit additional fields
 			if (isCurrentUserAdmin) {
@@ -182,8 +198,8 @@ export function UserSettings(props: RouteProps): JSX.Element {
 				setInitialized(false);
 			}
 		} catch (err: unknown) {
-			const errorMessage = err instanceof Error ? err.message : 'Failed to save settings';
-			setMessage({ type: 'error', text: errorMessage });
+			// A taken slug comes back as a 409 whose body names it; show that, not "HTTP 409".
+			setMessage({ type: 'error', text: fetchErrorText(err, 'Failed to save settings') });
 		} finally {
 			setSaving(false);
 		}
@@ -310,6 +326,14 @@ export function UserSettings(props: RouteProps): JSX.Element {
 									/>
 								</div>
 							</div>
+
+							{hasSlug && (
+								<UserSlugField
+									value={slug}
+									savedSlug={user.slug}
+									onInput={(value) => { setSlug(value); if (message) setMessage(null); }}
+								/>
+							)}
 
 							{isCurrentUserAdmin ? (
 								<>

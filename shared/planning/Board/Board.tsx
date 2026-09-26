@@ -11,7 +11,7 @@ export const BOARD_PAGE_SIZE = 100;
 export interface BoardProps {
 	/** Shared collection owned by the Planning container. */
 	items: ItemsCollection;
-	projectSlug: string;
+	projectRef: string;
 	selectedItemKey?: string;
 	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
 	flashingIds: Set<string>;
@@ -28,7 +28,7 @@ export interface BoardProps {
  */
 export function Board({
 	items,
-	projectSlug,
+	projectRef,
 	selectedItemKey,
 	flashingIds,
 	dialogOpen,
@@ -230,7 +230,7 @@ export function Board({
 					items={columnItems}
 					count={items.totalFor(status)}
 					more={columnMore(status)}
-					projectSlug={projectSlug}
+					projectRef={projectRef}
 					selectedItemKey={selectedItemKey}
 					flashingIds={flashingIds}
 					droppable={droppable}

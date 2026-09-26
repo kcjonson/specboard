@@ -4,7 +4,7 @@ import type { RouteProps } from '@specboard/router';
 import { useEffect, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { getCookie, setCookie } from '@specboard/core/cookies';
-import { isValidProjectSlug } from '@specboard/core/identifiers';
+import { formatProjectRef, parseProjectRef } from '@specboard/core/identifiers';
 import { fetchClient } from '@specboard/fetch';
 import { NotFound } from '@specboard/ui';
 
@@ -36,37 +36,36 @@ import './styles/global.css';
 // Smart redirect component for root path
 // Fetches projects and redirects based on:
 // - 0 projects → /projects
-// - 1 project → /projects/:slug/planning
-// - Multiple projects + valid cookie → /projects/:slug/planning
+// - 1 project → /projects/:owner/:project/planning
+// - Multiple projects + valid cookie → /projects/:owner/:project/planning
 // - Multiple projects + no cookie → /projects
 function RootRedirect(_props: RouteProps): JSX.Element | null {
 	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
+		function open(project: Project): void {
+			const projectRef = formatProjectRef(project.ownerSlug, project.slug);
+			// Refresh both cookies together to keep them in sync
+			setCookie('lastProjectRef', projectRef, 30);
+			setCookie('lastProjectName', project.name, 30);
+			navigate(`/projects/${projectRef}/planning`);
+		}
+
 		async function determineRedirect(): Promise<void> {
 			try {
 				const projects = await fetchClient.get<Project[]>('/api/projects');
-				const lastProjectSlug = getCookie('lastProjectSlug');
+				// A bare slug from before owner-namespaced URLs doesn't parse as a full ref.
+				const lastRef = parseProjectRef(getCookie('lastProjectRef'));
 
 				if (projects.length === 0) {
-					// No projects - go to projects list
 					navigate('/projects');
 				} else if (projects.length === 1) {
-					// Single project - go directly there
-					const [project] = projects;
-					if (project) {
-						setCookie('lastProjectSlug', project.slug, 30);
-						setCookie('lastProjectName', project.name, 30);
-						navigate(`/projects/${project.slug}/planning`);
-					}
-				} else if (lastProjectSlug && isValidProjectSlug(lastProjectSlug)) {
+					open(projects[0]!);
+				} else if (lastRef?.owner) {
 					// Multiple projects with valid cookie - check if project exists
-					const project = projects.find((p) => p.slug === lastProjectSlug);
+					const project = projects.find((p) => p.ownerSlug === lastRef.owner && p.slug === lastRef.project);
 					if (project) {
-						// Refresh both cookies together to keep them in sync
-						setCookie('lastProjectSlug', project.slug, 30);
-						setCookie('lastProjectName', project.name, 30);
-						navigate(`/projects/${project.slug}/planning`);
+						open(project);
 					} else {
 						// Cookie references deleted project - go to list
 						navigate('/projects');
@@ -101,10 +100,10 @@ const routes = [
 	// Planning entry, so selecting a card is a navigation (working Back) rather than
 	// hidden state; ItemDetail is the standalone full-page view, and a document load
 	// of the drawer URL is redirected there by the frontend service.
-	{ route: '/projects/:projectSlug/planning', entry: Planning },
-	{ route: '/projects/:projectSlug/planning/items/:itemKey', entry: Planning },
-	{ route: '/projects/:projectSlug/items/:itemKey', entry: ItemDetail },
-	{ route: '/projects/:projectSlug/pages', entry: Editor },
+	{ route: '/projects/:owner/:project/planning', entry: Planning },
+	{ route: '/projects/:owner/:project/planning/items/:itemKey', entry: Planning },
+	{ route: '/projects/:owner/:project/items/:itemKey', entry: ItemDetail },
+	{ route: '/projects/:owner/:project/pages', entry: Editor },
 
 	// App routes (not project-scoped)
 	// Onboarding gating is server-side: the frontend service redirects SPA

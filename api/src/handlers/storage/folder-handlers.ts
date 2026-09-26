@@ -5,8 +5,8 @@
 import type { Context, Env, Hono } from 'hono';
 import type { Redis } from 'ioredis';
 import fs from 'fs/promises';
-import { addFolder, removeFolder, resolveProjectSlug } from '@specboard/db';
-import { isValidProjectSlug } from '@specboard/core/identifiers';
+import { addFolder, removeFolder, resolveProject } from '@specboard/db';
+import { readProjectAddress } from '../../project-address.ts';
 import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/storage/git-utils.ts';
 import { getUserId } from './utils.ts';
 
@@ -15,14 +15,14 @@ import { getUserId } from './utils.ts';
  * only exists where a repository is mounted (dev compose). Removing one is a plain DB write.
  */
 export function registerFolderRoutes<E extends Env>(app: Hono<E>, redis: Redis): void {
-	app.delete('/api/projects/:projectSlug/folders', (context) => handleRemoveFolder(context, redis));
+	app.delete('/api/projects/:owner/:project/folders', (context) => handleRemoveFolder(context, redis));
 	if (process.env.LOCAL_STORAGE_ENABLED === 'true') {
-		app.post('/api/projects/:projectSlug/folders', (context) => handleAddFolder(context, redis));
+		app.post('/api/projects/:owner/:project/folders', (context) => handleAddFolder(context, redis));
 	}
 }
 
 /**
- * POST /api/projects/:projectSlug/folders
+ * POST /api/projects/:owner/:project/folders
  * Add a folder to the project (validates git repository)
  */
 async function handleAddFolder(context: Context, redis: Redis): Promise<Response> {
@@ -31,12 +31,12 @@ async function handleAddFolder(context: Context, redis: Redis): Promise<Response
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
-	const resolved = await resolveProjectSlug(projectSlug, userId);
+	const resolved = await resolveProject(address.owner, address.project, userId);
 	if (!resolved) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
@@ -151,7 +151,7 @@ async function handleAddFolder(context: Context, redis: Redis): Promise<Response
 }
 
 /**
- * DELETE /api/projects/:projectSlug/folders?path=...
+ * DELETE /api/projects/:owner/:project/folders?path=...
  * Remove a folder from the project (doesn't delete files)
  */
 async function handleRemoveFolder(context: Context, redis: Redis): Promise<Response> {
@@ -160,12 +160,12 @@ async function handleRemoveFolder(context: Context, redis: Redis): Promise<Respo
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
-	const resolved = await resolveProjectSlug(projectSlug, userId);
+	const resolved = await resolveProject(address.owner, address.project, userId);
 	if (!resolved) {
 		return context.json({ error: 'Project not found' }, 404);
 	}

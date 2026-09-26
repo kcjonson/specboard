@@ -12,6 +12,7 @@ import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { hashPassword, validatePassword } from '@specboard/auth';
 import { query, type User, type SignupMetadata } from '@specboard/db';
+import { defaultUserSlug, isValidUserSlug, withSuffix, MAX_USER_SLUG_LENGTH } from '@specboard/core/identifiers';
 import { isValidUUID, isValidEmail, isValidUsername } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
 
@@ -21,6 +22,7 @@ import { getCurrentUser, isAdmin } from './auth-utils.ts';
 interface UserApiResponse {
 	id: string;
 	username: string | null;
+	slug: string | null;
 	email: string;
 	first_name: string | null;
 	last_name: string | null;
@@ -37,6 +39,7 @@ function userToApiResponse(user: User, includeAdminFields = false): UserApiRespo
 	const response: UserApiResponse = {
 		id: user.id,
 		username: user.username,
+		slug: user.slug,
 		email: user.email,
 		first_name: user.first_name,
 		last_name: user.last_name,
@@ -53,6 +56,12 @@ function userToApiResponse(user: User, includeAdminFields = false): UserApiRespo
 	return response;
 }
 
+const UNIQUE_VIOLATION = '23505';
+const CHECK_VIOLATION = '23514';
+
+/** How many suffixed slugs admin user create tries before giving up. */
+const MAX_SLUG_ATTEMPTS = 50;
+
 // Valid roles that can be assigned
 const VALID_ROLES = new Set(['admin']);
 
@@ -64,7 +73,7 @@ function isValidRole(role: string): boolean {
 }
 
 // Fields that regular users can update on themselves (all others require admin)
-const USER_EDITABLE_FIELDS = new Set(['first_name', 'last_name']);
+const USER_EDITABLE_FIELDS = new Set(['first_name', 'last_name', 'slug']);
 
 /**
  * Filter an update object to only include fields the user can modify
@@ -78,6 +87,7 @@ function filterUpdates(
 	const filtered: UpdateUserRequest = {};
 	if (updates.first_name !== undefined) filtered.first_name = updates.first_name;
 	if (updates.last_name !== undefined) filtered.last_name = updates.last_name;
+	if (updates.slug !== undefined) filtered.slug = updates.slug;
 	return filtered;
 }
 
@@ -222,6 +232,7 @@ export async function handleGetUser(
 
 interface UpdateUserRequest {
 	username?: string;
+	slug?: string;
 	email?: string;
 	first_name?: string;
 	last_name?: string;
@@ -237,7 +248,7 @@ interface UpdateUserRequest {
  *
  * Special case: "me" as ID updates the current user
  * Admin: Can update any user, all fields (username, email, first_name, last_name, roles, is_active)
- * User: Can only update themselves, limited fields (first_name, last_name)
+ * User: Can only update themselves, limited fields (first_name, last_name, slug)
  */
 export async function handleUpdateUser(
 	context: Context,
@@ -309,7 +320,7 @@ export async function handleUpdateUser(
 
 	// Reject if non-admin tried to update admin-only fields
 	if (!userIsAdmin && hasAdminOnlyFields(body)) {
-		return context.json({ error: 'You can only update your first name and last name' }, 403);
+		return context.json({ error: 'You can only update your name and user slug' }, 403);
 	}
 
 	// Superadmin account: only allow first_name and last_name updates
@@ -324,12 +335,19 @@ export async function handleUpdateUser(
 		}
 	}
 
-	const { username, email, first_name, last_name, roles, is_active, email_verified } = permitted;
+	const { username, slug, email, first_name, last_name, roles, is_active, email_verified } = permitted;
 
 	// Validate fields
 	if (username !== undefined && !isValidUsername(username)) {
 		return context.json(
 			{ error: 'Username must be 3-30 characters, alphanumeric and underscores only' },
+			400
+		);
+	}
+
+	if (slug !== undefined && (typeof slug !== 'string' || !isValidUserSlug(slug))) {
+		return context.json(
+			{ error: `User slug must be up to ${MAX_USER_SLUG_LENGTH} lowercase letters, numbers, and single hyphens` },
 			400
 		);
 	}
@@ -367,6 +385,16 @@ export async function handleUpdateUser(
 	if (username !== undefined) {
 		updates.push(`username = LOWER($${paramIndex++})`);
 		params.push(username);
+	}
+
+	if (slug !== undefined) {
+		updates.push(`slug = $${paramIndex++}`);
+		params.push(slug);
+	} else if (username !== undefined) {
+		// An admin naming a user who never onboarded gives them a slug too; an
+		// existing slug is left alone, since renaming a user doesn't move their URLs.
+		updates.push(`slug = COALESCE(slug, $${paramIndex++})`);
+		params.push(defaultUserSlug(username));
 	}
 
 	if (email !== undefined) {
@@ -482,9 +510,46 @@ export async function handleUpdateUser(
 
 		return context.json(userToApiResponse(user, userIsAdmin));
 	} catch (error) {
+		const { code, constraint } = error as { code?: string; constraint?: string };
+		if (code === UNIQUE_VIOLATION && constraint === 'idx_users_slug') {
+			return context.json({ error: 'User slug already taken' }, 409);
+		}
+		if (code === CHECK_VIOLATION && constraint === 'users_slug_matches_username') {
+			return context.json({ error: 'Finish onboarding before choosing a user slug' }, 409);
+		}
 		console.error('Failed to update user:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
+}
+
+/**
+ * Insert an admin-created user with the default slug for their username, bumping a
+ * numeric suffix while the slug index says it's taken. Username and email conflicts
+ * still surface as unique violations for the caller to map.
+ */
+async function insertUserWithSlug(
+	username: string,
+	email: string,
+	firstName: string,
+	lastName: string,
+	roles: string[]
+): Promise<User> {
+	const baseSlug = defaultUserSlug(username);
+	for (let attempt = 1; attempt <= MAX_SLUG_ATTEMPTS; attempt++) {
+		try {
+			const result = await query<User>(
+				`INSERT INTO users (username, slug, email, first_name, last_name, roles, email_verified)
+				 VALUES (LOWER($1), $2, LOWER($3), $4, $5, $6, false)
+				 RETURNING *`,
+				[username, withSuffix(baseSlug, attempt, 'user-slug'), email, firstName, lastName, roles]
+			);
+			return result.rows[0]!;
+		} catch (error) {
+			const { code, constraint } = error as { code?: string; constraint?: string };
+			if (code !== UNIQUE_VIOLATION || constraint !== 'idx_users_slug') throw error;
+		}
+	}
+	throw new Error(`Could not find a free user slug for "${username}"`);
 }
 
 interface CreateUserRequest {
@@ -568,17 +633,7 @@ export async function handleCreateUser(
 
 		const passwordHash = await hashPassword(password);
 
-		const userResult = await query<User>(
-			`INSERT INTO users (username, email, first_name, last_name, roles, email_verified)
-			 VALUES (LOWER($1), LOWER($2), $3, $4, $5, false)
-			 RETURNING *`,
-			[username, email, first_name.trim(), last_name.trim(), roles]
-		);
-
-		const user = userResult.rows[0];
-		if (!user) {
-			return context.json({ error: 'Failed to create user' }, 500);
-		}
+		const user = await insertUserWithSlug(username, email, first_name.trim(), last_name.trim(), roles);
 
 		await query(
 			'INSERT INTO user_passwords (user_id, password_hash) VALUES ($1, $2)',
@@ -589,7 +644,7 @@ export async function handleCreateUser(
 	} catch (error) {
 		// Handle unique constraint violations (race condition on concurrent creates)
 		const pgError = error as { code?: string };
-		if (pgError.code === '23505') {
+		if (pgError.code === UNIQUE_VIOLATION) {
 			return context.json({ error: 'Username or email already exists' }, 409);
 		}
 		console.error('Failed to create user:', error);

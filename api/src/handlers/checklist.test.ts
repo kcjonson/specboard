@@ -47,9 +47,9 @@ import {
 	handleDeleteChecklistEntry,
 } from './checklist.ts';
 
-const PROJECT: ResolvedProject = { id: 'proj-1', slug: 'specboard', key: 'SB' };
+const PROJECT: ResolvedProject = { id: 'proj-1', slug: 'specboard', ownerSlug: 'acme', key: 'SB' };
 const ENTRY_ID = '11111111-2222-3333-4444-555555555555';
-const BASE = 'http://localhost/api/projects/specboard/items/SB-1/checklist';
+const BASE = 'http://localhost/api/projects/acme/specboard/items/SB-1/checklist';
 
 type TestVariables = { userId: string | undefined; project?: ResolvedProject };
 
@@ -60,10 +60,10 @@ function createApp(): Hono<{ Variables: TestVariables }> {
 		context.set('userId', 'user-1');
 		await next();
 	});
-	app.get('/api/projects/:projectSlug/items/:itemKey/checklist', handleListChecklist);
-	app.post('/api/projects/:projectSlug/items/:itemKey/checklist', handleAddChecklistEntry);
-	app.put('/api/projects/:projectSlug/items/:itemKey/checklist/:id', handleUpdateChecklistEntry);
-	app.delete('/api/projects/:projectSlug/items/:itemKey/checklist/:id', handleDeleteChecklistEntry);
+	app.get('/api/projects/:owner/:project/items/:itemKey/checklist', handleListChecklist);
+	app.post('/api/projects/:owner/:project/items/:itemKey/checklist', handleAddChecklistEntry);
+	app.put('/api/projects/:owner/:project/items/:itemKey/checklist/:id', handleUpdateChecklistEntry);
+	app.delete('/api/projects/:owner/:project/items/:itemKey/checklist/:id', handleDeleteChecklistEntry);
 	return app;
 }
 
