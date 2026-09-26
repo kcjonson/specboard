@@ -22,12 +22,20 @@ ALTER TABLE users ADD COLUMN slug VARCHAR(39);
 -- Backfilling is bookkeeping, not a profile edit; don't stamp every row's updated_at.
 ALTER TABLE users DISABLE TRIGGER users_updated_at;
 
+-- The app caps usernames at 30, but the column allows 255, so cap at 39 like the helper
+-- and re-trim in case the cut landed on a hyphen.
 UPDATE users
 SET slug = COALESCE(
 	NULLIF(
 		regexp_replace(
-			regexp_replace(lower(username), '[^a-z0-9]+', '-', 'g'),
-			'^-+|-+$', '', 'g'
+			substring(
+				regexp_replace(
+					regexp_replace(lower(username), '[^a-z0-9]+', '-', 'g'),
+					'^-+|-+$', '', 'g'
+				)
+				FROM 1 FOR 39
+			),
+			'-+$', '', 'g'
 		),
 		''
 	),
@@ -39,7 +47,7 @@ WHERE username IS NOT NULL;
 -- account keeps the bare slug and the rest get a numeric suffix. A natural slug may
 -- already hold the suffixed value (a user literally named jane_2 is jane-2), so each
 -- candidate is probed against a temp table of taken values, as 023 does for projects.
--- Usernames are at most 30 characters, so a suffix never overflows the column.
+-- The base is cut to make room for the suffix and re-trimmed, so it stays within 39.
 DO $$
 DECLARE
 	dup       RECORD;
@@ -60,7 +68,7 @@ BEGIN
 	LOOP
 		n := dup.rn;
 		LOOP
-			candidate := dup.slug || '-' || n;
+			candidate := regexp_replace(left(dup.slug, 39 - length(n::text) - 1), '-+$', '', 'g') || '-' || n;
 			EXIT WHEN NOT EXISTS (SELECT 1 FROM taken_user_slug t WHERE t.value = candidate);
 			n := n + 1;
 		END LOOP;

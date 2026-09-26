@@ -229,7 +229,7 @@ mcp:
 - MCP Server (existing)
 - REST API & Database -- file handlers at `api/src/handlers/storage/file-handlers.ts`
 - `@specboard/auth` -- CSRF middleware modification
-- `@specboard/db` -- `resolveProjectSlug()` for authorization
+- `@specboard/db` -- `resolveProject()` for authorization, via `resolveToolProject`
 
 ## Status
 

@@ -42,6 +42,10 @@ describe('030_user_slugs backfill', () => {
 		// A third claimant of `jane-doe`, after `-2` (natural) and `-3` (jane__doe) are taken.
 		await insertUser(db, '_jane_doe_', 60);
 		await insertUser(db, '___', 50);
+		// Longer than the slug column, as the users column allows; both truncate to the
+		// same 39 characters, and the cut lands on a hyphen for the collision suffix.
+		await insertUser(db, `${'a'.repeat(36)}_bcd_e${'x'.repeat(10)}`, 45);
+		await insertUser(db, `${'a'.repeat(36)}_bcd_e${'y'.repeat(10)}`, 44);
 		await insertUser(db, null, 40);
 
 		updatedBefore = await updatedAtById(db);
@@ -69,6 +73,11 @@ describe('030_user_slugs backfill', () => {
 
 	it('never takes a suffix that is already a natural slug', () => {
 		expect(slugs.get('jane_doe_2')).toBe('jane-doe-2');
+	});
+
+	it('caps slugs at the column width, suffix included', () => {
+		expect(slugs.get(`${'a'.repeat(36)}_bcd_e${'x'.repeat(10)}`)).toBe(`${'a'.repeat(36)}-bc`);
+		expect(slugs.get(`${'a'.repeat(36)}_bcd_e${'y'.repeat(10)}`)).toBe(`${'a'.repeat(36)}-2`);
 	});
 
 	it('falls back to "user" when the username has no alphanumerics', () => {

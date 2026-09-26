@@ -33,7 +33,7 @@ export function UserSlugField({ value, onInput, savedSlug, disabled }: UserSlugF
 				disabled={disabled}
 			/>
 			<span class={styles.preview}>
-				{window.location.host}/projects/<strong>{slug || 'your-slug'}</strong>/...
+				{window.location.host}/projects/<strong>{slug || 'your-slug'}</strong>/your-project/...
 			</span>
 			<span class={invalid ? styles.invalid : styles.hint}>
 				Up to {MAX_USER_SLUG_LENGTH} lowercase letters, numbers, and single hyphens
