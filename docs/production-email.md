@@ -27,7 +27,9 @@ Gotchas encoded in the stack, do not "simplify" them away:
 | Staging | noreply@staging.specboard.io | `EMAIL_ALLOWLIST=specboard.io` hard-blocks everything else |
 | Production | noreply@specboard.io | unrestricted (empty allowlist) |
 
-Send path: handler → `@specboard/email` `sendEmail()` → SES. Templates in `shared/email/src/templates.ts`. Only three emails exist: signup verification, verification resend, password reset. All user-triggered.
+Send path: handler → `@specboard/email` `sendEmail()` → SES. Templates in `shared/email/src/templates.ts`. Only four emails exist: signup verification, verification resend, password reset, and the waitlist confirmation. All user-triggered.
+
+The waitlist confirmation is sent until one succeeds per address: `waitlist_signups.confirmation_sent_at` is stamped when SES accepts it, a failed send leaves it NULL so submitting the form again retries, and `SELECT email FROM waitlist_signups WHERE confirmation_sent_at IS NULL` lists who never got one. Rows from before that column existed (migration 030) are NULL too, since nothing recorded whether they were sent.
 
 ## Sandbox status
 

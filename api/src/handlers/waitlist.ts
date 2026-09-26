@@ -4,7 +4,7 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { query } from '@specboard/db';
+import { query, transaction } from '@specboard/db';
 import { sendEmail, getWaitlistConfirmationEmailContent } from '@specboard/email';
 import { isValidEmail } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
@@ -59,45 +59,64 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 	const useCase = sanitizeOptionalString(body.use_case, 2000);
 
 	try {
-		// Insert new signup (idempotent: do nothing if email already exists)
-		// This avoids race conditions and handles duplicates atomically.
-		// RETURNING doubles as the confirmation-email guard: a conflict yields
-		// no row, so signing up twice never sends a second thank-you.
-		const result = await query<Pick<WaitlistSignup, 'id'>>(
+		// Idempotent: a resubmission leaves the existing row, and its original
+		// details, untouched.
+		await query(
 			`INSERT INTO waitlist_signups (email, company, role, use_case)
 			 VALUES ($1, $2, $3, $4)
-			 ON CONFLICT (email) DO NOTHING
-			 RETURNING id`,
+			 ON CONFLICT (email) DO NOTHING`,
 			[normalizedEmail, company, role, useCase]
 		);
-
-		if (result.rows.length > 0) {
-			// Fire-and-forget: the signup is already committed, so a mail
-			// failure must not fail the request or roll anything back.
-			const emailContent = getWaitlistConfirmationEmailContent();
-			sendEmail({
-				to: normalizedEmail,
-				subject: emailContent.subject,
-				textBody: emailContent.textBody,
-				htmlBody: emailContent.htmlBody,
-				replyTo: emailContent.replyTo,
-			}).catch((error) => {
-				// Name the address, and log the error whole rather than just
-				// its message: the RETURNING guard above means this signup can
-				// never trigger another send, so this line is the only record
-				// of who needs one re-sent by hand and why it failed. The
-				// stack and the SES $metadata (request id, error code) are the
-				// difference between diagnosing a throttle and guessing.
-				console.error(`Waitlist confirmation email failed for ${normalizedEmail}:`, error);
-			});
-		}
-
-		// Always return success (don't leak whether email already existed)
-		return context.json({ success: true }, 201);
 	} catch (error) {
 		console.error('Waitlist signup error:', error);
 		return context.json({ error: 'Unable to process signup. Please try again.' }, 500);
 	}
+
+	// Fire-and-forget: the signup is already committed, so a mail failure must
+	// not fail the request. A failure leaves confirmation_sent_at NULL, so
+	// submitting the same address again retries the send.
+	sendConfirmationIfUnsent(normalizedEmail).catch((error) => {
+		// Log the error whole: the stack and the SES $metadata (request id,
+		// error code) are the difference between diagnosing a throttle and
+		// guessing.
+		console.error(`Waitlist confirmation email failed for ${normalizedEmail}:`, error);
+	});
+
+	// Identical whether or not the address was already on the list, so the
+	// response can't be used to probe who signed up.
+	return context.json({ success: true }, 201);
+}
+
+async function sendConfirmationIfUnsent(email: string): Promise<void> {
+	await transaction(async (client) => {
+		// The row lock is held across the SES call instead of stamping the row
+		// up front: if the task dies mid-send the lock goes with the connection
+		// and the row stays NULL for the next submission to retry. SKIP LOCKED
+		// makes a concurrent submission of the same address stand down rather
+		// than send a duplicate.
+		const claimed = await client.query<Pick<WaitlistSignup, 'id'>>(
+			`SELECT id FROM waitlist_signups
+			 WHERE email = $1 AND confirmation_sent_at IS NULL
+			 FOR UPDATE SKIP LOCKED`,
+			[email]
+		);
+		const signup = claimed.rows[0];
+		if (!signup) return;
+
+		const emailContent = getWaitlistConfirmationEmailContent();
+		await sendEmail({
+			to: email,
+			subject: emailContent.subject,
+			textBody: emailContent.textBody,
+			htmlBody: emailContent.htmlBody,
+			replyTo: emailContent.replyTo,
+		});
+
+		await client.query(
+			'UPDATE waitlist_signups SET confirmation_sent_at = NOW() WHERE id = $1',
+			[signup.id]
+		);
+	});
 }
 
 /**
