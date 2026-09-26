@@ -5,7 +5,7 @@ import { Button, Checkbox, Text } from '@specboard/ui';
 import styles from './ChecklistSection.module.css';
 
 export interface ChecklistSectionProps {
-	projectSlug: string;
+	projectRef: string;
 	itemKey: string;
 }
 
@@ -18,8 +18,8 @@ export interface ChecklistSectionProps {
  * status, its blocked flag) reads the checklist, so a write here never leaves
  * the rest of the drawer stale.
  */
-export function ChecklistSection({ projectSlug, itemKey }: ChecklistSectionProps): JSX.Element {
-	const checklist = useMemo(() => new ChecklistCollection({ projectSlug, itemKey }), [projectSlug, itemKey]);
+export function ChecklistSection({ projectRef, itemKey }: ChecklistSectionProps): JSX.Element {
+	const checklist = useMemo(() => new ChecklistCollection({ projectRef, itemKey }), [projectRef, itemKey]);
 	useModel(checklist);
 
 	const [draft, setDraft] = useState('');

@@ -63,7 +63,7 @@ function createButton(container: Element): HTMLButtonElement {
 describe('NewItemForm', () => {
 	it('emits the drafted title, description, status and type', () => {
 		const onCreate = vi.fn();
-		const { container } = render(<NewItemForm projectSlug="specboard" createType="bug" onCreate={onCreate} />);
+		const { container } = render(<NewItemForm projectRef="acme/specboard" createType="bug" onCreate={onCreate} />);
 
 		fireEvent.input(titleField(container), { target: { value: '  Crash on save  ' } });
 		fireEvent.change(statusField(container), { target: { value: 'in_progress' } });
@@ -79,7 +79,7 @@ describe('NewItemForm', () => {
 
 	it('passes a parentKey through when one was supplied', () => {
 		const onCreate = vi.fn();
-		const { container } = render(<NewItemForm projectSlug="specboard" createType="task" parentKey="SB-7" onCreate={onCreate} />);
+		const { container } = render(<NewItemForm projectRef="acme/specboard" createType="task" parentKey="SB-7" onCreate={onCreate} />);
 
 		fireEvent.input(titleField(container), { target: { value: 'Child task' } });
 		fireEvent.click(createButton(container));
@@ -89,7 +89,7 @@ describe('NewItemForm', () => {
 
 	it('omits parentKey entirely when there is no parent', () => {
 		const onCreate = vi.fn();
-		const { container } = render(<NewItemForm projectSlug="specboard" onCreate={onCreate} />);
+		const { container } = render(<NewItemForm projectRef="acme/specboard" onCreate={onCreate} />);
 
 		fireEvent.input(titleField(container), { target: { value: 'Standalone epic' } });
 		fireEvent.click(createButton(container));
@@ -100,7 +100,7 @@ describe('NewItemForm', () => {
 	it('shows the parent it opened with, and creates under the one the picker chose', () => {
 		const onCreate = vi.fn();
 		const { container } = render(
-			<NewItemForm projectSlug="specboard" createType="task" parentKey="SB-7" onCreate={onCreate} />
+			<NewItemForm projectRef="acme/specboard" createType="task" parentKey="SB-7" onCreate={onCreate} />
 		);
 
 		expect(container.textContent).toContain('SB-7');
@@ -116,7 +116,7 @@ describe('NewItemForm', () => {
 	it('drops the parent entirely when the picker\'s clear row is chosen', () => {
 		const onCreate = vi.fn();
 		const { container } = render(
-			<NewItemForm projectSlug="specboard" createType="task" parentKey="SB-7" onCreate={onCreate} />
+			<NewItemForm projectRef="acme/specboard" createType="task" parentKey="SB-7" onCreate={onCreate} />
 		);
 
 		fireEvent.click(buttonLabelled(container, 'Change'));
@@ -128,7 +128,7 @@ describe('NewItemForm', () => {
 	});
 
 	it('offers only the statuses a brand new item can be in', () => {
-		const { container } = render(<NewItemForm projectSlug="specboard" onCreate={vi.fn()} />);
+		const { container } = render(<NewItemForm projectRef="acme/specboard" onCreate={vi.fn()} />);
 
 		const values = Array.from(statusField(container).options).map((o) => o.value);
 
@@ -137,7 +137,7 @@ describe('NewItemForm', () => {
 
 	it('does not create anything from a blank title', () => {
 		const onCreate = vi.fn();
-		const { container } = render(<NewItemForm projectSlug="specboard" onCreate={onCreate} />);
+		const { container } = render(<NewItemForm projectRef="acme/specboard" onCreate={onCreate} />);
 
 		fireEvent.input(titleField(container), { target: { value: '   ' } });
 		const button = createButton(container);
@@ -151,7 +151,7 @@ describe('NewItemForm', () => {
 	// label pointing at nothing. The ids are also distinct from ItemView's, which
 	// can be mounted in the drawer while this dialog is open.
 	it('associates every label with its field, under ids of its own', () => {
-		const { container } = render(<NewItemForm projectSlug="specboard" onCreate={vi.fn()} />);
+		const { container } = render(<NewItemForm projectRef="acme/specboard" onCreate={vi.fn()} />);
 
 		for (const label of Array.from(container.querySelectorAll('label'))) {
 			const target = label.getAttribute('for');

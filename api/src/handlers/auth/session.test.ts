@@ -1,5 +1,5 @@
 /**
- * Session handler tests — /me onboarding fields and the username claim
+ * Session handler tests — /me onboarding fields and the username + user slug claim
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -119,7 +119,7 @@ describe('handleUpdateMe username claim', () => {
 			}
 			if (text.includes('SET username = $1')) {
 				const rows = claimRowCount > 0
-					? [{ ...mockUser, username: 'alice', first_name: 'Alice', last_name: 'A' }]
+					? [{ ...mockUser, username: 'alice', slug: 'alice', first_name: 'Alice', last_name: 'A' }]
 					: [];
 				return mockQueryResult(rows, claimRowCount);
 			}
@@ -131,6 +131,7 @@ describe('handleUpdateMe username claim', () => {
 		mockClaimQueries(1);
 		const res = await request(createApp(), 'PUT', {
 			username: 'Alice',
+			slug: 'alice',
 			first_name: 'Alice',
 			last_name: 'A',
 		});
@@ -138,6 +139,7 @@ describe('handleUpdateMe username claim', () => {
 
 		expect(res.status).toBe(200);
 		expect(data.user.username).toBe('alice');
+		expect(data.user.slug).toBe('alice');
 		expect(updateSession).toHaveBeenCalledWith(redis, 'abc', { profileComplete: true });
 
 		const claimCall = vi.mocked(query).mock.calls.find((call) =>
@@ -147,7 +149,36 @@ describe('handleUpdateMe username claim', () => {
 		expect(claimCall?.[0]).toContain('username IS NULL');
 		expect(claimCall?.[0]).toContain('first_name');
 		expect(claimCall?.[0]).toContain('last_name');
+		expect(claimCall?.[0]).toContain('slug = $2');
 		expect(claimCall?.[1]?.[0]).toBe('alice');
+		expect(claimCall?.[1]?.[1]).toBe('alice');
+	});
+
+	it('requires a user slug with the username, before any DB write', async () => {
+		mockClaimQueries(1);
+		const res = await request(createApp(), 'PUT', { username: 'alice', first_name: 'Alice', last_name: 'A' });
+		expect(res.status).toBe(400);
+		const claimCall = vi.mocked(query).mock.calls.find((call) =>
+			(call[0] as string).includes('SET username = $1')
+		);
+		expect(claimCall).toBeUndefined();
+	});
+
+	it('rejects an invalid user slug', async () => {
+		const res = await request(createApp(), 'PUT', {
+			username: 'alice',
+			slug: 'Alice_A',
+			first_name: 'Alice',
+			last_name: 'A',
+		});
+		expect(res.status).toBe(400);
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it('refuses a slug change outside the onboarding claim', async () => {
+		const res = await request(createApp(), 'PUT', { slug: 'alice' });
+		expect(res.status).toBe(400);
+		expect(query).not.toHaveBeenCalled();
 	});
 
 	it('requires names when claiming a username, before any DB write', async () => {
@@ -176,6 +207,7 @@ describe('handleUpdateMe username claim', () => {
 		mockClaimQueries(0);
 		const res = await request(createApp(), 'PUT', {
 			username: 'alice',
+			slug: 'alice',
 			first_name: 'Alice',
 			last_name: 'A',
 		});
@@ -190,19 +222,46 @@ describe('handleUpdateMe username claim', () => {
 				return mockQueryResult([{ is_active: true }]);
 			}
 			if (text.includes('SET username = $1')) {
-				const err = new Error('duplicate key') as Error & { code: string };
+				const err = new Error('duplicate key') as Error & { code: string; constraint: string };
 				err.code = '23505';
+				err.constraint = 'users_username_key';
 				throw err;
 			}
 			return mockQueryResult([]);
 		});
 		const res = await request(createApp(), 'PUT', {
 			username: 'alice',
+			slug: 'alice',
 			first_name: 'Alice',
 			last_name: 'A',
 		});
 		const data = await res.json();
 		expect(res.status).toBe(409);
 		expect(data.error).toBe('Username already taken');
+	});
+
+	it('maps a slug unique violation to a taken-slug conflict', async () => {
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			const text = sql as string;
+			if (text.includes('SELECT is_active FROM users')) {
+				return mockQueryResult([{ is_active: true }]);
+			}
+			if (text.includes('SET username = $1')) {
+				const err = new Error('duplicate key') as Error & { code: string; constraint: string };
+				err.code = '23505';
+				err.constraint = 'idx_users_slug';
+				throw err;
+			}
+			return mockQueryResult([]);
+		});
+		const res = await request(createApp(), 'PUT', {
+			username: 'alice',
+			slug: 'alice',
+			first_name: 'Alice',
+			last_name: 'A',
+		});
+		const data = await res.json();
+		expect(res.status).toBe(409);
+		expect(data.error).toBe('User slug already taken');
 	});
 });

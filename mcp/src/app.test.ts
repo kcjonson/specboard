@@ -179,6 +179,20 @@ describe('POST /mcp', () => {
 		});
 	});
 
+	it('parses the X-Specboard-Project header into the binding every tool receives', async () => {
+		await post(TOOL_CALL, { 'x-specboard-project': ' Acme/Roadmap ' });
+		await lastActor();
+		expect(vi.mocked(handleEpicTool).mock.calls.at(-1)![3]).toEqual({ ref: { owner: 'acme', project: 'roadmap' } });
+
+		await post(TOOL_CALL, { 'x-specboard-project': 'roadmap' });
+		await lastActor();
+		expect(vi.mocked(handleEpicTool).mock.calls.at(-1)![3]).toEqual({ ref: { owner: null, project: 'roadmap' } });
+
+		await post(TOOL_CALL);
+		await lastActor();
+		expect(vi.mocked(handleEpicTool).mock.calls.at(-1)![3]).toBeUndefined();
+	});
+
 	it('treats a malformed session id as absent rather than failing the request', async () => {
 		const { status } = await post(TOOL_CALL, { 'mcp-session-id': 'stale-junk' });
 

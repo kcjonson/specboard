@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
+import { formatProjectRef } from '@specboard/core/identifiers';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type ItemType } from '@specboard/models';
 import { FetchError } from '@specboard/fetch';
@@ -73,8 +74,8 @@ function readView(): PlanningView {
 }
 
 /**
- * Planning page container — the route entry for both `/projects/:projectSlug/planning`
- * and `/projects/:projectSlug/planning/items/:itemKey`.
+ * Planning page container — the route entry for both `/projects/:owner/:project/planning`
+ * and `/projects/:owner/:project/planning/items/:itemKey`.
  *
  * Owns all state shared between the Board and Table views (the items collection,
  * selection, create/edit dialog, highlight, and active view) and renders the shared
@@ -93,21 +94,21 @@ function readView(): PlanningView {
  * service, so this entry only ever mounts with an `:itemKey` via in-app navigation.
  */
 export function Planning(props: RouteProps): JSX.Element {
-	const projectSlug = props.params.projectSlug || 'demo';
+	const projectRef = formatProjectRef(props.params.owner!, props.params.project!);
 	// Normalized so a lower-case key from any caller can't miss the collection's
 	// canonical `SB-345` and open a duplicate, detached model instead of the live
 	// one the board is rendering.
 	const openItemKey = props.params.itemKey?.toUpperCase();
 
-	// Collection auto-fetches after projectSlug is set. Memoized so it survives view
+	// Collection auto-fetches after projectRef is set. Memoized so it survives view
 	// toggles (the route/entry is unchanged, only the ?view= param differs). Its
 	// per-status windows start at the size of whichever view opens first.
 	const items = useMemo(
 		() => new ItemsCollection({
-			projectSlug,
+			projectRef,
 			limit: readView() === 'table' ? TABLE_PAGE_SIZE : BOARD_PAGE_SIZE,
 		}),
-		[projectSlug]
+		[projectRef]
 	);
 	useModel(items);
 
@@ -267,13 +268,13 @@ export function Planning(props: RouteProps): JSX.Element {
 
 	/** Board and item URLs, preserving the query string and hash the user is on. */
 	const boardUrl = useCallback(
-		(): string => `/projects/${projectSlug}/planning${window.location.search}${window.location.hash}`,
-		[projectSlug]
+		(): string => `/projects/${projectRef}/planning${window.location.search}${window.location.hash}`,
+		[projectRef]
 	);
 	const itemUrl = useCallback(
 		(itemKey: string): string =>
-			`/projects/${projectSlug}/planning/items/${itemKey}${window.location.search}${window.location.hash}`,
-		[projectSlug]
+			`/projects/${projectRef}/planning/items/${itemKey}${window.location.search}${window.location.hash}`,
+		[projectRef]
 	);
 
 	// Moving the selection (arrow keys, clicking a card). With the drawer open it
@@ -435,8 +436,8 @@ export function Planning(props: RouteProps): JSX.Element {
 		? openItemKey
 		: undefined;
 	const standaloneItem = useMemo(
-		() => (standaloneKey ? new ItemModel({ key: standaloneKey, projectSlug }) : undefined),
-		[standaloneKey, projectSlug]
+		() => (standaloneKey ? new ItemModel({ key: standaloneKey, projectRef }) : undefined),
+		[standaloneKey, projectRef]
 	);
 	const openItem = collectionItem ?? standaloneItem;
 
@@ -525,7 +526,7 @@ export function Planning(props: RouteProps): JSX.Element {
 		) : (
 			<Board
 				items={items}
-				projectSlug={projectSlug}
+				projectRef={projectRef}
 				selectedItemKey={selectedItemKey}
 				flashingIds={flashingIds}
 				dialogOpen={isNewItemDialogOpen}
@@ -537,7 +538,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	};
 
 	return (
-		<Page projectSlug={projectSlug} activeTab="Planning">
+		<Page projectRef={projectRef} activeTab="Planning">
 			<div class={styles.toolbar}>
 				<div class={styles.controls}>
 					<ViewToggle view={view} onChange={handleChangeView} />
@@ -570,7 +571,7 @@ export function Planning(props: RouteProps): JSX.Element {
 				{openItem && !openItemMissing && (
 					<ItemDrawer
 						item={openItem}
-						projectSlug={projectSlug}
+						projectRef={projectRef}
 						maxWidth={drawerMaxWidth}
 						onClose={handleCloseDrawer}
 						onDelete={handleDeleteItem}
@@ -584,7 +585,7 @@ export function Planning(props: RouteProps): JSX.Element {
 
 			{isNewItemDialogOpen && (
 				<NewItemDialog
-					projectSlug={projectSlug}
+					projectRef={projectRef}
 					createType={createType}
 					onClose={handleCloseNewItemDialog}
 					onCreate={handleCreateItem}

@@ -543,9 +543,9 @@ app.get('*', async (c) => {
 	// tab) lands on the standalone item page. That URL exists so opening a card
 	// in-app is a history entry Back can undo, not as the shape a shared link
 	// takes. In-app navigation is pushState and never reaches here.
-	const drawerLink = path.match(/^\/projects\/([^/]+)\/planning\/items\/([^/]+)\/*$/);
+	const drawerLink = path.match(/^\/projects\/([^/]+)\/([^/]+)\/planning\/items\/([^/]+)\/*$/);
 	if (drawerLink) {
-		return c.redirect(`/projects/${drawerLink[1]}/items/${drawerLink[2]}`);
+		return c.redirect(`/projects/${drawerLink[1]}/${drawerLink[2]}/items/${drawerLink[3]}`);
 	}
 
 	// Dev mode: proxy to Vite for HMR

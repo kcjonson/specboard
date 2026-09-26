@@ -13,7 +13,7 @@ import { getItems as getItemsService } from '@specboard/db';
 import { getItems } from './reads.ts';
 import { epicTools } from './definitions.ts';
 
-const PROJECT = { id: 'proj-1', slug: 'specboard', key: 'SB' };
+const PROJECT = { id: 'proj-1', slug: 'specboard', ownerSlug: 'acme', key: 'SB' };
 
 const mockGetItems = vi.mocked(getItemsService);
 

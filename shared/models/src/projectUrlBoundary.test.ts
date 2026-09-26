@@ -1,9 +1,10 @@
 /**
  * Guards the boundary this codebase now depends on: a project is addressed in URLs by
- * its **slug**, and by its **id** only as a local-storage key. The two are different
- * strings of the same type, so nothing in the type system keeps them apart — a UUID
- * interpolated into `/api/projects/${...}` typechecks perfectly and 404s at runtime,
- * which is exactly how it shipped once (Editor's document save).
+ * its **ref** (`owner/project`), and by its **id** only as a local-storage key. Ref,
+ * bare slug and id are all strings, so nothing in the type system keeps them apart —
+ * a UUID interpolated into `/api/projects/${...}` typechecks perfectly and 404s at
+ * runtime, which is exactly how it shipped once (Editor's document save), and a bare
+ * slug left over from before owner-namespaced URLs would do the same.
  *
  * This scans the frontend source rather than exercising a component, because the bug
  * lives in string interpolation that no component test would naturally cover.
@@ -19,8 +20,11 @@ const SCAN_DIRS = ['shared/models', 'shared/pages', 'shared/planning', 'shared/p
 /** Interpolations in a project-scoped API path: `/api/projects/${expr}` */
 const API_PROJECT_PATH = /\/api\/projects\/\$\{([^}]+)\}/g;
 
-/** Names that legitimately hold a slug. Anything else is presumed to be an id. */
-const SLUG_NAMED = /slug/i;
+/**
+ * Names that legitimately hold a ref (`projectRef`, `formatProjectRef(...)`). Anything
+ * else is presumed to be an id or a bare slug.
+ */
+const REF_NAMED = /ref\b/i;
 
 function sourceFiles(dir: string): string[] {
 	const abs = join(ROOT, dir);
@@ -38,7 +42,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('project URL boundary', () => {
-	it('addresses /api/projects/... by slug, never by id', () => {
+	it('addresses /api/projects/... by owner/project ref, never by id or bare slug', () => {
 		const offenders: string[] = [];
 
 		for (const dir of SCAN_DIRS) {
@@ -46,21 +50,21 @@ describe('project URL boundary', () => {
 				const source = readFileSync(file, 'utf-8');
 				for (const match of source.matchAll(API_PROJECT_PATH)) {
 					const expr = match[1]!.trim();
-					if (SLUG_NAMED.test(expr)) continue;
+					if (REF_NAMED.test(expr)) continue;
 					const line = source.slice(0, match.index).split('\n').length;
 					offenders.push(`${relative(ROOT, file)}:${line} -> \${${expr}}`);
 				}
 			}
 		}
 
-		expect(offenders, `Project API paths must interpolate a slug. Found:\n${offenders.join('\n')}`)
+		expect(offenders, `Project API paths must interpolate a project ref. Found:\n${offenders.join('\n')}`)
 			.toEqual([]);
 	});
 
 	it('actually detects a violation (the guard is not vacuous)', () => {
-		const sample = 'fetchClient.put(`/api/projects/${projectId}/files`)';
+		const sample = 'fetchClient.put(`/api/projects/${projectId}/files`); fetchClient.get(`/api/projects/${project.slug}`)';
 		const found = [...sample.matchAll(API_PROJECT_PATH)].map((m) => m[1]!.trim());
-		expect(found).toEqual(['projectId']);
-		expect(found.some((e) => SLUG_NAMED.test(e))).toBe(false);
+		expect(found).toEqual(['projectId', 'project.slug']);
+		expect(found.some((e) => REF_NAMED.test(e))).toBe(false);
 	});
 });

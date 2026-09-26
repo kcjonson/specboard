@@ -62,7 +62,7 @@ vi.mock('../RichTextEditor', () => ({
 function makeItem(title: string, extra: Record<string, unknown> = {}): ItemModel {
 	const item = new ItemModel({
 		key: 'SB-1',
-		projectSlug: 'specboard',
+		projectRef: 'acme/specboard',
 		title,
 		type: 'task',
 		status: 'ready',
@@ -78,7 +78,7 @@ function makeItem(title: string, extra: Record<string, unknown> = {}): ItemModel
 function makeItemWith(key: string, description: string): ItemModel {
 	const item = new ItemModel({
 		key,
-		projectSlug: 'specboard',
+		projectRef: 'acme/specboard',
 		title: 'T',
 		type: 'task',
 		status: 'ready',

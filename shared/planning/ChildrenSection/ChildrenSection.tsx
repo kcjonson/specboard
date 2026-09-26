@@ -50,7 +50,7 @@ export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX
 		// The dialog opens on this item as the parent but the user can change it, so the
 		// payload's parentKey wins. Repointing it elsewhere means the new item doesn't
 		// land in this list, which is what was asked for.
-		const child = new ItemModel({ ...data, projectSlug: item.projectSlug });
+		const child = new ItemModel({ ...data, projectRef: item.projectRef });
 		try {
 			await child.save();
 		} catch {
@@ -142,7 +142,7 @@ export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX
 
 			{createType && (
 				<NewItemDialog
-					projectSlug={item.projectSlug}
+					projectRef={item.projectRef}
 					createType={createType}
 					parentKey={item.key}
 					onClose={() => setCreateType(undefined)}

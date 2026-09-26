@@ -13,6 +13,7 @@ export function projectResponseToApi(project: ProjectResponse): ApiProject {
 	return {
 		id: project.id,
 		slug: project.slug,
+		ownerSlug: project.ownerSlug,
 		key: project.key,
 		name: project.name,
 		description: project.description ?? undefined,

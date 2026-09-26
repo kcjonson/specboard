@@ -14,15 +14,15 @@ import {
 } from '@specboard/db';
 import type { SpecSummary, ResolvedProject } from '@specboard/db';
 import { requireResolvedProject } from './items.ts';
-import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
+import { formatProjectRef, itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import type { ApiSpec } from '../types.ts';
 import { isValidUUID } from '../validation.ts';
 
-function toApi(spec: SpecSummary, itemKey: string, projectSlug: string): ApiSpec {
+function toApi(spec: SpecSummary, itemKey: string, project: ResolvedProject): ApiSpec {
 	return {
 		id: spec.id,
 		itemKey,
-		projectSlug,
+		projectRef: formatProjectRef(project.ownerSlug, project.slug),
 		path: spec.path,
 		type: spec.type,
 		createdAt: spec.createdAt.toISOString(),
@@ -30,7 +30,7 @@ function toApi(spec: SpecSummary, itemKey: string, projectSlug: string): ApiSpec
 }
 
 /**
- * The project resolved from :projectSlug plus the :itemKey path segment as a
+ * The project resolved from :owner/:project plus the :itemKey path segment as a
  * per-project number, or null when the key doesn't address this project.
  */
 function resolve(context: Context): { project: ResolvedProject; itemKey: string; itemNumber: number } | Response {
@@ -53,7 +53,7 @@ export async function handleListSpecs(context: Context): Promise<Response> {
 			return context.json({ error: 'Item not found' }, 404);
 		}
 		const specs = await listSpecsByItem(project.id, itemNumber);
-		return context.json(specs.map((s) => toApi(s, itemKey, project.slug)));
+		return context.json(specs.map((s) => toApi(s, itemKey, project)));
 	} catch (error) {
 		console.error('Failed to list specs:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -73,7 +73,7 @@ export async function handleAddSpec(context: Context): Promise<Response> {
 		if (!spec) {
 			return context.json({ error: 'Item not found' }, 404);
 		}
-		return context.json(toApi(spec, itemKey, project.slug), 201);
+		return context.json(toApi(spec, itemKey, project), 201);
 	} catch (error) {
 		if (error instanceof SpecValidationError) {
 			return context.json({ error: error.message }, 400);

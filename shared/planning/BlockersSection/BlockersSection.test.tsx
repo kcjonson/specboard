@@ -42,7 +42,7 @@ function textBlocker(overrides: Partial<BlockerPayload> = {}): BlockerPayload {
 }
 
 function renderSection(): ReturnType<typeof render> {
-	return render(<BlockersSection projectSlug="specboard" itemKey="SB-12" />);
+	return render(<BlockersSection projectRef="acme/specboard" itemKey="SB-12" />);
 }
 
 describe('BlockersSection', () => {

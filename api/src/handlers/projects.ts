@@ -8,19 +8,23 @@ import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
 import {
 	getProjects,
-	getProjectBySlug,
-	resolveProjectSlug,
+	resolveProject,
 	createProject,
 	updateProject,
 	deleteProject,
 	ProjectIdentifierTakenError,
 	ProjectHasRepositoryError,
+	ProjectOwnerWithoutSlugError,
 	type RepositoryConfigInput,
 } from '@specboard/db';
 import { isValidProjectSlug, isValidProjectKey } from '@specboard/core/identifiers';
 import { projectResponseToApi } from '../transform.ts';
+import { readProjectAddress, loadProject } from '../project-address.ts';
 import { isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
 import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
+
+/** Always part of a ?fields= filtered project response. */
+const IDENTIFIER_FIELDS = new Set(['id', 'slug', 'ownerSlug', 'key']);
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
@@ -130,21 +134,21 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const slug = context.req.param('projectSlug');
+	const address = readProjectAddress(context);
 
-	if (!isValidProjectSlug(slug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	// Support fields filter for lightweight queries (e.g., ?fields=name)
-	// Note: the identifiers (id, slug, key) are always included in filtered responses
+	// Note: the identifiers are always included in filtered responses
 	const fieldsParam = context.req.query('fields');
 	const requestedFields = fieldsParam
-		? fieldsParam.split(',').map((f) => f.trim()).filter((f) => f !== 'id' && f !== 'slug' && f !== 'key')
+		? fieldsParam.split(',').map((f) => f.trim()).filter((f) => !IDENTIFIER_FIELDS.has(f))
 		: null;
 
 	try {
-		const project = await getProjectBySlug(slug, userId);
+		const project = await loadProject(address, userId);
 
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
@@ -154,7 +158,12 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 
 		// If specific fields requested, return only those
 		if (requestedFields) {
-			const filtered: Record<string, unknown> = { id: fullResponse.id, slug: fullResponse.slug, key: fullResponse.key };
+			const filtered: Record<string, unknown> = {
+				id: fullResponse.id,
+				slug: fullResponse.slug,
+				ownerSlug: fullResponse.ownerSlug,
+				key: fullResponse.key,
+			};
 			for (const field of requestedFields) {
 				if (field in fullResponse) {
 					filtered[field] = fullResponse[field as keyof typeof fullResponse];
@@ -233,6 +242,9 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 
 		return context.json(projectResponseToApi(project), 201);
 	} catch (error) {
+		if (error instanceof ProjectOwnerWithoutSlugError) {
+			return context.json({ error: error.message }, 403);
+		}
 		console.error('Failed to create project:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
@@ -244,10 +256,10 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const currentSlug = context.req.param('projectSlug');
+	const address = readProjectAddress(context);
 
-	if (!isValidProjectSlug(currentSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	try {
@@ -317,7 +329,7 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 			validatedRepository = validation.repository;
 		}
 
-		const resolved = await resolveProjectSlug(currentSlug, userId);
+		const resolved = await resolveProject(address.owner, address.project, userId);
 		if (!resolved) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -358,14 +370,14 @@ export async function handleDeleteProject(context: Context, redis: Redis): Promi
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const slug = context.req.param('projectSlug');
+	const address = readProjectAddress(context);
 
-	if (!isValidProjectSlug(slug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
 	try {
-		const resolved = await resolveProjectSlug(slug, userId);
+		const resolved = await resolveProject(address.owner, address.project, userId);
 		if (!resolved) {
 			return context.json({ error: 'Project not found' }, 404);
 		}

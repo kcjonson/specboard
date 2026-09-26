@@ -16,8 +16,8 @@ import {
 	decrypt,
 	type EncryptedData,
 } from '@specboard/auth';
-import { query, resolveProjectSlug } from '@specboard/db';
-import { isValidProjectSlug } from '@specboard/core/identifiers';
+import { query, resolveProject } from '@specboard/db';
+import { readProjectAddress } from '../project-address.ts';
 import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
 import {
@@ -277,7 +277,7 @@ export async function startGitHubInitialSync(
 
 /**
  * Start initial sync - downloads entire repository.
- * POST /api/projects/:projectSlug/sync/initial
+ * POST /api/projects/:owner/:project/sync/initial
  */
 export async function handleGitHubInitialSync(
 	context: Context,
@@ -293,12 +293,12 @@ export async function handleGitHubInitialSync(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
-	const resolved = await resolveProjectSlug(projectSlug, session.userId);
+	const resolved = await resolveProject(address.owner, address.project, session.userId);
 	if (!resolved) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
@@ -367,7 +367,7 @@ export async function handleGitHubInitialSync(
 
 /**
  * Start incremental sync - fetches only changed files.
- * POST /api/projects/:projectSlug/sync
+ * POST /api/projects/:owner/:project/sync
  */
 export async function handleGitHubSync(
 	context: Context,
@@ -384,12 +384,12 @@ export async function handleGitHubSync(
 		return context.json({ success: false, error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ success: false, error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ success: false, error: 'Invalid project address' }, 400);
 	}
 
-	const resolved = await resolveProjectSlug(projectSlug, session.userId);
+	const resolved = await resolveProject(address.owner, address.project, session.userId);
 	if (!resolved) {
 		return context.json({ success: false, error: 'Project not found' }, 404);
 	}
@@ -474,7 +474,7 @@ export async function handleGitHubSync(
 
 /**
  * Get sync status for a project.
- * GET /api/projects/:projectSlug/sync/status
+ * GET /api/projects/:owner/:project/sync/status
  */
 export async function handleGitHubSyncStatus(
 	context: Context,
@@ -490,12 +490,12 @@ export async function handleGitHubSyncStatus(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
-	const resolved = await resolveProjectSlug(projectSlug, session.userId);
+	const resolved = await resolveProject(address.owner, address.project, session.userId);
 	if (!resolved) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
@@ -518,7 +518,7 @@ export async function handleGitHubSyncStatus(
 
 /**
  * Commit pending changes to GitHub repository.
- * POST /api/projects/:projectSlug/github/commit
+ * POST /api/projects/:owner/:project/github/commit
  *
  * Uses GitHub GraphQL createCommitOnBranch mutation for atomic commits:
  * 1. Get pending changes with content from storage service
@@ -540,12 +540,12 @@ export async function handleGitHubCommit(
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	const projectSlug = context.req.param('projectSlug');
-	if (!isValidProjectSlug(projectSlug)) {
-		return context.json({ error: 'Invalid project slug format' }, 400);
+	const address = readProjectAddress(context);
+	if (!address) {
+		return context.json({ error: 'Invalid project address' }, 400);
 	}
 
-	const resolved = await resolveProjectSlug(projectSlug, session.userId);
+	const resolved = await resolveProject(address.owner, address.project, session.userId);
 	if (!resolved) {
 		return context.json({ error: 'Project not found' }, 404);
 	}

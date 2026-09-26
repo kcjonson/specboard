@@ -142,6 +142,13 @@ constraint the old code violates.
 release writes. **Every project create and every item create fails for the duration of
 the rollout.** Reads are unaffected.
 
+`030_user_slugs.sql` is the second, and much narrower: `users_slug_matches_username`
+requires a slug wherever there is a username, so the previous release's onboarding claim
+and admin user create (both set a username alone) fail during the rollout. Every other
+write is unaffected. The same release also moves every project URL and API path to
+`/projects/:owner/:project/...`, so a browser tab left open on the old frontend 404s its
+API calls until it reloads.
+
 Before adding a migration, ask whether the previous release's writes still satisfy it:
 
 - **Yes** — normal deploy, nothing to do.
@@ -190,9 +197,9 @@ curl -s -o /dev/null -w "%{http_code}\n" https://specboard.io/api/health        
 curl -s https://specboard.io/mcp/health                                          # {"status":"ok"}
 
 # Authz smoke test — an unauthenticated planning read must be rejected (401), not 200.
-# Any slug works; the auth gate runs before the project lookup.
+# Any address works; the auth gate runs before the project lookup.
 curl -s -o /dev/null -w "%{http_code}\n" \
-  https://specboard.io/api/projects/some-project/items    # 401
+  https://specboard.io/api/projects/some-owner/some-project/items    # 401
 ```
 
 Swap `specboard.io` for `staging.specboard.io` to verify staging. For releases that

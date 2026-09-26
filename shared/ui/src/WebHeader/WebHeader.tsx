@@ -22,11 +22,11 @@ const NAV_TABS: NavTab[] = [
 ];
 
 export interface WebHeaderProps {
-	/** Project slug - if provided, shows project name and nav tabs */
-	projectSlug?: string;
+	/** Project ref (owner/project) - if provided, shows project name and nav tabs */
+	projectRef?: string;
 	/** Currently active tab (matches NavTabLabel) */
 	activeTab?: NavTabLabel;
-	/** Page title - shown when no projectSlug (for non-project pages like Settings) */
+	/** Page title - shown when no projectRef (for non-project pages like Settings) */
 	title?: string;
 	/** Optional right-side action buttons (placed before user menu) */
 	actions?: ComponentChildren;
@@ -35,7 +35,7 @@ export interface WebHeaderProps {
 }
 
 export function WebHeader({
-	projectSlug,
+	projectRef,
 	activeTab,
 	title,
 	actions,
@@ -52,10 +52,10 @@ export function WebHeader({
 
 	useEffect(() => {
 		// Check cookie inside effect to ensure consistent behavior
-		const lastProjectSlug = getCookie('lastProjectSlug');
-		const cachedName = projectSlug && lastProjectSlug === projectSlug ? getCookie('lastProjectName') : null;
+		const lastProjectRef = getCookie('lastProjectRef');
+		const cachedName = projectRef && lastProjectRef === projectRef ? getCookie('lastProjectName') : null;
 
-		if (!projectSlug || cachedName) {
+		if (!projectRef || cachedName) {
 			setFetchedName(cachedName);
 			return;
 		}
@@ -65,11 +65,11 @@ export function WebHeader({
 
 		// Fetch project name and update cookie
 		fetchClient
-			.get<{ id: string; name: string }>(`/api/projects/${projectSlug}`, { params: { fields: 'name' } })
+			.get<{ id: string; name: string }>(`/api/projects/${projectRef}`, { params: { fields: 'name' } })
 			.then((project) => {
 				if (cancelled) return;
 				setFetchedName(project.name);
-				setCookie('lastProjectSlug', projectSlug, 30);
+				setCookie('lastProjectRef', projectRef, 30);
 				setCookie('lastProjectName', project.name, 30);
 			})
 			.catch(() => {
@@ -79,7 +79,7 @@ export function WebHeader({
 		return () => {
 			cancelled = true;
 		};
-	}, [projectSlug]);
+	}, [projectRef]);
 
 	const projectName = fetchedName;
 
@@ -96,14 +96,14 @@ export function WebHeader({
 			<div class={styles.left}>
 				<Logo size={16} responsive href="/projects" />
 				<span class={styles.brandDivider} />
-				{projectSlug ? (
+				{projectRef ? (
 					<>
 						<span class={styles.projectName}>{projectName ?? ''}</span>
 						<nav class={styles.nav}>
 							{NAV_TABS.map((tab) => (
 								<a
 									key={tab.label}
-									href={`/projects/${projectSlug}/${tab.path}`}
+									href={`/projects/${projectRef}/${tab.path}`}
 									class={`${styles.navTab} ${activeTab === tab.label ? styles.navTabActive : ''}`}
 								>
 									{tab.label}
@@ -124,7 +124,7 @@ export function WebHeader({
 			</div>
 			<div class={styles.actions}>
 				{actions}
-				{projectSlug && (
+				{projectRef && (
 					<>
 						<button
 							type="button"
@@ -140,7 +140,7 @@ export function WebHeader({
 							{NAV_TABS.map((tab) => (
 								<a
 									key={tab.label}
-									href={`/projects/${projectSlug}/${tab.path}`}
+									href={`/projects/${projectRef}/${tab.path}`}
 									class={`${styles.menuItem} ${activeTab === tab.label ? styles.menuItemActive : ''}`}
 									aria-current={activeTab === tab.label ? 'page' : undefined}
 								>

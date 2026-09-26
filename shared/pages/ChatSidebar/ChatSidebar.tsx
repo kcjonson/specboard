@@ -12,7 +12,7 @@ import styles from './ChatSidebar.module.css';
 interface ChatSidebarProps {
 	documentContent?: string;
 	documentPath?: string;
-	projectSlug?: string;
+	projectRef?: string;
 	onApplyEdit?: (newMarkdown: string) => void;
 	/** When provided, renders a close button in the header (small screens only) */
 	onClose?: () => void;
@@ -21,7 +21,7 @@ interface ChatSidebarProps {
 export function ChatSidebar({
 	documentContent,
 	documentPath,
-	projectSlug,
+	projectRef,
 	onApplyEdit,
 	onClose,
 }: ChatSidebarProps): JSX.Element {
@@ -51,7 +51,7 @@ export function ChatSidebar({
 	} = useChatStream({
 		documentContent,
 		documentPath,
-		projectSlug,
+		projectRef,
 		selectedModel,
 		inputRef,
 	});

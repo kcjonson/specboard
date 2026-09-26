@@ -164,7 +164,7 @@ describe('FileTreeModel', () => {
 
 			await model.initialize('project-1', PROJECT_ID);
 
-			expect(model.projectSlug).toBe('project-1');
+			expect(model.projectRef).toBe('project-1');
 			expect(model.rootPaths).toEqual(['/']);
 			expect(model.files).toHaveLength(2);
 			expect(mockPost).toHaveBeenCalledTimes(1);
@@ -183,7 +183,7 @@ describe('FileTreeModel', () => {
 			expect(model.error).toBe('Failed to load files');
 		});
 
-		it('skips reload if same projectSlug', async () => {
+		it('skips reload if same projectRef', async () => {
 			mockPost.mockResolvedValueOnce({
 				files: [],
 				expanded: {},

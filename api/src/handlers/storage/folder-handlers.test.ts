@@ -10,7 +10,7 @@ import type { Redis } from 'ioredis';
 vi.mock('@specboard/db', () => ({
 	addFolder: vi.fn(),
 	removeFolder: vi.fn(),
-	resolveProjectSlug: vi.fn(),
+	resolveProject: vi.fn(),
 	getProject: vi.fn(),
 	isLocalRepository: vi.fn(() => false),
 	isCloudRepository: vi.fn(() => false),
@@ -21,10 +21,10 @@ vi.mock('@specboard/auth', () => ({
 	SESSION_COOKIE_NAME: 'session',
 }));
 
-import { resolveProjectSlug } from '@specboard/db';
+import { resolveProject } from '@specboard/db';
 import { registerFolderRoutes } from './folder-handlers.ts';
 
-const FOLDERS_URL = 'http://localhost/api/projects/specboard/folders?path=/docs';
+const FOLDERS_URL = 'http://localhost/api/projects/acme/specboard/folders?path=/docs';
 const redis = {} as Redis;
 
 function createApp(): Hono {
@@ -57,7 +57,7 @@ describe('registerFolderRoutes', () => {
 		const app = createApp();
 
 		expect((await request(app, 'POST')).status).toBe(404);
-		expect(resolveProjectSlug).not.toHaveBeenCalled();
+		expect(resolveProject).not.toHaveBeenCalled();
 	});
 
 	it('treats any value other than "true" as disabled', async () => {

@@ -17,6 +17,7 @@ const MIN_PASSWORD_LENGTH = 12;
 // Fixed superadmin details - same across all environments
 const SUPERADMIN = {
 	username: 'superadmin',
+	slug: 'superadmin',
 	email: 'superadmin@specboard.io',
 	firstName: 'Super',
 	lastName: 'Admin',
@@ -286,9 +287,9 @@ async function seed() {
 				await client.query('BEGIN');
 
 				const userResult = await client.query(
-					`INSERT INTO users (username, first_name, last_name, email, email_verified, roles)
-					 VALUES ($1, $2, $3, $4, true, $5) RETURNING id`,
-					[SUPERADMIN.username, SUPERADMIN.firstName, SUPERADMIN.lastName, SUPERADMIN.email, ['admin']]
+					`INSERT INTO users (username, slug, first_name, last_name, email, email_verified, roles)
+					 VALUES ($1, $2, $3, $4, $5, true, $6) RETURNING id`,
+					[SUPERADMIN.username, SUPERADMIN.slug, SUPERADMIN.firstName, SUPERADMIN.lastName, SUPERADMIN.email, ['admin']]
 				);
 
 				superadminId = userResult.rows[0]?.id;

@@ -126,9 +126,13 @@ specboard connect
 }
 ```
 
-### Project binding
+### Project addressing and binding
 
-A repo pins itself to one Specboard project by committing the project **slug** in its `.mcp.json`:
+A project is addressed as `owner/project`: the owner's user slug, then the project's slug
+(`acme/roadmap`). The item tools take it as the `project` argument, and `list_projects` returns
+each project's `owner`, `slug`, and the combined `ref` to pass back.
+
+A repo pins itself to one Specboard project by committing that address in its `.mcp.json`:
 
 ```json
 {
@@ -136,18 +140,32 @@ A repo pins itself to one Specboard project by committing the project **slug** i
 		"specboard": {
 			"type": "http",
 			"url": "https://specboard.io/mcp",
-			"headers": { "X-Specboard-Project": "specboard" }
+			"headers": { "X-Specboard-Project": "acme/roadmap" }
 		}
 	}
 }
 ```
 
-The server reads the header at session init and scopes every tool to that project: `list_projects`
-returns only the bound one, and the item tools default and enforce `project_slug` against it, refusing a
-slug that isn't the bound one. Auth
-stays per-user OAuth, so the committed file grants nothing on its own.
+The server reads the header on every request and scopes every tool to that project:
+`list_projects` returns only the bound one, and the item tools default `project` to it and refuse
+an explicit `project` that names a different board. Auth stays per-user OAuth, so the committed
+file grants nothing on its own. A header that doesn't parse as an address is reported on every
+tool call rather than ignored, since ignoring it would silently unscope the repo.
 
-**Why the slug is committed directly.** The first version of this put the project's UUID in the
+**Bare slugs mean "my own project".** Both the header and the `project` argument accept a bare
+`roadmap`. The server expands it to the caller's own user slug (`<caller>/roadmap`) before
+resolving, so there is still one resolver (`resolveProject`) and one access check, and bindings
+from before owner-namespaced addresses keep working for their owners. The catch is that a
+committed `.mcp.json` is shared by everyone who clones the repo, and a bare slug resolves against
+each caller's own projects: a collaborator gets "project not found". The not-found error for a
+bare reference says to use the full `owner/project` form, and any repo with collaborators should
+bind it. The bound-versus-requested check compares addresses after expansion, so `roadmap` and
+`acme/roadmap` agree for the owner.
+
+Misses never say which half was wrong, and never echo the address back: "doesn't exist" and "no
+access" read the same, so the tools can't be used to probe other users' projects.
+
+**Why the address is committed directly.** The first version of this put the project's UUID in the
 header, which meant a personal identifier landed in version control. The planned fix was an
 indirection: commit a repo slug instead, and keep a server-side `(user, repo_slug) -> project`
 binding table with a `bind_project` tool and a first-run prompt. That design was dropped. The
@@ -756,21 +774,21 @@ The MCP server is implemented for **planning/task management** with the followin
 
 - **HTTP Transport**: Uses `StreamableHTTPServerTransport` (not stdio)
 - **Project Scoping**: All API endpoints are project-scoped via URL path
-- **API Routes**: `GET/POST /api/projects/:projectSlug/items`, and the item sub-resources (`/specs`, `/blockers`, `/notes`, `/checklist`)
+- **API Routes**: `GET/POST /api/projects/:owner/:project/items`, and the item sub-resources (`/specs`, `/blockers`, `/notes`, `/checklist`)
 - **MCP Tools**: `list_projects`, `get_items`, `create_item`, `create_items`, `update_item`, `delete_item`
 - **Docker Deployment**: MCP runs as separate ECS Fargate service
 - **CI/CD**: Automated build and deployment
 
 #### API Route Structure (Project-Scoped)
 
-All planning endpoints use project ID in the URL:
+All planning endpoints address the project as `owner/project` and items by key:
 
 ```
-/api/projects/:projectId/epics
-/api/projects/:projectId/epics/:epicId
-/api/projects/:projectId/epics/:epicId/tasks
-/api/projects/:projectId/tasks/:taskId/start
-/api/projects/:projectId/tasks/:taskId/complete
+/api/projects/:owner/:project/items
+/api/projects/:owner/:project/items/:itemKey
+/api/projects/:owner/:project/items/:itemKey/children
+/api/projects/:owner/:project/items/:itemKey/start
+/api/projects/:owner/:project/items/:itemKey/complete
 ...
 ```
 

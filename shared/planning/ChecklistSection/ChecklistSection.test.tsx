@@ -32,11 +32,11 @@ function entry(overrides: Partial<EntryPayload> = {}): EntryPayload {
 	return { id: 'c1', text: 'Rename the column', status: 'todo', ...overrides };
 }
 
-const URL = '/api/projects/specboard/items/SB-12/checklist';
+const URL = '/api/projects/acme/specboard/items/SB-12/checklist';
 
 function renderSection(entries: EntryPayload[]): ReturnType<typeof render> {
 	get.mockResolvedValue(entries);
-	return render(<ChecklistSection projectSlug="specboard" itemKey="SB-12" />);
+	return render(<ChecklistSection projectRef="acme/specboard" itemKey="SB-12" />);
 }
 
 /** The section under an ancestor that closes on Escape, the way the drawer wraps it. */
@@ -47,7 +47,7 @@ function renderInDrawer(
 	get.mockResolvedValue(entries);
 	return render(
 		<div onKeyDown={onKeyDown}>
-			<ChecklistSection projectSlug="specboard" itemKey="SB-12" />
+			<ChecklistSection projectRef="acme/specboard" itemKey="SB-12" />
 		</div>
 	);
 }
@@ -284,7 +284,7 @@ describe('ChecklistSection', () => {
 	// A checklist that failed to load is not an empty checklist.
 	it('shows an error instead of the placeholder when the fetch fails', async () => {
 		get.mockRejectedValue(new Error('nope'));
-		const { container, findByText } = render(<ChecklistSection projectSlug="specboard" itemKey="SB-12" />);
+		const { container, findByText } = render(<ChecklistSection projectRef="acme/specboard" itemKey="SB-12" />);
 
 		expect(await findByText('Could not load the checklist.')).toBeTruthy();
 		expect(container.textContent).not.toContain('Nothing on the checklist');

@@ -7,7 +7,7 @@ import { actorLabel } from '../utils/actor';
 import styles from './NotesSection.module.css';
 
 export interface NotesSectionProps {
-	projectSlug: string;
+	projectRef: string;
 	itemKey: string;
 }
 
@@ -15,8 +15,8 @@ export interface NotesSectionProps {
  * An item's activity log: append-only entries written here or by an agent
  * through the MCP. Newest first, in the order the server returns them.
  */
-export function NotesSection({ projectSlug, itemKey }: NotesSectionProps): JSX.Element {
-	const notes = useMemo(() => new NotesCollection({ projectSlug, itemKey }), [projectSlug, itemKey]);
+export function NotesSection({ projectRef, itemKey }: NotesSectionProps): JSX.Element {
+	const notes = useMemo(() => new NotesCollection({ projectRef, itemKey }), [projectRef, itemKey]);
 	useModel(notes);
 
 	const [draft, setDraft] = useState('');

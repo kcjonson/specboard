@@ -54,11 +54,11 @@ The frontend is storage-agnostic—it uses the same API regardless of mode.
 ```
 Frontend (browser)
     │
-    ├── POST /api/projects/:projectSlug/folders     ← Add folder (only with LOCAL_STORAGE_ENABLED=true)
-    ├── PUT  /api/projects/:projectSlug {repository} ← Connect GitHub (cloud mode)
-    ├── GET  /api/projects/:projectSlug/tree        ← List files
-    ├── GET  /api/projects/:projectSlug/files?path= ← Read file
-    └── PUT  /api/projects/:projectSlug/files?path= ← Write file
+    ├── POST /api/projects/:owner/:project/folders     ← Add folder (only with LOCAL_STORAGE_ENABLED=true)
+    ├── PUT  /api/projects/:owner/:project {repository} ← Connect GitHub (cloud mode)
+    ├── GET  /api/projects/:owner/:project/tree        ← List files
+    ├── GET  /api/projects/:owner/:project/files?path= ← Read file
+    └── PUT  /api/projects/:owner/:project/files?path= ← Write file
     │
     ▼
 Backend (Hono)
@@ -158,7 +158,7 @@ Developer running the **Electron desktop app** for:
 
 **Note:** Local mode is not available in the browser. Browser users must use cloud mode.
 
-The API only registers `POST /api/projects/:projectSlug/folders` when it starts with `LOCAL_STORAGE_ENABLED=true`. Today only the dev compose stack sets it (the host repo is mounted at `/host/specboard`); the cloud build never does, so a web user cannot point a project at a path on the API container. A desktop shell that runs its own API process will need to set it too.
+The API only registers `POST /api/projects/:owner/:project/folders` when it starts with `LOCAL_STORAGE_ENABLED=true`. Today only the dev compose stack sets it (the host repo is mounted at `/host/specboard`); the cloud build never does, so a web user cannot point a project at a path on the API container. A desktop shell that runs its own API process will need to set it too.
 
 The file browser decides which empty state to show by asking `@specboard/platform` for the desktop bridge (`getPlatformBridge()`) and checking for `showOpenDialog`. With it, the browser offers "Add Folder" and opens that picker; without it (the browser, or a shell that exposes no picker) a project without a repository gets a note that pages come from a GitHub repository and a link to the project's settings dialog (`/projects?edit=<slug>`).
 
@@ -168,7 +168,7 @@ The file browser decides which empty state to show by asking `@specboard/platfor
 1. User clicks "Add Folder" in file browser
 2. Electron shows native OS folder picker (dialog.showOpenDialog)
 3. User selects folder: /Users/me/projects/my-app/docs
-4. Frontend calls POST /api/projects/:projectSlug/folders
+4. Frontend calls POST /api/projects/:owner/:project/folders
    Body: { "path": "/Users/me/projects/my-app/docs" }
 
 5. Backend validates:
@@ -286,7 +286,7 @@ A project that already has a repository cannot swap or remove it in v1; the API 
 
 ### Folder Management (Local Mode)
 
-#### POST /api/projects/:projectSlug/folders
+#### POST /api/projects/:owner/:project/folders
 
 Add a local folder to the project. Registered only when the API starts with `LOCAL_STORAGE_ENABLED=true`; 404 otherwise.
 
@@ -317,7 +317,7 @@ Add a local folder to the project. Registered only when the API starts with `LOC
 - `400 DIFFERENT_REPO` - Path is in a different git repository
 - `400 DUPLICATE_PATH` - Path already added
 
-#### DELETE /api/projects/:projectSlug/folders
+#### DELETE /api/projects/:owner/:project/folders
 
 Remove a root path from the project (does not delete files).
 
@@ -331,11 +331,11 @@ Remove a root path from the project (does not delete files).
 ### Repository Connection (Cloud Mode)
 
 There is no separate repository endpoint. The `repository` field of the project body
-connects one, on `POST /api/projects` at creation or on `PUT /api/projects/:projectSlug`
+connects one, on `POST /api/projects` at creation or on `PUT /api/projects/:owner/:project`
 afterwards. On update it is accepted only while the project has no storage configured
 (`storage_mode = 'none'`).
 
-**Request (`PUT /api/projects/:projectSlug`):**
+**Request (`PUT /api/projects/:owner/:project`):**
 ```json
 {
   "repository": {
@@ -372,8 +372,8 @@ along in the same request.
 The response does not wait for or report on the initial sync. It is started as a side
 effect; if it cannot start (GitHub not connected, sync invoke failed) the project's
 `syncStatus` becomes `failed` with the reason in `syncError`, and
-`POST /api/projects/:projectSlug/sync/initial` retries. Poll
-`GET /api/projects/:projectSlug/sync/status` for progress.
+`POST /api/projects/:owner/:project/sync/initial` retries. Poll
+`GET /api/projects/:owner/:project/sync/status` for progress.
 
 **Error Responses:**
 - `400` - Repository config fails validation (provider, GitHub owner/repo/branch naming, or a URL that is not `https://github.com/{owner}/{repo}`)
@@ -383,7 +383,7 @@ Disconnecting or replacing a repository is not supported in v1.
 
 ### File Operations
 
-#### GET /api/projects/:projectSlug/tree
+#### GET /api/projects/:owner/:project/tree
 
 Get file tree for all root paths.
 
@@ -418,11 +418,11 @@ Get file tree for all root paths.
 }
 ```
 
-#### GET /api/projects/:projectSlug/files?path=...
+#### GET /api/projects/:owner/:project/files?path=...
 
 Read file content. Path is passed as query parameter to handle special characters.
 
-#### PUT /api/projects/:projectSlug/files?path=...
+#### PUT /api/projects/:owner/:project/files?path=...
 
 Write file content. Path is passed as query parameter.
 

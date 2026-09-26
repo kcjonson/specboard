@@ -56,19 +56,29 @@ This specification defines the REST API endpoints and database schema for Specbo
 -- Users (core identity)
 -- username is immutable after creation
 -- email can be changed but must be unique across all users
+-- username, slug and names are NULL until onboarding claims them (email-only signup)
 CREATE TABLE users (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	username VARCHAR(255) NOT NULL UNIQUE,
-	first_name VARCHAR(255) NOT NULL,
-	last_name VARCHAR(255) NOT NULL,
+	username VARCHAR(255) UNIQUE,
+	slug VARCHAR(39),
+	-- The owner half of every project address (acme/roadmap). Same alphabet as
+	-- project slugs, unique site-wide, editable. Defaults to the username lowercased
+	-- with _ mapped to -. NULL exactly when username is (users_slug_matches_username),
+	-- so every user who can own a project is addressable.
+	first_name VARCHAR(255),
+	last_name VARCHAR(255),
 	email VARCHAR(255) NOT NULL UNIQUE,
 	email_verified BOOLEAN DEFAULT FALSE,
 	email_verified_at TIMESTAMPTZ,
 	phone_number VARCHAR(50),
 	avatar_url TEXT,
 	created_at TIMESTAMPTZ DEFAULT NOW(),
-	updated_at TIMESTAMPTZ DEFAULT NOW()
+	updated_at TIMESTAMPTZ DEFAULT NOW(),
+	CONSTRAINT users_slug_format CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND length(slug) <= 39),
+	CONSTRAINT users_slug_matches_username CHECK ((username IS NULL) = (slug IS NULL))
 );
+
+CREATE UNIQUE INDEX idx_users_slug ON users(slug) WHERE slug IS NOT NULL;
 
 -- User passwords (for username/password auth)
 CREATE TABLE user_passwords (
@@ -96,8 +106,9 @@ CREATE TABLE github_connections (
 CREATE TABLE projects (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	slug VARCHAR(63) NOT NULL,
-	-- URL identifier, e.g. "specboard". Every user-facing URL and API path addresses
-	-- a project by slug; the UUID above is internal only.
+	-- URL identifier, e.g. "roadmap", unique per owner. Every user-facing URL and API
+	-- path addresses a project as <owner slug>/<project slug> (acme/roadmap); the UUID
+	-- above is internal only.
 	key VARCHAR(10) NOT NULL,
 	-- Short uppercase prefix for this project's item keys, e.g. "SB" -> SB-345.
 	item_seq INTEGER NOT NULL DEFAULT 0,
@@ -118,8 +129,8 @@ CREATE TABLE projects (
 
 CREATE INDEX idx_projects_owner_id ON projects(owner_id);
 
--- Slugs and keys are unique per owner, matching the access-control scope, so a slug
--- resolves unambiguously for the signed-in user.
+-- Slugs and keys are unique per owner, which is exactly the URL namespace: the owner's
+-- user slug plus the project slug resolves to one project.
 CREATE UNIQUE INDEX idx_projects_owner_slug ON projects(owner_id, slug);
 CREATE UNIQUE INDEX idx_projects_owner_key ON projects(owner_id, key);
 
@@ -316,7 +327,7 @@ rows in rank order, and the response reports how many rows matched in the
 `X-Total-Count` header (exposed through CORS). The body stays a plain array.
 
 ```
-GET /api/projects/:projectSlug/items?status=done&limit=100
+GET /api/projects/:owner/:project/items?status=done&limit=100
 
 X-Total-Count: 842
 [ ...100 items, by rank... ]
@@ -361,12 +372,24 @@ same deep set as the body.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/me | Get current user |
-| PATCH | /api/me | Update current user |
-| GET | /api/me/emails | List user emails |
-| POST | /api/me/emails | Add email |
-| DELETE | /api/me/emails/:id | Remove email |
-| PATCH | /api/me/emails/:id/primary | Set primary email |
+| GET | /api/auth/me | Get current user, including `slug` |
+| PUT | /api/auth/me | Update names; at onboarding, claim `username` and `slug` together (once) |
+| GET | /api/users/:id | Get a user (`me` for yourself; admins can read anyone) |
+| PUT | /api/users/:id | Update a user; users can change their own names and `slug`, admins any field |
+| POST | /api/users | Create a user (admin); the slug defaults from the username, suffixed past collisions |
+
+A user slug is changed only through `PUT /api/users/:id`. Changing it moves every project
+URL the user owns and breaks `.mcp.json` bindings that name it; the old addresses 404
+(redirects are SPE-204). A taken slug is a 409.
+
+### Project addresses
+
+Every project-scoped path is `/api/projects/:owner/:project/...`, where `:owner` is the
+owner's user slug and `:project` the project slug. Handlers resolve the pair with
+`resolveProject(ownerSlug, projectSlug, userId)` (`shared/db/src/services/projects.ts`),
+the one resolver REST and MCP share. A malformed address is a 400; an address that
+doesn't exist or isn't the caller's is a 404, never a 403, so other users' projects
+can't be probed. Project responses carry `ownerSlug` next to `slug`.
 
 ### Projects
 
@@ -374,27 +397,27 @@ same deep set as the body.
 |--------|------|-------------|
 | GET | /api/projects | List user's projects |
 | POST | /api/projects | Create project |
-| GET | /api/projects/:projectSlug | Get project |
-| PUT | /api/projects/:projectSlug | Update project (name, description, slug, key, system prompt, repository: attach once) |
-| DELETE | /api/projects/:projectSlug | Delete project |
+| GET | /api/projects/:owner/:project | Get project |
+| PUT | /api/projects/:owner/:project | Update project (name, description, slug, key, system prompt, repository: attach once) |
+| DELETE | /api/projects/:owner/:project | Delete project |
 
 ### Project Storage (see [project-storage.md](./project-storage.md))
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/projects/:projectSlug/folders | Add local folder (only with `LOCAL_STORAGE_ENABLED=true`) |
-| DELETE | /api/projects/:projectSlug/folders | Remove folder from view |
-| POST | /api/projects/:projectSlug/sync | Sync a cloud project from GitHub |
-| POST | /api/projects/:projectSlug/sync/initial | First sync after connecting a repo |
-| GET | /api/projects/:projectSlug/sync/status | Poll sync progress |
+| POST | /api/projects/:owner/:project/folders | Add local folder (only with `LOCAL_STORAGE_ENABLED=true`) |
+| DELETE | /api/projects/:owner/:project/folders | Remove folder from view |
+| POST | /api/projects/:owner/:project/sync | Sync a cloud project from GitHub |
+| POST | /api/projects/:owner/:project/sync/initial | First sync after connecting a repo |
+| GET | /api/projects/:owner/:project/sync/status | Poll sync progress |
 
 ### Project Files
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET/POST | /api/projects/:projectSlug/tree | List files/folders |
-| GET | /api/projects/:projectSlug/files?path=... | Get file content |
-| PUT | /api/projects/:projectSlug/files?path=... | Save file |
+| GET/POST | /api/projects/:owner/:project/tree | List files/folders |
+| GET | /api/projects/:owner/:project/files?path=... | Get file content |
+| PUT | /api/projects/:owner/:project/files?path=... | Save file |
 
 ### Repositories (Legacy)
 
@@ -661,7 +684,7 @@ Improve selected text.
 | Write operations | 30/minute |
 | Search | 20/minute |
 | AI | 10/minute |
-| `GET /api/projects/:slug/items` | 600/minute |
+| `GET /api/projects/:owner/:project/items` | 600/minute |
 
 The items list gets its own budget because the planning board doesn't fetch it
 once per view: it fetches one window per status column, so a single poll (every

@@ -54,12 +54,12 @@ async function renderBoard(
 	props: { selectedItemKey?: string; onSelectItem?: (item: ItemModel | undefined) => void } = {}
 ): Promise<ReturnType<typeof render>> {
 	serve(counts);
-	const items = new ItemsCollection({ projectSlug: 'demo', limit: 100 });
+	const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 	await items.fetch();
 	return render(
 		<Board
 			items={items}
-			projectSlug="demo"
+			projectRef="acme/demo"
 			selectedItemKey={props.selectedItemKey}
 			flashingIds={new Set()}
 			dialogOpen={false}

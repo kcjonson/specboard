@@ -94,7 +94,7 @@ describe('updateProject with a repository', () => {
 		await expect(updateProject('proj-1', 'user-1', { repository: REPOSITORY })).rejects.toBeInstanceOf(ProjectHasRepositoryError);
 
 		expect(mockQuery).toHaveBeenCalledTimes(2);
-		expect(sqlOf(1)).toBe('SELECT * FROM projects WHERE id = $1 AND owner_id = $2');
+		expect(sqlOf(1)).toBe('SELECT p.*, u.slug AS owner_slug FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = $1 AND p.owner_id = $2');
 	});
 
 	it('returns null when the project is not the caller\'s', async () => {

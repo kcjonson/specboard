@@ -54,8 +54,8 @@ interface PullResponse {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class GitStatusModel extends Model {
-	/** Project slug for API calls */
-	@prop accessor projectSlug!: string;
+	/** Project ref (owner/project) for API calls */
+	@prop accessor projectRef!: string;
 
 	/** Current branch name */
 	@prop accessor branch!: string;
@@ -89,7 +89,7 @@ export class GitStatusModel extends Model {
 
 	constructor() {
 		super({
-			projectSlug: '',
+			projectRef: '',
 			branch: '',
 			ahead: 0,
 			behind: 0,
@@ -145,14 +145,14 @@ export class GitStatusModel extends Model {
 
 	/** Fetch git status from server */
 	async refresh(): Promise<void> {
-		if (!this.projectSlug) return;
+		if (!this.projectRef) return;
 
 		this.loading = true;
 		this.error = null;
 
 		try {
 			const response = await fetchClient.get<GitStatusResponse>(
-				`/api/projects/${this.projectSlug}/git/status`
+				`/api/projects/${this.projectRef}/git/status`
 			);
 
 			this.branch = response.branch;
@@ -168,14 +168,14 @@ export class GitStatusModel extends Model {
 
 	/** Commit all changes */
 	async commit(commitMessage?: string): Promise<{ sha: string } | null> {
-		if (!this.projectSlug) return null;
+		if (!this.projectRef) return null;
 
 		this.committing = true;
 		this.commitError = null;
 
 		try {
 			const response = await fetchClient.post<CommitResponse>(
-				`/api/projects/${this.projectSlug}/git/commit`,
+				`/api/projects/${this.projectRef}/git/commit`,
 				commitMessage ? { message: commitMessage } : {}
 			);
 
@@ -200,11 +200,11 @@ export class GitStatusModel extends Model {
 
 	/** Restore a deleted file from git */
 	async restore(path: string): Promise<boolean> {
-		if (!this.projectSlug) return false;
+		if (!this.projectRef) return false;
 
 		try {
 			const response = await fetchClient.post<RestoreResponse>(
-				`/api/projects/${this.projectSlug}/git/restore`,
+				`/api/projects/${this.projectRef}/git/restore`,
 				{ path }
 			);
 
@@ -222,14 +222,14 @@ export class GitStatusModel extends Model {
 
 	/** Pull latest changes from remote */
 	async pull(): Promise<{ success: boolean; commits?: number }> {
-		if (!this.projectSlug) return { success: false };
+		if (!this.projectRef) return { success: false };
 
 		this.pulling = true;
 		this.pullError = null;
 
 		try {
 			const response = await fetchClient.post<PullResponse>(
-				`/api/projects/${this.projectSlug}/git/pull`,
+				`/api/projects/${this.projectRef}/git/pull`,
 				{}
 			);
 

@@ -1,16 +1,18 @@
 /**
- * Human-friendly identifiers for projects and work items.
+ * Human-friendly identifiers for users, projects and work items.
  *
- * A project is addressed by its `slug` ("specboard") in every URL and API path.
+ * Every user has a `slug` ("acme"), unique site-wide. A project has a `slug`
+ * ("roadmap") unique per owner, so a project is addressed by the pair, written as a
+ * ref: `acme/roadmap`. Every URL and API path carries both halves.
  * A work item is addressed by its key — the project's short uppercase `key`
  * joined to a per-project sequential number, JIRA-style: `SB-345`.
- *
- * Slugs and keys are unique per owner, matching the access-control scope, so both
- * resolve unambiguously for the signed-in user.
  */
 
 /** Longest a project slug may be. Leaves room for a dedupe suffix under the column's 63. */
 export const MAX_PROJECT_SLUG_LENGTH = 55;
+
+/** Longest a user slug may be. Matches the users.slug column width. */
+export const MAX_USER_SLUG_LENGTH = 39;
 
 /** Longest a project key may be. Matches the column width and PROJECT_KEY_REGEX. */
 export const MAX_PROJECT_KEY_LENGTH = 10;
@@ -18,14 +20,18 @@ export const MAX_PROJECT_KEY_LENGTH = 10;
 /** Project keys are 2-10 chars: a leading letter so `KEY-123` parses, then alphanumerics. */
 const PROJECT_KEY_REGEX = /^[A-Z][A-Z0-9]{1,9}$/;
 
-/** Slugs are hyphen-separated alphanumeric groups: no leading, trailing, or doubled hyphens. */
-const PROJECT_SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/**
+ * Slugs (user and project alike) are hyphen-separated alphanumeric groups: no leading,
+ * trailing, or doubled hyphens.
+ */
+const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** Item keys look like `SB-345`. */
 const ITEM_KEY_REGEX = /^([A-Z][A-Z0-9]{1,9})-([0-9]{1,9})$/;
 
 /** Used when a name yields nothing usable (punctuation-only, or a leading digit). */
 const FALLBACK_SLUG = 'project';
+const FALLBACK_USER_SLUG = 'user';
 const FALLBACK_KEY = 'PRJ';
 
 /** Split a name into its alphanumeric words. */
@@ -72,7 +78,63 @@ export function deriveProjectKey(name: string): string {
 export function isValidProjectSlug(slug: unknown): slug is string {
 	return typeof slug === 'string'
 		&& slug.length <= MAX_PROJECT_SLUG_LENGTH
-		&& PROJECT_SLUG_REGEX.test(slug);
+		&& SLUG_REGEX.test(slug);
+}
+
+export function isValidUserSlug(slug: unknown): slug is string {
+	return typeof slug === 'string'
+		&& slug.length <= MAX_USER_SLUG_LENGTH
+		&& SLUG_REGEX.test(slug);
+}
+
+/**
+ * The slug a user gets when they haven't picked one: their username lowercased, with
+ * `_` mapped to `-` (usernames allow `[A-Za-z0-9_]`). Underscore runs and leading or
+ * trailing underscores would make invalid hyphens, so they collapse and trim, and an
+ * all-underscore username falls back to `user`. Migration 030 backfills with the same
+ * rule; keep the two in step.
+ */
+export function defaultUserSlug(username: string): string {
+	const slug = username
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-|-$/g, '')
+		.slice(0, MAX_USER_SLUG_LENGTH)
+		.replace(/-$/, '');
+	return slug || FALLBACK_USER_SLUG;
+}
+
+/**
+ * A project address: the owner's user slug and the project's slug. `owner` is null
+ * only for a bare MCP reference (`roadmap`), which the MCP server expands to the
+ * caller's own slug before resolving; web and REST addresses always carry it.
+ */
+export interface ProjectRef {
+	owner: string | null;
+	project: string;
+}
+
+/** Join an owner and project slug into the `acme/roadmap` form URLs and MCP use. */
+export function formatProjectRef(owner: string, project: string): string {
+	return `${owner}/${project}`;
+}
+
+/**
+ * Parse `acme/roadmap` or a bare `roadmap`, or null if it is neither. Trimmed and
+ * lowercased first, so a hand-typed `Acme/Roadmap` in an .mcp.json resolves the same.
+ */
+export function parseProjectRef(raw: unknown): ProjectRef | null {
+	if (typeof raw !== 'string') return null;
+	const parts = raw.trim().toLowerCase().split('/');
+	if (parts.length === 1) {
+		const [project] = parts as [string];
+		return isValidProjectSlug(project) ? { owner: null, project } : null;
+	}
+	if (parts.length === 2) {
+		const [owner, project] = parts as [string, string];
+		return isValidUserSlug(owner) && isValidProjectSlug(project) ? { owner, project } : null;
+	}
+	return null;
 }
 
 export function isValidProjectKey(key: unknown): key is string {
@@ -103,18 +165,19 @@ export function parseItemKey(key: string): { projectKey: string; number: number 
  * `docs` -> `docs-2` -> `docs-3`, `DOC` -> `DOC2` -> `DOC3`.
  *
  * Truncating a long base to make room for the suffix can land the cut on a hyphen,
- * which would produce `foo--2` — invalid by PROJECT_SLUG_REGEX and rejected by the
+ * which would produce `foo--2` — invalid by SLUG_REGEX and rejected by the
  * projects_slug_format CHECK. Re-trim after the cut so the result is always valid.
  */
-export function withSuffix(base: string, attempt: number, style: 'slug' | 'key'): string {
+export function withSuffix(base: string, attempt: number, style: 'slug' | 'user-slug' | 'key'): string {
 	if (attempt < 2) return base;
 	const suffix = String(attempt);
 	if (style === 'key') {
 		return `${base.slice(0, MAX_PROJECT_KEY_LENGTH - suffix.length)}${suffix}`;
 	}
+	const maxLength = style === 'user-slug' ? MAX_USER_SLUG_LENGTH : MAX_PROJECT_SLUG_LENGTH;
 	// Single `-` for the same reason as slugifyProjectName: a valid slug never contains
 	// two in a row, so matching `-+` here would only add backtracking, never coverage.
-	const stem = base.slice(0, MAX_PROJECT_SLUG_LENGTH - suffix.length - 1).replace(/-$/, '');
+	const stem = base.slice(0, maxLength - suffix.length - 1).replace(/-$/, '');
 	return `${stem}-${suffix}`;
 }
 

@@ -21,7 +21,7 @@ interface ColumnProps {
 	count: number;
 	/** Present while the server holds more of this status than the column shows. */
 	more?: ColumnMore;
-	projectSlug: string;
+	projectRef: string;
 	selectedItemKey?: string;
 	flashingIds: Set<string>;
 	/** Whether cards can be dropped into this column (the Blocked column is display-only). */
@@ -39,7 +39,7 @@ export function Column({
 	items,
 	count,
 	more,
-	projectSlug,
+	projectRef,
 	selectedItemKey,
 	flashingIds,
 	droppable = true,
@@ -141,7 +141,7 @@ export function Column({
 								)}
 								<ItemCard
 									item={item}
-									projectSlug={projectSlug}
+									projectRef={projectRef}
 									// A child row a search turned up is ranked among its parent's
 									// children, not among this column's cards, so there is no
 									// position here to drag it into. It still opens and selects.
