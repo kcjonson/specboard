@@ -1,6 +1,7 @@
 /**
  * Adding a folder stats an arbitrary host path and runs git there, so that route must not
  * exist in the cloud build. LOCAL_STORAGE_ENABLED gates it, read once at registration.
+ * Where the routes do exist, a cloud project must refuse both of them.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -21,7 +22,14 @@ vi.mock('@specboard/auth', () => ({
 	SESSION_COOKIE_NAME: 'session',
 }));
 
-import { resolveProjectSlug } from '@specboard/db';
+vi.mock('../../services/storage/git-utils.ts', () => ({
+	findRepoRoot: vi.fn(async () => '/etc'),
+	getCurrentBranch: vi.fn(async () => 'main'),
+	getRelativePath: vi.fn(() => '/'),
+}));
+
+import { getSession } from '@specboard/auth';
+import { addFolder, removeFolder, resolveProjectSlug } from '@specboard/db';
 import { registerFolderRoutes } from './folder-handlers.ts';
 
 const FOLDERS_URL = 'http://localhost/api/projects/specboard/folders?path=/docs';
@@ -33,11 +41,11 @@ function createApp(): Hono {
 	return app;
 }
 
-function request(app: Hono, method: 'POST' | 'DELETE'): Promise<Response> {
+function request(app: Hono, method: 'POST' | 'DELETE', cookie?: string): Promise<Response> {
 	return Promise.resolve(
 		app.request(FOLDERS_URL, {
 			method,
-			headers: { 'Content-Type': 'application/json' },
+			headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
 			body: method === 'POST' ? JSON.stringify({ path: '/etc' }) : undefined,
 		})
 	);
@@ -85,5 +93,38 @@ describe('registerFolderRoutes', () => {
 		vi.stubEnv('LOCAL_STORAGE_ENABLED', '');
 
 		expect((await request(createApp(), 'DELETE')).status).toBe(401);
+	});
+});
+
+describe('folder routes on a cloud project', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.stubEnv('LOCAL_STORAGE_ENABLED', 'true');
+		vi.mocked(getSession).mockResolvedValue({ userId: 'user-1' } as never);
+		vi.mocked(resolveProjectSlug).mockResolvedValue({ id: 'proj-1' } as never);
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
+	it('answers 409 CLOUD_PROJECT when adding a folder', async () => {
+		vi.mocked(addFolder).mockRejectedValue(new Error('CLOUD_PROJECT'));
+
+		const res = await request(createApp(), 'POST', 'session=abc');
+
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({ code: 'CLOUD_PROJECT' });
+		expect(addFolder).toHaveBeenCalledWith('proj-1', 'user-1', { repoPath: '/etc', rootPath: '/', branch: 'main' });
+	});
+
+	it('answers 409 CLOUD_PROJECT when removing a folder', async () => {
+		vi.mocked(removeFolder).mockRejectedValue(new Error('CLOUD_PROJECT'));
+
+		const res = await request(createApp(), 'DELETE', 'session=abc');
+
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({ code: 'CLOUD_PROJECT' });
+		expect(removeFolder).toHaveBeenCalledWith('proj-1', 'user-1', '/docs');
 	});
 });

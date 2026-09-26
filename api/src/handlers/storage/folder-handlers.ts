@@ -10,6 +10,11 @@ import { isValidProjectSlug } from '@specboard/core/identifiers';
 import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/storage/git-utils.ts';
 import { getUserId } from './utils.ts';
 
+const CLOUD_PROJECT_RESPONSE = {
+	error: 'Folders cannot be added to or removed from a project connected to a cloud repository',
+	code: 'CLOUD_PROJECT',
+} as const;
+
 /**
  * Adding a folder stats an arbitrary path on the API host and runs git there, so the route
  * only exists where a repository is mounted (dev compose). Removing one is a plain DB write.
@@ -124,6 +129,10 @@ async function handleAddFolder(context: Context, redis: Redis): Promise<Response
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 
+		if (message === 'CLOUD_PROJECT') {
+			return context.json(CLOUD_PROJECT_RESPONSE, 409);
+		}
+
 		if (message === 'DIFFERENT_REPO') {
 			return context.json(
 				{ error: 'Folder must be in the same git repository as existing folders', code: 'DIFFERENT_REPO' },
@@ -190,6 +199,9 @@ async function handleRemoveFolder(context: Context, redis: Redis): Promise<Respo
 			rootPaths: project.rootPaths,
 		});
 	} catch (error) {
+		if (error instanceof Error && error.message === 'CLOUD_PROJECT') {
+			return context.json(CLOUD_PROJECT_RESPONSE, 409);
+		}
 		console.error('Failed to remove folder:', error);
 		return context.json({ error: 'Server error' }, 500);
 	}

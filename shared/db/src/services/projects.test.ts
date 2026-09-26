@@ -1,6 +1,7 @@
 /**
  * Project service tests — attaching a repository through updateProject: the SQL it
  * builds, the storage_mode guard, and how a missed guard is told apart from not-found.
+ * Also the mirror guard on the local-mode folder service, which must leave cloud projects alone.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -10,10 +11,18 @@ vi.mock('../index.ts', () => ({
 	transaction: vi.fn(),
 }));
 
-import { query } from '../index.ts';
-import { updateProject, ProjectHasRepositoryError, type RepositoryConfigInput } from './projects.ts';
+import { query, transaction } from '../index.ts';
+import {
+	addFolder,
+	removeFolder,
+	updateProject,
+	ProjectHasRepositoryError,
+	type RepositoryConfigInput,
+} from './projects.ts';
 
 const mockQuery = vi.mocked(query);
+const clientQuery = vi.fn();
+vi.mocked(transaction).mockImplementation((fn) => fn({ query: clientQuery } as never));
 
 const REPOSITORY: RepositoryConfigInput = {
 	provider: 'github',
@@ -48,8 +57,20 @@ function sqlOf(call: number): string {
 	return String(mockQuery.mock.calls[call]![0]).replace(/\s+/g, ' ').trim();
 }
 
+const CLOUD_ROW = row({
+	storage_mode: 'cloud',
+	repository: {
+		type: 'cloud',
+		remote: { provider: 'github', owner: 'acme-corp', repo: 'documentation', url: REPOSITORY.url },
+		branch: 'main',
+	},
+	root_paths: ['/'],
+	sync_status: 'completed',
+});
+
 beforeEach(() => {
 	mockQuery.mockReset();
+	clientQuery.mockReset();
 });
 
 describe('updateProject with a repository', () => {
@@ -116,5 +137,62 @@ describe('updateProject without a repository', () => {
 		const sql = sqlOf(0);
 		expect(sql).toContain('SET slug = $1, updated_at = NOW() WHERE id = $2 AND owner_id = $3');
 		expect(sql).not.toContain('storage_mode');
+	});
+});
+
+describe('addFolder', () => {
+	const FOLDER = { repoPath: '/home/me/app', rootPath: '/docs', branch: 'main' };
+
+	it('refuses a cloud project and never writes', async () => {
+		clientQuery.mockResolvedValueOnce({ rows: [CLOUD_ROW], rowCount: 1 });
+
+		await expect(addFolder('proj-1', 'user-1', FOLDER)).rejects.toThrow('CLOUD_PROJECT');
+
+		expect(clientQuery).toHaveBeenCalledTimes(1);
+		expect(String(clientQuery.mock.calls[0]![0])).toContain('FOR UPDATE');
+	});
+
+	it('switches a project with no storage to local mode', async () => {
+		clientQuery
+			.mockResolvedValueOnce({ rows: [row()], rowCount: 1 })
+			.mockResolvedValueOnce({ rows: [row({ storage_mode: 'local', root_paths: ['/docs'] })], rowCount: 1 });
+
+		const project = await addFolder('proj-1', 'user-1', FOLDER);
+
+		expect(project?.storageMode).toBe('local');
+		expect(String(clientQuery.mock.calls[1]![0])).toContain("SET storage_mode = 'local'");
+	});
+});
+
+describe('removeFolder', () => {
+	it('refuses a cloud project and never writes', async () => {
+		clientQuery.mockResolvedValueOnce({ rows: [CLOUD_ROW], rowCount: 1 });
+
+		await expect(removeFolder('proj-1', 'user-1', '/')).rejects.toThrow('CLOUD_PROJECT');
+
+		expect(clientQuery).toHaveBeenCalledTimes(1);
+	});
+
+	it('still removes a local project\'s last folder', async () => {
+		const local = row({
+			storage_mode: 'local',
+			repository: { type: 'local', localPath: '/home/me/app', branch: 'main' },
+			root_paths: ['/docs'],
+		});
+		clientQuery
+			.mockResolvedValueOnce({ rows: [local], rowCount: 1 })
+			.mockResolvedValueOnce({ rows: [row()], rowCount: 1 });
+
+		const project = await removeFolder('proj-1', 'user-1', '/docs');
+
+		expect(project?.storageMode).toBe('none');
+		expect(clientQuery.mock.calls[1]![1]).toEqual(['[]', 'proj-1', 'user-1']);
+	});
+
+	it('returns null when the project is not the caller\'s', async () => {
+		clientQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+		await expect(removeFolder('proj-1', 'user-2', '/docs')).resolves.toBeNull();
+		expect(clientQuery).toHaveBeenCalledTimes(1);
 	});
 });
