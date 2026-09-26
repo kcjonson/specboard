@@ -72,7 +72,7 @@ describe('createItem', () => {
 		expect(sql).toContain('INSERT INTO items');
 		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $1 AND parent_id IS NULL)');
 		expect(sql).toContain('UPDATE projects SET item_seq = item_seq + 1');
-		expect(params).toEqual(['proj-1', null, 'epic', 'Epic A', null, 'ready', 'not_started', ORIGIN_JSON]);
+		expect(params).toEqual(['proj-1', null, 'epic', 'Epic A', null, 'ready', 'not_started', ORIGIN_JSON, 'default']);
 	});
 
 	it('computes rank inside the INSERT for child items scoped to the parent', async () => {
@@ -83,7 +83,7 @@ describe('createItem', () => {
 		expect(mockQuery).toHaveBeenCalledTimes(1);
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = (SELECT id FROM parent))');
-		expect(params).toEqual(['proj-1', 7, 'task', 'Task A', null, 'ready', 'not_started', ORIGIN_JSON]);
+		expect(params).toEqual(['proj-1', 7, 'task', 'Task A', null, 'ready', 'not_started', ORIGIN_JSON, 'default']);
 	});
 
 	it('uses an explicit rank verbatim when provided', async () => {
@@ -93,8 +93,21 @@ describe('createItem', () => {
 
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).not.toContain('MAX(rank)');
-		expect(sql).toContain('$9');
-		expect(params).toEqual(['proj-1', null, 'epic', 'Ranked', null, 'ready', 'not_started', ORIGIN_JSON, 2.5]);
+		expect(sql).toContain('$10');
+		expect(params).toEqual(['proj-1', null, 'epic', 'Ranked', null, 'ready', 'not_started', ORIGIN_JSON, 'default', 2.5]);
+	});
+
+	it('records a named status as explicit and an unnamed one as default, whichever it is', async () => {
+		mockQuery.mockResolvedValue(insertResult());
+
+		await createItem('proj-1', { title: 'Named', status: 'ready', origin: ORIGIN });
+		await createItem('proj-1', { title: 'Started', status: 'in_progress', origin: ORIGIN });
+		await createItem('proj-1', { title: 'Unnamed', origin: ORIGIN });
+
+		expect(mockQuery.mock.calls.map(([, params]) => (params as unknown[])[8])).toEqual(['explicit', 'explicit', 'default']);
+		const [sql] = mockQuery.mock.calls[0]!;
+		expect(sql).toContain('INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, status_source, origin, rank, number)');
+		expect(sql).toContain('$7, $9, $8::jsonb');
 	});
 
 	it('snapshots discoveredFrom into origin before the INSERT', async () => {
@@ -131,6 +144,7 @@ describe('createItems', () => {
 		expect(mockQuery).toHaveBeenCalledTimes(1);
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) FROM items WHERE parent_id = (SELECT id FROM parent))');
+		expect(sql).toContain("v.description, 'ready', 'not_started', 'default', $7::jsonb");
 		expect(sql).toContain('row_number() OVER (ORDER BY v.ord)');
 		expect(sql).toContain('WITH ORDINALITY');
 		expect(sql).toContain('UPDATE projects SET item_seq = item_seq + $6');
@@ -622,7 +636,7 @@ describe('parent status rollup', () => {
 
 		const [[sql, params]] = rollupCalls() as [[string, unknown[]]];
 		expect(sql).toContain(`SET status = CASE WHEN (SELECT started FROM children) THEN 'in_progress' ELSE 'ready' END`);
-		expect(sql).toContain(`(status = 'ready' AND (SELECT started FROM children))`);
+		expect(sql).toContain(`(status = 'ready' AND status_source <> 'explicit' AND (SELECT started FROM children))`);
 		expect(sql).toContain(`(status = 'in_progress' AND NOT (SELECT started FROM children)`);
 		expect(params![0]).toBe('epic-1');
 	});
@@ -1010,7 +1024,7 @@ describe('status source', () => {
 		expect(sql).not.toContain('status_source');
 	});
 
-	it('the lifecycle routes are explicit, unconditionally', async () => {
+	it('the lifecycle routes are explicit, except the Ready an unblock restores', async () => {
 		mockClientQuery.mockResolvedValue({ rows: [{ id: 'item-1', parent_id: null }], rowCount: 1 });
 		mockQuery.mockImplementation((async (sql: string) => (
 			sql.startsWith('UPDATE items') ? { rows: [{ parent_id: null }], rowCount: 1 } : { rows: [detailRow], rowCount: 1 }
@@ -1025,6 +1039,8 @@ describe('status source', () => {
 			.map(([sql]) => sql as string)
 			.filter((sql) => sql.startsWith('UPDATE items SET status'));
 		expect(writes).toHaveLength(4);
-		for (const sql of writes) expect(sql).toContain(`status_source = 'explicit'`);
+		const unblock = writes.find((sql) => sql.startsWith(`UPDATE items SET status = 'ready'`))!;
+		expect(unblock).toContain(`status_source = CASE WHEN status = 'blocked' THEN 'default' ELSE 'explicit' END`);
+		for (const sql of writes.filter((w) => w !== unblock)) expect(sql).toContain(`status_source = 'explicit'`);
 	});
 });

@@ -93,14 +93,19 @@ act.
 
 A parent's board status follows its children between `ready` and `in_progress`, and follows them
 back: it is in progress while any child is `in_progress`, `in_review`, or `done`, and returns to
-ready when none is, recomputed on every child status change, move, and delete. Two things hold a
-parent in progress regardless of its children: its own active sub_status (`scoping`,
-`in_development`, `needs_input`, `paused`, `pr_open`), and an explicit status write. An epic set to
-in_progress with `update_item status=in_progress` or dragged there on the board stays until its
-status is next written; the rollup only rolls back an in_progress that it or a sub_status put there.
-So an epic in progress through sub_status alone returns to ready when its sub_status goes back to
-`not_started` with no started children, and one the rollup promoted returns with its children.
-`blocked`, `in_review`, and `done` parents are never touched. See
+ready when none is, recomputed on every child create, status change, move, and delete. The rollup
+never undoes a status somebody chose, in either direction. Two things hold a parent in progress
+regardless of its children: its own active sub_status (`scoping`, `in_development`, `needs_input`,
+`paused`, `pr_open`), and an explicit status write. An epic set to in_progress with `update_item
+status=in_progress` or dragged there on the board stays until its status is next written; the rollup
+only rolls back an in_progress that it or a sub_status put there. Likewise an epic put in Ready on
+purpose (`update_item status=ready` on an item that isn't blocked, a drag to Ready, or a create that
+names `ready`) stays there when its children start. A Ready nobody chose is still promoted: a new
+item created without a status (`create_item` and `create_items` never set one), one an unblock
+returned to Ready, and one the rollup rolled back. So an epic in progress through sub_status alone
+returns to ready when its sub_status goes back to `not_started` with no started children, and one
+the rollup promoted returns with its children. `blocked`, `in_review`, and `done` parents are never
+touched. See
 [item-relationships.md](item-relationships.md#parent-itemsparent_id).
 
 ---

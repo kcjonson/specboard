@@ -511,12 +511,13 @@ const ACTIVE_SUB_STATUSES: SubStatus[] = ['scoping', 'in_development', 'needs_in
  * A level that holds still doesn't end the walk: an explicit in_progress parent can sit
  * under a ready grandparent, and only a recompute of the grandparent notices.
  *
- * It only moves an item between ready and in_progress: ready rolls up when any child
- * has started; in_progress rolls back when none has, unless the item's
- * own sub_status says it is active or nobody but the rollup or a sub_status put it in
- * progress (status_source 'rollup' or 'sub_status'). An explicit in_progress (a drag, a
- * start) is the caller's call and stays. Blocked, in_review, and done are explicit states
- * and are never touched. A rollback ends worker episodes like any other transition out
+ * It only moves an item between ready and in_progress, and never undoes a status a
+ * caller named. Ready rolls up when any child has started, unless someone put it in
+ * Ready on purpose (status_source 'explicit'; a default or rolled-back Ready is fair
+ * game). In_progress rolls back when no child has started, unless the item's own
+ * sub_status says it is active or someone other than the rollup or a sub_status put it
+ * in progress (status_source not 'rollup' or 'sub_status'). Blocked, in_review, and
+ * done are explicit states and are never touched. A rollback ends worker episodes like any other transition out
  * of in_progress.
  *
  * `touch` says the first level's children changed (membership or a child's status), so
@@ -568,7 +569,7 @@ async function rollUpLevel(client: pg.PoolClient, itemId: string, touch: boolean
 		SET status = CASE WHEN (SELECT started FROM children) THEN 'in_progress' ELSE 'ready' END,
 			status_source = 'rollup', updated_at = NOW()
 		WHERE id = $1 AND (
-			(status = 'ready' AND (SELECT started FROM children))
+			(status = 'ready' AND status_source <> 'explicit' AND (SELECT started FROM children))
 			OR (status = 'in_progress' AND NOT (SELECT started FROM children)
 				AND status_source IN ('rollup', 'sub_status')
 				AND (sub_status IS NULL OR sub_status <> ALL($3::text[])))
@@ -601,7 +602,10 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 	// Rank within the sibling group (project for top-level, parent for children), computed
 	// inside the INSERT to avoid a read-modify-write race. Concurrent inserts can still
 	// collide on a rank; the created_at/id ORDER BY tiebreakers keep ordering stable anyway.
-	const values: unknown[] = [projectId, parentNumber, data.type || 'epic', data.title, data.description || null, initialStatus, subStatus, JSON.stringify(origin)];
+	// A create that names no status lands on Ready by default, which nobody chose, so the
+	// rollup may still promote it; a named status is the caller's.
+	const statusSource: StatusSource = data.status === undefined ? 'default' : 'explicit';
+	const values: unknown[] = [projectId, parentNumber, data.type || 'epic', data.title, data.description || null, initialStatus, subStatus, JSON.stringify(origin), statusSource];
 	let rankSql: string;
 	if (data.rank !== undefined) {
 		values.push(data.rank);
@@ -624,8 +628,8 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 			WHERE id = $1 AND ($2::int IS NULL OR EXISTS (SELECT 1 FROM parent))
 			RETURNING id, key, item_seq
 		), inserted AS (
-			INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, origin, rank, number)
-			SELECT $1, (SELECT id FROM parent), $3, $4, $5, $6, $7, $8::jsonb, ${rankSql}, a.item_seq
+			INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, status_source, origin, rank, number)
+			SELECT $1, (SELECT id FROM parent), $3, $4, $5, $6, $7, $9, $8::jsonb, ${rankSql}, a.item_seq
 			FROM allocated a
 			RETURNING *
 		)
@@ -693,8 +697,8 @@ export async function createItems(
 			WHERE id = $1 AND EXISTS (SELECT 1 FROM parent)
 			RETURNING key, item_seq - $6 AS base
 		), inserted AS (
-			INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, origin, rank, number)
-			SELECT $1, (SELECT id FROM parent), v.type, v.title, v.description, 'ready', 'not_started', $7::jsonb,
+			INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, status_source, origin, rank, number)
+			SELECT $1, (SELECT id FROM parent), v.type, v.title, v.description, 'ready', 'not_started', 'default', $7::jsonb,
 			       (SELECT COALESCE(MAX(rank), 0) FROM items WHERE parent_id = (SELECT id FROM parent)) + row_number() OVER (ORDER BY v.ord),
 			       a.base + row_number() OVER (ORDER BY v.ord)
 			FROM unnest($3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS v(type, title, description, ord)
@@ -938,10 +942,19 @@ export async function blockItem(projectId: string, itemNumber: number): Promise<
 	return getItemByNumber(projectId, itemNumber);
 }
 
-/** Unblock an item back to ready. Ends worker episodes (no longer being worked). */
+/**
+ * Unblock an item back to ready. Ends worker episodes (no longer being worked).
+ *
+ * Lifting a block restores the default Ready, which nobody chose, so the rollup may
+ * still promote it. Anything else sent here (MCP routes a bare update_item
+ * status=ready to it) is a deliberate move to Ready and is explicit. The SET reads
+ * the row as it was, so `status` in the CASE is the old value.
+ */
 export async function unblockItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const result = await query<{ parent_id: string | null }>(
-		`UPDATE items SET status = 'ready', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
+		`UPDATE items SET status = 'ready',
+			status_source = CASE WHEN status = 'blocked' THEN 'default' ELSE 'explicit' END, updated_at = NOW()
+		WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
 		[itemNumber, projectId]
 	);
 	const row = result.rows[0];

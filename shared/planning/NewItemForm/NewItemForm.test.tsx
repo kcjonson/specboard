@@ -77,6 +77,22 @@ describe('NewItemForm', () => {
 		});
 	});
 
+	it('leaves status out when it is Ready, so the server records a default Ready the rollup can promote', () => {
+		const onCreate = vi.fn();
+		const { container } = render(<NewItemForm projectRef="acme/specboard" createType="task" onCreate={onCreate} />);
+
+		fireEvent.input(titleField(container), { target: { value: 'Plain task' } });
+		fireEvent.click(createButton(container));
+
+		expect(onCreate.mock.calls.at(0)?.[0]).not.toHaveProperty('status');
+
+		fireEvent.change(statusField(container), { target: { value: 'in_progress' } });
+		fireEvent.change(statusField(container), { target: { value: 'ready' } });
+		fireEvent.click(createButton(container));
+
+		expect(onCreate.mock.calls.at(1)?.[0]).not.toHaveProperty('status');
+	});
+
 	it('passes a parentKey through when one was supplied', () => {
 		const onCreate = vi.fn();
 		const { container } = render(<NewItemForm projectRef="acme/specboard" createType="task" parentKey="SB-7" onCreate={onCreate} />);

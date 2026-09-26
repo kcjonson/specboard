@@ -176,8 +176,12 @@ export interface Project {
 export type ItemStatus = 'ready' | 'in_progress' | 'blocked' | 'in_review' | 'done';
 export type ItemType = 'epic' | 'task' | 'bug';
 export type SubStatus = 'not_started' | 'scoping' | 'in_development' | 'paused' | 'needs_input' | 'pr_open' | 'complete';
-/** Who set an item's current status. The parent rollup only demotes a status that it or a sub_status set. */
-export type StatusSource = 'explicit' | 'rollup' | 'sub_status';
+/**
+ * Who set an item's current status. `default` means nobody chose it: a create that named
+ * no status, or the Ready an unblock restores. The parent rollup promotes any ready item
+ * but an explicit one, and only demotes an in_progress that it or a sub_status set.
+ */
+export type StatusSource = 'explicit' | 'rollup' | 'sub_status' | 'default';
 export type SpecType = 'product' | 'technical';
 
 /**

@@ -131,7 +131,8 @@ Library` without a second request.
   child's status; a bulk create recomputes its parent once for the whole batch.
   The rollup only moves a parent between `ready` and `in_progress`: a `ready`
   parent goes to `in_progress` once any child is `in_progress`, `in_review`, or
-  `done`, and an `in_progress` parent goes back to `ready` once none is. A `done`
+  `done`, unless somebody put it in Ready on purpose (below), and an
+  `in_progress` parent goes back to `ready` once none is. A `done`
   child counts, so finishing the last active task doesn't drop an epic that's
   awaiting its close back into Ready; a `blocked` child doesn't, since nobody is
   working it. Three things stop a rollback: the parent's own `sub_status` being
@@ -181,46 +182,64 @@ Library` without a second request.
   concurrent change), so the web client's restating PUTs on every title edit
   don't flash the parent on other screens. The lifecycle routes touch
   unconditionally, since none of them is an echo.
-- **The rollup only demotes what it or a sub_status put there**
-  (`items.status_source`, migration 032). "Dragged epics should stay put": an
+- **The rollup never undoes a status somebody chose** (`items.status_source`,
+  migration 032). "Dragged epics should stay put", in both directions: an
   explicit status write is the user's call, and the rollup must not undo it. An
   epic dragged to In Progress with no started children keeps `sub_status
   not_started`, so before 032 it looked exactly like one the rollup had promoted
   and dropped back to Ready on the next child write, creating its first ready
-  task included. The column records who set the current status, and the
-  rollback additionally requires `status_source IN ('rollup', 'sub_status')`.
-  Per write path:
-  - `explicit`: `startItem`, `completeItem`, `blockItem`, and `unblockItem`,
-    unconditionally, since each names a transition for that item (MCP
-    `update_item status=in_progress|done|blocked`, and a bare `status=ready`,
-    route to them, as do the REST lifecycle routes). A create takes the column
-    default, `explicit`. `updateItem` with a status and either no `sub_status`
-    or one that derives something else, which covers a board drag and the
-    drawer's status select.
+  task included; and an epic dragged back to Ready went straight to In Progress
+  again the next time a child started. The column records who set the current
+  status. A promotion requires `status_source <> 'explicit'`, and a rollback
+  requires `status_source IN ('rollup', 'sub_status')`. Per write path:
+  - `explicit`: `startItem`, `completeItem`, and `blockItem`, unconditionally,
+    since each names a transition for that item (MCP `update_item
+    status=in_progress|done|blocked` routes to them, as do the REST lifecycle
+    routes). `unblockItem` on an item that wasn't `blocked`, which is what MCP's
+    bare `update_item status=ready` is. A create that names a status, `ready`
+    included. `updateItem` with a status and either no `sub_status` or one that
+    derives something else, which covers a board drag and the drawer's status
+    select.
+  - `default`: nobody chose it. A create that names no status: MCP
+    `create_item`, `create_items`, and the web's new-item form left on Ready
+    (the form sends a status only when it's something else, since its select
+    can't tell a chosen Ready from the one it opened on). `unblockItem` lifting
+    a `blocked` item, since the Ready it restores is where the item falls back
+    to, not a place anyone put it. This is also the column default, so rows
+    written without a source (the seed script, the previous release during a
+    rollout) land here.
   - `sub_status`: `updateItem` whose status is the one its `sub_status` derives
     (`scoping`/`in_development`/`pr_open` to `in_progress`, `complete` to
     `done`), whether the service derived it or the caller sent both. The drawer
     mirrors the derive client-side and PUTs both, so it lands the same as an MCP
     `sub_status`-only write. A caller-named status that disagrees still wins, as
     it always has, and is explicit.
-  - `rollup`: every status the rollup writes, promotions and rollbacks alike.
+  - `rollup`: every status the rollup writes, promotions and rollbacks alike,
+    so a Ready the rollup rolled back to is promotable again.
   - `updateItem` records a source only when the status value **changes**. The
     web client saves by PUTting the whole model, so a drag sends `status` and
     echoes the current `sub_status`, but so does every title edit, description
     edit, and in-column reorder, each restating the status it already has.
     Counting the echo as explicit would silently pin a rollup-promoted epic in
-    progress the first time someone fixed a typo in it. The lifecycle routes are
-    never an echo, so they don't need the check: MCP `update_item
-    status=in_progress` on an epic the rollup already promoted makes it
-    explicit.
+    progress, or a default Ready in Ready, the first time someone fixed a typo
+    in it. The lifecycle routes are never an echo, so they don't need the
+    check: MCP `update_item status=in_progress` on an epic the rollup already
+    promoted makes it explicit.
 
-  An explicit `in_progress` stays until its status is next written. Dragging it
-  to Ready makes that explicit too, but promotion isn't gated on the source, so
-  the next child write moves it back to In Progress if a child has started; only
-  the rollback is. Rows that existed before 032 were backfilled `explicit`,
-  because nothing says which in_progress parents the rollup promoted and which
-  someone dragged; the cost is that previously promoted epics stay in progress
-  when their children stop, until touched.
+  `default` reads the same way in both directions: a default `ready` is
+  promotable, and a default `in_progress` (only a row written without a source
+  can have one) is not rolled back, since nothing says the rollup put it
+  there. An explicit status stays until its status is next written. Rows that
+  existed before 032 were backfilled by status, each to the reading under which
+  nothing behaves differently at deploy: `ready` rows `default` (promotable,
+  as every Ready was), `in_progress` rows `explicit` (nothing says which
+  in_progress parents the rollup promoted and which someone dragged; the cost
+  is that previously promoted epics stay in progress when their children
+  stop, until touched), and `blocked`, `in_review`, and `done` rows `default`.
+  The rollup never touches those three, and every current write that moves an
+  item out of them records a fresh source, so their value only matters for a
+  status the previous release moves during the rollout, where `default` keeps
+  it behaving as that release expects.
 
 ## Origin (`items.origin`, migration 025)
 
