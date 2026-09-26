@@ -9,7 +9,11 @@ import type { McpTokenPayload } from '@specboard/auth';
 
 const state = vi.hoisted(() => ({
 	token: {} as McpTokenPayload,
-	servers: [] as Array<{ handlers: Map<unknown, (request: unknown) => Promise<unknown>>; close: () => Promise<void> }>,
+	servers: [] as Array<{
+		options: { instructions?: string };
+		handlers: Map<unknown, (request: unknown) => Promise<unknown>>;
+		close: () => Promise<void>;
+	}>,
 	transports: [] as Array<{ handleRequest: ReturnType<typeof vi.fn> }>,
 }));
 
@@ -30,7 +34,9 @@ vi.mock('./tools/projects.ts', () => ({ projectTools: [], handleProjectTool: vi.
 vi.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
 	Server: class {
 		handlers = new Map<unknown, (request: unknown) => Promise<unknown>>();
-		constructor() {
+		options: { instructions?: string };
+		constructor(_info: unknown, options: { instructions?: string }) {
+			this.options = options;
 			state.servers.push(this);
 		}
 		setRequestHandler(schema: unknown, handler: (request: unknown) => Promise<unknown>): void {
@@ -107,6 +113,9 @@ async function lastActor(): Promise<Record<string, unknown>> {
 	return call[2] as unknown as Record<string, unknown>;
 }
 
+// Claude Code silently truncates server instructions past this (code.claude.com/docs/en/mcp).
+const CLAUDE_CODE_INSTRUCTIONS_LIMIT = 2048;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 beforeEach(() => {
@@ -123,6 +132,14 @@ beforeEach(() => {
 });
 
 describe('POST /mcp', () => {
+	it('sends server instructions that fit under Claude Code\'s truncation limit', async () => {
+		await post(INITIALIZE);
+
+		const instructions = state.servers[0]!.options.instructions!;
+		expect(instructions.length).toBeGreaterThan(0);
+		expect(instructions.length).toBeLessThanOrEqual(CLAUDE_CODE_INSTRUCTIONS_LIMIT);
+	});
+
 	it('mints a session id on initialize, returns it in the header, and hands the transport the parsed body', async () => {
 		const { outgoing } = await post(INITIALIZE);
 

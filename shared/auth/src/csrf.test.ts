@@ -13,7 +13,6 @@ const SESSION_JSON = JSON.stringify({
 	userId: 'user-1',
 	csrfToken: 'valid-token',
 	createdAt: Date.now(),
-	lastAccessedAt: Date.now(),
 });
 
 function appWith(redis: Redis): Hono {
@@ -38,7 +37,7 @@ describe('csrf middleware', () => {
 	it('allows a request with a valid token', async () => {
 		const redis = {
 			get: async () => SESSION_JSON,
-			setex: async () => 'OK',
+			expire: async () => 1,
 		} as unknown as Redis;
 
 		const res = await post(appWith(redis), 'valid-token');
@@ -48,7 +47,7 @@ describe('csrf middleware', () => {
 	it('rejects an invalid token with 403', async () => {
 		const redis = {
 			get: async () => SESSION_JSON,
-			setex: async () => 'OK',
+			expire: async () => 1,
 		} as unknown as Redis;
 
 		const res = await post(appWith(redis), 'wrong-token');

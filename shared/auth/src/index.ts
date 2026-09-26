@@ -6,12 +6,14 @@ export {
 	getSession,
 	updateSession,
 	deleteSession,
+	deleteUserSessions,
 	sessionExists,
 } from './session.ts';
 
 // Auth middleware
 export {
 	authMiddleware,
+	requireAdminPath,
 	getUser,
 	getSessionId,
 	type AuthVariables,
@@ -100,6 +102,7 @@ export {
 	type AuthMethod,
 	type AuthUser,
 	type AuthMiddlewareOptions,
+	type AdminPathOptions,
 	SESSION_COOKIE_NAME,
 	CSRF_COOKIE_NAME,
 	SESSION_TTL_SECONDS,

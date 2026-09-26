@@ -388,7 +388,8 @@ async function resolveBlockerTarget(
 	return row.id;
 }
 
-async function bumpItem(client: pg.PoolClient, itemId: string): Promise<void> {
+/** Move an item's updated_at so polling clients reapply it after a derived change. */
+export async function bumpItem(client: pg.PoolClient, itemId: string): Promise<void> {
 	await client.query('UPDATE items SET updated_at = NOW() WHERE id = $1', [itemId]);
 }
 

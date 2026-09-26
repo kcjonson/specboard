@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
 import { getSession } from './session.ts';
-import type { AuthMiddlewareOptions, AuthUser, Session } from './types.ts';
+import type { AdminPathOptions, AuthMiddlewareOptions, AuthUser, Session } from './types.ts';
 import { SESSION_COOKIE_NAME } from './types.ts';
 
 /**
@@ -100,6 +100,41 @@ export function authMiddleware(
 		});
 		c.set('sessionId', sessionId);
 		c.set('session', session);
+
+		return next();
+	};
+}
+
+/**
+ * Gate a path prefix on a fresh admin check of the session's user. Must run
+ * after authMiddleware; a request under the prefix with no session, or whose
+ * check rejects, is denied too. Paths outside the prefix never run the check.
+ *
+ * Empty segments are dropped before comparing because the SPA router drops
+ * them as well, so `//admin/ui` still renders the /admin/ui route.
+ */
+export function requireAdminPath(
+	options: AdminPathOptions
+): MiddlewareHandler<{ Variables: AuthVariables }> {
+	const prefixSegments = options.prefix.split('/').filter(Boolean);
+
+	return async (c: Context<{ Variables: AuthVariables }>, next) => {
+		// c.req.path is already percent-decoded (all but %25 and %2F), so
+		// `/%61dmin/ui` arrives here as /admin/ui
+		const segments = c.req.path.split('/').filter(Boolean);
+		if (!prefixSegments.every((segment, i) => segments[i] === segment)) {
+			return next();
+		}
+
+		const sessionId: string | undefined = c.get('sessionId');
+		const allowed = sessionId !== undefined && await options.isAdmin(sessionId).catch((error: unknown) => {
+			console.error('Admin check error:', error instanceof Error ? error.message : error);
+			return false;
+		});
+
+		if (!allowed) {
+			return options.onDenied(new URL(c.req.url));
+		}
 
 		return next();
 	};
