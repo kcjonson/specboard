@@ -18,7 +18,8 @@ const STATUS_OPTIONS: { value: Status; label: string }[] = [
 export interface NewItemData {
 	title: string;
 	description?: string;
-	status: Status;
+	/** Absent for Ready, where a new item starts anyway. */
+	status?: Status;
 	type?: ItemType;
 	parentKey?: string;
 }
@@ -55,7 +56,10 @@ export function NewItemForm({ projectRef, createType, parentKey, onCreate }: New
 		onCreate({
 			title: titleDraft.trim(),
 			description: descriptionText || undefined,
-			status: statusDraft,
+			// A named Ready would be recorded as a deliberate one, which the parent
+			// rollup never promotes. The select can't tell a chosen Ready from the one
+			// it opened on, so only another status is sent.
+			...(statusDraft !== 'ready' ? { status: statusDraft } : {}),
 			type: itemType,
 			...(parentDraft ? { parentKey: parentDraft } : {}),
 		});

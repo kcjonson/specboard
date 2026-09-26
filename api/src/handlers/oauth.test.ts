@@ -36,7 +36,6 @@ function createMockSession(userId: string): Session {
 		userId,
 		csrfToken: 'mock-csrf-token',
 		createdAt: Date.now(),
-		lastAccessedAt: Date.now(),
 	};
 }
 

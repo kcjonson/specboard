@@ -316,10 +316,12 @@ Add a local folder to the project. Registered only when the API starts with `LOC
 - `400 NOT_GIT_REPO` - Path is not inside a git repository
 - `400 DIFFERENT_REPO` - Path is in a different git repository
 - `400 DUPLICATE_PATH` - Path already added
+- `409 CLOUD_PROJECT` - The project is connected to a cloud repository
 
 #### DELETE /api/projects/:owner/:project/folders
 
-Remove a root path from the project (does not delete files).
+Remove a root path from the project (does not delete files). Removing the last one
+returns the project to `storageMode: 'none'`.
 
 **Request:**
 ```json
@@ -327,6 +329,11 @@ Remove a root path from the project (does not delete files).
   "path": "/docs"
 }
 ```
+
+**Error Responses:**
+- `409 CLOUD_PROJECT` - The project is connected to a cloud repository; its root paths
+  are managed with the repository, and dropping the last one would orphan the managed
+  checkout and its sync state
 
 ### Repository Connection (Cloud Mode)
 
@@ -373,7 +380,9 @@ The response does not wait for or report on the initial sync. It is started as a
 effect; if it cannot start (GitHub not connected, sync invoke failed) the project's
 `syncStatus` becomes `failed` with the reason in `syncError`, and
 `POST /api/projects/:owner/:project/sync/initial` retries. Poll
-`GET /api/projects/:owner/:project/sync/status` for progress.
+`GET /api/projects/:owner/:project/sync/status` for progress. Because the start runs after
+the response, the first polls can still read a `null` status; the setup dialog treats that
+as "starting" and keeps polling for 30 seconds before reporting that the sync never started.
 
 **Error Responses:**
 - `400` - Repository config fails validation (provider, GitHub owner/repo/branch naming, or a URL that is not `https://github.com/{owner}/{repo}`)
@@ -450,7 +459,8 @@ Users may start with local mode during initial setup, then transition to cloud m
 
 - Local changes should be committed and pushed before transitioning
 - Backend could warn if there are uncommitted local changes
-- The transition is one-way in v1 (cloud → local not supported via UI)
+- The transition is one-way in v1: cloud → local is not supported, and the folder
+  endpoints answer `409 CLOUD_PROJECT` for a cloud project
 - Not implemented yet: the API only attaches a repository to a project with no storage
   configured, so a local-mode project answers `409` until this flow exists
 
@@ -476,6 +486,7 @@ File operations:
 | `NOT_GIT_REPO` | 400 | Folder is not inside a git repository |
 | `DIFFERENT_REPO` | 400 | Folder is in a different repository than existing folders |
 | `DUPLICATE_PATH` | 400 | Path is already added to project |
+| `CLOUD_PROJECT` | 409 | Folder add/remove on a project connected to a cloud repository |
 | `REPO_NOT_CONFIGURED` | 400 | Project has no repository configured |
 | `PATH_OUTSIDE_ROOTS` | 403 | Requested path is outside project boundaries |
 | `INVALID_PATH` | 400 | Path contains invalid characters or traversal |
@@ -516,6 +527,7 @@ To prevent performance issues and abuse, the following limits are enforced:
 - `NOT_GIT_REPO` (400): Folder is not inside a git repository
 - `DIFFERENT_REPO` (400): Folder must be in the same git repository as existing folders
 - `DUPLICATE_PATH` (400): This folder is already added
+- `CLOUD_PROJECT` (409): Folders cannot be added to or removed from a cloud project
 
 *File Operations:*
 - `REPO_NOT_CONFIGURED` (400): No repository configured for project

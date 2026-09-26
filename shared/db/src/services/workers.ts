@@ -8,6 +8,7 @@
  * from last_seen_at at read time by consumers and never stored.
  */
 
+import type pg from 'pg';
 import { query } from '../index.ts';
 import type { AgentActor } from '../types.ts';
 
@@ -37,15 +38,16 @@ export async function recordWorkerActivity(
 	);
 }
 
-/** End every active episode on an item (it left in_progress). */
-export async function endWorkers(projectId: string, itemNumber: number): Promise<void> {
-	await query(
-		`UPDATE item_workers w SET ended_at = now()
+/**
+ * End every active episode on an item (it left in_progress). Pass `client` to end them
+ * inside the transaction that moved the item.
+ */
+export async function endWorkers(projectId: string, itemNumber: number, client?: pg.PoolClient): Promise<void> {
+	const sql = `UPDATE item_workers w SET ended_at = now()
 		 FROM items i
 		 WHERE w.item_id = i.id AND i.project_id = $1 AND i.number = $2
-		   AND w.ended_at IS NULL`,
-		[projectId, itemNumber]
-	);
+		   AND w.ended_at IS NULL`;
+	await (client ? client.query(sql, [projectId, itemNumber]) : query(sql, [projectId, itemNumber]));
 }
 
 /** Batch-load active episodes for many items (item-response hydration). */

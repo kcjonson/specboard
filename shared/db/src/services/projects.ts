@@ -384,8 +384,8 @@ export async function updateProject(
 			"storage_mode = 'cloud'",
 			`repository = $${paramIndex++}`,
 			`root_paths = $${paramIndex++}`,
-			// A project can return to 'none' via removeFolder without touching its sync
-			// columns; a stale pending status or commit sha must not leak into the new repo.
+			// Projects that removeFolder moved out of cloud mode before it refused them still
+			// carry sync state; a stale pending status or commit sha must not leak into the new repo.
 			'last_synced_commit_sha = NULL',
 			'sync_status = NULL',
 			'sync_started_at = NULL',
@@ -477,6 +477,11 @@ export async function addFolder(
 
 		const project = existing.rows[0]!;
 
+		// Cloud -> local is unsupported; the managed checkout and sync state belong to the repo.
+		if (project.storage_mode === 'cloud') {
+			throw new Error('CLOUD_PROJECT');
+		}
+
 		// If project already has a local path, verify it matches
 		const currentRepo = project.repository as RepositoryConfig | Record<string, never>;
 		if (isLocalRepository(currentRepo) && currentRepo.localPath !== data.repoPath) {
@@ -541,6 +546,13 @@ export async function removeFolder(
 		}
 
 		const project = existing.rows[0]!;
+
+		// Dropping a cloud project's only root path would reset it to 'none' and orphan its
+		// managed checkout and sync state.
+		if (project.storage_mode === 'cloud') {
+			throw new Error('CLOUD_PROJECT');
+		}
+
 		const newRootPaths = project.root_paths.filter((p) => p !== rootPath);
 
 		const result = await client.query<ProjectRow>(

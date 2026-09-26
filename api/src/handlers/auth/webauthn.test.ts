@@ -316,7 +316,7 @@ describe('handleWebauthnRegisterOptions', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0, lastAccessedAt: 0 });
+		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0 });
 	});
 
 	function optApp(redis: Redis): Hono {
@@ -362,7 +362,7 @@ describe('handleWebauthnRegisterOptions', () => {
 describe('handleWebauthnRegisterVerify', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0, lastAccessedAt: 0 });
+		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0 });
 		// Typed (not `as never`) so a future library shape change fails to compile
 		// here rather than silently desyncing the mock from the real return value.
 		const verified: VerifiedRegistrationResponse = {
@@ -490,7 +490,7 @@ describe('handleWebauthnRegisterVerify', () => {
 describe('passkey management (ownership scoping)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0, lastAccessedAt: 0 });
+		vi.mocked(getSession).mockResolvedValue({ userId: USER_ID, csrfToken: 'x', createdAt: 0 });
 		mockSessionQueries(); // active account by default
 	});
 

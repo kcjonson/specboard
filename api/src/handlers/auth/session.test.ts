@@ -71,7 +71,6 @@ describe('handleGetMe onboarding fields', () => {
 			userId: mockUser.id,
 			csrfToken: 'x',
 			createdAt: 0,
-			lastAccessedAt: 0,
 		});
 	});
 
@@ -103,7 +102,6 @@ describe('handleUpdateMe username claim', () => {
 			userId: mockUser.id,
 			csrfToken: 'x',
 			createdAt: 0,
-			lastAccessedAt: 0,
 			profileComplete: false,
 		});
 		vi.mocked(updateSession).mockResolvedValue(true);

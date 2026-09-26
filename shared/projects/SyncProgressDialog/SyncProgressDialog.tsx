@@ -19,6 +19,10 @@ export interface SyncProgressDialogProps {
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 100; // ~5 minutes at 3s intervals
+// The API returns the project before its fire-and-forget sync start has written a
+// status, so the first polls can read null. Treat that as "starting" for this long.
+const SYNC_START_TIMEOUT_MS = 30_000;
+const SYNC_NEVER_STARTED_ERROR = 'The repository sync never started. Retry to start it again.';
 
 /** Extract a user-friendly error message from a caught error */
 function getErrorMessage(err: unknown): string {
@@ -36,7 +40,7 @@ export function SyncProgressDialog({
 	onNavigate,
 	onDismiss,
 }: SyncProgressDialogProps): JSX.Element {
-	const [syncStatus, setSyncStatus] = useState<SyncStatus | null>('pending');
+	const [syncStatus, setSyncStatus] = useState<SyncStatus>('pending');
 	const [syncError, setSyncError] = useState<string | null>(null);
 	const [retrying, setRetrying] = useState(false);
 	// Increment to restart the polling effect (e.g. after retry)
@@ -52,6 +56,7 @@ export function SyncProgressDialog({
 
 	useEffect(() => {
 		const controller = new AbortController();
+		const startDeadline = Date.now() + SYNC_START_TIMEOUT_MS;
 		let pollCount = 0;
 		let consecutiveErrors = 0;
 
@@ -65,6 +70,17 @@ export function SyncProgressDialog({
 				if (controller.signal.aborted) return;
 
 				consecutiveErrors = 0;
+
+				if (data.status === null) {
+					if (Date.now() < startDeadline) {
+						timerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+					} else {
+						setSyncError(SYNC_NEVER_STARTED_ERROR);
+						setSyncStatus('failed');
+					}
+					return;
+				}
+
 				setSyncStatus(data.status);
 				setSyncError(data.error);
 

@@ -58,4 +58,15 @@ describe('endWorkers', () => {
 		expect(sql).toContain('w.ended_at IS NULL');
 		expect(params).toEqual(['proj-1', 1]);
 	});
+
+	it("runs on the caller's transaction client when given one", async () => {
+		const clientQuery = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 });
+
+		await endWorkers('proj-1', 1, { query: clientQuery } as never);
+
+		expect(mockQuery).not.toHaveBeenCalled();
+		const [sql, params] = clientQuery.mock.calls[0]!;
+		expect(sql).toContain('SET ended_at = now()');
+		expect(params).toEqual(['proj-1', 1]);
+	});
 });

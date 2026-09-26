@@ -10,7 +10,6 @@ export interface Session {
 	userId: string;
 	csrfToken: string;
 	createdAt: number;
-	lastAccessedAt: number;
 	/** Absent on sessions created before auth methods were recorded */
 	authMethod?: AuthMethod;
 	/**
@@ -36,6 +35,21 @@ export interface AuthMiddlewareOptions {
 	excludePaths?: string[];
 	/** Custom handler for unauthenticated requests. Receives the full request URL. */
 	onUnauthenticated?: (requestUrl: URL) => Response | Promise<Response>;
+}
+
+/**
+ * Admin path gate options
+ */
+export interface AdminPathOptions {
+	/** Path prefix to gate, e.g. '/admin'; covers the prefix itself and everything under it */
+	prefix: string;
+	/**
+	 * Whether the session's user is a site admin, read fresh from the source
+	 * of truth on every call. A rejection denies, same as false.
+	 */
+	isAdmin: (sessionId: string) => Promise<boolean>;
+	/** Response for a request under the prefix that isn't an admin's */
+	onDenied: (requestUrl: URL) => Response | Promise<Response>;
 }
 
 /**

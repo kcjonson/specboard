@@ -21,11 +21,19 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const APP_ENV = process.env.APP_ENV || 'development';
 const EMAIL_MODE = process.env.EMAIL_MODE;
 const EMAIL_ALLOWLIST = process.env.EMAIL_ALLOWLIST;
+const SES_REQUEST_TIMEOUT_MS = 30_000;
 
 // Only create SES client if we might actually use it
 // sendEmail bypasses SES when NODE_ENV is 'development' or EMAIL_MODE is 'console'
+//
+// requestTimeout only warns by default, so a hung connection would hold the
+// caller forever. Throwing caps a send at the SDK's three attempts of 30s
+// each, well inside the waitlist confirmation's 10 minute claim lease.
 const sesClient = NODE_ENV !== 'development' && EMAIL_MODE !== 'console'
-	? new SESClient({ region: SES_REGION })
+	? new SESClient({
+		region: SES_REGION,
+		requestHandler: { requestTimeout: SES_REQUEST_TIMEOUT_MS, throwOnRequestTimeout: true },
+	})
 	: null;
 
 export interface SendEmailOptions {
@@ -88,21 +96,24 @@ function logEmail(options: SendEmailOptions, reason: string): void {
  *
  * In non-production app environments (APP_ENV !== 'production') with EMAIL_ALLOWLIST set,
  * only emails to allowed domains will be sent.
+ *
+ * Resolves true only when SES accepted the message; a logged, blocked, or
+ * clientless send resolves false.
  */
-export async function sendEmail(options: SendEmailOptions): Promise<void> {
+export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
 	const { to, subject, textBody, htmlBody, replyTo } = options;
 
 	// Development mode: always log to console
 	if (NODE_ENV === 'development' || EMAIL_MODE === 'console') {
 		logEmail(options, '(CONSOLE MODE - not sent)');
-		return;
+		return false;
 	}
 
 	// Non-production app environment: check allowlist
 	if (APP_ENV !== 'production') {
 		if (!isEmailAllowed(to)) {
 			logEmail(options, `(BLOCKED - ${to} not in allowlist: ${EMAIL_ALLOWLIST || 'none'})`);
-			return;
+			return false;
 		}
 		console.log(`[Email] Sending to ${to} (allowed by EMAIL_ALLOWLIST)`);
 	}
@@ -110,7 +121,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	if (!sesClient) {
 		console.error('[Email] SES client not initialized but trying to send email');
 		logEmail(options, '(ERROR - SES client not initialized)');
-		return;
+		return false;
 	}
 
 	const command = new SendEmailCommand({
@@ -140,4 +151,5 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	});
 
 	await sesClient.send(command);
+	return true;
 }

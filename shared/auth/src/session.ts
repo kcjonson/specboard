@@ -31,15 +31,13 @@ function sessionKey(sessionId: string): string {
 export async function createSession(
 	redis: Redis,
 	sessionId: string,
-	data: Omit<Session, 'createdAt' | 'lastAccessedAt' | 'csrfToken'> & { csrfToken?: string }
+	data: Omit<Session, 'createdAt' | 'csrfToken'> & { csrfToken?: string }
 ): Promise<string> {
-	const now = Date.now();
 	const csrfToken = data.csrfToken || generateCsrfToken();
 	const session: Session = {
 		userId: data.userId,
 		csrfToken,
-		createdAt: now,
-		lastAccessedAt: now,
+		createdAt: Date.now(),
 		authMethod: data.authMethod,
 		profileComplete: data.profileComplete,
 	};
@@ -54,8 +52,9 @@ export async function createSession(
 }
 
 /**
- * Get a session from Redis
- * Updates lastAccessedAt and refreshes TTL (sliding expiration)
+ * Get a session from Redis and slide its expiry. Only the TTL is touched:
+ * rewriting the body here would race updateSession (and resurrect sessions
+ * deleted mid-request), since every request reads it.
  */
 export async function getSession(
 	redis: Redis,
@@ -77,47 +76,51 @@ export async function getSession(
 		return null;
 	}
 
-	// Update last accessed time and refresh TTL
-	session.lastAccessedAt = Date.now();
-	await redis.setex(key, SESSION_TTL_SECONDS, JSON.stringify(session));
+	await redis.expire(key, SESSION_TTL_SECONDS);
 
 	return session;
 }
 
 /**
- * Update session data (e.g., after token refresh)
- * Uses atomic get + update to avoid race conditions
+ * Merges ARGV[1] (a JSON object) into the session at KEYS[1] and resets its
+ * TTL to ARGV[2] seconds, in one atomic step. Returns 0 if the session is
+ * gone; corrupted data is deleted. cjson encodes numbers with at most 14
+ * significant digits (Redis caps the precision), so integers stay exact only
+ * below 1e14; ms timestamps like createdAt are 13.
+ */
+const MERGE_SESSION_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+	return 0
+end
+local ok, session = pcall(cjson.decode, raw)
+if not ok or type(session) ~= 'table' then
+	redis.call('DEL', KEYS[1])
+	return 0
+end
+for field, value in pairs(cjson.decode(ARGV[1])) do
+	session[field] = value
+end
+redis.call('SET', KEYS[1], cjson.encode(session), 'EX', ARGV[2])
+return 1
+`;
+
+/**
+ * Update session data and refresh its TTL
  */
 export async function updateSession(
 	redis: Redis,
 	sessionId: string,
-	updates: Partial<Omit<Session, 'createdAt' | 'lastAccessedAt'>>
+	updates: Partial<Omit<Session, 'createdAt'>>
 ): Promise<boolean> {
-	const key = sessionKey(sessionId);
-	const data = await redis.get(key);
-
-	if (!data) {
-		return false;
-	}
-
-	let session: Session;
-	try {
-		session = JSON.parse(data);
-	} catch {
-		// Corrupted session data - delete and return false
-		await redis.del(key);
-		return false;
-	}
-
-	const updated: Session = {
-		...session,
-		...updates,
-		lastAccessedAt: Date.now(),
-	};
-
-	await redis.setex(key, SESSION_TTL_SECONDS, JSON.stringify(updated));
-
-	return true;
+	const merged = await redis.eval(
+		MERGE_SESSION_SCRIPT,
+		1,
+		sessionKey(sessionId),
+		JSON.stringify(updates),
+		SESSION_TTL_SECONDS
+	);
+	return merged === 1;
 }
 
 /**
@@ -128,6 +131,33 @@ export async function deleteSession(
 	sessionId: string
 ): Promise<void> {
 	await redis.del(sessionKey(sessionId));
+}
+
+/**
+ * Delete every session of a user, forcing re-login on all devices. Sessions
+ * aren't indexed by user, so this scans the whole keyspace; keep it to rare
+ * account-level actions such as a password change.
+ */
+export async function deleteUserSessions(redis: Redis, userId: string): Promise<void> {
+	let cursor = '0';
+	do {
+		const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', sessionKey('*'), 'COUNT', 100);
+		cursor = nextCursor;
+		for (const key of keys) {
+			const data = await redis.get(key);
+			if (!data) continue;
+			let session: Session;
+			try {
+				session = JSON.parse(data);
+			} catch {
+				// Corrupted session data belongs to no one
+				continue;
+			}
+			if (session.userId === userId) {
+				await redis.del(key);
+			}
+		}
+	} while (cursor !== '0');
 }
 
 /**

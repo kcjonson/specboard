@@ -179,12 +179,21 @@ CREATE TABLE webauthn_credentials (
 session:{session_id}:
   user_id: UUID
   created_at: timestamp
-  last_accessed: timestamp
   auth_method: password | magic_link | passkey (optional)
   profile_complete: boolean (optional; false gates SPA loads to /onboarding)
 
 TTL: 30 days (sliding expiration)
 ```
+
+Reading a session slides its expiry with `EXPIRE` and never rewrites the
+body, so a request in flight can't overwrite a concurrent flag change or
+bring back a session that was just deleted. Flag changes (`updateSession`)
+merge into the stored JSON and refresh the TTL with a Lua script, one atomic
+step in Redis.
+
+Sessions don't carry roles. Anything that needs to know whether a user is an
+admin reads `users.roles`, so a grant or revoke applies on the next request
+without touching live sessions.
 
 Sessions are auth-only. User details (username, first_name, last_name, avatar, etc.) are fetched via `/api/auth/me` or `/api/users/:id`.
 
@@ -357,6 +366,40 @@ Browser                     Frontend/API              Redis
    │◄───────────────────────────│                       │
    │ Response                   │                       │
 ```
+
+**Admin pages**: every path under `/admin` (the prefix itself included) is
+site-admin only. The frontend service runs `requireAdminPath` after
+`authMiddleware`, and on every document load under the prefix it asks the API
+whether the user is an admin right now: it calls `GET /api/auth/me` with the
+request's session cookie, and `/me` reads the user row (roles, `is_active`)
+from Postgres on every call. The frontend has no database access, so this is
+its route to the source of truth, one extra API round trip per `/admin`
+document load and none anywhere else. The gate fails closed: a non-2xx
+(deactivated, expired, rate limited, API error), a response without an
+`admin` role, a network error, or no answer within 5 seconds all get the same
+private, no-cache 404 page an unauthenticated request gets, so non-admins
+can't tell the admin area exists. In production the frontend reaches the API
+through the public ALB, so every user's check arrives from the frontend's
+egress IP and they share one per-IP bucket of the API's default rate limit
+(100/min on `/api/auth/me`); past it, `/admin` document loads 404 until the
+window resets. Path segments are compared with empty ones dropped, matching
+the SPA router, so `//admin/ui` is gated too. The gate reads Hono's
+`c.req.path`, which is already percent-decoded (except `%25` and `%2F`), so
+`/%61dmin/ui` is gated as well; the SPA router compares raw segments and never
+renders an admin page for an encoded path.
+
+In-app navigation never reaches the frontend service, so the SPA gates it too:
+every `/admin` route in `web/src/main.tsx` is wrapped in `adminOnly`, which
+fetches `GET /api/users/me` (the same current-user source the header uses to
+show the Admin link, read from Postgres on every call) on each navigation into
+an admin route, including between two URLs of the same route. Until it answers
+the route shows a plain loading state; a non-admin or a failed request gets the
+same NotFound page as an unknown URL, so a demoted admin loses the admin pages
+on their next navigation. This client gate is an explicit product decision
+("always check auth on admin pages"), not a replacement for the server-side
+ones: the admin API endpoints (`/api/users`, `/api/waitlist`) still check the
+role against the database on every call, and those checks are what protect
+the data.
 
 ### 5. Password Reset
 

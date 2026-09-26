@@ -64,16 +64,19 @@ field.
 
 | sub_status | Meaning | Board status |
 |------------|---------|--------------|
-| not_started | nothing begun | ready |
+| not_started | nothing begun | unchanged |
 | scoping | planning / plan mode / writing the spec | in_progress |
 | in_development | actively coding | in_progress |
-| needs_input | blocked on a human answer | in_progress |
-| paused | stepped away mid-flight | in_progress |
-| pr_open | PR open for review | in_review |
+| needs_input | blocked on a human answer | unchanged, and held |
+| paused | stepped away mid-flight | unchanged, and held |
+| pr_open | PR open for review | in_progress |
 | complete | verified and closed | done |
 
 Setting sub_status to `scoping`, `in_development`, or `pr_open` moves the board to `in_progress`;
-`complete` moves it to `done`.
+`complete` moves it to `done`. `needs_input` and `paused` describe work that has already started, so
+they don't set a status of their own: they keep whatever the item has and stop the parent rollup from
+moving it back to `ready` (see Parent rollup below). Setting them on an item that was never started
+leaves it `ready`.
 
 ### Task status
 
@@ -85,6 +88,25 @@ ready ──start──> in_progress ──complete──> done
 
 Completing all tasks does not auto-complete the epic. Closing the epic is a deliberate, verified
 act.
+
+### Parent rollup
+
+A parent's board status follows its children between `ready` and `in_progress`, and follows them
+back: it is in progress while any child is `in_progress`, `in_review`, or `done`, and returns to
+ready when none is, recomputed on every child create, status change, move, and delete. The rollup
+never undoes a status somebody chose, in either direction. Two things hold a parent in progress
+regardless of its children: its own active sub_status (`scoping`, `in_development`, `needs_input`,
+`paused`, `pr_open`), and an explicit status write. An epic set to in_progress with `update_item
+status=in_progress` or dragged there on the board stays until its status is next written; the rollup
+only rolls back an in_progress that it or a sub_status put there. Likewise an epic put in Ready on
+purpose (`update_item status=ready` on an item that isn't blocked, a drag to Ready, or a create that
+names `ready`) stays there when its children start. A Ready nobody chose is still promoted: a new
+item created without a status (`create_item` and `create_items` never set one), one an unblock
+returned to Ready, and one the rollup rolled back. So an epic in progress through sub_status alone
+returns to ready when its sub_status goes back to `not_started` with no started children, and one
+the rollup promoted returns with its children. `blocked`, `in_review`, and `done` parents are never
+touched. See
+[item-relationships.md](item-relationships.md#parent-itemsparent_id).
 
 ---
 
@@ -111,6 +133,9 @@ yet, the path is a stable reference, not a fetch.
 
 Server-level `instructions` (returned at MCP `initialize`) give every connected client a short
 summary of this model even without the plugin installed; the plugin carries the full workflow.
+Claude Code truncates server instructions past 2,048 characters by default, dropping the tail
+without warning, so the summary stays under that limit (a test in `mcp/src/app.test.ts` enforces
+it) and leads with the most important rules.
 
 ---
 
