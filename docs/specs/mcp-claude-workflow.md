@@ -90,11 +90,14 @@ act.
 
 A parent's board status follows its children between `ready` and `in_progress`, and follows them
 back: it is in progress while any child is `in_progress`, `in_review`, or `done`, and returns to
-ready when none is, recomputed on every child status change, move, and delete. The parent's own
-active sub_status (`scoping`, `in_development`, `needs_input`, `paused`, `pr_open`) holds it in
-progress regardless of its children, which is why driving an epic through sub_status matters: an
-epic moved to in_progress by raw status alone is indistinguishable from one the rollup moved, and
-rolls back with its children. `blocked`, `in_review`, and `done` parents are never touched. See
+ready when none is, recomputed on every child status change, move, and delete. Two things hold a
+parent in progress regardless of its children: its own active sub_status (`scoping`,
+`in_development`, `needs_input`, `paused`, `pr_open`), and an explicit status write. An epic set to
+in_progress with `update_item status=in_progress` or dragged there on the board stays until its
+status is next written; the rollup only rolls back an in_progress that it or a sub_status put there.
+So an epic in progress through sub_status alone returns to ready when its sub_status goes back to
+`not_started` with no started children, and one the rollup promoted returns with its children.
+`blocked`, `in_review`, and `done` parents are never touched. See
 [item-relationships.md](item-relationships.md#parent-itemsparent_id).
 
 ---

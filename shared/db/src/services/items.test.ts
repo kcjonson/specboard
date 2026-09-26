@@ -36,6 +36,7 @@ function makeItem(overrides: Partial<ItemRow> = {}): ItemRow {
 		description: null,
 		status: 'ready',
 		sub_status: 'not_started',
+		status_source: 'explicit',
 		origin: ORIGIN,
 		assignee: null,
 		rank: 1,
@@ -542,11 +543,14 @@ describe('reaching done', () => {
 			.mockResolvedValueOnce({ rows: [detailRow], rowCount: 1 } as never);
 
 		await updateItem('proj-1', 1, { subStatus: 'complete' });
-		expect(mockTransaction).toHaveBeenCalledTimes(1);
+		const [writeSql] = mockClientQuery.mock.calls[0]!;
+		expect(writeSql).toContain(`UPDATE items SET`);
+		expect(mockClientQuery.mock.calls[1]![0]).toContain('WHERE blocker_item_id = $1');
 
+		const transactions = mockTransaction.mock.calls.length;
 		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
 		await updateItem('proj-1', 1, { title: 'renamed' });
-		expect(mockTransaction).toHaveBeenCalledTimes(1);
+		expect(mockTransaction).toHaveBeenCalledTimes(transactions);
 	});
 
 	it('updateItem ends worker episodes on any status transition out of in_progress', async () => {
@@ -716,18 +720,39 @@ describe('parent status rollup', () => {
 		await updateItem('proj-1', 1, { title: 'renamed' });
 		expect(rollupCalls()).toHaveLength(0);
 
+		// The item itself first (its sub_status is an input), then the parent its derived status moved.
 		await updateItem('proj-1', 1, { subStatus: 'in_development' });
-		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
+		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['item-1', 'epic-1']);
 	});
 
-	it('a child write rolls up its parent even when the parent has no children left', async () => {
+	it('only a status the rollup or a sub_status set is demoted; an explicit one stays', async () => {
+		route({ parent_id: 'epic-1' });
+
+		await deleteItem('proj-1', 1);
+
+		const [[sql]] = rollupCalls() as [[string]];
+		const demotion = sql.slice(sql.indexOf(`(status = 'in_progress'`));
+		expect(demotion).toContain(`AND status_source IN ('rollup', 'sub_status')`);
+		expect(sql.slice(0, sql.indexOf(`(status = 'in_progress'`))).not.toContain('status_source IN');
+	});
+
+	it('records every status the rollup moves as its own', async () => {
+		route({ parent_id: 'epic-1' });
+
+		await startItem('proj-1', 1);
+
+		const [[sql]] = rollupCalls() as [[string]];
+		expect(sql).toContain(`status_source = 'rollup', updated_at = NOW()`);
+	});
+
+	it('recomputes a childless item like any other: nothing can promote it, and only a derived in_progress falls back', async () => {
 		route({ parent_id: 'epic-1' });
 
 		await deleteItem('proj-1', 1);
 
 		const [[sql, params]] = rollupCalls() as [[string, unknown[]]];
-		expect(sql).toContain('AND (NOT $4::boolean OR (SELECT has_children FROM children))');
-		expect(params![3]).toBe(false);
+		expect(sql).not.toContain('has_children');
+		expect(params).toHaveLength(3);
 	});
 
 	it('a sub_status that derives no status recomputes the item itself, then walks up from it', async () => {
@@ -739,19 +764,20 @@ describe('parent status rollup', () => {
 
 		const rollups = rollupCalls() as Array<[string, unknown[]]>;
 		expect(rollups.map(([, params]) => params[0])).toEqual(['item-1', 'epic-1']);
-		expect(rollups.map(([, params]) => params[3])).toEqual([true, false]);
 		expect(mockTransaction).toHaveBeenCalledTimes(2);
 		const locks = mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(LOCK));
 		expect(locks.map(([, params]) => (params as unknown[])[0])).toEqual(['item-1', 'epic-1']);
 		expect(workerEnds().map(([, params]) => params)).toEqual([['proj-1', 1]]);
 	});
 
-	it('an explicit status alongside a sub_status is left as written; only the parent recomputes', async () => {
+	it('a status sent alongside a sub_status still recomputes the item, then its parent', async () => {
+		// The web client PUTs the whole model, so a sub_status change always carries the
+		// current status too; that echo must not skip the item's own recompute.
 		route({ id: 'item-1', parent_id: 'epic-1' });
 
 		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'not_started' });
 
-		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
+		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['item-1', 'epic-1']);
 	});
 
 	it('a top-level item has no parent to recompute', async () => {
@@ -836,5 +862,94 @@ describe('parent status rollup', () => {
 		expect(mockTransaction).toHaveBeenCalledTimes(1);
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
 		expect(mockQuery.mock.invocationCallOrder[0]!).toBeLessThan(mockClientQuery.mock.invocationCallOrder[0]!);
+	});
+});
+
+describe('status source', () => {
+	const detailRow = {
+		...makeItem(),
+		blocked: false,
+		child_count: '0',
+		done_count: '0',
+		in_progress_count: '0',
+		blocked_count: '0',
+	};
+
+	/** The item's own UPDATE and its params, by position of the status_source assignment. */
+	function sourceWrite(): { sql: string; status: unknown; source: unknown } {
+		const call = [...mockQuery.mock.calls, ...mockClientQuery.mock.calls]
+			.find(([sql]) => (sql as string).startsWith('UPDATE items SET'))!;
+		const sql = call[0] as string;
+		const params = call[1] as unknown[];
+		const match = /status_source = CASE WHEN status IS DISTINCT FROM \$(\d+) THEN \$(\d+) ELSE status_source END/.exec(sql);
+		expect(match).not.toBeNull();
+		return { sql, status: params[Number(match![1]) - 1], source: params[Number(match![2]) - 1] };
+	}
+
+	beforeEach(() => {
+		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
+		mockClientQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 });
+	});
+
+	it('a drag (status moved, the model echoing sub_status not_started) is explicit', async () => {
+		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'not_started', rank: 2 });
+
+		expect(sourceWrite()).toMatchObject({ status: 'in_progress', source: 'explicit' });
+	});
+
+	it('a bare status write is explicit', async () => {
+		await updateItem('proj-1', 1, { status: 'in_progress' });
+
+		expect(sourceWrite()).toMatchObject({ status: 'in_progress', source: 'explicit' });
+	});
+
+	it('a status derived from sub_status is recorded as the sub_status\'s', async () => {
+		await updateItem('proj-1', 1, { subStatus: 'in_development' });
+
+		expect(sourceWrite()).toMatchObject({ status: 'in_progress', source: 'sub_status' });
+	});
+
+	it('a status that matches what the sent sub_status derives is the sub_status\'s, as the drawer sends it', async () => {
+		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'scoping' });
+
+		expect(sourceWrite()).toMatchObject({ status: 'in_progress', source: 'sub_status' });
+	});
+
+	it('a named status that differs from the derived one wins, and is explicit', async () => {
+		await updateItem('proj-1', 1, { status: 'blocked', subStatus: 'in_development' });
+
+		expect(sourceWrite()).toMatchObject({ status: 'blocked', source: 'explicit' });
+	});
+
+	it('restating the current status keeps its source: the CASE only fires when the value moves', async () => {
+		await updateItem('proj-1', 1, { title: 'renamed', status: 'in_progress' });
+
+		const { sql } = sourceWrite();
+		expect(sql).toMatch(/ELSE status_source END/);
+	});
+
+	it('writes no source when no status is written', async () => {
+		await updateItem('proj-1', 1, { title: 'renamed' });
+
+		const [sql] = mockQuery.mock.calls[0]!;
+		expect(sql).not.toContain('status_source');
+	});
+
+	it('the lifecycle routes are explicit, unconditionally', async () => {
+		mockClientQuery.mockResolvedValue({ rows: [{ id: 'item-1', parent_id: null }], rowCount: 1 });
+		mockQuery.mockImplementation((async (sql: string) => (
+			sql.startsWith('UPDATE items') ? { rows: [{ parent_id: null }], rowCount: 1 } : { rows: [detailRow], rowCount: 1 }
+		)) as never);
+
+		await startItem('proj-1', 1);
+		await completeItem('proj-1', 1);
+		await blockItem('proj-1', 1);
+		await unblockItem('proj-1', 1);
+
+		const writes = [...mockQuery.mock.calls, ...mockClientQuery.mock.calls]
+			.map(([sql]) => sql as string)
+			.filter((sql) => sql.startsWith('UPDATE items SET status'));
+		expect(writes).toHaveLength(4);
+		for (const sql of writes) expect(sql).toContain(`status_source = 'explicit'`);
 	});
 });

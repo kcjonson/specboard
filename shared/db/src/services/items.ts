@@ -9,7 +9,7 @@
 import type pg from 'pg';
 import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
-import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin, ChecklistEntry } from '../types.ts';
+import type { Item, ItemType, ItemStatus, SubStatus, StatusSource, SpecType, ItemOrigin, ChecklistEntry } from '../types.ts';
 import { clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
 import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
@@ -504,65 +504,54 @@ const STARTED_CHILD_STATUSES: ItemStatus[] = ['in_progress', 'in_review', 'done'
 const ACTIVE_SUB_STATUSES: SubStatus[] = ['scoping', 'in_development', 'needs_input', 'paused', 'pr_open'];
 
 /**
- * Recompute a parent's status from its current children. Called after every write
- * that can change a child's status or the child set, so the rollup reverses as
- * readily as it advances. It only moves a parent between ready and in_progress:
- * ready rolls up when any child has started; in_progress rolls back when none has,
- * unless the parent's own sub_status says it is active. Blocked, in_review, and done
- * parents are explicit states and are never touched. A parent that changed is itself
- * a child, so the walk continues up the tree until a level holds still. A rollback
- * ends worker episodes like any other transition out of in_progress.
+ * Recompute an item's status from its current children, then its parent's, and so on
+ * up the tree until a level holds still. Called with the parent after every write that
+ * can change a child's status or the child set, so the rollup reverses as readily as it
+ * advances, and with the item itself after a sub_status write, since its own sub_status
+ * is an input too. It only moves an item between ready and in_progress: ready rolls up
+ * when any child has started; in_progress rolls back when none has, unless the item's
+ * own sub_status says it is active or nobody but the rollup or a sub_status put it in
+ * progress (status_source 'rollup' or 'sub_status'). An explicit in_progress (a drag, a
+ * start) is the caller's call and stays. Blocked, in_review, and done are explicit states
+ * and are never touched. A rollback ends worker episodes like any other transition out
+ * of in_progress.
  *
- * Each level is its own transaction that locks the parent row before recomputing, so
- * rollups of one parent run one at a time. Every rollup starts after its child write
+ * Each level is its own transaction that locks the row before recomputing, so rollups
+ * of one item run one at a time. Every rollup starts after the write that triggered it
  * has committed, and the recompute is a separate statement from the lock so its
  * READ COMMITTED snapshot is taken after the lock is granted; the last rollup to run
  * therefore sees every child write that preceded it. Committing each level before
  * locking the next means a rollup never holds two item locks, so walks can't deadlock.
  */
-async function rollUpParentStatus(parentId: string | null): Promise<void> {
-	let id = parentId;
+async function rollUpStatus(fromId: string | null): Promise<void> {
+	let id = fromId;
 	while (id) {
 		const levelId = id;
-		id = await transaction((client) => rollUpLevel(client, levelId, false));
+		id = await transaction((client) => rollUpLevel(client, levelId));
 	}
 }
 
-/**
- * Recompute an item whose own sub_status changed, then walk up from it like any rollup.
- * Only an item with children is held in_progress by its sub_status; a leaf's in_progress
- * is its own explicit state (startItem doesn't set sub_status), so a leaf is left alone.
- */
-async function recomputeOwnStatus(itemId: string): Promise<void> {
-	const parentId = await transaction((client) => rollUpLevel(client, itemId, true));
-	await rollUpParentStatus(parentId);
-}
-
-/**
- * One level of the rollup. Returns the next parent to recompute, or null to stop.
- * `onlyWithChildren` leaves a childless item untouched; a rollup triggered by a child
- * write passes false, so a parent whose last started child was deleted or moved out
- * still rolls back.
- */
-async function rollUpLevel(client: pg.PoolClient, parentId: string, onlyWithChildren: boolean): Promise<string | null> {
+/** One level of the rollup. Returns the next item up to recompute, or null to stop. */
+async function rollUpLevel(client: pg.PoolClient, itemId: string): Promise<string | null> {
 	// NO KEY UPDATE, not UPDATE: it still excludes other rollups but doesn't block the
-	// FK's KEY SHARE lock, so children can be created under or moved into this parent meanwhile.
-	const locked = await client.query('SELECT 1 FROM items WHERE id = $1 FOR NO KEY UPDATE', [parentId]);
+	// FK's KEY SHARE lock, so children can be created under or moved into this item meanwhile.
+	const locked = await client.query('SELECT 1 FROM items WHERE id = $1 FOR NO KEY UPDATE', [itemId]);
 	if (locked.rows.length === 0) return null;
 	const result = await client.query<{ parent_id: string | null; project_id: string; number: number; status: ItemStatus }>(
 		`WITH children AS (
-			SELECT EXISTS (SELECT 1 FROM items WHERE parent_id = $1 AND status = ANY($2::text[])) AS started,
-				EXISTS (SELECT 1 FROM items WHERE parent_id = $1) AS has_children
+			SELECT EXISTS (SELECT 1 FROM items WHERE parent_id = $1 AND status = ANY($2::text[])) AS started
 		)
 		UPDATE items
-		SET status = CASE WHEN (SELECT started FROM children) THEN 'in_progress' ELSE 'ready' END, updated_at = NOW()
-		WHERE id = $1 AND (NOT $4::boolean OR (SELECT has_children FROM children)) AND (
+		SET status = CASE WHEN (SELECT started FROM children) THEN 'in_progress' ELSE 'ready' END,
+			status_source = 'rollup', updated_at = NOW()
+		WHERE id = $1 AND (
 			(status = 'ready' AND (SELECT started FROM children))
 			OR (status = 'in_progress' AND NOT (SELECT started FROM children)
+				AND status_source IN ('rollup', 'sub_status')
 				AND (sub_status IS NULL OR sub_status <> ALL($3::text[])))
 		)
 		RETURNING parent_id, project_id, number, status`,
-		[parentId, STARTED_CHILD_STATUSES, ACTIVE_SUB_STATUSES, onlyWithChildren]
+		[itemId, STARTED_CHILD_STATUSES, ACTIVE_SUB_STATUSES]
 	);
 	const row = result.rows[0];
 	if (!row) return null;
@@ -622,7 +611,7 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 
 	const row = result.rows[0];
 	if (!row) await throwCreateFailure(projectId, parentNumber);
-	await rollUpParentStatus(row!.parent_id);
+	await rollUpStatus(row!.parent_id);
 	return { ...transformItem(row!), blocked: row!.status === 'blocked', childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
 }
 
@@ -693,19 +682,27 @@ export async function createItems(
 	);
 
 	if (result.rows.length === 0) await throwCreateFailure(projectId, parentNumber);
-	await rollUpParentStatus(result.rows[0]!.parent_id);
+	await rollUpStatus(result.rows[0]!.parent_id);
 
 	return result.rows
 		.sort((a, b) => a.rank - b.rank)
 		.map((row) => ({ ...transformItem(row), blocked: false, childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } }));
 }
 
-/** Update an item. Setting subStatus auto-derives board status at key transitions. */
+/**
+ * Update an item. Setting subStatus auto-derives board status at key transitions;
+ * a status the caller names wins over the derived one.
+ *
+ * A status write records its source only when it moves the status. The web client
+ * saves by PUTting the whole model, so every title edit or in-column reorder restates
+ * the current status; counting that as an explicit write would silently pin a
+ * rollup-promoted parent in progress. A status equal to what the sub_status derives is
+ * recorded as the sub_status's, since the drawer mirrors the derive client-side and
+ * sends both.
+ */
 export async function updateItem(projectId: string, itemNumber: number, data: UpdateItemInput): Promise<ItemResponse | null> {
-	if (data.subStatus !== undefined && data.status === undefined) {
-		const derived = deriveStatusFromSubStatus(data.subStatus);
-		if (derived) data.status = derived;
-	}
+	const derived = data.subStatus === undefined ? undefined : deriveStatusFromSubStatus(data.subStatus);
+	const status = data.status ?? derived;
 
 	const updates: string[] = [];
 	const values: unknown[] = [];
@@ -714,7 +711,14 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 
 	if (data.title !== undefined) set('title', data.title);
 	if (data.description !== undefined) set('description', data.description);
-	if (data.status !== undefined) set('status', data.status);
+	if (status !== undefined) {
+		const source: StatusSource = status === derived ? 'sub_status' : 'explicit';
+		// SET expressions read the row as it was, so `status` here is the old value.
+		updates.push(`status_source = CASE WHEN status IS DISTINCT FROM $${i} THEN $${i + 1} ELSE status_source END`);
+		values.push(status, source);
+		i += 2;
+		set('status', status);
+	}
 	if (data.subStatus !== undefined) set('sub_status', data.subStatus);
 	if (data.rank !== undefined) set('rank', data.rank);
 	if (data.prUrl !== undefined) set('pr_url', data.prUrl);
@@ -731,7 +735,7 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 	// Reaching done (directly or via subStatus 'complete') auto-clears blockers —
 	// dependents' and the item's own — in the same transaction as the status write.
 	let updated: { id: string; parent_id: string | null } | undefined;
-	if (data.status === 'done') {
+	if (status === 'done') {
 		updated = await transaction(async (client) => {
 			const result = await client.query<{ id: string; parent_id: string | null }>(sql, values);
 			const row = result.rows[0];
@@ -744,17 +748,14 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 	}
 	if (!updated) return null;
 
-	if (data.status !== undefined) {
-		// Any status transition out of in_progress ends worker episodes — the item
-		// is no longer being worked, whichever surface moved it.
-		if (data.status !== 'in_progress') await endWorkers(projectId, itemNumber);
-		await rollUpParentStatus(updated.parent_id);
-	} else if (data.subStatus !== undefined) {
-		// A sub_status that derives no board status (not_started, paused, needs_input)
-		// leaves the item's status as written, but it may have been the only thing
-		// holding the item in_progress over children that haven't started.
-		await recomputeOwnStatus(updated.id);
-	}
+	// Any status transition out of in_progress ends worker episodes — the item
+	// is no longer being worked, whichever surface moved it.
+	if (status !== undefined && status !== 'in_progress') await endWorkers(projectId, itemNumber);
+	// The sub_status may have been the only thing holding the item in_progress over
+	// children that haven't started. A status sent alongside it doesn't skip this: the
+	// web client always sends one, and an explicit status is safe from the rollup.
+	if (data.subStatus !== undefined) await rollUpStatus(updated.id);
+	if (status !== undefined) await rollUpStatus(updated.parent_id);
 
 	return getItemByNumber(projectId, itemNumber);
 }
@@ -825,8 +826,8 @@ export async function moveItem(projectId: string, itemNumber: number, newParentN
 	// The item left one child set and joined another; both parents recompute.
 	const { parent_id: parentId, previous_parent_id: previousParentId } = result.rows[0]!;
 	if (previousParentId !== parentId) {
-		await rollUpParentStatus(previousParentId);
-		await rollUpParentStatus(parentId);
+		await rollUpStatus(previousParentId);
+		await rollUpStatus(parentId);
 	}
 	return getItemByNumber(projectId, itemNumber);
 }
@@ -839,7 +840,7 @@ export async function deleteItem(projectId: string, itemNumber: number): Promise
 	);
 	const deleted = result.rows[0];
 	if (!deleted) return false;
-	await rollUpParentStatus(deleted.parent_id);
+	await rollUpStatus(deleted.parent_id);
 	return true;
 }
 
@@ -848,12 +849,12 @@ export async function deleteItem(projectId: string, itemNumber: number): Promise
 /** Start an item: in_progress, then roll its parent up. */
 export async function startItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const result = await query<{ parent_id: string | null }>(
-		`UPDATE items SET status = 'in_progress', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
+		`UPDATE items SET status = 'in_progress', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
 		[itemNumber, projectId]
 	);
 	const started = result.rows[0];
 	if (!started) return null;
-	await rollUpParentStatus(started.parent_id);
+	await rollUpStatus(started.parent_id);
 	return getItemByNumber(projectId, itemNumber);
 }
 
@@ -864,7 +865,7 @@ export async function startItem(projectId: string, itemNumber: number): Promise<
 export async function completeItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const completed = await transaction(async (client) => {
 		const result = await client.query<{ id: string; parent_id: string | null }>(
-			`UPDATE items SET status = 'done', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id, parent_id`,
+			`UPDATE items SET status = 'done', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id, parent_id`,
 			[itemNumber, projectId]
 		);
 		const row = result.rows[0];
@@ -873,32 +874,32 @@ export async function completeItem(projectId: string, itemNumber: number): Promi
 	});
 	if (!completed) return null;
 	await endWorkers(projectId, itemNumber);
-	await rollUpParentStatus(completed.parent_id);
+	await rollUpStatus(completed.parent_id);
 	return getItemByNumber(projectId, itemNumber);
 }
 
 /** Block an item (a manual status-level hold). Ends worker episodes (no longer being worked). */
 export async function blockItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const result = await query<{ parent_id: string | null }>(
-		`UPDATE items SET status = 'blocked', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
+		`UPDATE items SET status = 'blocked', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
 		[itemNumber, projectId]
 	);
 	const row = result.rows[0];
 	if (!row) return null;
 	await endWorkers(projectId, itemNumber);
-	await rollUpParentStatus(row.parent_id);
+	await rollUpStatus(row.parent_id);
 	return getItemByNumber(projectId, itemNumber);
 }
 
 /** Unblock an item back to ready. Ends worker episodes (no longer being worked). */
 export async function unblockItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
 	const result = await query<{ parent_id: string | null }>(
-		`UPDATE items SET status = 'ready', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
+		`UPDATE items SET status = 'ready', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
 		[itemNumber, projectId]
 	);
 	const row = result.rows[0];
 	if (!row) return null;
 	await endWorkers(projectId, itemNumber);
-	await rollUpParentStatus(row.parent_id);
+	await rollUpStatus(row.parent_id);
 	return getItemByNumber(projectId, itemNumber);
 }

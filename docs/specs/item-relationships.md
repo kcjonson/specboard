@@ -127,45 +127,80 @@ Library` without a second request.
 - **A parent's status rolls up from its children, both ways.** Every write that
   can change a child's status or the child set (create, bulk create, update,
   start, complete, block, unblock, move, delete) recomputes the parent from the
-  children it has now, in `rollUpParentStatus`. A create recomputes whatever
-  the new child's status, since a parent set to `in_progress` by hand, with no
-  active `sub_status`, has no started children to hold it there; a bulk create
-  recomputes its parent once for the whole batch. The rollup only moves a parent
-  between `ready` and `in_progress`: a `ready` parent goes to `in_progress` once
-  any child is `in_progress`, `in_review`, or `done`, and an `in_progress`
-  parent goes back to `ready` once none is. A `done` child counts, so finishing
-  the last active task doesn't drop an epic that's awaiting its close back into
-  Ready; a `blocked` child doesn't, since nobody is working it. Two things stop
-  a rollback: the parent's own `sub_status` being active (`scoping`,
-  `in_development`, `needs_input`, `paused`, `pr_open`), which is how an agent
-  scoping an epic with no started tasks keeps it in progress, and the parent's
-  status being anything other than those two (`blocked`, `in_review`, and `done`
-  are explicit and never touched; the rollup never completes a parent). A move
+  children it has now, in `rollUpStatus`. A create recomputes whatever the new
+  child's status; a bulk create recomputes its parent once for the whole batch.
+  The rollup only moves a parent between `ready` and `in_progress`: a `ready`
+  parent goes to `in_progress` once any child is `in_progress`, `in_review`, or
+  `done`, and an `in_progress` parent goes back to `ready` once none is. A `done`
+  child counts, so finishing the last active task doesn't drop an epic that's
+  awaiting its close back into Ready; a `blocked` child doesn't, since nobody is
+  working it. Three things stop a rollback: the parent's own `sub_status` being
+  active (`scoping`, `in_development`, `needs_input`, `paused`, `pr_open`), which
+  is how an agent scoping an epic with no started tasks keeps it in progress; an
+  `in_progress` that somebody set explicitly (below); and the parent's status
+  being anything other than those two (`blocked`, `in_review`, and `done` are
+  explicit and never touched; the rollup never completes a parent). A move
   recomputes both the parent it left and the one it joined, and a parent that
   changed is itself a child, so the walk continues up the tree until a level
-  holds still. The parent's own `sub_status` is an input too, so an update that
-  changes only the sub_status, to a value that derives no board status,
-  recomputes the item itself and then walks up from it; otherwise an epic held
-  in progress only by `in_development` would stay there after going back to
-  `not_started` until some child happened to write. That self-recompute skips a
-  childless item, since a leaf's `in_progress` is its own explicit state
-  (`startItem` doesn't set a sub_status). A child-triggered rollup doesn't skip
-  it, so a parent whose last started child is deleted or moved out still rolls
-  back. An update that sets a status alongside the sub_status is left as
-  written. Rollups of one parent are serialized: each level is its own
-  transaction that locks the parent row (`FOR NO KEY UPDATE`, which still lets
-  children be inserted or moved under it) and then recomputes in a separate
+  holds still. The item's own `sub_status` is an input too, so any update that
+  carries a `sub_status` recomputes the item itself and then walks up from it,
+  whether or not a status came with it (the web client always sends one);
+  otherwise an epic held in progress only by `in_development` would stay there
+  after going back to `not_started` until some child happened to write. That
+  applies to a childless item as well: its `in_progress` derived from a
+  `sub_status` falls back with it, while one it was started or dragged into is
+  explicit and stays. Rollups of one parent are serialized: each level is its
+  own transaction that locks the parent row (`FOR NO KEY UPDATE`, which still
+  lets children be inserted or moved under it) and then recomputes in a separate
   statement, so under READ COMMITTED the recompute's snapshot postdates the lock
   and the last rollup to run sees every child write that preceded it. A single
   locking UPDATE would not do: its subqueries keep the statement's starting
   snapshot even when the row lock is granted later, which let one child stopping
   and another starting at the same moment leave the parent `ready` over a started
   child. Each level commits before the next is locked, so a walk never holds two
-  item locks and can't deadlock with another walk. The sub_status recompute
-  takes the item's lock the same way, and commits before its parent is locked.
-  It replaced a one-way bump in `startItem` that only ever pushed a `ready`
-  parent forward, so a child going back to `ready` left its epic stuck in In
-  Progress.
+  item locks and can't deadlock with another walk. It replaced a one-way bump in
+  `startItem` that only ever pushed a `ready` parent forward, so a child going
+  back to `ready` left its epic stuck in In Progress.
+- **The rollup only demotes what it or a sub_status put there**
+  (`items.status_source`, migration 031). "Dragged epics should stay put": an
+  explicit status write is the user's call, and the rollup must not undo it. An
+  epic dragged to In Progress with no started children keeps `sub_status
+  not_started`, so before 031 it looked exactly like one the rollup had promoted
+  and dropped back to Ready on the next child write, creating its first ready
+  task included. The column records who set the current status, and the
+  rollback additionally requires `status_source IN ('rollup', 'sub_status')`.
+  Per write path:
+  - `explicit`: `startItem`, `completeItem`, `blockItem`, and `unblockItem`,
+    unconditionally, since each names a transition for that item (MCP
+    `update_item status=in_progress|done|blocked`, and a bare `status=ready`,
+    route to them, as do the REST lifecycle routes). A create takes the column
+    default, `explicit`. `updateItem` with a status and either no `sub_status`
+    or one that derives something else, which covers a board drag and the
+    drawer's status select.
+  - `sub_status`: `updateItem` whose status is the one its `sub_status` derives
+    (`scoping`/`in_development`/`pr_open` to `in_progress`, `complete` to
+    `done`), whether the service derived it or the caller sent both. The drawer
+    mirrors the derive client-side and PUTs both, so it lands the same as an MCP
+    `sub_status`-only write. A caller-named status that disagrees still wins, as
+    it always has, and is explicit.
+  - `rollup`: every status the rollup writes, promotions and rollbacks alike.
+  - `updateItem` records a source only when the status value **changes**. The
+    web client saves by PUTting the whole model, so a drag sends `status` and
+    echoes the current `sub_status`, but so does every title edit, description
+    edit, and in-column reorder, each restating the status it already has.
+    Counting the echo as explicit would silently pin a rollup-promoted epic in
+    progress the first time someone fixed a typo in it. The lifecycle routes are
+    never an echo, so they don't need the check: MCP `update_item
+    status=in_progress` on an epic the rollup already promoted makes it
+    explicit.
+
+  An explicit `in_progress` stays until its status is next written. Dragging it
+  to Ready makes that explicit too, but promotion isn't gated on the source, so
+  the next child write moves it back to In Progress if a child has started; only
+  the rollback is. Rows that existed before 031 were backfilled `explicit`,
+  because nothing says which in_progress parents the rollup promoted and which
+  someone dragged; the cost is that previously promoted epics stay in progress
+  when their children stop, until touched.
 
 ## Origin (`items.origin`, migration 025)
 
