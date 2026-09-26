@@ -569,7 +569,8 @@ describe('reaching done', () => {
 
 describe('parent status rollup', () => {
 	const ROLLUP = 'WITH children AS';
-	const LOCK = 'FOR NO KEY UPDATE';
+	const LOCK = 'SELECT parent_id FROM items WHERE id = $1 FOR NO KEY UPDATE';
+	const BUMP = 'UPDATE items SET updated_at = NOW() WHERE id = $1';
 	const detailRow = {
 		...makeItem({ parent_id: 'epic-1', type: 'task' }),
 		blocked: false,
@@ -581,19 +582,24 @@ describe('parent status rollup', () => {
 
 	/**
 	 * Routes each statement by its SQL, on the pool and transaction clients alike: the
-	 * item's own write returns `written`, the parent lock finds its row, the rollup
-	 * returns the next of `rolledUp` (then nothing, ending the walk), and everything
-	 * else (blockers, worker episodes, the re-read) returns the detail row or nothing.
+	 * item's own write returns `written`; the lock on a level finds its row and reports
+	 * its parent from `parents` (none by default, so the walk ends there); the recompute
+	 * of a level listed in `moved` returns that row, and holds still otherwise; everything
+	 * else (touches, blockers, worker episodes, the re-read) returns the detail row or nothing.
 	 */
-	function route(written: object | null, rolledUp: Array<Record<string, unknown>> = []): void {
-		const queue = [...rolledUp];
+	function route(
+		written: object | null,
+		{ parents = {}, moved = {} }: { parents?: Record<string, string>; moved?: Record<string, Record<string, unknown>> } = {}
+	): void {
 		const writeResult = { rows: written ? [written] : [], rowCount: written ? 1 : 0 };
-		const respond = async (sql: string): Promise<{ rows: unknown[]; rowCount: number }> => {
-			if (sql.includes(LOCK)) return { rows: [{}], rowCount: 1 };
+		const respond = async (sql: string, params?: unknown[]): Promise<{ rows: unknown[]; rowCount: number }> => {
+			const levelId = params?.[0] as string;
+			if (sql.includes(LOCK)) return { rows: [{ parent_id: parents[levelId] ?? null }], rowCount: 1 };
 			if (sql.includes(ROLLUP)) {
-				const row = queue.shift();
+				const row = moved[levelId];
 				return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
 			}
+			if (sql.includes(BUMP)) return { rows: [], rowCount: 1 };
 			if (sql.includes('item_workers') || sql.includes('item_blockers')) return { rows: [], rowCount: 0 };
 			if (/^\s*(UPDATE items|DELETE FROM items|WITH (RECURSIVE )?parent AS)/.test(sql)) return writeResult;
 			return { rows: [detailRow], rowCount: 1 };
@@ -605,6 +611,9 @@ describe('parent status rollup', () => {
 	const rollupCalls = (): unknown[][] => mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(ROLLUP));
 	const workerEnds = (): unknown[][] => [...mockQuery.mock.calls, ...mockClientQuery.mock.calls]
 		.filter(([sql]) => (sql as string).includes('UPDATE item_workers'));
+	const touched = (): unknown[] => mockClientQuery.mock.calls
+		.filter(([sql]) => (sql as string).includes(BUMP))
+		.map(([, params]) => (params as unknown[])[0]);
 
 	it('recomputes from the child set: ready rolls up on any started child, in_progress rolls back on none', async () => {
 		route({ parent_id: 'epic-1' });
@@ -648,7 +657,7 @@ describe('parent status rollup', () => {
 	});
 
 	it('a child back to ready rolls the parent back and ends its worker episodes', async () => {
-		route({ parent_id: 'epic-1' }, [{ parent_id: null, project_id: 'proj-1', number: 7, status: 'ready' }]);
+		route({ id: 'item-1', parent_id: 'epic-1', status_changed: true }, { moved: { 'epic-1': { project_id: 'proj-1', number: 7, status: 'ready' } } });
 
 		await updateItem('proj-1', 1, { status: 'ready' });
 
@@ -657,15 +666,80 @@ describe('parent status rollup', () => {
 		expect(parentEnd?.[1]).toEqual(['proj-1', 7]);
 	});
 
-	it('walks up the tree while each level changes, and stops at the first that holds', async () => {
-		route({ parent_id: 'task-1' }, [
-			{ parent_id: 'epic-1', project_id: 'proj-1', number: 5, status: 'in_progress' },
-		]);
+	it('walks to the root, past levels that hold still, following each locked row\'s parent', async () => {
+		route({ parent_id: 'task-1' }, {
+			parents: { 'task-1': 'epic-1', 'epic-1': 'root-1' },
+			moved: { 'task-1': { project_id: 'proj-1', number: 5, status: 'in_progress' } },
+		});
 
 		await startItem('proj-1', 9);
 
-		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['task-1', 'epic-1']);
+		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['task-1', 'epic-1', 'root-1']);
+		expect(mockTransaction).toHaveBeenCalledTimes(3);
 		expect(workerEnds()).toHaveLength(0);
+	});
+
+	it("touches the changed child's parent when its status holds, and nothing above it", async () => {
+		route({ parent_id: 'epic-1' }, { parents: { 'epic-1': 'root-1' } });
+
+		await blockItem('proj-1', 1);
+
+		expect(touched()).toEqual(['epic-1']);
+	});
+
+	it('a level the rollup moves hands the touch to its own parent', async () => {
+		route({ parent_id: 'task-1' }, {
+			parents: { 'task-1': 'epic-1', 'epic-1': 'root-1' },
+			moved: { 'task-1': { project_id: 'proj-1', number: 5, status: 'in_progress' } },
+		});
+
+		await startItem('proj-1', 9);
+
+		// task-1's own recompute wrote its updated_at; epic-1's child counts moved with it.
+		expect(touched()).toEqual(['epic-1']);
+	});
+
+	it('a touch moves updated_at only, never the status or its source', async () => {
+		route({ parent_id: 'epic-1' });
+
+		await deleteItem('proj-1', 1);
+
+		const [bump] = mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(BUMP));
+		expect(bump![0]).toBe(BUMP);
+	});
+
+	it('updateItem touches the parent only when the status actually moved', async () => {
+		route({ id: 'item-1', parent_id: 'epic-1', status_changed: false });
+		await updateItem('proj-1', 1, { title: 'renamed', status: 'ready' });
+		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
+		expect(touched()).toEqual([]);
+
+		mockClientQuery.mockClear();
+		route({ id: 'item-1', parent_id: 'epic-1', status_changed: true });
+		await updateItem('proj-1', 1, { status: 'blocked' });
+		expect(touched()).toEqual(['epic-1']);
+	});
+
+	it('updateItem reports the move against the row as locked, not the statement snapshot', async () => {
+		route({ id: 'item-1', parent_id: 'epic-1', status_changed: false });
+
+		await updateItem('proj-1', 1, { status: 'ready' });
+
+		const [write] = mockQuery.mock.calls.find(([sql]) => (sql as string).startsWith('UPDATE items SET'))!;
+		expect(write).toContain('FROM (SELECT id AS previous_id, status AS previous_status FROM items');
+		expect(write).toContain('FOR NO KEY UPDATE) previous');
+		expect(write).toContain('RETURNING id, parent_id, status IS DISTINCT FROM previous.previous_status AS status_changed');
+	});
+
+	it('the parent hears of a sub_status write whose recompute moved the item, even when the write did not', async () => {
+		route({ id: 'item-1', parent_id: 'epic-1', status_changed: false }, {
+			parents: { 'item-1': 'epic-1' },
+			moved: { 'item-1': { project_id: 'proj-1', number: 1, status: 'ready' } },
+		});
+
+		await updateItem('proj-1', 1, { subStatus: 'not_started' });
+
+		expect(touched()).toEqual(['epic-1']);
 	});
 
 	it('locks the parent row before recomputing, as a separate statement in the same transaction', async () => {
@@ -685,9 +759,7 @@ describe('parent status rollup', () => {
 	});
 
 	it('commits each level before locking the next, so a walk holds one parent lock at a time', async () => {
-		route({ parent_id: 'task-1' }, [
-			{ parent_id: 'epic-1', project_id: 'proj-1', number: 5, status: 'in_progress' },
-		]);
+		route({ parent_id: 'task-1' }, { parents: { 'task-1': 'epic-1' } });
 
 		await startItem('proj-1', 9);
 
@@ -699,7 +771,7 @@ describe('parent status rollup', () => {
 	it('stops the walk without recomputing when the parent is gone by the time it is locked', async () => {
 		route({ parent_id: 'epic-1' });
 		const respond = mockClientQuery.getMockImplementation()!;
-		mockClientQuery.mockImplementation(async (sql: string) => (sql.includes(LOCK) ? { rows: [], rowCount: 0 } : respond(sql)));
+		mockClientQuery.mockImplementation(async (sql: string, params?: unknown[]) => (sql.includes(LOCK) ? { rows: [], rowCount: 0 } : respond(sql, params)));
 
 		await startItem('proj-1', 1);
 
@@ -715,7 +787,7 @@ describe('parent status rollup', () => {
 	});
 
 	it('updateItem recomputes only on a status or sub_status write', async () => {
-		route({ id: 'item-1', parent_id: 'epic-1' });
+		route({ id: 'item-1', parent_id: 'epic-1' }, { parents: { 'item-1': 'epic-1' } });
 
 		await updateItem('proj-1', 1, { title: 'renamed' });
 		expect(rollupCalls()).toHaveLength(0);
@@ -756,9 +828,10 @@ describe('parent status rollup', () => {
 	});
 
 	it('a sub_status that derives no status recomputes the item itself, then walks up from it', async () => {
-		route({ id: 'item-1', parent_id: 'epic-1' }, [
-			{ parent_id: 'epic-1', project_id: 'proj-1', number: 1, status: 'ready' },
-		]);
+		route({ id: 'item-1', parent_id: 'epic-1' }, {
+			parents: { 'item-1': 'epic-1' },
+			moved: { 'item-1': { project_id: 'proj-1', number: 1, status: 'ready' } },
+		});
 
 		await updateItem('proj-1', 1, { subStatus: 'not_started' });
 
@@ -773,7 +846,7 @@ describe('parent status rollup', () => {
 	it('a status sent alongside a sub_status still recomputes the item, then its parent', async () => {
 		// The web client PUTs the whole model, so a sub_status change always carries the
 		// current status too; that echo must not skip the item's own recompute.
-		route({ id: 'item-1', parent_id: 'epic-1' });
+		route({ id: 'item-1', parent_id: 'epic-1' }, { parents: { 'item-1': 'epic-1' } });
 
 		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'not_started' });
 
@@ -815,6 +888,7 @@ describe('parent status rollup', () => {
 		expect(moveSql).toContain('previous AS (\n\t\t\tSELECT parent_id FROM items WHERE number = $2 AND project_id = $3');
 		expect(moveSql).toContain('(SELECT parent_id FROM previous) AS previous_parent_id');
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1', 'epic-2']);
+		expect(touched()).toEqual(['epic-1', 'epic-2']);
 	});
 
 	it('promoting a child to top-level recomputes only the parent it left', async () => {
@@ -861,6 +935,7 @@ describe('parent status rollup', () => {
 
 		expect(mockTransaction).toHaveBeenCalledTimes(1);
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
+		expect(touched()).toEqual(['epic-1']);
 		expect(mockQuery.mock.invocationCallOrder[0]!).toBeLessThan(mockClientQuery.mock.invocationCallOrder[0]!);
 	});
 });

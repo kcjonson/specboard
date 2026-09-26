@@ -140,13 +140,15 @@ Library` without a second request.
   `in_progress` that somebody set explicitly (below); and the parent's status
   being anything other than those two (`blocked`, `in_review`, and `done` are
   explicit and never touched; the rollup never completes a parent). A move
-  recomputes both the parent it left and the one it joined, and a parent that
-  changed is itself a child, so the walk continues up the tree until a level
-  holds still. The item's own `sub_status` is an input too, so any update that
-  carries a `sub_status` recomputes the item itself and then walks up from it,
-  whether or not a status came with it (the web client always sends one);
-  otherwise an epic held in progress only by `in_development` would stay there
-  after going back to `not_started` until some child happened to write. That
+  recomputes both the parent it left and the one it joined. Every parent is
+  itself a child, so the walk continues to the root whether or not a level
+  changed: an explicit `in_progress` parent holds still when its first child
+  starts, and stopping there would leave a `ready` grandparent above it that
+  has a started child. The item's own `sub_status` is an input too, so any
+  update that carries a `sub_status` recomputes the item itself and then walks
+  up from it, whether or not a status came with it (the web client always sends
+  one); otherwise an epic held in progress only by `in_development` would stay
+  there after going back to `not_started` until some child happened to write. That
   applies to a childless item as well: its `in_progress` derived from a
   `sub_status` falls back with it, while one it was started or dragged into is
   explicit and stays. Rollups of one parent are serialized: each level is its
@@ -158,14 +160,32 @@ Library` without a second request.
   snapshot even when the row lock is granted later, which let one child stopping
   and another starting at the same moment leave the parent `ready` over a started
   child. Each level commits before the next is locked, so a walk never holds two
-  item locks and can't deadlock with another walk. It replaced a one-way bump in
+  item locks and can't deadlock with another walk. The lock also reports the
+  row's parent, which is where the walk goes next. It replaced a one-way bump in
   `startItem` that only ever pushed a `ready` parent forward, so a child going
   back to `ready` left its epic stuck in In Progress.
+
+  A child write also moves its parent's `updated_at`, even when the parent's
+  status holds. List reads carry per-status child counts, and `SyncCollection`
+  reapplies a polled row only when its `updated_at` moved, so without the touch
+  other sessions kept stale counts until the parent's own status next changed.
+  The touch lands on the direct parent of whatever changed: the parent of a
+  created, bulk-created, deleted, started, completed, blocked, or unblocked
+  child, both parents on a move, and the parent of any level the rollup itself
+  moves, since that level's status is one of its parent's counts. Ancestors
+  whose children didn't change aren't touched, and a touch writes `updated_at`
+  only, never the status or `status_source`, through the same `bumpItem` the
+  blocker writes use. `updateItem` touches the parent only when the status
+  value actually moved, reading the old value under a row lock in the same
+  statement (a plain sub-select would read the statement's snapshot and miss a
+  concurrent change), so the web client's restating PUTs on every title edit
+  don't flash the parent on other screens. The lifecycle routes touch
+  unconditionally, since none of them is an echo.
 - **The rollup only demotes what it or a sub_status put there**
   (`items.status_source`, migration 032). "Dragged epics should stay put": an
   explicit status write is the user's call, and the rollup must not undo it. An
   epic dragged to In Progress with no started children keeps `sub_status
-  not_started`, so before 031 it looked exactly like one the rollup had promoted
+  not_started`, so before 032 it looked exactly like one the rollup had promoted
   and dropped back to Ready on the next child write, creating its first ready
   task included. The column records who set the current status, and the
   rollback additionally requires `status_source IN ('rollup', 'sub_status')`.
@@ -197,7 +217,7 @@ Library` without a second request.
   An explicit `in_progress` stays until its status is next written. Dragging it
   to Ready makes that explicit too, but promotion isn't gated on the source, so
   the next child write moves it back to In Progress if a child has started; only
-  the rollback is. Rows that existed before 031 were backfilled `explicit`,
+  the rollback is. Rows that existed before 032 were backfilled `explicit`,
   because nothing says which in_progress parents the rollup promoted and which
   someone dragged; the cost is that previously promoted epics stay in progress
   when their children stop, until touched.

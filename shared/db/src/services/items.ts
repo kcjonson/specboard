@@ -10,7 +10,7 @@ import type pg from 'pg';
 import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Item, ItemType, ItemStatus, SubStatus, StatusSource, SpecType, ItemOrigin, ChecklistEntry } from '../types.ts';
-import { clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
+import { bumpItem, clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
 import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
 
@@ -505,16 +505,24 @@ const ACTIVE_SUB_STATUSES: SubStatus[] = ['scoping', 'in_development', 'needs_in
 
 /**
  * Recompute an item's status from its current children, then its parent's, and so on
- * up the tree until a level holds still. Called with the parent after every write that
- * can change a child's status or the child set, so the rollup reverses as readily as it
- * advances, and with the item itself after a sub_status write, since its own sub_status
- * is an input too. It only moves an item between ready and in_progress: ready rolls up
- * when any child has started; in_progress rolls back when none has, unless the item's
+ * up to the root. Called with the parent after every write that can change a child's
+ * status or the child set, so the rollup reverses as readily as it advances, and with
+ * the item itself after a sub_status write, since its own sub_status is an input too.
+ * A level that holds still doesn't end the walk: an explicit in_progress parent can sit
+ * under a ready grandparent, and only a recompute of the grandparent notices.
+ *
+ * It only moves an item between ready and in_progress: ready rolls up when any child
+ * has started; in_progress rolls back when none has, unless the item's
  * own sub_status says it is active or nobody but the rollup or a sub_status put it in
  * progress (status_source 'rollup' or 'sub_status'). An explicit in_progress (a drag, a
  * start) is the caller's call and stays. Blocked, in_review, and done are explicit states
  * and are never touched. A rollback ends worker episodes like any other transition out
  * of in_progress.
+ *
+ * `touch` says the first level's children changed (membership or a child's status), so
+ * its updated_at moves even when its status holds: list reads carry per-status child
+ * counts, and clients only reapply a polled row whose updated_at moved. Each level up
+ * is touched only when the level below it changed status.
  *
  * Each level is its own transaction that locks the row before recomputing, so rollups
  * of one item run one at a time. Every rollup starts after the write that triggered it
@@ -523,21 +531,36 @@ const ACTIVE_SUB_STATUSES: SubStatus[] = ['scoping', 'in_development', 'needs_in
  * therefore sees every child write that preceded it. Committing each level before
  * locking the next means a rollup never holds two item locks, so walks can't deadlock.
  */
-async function rollUpStatus(fromId: string | null): Promise<void> {
+async function rollUpStatus(fromId: string | null, touch: boolean): Promise<void> {
 	let id = fromId;
+	let touchLevel = touch;
 	while (id) {
 		const levelId = id;
-		id = await transaction((client) => rollUpLevel(client, levelId));
+		const levelTouch = touchLevel;
+		const step = await transaction((client) => rollUpLevel(client, levelId, levelTouch));
+		id = step.parentId;
+		touchLevel = step.changed;
 	}
 }
 
-/** One level of the rollup. Returns the next item up to recompute, or null to stop. */
-async function rollUpLevel(client: pg.PoolClient, itemId: string): Promise<string | null> {
+interface RollUpStep {
+	/** The next item up, or null at the root (or when the item is gone). */
+	parentId: string | null;
+	/** Whether this level's status changed, which changes its parent's child counts. */
+	changed: boolean;
+}
+
+/** One level of the rollup: lock, recompute, and touch the row if asked and it held still. */
+async function rollUpLevel(client: pg.PoolClient, itemId: string, touch: boolean): Promise<RollUpStep> {
 	// NO KEY UPDATE, not UPDATE: it still excludes other rollups but doesn't block the
 	// FK's KEY SHARE lock, so children can be created under or moved into this item meanwhile.
-	const locked = await client.query('SELECT 1 FROM items WHERE id = $1 FOR NO KEY UPDATE', [itemId]);
-	if (locked.rows.length === 0) return null;
-	const result = await client.query<{ parent_id: string | null; project_id: string; number: number; status: ItemStatus }>(
+	const locked = await client.query<{ parent_id: string | null }>(
+		'SELECT parent_id FROM items WHERE id = $1 FOR NO KEY UPDATE',
+		[itemId]
+	);
+	const lockedRow = locked.rows[0];
+	if (!lockedRow) return { parentId: null, changed: false };
+	const result = await client.query<{ project_id: string; number: number; status: ItemStatus }>(
 		`WITH children AS (
 			SELECT EXISTS (SELECT 1 FROM items WHERE parent_id = $1 AND status = ANY($2::text[])) AS started
 		)
@@ -550,13 +573,16 @@ async function rollUpLevel(client: pg.PoolClient, itemId: string): Promise<strin
 				AND status_source IN ('rollup', 'sub_status')
 				AND (sub_status IS NULL OR sub_status <> ALL($3::text[])))
 		)
-		RETURNING parent_id, project_id, number, status`,
+		RETURNING project_id, number, status`,
 		[itemId, STARTED_CHILD_STATUSES, ACTIVE_SUB_STATUSES]
 	);
 	const row = result.rows[0];
-	if (!row) return null;
+	if (!row) {
+		if (touch) await bumpItem(client, itemId);
+		return { parentId: lockedRow.parent_id, changed: false };
+	}
 	if (row.status !== 'in_progress') await endWorkers(row.project_id, row.number, client);
-	return row.parent_id;
+	return { parentId: lockedRow.parent_id, changed: true };
 }
 
 /**
@@ -611,7 +637,7 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 
 	const row = result.rows[0];
 	if (!row) await throwCreateFailure(projectId, parentNumber);
-	await rollUpStatus(row!.parent_id);
+	await rollUpStatus(row!.parent_id, true);
 	return { ...transformItem(row!), blocked: row!.status === 'blocked', childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
 }
 
@@ -682,11 +708,17 @@ export async function createItems(
 	);
 
 	if (result.rows.length === 0) await throwCreateFailure(projectId, parentNumber);
-	await rollUpStatus(result.rows[0]!.parent_id);
+	await rollUpStatus(result.rows[0]!.parent_id, true);
 
 	return result.rows
 		.sort((a, b) => a.rank - b.rank)
 		.map((row) => ({ ...transformItem(row), blocked: false, childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } }));
+}
+
+interface UpdatedRow {
+	id: string;
+	parent_id: string | null;
+	status_changed: boolean;
 }
 
 /**
@@ -730,32 +762,47 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 
 	updates.push('updated_at = NOW()');
 	values.push(itemNumber, projectId);
-	const sql = `UPDATE items SET ${updates.join(', ')} WHERE number = $${i++} AND project_id = $${i} RETURNING id, parent_id`;
+	// The parent is touched only when the status actually moves, not on every restating
+	// PUT, so the write reports whether it did. The locking sub-select reads the row as
+	// it stands once any concurrent write has committed; a plain one would report against
+	// the statement's older snapshot.
+	const sql = `UPDATE items SET ${updates.join(', ')}
+		FROM (SELECT id AS previous_id, status AS previous_status FROM items
+			WHERE number = $${i++} AND project_id = $${i} FOR NO KEY UPDATE) previous
+		WHERE items.id = previous.previous_id
+		RETURNING id, parent_id, status IS DISTINCT FROM previous.previous_status AS status_changed`;
 
 	// Reaching done (directly or via subStatus 'complete') auto-clears blockers —
 	// dependents' and the item's own — in the same transaction as the status write.
-	let updated: { id: string; parent_id: string | null } | undefined;
+	let updated: UpdatedRow | undefined;
 	if (status === 'done') {
 		updated = await transaction(async (client) => {
-			const result = await client.query<{ id: string; parent_id: string | null }>(sql, values);
+			const result = await client.query<UpdatedRow>(sql, values);
 			const row = result.rows[0];
 			if (row) await clearBlockersForCompletion(client, row.id);
 			return row;
 		});
 	} else {
-		const result = await query<{ id: string; parent_id: string | null }>(sql, values);
+		const result = await query<UpdatedRow>(sql, values);
 		updated = result.rows[0];
 	}
 	if (!updated) return null;
+	const { id, parent_id: parentId, status_changed: statusChanged } = updated;
 
 	// Any status transition out of in_progress ends worker episodes — the item
 	// is no longer being worked, whichever surface moved it.
 	if (status !== undefined && status !== 'in_progress') await endWorkers(projectId, itemNumber);
-	// The sub_status may have been the only thing holding the item in_progress over
-	// children that haven't started. A status sent alongside it doesn't skip this: the
-	// web client always sends one, and an explicit status is safe from the rollup.
-	if (data.subStatus !== undefined) await rollUpStatus(updated.id);
-	if (status !== undefined) await rollUpStatus(updated.parent_id);
+	if (data.subStatus !== undefined) {
+		// The sub_status may have been the only thing holding the item in_progress over
+		// children that haven't started, so the walk starts at the item itself. A status
+		// sent alongside it doesn't skip this: the web client always sends one, and an
+		// explicit status is safe from the rollup. The parent hears of the item's status
+		// moving whether the write or the recompute moved it.
+		const own = await transaction((client) => rollUpLevel(client, id, false));
+		await rollUpStatus(own.parentId, own.changed || statusChanged);
+	} else if (status !== undefined) {
+		await rollUpStatus(parentId, statusChanged);
+	}
 
 	return getItemByNumber(projectId, itemNumber);
 }
@@ -826,8 +873,8 @@ export async function moveItem(projectId: string, itemNumber: number, newParentN
 	// The item left one child set and joined another; both parents recompute.
 	const { parent_id: parentId, previous_parent_id: previousParentId } = result.rows[0]!;
 	if (previousParentId !== parentId) {
-		await rollUpStatus(previousParentId);
-		await rollUpStatus(parentId);
+		await rollUpStatus(previousParentId, true);
+		await rollUpStatus(parentId, true);
 	}
 	return getItemByNumber(projectId, itemNumber);
 }
@@ -840,7 +887,7 @@ export async function deleteItem(projectId: string, itemNumber: number): Promise
 	);
 	const deleted = result.rows[0];
 	if (!deleted) return false;
-	await rollUpStatus(deleted.parent_id);
+	await rollUpStatus(deleted.parent_id, true);
 	return true;
 }
 
@@ -854,7 +901,7 @@ export async function startItem(projectId: string, itemNumber: number): Promise<
 	);
 	const started = result.rows[0];
 	if (!started) return null;
-	await rollUpStatus(started.parent_id);
+	await rollUpStatus(started.parent_id, true);
 	return getItemByNumber(projectId, itemNumber);
 }
 
@@ -874,7 +921,7 @@ export async function completeItem(projectId: string, itemNumber: number): Promi
 	});
 	if (!completed) return null;
 	await endWorkers(projectId, itemNumber);
-	await rollUpStatus(completed.parent_id);
+	await rollUpStatus(completed.parent_id, true);
 	return getItemByNumber(projectId, itemNumber);
 }
 
@@ -887,7 +934,7 @@ export async function blockItem(projectId: string, itemNumber: number): Promise<
 	const row = result.rows[0];
 	if (!row) return null;
 	await endWorkers(projectId, itemNumber);
-	await rollUpStatus(row.parent_id);
+	await rollUpStatus(row.parent_id, true);
 	return getItemByNumber(projectId, itemNumber);
 }
 
@@ -900,6 +947,6 @@ export async function unblockItem(projectId: string, itemNumber: number): Promis
 	const row = result.rows[0];
 	if (!row) return null;
 	await endWorkers(projectId, itemNumber);
-	await rollUpStatus(row.parent_id);
+	await rollUpStatus(row.parent_id, true);
 	return getItemByNumber(projectId, itemNumber);
 }
