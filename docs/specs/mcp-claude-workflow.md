@@ -64,16 +64,19 @@ field.
 
 | sub_status | Meaning | Board status |
 |------------|---------|--------------|
-| not_started | nothing begun | ready |
+| not_started | nothing begun | unchanged |
 | scoping | planning / plan mode / writing the spec | in_progress |
 | in_development | actively coding | in_progress |
-| needs_input | blocked on a human answer | in_progress |
-| paused | stepped away mid-flight | in_progress |
-| pr_open | PR open for review | in_review |
+| needs_input | blocked on a human answer | unchanged, and held |
+| paused | stepped away mid-flight | unchanged, and held |
+| pr_open | PR open for review | in_progress |
 | complete | verified and closed | done |
 
 Setting sub_status to `scoping`, `in_development`, or `pr_open` moves the board to `in_progress`;
-`complete` moves it to `done`.
+`complete` moves it to `done`. `needs_input` and `paused` describe work that has already started, so
+they don't set a status of their own: they keep whatever the item has and stop the parent rollup from
+moving it back to `ready` (see Parent rollup below). Setting them on an item that was never started
+leaves it `ready`.
 
 ### Task status
 
