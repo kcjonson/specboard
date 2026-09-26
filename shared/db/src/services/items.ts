@@ -6,6 +6,7 @@
  * are themselves items, so the same operations apply at every level.
  */
 
+import type pg from 'pg';
 import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Item, ItemType, ItemStatus, SubStatus, SpecType, ItemOrigin, ChecklistEntry } from '../types.ts';
@@ -511,29 +512,46 @@ const ACTIVE_SUB_STATUSES: SubStatus[] = ['scoping', 'in_development', 'needs_in
  * parents are explicit states and are never touched. A parent that changed is itself
  * a child, so the walk continues up the tree until a level holds still. A rollback
  * ends worker episodes like any other transition out of in_progress.
+ *
+ * Each level is its own transaction that locks the parent row before recomputing, so
+ * rollups of one parent run one at a time. Every rollup starts after its child write
+ * has committed, and the recompute is a separate statement from the lock so its
+ * READ COMMITTED snapshot is taken after the lock is granted; the last rollup to run
+ * therefore sees every child write that preceded it. Committing each level before
+ * locking the next means a rollup never holds two item locks, so walks can't deadlock.
  */
 async function rollUpParentStatus(parentId: string | null): Promise<void> {
 	let id = parentId;
 	while (id) {
-		const result = await query<{ parent_id: string | null; project_id: string; number: number; status: ItemStatus }>(
-			`WITH children AS (
-				SELECT EXISTS (SELECT 1 FROM items WHERE parent_id = $1 AND status = ANY($2::text[])) AS started
-			)
-			UPDATE items
-			SET status = CASE WHEN (SELECT started FROM children) THEN 'in_progress' ELSE 'ready' END, updated_at = NOW()
-			WHERE id = $1 AND (
-				(status = 'ready' AND (SELECT started FROM children))
-				OR (status = 'in_progress' AND NOT (SELECT started FROM children)
-					AND (sub_status IS NULL OR sub_status <> ALL($3::text[])))
-			)
-			RETURNING parent_id, project_id, number, status`,
-			[id, STARTED_CHILD_STATUSES, ACTIVE_SUB_STATUSES]
-		);
-		const row = result.rows[0];
-		if (!row) return;
-		if (row.status !== 'in_progress') await endWorkers(row.project_id, row.number);
-		id = row.parent_id;
+		const levelId = id;
+		id = await transaction((client) => rollUpLevel(client, levelId));
 	}
+}
+
+/** One level of the rollup. Returns the next parent to recompute, or null to stop. */
+async function rollUpLevel(client: pg.PoolClient, parentId: string): Promise<string | null> {
+	// NO KEY UPDATE, not UPDATE: it still excludes other rollups but doesn't block the
+	// FK's KEY SHARE lock, so children can be created under or moved into this parent meanwhile.
+	const locked = await client.query('SELECT 1 FROM items WHERE id = $1 FOR NO KEY UPDATE', [parentId]);
+	if (locked.rows.length === 0) return null;
+	const result = await client.query<{ parent_id: string | null; project_id: string; number: number; status: ItemStatus }>(
+		`WITH children AS (
+			SELECT EXISTS (SELECT 1 FROM items WHERE parent_id = $1 AND status = ANY($2::text[])) AS started
+		)
+		UPDATE items
+		SET status = CASE WHEN (SELECT started FROM children) THEN 'in_progress' ELSE 'ready' END, updated_at = NOW()
+		WHERE id = $1 AND (
+			(status = 'ready' AND (SELECT started FROM children))
+			OR (status = 'in_progress' AND NOT (SELECT started FROM children)
+				AND (sub_status IS NULL OR sub_status <> ALL($3::text[])))
+		)
+		RETURNING parent_id, project_id, number, status`,
+		[parentId, STARTED_CHILD_STATUSES, ACTIVE_SUB_STATUSES]
+	);
+	const row = result.rows[0];
+	if (!row) return null;
+	if (row.status !== 'in_progress') await endWorkers(row.project_id, row.number, client);
+	return row.parent_id;
 }
 
 /**

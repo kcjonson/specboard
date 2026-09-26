@@ -564,6 +564,7 @@ describe('reaching done', () => {
 
 describe('parent status rollup', () => {
 	const ROLLUP = 'WITH children AS';
+	const LOCK = 'FOR NO KEY UPDATE';
 	const detailRow = {
 		...makeItem({ parent_id: 'epic-1', type: 'task' }),
 		blocked: false,
@@ -574,26 +575,31 @@ describe('parent status rollup', () => {
 	};
 
 	/**
-	 * Routes each statement by its SQL: the item's own write returns `written`, the
-	 * rollup returns the next of `rolledUp` (then nothing, ending the walk), and
-	 * everything else (worker episodes, the re-read) returns the detail row.
+	 * Routes each statement by its SQL, on the pool and transaction clients alike: the
+	 * item's own write returns `written`, the parent lock finds its row, the rollup
+	 * returns the next of `rolledUp` (then nothing, ending the walk), and everything
+	 * else (blockers, worker episodes, the re-read) returns the detail row or nothing.
 	 */
-	function route(written: Record<string, unknown> | null, rolledUp: Array<Record<string, unknown>> = []): void {
+	function route(written: object | null, rolledUp: Array<Record<string, unknown>> = []): void {
 		const queue = [...rolledUp];
 		const writeResult = { rows: written ? [written] : [], rowCount: written ? 1 : 0 };
-		mockClientQuery.mockImplementation(async () => writeResult);
-		mockQuery.mockImplementation((async (sql: string) => {
+		const respond = async (sql: string): Promise<{ rows: unknown[]; rowCount: number }> => {
+			if (sql.includes(LOCK)) return { rows: [{}], rowCount: 1 };
 			if (sql.includes(ROLLUP)) {
 				const row = queue.shift();
 				return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
 			}
-			if (sql.includes('UPDATE item_workers')) return { rows: [], rowCount: 0 };
+			if (sql.includes('item_workers') || sql.includes('item_blockers')) return { rows: [], rowCount: 0 };
 			if (/^\s*(UPDATE items|DELETE FROM items|WITH (RECURSIVE )?parent AS)/.test(sql)) return writeResult;
 			return { rows: [detailRow], rowCount: 1 };
-		}) as never);
+		};
+		mockClientQuery.mockImplementation(respond);
+		mockQuery.mockImplementation(respond as never);
 	}
 
-	const rollupCalls = (): unknown[][] => mockQuery.mock.calls.filter(([sql]) => (sql as string).includes(ROLLUP));
+	const rollupCalls = (): unknown[][] => mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(ROLLUP));
+	const workerEnds = (): unknown[][] => [...mockQuery.mock.calls, ...mockClientQuery.mock.calls]
+		.filter(([sql]) => (sql as string).includes('UPDATE item_workers'));
 
 	it('recomputes from the child set: ready rolls up on any started child, in_progress rolls back on none', async () => {
 		route({ parent_id: 'epic-1' });
@@ -641,8 +647,9 @@ describe('parent status rollup', () => {
 
 		await updateItem('proj-1', 1, { status: 'ready' });
 
-		const workerEnds = mockQuery.mock.calls.filter(([sql]) => (sql as string).includes('UPDATE item_workers'));
-		expect(workerEnds.map(([, params]) => params)).toEqual([['proj-1', 1], ['proj-1', 7]]);
+		expect(mockQuery.mock.calls.filter(([sql]) => (sql as string).includes('UPDATE item_workers')).map(([, params]) => params)).toEqual([['proj-1', 1]]);
+		const parentEnd = mockClientQuery.mock.calls.find(([sql]) => (sql as string).includes('UPDATE item_workers'));
+		expect(parentEnd?.[1]).toEqual(['proj-1', 7]);
 	});
 
 	it('walks up the tree while each level changes, and stops at the first that holds', async () => {
@@ -653,7 +660,45 @@ describe('parent status rollup', () => {
 		await startItem('proj-1', 9);
 
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['task-1', 'epic-1']);
-		expect(mockQuery.mock.calls.some(([sql]) => (sql as string).includes('UPDATE item_workers'))).toBe(false);
+		expect(workerEnds()).toHaveLength(0);
+	});
+
+	it('locks the parent row before recomputing, as a separate statement in the same transaction', async () => {
+		route({ parent_id: 'epic-1' });
+
+		await startItem('proj-1', 1);
+
+		expect(mockTransaction).toHaveBeenCalledTimes(1);
+		const statements = mockClientQuery.mock.calls.map(([sql]) => sql as string);
+		const lockAt = statements.findIndex((sql) => sql.includes(LOCK));
+		const rollupAt = statements.findIndex((sql) => sql.includes(ROLLUP));
+		expect(lockAt).toBeGreaterThanOrEqual(0);
+		expect(lockAt).toBeLessThan(rollupAt);
+		expect(statements[lockAt]).not.toContain(ROLLUP);
+		expect(mockClientQuery.mock.calls[lockAt]![1]).toEqual(['epic-1']);
+		expect(mockQuery.mock.calls.some(([sql]) => (sql as string).includes(ROLLUP))).toBe(false);
+	});
+
+	it('commits each level before locking the next, so a walk holds one parent lock at a time', async () => {
+		route({ parent_id: 'task-1' }, [
+			{ parent_id: 'epic-1', project_id: 'proj-1', number: 5, status: 'in_progress' },
+		]);
+
+		await startItem('proj-1', 9);
+
+		expect(mockTransaction).toHaveBeenCalledTimes(2);
+		const locks = mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(LOCK));
+		expect(locks.map(([, params]) => (params as unknown[])[0])).toEqual(['task-1', 'epic-1']);
+	});
+
+	it('stops the walk without recomputing when the parent is gone by the time it is locked', async () => {
+		route({ parent_id: 'epic-1' });
+		const respond = mockClientQuery.getMockImplementation()!;
+		mockClientQuery.mockImplementation(async (sql: string) => (sql.includes(LOCK) ? { rows: [], rowCount: 0 } : respond(sql)));
+
+		await startItem('proj-1', 1);
+
+		expect(rollupCalls()).toHaveLength(0);
 	});
 
 	it('completing a child recomputes its parent after the completion transaction', async () => {
@@ -720,9 +765,7 @@ describe('parent status rollup', () => {
 	});
 
 	it('creating a started child recomputes its parent; a ready one cannot change it', async () => {
-		mockQuery.mockImplementation((async (sql: string) => (sql.includes(ROLLUP)
-			? { rows: [], rowCount: 0 }
-			: insertResult({ parent_id: 'epic-1', status: 'in_progress', sub_status: 'in_development' }))) as never);
+		route(makeItem({ parent_id: 'epic-1', status: 'in_progress', sub_status: 'in_development' }));
 
 		await createItem('proj-1', { title: 'Task', type: 'task', parentNumber: 7, status: 'in_progress', origin: ORIGIN });
 

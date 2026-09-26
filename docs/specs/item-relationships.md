@@ -140,7 +140,16 @@ Library` without a second request.
   are explicit and never touched; the rollup never completes a parent). A move
   recomputes both the parent it left and the one it joined, and a parent that
   changed is itself a child, so the walk continues up the tree until a level
-  holds still. It replaced a one-way bump in `startItem` that only ever pushed a
+  holds still. Rollups of one parent are serialized: each level is its own
+  transaction that locks the parent row (`FOR NO KEY UPDATE`, which still lets
+  children be inserted or moved under it) and then recomputes in a separate
+  statement, so under READ COMMITTED the recompute's snapshot postdates the lock
+  and the last rollup to run sees every child write that preceded it. A single
+  locking UPDATE would not do: its subqueries keep the statement's starting
+  snapshot even when the row lock is granted later, which let one child stopping
+  and another starting at the same moment leave the parent `ready` over a started
+  child. Each level commits before the next is locked, so a walk never holds two
+  item locks and can't deadlock with another walk. It replaced a one-way bump in `startItem` that only ever pushed a
   `ready` parent forward, so a child going back to `ready` left its epic stuck in
   In Progress.
 
