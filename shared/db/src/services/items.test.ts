@@ -709,13 +709,47 @@ describe('parent status rollup', () => {
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
 	});
 
-	it('updateItem recomputes only on a status write', async () => {
+	it('updateItem recomputes only on a status or sub_status write', async () => {
 		route({ id: 'item-1', parent_id: 'epic-1' });
 
 		await updateItem('proj-1', 1, { title: 'renamed' });
 		expect(rollupCalls()).toHaveLength(0);
 
 		await updateItem('proj-1', 1, { subStatus: 'in_development' });
+		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
+	});
+
+	it('a child write rolls up its parent even when the parent has no children left', async () => {
+		route({ parent_id: 'epic-1' });
+
+		await deleteItem('proj-1', 1);
+
+		const [[sql, params]] = rollupCalls() as [[string, unknown[]]];
+		expect(sql).toContain('AND (NOT $4::boolean OR (SELECT has_children FROM children))');
+		expect(params![3]).toBe(false);
+	});
+
+	it('a sub_status that derives no status recomputes the item itself, then walks up from it', async () => {
+		route({ id: 'item-1', parent_id: 'epic-1' }, [
+			{ parent_id: 'epic-1', project_id: 'proj-1', number: 1, status: 'ready' },
+		]);
+
+		await updateItem('proj-1', 1, { subStatus: 'not_started' });
+
+		const rollups = rollupCalls() as Array<[string, unknown[]]>;
+		expect(rollups.map(([, params]) => params[0])).toEqual(['item-1', 'epic-1']);
+		expect(rollups.map(([, params]) => params[3])).toEqual([true, false]);
+		expect(mockTransaction).toHaveBeenCalledTimes(2);
+		const locks = mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(LOCK));
+		expect(locks.map(([, params]) => (params as unknown[])[0])).toEqual(['item-1', 'epic-1']);
+		expect(workerEnds().map(([, params]) => params)).toEqual([['proj-1', 1]]);
+	});
+
+	it('an explicit status alongside a sub_status is left as written; only the parent recomputes', async () => {
+		route({ id: 'item-1', parent_id: 'epic-1' });
+
+		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'not_started' });
+
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
 	});
 

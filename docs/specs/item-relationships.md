@@ -140,7 +140,16 @@ Library` without a second request.
   are explicit and never touched; the rollup never completes a parent). A move
   recomputes both the parent it left and the one it joined, and a parent that
   changed is itself a child, so the walk continues up the tree until a level
-  holds still. Rollups of one parent are serialized: each level is its own
+  holds still. The parent's own `sub_status` is an input too, so an update that
+  changes only the sub_status, to a value that derives no board status,
+  recomputes the item itself and then walks up from it; otherwise an epic held
+  in progress only by `in_development` would stay there after going back to
+  `not_started` until some child happened to write. That self-recompute skips a
+  childless item, since a leaf's `in_progress` is its own explicit state
+  (`startItem` doesn't set a sub_status). A child-triggered rollup doesn't skip
+  it, so a parent whose last started child is deleted or moved out still rolls
+  back. An update that sets a status alongside the sub_status is left as
+  written. Rollups of one parent are serialized: each level is its own
   transaction that locks the parent row (`FOR NO KEY UPDATE`, which still lets
   children be inserted or moved under it) and then recomputes in a separate
   statement, so under READ COMMITTED the recompute's snapshot postdates the lock
@@ -149,9 +158,11 @@ Library` without a second request.
   snapshot even when the row lock is granted later, which let one child stopping
   and another starting at the same moment leave the parent `ready` over a started
   child. Each level commits before the next is locked, so a walk never holds two
-  item locks and can't deadlock with another walk. It replaced a one-way bump in `startItem` that only ever pushed a
-  `ready` parent forward, so a child going back to `ready` left its epic stuck in
-  In Progress.
+  item locks and can't deadlock with another walk. The sub_status recompute
+  takes the item's lock the same way, and commits before its parent is locked.
+  It replaced a one-way bump in `startItem` that only ever pushed a `ready`
+  parent forward, so a child going back to `ready` left its epic stuck in In
+  Progress.
 
 ## Origin (`items.origin`, migration 025)
 

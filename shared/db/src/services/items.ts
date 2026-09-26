@@ -524,29 +524,45 @@ async function rollUpParentStatus(parentId: string | null): Promise<void> {
 	let id = parentId;
 	while (id) {
 		const levelId = id;
-		id = await transaction((client) => rollUpLevel(client, levelId));
+		id = await transaction((client) => rollUpLevel(client, levelId, false));
 	}
 }
 
-/** One level of the rollup. Returns the next parent to recompute, or null to stop. */
-async function rollUpLevel(client: pg.PoolClient, parentId: string): Promise<string | null> {
+/**
+ * Recompute an item whose own sub_status changed, then walk up from it like any rollup.
+ * Only an item with children is held in_progress by its sub_status; a leaf's in_progress
+ * is its own explicit state (startItem doesn't set sub_status), so a leaf is left alone.
+ */
+async function recomputeOwnStatus(itemId: string): Promise<void> {
+	const parentId = await transaction((client) => rollUpLevel(client, itemId, true));
+	await rollUpParentStatus(parentId);
+}
+
+/**
+ * One level of the rollup. Returns the next parent to recompute, or null to stop.
+ * `onlyWithChildren` leaves a childless item untouched; a rollup triggered by a child
+ * write passes false, so a parent whose last started child was deleted or moved out
+ * still rolls back.
+ */
+async function rollUpLevel(client: pg.PoolClient, parentId: string, onlyWithChildren: boolean): Promise<string | null> {
 	// NO KEY UPDATE, not UPDATE: it still excludes other rollups but doesn't block the
 	// FK's KEY SHARE lock, so children can be created under or moved into this parent meanwhile.
 	const locked = await client.query('SELECT 1 FROM items WHERE id = $1 FOR NO KEY UPDATE', [parentId]);
 	if (locked.rows.length === 0) return null;
 	const result = await client.query<{ parent_id: string | null; project_id: string; number: number; status: ItemStatus }>(
 		`WITH children AS (
-			SELECT EXISTS (SELECT 1 FROM items WHERE parent_id = $1 AND status = ANY($2::text[])) AS started
+			SELECT EXISTS (SELECT 1 FROM items WHERE parent_id = $1 AND status = ANY($2::text[])) AS started,
+				EXISTS (SELECT 1 FROM items WHERE parent_id = $1) AS has_children
 		)
 		UPDATE items
 		SET status = CASE WHEN (SELECT started FROM children) THEN 'in_progress' ELSE 'ready' END, updated_at = NOW()
-		WHERE id = $1 AND (
+		WHERE id = $1 AND (NOT $4::boolean OR (SELECT has_children FROM children)) AND (
 			(status = 'ready' AND (SELECT started FROM children))
 			OR (status = 'in_progress' AND NOT (SELECT started FROM children)
 				AND (sub_status IS NULL OR sub_status <> ALL($3::text[])))
 		)
 		RETURNING parent_id, project_id, number, status`,
-		[parentId, STARTED_CHILD_STATUSES, ACTIVE_SUB_STATUSES]
+		[parentId, STARTED_CHILD_STATUSES, ACTIVE_SUB_STATUSES, onlyWithChildren]
 	);
 	const row = result.rows[0];
 	if (!row) return null;
@@ -733,6 +749,11 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 		// is no longer being worked, whichever surface moved it.
 		if (data.status !== 'in_progress') await endWorkers(projectId, itemNumber);
 		await rollUpParentStatus(updated.parent_id);
+	} else if (data.subStatus !== undefined) {
+		// A sub_status that derives no board status (not_started, paused, needs_input)
+		// leaves the item's status as written, but it may have been the only thing
+		// holding the item in_progress over children that haven't started.
+		await recomputeOwnStatus(updated.id);
 	}
 
 	return getItemByNumber(projectId, itemNumber);
