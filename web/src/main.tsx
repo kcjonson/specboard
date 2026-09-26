@@ -27,6 +27,7 @@ import { OAuthConsent } from './routes/oauth/OAuthConsent';
 import { Admin } from './routes/admin/Admin';
 import { AdminUsers } from './routes/admin/AdminUsers';
 import { AdminWaitlist } from './routes/admin/AdminWaitlist';
+import { adminOnly } from './routes/admin/admin-only';
 
 // Global styles - common CSS shared with SSG pages, then app-specific
 import '../../shared/styles/common.css';
@@ -112,14 +113,15 @@ const routes = [
 	{ route: '/settings', entry: UserSettings },
 	{ route: '/oauth/consent', entry: OAuthConsent },
 
-	// Admin routes
-	// Role gating is server-side: the frontend service 404s document loads
-	// under /admin unless the user currently holds the admin role
-	{ route: '/admin', entry: Admin },
-	{ route: '/admin/users', entry: AdminUsers },
-	{ route: '/admin/users/:userId', entry: UserSettings },
-	{ route: '/admin/waitlist', entry: AdminWaitlist },
-	{ route: '/admin/ui', entry: UIDemo },
+	// Admin routes. The frontend service 404s document loads under /admin for
+	// non-admins; adminOnly does the same for in-app navigation.
+	...[
+		{ route: '/admin', entry: Admin },
+		{ route: '/admin/users', entry: AdminUsers },
+		{ route: '/admin/users/:userId', entry: UserSettings },
+		{ route: '/admin/waitlist', entry: AdminWaitlist },
+		{ route: '/admin/ui', entry: UIDemo },
+	].map(({ route, entry }) => ({ route, entry: adminOnly(entry) })),
 
 	// Smart redirect based on cookie
 	{ route: '/', entry: RootRedirect },

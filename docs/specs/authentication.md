@@ -386,10 +386,20 @@ window resets. Path segments are compared with empty ones dropped, matching
 the SPA router, so `//admin/ui` is gated too. The gate reads Hono's
 `c.req.path`, which is already percent-decoded (except `%25` and `%2F`), so
 `/%61dmin/ui` is gated as well; the SPA router compares raw segments and never
-renders an admin page for an encoded path. Like the
-onboarding redirect, this gates document loads, not in-app navigation; the
-admin API endpoints (`/api/users`, `/api/waitlist`) check the role against
-the database on every call.
+renders an admin page for an encoded path.
+
+In-app navigation never reaches the frontend service, so the SPA gates it too:
+every `/admin` route in `web/src/main.tsx` is wrapped in `adminOnly`, which
+fetches `GET /api/users/me` (the same current-user source the header uses to
+show the Admin link, read from Postgres on every call) on each navigation into
+an admin route, including between two URLs of the same route. Until it answers
+the route shows a plain loading state; a non-admin or a failed request gets the
+same NotFound page as an unknown URL, so a demoted admin loses the admin pages
+on their next navigation. This client gate is an explicit product decision
+("always check auth on admin pages"), not a replacement for the server-side
+ones: the admin API endpoints (`/api/users`, `/api/waitlist`) still check the
+role against the database on every call, and those checks are what protect
+the data.
 
 ### 5. Password Reset
 
