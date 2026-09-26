@@ -31,6 +31,8 @@ Send path: handler → `@specboard/email` `sendEmail()` → SES. Templates in `s
 
 The waitlist confirmation is sent until one succeeds per address: `waitlist_signups.confirmation_sent_at` is stamped when SES accepts it, a failed send leaves it NULL so submitting the form again retries, and `SELECT email FROM waitlist_signups WHERE confirmation_sent_at IS NULL` lists who never got one. Rows from before that column existed (migration 030) are NULL too, since nothing recorded whether they were sent.
 
+A lease column guards the send. The handler claims the row with one `UPDATE` that sets `confirmation_claimed_at` (only if unsent and unclaimed, or the claim is older than 10 minutes), calls SES with no database connection held, then stamps `confirmation_sent_at`. A concurrent submission of the same address finds the live claim and sends nothing. A failed send clears the claim so the next submission retries immediately; a task that dies mid-send leaves the claim in place, and that address can't be retried until it lapses 10 minutes later. Holding a transaction across the SES call instead would pin a pool connection per in-flight send, and a throttled SES could then starve unrelated API requests.
+
 ## Sandbox status
 
 The January 2026 production access request was denied (case 176774600400459): the bounce and

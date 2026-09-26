@@ -12,7 +12,6 @@ import type pg from 'pg';
 
 vi.mock('@specboard/db', () => ({
 	query: vi.fn(),
-	transaction: vi.fn(),
 }));
 
 vi.mock('@specboard/email', () => ({
@@ -25,7 +24,7 @@ vi.mock('@specboard/email', () => ({
 	})),
 }));
 
-import { query, transaction } from '@specboard/db';
+import { query } from '@specboard/db';
 import { sendEmail } from '@specboard/email';
 import { handleWaitlistSignup } from './waitlist.ts';
 
@@ -49,40 +48,57 @@ function post(app: Hono, body: unknown): Promise<Response> {
 	);
 }
 
-// The claim SELECT runs on the transaction client; an empty result means the
-// row is already confirmed or another request holds it mid-send.
-const txClient = { query: vi.fn() };
-let pendingSend: Promise<unknown> | undefined;
-
-function claimReturns(rows: pg.QueryResultRow[]): void {
-	txClient.query.mockImplementation(async (sql: string) =>
-		sql.includes('SELECT') ? mockQueryResult(rows) : mockQueryResult([], 1)
-	);
+interface DbScenario {
+	// false: ON CONFLICT DO NOTHING hit an existing row
+	inserted?: boolean;
+	// false: the row is already confirmed or another request holds a live claim
+	claimed?: boolean;
+	insertError?: Error;
+	releaseError?: Error;
 }
 
-// The send is fire-and-forget, so the response lands before it finishes.
-async function settleSend(): Promise<void> {
-	await pendingSend?.catch(() => undefined);
+function mockDb({ inserted = true, claimed = true, insertError, releaseError }: DbScenario = {}): void {
+	vi.mocked(query).mockImplementation((async (sql: string) => {
+		if (sql.includes('INSERT')) {
+			if (insertError) throw insertError;
+			return mockQueryResult([], inserted ? 1 : 0);
+		}
+		if (sql.includes('RETURNING id')) return mockQueryResult(claimed ? [{ id: 'signup-uuid' }] : []);
+		if (sql.includes('confirmation_claimed_at = NULL') && releaseError) throw releaseError;
+		return mockQueryResult([], 1);
+	}) as never);
+}
+
+// The send is fire-and-forget, so the response lands before it finishes. Every
+// mock resolves immediately, so one macrotask turn drains the whole chain.
+function settleSend(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function queryCalls(fragment: string): unknown[][] {
+	return vi.mocked(query).mock.calls.filter(([sql]) => String(sql).includes(fragment));
+}
+
+function claimCalls(): unknown[][] {
+	return queryCalls('confirmation_claimed_at = NOW()');
 }
 
 function stampCalls(): unknown[][] {
-	return txClient.query.mock.calls.filter(([sql]) => String(sql).includes('confirmation_sent_at = NOW()'));
+	return queryCalls('confirmation_sent_at = NOW()');
+}
+
+function releaseCalls(): unknown[][] {
+	return queryCalls('confirmation_claimed_at = NULL');
 }
 
 describe('handleWaitlistSignup', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		pendingSend = undefined;
 		vi.mocked(sendEmail).mockResolvedValue(undefined);
-		vi.mocked(query).mockResolvedValue(mockQueryResult([], 1) as never);
-		vi.mocked(transaction).mockImplementation(((fn: (client: typeof txClient) => Promise<unknown>) => {
-			pendingSend = fn(txClient);
-			return pendingSend;
-		}) as never);
-		claimReturns([{ id: 'signup-uuid' }]);
+		mockDb();
 	});
 
-	it('sends one confirmation email to the normalized address for a new signup, then stamps it', async () => {
+	it('claims, sends one confirmation email to the normalized address, then stamps it', async () => {
 		const res = await post(createApp(), { email: 'Alice@Example.COM', company: 'Acme' });
 		await settleSend();
 
@@ -95,7 +111,16 @@ describe('handleWaitlistSignup', () => {
 				subject: 'Thanks for joining the Specboard waitlist',
 			})
 		);
+		expect(claimCalls()).toEqual([[expect.any(String), ['alice@example.com', '10 minutes']]]);
 		expect(stampCalls()).toEqual([[expect.any(String), ['signup-uuid']]]);
+		expect(releaseCalls()).toHaveLength(0);
+
+		// Claim and stamp are separate autocommit statements on either side of
+		// the send, so no connection or row lock is held while SES is called.
+		const [, claimOrder, stampOrder] = vi.mocked(query).mock.invocationCallOrder;
+		const [sendOrder] = vi.mocked(sendEmail).mock.invocationCallOrder;
+		expect(claimOrder).toBeLessThan(sendOrder!);
+		expect(stampOrder).toBeGreaterThan(sendOrder!);
 	});
 
 	it('routes replies to the address the copy tells people to write to', async () => {
@@ -110,8 +135,7 @@ describe('handleWaitlistSignup', () => {
 	});
 
 	it('retries the send when an address already on the list was never confirmed', async () => {
-		// ON CONFLICT DO NOTHING: the row exists, but confirmation_sent_at is NULL
-		vi.mocked(query).mockResolvedValue(mockQueryResult([], 0) as never);
+		mockDb({ inserted: false });
 
 		const res = await post(createApp(), { email: 'alice@example.com' });
 		await settleSend();
@@ -122,9 +146,8 @@ describe('handleWaitlistSignup', () => {
 		expect(stampCalls()).toHaveLength(1);
 	});
 
-	it('sends nothing when the address is already confirmed or mid-send elsewhere', async () => {
-		vi.mocked(query).mockResolvedValue(mockQueryResult([], 0) as never);
-		claimReturns([]);
+	it('sends nothing when the address is already confirmed', async () => {
+		mockDb({ inserted: false, claimed: false });
 
 		const res = await post(createApp(), { email: 'alice@example.com' });
 		await settleSend();
@@ -135,15 +158,30 @@ describe('handleWaitlistSignup', () => {
 		expect(sendEmail).not.toHaveBeenCalled();
 		expect(stampCalls()).toHaveLength(0);
 
-		// Only unsent rows are claimable, and SKIP LOCKED is what keeps a
-		// concurrent submission of the same address from sending a duplicate.
-		const [claimSql, claimParams] = txClient.query.mock.calls[0] as [string, unknown[]];
+		const [claimSql] = claimCalls()[0] as [string];
 		expect(claimSql).toMatch(/confirmation_sent_at IS NULL/);
-		expect(claimSql).toMatch(/FOR UPDATE SKIP LOCKED/);
-		expect(claimParams).toEqual(['alice@example.com']);
 	});
 
-	it('still succeeds when the email fails to send, and leaves it unstamped for a retry', async () => {
+	it('sends nothing when another request holds a live claim on the address', async () => {
+		mockDb({ inserted: false, claimed: false });
+
+		const res = await post(createApp(), { email: 'alice@example.com' });
+		await settleSend();
+
+		expect(res.status).toBe(201);
+		expect(sendEmail).not.toHaveBeenCalled();
+		expect(stampCalls()).toHaveLength(0);
+		expect(releaseCalls()).toHaveLength(0);
+
+		// Only an unclaimed row, or one whose lease lapsed after a crash
+		// mid-send, can be claimed; that is what keeps a concurrent submission
+		// of the same address from sending a duplicate.
+		const [claimSql, claimParams] = claimCalls()[0] as [string, unknown[]];
+		expect(claimSql).toMatch(/confirmation_claimed_at IS NULL OR confirmation_claimed_at < NOW\(\) - \$2::interval/);
+		expect(claimParams).toEqual(['alice@example.com', '10 minutes']);
+	});
+
+	it('still succeeds when the email fails to send, and releases the claim for an immediate retry', async () => {
 		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 		const sesError = new Error('SES is down');
 		vi.mocked(sendEmail).mockRejectedValue(sesError);
@@ -155,23 +193,45 @@ describe('handleWaitlistSignup', () => {
 		expect(res.status).toBe(201);
 		expect(sendEmail).toHaveBeenCalledOnce();
 		expect(stampCalls()).toHaveLength(0);
-		// transaction() rejects, which rolls back and releases the row lock
-		await expect(pendingSend).rejects.toBe(sesError);
-		await vi.waitFor(() => expect(consoleError).toHaveBeenCalledWith(
+		expect(releaseCalls()).toEqual([[expect.stringMatching(/confirmation_sent_at IS NULL/), ['signup-uuid']]]);
+		expect(consoleError).toHaveBeenCalledWith(
 			'Waitlist confirmation email failed for alice@example.com:',
 			sesError
-		));
+		);
+		consoleError.mockRestore();
+	});
+
+	it('still logs the SES error when releasing the claim also fails', async () => {
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const sesError = new Error('SES is down');
+		const releaseError = new Error('connection reset');
+		vi.mocked(sendEmail).mockRejectedValue(sesError);
+		mockDb({ releaseError });
+
+		const res = await post(createApp(), { email: 'alice@example.com' });
+		await settleSend();
+
+		expect(res.status).toBe(201);
+		expect(consoleError).toHaveBeenCalledWith(
+			'Waitlist confirmation claim release failed for alice@example.com:',
+			releaseError
+		);
+		expect(consoleError).toHaveBeenCalledWith(
+			'Waitlist confirmation email failed for alice@example.com:',
+			sesError
+		);
 		consoleError.mockRestore();
 	});
 
 	it('returns 500 and sends nothing when the signup cannot be saved', async () => {
 		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-		vi.mocked(query).mockRejectedValue(new Error('connection refused'));
+		mockDb({ insertError: new Error('connection refused') });
 
 		const res = await post(createApp(), { email: 'alice@example.com' });
+		await settleSend();
 
 		expect(res.status).toBe(500);
-		expect(transaction).not.toHaveBeenCalled();
+		expect(claimCalls()).toHaveLength(0);
 		expect(sendEmail).not.toHaveBeenCalled();
 		consoleError.mockRestore();
 	});
@@ -193,7 +253,6 @@ describe('handleWaitlistSignup', () => {
 
 		expect(res.status).toBe(400);
 		expect(query).not.toHaveBeenCalled();
-		expect(transaction).not.toHaveBeenCalled();
 		expect(sendEmail).not.toHaveBeenCalled();
 	});
 });

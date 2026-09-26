@@ -4,10 +4,14 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { query, transaction } from '@specboard/db';
+import { query } from '@specboard/db';
 import { sendEmail, getWaitlistConfirmationEmailContent } from '@specboard/email';
 import { isValidEmail } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
+
+// Only bounds a crash mid-send, so it just has to outlast any SES call with
+// its retries; too short and a live send could be duplicated.
+const CONFIRMATION_CLAIM_LEASE = '10 minutes';
 
 interface WaitlistSignup {
 	id: string;
@@ -73,8 +77,8 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 	}
 
 	// Fire-and-forget: the signup is already committed, so a mail failure must
-	// not fail the request. A failure leaves confirmation_sent_at NULL, so
-	// submitting the same address again retries the send.
+	// not fail the request. A failure leaves confirmation_sent_at NULL and
+	// releases the claim, so submitting the same address again retries the send.
 	sendConfirmationIfUnsent(normalizedEmail).catch((error) => {
 		// Log the error whole: the stack and the SES $metadata (request id,
 		// error code) are the difference between diagnosing a throttle and
@@ -88,22 +92,21 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 }
 
 async function sendConfirmationIfUnsent(email: string): Promise<void> {
-	await transaction(async (client) => {
-		// The row lock is held across the SES call instead of stamping the row
-		// up front: if the task dies mid-send the lock goes with the connection
-		// and the row stays NULL for the next submission to retry. SKIP LOCKED
-		// makes a concurrent submission of the same address stand down rather
-		// than send a duplicate.
-		const claimed = await client.query<Pick<WaitlistSignup, 'id'>>(
-			`SELECT id FROM waitlist_signups
-			 WHERE email = $1 AND confirmation_sent_at IS NULL
-			 FOR UPDATE SKIP LOCKED`,
-			[email]
-		);
-		const signup = claimed.rows[0];
-		if (!signup) return;
+	// Claimed with a lease instead of a row lock held across the SES call, so
+	// a slow or throttled SES never pins a pool connection. A concurrent
+	// submission of the same address finds the lease and stands down.
+	const claimed = await query<Pick<WaitlistSignup, 'id'>>(
+		`UPDATE waitlist_signups SET confirmation_claimed_at = NOW()
+		 WHERE email = $1 AND confirmation_sent_at IS NULL
+		   AND (confirmation_claimed_at IS NULL OR confirmation_claimed_at < NOW() - $2::interval)
+		 RETURNING id`,
+		[email, CONFIRMATION_CLAIM_LEASE]
+	);
+	const signup = claimed.rows[0];
+	if (!signup) return;
 
-		const emailContent = getWaitlistConfirmationEmailContent();
+	const emailContent = getWaitlistConfirmationEmailContent();
+	try {
 		await sendEmail({
 			to: email,
 			subject: emailContent.subject,
@@ -111,12 +114,23 @@ async function sendConfirmationIfUnsent(email: string): Promise<void> {
 			htmlBody: emailContent.htmlBody,
 			replyTo: emailContent.replyTo,
 		});
-
-		await client.query(
-			'UPDATE waitlist_signups SET confirmation_sent_at = NOW() WHERE id = $1',
+	} catch (sendError) {
+		// The lease would lapse on its own; releasing it lets the next
+		// submission retry now. A failed release must not mask the SES error.
+		await query(
+			`UPDATE waitlist_signups SET confirmation_claimed_at = NULL
+			 WHERE id = $1 AND confirmation_sent_at IS NULL`,
 			[signup.id]
-		);
-	});
+		).catch((releaseError: unknown) => {
+			console.error(`Waitlist confirmation claim release failed for ${email}:`, releaseError);
+		});
+		throw sendError;
+	}
+
+	await query(
+		'UPDATE waitlist_signups SET confirmation_sent_at = NOW() WHERE id = $1',
+		[signup.id]
+	);
 }
 
 /**
