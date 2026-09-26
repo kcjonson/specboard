@@ -380,7 +380,9 @@ The response does not wait for or report on the initial sync. It is started as a
 effect; if it cannot start (GitHub not connected, sync invoke failed) the project's
 `syncStatus` becomes `failed` with the reason in `syncError`, and
 `POST /api/projects/:projectSlug/sync/initial` retries. Poll
-`GET /api/projects/:projectSlug/sync/status` for progress.
+`GET /api/projects/:projectSlug/sync/status` for progress. Because the start runs after
+the response, the first polls can still read a `null` status; the setup dialog treats that
+as "starting" and keeps polling for 30 seconds before reporting that the sync never started.
 
 **Error Responses:**
 - `400` - Repository config fails validation (provider, GitHub owner/repo/branch naming, or a URL that is not `https://github.com/{owner}/{repo}`)
