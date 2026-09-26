@@ -41,11 +41,11 @@
 	padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
 }
 
-/* Shown when the routed item key doesn't resolve. */
-.missing {
+/* Stands in for the item until its first fetch lands, or when it never does. */
+.placeholder {
 	color: var(--color-text-muted);
-	font-size: 14px;
-	line-height: 1.5;
+	font-size: var(--text-sm);
+	line-height: var(--leading-normal);
 }
 
 @media (width < 768px) { /* bp-small: full-screen takeover, slides in from the right like a nav push */

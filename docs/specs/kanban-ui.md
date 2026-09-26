@@ -547,7 +547,7 @@ shared/planning/
 ├── Table/               table view (Table, ItemRow, ChildRow)
 ├── ViewToggle/          board / table switch
 ├── ItemView/            the item body: title, status, description, sections
-├── ItemDrawer/          side panel the board opens; renders ItemView
+├── ItemDrawer/          side panel the board opens; inert until the item loads, then ItemView
 ├── ItemDetail/          full-page item route; loads the model, renders ItemView
 ├── BlockersSection/     the item's sub-resources, one section each
 ├── ChecklistSection/

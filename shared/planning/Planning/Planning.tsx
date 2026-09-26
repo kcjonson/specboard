@@ -7,7 +7,7 @@ import { FetchError } from '@specboard/fetch';
 import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption, type SelectOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
-import { ItemDrawer, MissingItemDrawer } from '../ItemDrawer/ItemDrawer';
+import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import type { NewItemData } from '../NewItemForm/NewItemForm';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
@@ -423,7 +423,7 @@ export function Planning(props: RouteProps): JSX.Element {
 	// The drawer renders the item named by the route. A top-level item uses the live
 	// collection model, so edits reflect on the board immediately. Anything else — a
 	// child, or an item the collection has dropped — gets a standalone model that
-	// fetches its own detail.
+	// fetches its own detail, and the drawer stays inert until that fetch lands.
 	//
 	// `items` is a stable reference whose *contents* change, so the collection lookup
 	// has to run every render (it is a cheap array scan) rather than inside the memo:
@@ -439,24 +439,6 @@ export function Planning(props: RouteProps): JSX.Element {
 		[standaloneKey, projectSlug]
 	);
 	const openItem = collectionItem ?? standaloneItem;
-
-	// A key that resolves to nothing (an item someone else deleted, an epic link in the
-	// editor pointing at a deleted epic) must
-	// not render an empty but editable drawer — that offers a Save and a Delete against
-	// an item that does not exist. Surface it instead.
-	//
-	// Only the item's FIRST load counts: `$meta.error` is also where a later failed
-	// write lands (a rejected move, a save that 409s), and swapping a loaded item's
-	// drawer for an error panel would misreport what happened.
-	const openItemError = standaloneItem?.$meta.lastFetched === null ? standaloneItem?.$meta.error : undefined;
-
-	// EVERY first-load failure gets the inert panel, not just a 404. The hazard
-	// being avoided is an empty but editable drawer whose Save and Delete act on an
-	// item we could not read — equally true of a 500, a timeout, or an expired
-	// session. Narrowing this to 404 would bring that back; the status decides only
-	// what the panel says.
-	const openItemMissing = Boolean(openItemError);
-	const openItemStatus = openItemError instanceof FetchError ? openItemError.status : undefined;
 
 	// Measure the workspace so the drawer can't widen past leaving the board a
 	// usable minimum. A callback ref keeps the observer bound to whichever node
@@ -567,18 +549,16 @@ export function Planning(props: RouteProps): JSX.Element {
 			<div class={styles.workspace} ref={workspaceRefCallback}>
 				<div class={styles.viewArea}>{renderViewArea()}</div>
 
-				{openItem && !openItemMissing && (
+				{openItem && (
 					<ItemDrawer
 						item={openItem}
+						listed={collectionItem !== undefined}
 						projectSlug={projectSlug}
 						maxWidth={drawerMaxWidth}
 						onClose={handleCloseDrawer}
 						onDelete={handleDeleteItem}
 						onOpenItem={handleOpenItemByKey}
 					/>
-				)}
-				{openItemMissing && (
-					<MissingItemDrawer itemKey={openItemKey!} status={openItemStatus} onClose={handleCloseDrawer} />
 				)}
 			</div>
 

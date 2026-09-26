@@ -30,7 +30,7 @@ vi.mock('@specboard/fetch', async (importOriginal) => {
 
 vi.mock('../Board/Board', () => ({ Board: () => <div data-testid="board" />, BOARD_PAGE_SIZE: 20 }));
 vi.mock('../Table/Table', () => ({ Table: () => <div data-testid="table" />, TABLE_PAGE_SIZE: 50 }));
-vi.mock('../ItemDrawer/ItemDrawer', () => ({ ItemDrawer: () => null, MissingItemDrawer: () => null }));
+vi.mock('../ItemDrawer/ItemDrawer', () => ({ ItemDrawer: () => null }));
 vi.mock('../NewItemDialog/NewItemDialog', () => ({ NewItemDialog: () => null }));
 
 function failWith(error: Error): void {
