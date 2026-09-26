@@ -9,8 +9,9 @@ import { sendEmail, getWaitlistConfirmationEmailContent } from '@specboard/email
 import { isValidEmail } from '../validation.ts';
 import { getCurrentUser, isAdmin } from './auth-utils.ts';
 
-// Only bounds a crash mid-send, so it just has to outlast any SES call with
-// its retries; too short and a live send could be duplicated.
+// Only bounds a crash mid-send. It must outlast any live send, which the SES
+// client's request timeout caps at a couple of minutes including retries, or a
+// second request could claim the row and send while the first is in flight.
 const CONFIRMATION_CLAIM_LEASE = '10 minutes';
 
 interface WaitlistSignup {
@@ -93,13 +94,15 @@ export async function handleWaitlistSignup(context: Context): Promise<Response> 
 
 async function sendConfirmationIfUnsent(email: string): Promise<void> {
 	// Claimed with a lease instead of a row lock held across the SES call, so
-	// a slow or throttled SES never pins a pool connection. A concurrent
-	// submission of the same address finds the lease and stands down.
-	const claimed = await query<Pick<WaitlistSignup, 'id'>>(
+	// a slow or throttled SES never pins a pool connection; a concurrent
+	// submission of the same address finds the lease and stands down. The
+	// claim timestamp is the owner token, returned as text because a JS Date
+	// drops its microseconds and would never match again.
+	const claimed = await query<{ id: string; claim: string }>(
 		`UPDATE waitlist_signups SET confirmation_claimed_at = NOW()
 		 WHERE email = $1 AND confirmation_sent_at IS NULL
 		   AND (confirmation_claimed_at IS NULL OR confirmation_claimed_at < NOW() - $2::interval)
-		 RETURNING id`,
+		 RETURNING id, confirmation_claimed_at::text AS claim`,
 		[email, CONFIRMATION_CLAIM_LEASE]
 	);
 	const signup = claimed.rows[0];
@@ -116,19 +119,25 @@ async function sendConfirmationIfUnsent(email: string): Promise<void> {
 		});
 	} catch (sendError) {
 		// The lease would lapse on its own; releasing it lets the next
-		// submission retry now. A failed release must not mask the SES error.
+		// submission retry now. Matching the token leaves a newer claim alone
+		// if ours lapsed mid-send. A failed release must not mask the SES error.
 		await query(
 			`UPDATE waitlist_signups SET confirmation_claimed_at = NULL
-			 WHERE id = $1 AND confirmation_sent_at IS NULL`,
-			[signup.id]
+			 WHERE id = $1 AND confirmation_claimed_at = $2::timestamptz
+			   AND confirmation_sent_at IS NULL`,
+			[signup.id, signup.claim]
 		).catch((releaseError: unknown) => {
 			console.error(`Waitlist confirmation claim release failed for ${email}:`, releaseError);
 		});
 		throw sendError;
 	}
 
+	// Deliberately not tied to the claim: SES accepted the message, so it went
+	// out even if our lease lapsed, and recording that is what stops further
+	// sends. The first acceptance keeps its timestamp.
 	await query(
-		'UPDATE waitlist_signups SET confirmation_sent_at = NOW() WHERE id = $1',
+		`UPDATE waitlist_signups SET confirmation_sent_at = NOW()
+		 WHERE id = $1 AND confirmation_sent_at IS NULL`,
 		[signup.id]
 	);
 }

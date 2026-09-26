@@ -48,6 +48,10 @@ function post(app: Hono, body: unknown): Promise<Response> {
 	);
 }
 
+// Microsecond precision matters: the claim is the owner token and has to
+// round-trip exactly.
+const CLAIM = '2026-09-26 15:21:45.123456+00';
+
 interface DbScenario {
 	// false: ON CONFLICT DO NOTHING hit an existing row
 	inserted?: boolean;
@@ -63,7 +67,7 @@ function mockDb({ inserted = true, claimed = true, insertError, releaseError }: 
 			if (insertError) throw insertError;
 			return mockQueryResult([], inserted ? 1 : 0);
 		}
-		if (sql.includes('RETURNING id')) return mockQueryResult(claimed ? [{ id: 'signup-uuid' }] : []);
+		if (sql.includes('RETURNING id')) return mockQueryResult(claimed ? [{ id: 'signup-uuid', claim: CLAIM }] : []);
 		if (sql.includes('confirmation_claimed_at = NULL') && releaseError) throw releaseError;
 		return mockQueryResult([], 1);
 	}) as never);
@@ -114,6 +118,13 @@ describe('handleWaitlistSignup', () => {
 		expect(claimCalls()).toEqual([[expect.any(String), ['alice@example.com', '10 minutes']]]);
 		expect(stampCalls()).toEqual([[expect.any(String), ['signup-uuid']]]);
 		expect(releaseCalls()).toHaveLength(0);
+
+		// SES accepted it, so the stamp lands even if our lease lapsed and
+		// another request claimed the row meanwhile; only the first acceptance
+		// keeps its timestamp.
+		const [stampSql] = stampCalls()[0] as [string];
+		expect(stampSql).not.toMatch(/confirmation_claimed_at/);
+		expect(stampSql).toMatch(/confirmation_sent_at IS NULL/);
 
 		// Claim and stamp are separate autocommit statements on either side of
 		// the send, so no connection or row lock is held while SES is called.
@@ -193,11 +204,28 @@ describe('handleWaitlistSignup', () => {
 		expect(res.status).toBe(201);
 		expect(sendEmail).toHaveBeenCalledOnce();
 		expect(stampCalls()).toHaveLength(0);
-		expect(releaseCalls()).toEqual([[expect.stringMatching(/confirmation_sent_at IS NULL/), ['signup-uuid']]]);
+		expect(releaseCalls()).toEqual([[expect.stringMatching(/confirmation_sent_at IS NULL/), ['signup-uuid', CLAIM]]]);
 		expect(consoleError).toHaveBeenCalledWith(
 			'Waitlist confirmation email failed for alice@example.com:',
 			sesError
 		);
+		consoleError.mockRestore();
+	});
+
+	it('releases only its own claim, so a newer claim taken after its lease lapsed survives', async () => {
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		vi.mocked(sendEmail).mockRejectedValue(new Error('SES is down'));
+
+		await post(createApp(), { email: 'alice@example.com' });
+		await settleSend();
+
+		// A stale owner clearing the row by id alone would let a third request
+		// send alongside the newer owner still in flight.
+		const [claimSql] = claimCalls()[0] as [string];
+		expect(claimSql).toMatch(/RETURNING id, confirmation_claimed_at::text AS claim/);
+		const [releaseSql, releaseParams] = releaseCalls()[0] as [string, unknown[]];
+		expect(releaseSql).toMatch(/confirmation_claimed_at = \$2::timestamptz/);
+		expect(releaseParams).toEqual(['signup-uuid', CLAIM]);
 		consoleError.mockRestore();
 	});
 

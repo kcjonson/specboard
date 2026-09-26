@@ -21,11 +21,19 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const APP_ENV = process.env.APP_ENV || 'development';
 const EMAIL_MODE = process.env.EMAIL_MODE;
 const EMAIL_ALLOWLIST = process.env.EMAIL_ALLOWLIST;
+const SES_REQUEST_TIMEOUT_MS = 30_000;
 
 // Only create SES client if we might actually use it
 // sendEmail bypasses SES when NODE_ENV is 'development' or EMAIL_MODE is 'console'
+//
+// requestTimeout only warns by default, so a hung connection would hold the
+// caller forever. Throwing caps a send at the SDK's three attempts of 30s
+// each, well inside the waitlist confirmation's 10 minute claim lease.
 const sesClient = NODE_ENV !== 'development' && EMAIL_MODE !== 'console'
-	? new SESClient({ region: SES_REGION })
+	? new SESClient({
+		region: SES_REGION,
+		requestHandler: { requestTimeout: SES_REQUEST_TIMEOUT_MS, throwOnRequestTimeout: true },
+	})
 	: null;
 
 export interface SendEmailOptions {

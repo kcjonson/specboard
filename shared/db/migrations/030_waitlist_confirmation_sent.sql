@@ -3,8 +3,10 @@
 --
 -- confirmation_claimed_at: a lease on the send. The API claims an unsent row
 -- with a single UPDATE, calls SES with no connection or row lock held, then
--- stamps confirmation_sent_at. A failed send clears the claim so the next
--- submission retries at once; a task that dies mid-send leaves it set, and it
+-- stamps confirmation_sent_at. The claimed timestamp is also the owner token:
+-- a failed send clears the claim only if it still holds that exact value, so
+-- the next submission retries at once without a stale owner clearing a newer
+-- claim. A task that dies mid-send leaves it set, and it
 -- lapses after the lease window (10 minutes, set in the API) so a later
 -- submission can retry. A live claim is what stops two concurrent submissions
 -- of one address from both sending.
