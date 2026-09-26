@@ -118,6 +118,8 @@ export function requireAdminSession(
 	const prefixSegments = options.prefix.split('/').filter(Boolean);
 
 	return async (c: Context<{ Variables: AuthVariables }>, next) => {
+		// c.req.path is already percent-decoded (all but %25 and %2F), so
+		// `/%61dmin/ui` arrives here as /admin/ui
 		const segments = c.req.path.split('/').filter(Boolean);
 		const underPrefix = prefixSegments.every((segment, i) => segments[i] === segment);
 

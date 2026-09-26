@@ -96,7 +96,7 @@ describe('requireAdminSession', () => {
 		);
 	}
 
-	const adminPaths = ['/admin', '/admin/', '/admin/ui', '/admin/users/some-id', '//admin/ui', '/admin//ui', '/%61dmin/ui'];
+	const adminPaths = ['/admin', '/admin/', '/admin/ui', '/admin/users/some-id', '//admin/ui', '/admin//ui', '/x/%2e%2e/admin/ui'];
 
 	it.each(adminPaths)('serves %s to an admin session', async (path) => {
 		const res = await load(adminApp(sessionRedis({ isAdmin: true })), path);
@@ -105,6 +105,15 @@ describe('requireAdminSession', () => {
 	});
 
 	it.each(adminPaths)('denies %s to a non-admin session', async (path) => {
+		const res = await load(adminApp(sessionRedis({ isAdmin: false })), path);
+		expect(res.status).toBe(404);
+	});
+
+	// Hono percent-decodes c.req.path before the gate compares it, and a
+	// malformed escape later in the path doesn't stop the prefix decoding.
+	// Encodings Hono keeps (%25, %2F) never render an admin page in the SPA
+	// router either; shared/router start-router.test.tsx pins that half.
+	it.each(['/%61dmin/ui', '/%61%64%6D%69%6E', '/%61dmin/%E0%A4%A'])('denies the encoded %s to a non-admin session', async (path) => {
 		const res = await load(adminApp(sessionRedis({ isAdmin: false })), path);
 		expect(res.status).toBe(404);
 	});

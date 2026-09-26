@@ -371,7 +371,10 @@ site-admin only. The frontend service runs `requireAdminSession` after
 `authMiddleware` and answers a session without `isAdmin: true` with the same
 private, no-cache 404 page an unauthenticated request gets, so non-admins
 can't tell the admin area exists. Path segments are compared with empty ones
-dropped, matching the SPA router, so `//admin/ui` is gated too. The flag is
+dropped, matching the SPA router, so `//admin/ui` is gated too. The gate
+reads Hono's `c.req.path`, which is already percent-decoded (except `%25` and
+`%2F`), so `/%61dmin/ui` is gated as well; the SPA router compares raw
+segments and never renders an admin page for an encoded path. The flag is
 set from `users.roles` when a session is created, and `PUT /api/users/:id`
 rewrites it on all of that user's live sessions whenever roles change, so a
 grant or revoke takes effect on the next document load. Sessions from before
