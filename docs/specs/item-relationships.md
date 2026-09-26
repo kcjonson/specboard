@@ -124,6 +124,25 @@ Library` without a second request.
   the time the refusal was known — the item would survive the "rejection"
   orphaned. The API handler's pre-check is a nicety for a clean 400, not the
   guarantee; the statement is.
+- **A parent's status rolls up from its children, both ways.** Every write that
+  can change a child's status or the child set (create, update, start,
+  complete, block, unblock, move, delete) recomputes the parent from the
+  children it has now, in `rollUpParentStatus`. The rollup only moves a parent
+  between `ready` and `in_progress`: a `ready` parent goes to `in_progress` once
+  any child is `in_progress`, `in_review`, or `done`, and an `in_progress`
+  parent goes back to `ready` once none is. A `done` child counts, so finishing
+  the last active task doesn't drop an epic that's awaiting its close back into
+  Ready; a `blocked` child doesn't, since nobody is working it. Two things stop
+  a rollback: the parent's own `sub_status` being active (`scoping`,
+  `in_development`, `needs_input`, `paused`, `pr_open`), which is how an agent
+  scoping an epic with no started tasks keeps it in progress, and the parent's
+  status being anything other than those two (`blocked`, `in_review`, and `done`
+  are explicit and never touched; the rollup never completes a parent). A move
+  recomputes both the parent it left and the one it joined, and a parent that
+  changed is itself a child, so the walk continues up the tree until a level
+  holds still. It replaced a one-way bump in `startItem` that only ever pushed a
+  `ready` parent forward, so a child going back to `ready` left its epic stuck in
+  In Progress.
 
 ## Origin (`items.origin`, migration 025)
 
@@ -161,9 +180,10 @@ owns. Two Claude Code windows on one machine are two sessions.
 - **No heartbeat or claim call.** Episodes open as a side effect of real MCP
   writes: a write that leaves an item `in_progress` upserts the episode
   (bumping `last_seen_at`). Episodes END in the item service, so every surface
-  behaves the same: any status transition out of `in_progress` — done, ready,
-  in_review, or blocked, via MCP, the REST API, or a board drag — ends all
-  active episodes on the item. A heartbeat requires agent cooperation and
+  behaves the same: any status transition out of `in_progress` (done, ready,
+  in_review, or blocked, via MCP, the REST API, a board drag, or a parent
+  rolling back when its last started child stops) ends all active episodes on
+  the item. A heartbeat requires agent cooperation and
   produces exactly the stale rows it is meant to prevent; deriving presence
   from observed writes makes staleness meaningful by construction.
 - **Staleness is derived at read time** (`now() - last_seen_at`), never stored.
