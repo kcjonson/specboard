@@ -136,7 +136,7 @@ export async function deleteSession(
 /**
  * Delete every session of a user, forcing re-login on all devices. Sessions
  * aren't indexed by user, so this scans the whole keyspace; keep it to rare
- * admin actions.
+ * account-level actions such as a password change.
  */
 export async function deleteUserSessions(redis: Redis, userId: string): Promise<void> {
 	let cursor = '0';

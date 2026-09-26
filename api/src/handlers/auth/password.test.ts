@@ -21,6 +21,7 @@ vi.mock('@specboard/auth', () => ({
 	getTokenExpiry: vi.fn(),
 	isTokenExpired: vi.fn(),
 	SESSION_COOKIE_NAME: 'session_id',
+	deleteUserSessions: vi.fn(async () => undefined),
 }));
 
 vi.mock('@specboard/email', () => ({
@@ -29,8 +30,8 @@ vi.mock('@specboard/email', () => ({
 }));
 
 import { query } from '@specboard/db';
-import { getSession, verifyPassword } from '@specboard/auth';
-import { handleChangePassword } from './password.ts';
+import { getSession, verifyPassword, isTokenExpired, deleteUserSessions } from '@specboard/auth';
+import { handleChangePassword, handleResetPassword } from './password.ts';
 
 const redis = {} as Redis;
 
@@ -113,5 +114,32 @@ describe('handleChangePassword', () => {
 			new_password: 'NewSecure123!',
 		});
 		expect(res.status).toBe(200);
+	});
+});
+
+describe('handleResetPassword', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('signs the user out on every device after resetting the password', async () => {
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			if ((sql as string).includes('FROM password_reset_tokens')) {
+				return mockQueryResult([{ id: 'token-1', user_id: 'user-1', token_hash: 'h', expires_at: new Date() }]);
+			}
+			return mockQueryResult([], 1);
+		});
+		vi.mocked(isTokenExpired).mockReturnValue(false);
+		const app = new Hono();
+		app.post('/api/auth/reset-password', (c) => handleResetPassword(c, redis));
+
+		const res = await app.request('http://localhost/api/auth/reset-password', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ token: 'a'.repeat(64), password: 'NewSecure123!' }),
+		});
+
+		expect(res.status).toBe(200);
+		expect(deleteUserSessions).toHaveBeenCalledWith(redis, 'user-1');
 	});
 });

@@ -51,7 +51,7 @@ A checklist is scratch todos on one item; child items are tracked work. update_i
 
 Blockers: an item is blocked while any is open. Set them explicitly ({item_key} auto-clears when that item completes, {text} only when removed); never infer them. status=ready excludes blocked items unless include_blocked. Blocking needs a reason: a note, or blockers. When filing work found mid-task, pass discovered_from with the item you were on.
 
-You can run the full loop (specs, epics, tasks, build, verify, merge, close); the human decides when to write specs or review PRs. One hard rule: verify the work (tests green, behavior confirmed) before marking anything done. Keep status accurate: an in_progress item shows your session as its worker, so never leave one stale.
+You can run the full loop (specs, epics, tasks, build, verify, merge, close); the human decides when to write specs or review PRs. One hard rule: verify the work (tests green, behavior confirmed) before marking anything done. Keep status accurate: your session is recorded as each item's creator, and as the worker of an in_progress one, so never leave one stale.
 
 For the full workflow, install the Specboard plugin: /plugin marketplace add https://specboard.io/claude then /plugin install specboard@specboard`;
 
