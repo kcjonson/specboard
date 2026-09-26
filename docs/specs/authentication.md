@@ -377,7 +377,20 @@ reads Hono's `c.req.path`, which is already percent-decoded (except `%25` and
 segments and never renders an admin page for an encoded path. The flag is
 set from `users.roles` when a session is created, and `PUT /api/users/:id`
 rewrites it on all of that user's live sessions whenever roles change, so a
-grant or revoke takes effect on the next document load. Sessions from before
+grant or revoke takes effect on the next document load. A login can race a
+role change (it read the old roles, but its session lands after the role
+change's scan), so both sides finish the same way: after writing the flag they
+re-read `users.roles` and rewrite until a read matches what they last wrote
+(`settleAdminFlag`). The role change commits its UPDATE before scanning, so a
+login whose re-read missed the new roles wrote its session before that scan,
+and the scan fixes it; a login whose re-read saw them fixes itself. No lock
+or role version column is needed. Redis failures fail closed: a revoke clears
+the flag on the user's sessions before the UPDATE, so if that fails the request
+errors with the role unchanged, and a grant reaches sessions only after it
+commits, so a failure leaves them without the flag until the next login.
+The remaining gap needs a login to land between a revoke's early clear and
+its commit and the scan after the commit to fail; that request errors, and
+saving the revoke again clears the session. Sessions from before
 the flag existed read as not admin until the user signs in again. Like the
 onboarding redirect, this gates document loads, not in-app navigation; the
 admin API endpoints (`/api/users`, `/api/waitlist`) check the role against

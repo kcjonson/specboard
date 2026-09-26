@@ -8,13 +8,14 @@ import type { Redis } from 'ioredis';
 import {
 	generateSessionId,
 	createSession,
+	updateSession,
 	SESSION_COOKIE_NAME,
 	CSRF_COOKIE_NAME,
 	SESSION_TTL_SECONDS,
 	type AuthMethod,
 } from '@specboard/auth';
 import type { User } from '@specboard/db';
-import { isAdmin } from '../auth-utils.ts';
+import { isAdmin, settleAdminFlag } from '../auth-utils.ts';
 
 /**
  * Auth event types for logging
@@ -125,7 +126,9 @@ export function isValidInviteKey(key: string): boolean {
  * Create a Redis session and set the auth cookies on the response.
  * Shared by every successful-auth path (password, magic link, passkey).
  * The session's profileComplete and isAdmin flags drive the frontend
- * service's server-side gates (onboarding redirect, /admin 404).
+ * service's server-side gates (onboarding redirect, /admin 404). `user` may
+ * predate a concurrent role change whose session scan ran before this
+ * session existed, so the admin flag is settled against a fresh read.
  */
 export async function establishSession(
 	context: Context,
@@ -134,11 +137,15 @@ export async function establishSession(
 	authMethod: AuthMethod
 ): Promise<void> {
 	const sessionId = generateSessionId();
+	const sessionIsAdmin = isAdmin(user);
 	const csrfToken = await createSession(redis, sessionId, {
 		userId: user.id,
 		authMethod,
 		profileComplete: user.username !== null,
-		isAdmin: isAdmin(user),
+		isAdmin: sessionIsAdmin,
+	});
+	await settleAdminFlag(user.id, sessionIsAdmin, async (fresh) => {
+		await updateSession(redis, sessionId, { isAdmin: fresh });
 	});
 	const secure = isSecureRequest(context);
 
