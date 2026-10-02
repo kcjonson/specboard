@@ -1,16 +1,19 @@
 # AI Development Overview Specification
 
-A pannable, zoomable canvas that draws a whole project as one picture: every epic
-and its children, laid out in the order the work happens, with what's done on one
-side, what agents are working on right now in the middle, and what's next on the
-other. The board answers "what's in each column"; the overview answers "where is
-this project, and what is it doing".
+A pannable, zoomable map of a whole project, labeled Map in the planning view toggle.
+Every item is a dot. Time runs loosely from left to right: whatever was filed or
+worked on long ago sits on the left, and what's happening now sits at the right
+edge, so new work enters on the right and drifts left as it ages. Relationships
+pull dots together: an epic gathers its children, and blockers and discovered-from
+tie related work with weaker links. Most items are connected to nothing, and they
+float free. Status, live agent sessions, and anything waiting on a person are drawn
+on the dots.
 
 Specboard's premise is an agent running the development loop while a person steers
 by exception ([mcp-claude-workflow.md](mcp-claude-workflow.md)). Steering by
 exception needs somewhere to notice the exceptions. Today that means reading three
 board columns, opening drawers one at a time, and rebuilding the shape of the
-project in your head. The overview does that rebuild once, visually, and keeps it
+project in your head. The Map does that rebuild once, visually, and keeps it
 current.
 
 ---
@@ -37,37 +40,42 @@ them doesn't belong in v1.
 
 1. **Every item gets `started_at` and `completed_at`, as part of this feature.**
    Items carry only `created_at` and `updated_at` today, so when something started
-   or finished isn't stored anywhere, and the overview can't order its done side or
-   say what changed since your last visit without both. They're item fields, not
-   overview internals: every item response carries them and the item view shows
-   them. See [Data](#data).
+   or finished isn't stored anywhere. They're item fields, not Map internals: every
+   item response carries them and the item view shows them. See [Data](#data).
+2. **Every status transition is recorded.** One row per change of status or
+   sub-status, from the day this ships. A transition nobody recorded can't be
+   reconstructed later, and it's what lets
+   [since your last visit](#since-your-last-visit) report a raised question or an
+   opened PR.
+3. **A loose time map, not a tree, a timeline, or lanes.** Position comes from a
+   layout algorithm (a pull toward the item's moment in time, springs along its
+   relationships, and spacing between dots) rather than from slots, columns, or
+   fixed constants. Ten unrelated items in a new project are ten dots in a loose
+   cloud. See [The layout](#the-layout).
+4. **All relationships shape the layout.** Parent-child links are the strongest.
+   Blockers and discovered-from are weaker, and are drawn faintly.
+5. **Labeled Map, as a third planning view beside Board and Table.** `?view=map` on
+   the planning route, picked from the same view toggle and remembered the same
+   way, opening items in the same drawer ([kanban-ui.md](kanban-ui.md#item-urls)).
+6. **Up next follows the agents' order.** The next ready child of each in-flight
+   parent first, then the top of the project-wide ready list. See
+   [Up next](#up-next).
+7. **The last-visit baseline is per account**, so checking on a phone in the
+   morning clears the same marks on the laptop.
 
 ### Proposed
 
 Confirm or redline before the design pass.
 
-2. **One project per overview.** A cross-project portfolio asks different questions
-   and is a different view.
-3. **A third planning view, beside Board and Table.** `?view=overview` on the
-   planning route, picked from the same view toggle and remembered the same way,
-   opening items in the same drawer ([kanban-ui.md](kanban-ui.md#item-urls)). Not a
-   separate route tree.
-4. **Read-only canvas.** Nothing on the canvas changes an item in v1: no dragging to
-   reorder, reparent, or change status. Edits happen in the drawer, under its
-   existing role rules. Page-level actions (new item, search) stay where they are.
-5. **Ordered by lifecycle, not scaled by calendar.** Position along the main axis
-   means phase (done, in flight, next, later) and order within the phase. It
-   doesn't mean elapsed time. Agent work is bursty: twenty tasks close in an
-   afternoon, then nothing moves for a week, and a calendar scale would crush the
-   afternoon into a sliver while spending most of the canvas on empty weeks. Only
-   the past has timestamps anyway; the future is an order. Dates still appear on the
-   done side, as landmarks between items ("today", "last week"), so it reads as a
-   history without being a ruler.
-6. **The default viewport is now.** Opening the overview centers on in-flight work,
-   which is where most of what needs a person lives, not on the project's first
-   epic. Fit-all is one key away.
-7. **Polling until push exists.** Same cadence and visibility rule as the board
-   (every 10 s while the page is visible) until SPE-203 replaces polling for both.
+8. **One project per map.** A cross-project portfolio asks different questions and
+   is a different view.
+9. **Read-only.** Nothing on the Map changes an item in v1. Dragging a dot to pull
+   a tangle apart is allowed; it springs back on release and nothing is saved.
+   Edits happen in the drawer, under its existing role rules.
+10. **The default viewport is now.** The Map opens on its right edge, where
+    in-flight work and most of what needs a person live. Fit-all is one key away.
+11. **Polling until push exists.** Same cadence and visibility rule as the board
+    (every 10 s while the page is visible) until SPE-203 replaces polling for both.
 
 ---
 
@@ -113,6 +121,14 @@ top requests on its new hierarchy view are roadmap support, filters that reach
 nested items, and
 [remembering what was expanded](https://github.com/orgs/community/discussions/184225).
 
+The nearest precedent for the Map's shape isn't a tracker at all.
+[Obsidian's graph view](https://help.obsidian.md/plugins/graph) is a force layout
+of notes, where unlinked notes float free as orphans and four forces (center,
+repel, link force, and link distance) set the feel.
+[Gource](https://github.com/acaudwell/Gource) grows a project's file tree
+organically over time. The Map is that kind of picture, with time pulling on one
+axis and the board's statuses and agents drawn on it.
+
 Developers' own threads point the same way. Across more than fifteen Reddit and
 Hacker News threads the most common ask is a glance that answers "is an agent
 waiting on me, and is one stuck?", and in
@@ -124,11 +140,11 @@ Kanban is the default and wears thin: on
 [Vibe Kanban's Show HN](https://news.ycombinator.com/item?id=44533004) its creator
 conceded that cards move so fast half the columns feel redundant. Practitioners
 plan from filtered ready and blocked lists plus a dependency tree, not from a
-picture of the whole graph. The closest precedent for a giant pannable tree, the
-[Historical Tech Tree](https://news.ycombinator.com/item?id=44829185), drew exactly
-the complaints this canvas would risk: too much empty space, no zoom, no way to
-jump to the next node, and a request for a vertical layout on phones. Its author's
-answer was the minimap.
+picture of the whole graph, so the Map has to earn its place. The
+[Historical Tech Tree](https://news.ycombinator.com/item?id=44829185), a giant
+pannable canvas, drew exactly the complaints this one would risk: too much empty
+space, no zoom, no way to jump to the next node, and a request for a vertical
+layout on phones. Its author's answer was the minimap.
 
 One warning runs through all of it.
 [Vibe Kanban is sunsetting](https://www.vibekanban.com/blog/shutdown), Archon
@@ -143,48 +159,121 @@ diffs), never on the map itself.
 
 ---
 
-## What's on the canvas
+## The layout
 
-### Items
+A force simulation places every dot. This is the starting heuristic; the design
+pass tunes it against real projects.
 
-- Every item in the project, at any depth, all three types. The model allows any
-  parenting and agents build deeper and mixed trees on purpose
-  ([item-relationships.md](item-relationships.md#parent-itemsparent_id)), so the
-  canvas can't assume two levels.
-- Top-level items form the main sequence. A standalone task or bug sits in it as a
-  smaller node with no subtree.
-- Done items are included; they're half the story. They start condensed (see
-  [Collapse](#collapse)).
+1. **Time anchor.** Each item belongs to a moment:
+   - a done item: `completed_at`
+   - anything else: its latest meaningful event, whichever is newest of being
+     filed (`created_at`), a status or sub-status transition, an activity-log
+     entry, a blocker added or cleared, and an observed agent write
+   - a parent: the newest anchor anywhere in its subtree, so an epic with work
+     underway sits near now with its finished children trailing back to where they
+     were done
+
+   Editing a title or description isn't an event, so fixing a typo on something
+   finished last month doesn't drag it back to now. An item that stops generating
+   events drifts left on its own, which makes stalled work visible without a rule
+   for it.
+2. **Time pull.** Each dot is pulled horizontally toward its anchor on a compressed
+   scale: now at the right edge, and the further back, the more compressed (roughly
+   logarithmic in age, so for example the last day is about as wide as the rest of
+   the month). Bursts of agent work get room, and quiet weeks don't become empty
+   canvas. The pull is soft: it sets a dot's neighborhood in time, and the other
+   forces settle where exactly it sits.
+3. **Links.** Parent-child links are strong, short springs, so a family clusters.
+   Blocker and discovered-from links are weaker and longer: they draw related work
+   toward each other without merging families.
+4. **Spacing.** Dots repel each other a little and never overlap, so work that
+   landed in one burst blooms into a cloud instead of stacking in a column, and
+   families keep their own room.
+5. **Containment.** A weak pull toward a horizontal midline keeps the Map a band
+   you can scan rather than a cloud that spreads forever. Vertical position means
+   nothing else.
+6. **Seeded start.** A dot starts at its time anchor, at a height hashed from its
+   key. Together with the simulation's fixed-seed randomness, the same data at the
+   same moment produces the same map on every device.
+
+What that produces:
+
+- A new project's ten unrelated items: a loose cloud of ten dots near the right
+  edge.
+- An epic in progress: a comet, the epic and its live tasks at now and its finished
+  tasks trailing back to where each was done.
+- A finished epic: a compact cluster in the past, collapsed to one dot by default.
+- A backlog item nobody has touched since it was filed: a lone dot out on the left.
+- An in-progress task whose agent went quiet: sliding left of now, its session
+  dimmed.
+
+### Layout requirements
+
+1. Left is earlier and right is now, everywhere on the Map. The forces can displace
+   a dot from its moment but not carry it weeks away from it.
+2. A time ruler (now, today, yesterday, last week, month names) runs along one edge
+   at the same compression, so "roughly when" is always readable.
+3. Deterministic: same data, same moment, same map, on every device.
+4. Stable: an update starts from the current positions, and only the changed items
+   and their neighbors move. Time drift, everything sliding left as time passes, is
+   applied on refresh as a short eased step, never as continuous motion. A reload
+   lands on recognizably the same map.
+5. Semantic zoom with at least three levels: far (dots and faint links, labels only
+   on the largest families and on anything that needs a person), middle (key and
+   title on every dot, hiding labels that would collide), and near (cards with
+   everything in [Status encoding](#status-encoding)). Levels switch on on-screen
+   size with hysteresis, so they don't flicker at a boundary.
+6. Dense: no long empty stretches, and a viewport with nothing in it offers a jump
+   to the nearest dots.
+7. A parent's dot grows with its subtree, sublinearly, so an epic with a hundred
+   children reads as big without swallowing the Map. Its children condense at far
+   zoom.
+8. No fisheye or other distortion. Focus comes from dimming and collapse.
+9. Holds up at ten unrelated items, at one huge epic, and at a few thousand items.
+
+### Collapse
+
+- Any parent collapses into its own dot, carrying its rollup; its children fold in.
+- Finished families (a parent and every descendant done) start collapsed;
+  everything else starts open.
+- A person's expand and collapse choices persist per project on their device.
+
+---
+
+## Phases and up next
 
 ### Phases
 
-Every item is in exactly one phase:
+Phases don't place dots; time does. They drive the summary counts, rollups,
+filters, and up next. Every item is in exactly one:
 
-| Phase | What's in it | Order |
-|---|---|---|
-| Done | `done` | completion time |
-| In flight | `in_progress` and `in_review`, blocked or not; a `blocked` hold that had started | start time |
-| Next | `ready` with no open blocker | rank, the board's own order |
-| Later | `ready` with an open blocker; a `blocked` hold that never started | after whatever blocks it, rank breaking ties |
+| Phase | What's in it |
+|---|---|
+| Done | `done` |
+| In flight | `in_progress` and `in_review`, blocked or not; a `blocked` hold that had started |
+| Next | `ready` with no open blocker |
+| Later | `ready` with an open blocker; a `blocked` hold that never started |
 
-- Next is exactly what MCP `get_items status=ready` returns (ready, blocked
-  excluded, by rank), which is where agents pick up work. The overview, the board's
-  Ready column, and the agents agree on what's next, and a reorder on the board
-  reorders Next.
-- Later puts an item after the items blocking it. The blockers service rejects an
-  item blocking itself but not a longer cycle (A blocks B, B blocks A), so the
-  ordering can't assume there are none. A cycle must not hang the layout, and it
-  shows as a deadlock, which [needs a person](#needs-a-person).
-- Children are ordered by the same rules inside their parent.
-- Remaining ties break by item number, so every order is total and the layout is
-  deterministic.
-- An in-flight item with no recorded start (only rows that predate `started_at`)
-  sorts after the dated ones, by rank.
+Next is exactly what MCP `get_items status=ready` returns (ready, blocked excluded,
+by rank), which is where agents pick up work.
+
+### Up next
+
+The up-next marker goes on the next ready child, by rank, of each in-flight parent,
+then on the top of the project-wide ready list. That's
+`/specboard:whats-next`'s order: continue work that's started before picking up
+new work. How many items carry the marker is the design pass's call. Since time
+places dots, an up-next item filed long ago sits far left; the marker and its
+off-screen indicator are what find it.
+
+---
+
+## What a dot shows
 
 ### Status encoding
 
-Each node shows the following. Shape, icon, or text carries every distinction that
-color does; hue is never the only signal.
+Shape, icon, or text carries every distinction that color does; hue is never the
+only signal.
 
 - Board status, all five values.
 - The sub-statuses that change what a person should do: scoping, PR open, needs
@@ -195,89 +284,38 @@ color does; hue is never the only signal.
 - On a parent, a rollup of its whole subtree split by phase rather than a single
   done fraction.
 - A PR link when `pr_url` is set.
-- At item zoom: a linked spec, and whether an agent or a person created the item
+- At near zoom: a linked spec, and whether an agent or a person created the item
   (`origin.actor.type`).
 
 Board and Table show status with `StatusDot`, an 8 px dot that encodes it by hue
-alone. The overview's status glyphs replace it in every view rather than living
-beside it, so there's one status vocabulary. Glyphs meet 3:1 non-text contrast
-(WCAG 1.4.11) in both themes. The existing status tokens carry over, and the design
-pass adds what blocked, needs input, and stale need.
+alone. The Map's status glyphs replace it in every view rather than living beside
+it, so there's one status vocabulary. Glyphs meet 3:1 non-text contrast (WCAG
+1.4.11) in both themes. The existing status tokens carry over, and the design pass
+adds what blocked, needs input, and stale need.
 
 ### Relationships
 
-- Parent and child is the hierarchy itself, always visible.
+- Parent-child links draw as branches between dots.
+- Blocker and discovered-from links draw faintly, always. A toggle hides them.
 - Selecting an item lights its whole blocker chain in both directions (what it
   waits on, transitively, and what waits on it) and its discovered-from lineage both
   ways, and dims everything else, like a path preview in a game's skill tree.
-- A toggle shows every open blocker edge. At far zoom, edges between the same two
-  top-level items bundle into one with a count. Never all of them by default: a
-  project's worth of cross-links is a hairball.
-- Text blockers aren't edges; they show on the item they hold.
-- Cleared blockers aren't shown in v1.
-
-### Layout requirements
-
-The design pass picks the layout. Whatever it picks has to hold these:
-
-1. An item's parent is unambiguous at every zoom level where the item is visible.
-2. Lifecycle reads in one direction across the whole canvas. Done is always on the
-   same side.
-3. Deterministic: the same data lays out the same way on every load and every
-   device. No force-directed physics.
-4. Stable: a refresh moves only what changed and the minimum around it. Completing
-   an item may carry it into Done; it may not reshuffle the rest of the project.
-   Top-level order never re-sorts by activity.
-5. Semantic zoom with at least three levels: the whole project (top-level items as
-   shapes carrying their rollups, children as marks), a working level (titles and
-   statuses readable), and item level (everything in
-   [Status encoding](#status-encoding)). Levels switch on on-screen size with
-   hysteresis, so they don't flicker at a boundary.
-6. Detail is densest at the frontier. Long Done and Later tails condense into
-   summaries that expand, and a parent with a hundred children doesn't dominate.
-7. Dense: no large empty regions. A viewport with nothing in it offers a jump to
-   the nearest items.
-8. Orientation is never lost: while panning, which top-level item and which phase
-   you're looking at stay visible.
-9. No fisheye or other distortion. Focus comes from dimming and collapse.
-10. Holds up with zero epics (a project of standalone tasks), with one epic, and
-    with a few thousand items.
-
-Candidate shapes for the design pass:
-
-1. Progress lanes, the recommended starting point: a Gantt chart without dates.
-   Each top-level item is a horizontal band, with its descendants nested inside as
-   sub-bands, like an indented outline. Every band shares one lifecycle axis and a
-   single vertical Now line, with Done to its left and In flight, Next, and Later
-   to its right. Depth 2 and depth 6 lay out the same way. Most status changes move
-   a card one slot across the line, which keeps a viewer's mental map intact. Dates
-   appear only where they exist, on the done side. The risk is that the hierarchy
-   reads as indentation rather than as a drawn tree.
-2. Tree along a timeline: top-level items on a horizontal spine in phase order,
-   children branching off it. It's the most literal giant tree, and the hierarchy
-   reads first. But a 50-child epic becomes a comb, and every extra level of depth
-   costs a lot of space.
-3. Tech tree: columns by dependency depth, as in Civilization or Factorio. Blockers
-   are sparse here by design (agents record them only when the dependency is
-   explicit), so most items would land in the first column. Keep the vocabulary
-   (Factorio's researched, available, queued, and locked map onto done, next, up
-   next, and later) and drop the layout.
-
-### Collapse
-
-- Any parent collapses to a single node that carries its rollup.
-- The default favors the present: in-flight work expanded, Done and Later
-  condensed, and Next expanded up to a limit the design pass sets.
-- A person's expand and collapse choices persist per project on their device.
+- Text blockers aren't links; they show on the dot they hold.
+- Cleared blockers neither draw nor pull.
+- The blockers service rejects an item blocking itself but not a longer cycle (A
+  blocks B, B blocks A). A cycle shows as a deadlock, which
+  [needs a person](#needs-a-person).
 
 ---
 
 ## Agents
 
-- A live worker episode (`item_workers` with no `ended_at`) shows on its item:
-  client and device ("claude-code on dev-laptop"), branch, how long it has been
-  on the item, and how long since its last observed write, so a stalled session
-  reads differently from a slow one.
+- A live worker episode (`item_workers` with no `ended_at`) shows on its dot: client
+  and device ("claude-code on dev-laptop"), branch, how long it has been on the
+  item, and how long since its last observed write, so a stalled session reads
+  differently from a slow one.
+- Every observed write refreshes the item's time anchor, so live work sits at now
+  without a rule for it.
 - Several sessions on one item stack rather than overlap.
 - A session with no observed write for 15 minutes dims, the threshold the drawer
   already uses
@@ -286,14 +324,14 @@ Candidate shapes for the design pass:
   crashed, or stopped updating the board, looks like.
 - Calm by default. A session's indicator moves briefly when a write is observed,
   then holds still. Nothing pulses indefinitely, and no motion runs longer than
-  five seconds, which also keeps the canvas inside WCAG 2.2.2 without a pause
-  control. The loudest treatment belongs to [needs a person](#needs-a-person).
-- At far zoom, each top-level item shows a count of its live sessions.
+  five seconds, which also keeps the Map inside WCAG 2.2.2 without a pause control.
+  The loudest treatment belongs to [needs a person](#needs-a-person).
+- At far zoom, each family shows a count of its live sessions.
 - A roster lists every live session in the project with the item it's on. Picking
-  one flies the canvas there.
+  one flies the Map there.
 - Live sessions and needs-a-person items outside the viewport get edge markers
   pointing toward them.
-- The overview shows item state and session presence. It never streams tool calls.
+- The Map shows item state and session presence. It never streams tool calls.
 - The browser sees the sanitized actor only (type, device name, client), as it
   does today. When People
   ([multi-user-collaboration.md](multi-user-collaboration.md#implementation-phases),
@@ -304,7 +342,7 @@ Candidate shapes for the design pass:
 ## Needs a person
 
 In an agent-driven loop the person is usually the bottleneck, so their queue is the
-loudest thing on the canvas:
+loudest thing on the Map:
 
 - needs input (`sub_status = needs_input`), an agent's explicit question
 - in review (`status = in_review` or `sub_status = pr_open`), rolled up per parent
@@ -314,79 +352,82 @@ loudest thing on the canvas:
 - stale sessions
 - blocker cycles
 
-Each gets a marker that still reads at whole-project zoom, a count in the summary,
-a filter, and a key that jumps to the next one.
+Each gets a marker that still reads at far zoom, a count in the summary, a filter,
+and a key that jumps to the next one.
 
 ---
 
 ## Summary strip
 
-Fixed, outside the canvas:
+Fixed, outside the Map:
 
 - counts per phase, plus blocked and needs-a-person
 - live agent sessions
-- since your last visit: completed, started, and created, each of which highlights
-  those items on the canvas and steps through them
+- since your last visit: what changed, by kind, each of which highlights those
+  items and steps through them
 - freshness: when the data last refreshed
 
 ---
 
 ## Since your last visit
 
-- A visit is the last time this person had the overview open for this project.
-- On return, the canvas marks what changed since then: items completed, started, or
-  created (agent-filed ones called out, with what they were discovered from), and
-  items newly blocked by a blocker row, which carries its own `created_at`.
-- A mark stays until its item is opened or everything is marked seen.
+- A visit is the time this person spends on the Map for a project. The baseline is
+  stored per account (decision 7), so it's the same on every device.
+- On return, the Map marks what changed since the baseline: items completed,
+  started, or created (agent-filed ones called out, with what they were discovered
+  from), newly blocked or held, questions raised (`needs_input`), and PRs opened.
+  The transition log is what dates the last three.
+- Opening a marked item clears its mark for the rest of the visit. The baseline
+  moves forward when the person leaves the Map or marks everything seen.
 - Each marked item's quick card shows its latest activity-log entry, usually the
   agent's own account of what it did and why.
-- Needs input raised, PRs opened, and status holds carry no timestamp, so v1 can't
-  report them. The transition log in [open question 4](#open-questions) would.
 
 ---
 
 ## Navigation and interaction
 
-- Pan by drag, two-finger scroll, or one-finger touch drag. Zoom by pinch,
-  ctrl/cmd-wheel, on-screen controls, and keys.
-- Fit all, fit to now, fit to a top-level item, and fit to the selection. Camera
-  flights are short and skippable.
+- Pan by dragging the background, two-finger scroll, or one-finger touch drag. Zoom
+  by pinch, ctrl/cmd-wheel, on-screen controls, and keys.
+- Fit all, fit to now, fit to a family, and fit to the selection. Camera flights
+  are short and skippable.
 - A minimap on large screens, marking the viewport, search hits, and live sessions.
 - Search uses the toolbar's search and the board's matching rules (title,
   description, or key, at any depth). It dims non-matches, flies to the first hit,
   and steps through the rest.
 - Filters dim what doesn't match instead of removing it, so filtering never
-  re-lays out the canvas: type, needs a person, live sessions. Collapse is what
+  re-lays out the Map: type, phase, needs a person, live sessions. Collapse is what
   saves space.
-- Selecting an item (click, or Enter on the focused one) opens the drawer, the same
+- Selecting a dot (click, or Enter on the focused one) opens the drawer, the same
   component the board uses, and lights its relationships.
 - Hover or keyboard focus shows a quick card: title, status, sub-status, sessions,
   blockers, progress, and the latest activity-log entry, fetched on demand.
-- Keyboard-complete, with one tab stop into the canvas. Arrows move to the nearest
-  item in that direction, Enter opens, Escape closes or clears, `+`, `-`, and `0`
-  zoom, a key returns to now, and keys step through needs-a-person items and live
-  sessions. Focus pans the canvas to keep the focused item in view. The planning
-  page's global shortcuts (`N`, `C`, `/`, `?`, Escape) keep their meanings, so
-  overview keys can't reuse them
-  ([kanban-ui.md](kanban-ui.md#keyboard-shortcuts)).
+- Dragging a dot pulls it and its links along; on release it springs back
+  (decision 9).
+- Keyboard-complete, with one tab stop into the Map. Arrows move to the nearest dot
+  in that direction, Enter opens, Escape closes or clears, `+`, `-`, and `0` zoom, a
+  key returns to now, and keys step through needs-a-person items and live sessions.
+  Focus pans the Map to keep the focused dot in view. The planning page's global
+  shortcuts (`N`, `C`, `/`, `?`, Escape) keep their meanings, so Map keys can't
+  reuse them ([kanban-ui.md](kanban-ui.md#keyboard-shortcuts)).
 - Links anchor on an item, not on coordinates, since coordinates shift as items
-  arrive: `?view=overview&focus=SPE-123` reopens centered on that item. Panning
-  replaces the history entry; a jump pushes one.
+  arrive: `?view=map&focus=SPE-123` reopens centered on that item. Panning replaces
+  the history entry; a jump pushes one.
 
 ---
 
 ## Live updates
 
-- The same poll as the board. The canvas consumes change notifications rather than
-  the poll itself, so SPE-203 can swap the transport without touching the canvas.
-- Changes buffer and apply at most about once a second, and only what changed
-  re-lays out.
+- The same poll as the board. The Map consumes change notifications rather than
+  the poll itself, so SPE-203 can swap the transport without touching the Map.
+- Changes buffer and apply at most about once a second, as a short, low-energy
+  pass of the simulation started from the current positions.
 - Transitions run in stages, a few hundred milliseconds each: exits, then moves,
-  then entries. A status change recolors in place; a completion moves into Done.
+  then entries. A status change restyles a dot in place; activity moves it toward
+  now.
 - Under reduced motion, changes cut in with the brief highlight the board already
   gives changed items.
-- The item under the pointer doesn't move out from under the person. If the
-  focused item moves, the viewport follows it so it stays put on screen.
+- The dot under the pointer doesn't move out from under the person. If the focused
+  dot moves, the viewport follows it so it stays put on screen.
 - A refresh never resets the viewport, the selection, or collapse state.
 
 ---
@@ -396,8 +437,7 @@ Fixed, outside the canvas:
 ### What's missing today
 
 - **No start or completion time.** Items have `created_at` and `updated_at`, and
-  `updated_at` moves on every edit, so it can't stand in for either. Decision 1
-  adds both.
+  `updated_at` moves on every edit, so it can't stand in for either.
 - **No status history.** The activity log is prose, and status writes and log
   writes are separate on purpose
   ([item-relationships.md](item-relationships.md#activity-log-item_notes-migration-027)).
@@ -415,51 +455,67 @@ Fixed, outside the canvas:
      `done` never started, and its `started_at` stays empty.
    - `completed_at` is the most recent entry into `done`, cleared when the item
      leaves `done`, so it's set exactly when the status is `done`.
-   - Both are stamped server-side, in the item service, on every path that writes
-     a status: MCP, REST, a board drag, a create that names a status, a status
-     derived from `sub_status`, and the parent rollup. Like actors, they're never
-     accepted from a client payload.
    - Every item response carries both, REST and MCP alike, and the drawer and the
      standalone item view show them.
-2. **Best-effort backfill.** Done items take the later of their last worker
-   episode's end and their last activity-log entry, else `updated_at`. Items that
-   have started take their first worker episode's start, else their first
+2. **A status transition log** (decision 2). One append-only row per change of
+   status or sub-status: the before and after of both, the actor, and the time.
+   - Written by the item service in the same transaction as the status write, on
+     every path that writes one: MCP, REST, a board drag, a create that names a
+     status, a status derived from `sub_status`, and the parent rollup (as a system
+     actor). The activity log is deliberately separate from status writes; this log
+     can't be, since a status write without its row would make since-your-last-visit
+     lie.
+   - `started_at` and `completed_at` are written by the same code in the same
+     transaction, so they can't disagree with the log. Neither is ever accepted from
+     a client payload.
+   - The log starts empty. Nothing before the release is reconstructed.
+3. **Best-effort backfill of the two times.** Done items take the later of their
+   last worker episode's end and their last activity-log entry, else `updated_at`.
+   Items that have started take their first worker episode's start, else their first
    activity-log entry, else stay empty. Times before the release are approximate
-   and deliberately unflagged: the overview reads them as coarse landmarks, and a
-   flag column would exist only for legacy rows. The verbatim backfill expression
-   runs read-only against prod before release, since staging has too little data
-   to prove a backfill
-   ([verification.md](../verification.md#when-a-manual-pass-is-required)).
-3. **One request for the whole tree.** Every item in the project at any depth,
-   carrying only what the canvas draws: key, type, title, status, sub-status,
-   blocked, parent key, rank, created, started, completed, and updated times, live
-   sessions (sanitized), open item-blocker edges, text-blocker count,
-   discovered-from key, origin actor type, PR URL, and spec count. No descriptions,
-   activity log, or checklist.
-4. **Payload budget.** 2,000 items in one response at roughly 100 KB gzipped.
-5. **Cheap refresh.** A poll doesn't re-download the tree. It asks for what changed
-   since the last read, which `updated_at` already supports: child writes bump the
-   parent and blocker writes bump the item. Deletions don't show up in an
+   and deliberately unflagged: the Map reads them loosely, and a flag column would
+   exist only for legacy rows. The verbatim backfill expression runs read-only
+   against prod before release, since staging has too little data to prove a
+   backfill ([verification.md](../verification.md#when-a-manual-pass-is-required)).
+4. **A time anchor per item**, computed server-side as [The layout](#the-layout)
+   defines it, from data that already exists or that this spec adds: the two
+   times, the transition log, activity-log entries, blocker rows, and worker
+   episodes.
+5. **One request for the whole project.** Every item at any depth, carrying only
+   what the Map draws: key, type, title, status, sub-status, blocked, parent key,
+   rank, created, started, and completed times, time anchor, live sessions
+   (sanitized), open item-blocker links, text-blocker count, discovered-from key,
+   origin actor type, PR URL, and spec count. No descriptions, activity log, or
+   checklist.
+6. **Payload budget.** 2,000 items in one response at roughly 100 KB gzipped.
+7. **Cheap refresh.** A poll doesn't re-download the project. It asks for what
+   changed since the last read, which `updated_at` already supports: child writes
+   bump the parent and blocker writes bump the item. Deletions don't show up in an
    `updated_at` delta (the board has the same blind spot), so they need their own
-   signal, and the canvas reflects a deletion within a few minutes at worst.
-6. **Same read access as the board.** Any member role, viewers included.
+   signal, and the Map reflects a deletion within a few minutes at worst.
+8. **A per-account last-visit baseline** (decision 7): one timestamp per person per
+   project, read when the Map opens and moved forward when they leave it or mark
+   everything seen.
+9. **Same read access as the board.** Any member role, viewers included.
 
 ---
 
 ## Performance
 
-- Data to first paint under 1 s for 1,000 items on a mid-range laptop.
+- Data to first paint under 1 s for 1,000 items on a mid-range laptop, layout
+  included.
 - 60 fps pan and zoom at 2,000 items on a mid-range laptop; 30 fps or better on a
   recent phone.
-- A refresh doesn't drop frames during a pan or zoom.
-- At fit-all every item is on screen, so culling to the viewport saves nothing
-  there. The far zoom levels have to draw aggregates (one or two shapes per item,
-  or one per top-level item), never full cards.
-- The overview's code loads only when the view opens, so Board and Table don't get
-  heavier. Target 60 KB gzipped for the overview chunk, layout code included; the
-  same JavaScript ships to phones ([tech-stack.md](../tech-stack.md)).
-- A project past the read cap still opens. Done subtrees come back summarized, and
-  the canvas says that it's summarizing.
+- The simulation runs off the main thread. A refresh never drops frames during a
+  pan or zoom.
+- At fit-all every dot is on screen, so culling to the viewport saves nothing there.
+  The far and middle zoom levels draw one or two shapes per item; only near zoom
+  draws cards.
+- The Map's code loads only when the view opens, so Board and Table don't get
+  heavier. Target 60 KB gzipped for the Map's chunk, layout code included; the same
+  JavaScript ships to phones ([tech-stack.md](../tech-stack.md)).
+- A project past the read cap still opens. Finished families come back summarized,
+  and the Map says that it's summarizing.
 
 ---
 
@@ -467,27 +523,27 @@ Fixed, outside the canvas:
 
 - Every target in [shared-app-shell.md](shared-app-shell.md), with no target
   branches.
-- Below 768 px: touch pan and pinch, tap opens the full-screen item view as the
-  board does, no minimap, the summary strip collapses to one line, and controls sit
-  within thumb reach. The main sequence is followable by scrolling one axis (a
-  vertical orientation, for instance); two-axis panning across empty space is what
-  made the Historical Tech Tree hard to use on a phone.
+- Below 768 px time runs vertically, now at the top, so reading the Map is a scroll
+  along one axis; two-axis panning across empty space is what made the Historical
+  Tech Tree hard to use on a phone. Touch pan and pinch, tap opens the full-screen
+  item view as the board does, no minimap, the summary strip collapses to one line,
+  and controls sit within thumb reach.
 - Coarse pointers get hit targets of at least 44 px at whatever zoom level makes
-  items tappable.
+  dots tappable.
 
 ---
 
 ## Accessibility
 
 - Keyboard-complete (see [Navigation](#navigation-and-interaction)).
-- A parallel accessible tree in the DOM mirrors the canvas: `tree`, `treeitem`, and
-  `group` roles, with `aria-level`, `aria-setsize`, `aria-posinset`, and
-  `aria-expanded`, and status in each item's name. The Table view stays the
-  visible linear alternative.
+- A parallel accessible tree in the DOM mirrors the Map: families and standalone
+  items, newest anchor first, using the `tree`, `treeitem`, and `group` roles with
+  `aria-level`, `aria-setsize`, `aria-posinset`, and `aria-expanded`, and status in
+  each item's name. The Table view stays the visible linear alternative.
 - Color is never the only carrier of meaning. Text meets WCAG AA contrast and
   glyphs meet 3:1, in both themes.
-- `prefers-reduced-motion` stops presence motion and turns camera flights and
-  transitions into cuts.
+- `prefers-reduced-motion` stops presence motion and turns camera flights,
+  transitions, and time drift into cuts.
 - Remote changes are announced through a polite live region, rate-limited, with a
   setting to turn the announcements off.
 
@@ -496,7 +552,7 @@ Fixed, outside the canvas:
 ## Measuring it
 
 A view nobody opens is a cost, so it reports through `@specboard/telemetry`: opens,
-time on view, searches, drawer opens from the canvas, roster picks, and
+time on view, searches, drawer opens from the Map, roster picks, and
 needs-a-person jumps. The next version gets decided on use rather than taste.
 
 ---
@@ -505,25 +561,27 @@ needs-a-person jumps. The next version gets decided on use rather than taste.
 
 Input for the technical design, not decisions.
 
+- `d3-force` (ISC, about 5.5 KB gzipped) covers the whole heuristic: `forceX` for
+  the time pull (the beeswarm technique), `forceLink` with a strength and distance
+  per link type, `forceManyBody` (Barnes-Hut, so it scales to thousands of nodes),
+  `forceCollide` sized per dot, and a weak `forceY` for the midline. Its simulation
+  defaults to a fixed-seed random generator, which is half of the determinism
+  requirement; the hashed starting positions are the other half. Starting each dot
+  at its anchor puts it near its final spot, which keeps the tick count, and the
+  cold-start time, down. Run it in a Web Worker.
+- Alternatives if `d3-force` falls short: ForceAtlas2 through graphology (Gephi's
+  organic layout, about 3 KB plus graphology), or WebCoLa (about 21 KB), whose hard
+  constraints could enforce left-of-in-time if the soft pull proves too loose.
 - Rendering cost is per item, not per API. In a 2018 benchmark of trees drawn at
   about 15 primitives per node, SVG and Canvas both dropped frames above roughly
   400 nodes, and WebGL held up only once text was removed
   ([Horak et al.](https://mt.inf.tu-dresden.de/cnt/uploads/Horak-2018-Graph-Performance-Poster.pdf)).
-  That's why the far zoom levels draw aggregates.
-- A stack that fits [tech-stack.md](../tech-stack.md)'s bias toward building our
-  own and the 60 KB budget: `d3-zoom` for the camera (about 15 KB gzipped), plain
-  TypeScript for the layout with `d3-hierarchy` for stratify and rollups (about
-  6 KB), Preact components for cards at near zoom, culled to the viewport (real
-  text, real focus, and `@specboard/ui` reuse), and one Canvas 2D layer for the far
-  zoom levels.
+  So one Canvas 2D layer draws dots and links at far and middle zoom, and Preact
+  components draw cards at near zoom, culled to the viewport (real text, real
+  focus, and `@specboard/ui` reuse). `d3-zoom` (about 15 KB) runs the camera.
 - Ruled out: tldraw (production use needs a license key; React-only; about
-  530 KB) and Excalidraw (React-only; about 350 KB). React Flow (`@xyflow/react`,
-  about 60 KB) is React-only too. The repo already runs `slate-react` on
-  `@preact/compat`, but nobody reports React Flow working there, so it needs a
-  spike before it's a candidate.
-- A dedicated dependency layout would need ELK (about 433 KB, lazy-loaded), and
-  its EPL-2.0 license checked against this repo's PolyForm Noncommercial license.
-  It's out of scope; selection lighting covers v1.
+  530 KB), Excalidraw (React-only; about 350 KB), and React Flow (React-only, and a
+  node editor rather than a layout engine).
 
 Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
 
@@ -531,36 +589,31 @@ Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
 
 ## Out of scope
 
-- Editing on the canvas: dragging to reorder, reparent, or change status, and
-  creating items in place.
+- Editing items on the Map: changing status, reparenting, reordering, or creating
+  items in place.
+- Saving dot positions a person dragged.
 - A cross-project portfolio.
-- A calendar-scaled timeline, due dates, scheduling, Gantt.
+- Due dates, scheduling, Gantt.
 - A dedicated dependency layout (a layered graph of one item's blocker chain).
 - CI and merge state on items, which needs GitHub data the board doesn't hold.
-- Replay of history and metrics (cycle time, throughput, burn-up). The new times
-  make cycle time possible later; replay needs the transition log (open question
-  4).
+- Replay of history (Gource-style) and metrics (cycle time, throughput, burn-up).
+  The transition log makes both possible later.
 - Push updates: SPE-203.
 - Image export, public share links, and standup snapshots.
 - An AI-written narrative of recent progress.
-- An agent-facing rendering of the tree over MCP. The whole-tree read could serve
+- An agent-facing rendering of the Map over MCP. The whole-project read could serve
   it later, more likely as a `get_items` parameter than a new tool, since every
   tool schema is resident context on every agent request.
 
 ## Open questions
 
-1. Start the design pass from progress lanes?
-2. Decision 5: lifecycle axis with date landmarks, or a calendar axis?
-3. Last visit per device (browser storage) or per account (server)?
-4. Record every status transition as well (from, to, sub-status, actor, time)? v1
-   runs on the two times without it. Recommended anyway: a transition nobody
-   recorded can't be reconstructed later, it's what would let since-your-last-visit
-   report needs input raised, PRs opened, and holds, and replay or cycle time would
-   need it.
-5. What does "up next" mark: the first ready child of each in-flight parent, the
-   top of the project-wide ready list, or both? It decides the frontier's look and
-   where fit-to-now lands.
-6. The UI label: Overview, Map, or something else.
+1. Does a parent anchor at the newest activity in its subtree (the comet), or at
+   its own events, leaving the epic where it was filed while its children stretch
+   toward now? This spec proposes the subtree.
+2. How hard should time pull against the links? Settle it on real projects in the
+   design pass, where a strong pull keeps the Map honest about when and a weak one
+   keeps families tight.
+3. How many up-next markers?
 
 ## Dependencies
 
