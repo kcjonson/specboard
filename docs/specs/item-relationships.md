@@ -58,13 +58,38 @@ One row per blocker; an item can hold any mix of item and text blockers.
   erases history: FK cascades remove rows, tombstones included, when either end
   or the project is deleted.
 - **Edges**: blocking a done item is rejected; a done item can't be added as a
-  blocker (it could never clear naturally); self-blocking is rejected; the
-  partial unique indexes forbid duplicate *open* blockers of either kind; text
-  is capped at 500 characters. Blocker writes run in transactions that lock the
-  item rows they validated (`FOR SHARE`), so a concurrent completion can't slip
-  between the not-done check and the insert. Every blocker mutation bumps the
-  affected item's `updated_at` so polling boards pick up derived changes made by
-  other sessions.
+  blocker (it could never clear naturally); self-blocking is rejected; so is an
+  item blocker that would close a cycle among open item blockers, since a cycle
+  is never a real dependency and would keep every item in it off the ready lists
+  until someone broke it by hand; the partial unique indexes forbid duplicate
+  *open* blockers of either kind; text is capped at 500 characters. The cycle
+  check is a recursive CTE that walks up from each new target through open item
+  rows and refuses the write (`BlockerTargetError`, naming the shortest cycle)
+  if the walk reaches the blocked item. It is a `UNION` over (item,
+  reached-from) pairs, so each edge is taken once: diamonds stay linear, and a
+  cycle that predates the check still ends the walk. Only the edges a write adds
+  are checked, so a full replace that restates an open blocker isn't refused
+  for a cycle it was already part of. The blocked item's own rows, the ones a
+  replace is rewriting, can't change the answer, since a cycle through a new
+  edge comes back through other items' blockers.
+
+  Blocker writes run in transactions that take a per-project advisory lock
+  (`pg_advisory_xact_lock`) and then lock the item rows they validated
+  (`FOR SHARE`). The row locks keep a concurrent completion from slipping
+  between the not-done check and the insert, but they can't keep cycles out:
+  the walk reads edges it doesn't lock, so two writes can each close half of a
+  cycle, even through four different rows (A blocked by B and C blocked by D,
+  with B blocked by C and D blocked by A already open). The project lock
+  serializes blocker writes, and the check runs in a later statement, so under
+  READ COMMITTED its snapshot holds every edge committed before the lock was
+  granted. It comes before any row lock, since a write holding a share lock
+  while it waited could deadlock with the holder's `updated_at` bump;
+  serializing also ends the deadlock two writes to one item used to hit, each
+  holding the share lock the other's bump needed. Clears don't take it:
+  removing an edge can't close a cycle, and a stale read can at worst refuse a
+  write that a concurrent clear would have allowed. Every blocker mutation
+  bumps the affected item's `updated_at` so polling boards pick up derived
+  changes made by other sessions.
 - **Ready means startable**: `getItems({ excludeBlocked: true })` backs the
   current-work ready list and MCP `get_items status=ready` (override with
   `include_blocked`). Text blockers represent a human hold and clear only when

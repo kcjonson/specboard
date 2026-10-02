@@ -30,6 +30,8 @@ const mockQuery = vi.mocked(query);
 const mockTransaction = vi.mocked(transaction);
 
 const ACTOR: Actor = { type: 'user', userId: 'user-1' };
+const LOCKED = { rows: [{}], rowCount: 1 };
+const NO_CYCLE = { rows: [], rowCount: 0 };
 
 beforeEach(() => {
 	mockQuery.mockReset();
@@ -53,34 +55,43 @@ describe('validateBlockerInput', () => {
 });
 
 describe('addBlocker', () => {
-	it('locks the blocked item and rejects when it is done', async () => {
-		mockClientQuery.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'done' }], rowCount: 1 });
+	it('takes the project blocker lock before any row lock, then rejects a done item', async () => {
+		mockClientQuery
+			.mockResolvedValueOnce(LOCKED)
+			.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'done' }], rowCount: 1 });
 
 		await expect(addBlocker('proj-1', 1, { text: 'hold' }, ACTOR)).rejects.toThrow(BlockerTargetError);
-		const [lockSql] = mockClientQuery.mock.calls[0]!;
+		const [projectLockSql, projectLockParams] = mockClientQuery.mock.calls[0]!;
+		expect(projectLockSql).toContain('pg_advisory_xact_lock');
+		expect(projectLockParams).toEqual(['proj-1']);
+		const [lockSql] = mockClientQuery.mock.calls[1]!;
 		expect(lockSql).toContain('FOR SHARE');
 	});
 
 	it('rejects a done item as a blocker (it could never clear naturally)', async () => {
 		mockClientQuery
+			.mockResolvedValueOnce(LOCKED)
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'ready' }], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [{ id: 'item-2', status: 'done' }], rowCount: 1 });
 
-		await expect(addBlocker('proj-1', 1, { itemNumber: 2 }, ACTOR)).rejects.toThrow(BlockerTargetError);
+		await expect(addBlocker('proj-1', 1, { itemNumber: 2 }, ACTOR)).rejects.toThrow('Item 2 is already done');
 	});
 
 	it('rejects self-blocking', async () => {
 		mockClientQuery
+			.mockResolvedValueOnce(LOCKED)
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'ready' }], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'ready' }], rowCount: 1 });
 
-		await expect(addBlocker('proj-1', 1, { itemNumber: 1 }, ACTOR)).rejects.toThrow(BlockerTargetError);
+		await expect(addBlocker('proj-1', 1, { itemNumber: 1 }, ACTOR)).rejects.toThrow('An item cannot block itself');
 	});
 
 	it('maps a unique-index violation to BlockerConflictError', async () => {
 		mockClientQuery
+			.mockResolvedValueOnce(LOCKED)
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'ready' }], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [{ id: 'item-2', status: 'ready' }], rowCount: 1 })
+			.mockResolvedValueOnce(NO_CYCLE)
 			.mockRejectedValueOnce(Object.assign(new Error('duplicate'), { code: '23505' }));
 
 		await expect(addBlocker('proj-1', 1, { itemNumber: 2 }, ACTOR)).rejects.toThrow(BlockerConflictError);
@@ -88,6 +99,7 @@ describe('addBlocker', () => {
 
 	it('inserts with the actor recorded and bumps the item updated_at', async () => {
 		mockClientQuery
+			.mockResolvedValueOnce(LOCKED)
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'ready' }], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [{ id: 'blocker-1' }], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [], rowCount: 1 });
@@ -95,10 +107,10 @@ describe('addBlocker', () => {
 
 		await addBlocker('proj-1', 1, { text: 'hold' }, ACTOR);
 
-		const [insertSql, insertParams] = mockClientQuery.mock.calls[1]!;
+		const [insertSql, insertParams] = mockClientQuery.mock.calls[2]!;
 		expect(insertSql).toContain('INSERT INTO item_blockers');
 		expect(insertParams).toEqual(['item-1', 'proj-1', null, 'hold', JSON.stringify(ACTOR)]);
-		const [bumpSql, bumpParams] = mockClientQuery.mock.calls[2]!;
+		const [bumpSql, bumpParams] = mockClientQuery.mock.calls[3]!;
 		expect(bumpSql).toContain('UPDATE items SET updated_at = NOW()');
 		expect(bumpParams).toEqual(['item-1']);
 	});
@@ -124,6 +136,7 @@ describe('clearBlocker', () => {
 describe('setBlockers', () => {
 	it('reconciles: clears open rows not in the list, inserts missing, keeps matches — never DELETEs', async () => {
 		mockClientQuery
+			.mockResolvedValueOnce(LOCKED)
 			// lockItem
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'ready' }], rowCount: 1 })
 			// resolveBlockerTarget for itemNumber 2
@@ -142,6 +155,11 @@ describe('setBlockers', () => {
 		await setBlockers('proj-1', 1, [{ text: 'kept reason' }, { itemNumber: 2 }], ACTOR);
 
 		const statements = mockClientQuery.mock.calls.map(([sql]) => sql as string);
+		expect(statements[0]).toContain('pg_advisory_xact_lock');
+		expect(statements[1]).toContain('FOR SHARE');
+		// The new item edge is walked for cycles; the kept text row is not an edge.
+		const walks = mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes('WITH RECURSIVE'));
+		expect(walks.map(([, params]) => params)).toEqual([['item-1', 'blocker-item-2']]);
 		expect(statements.some((s) => s.includes('SET cleared_at = now()'))).toBe(true);
 		expect(statements.some((s) => s.includes('INSERT INTO item_blockers'))).toBe(true);
 		expect(statements.some((s) => s.includes('UPDATE items SET updated_at = NOW()'))).toBe(true);
@@ -153,9 +171,11 @@ describe('setBlockers', () => {
 
 	it('maps a concurrent duplicate insert to BlockerConflictError', async () => {
 		mockClientQuery
+			.mockResolvedValueOnce(LOCKED)
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1', status: 'ready' }], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [{ id: 'blocker-item-2', status: 'ready' }], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 })
+			.mockResolvedValueOnce(NO_CYCLE)
 			.mockRejectedValueOnce(Object.assign(new Error('duplicate'), { code: '23505' }));
 
 		await expect(setBlockers('proj-1', 1, [{ itemNumber: 2 }], ACTOR)).rejects.toThrow(BlockerConflictError);
