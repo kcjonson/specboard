@@ -24,26 +24,18 @@ export function gridStep(k: number): number {
 /** What the outline math needs of a layout: each region's members where the layout put them, and how deep its nesting runs. */
 export function regionInputs(layout: MapLayout): RegionInput[] {
 	const nodes = new Map(layout.nodes.map((node) => [node.key, node]));
-	const childrenOf = new Map<string, string[]>();
-	for (const region of layout.regions) {
-		if (!region.parentKey) continue;
-		const siblings = childrenOf.get(region.parentKey) ?? [];
-		siblings.push(region.key);
-		childrenOf.set(region.parentKey, siblings);
-	}
+	// Deepest first, so a region's children all have their heights before it does. No
+	// recursion: nesting has no depth limit.
 	const heights = new Map<string, number>();
-	const heightOf = (key: string): number => {
-		let height = heights.get(key);
-		if (height === undefined) {
-			height = 1 + Math.max(0, ...(childrenOf.get(key) ?? []).map(heightOf));
-			heights.set(key, height);
-		}
-		return height;
-	};
+	for (const region of [...layout.regions].sort((a, b) => b.depth - a.depth)) {
+		const height = heights.get(region.key) ?? 1;
+		heights.set(region.key, height);
+		if (region.parentKey) heights.set(region.parentKey, Math.max(heights.get(region.parentKey) ?? 1, height + 1));
+	}
 	return layout.regions.map((region) => ({
 		key: region.key,
 		parentKey: region.parentKey,
-		height: heightOf(region.key),
+		height: heights.get(region.key)!,
 		members: region.members.flatMap((key) => {
 			const node = nodes.get(key);
 			return node ? [{ x: node.x, y: node.y, r: node.r }] : [];

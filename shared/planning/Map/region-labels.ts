@@ -59,20 +59,37 @@ const CLEARANCE = 2;
 const MARK_REACH = 3.5;
 /** A folded family's rollup bar hangs this far further below its dot. */
 const FOLDED_BAR_REACH = 8;
+/** Points sampled along each of the outline's curves when finding its edge. */
+const CURVE_SAMPLES = 4;
 /** How far either side of a point on the outline counts as the outline there, in layout units. */
 const EDGE_REACH = 6;
 
 /** Label centers tried along the top edge, in label widths from the top point. */
 const SHIFTS = [0, -0.25, 0.25, -0.5, 0.5, -0.75, 0.75, -1, 1, -1.5, 1.5, -2, 2];
 
-/** The outline's highest (or lowest) on-curve point within a few units of `x`, in layout units; null where the outline doesn't reach. */
+/**
+ * The outline's highest (or lowest) point within a few units of `x`, in layout units;
+ * null where the outline doesn't reach. Each quadratic is sampled along its length, not
+ * just at its ends, since its control point can carry the curve past both.
+ */
 function edgeAt(outline: RegionOutline, x: number, side: 'top' | 'bottom'): number | null {
 	const { curve } = outline;
 	let best: number | null = null;
-	for (let i = 4; i < curve.length; i += 4) {
-		if (Math.abs(curve[i]! - x) > EDGE_REACH) continue;
-		const y = curve[i + 1]!;
-		if (best === null || (side === 'top' ? y < best : y > best)) best = y;
+	for (let i = 2; i < curve.length; i += 4) {
+		const sx = curve[i - 2]!;
+		const sy = curve[i - 1]!;
+		const cx = curve[i]!;
+		const cy = curve[i + 1]!;
+		const ex = curve[i + 2]!;
+		const ey = curve[i + 3]!;
+		for (let s = 0; s <= CURVE_SAMPLES; s++) {
+			const t = s / CURVE_SAMPLES;
+			const u = 1 - t;
+			const px = u * u * sx + 2 * u * t * cx + t * t * ex;
+			if (Math.abs(px - x) > EDGE_REACH) continue;
+			const py = u * u * sy + 2 * u * t * cy + t * t * ey;
+			if (best === null || (side === 'top' ? py < best : py > best)) best = py;
+		}
 	}
 	return best;
 }

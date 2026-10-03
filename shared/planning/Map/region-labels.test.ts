@@ -42,7 +42,9 @@ describe('region labels', () => {
 
 	it('sits on the outline at its top, centered, with glyph, title, rollup bar, and control in a row', () => {
 		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
-		expect(label!.box.y + LABEL_HEIGHT / 2).toBeCloseTo(a.top.y);
+		// On the curve at its top: at or a hair above the highest point the curve passes through at a segment end.
+		expect(label!.box.y + LABEL_HEIGHT / 2).toBeLessThanOrEqual(a.top.y);
+		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(a.top.y - 2);
 		expect(label!.box.x + label!.box.w / 2).toBeCloseTo(a.top.x);
 		expect(label!.glyph.x).toBeLessThan(label!.titleAt.x);
 		expect(label!.titleAt.x + measure(label!.title)).toBeLessThan(label!.bar.x);
@@ -97,7 +99,8 @@ describe('region labels', () => {
 	it('follows the camera: the label stays on the outline in screen space', () => {
 		const transform = { k: 2, x: -100, y: -50 };
 		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform, viewport, measure, cap: null, occupied: [] });
-		expect(label!.box.y + LABEL_HEIGHT / 2).toBeCloseTo(-50 + 2 * a.top.y);
+		expect(label!.box.y + LABEL_HEIGHT / 2).toBeLessThanOrEqual(-50 + 2 * a.top.y);
+		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(-50 + 2 * a.top.y - 4);
 	});
 
 	it('cuts a long title with an ellipsis', () => {

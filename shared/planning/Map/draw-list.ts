@@ -86,14 +86,15 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 	// Past the read cap a finished family comes back as one row carrying its count; those are all done.
 	const rollupOf = (key: string): Rollup => {
 		const rollup = emptyRollup();
-		const visit = (parent: string): void => {
+		// An explicit stack: nesting has no depth limit, so a recursive walk could run out of stack.
+		const stack = [key];
+		for (let parent = stack.pop(); parent !== undefined; parent = stack.pop()) {
 			for (const child of children.get(parent) ?? []) {
 				rollup[layout.phases[child.key]!]++;
 				rollup.done += child.summarizedDescendants ?? 0;
-				visit(child.key);
+				stack.push(child.key);
 			}
-		};
-		visit(key);
+		}
 		rollup.done += rows.get(key)?.summarizedDescendants ?? 0;
 		return rollup;
 	};

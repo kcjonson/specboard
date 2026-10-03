@@ -210,6 +210,23 @@ describe('region outlines on laid-out boards', () => {
 	});
 });
 
+describe('region inputs', () => {
+	it('counts nesting heights without recursion, however deep the nesting runs', () => {
+		const depth = 20_000;
+		const regions = Array.from({ length: depth }, (_, i) => ({
+			key: `R-${i}`,
+			parentKey: i ? `R-${i - 1}` : null,
+			depth: i,
+			members: ['DOT'],
+		}));
+		const layout = { regions, nodes: [{ key: 'DOT', kind: 'item', x: 0, y: 0, r: 5.5, hub: false }] } as unknown as MapLayout;
+		const inputs = regionInputs(layout);
+		expect(inputs[0]!.height).toBe(depth);
+		expect(inputs.at(-1)!.height).toBe(1);
+		expect(inputs[0]!.members).toEqual([{ x: 0, y: 0, r: 5.5 }]);
+	});
+});
+
 describe('grid step', () => {
 	it('resolves outlines to about 5 px on screen in buckets of powers of two, never coarser than a neck', () => {
 		expect(gridStep(1)).toBe(5);

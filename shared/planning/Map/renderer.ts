@@ -270,7 +270,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		const x = transform.x + transform.k * dot.x;
 		const y = transform.y + transform.k * dot.y;
 		if (offscreen(x, y, r + INK_GAP + INK_WIDTH)) return;
-		disc(x, y, r + (dot.needsPerson ? INK_GAP : BACKING), theme.surface);
+		disc(x, y, r + (dot.needsPerson ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
 		if (dot.needsPerson) ring(x, y, r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
 		const count = dot.folded && r >= COUNT_MIN_RADIUS ? dot.folded.count : null;
 		drawGlyph(x, y, r, dot.status, { weight: dot.weight, cue: dot.cue, count });
@@ -373,7 +373,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.roundRect(box.x, box.y, box.w, box.h, box.h / 2);
 			ctx.fill();
 			if (region.needsPerson) {
-				disc(glyph.x, glyph.y, glyph.r + INK_GAP, theme.surface);
+				disc(glyph.x, glyph.y, glyph.r + INK_GAP + INK_WIDTH + 0.5, theme.surface);
 				ring(glyph.x, glyph.y, glyph.r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
 			}
 			drawGlyph(glyph.x, glyph.y, glyph.r, region.status);
