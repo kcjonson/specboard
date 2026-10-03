@@ -1,7 +1,7 @@
 import type { MapItemRow } from '@specboard/core/map-read';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BoardBuilder, NOW, iso, realisticBoard, syntheticBoard, type RealisticBoard } from './board-fixture';
-import { ORDER_GAP } from './constants';
+import { COLLISION_PAD, ORDER_GAP } from './constants';
 import { layoutMap } from './layout';
 import type { MapLayout, MapNode } from './types';
 
@@ -67,15 +67,21 @@ function expectOrdersHold(result: MapLayout, rows: readonly MapItemRow[]): void 
 	}
 }
 
-function expectNoOverlaps(result: MapLayout): void {
+/**
+ * No two dots touch, and every pair keeps at least `pad` between edges. Collision asks
+ * for 4 but is soft, as d3's is, so a crowded family can settle a little inside it.
+ */
+function expectNoOverlaps(result: MapLayout, pad = 0): void {
 	const placed = result.nodes.filter((n) => !n.hub);
+	let closest = Infinity;
 	for (let i = 0; i < placed.length; i++) {
 		for (let j = i + 1; j < placed.length; j++) {
 			const a = placed[i]!;
 			const b = placed[j]!;
-			expect(Math.hypot(a.x - b.x, a.y - b.y), `${a.key} and ${b.key}`).toBeGreaterThan((a.r + b.r) * 0.9);
+			closest = Math.min(closest, Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r);
 		}
 	}
+	expect(closest).toBeGreaterThan(pad);
 }
 
 /**
@@ -130,8 +136,8 @@ describe('layoutMap on a realistic board', () => {
 		expectOrdersHold(result, board.rows);
 	});
 
-	it('keeps dots apart', () => {
-		expectNoOverlaps(result);
+	it('keeps dots apart, by close to the collision pad', () => {
+		expectNoOverlaps(result, COLLISION_PAD - 0.5);
 	});
 
 	it('gives hubs no size and packs children around them rather than ringing them', () => {
@@ -356,7 +362,7 @@ describe('layoutMap edge cases', () => {
 		const result = layout(b.rows);
 		const placed = dots(result);
 		expect(placed).toHaveLength(10);
-		expectNoOverlaps(result);
+		expectNoOverlaps(result, COLLISION_PAD - 0.5);
 		const ys = placed.map((n) => n.y);
 		expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(20);
 		const xs = placed.map((n) => n.x);
@@ -380,7 +386,7 @@ describe('layoutMap edge cases', () => {
 		expect(result.regions).toHaveLength(1);
 		expect(result.regions[0]!.members).toHaveLength(300);
 		expectOrdersHold(result, b.rows);
-		expectNoOverlaps(result);
+		expectNoOverlaps(result, COLLISION_PAD / 2);
 		expect(strangersInRegions(result)).toEqual([]);
 	});
 
