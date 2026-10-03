@@ -70,6 +70,7 @@ export default [
 				MutationObserver: 'readonly',
 				ResizeObserver: 'readonly',
 				PointerEvent: 'readonly',
+				Worker: 'readonly',
 			},
 		},
 		plugins: {
