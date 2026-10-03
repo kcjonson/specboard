@@ -1,16 +1,9 @@
-import type { MapItemRow } from '@specboard/core/map-read';
+import type { MapItemRow, MapRead } from '@specboard/core/map-read';
 import type { ChangeCallback, Observable } from '@specboard/models';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import type { MapLayout } from './layout/types';
 
 export type MapLoadState = 'loading' | 'ready' | 'error';
-
-/** The whole-project read: every item at any depth. */
-export interface MapRead {
-	items: MapItemRow[];
-	/** True when the project passed the read cap and finished families came back folded. */
-	summarized: boolean;
-}
 
 export type MapReadSource = () => Promise<MapRead>;
 

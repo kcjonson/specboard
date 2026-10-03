@@ -11,7 +11,8 @@ import { BoardBuilder } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { MapView } from './MapView';
-import { MapDataModel, type MapRead } from './map-data-model';
+import type { MapRead } from '@specboard/core/map-read';
+import { MapDataModel } from './map-data-model';
 import type { MapFrame, MapRenderer } from './renderer';
 
 const frames: MapFrame[] = [];

@@ -1,6 +1,8 @@
+import { decodeMapRead, type MapReadWire } from '@specboard/core/map-read';
+import { fetchClient } from '@specboard/fetch';
 import type { MapReadSource } from './map-data-model';
 
-/** The Map's read for one project. */
+/** The Map's whole-project read, decoded from its columnar wire form back into rows. */
 export function createMapSource(projectRef: string): MapReadSource {
-	return () => Promise.reject(new Error(`The Map's read endpoint is not wired for ${projectRef}`));
+	return async () => decodeMapRead(await fetchClient.get<MapReadWire>(`/api/projects/${projectRef}/map`));
 }

@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { BoardBuilder } from './layout/board-fixture';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { layoutMap } from './layout/layout';
-import { MapDataModel, type MapRead } from './map-data-model';
+import type { MapRead } from '@specboard/core/map-read';
+import { MapDataModel } from './map-data-model';
 
 function board(count: number): MapRead {
 	const b = new BoardBuilder();

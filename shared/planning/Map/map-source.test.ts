@@ -1,0 +1,34 @@
+import { describe, expect, it, vi } from 'vitest';
+import { encodeMapRead } from '@specboard/core/map-read';
+import { BoardBuilder } from './layout/board-fixture';
+
+const get = vi.fn();
+
+vi.mock('@specboard/fetch', () => ({ fetchClient: { get: (...args: unknown[]) => get(...args) } }));
+
+const { createMapSource } = await import('./map-source');
+
+describe('createMapSource', () => {
+	it('reads the project route and decodes the columns back into rows', async () => {
+		const b = new BoardBuilder();
+		const blocker = b.add({ status: 'in_progress' });
+		const waiting = b.add({ status: 'ready' });
+		b.block(waiting, blocker);
+		b.work(blocker, 'session-a', 'laptop');
+		const read = { items: b.rows, summarized: false };
+		get.mockResolvedValue(encodeMapRead(read, 'MAP'));
+
+		const result = await createMapSource('acme/specboard')();
+
+		expect(get).toHaveBeenCalledWith('/api/projects/acme/specboard/map');
+		expect(result.summarized).toBe(false);
+		expect(result.items.map((row) => row.key)).toEqual(read.items.map((row) => row.key));
+		expect(result.items[1]!.blockers).toEqual([{ blockerKey: blocker.key, state: 'open' }]);
+		expect(result.items[0]!.workers[0]).toMatchObject({ sessionKey: 'session-a', deviceName: 'laptop' });
+	});
+
+	it('lets a failed read through for the error state', async () => {
+		get.mockRejectedValue(new Error('HTTP 500'));
+		await expect(createMapSource('acme/specboard')()).rejects.toThrow('HTTP 500');
+	});
+});
