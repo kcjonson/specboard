@@ -922,7 +922,9 @@ Input for the technical design, not decisions.
   new step once the gesture stops. On a generated 1,000-item board (682 nodes,
   17 regions with finished epics folded) a step costs about 21 ms at 5 units and
   56 ms at 2.5; with every family open (34 regions, 610 members), 35 ms and
-  104 ms.
+  104 ms. The spanning tree is Kruskal over a grid's neighboring pairs rather than
+  exact Prim, within a few percent of the minimum, so one huge epic stays cheap: a
+  single 5,000-member family outlines in about 110 ms at 5 units.
 - Where the layout lets two families interleave, a member can sit on ground its
   neighbor's field wins, and the drawing can't fix that without overlapping: on
   that generated board, whose open epics have children spread over 120 days,

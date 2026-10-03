@@ -32,6 +32,8 @@ export class MapDataModel implements Observable {
 	private readonly store: CollapseStore;
 	private readonly clock: () => number;
 	private worker: MapLayoutWorker | null = null;
+	/** Collapse toggles no settled layout reflects yet. */
+	private readonly unsettled = new Set<string>();
 	private aspect = 2;
 	/** Bumped by every load and by dispose, so an answer that arrives late is dropped. */
 	private generation = 0;
@@ -59,6 +61,7 @@ export class MapDataModel implements Observable {
 	/** Reads the project and lays it out for a plot of this width over height. */
 	async load(aspect: number): Promise<void> {
 		this.aspect = aspect;
+		this.unsettled.clear();
 		const generation = ++this.generation;
 		this.state = 'loading';
 		this.error = null;
@@ -95,16 +98,20 @@ export class MapDataModel implements Observable {
 		if (this.state !== 'ready' || !layout || !read || !this.worker) return;
 		this.collapse = { ...this.collapse, [key]: collapsed };
 		this.store.write(this.collapse);
+		// A toggle made while another's pass is still out starts from the same last settled
+		// layout, so it carries every key toggled since, or the earlier family stays where it was.
+		this.unsettled.add(key);
 		const generation = ++this.generation;
 		const previous: MapLayoutPrevious = {
 			frame: layout.frame,
 			positions: Object.fromEntries(layout.nodes.map((node) => [node.key, { x: node.x, y: node.y }])),
-			changed: [key],
+			changed: [...this.unsettled],
 		};
 		try {
 			const next = await this.worker.layout({ rows: read.items, now: this.now, collapse: this.collapse, aspect: this.aspect, previous });
 			if (generation !== this.generation) return;
 			this.layout = next.layout;
+			this.unsettled.clear();
 		} catch (error) {
 			if (generation !== this.generation) return;
 			this.fail(error);

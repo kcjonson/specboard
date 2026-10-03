@@ -73,29 +73,91 @@ function sample(field: Field, i: number, j: number): number {
 	return x < 0 || y < 0 || x >= field.nx || y >= field.ny ? 0 : field.values[y * field.nx + x]!;
 }
 
-/** Prim's minimum spanning tree over the members, as index pairs. Quadratic, which a family's size allows. */
+/**
+ * A spanning tree over the members that's minimal or nearly so, as index pairs. Exact
+ * Prim is quadratic, which one huge epic can't afford on the main thread, so this is
+ * Kruskal over candidate pairs from a uniform grid: every pair in the same or adjacent
+ * cells, shortest first. A grid too fine to connect everything doubles and goes again,
+ * pairing only points not yet joined, and skipping cell pairs that hold one component.
+ */
 export function spanningTree(points: readonly MapPoint[]): Array<[number, number]> {
 	const count = points.length;
 	const edges: Array<[number, number]> = [];
 	if (count < 2) return edges;
-	const inTree = new Uint8Array(count);
-	const best = new Float64Array(count).fill(Infinity);
-	const from = new Int32Array(count).fill(-1);
-	best[0] = 0;
-	for (let step = 0; step < count; step++) {
-		let u = -1;
-		for (let i = 0; i < count; i++) if (!inTree[i] && (u < 0 || best[i]! < best[u]!)) u = i;
-		inTree[u] = 1;
-		if (from[u]! >= 0) edges.push([from[u]!, u]);
-		const p = points[u]!;
+	const root = Int32Array.from({ length: count }, (_, i) => i);
+	const find = (i: number): number => {
+		while (root[i] !== i) {
+			root[i] = root[root[i]!]!;
+			i = root[i]!;
+		}
+		return i;
+	};
+	let minX = Infinity;
+	let minY = Infinity;
+	let maxX = -Infinity;
+	let maxY = -Infinity;
+	for (const p of points) {
+		minX = Math.min(minX, p.x);
+		minY = Math.min(minY, p.y);
+		maxX = Math.max(maxX, p.x);
+		maxY = Math.max(maxY, p.y);
+	}
+	// About two points per cell where the members spread evenly.
+	let cell = Math.max(1, Math.sqrt((2 * Math.max(1, maxX - minX) * Math.max(1, maxY - minY)) / count));
+	let components = count;
+	while (components > 1) {
+		const cells = new Map<string, number[]>();
+		const keyOf = (cx: number, cy: number): string => `${cx},${cy}`;
 		for (let i = 0; i < count; i++) {
-			if (inTree[i]) continue;
-			const d = Math.hypot(points[i]!.x - p.x, points[i]!.y - p.y);
-			if (d < best[i]!) {
-				best[i] = d;
-				from[i] = u;
+			const key = keyOf(Math.floor((points[i]!.x - minX) / cell), Math.floor((points[i]!.y - minY) / cell));
+			const members = cells.get(key);
+			if (members) members.push(i);
+			else cells.set(key, [i]);
+		}
+		// A cell whose points are all one component, or -1 when it mixes them.
+		const uniform = new Map<string, number>();
+		for (const [key, members] of cells) {
+			const c = find(members[0]!);
+			uniform.set(key, members.every((i) => find(i) === c) ? c : -1);
+		}
+		const from: number[] = [];
+		const to: number[] = [];
+		const length: number[] = [];
+		const pair = (a: number[], b: number[], same: boolean): void => {
+			for (let x = 0; x < a.length; x++) {
+				for (let y = same ? x + 1 : 0; y < b.length; y++) {
+					const i = a[x]!;
+					const j = b[y]!;
+					if (find(i) === find(j)) continue;
+					from.push(i);
+					to.push(j);
+					length.push((points[i]!.x - points[j]!.x) ** 2 + (points[i]!.y - points[j]!.y) ** 2);
+				}
+			}
+		};
+		for (const [key, members] of cells) {
+			const [cx, cy] = key.split(',').map(Number) as [number, number];
+			const mine = uniform.get(key)!;
+			// Each neighboring pair of cells once: this cell, then the four ahead of it.
+			for (const [dx, dy] of [[0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]] as const) {
+				const other = keyOf(cx + dx, cy + dy);
+				const theirs = cells.get(other);
+				if (!theirs) continue;
+				const them = uniform.get(other)!;
+				if (mine !== -1 && mine === them) continue;
+				pair(members, theirs, dx === 0 && dy === 0);
 			}
 		}
+		const order = Array.from(length.keys()).sort((a, b) => length[a]! - length[b]!);
+		for (const k of order) {
+			const a = find(from[k]!);
+			const b = find(to[k]!);
+			if (a === b) continue;
+			root[a] = b;
+			edges.push([from[k]!, to[k]!]);
+			components--;
+		}
+		cell *= 2;
 	}
 	return edges;
 }

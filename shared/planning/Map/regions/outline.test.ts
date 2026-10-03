@@ -149,6 +149,33 @@ describe('region outlines', () => {
 		expect(traceRegions([region('A', [])], 5)).toEqual([]);
 	});
 
+	it('spans a large, lopsided family with a tree as short as the exact one, give or take', () => {
+		let seed = 7;
+		const random = (): number => (seed = (seed * 16807) % 2147483647) / 2147483647;
+		const points = Array.from({ length: 400 }, () => ({ x: 600 * random(), y: 150 * random() }));
+		points.push({ x: 3000, y: 900 }, { x: 3010, y: 905 });
+		const tree = spanningTree(points);
+		expect(tree).toHaveLength(points.length - 1);
+		const root = points.map((_, i) => i);
+		const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i]!)));
+		for (const [a, b] of tree) root[find(a)] = find(b);
+		expect(new Set(points.map((_, i) => find(i))).size).toBe(1);
+
+		// Exact Prim, for the length to beat.
+		const inTree = new Set([0]);
+		const best = points.map((p) => Math.hypot(p.x - points[0]!.x, p.y - points[0]!.y));
+		let exact = 0;
+		while (inTree.size < points.length) {
+			let u = -1;
+			for (let i = 0; i < points.length; i++) if (!inTree.has(i) && (u < 0 || best[i]! < best[u]!)) u = i;
+			inTree.add(u);
+			exact += best[u]!;
+			for (let i = 0; i < points.length; i++) best[i] = Math.min(best[i]!, Math.hypot(points[i]!.x - points[u]!.x, points[i]!.y - points[u]!.y));
+		}
+		const length = tree.reduce((sum, [a, b]) => sum + Math.hypot(points[a]!.x - points[b]!.x, points[a]!.y - points[b]!.y), 0);
+		expect(length).toBeLessThan(exact * 1.03);
+	});
+
 	it('spans every member with the shortest tree', () => {
 		const tree = spanningTree([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 100, y: 0 }, { x: 11, y: 5 }]);
 		expect(tree).toHaveLength(3);

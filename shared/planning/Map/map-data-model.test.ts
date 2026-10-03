@@ -199,4 +199,35 @@ describe('MapDataModel', () => {
 		expect(store.choices).toEqual({});
 		expect(worker.calls).toBe(0);
 	});
+
+	it('carries every toggle still in flight into the next pass, and keeps only the last answer', async () => {
+		const b = new BoardBuilder();
+		const one = b.add({ type: 'epic', status: 'in_progress' });
+		b.add({ parentKey: one.key, status: 'ready' });
+		const two = b.add({ type: 'epic', status: 'in_progress' });
+		b.add({ parentKey: two.key, status: 'ready' });
+		const worker = fakeWorker();
+		const model = new MapDataModel(() => Promise.resolve({ items: b.rows, summarized: false }), () => worker, memoryCollapseStore());
+		const loading = model.load(2);
+		await flush();
+		worker.pending.shift()!();
+		await loading;
+
+		const first = model.setCollapsed(one.key, true);
+		const second = model.setCollapsed(two.key, true);
+		expect(worker.inputs[1]!.previous!.changed).toEqual([one.key]);
+		expect(worker.inputs[2]!.previous!.changed).toEqual([one.key, two.key]);
+		expect(worker.inputs[2]!.collapse).toEqual({ [one.key]: true, [two.key]: true });
+		worker.pending.shift()!();
+		await first;
+		expect(model.layout!.collapsed).toEqual([]);
+		worker.pending.shift()!();
+		await second;
+		expect(model.layout!.collapsed.sort()).toEqual([one.key, two.key].sort());
+
+		const third = model.setCollapsed(one.key, false);
+		expect(worker.inputs[3]!.previous!.changed).toEqual([one.key]);
+		worker.pending.shift()!();
+		await third;
+	});
 });
