@@ -15,7 +15,7 @@ vi.mock('../index.ts', () => ({
 	transaction: <T>(fn: (client: Transaction) => Promise<T>) => state.db!.transaction(fn),
 }));
 
-import { applyMigration, migratedDb } from '../test-support/migrated-db.ts';
+import { applyMigration, applyMigrationsAfter, migratedDb } from '../test-support/migrated-db.ts';
 import { createItem, createItems, deleteItem, moveItem, startItem, blockItem, unblockItem, updateItem } from './items.ts';
 
 const ORIGIN = { actor: { type: 'user' as const, userId: '00000000-0000-0000-0000-000000000000' } };
@@ -67,7 +67,7 @@ describe('the walk', () => {
 		await insertItem(2, 1, 'in_progress', 'explicit');
 		await insertItem(3, 2, 'ready', 'explicit');
 
-		await startItem(projectId, 3);
+		await startItem(projectId, 3, ORIGIN.actor);
 
 		expect(await item(2)).toMatchObject({ status: 'in_progress', status_source: 'explicit' });
 		expect(await item(1)).toMatchObject({ status: 'in_progress', status_source: 'rollup' });
@@ -78,7 +78,7 @@ describe('the walk', () => {
 		await insertItem(2, 1, 'ready', 'rollup');
 		await insertItem(3, 2, 'in_progress', 'explicit');
 
-		await updateItem(projectId, 3, { status: 'ready' });
+		await updateItem(projectId, 3, { status: 'ready' }, ORIGIN.actor);
 
 		expect((await item(2)).status).toBe('ready');
 		expect(await item(1)).toMatchObject({ status: 'ready', status_source: 'rollup' });
@@ -107,28 +107,28 @@ describe('updated_at on a child write', () => {
 	});
 
 	it("a child's status change touches its parent even when the parent's status holds", async () => {
-		await blockItem(projectId, 3);
+		await blockItem(projectId, 3, ORIGIN.actor);
 
 		expect(await item(2)).toEqual({ status: 'ready', status_source: 'default', touched: true });
 		expect((await item(1)).touched).toBe(false);
 	});
 
 	it('a parent the rollup moves touches its own parent in turn', async () => {
-		await startItem(projectId, 3);
+		await startItem(projectId, 3, ORIGIN.actor);
 
 		expect(await item(2)).toEqual({ status: 'in_progress', status_source: 'rollup', touched: true });
 		expect(await item(1)).toEqual({ status: 'in_progress', status_source: 'explicit', touched: true });
 	});
 
 	it('an edit that restates the current status does not touch the parent', async () => {
-		await updateItem(projectId, 3, { title: 'renamed', status: 'ready', subStatus: 'not_started' });
+		await updateItem(projectId, 3, { title: 'renamed', status: 'ready', subStatus: 'not_started' }, ORIGIN.actor);
 
 		expect((await item(3)).touched).toBe(true);
 		expect((await item(2)).touched).toBe(false);
 	});
 
 	it('an edit that moves the status does touch the parent', async () => {
-		await updateItem(projectId, 3, { status: 'blocked' });
+		await updateItem(projectId, 3, { status: 'blocked' }, ORIGIN.actor);
 
 		expect((await item(2)).touched).toBe(true);
 		expect((await item(1)).touched).toBe(false);
@@ -163,18 +163,18 @@ describe('which Ready the rollup promotes', () => {
 		const { epic, child } = await epicWithChild();
 		expect(await item(epic)).toMatchObject({ status: 'ready', status_source: 'default' });
 
-		await startItem(projectId, child);
+		await startItem(projectId, child, ORIGIN.actor);
 
 		expect(await item(epic)).toMatchObject({ status: 'in_progress', status_source: 'rollup' });
 	});
 
 	it('an epic dragged to Ready stays there when a child starts', async () => {
 		const { epic, child } = await epicWithChild();
-		await updateItem(projectId, epic, { status: 'in_progress' });
-		await updateItem(projectId, epic, { status: 'ready', subStatus: 'not_started' });
+		await updateItem(projectId, epic, { status: 'in_progress' }, ORIGIN.actor);
+		await updateItem(projectId, epic, { status: 'ready', subStatus: 'not_started' }, ORIGIN.actor);
 		expect(await item(epic)).toMatchObject({ status: 'ready', status_source: 'explicit' });
 
-		await startItem(projectId, child);
+		await startItem(projectId, child, ORIGIN.actor);
 
 		expect(await item(epic)).toMatchObject({ status: 'ready', status_source: 'explicit' });
 	});
@@ -188,43 +188,43 @@ describe('which Ready the rollup promotes', () => {
 
 	it('an epic returned to Ready by unblock still promotes', async () => {
 		const { epic, child } = await epicWithChild();
-		await blockItem(projectId, epic);
-		await unblockItem(projectId, epic);
+		await blockItem(projectId, epic, ORIGIN.actor);
+		await unblockItem(projectId, epic, ORIGIN.actor);
 		expect(await item(epic)).toMatchObject({ status: 'ready', status_source: 'default' });
 
-		await startItem(projectId, child);
+		await startItem(projectId, child, ORIGIN.actor);
 
 		expect(await item(epic)).toMatchObject({ status: 'in_progress', status_source: 'rollup' });
 	});
 
 	it('an unblock of an item that was not blocked is a deliberate Ready, as MCP routes a bare status=ready', async () => {
 		const { epic, child } = await epicWithChild();
-		await updateItem(projectId, epic, { status: 'in_progress' });
-		await unblockItem(projectId, epic);
+		await updateItem(projectId, epic, { status: 'in_progress' }, ORIGIN.actor);
+		await unblockItem(projectId, epic, ORIGIN.actor);
 		expect(await item(epic)).toMatchObject({ status: 'ready', status_source: 'explicit' });
 
-		await startItem(projectId, child);
+		await startItem(projectId, child, ORIGIN.actor);
 
 		expect((await item(epic)).status).toBe('ready');
 	});
 
 	it('a Ready the rollup rolled back is promotable again', async () => {
 		const { epic, child } = await epicWithChild();
-		await startItem(projectId, child);
-		await updateItem(projectId, child, { status: 'ready' });
+		await startItem(projectId, child, ORIGIN.actor);
+		await updateItem(projectId, child, { status: 'ready' }, ORIGIN.actor);
 		expect(await item(epic)).toMatchObject({ status: 'ready', status_source: 'rollup' });
 
-		await startItem(projectId, child);
+		await startItem(projectId, child, ORIGIN.actor);
 
 		expect((await item(epic)).status).toBe('in_progress');
 	});
 
 	it('restating Ready on an edit keeps a default Ready promotable', async () => {
 		const { epic, child } = await epicWithChild();
-		await updateItem(projectId, epic, { title: 'renamed', status: 'ready', subStatus: 'not_started' });
+		await updateItem(projectId, epic, { title: 'renamed', status: 'ready', subStatus: 'not_started' }, ORIGIN.actor);
 		expect((await item(epic)).status_source).toBe('default');
 
-		await startItem(projectId, child);
+		await startItem(projectId, child, ORIGIN.actor);
 
 		expect((await item(epic)).status).toBe('in_progress');
 	});
@@ -258,11 +258,13 @@ describe('the 032 backfill', () => {
 			)).rows.map((r) => [r.number, r.status_source]);
 			expect(sources).toEqual([[1, 'default'], [2, 'default'], [3, 'explicit'], [4, 'default'], [5, 'default']]);
 
+			// The service code below is current, so the schema has to be too.
+			await applyMigrationsAfter(db, '032_item_status_source.sql');
 			state.db = db;
 			const previousProject = projectId;
 			projectId = project!.id;
 			try {
-				await startItem(projectId, 2);
+				await startItem(projectId, 2, ORIGIN.actor);
 				expect(await item(1)).toMatchObject({ status: 'in_progress', status_source: 'rollup' });
 			} finally {
 				projectId = previousProject;

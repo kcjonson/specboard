@@ -255,7 +255,7 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 			rank: body.rank as number | undefined,
 			prUrl: body.prUrl as string | undefined,
 			branchName: body.branchName as string | undefined,
-		});
+		}, apiActor(context));
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(apiItem(item));
 	} catch (error) {
@@ -320,14 +320,14 @@ export async function handleDeleteItem(context: Context): Promise<Response> {
 
 async function lifecycle(
 	context: Context,
-	run: (projectId: string, itemNumber: number) => Promise<unknown>
+	run: (projectId: string, itemNumber: number, actor: UserActor) => Promise<unknown>
 ): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
 	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
-		const item = await run(projectId, itemNumber);
+		const item = await run(projectId, itemNumber, apiActor(context));
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(apiItem(item as Parameters<typeof apiItem>[0]));
 	} catch (error) {
