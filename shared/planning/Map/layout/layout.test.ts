@@ -280,6 +280,48 @@ describe('layoutMap edge cases', () => {
 		expect(result.upNext).toEqual([]);
 	});
 
+	describe('a floor is a minimum, not a destination', () => {
+		/** The most dots sharing one x, give or take 2 units: a fence scores its height. */
+		const crowdOnOneX = (placed: MapNode[]): number =>
+			Math.max(...placed.map((n) => placed.filter((m) => Math.abs(m.x - n.x) < 2).length));
+		const extentX = (placed: MapNode[]): number => Math.max(...placed.map((n) => n.x)) - Math.min(...placed.map((n) => n.x));
+
+		it('blooms a burst of in-flight work into a cloud past the last completion', () => {
+			// Twenty in-flight children of an epic whose done work is weeks back: the family
+			// pulls them left, the floor holds them, and they used to line up on it.
+			const b = new BoardBuilder();
+			const epic = b.add({ type: 'epic', status: 'in_progress', created: NOW - 20 * DAY, started: NOW - 20 * DAY });
+			for (let i = 0; i < 25; i++) b.add({ parentKey: epic.key, status: 'done', created: NOW - 20 * DAY, completed: NOW - 15 * DAY + i * 8 * HOUR });
+			const burst = Array.from({ length: 20 }, (_, i) =>
+				b.add({ parentKey: epic.key, status: i % 3 ? 'in_progress' : 'in_review', created: NOW - 3 * DAY, started: NOW - HOUR }),
+			);
+			for (let i = 0; i < 20; i++) b.add({ status: 'done', created: NOW - 5 * DAY, completed: NOW - 4 * DAY + i * 4 * HOUR });
+			const result = layout(b.rows);
+			const node = nodesOf(result);
+			const placed = burst.map((row) => node.get(row.key)!);
+			expectOrdersHold(result, b.rows);
+			expect(crowdOnOneX(placed)).toBeLessThanOrEqual(3);
+			expect(extentX(placed)).toBeGreaterThan(3 * 2 * placed[0]!.r);
+		});
+
+		it('spreads what one blocker holds instead of stacking it on one x', () => {
+			// Twelve tasks of an older epic, all waiting on one item in flight: their family
+			// pulls them left, the dependency holds them, and they used to line up on it.
+			const b = new BoardBuilder();
+			const epic = b.add({ type: 'epic', status: 'in_progress', created: NOW - 20 * DAY, started: NOW - 20 * DAY });
+			for (let i = 0; i < 20; i++) b.add({ parentKey: epic.key, status: 'done', created: NOW - 20 * DAY, completed: NOW - 15 * DAY + i * 8 * HOUR });
+			const blocker = b.add({ status: 'in_progress', created: NOW - 2 * DAY, started: NOW - HOUR });
+			const waiting = Array.from({ length: 12 }, () => b.add({ parentKey: epic.key, status: 'ready', created: NOW - 9 * DAY }));
+			for (const row of waiting) b.block(row, blocker);
+			const result = layout(b.rows);
+			const node = nodesOf(result);
+			const placed = waiting.map((row) => node.get(row.key)!);
+			expectOrdersHold(result, b.rows);
+			expect(crowdOnOneX(placed)).toBeLessThanOrEqual(3);
+			expect(extentX(placed)).toBeGreaterThan(3 * 2 * placed[0]!.r);
+		});
+	});
+
 	it('lays a blocker cycle out without oscillating', () => {
 		const b = new BoardBuilder();
 		const epic = b.add({ type: 'epic', status: 'in_progress' });
