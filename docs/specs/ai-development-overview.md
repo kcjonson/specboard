@@ -55,7 +55,10 @@ them doesn't belong in v1.
 4. **All relationships shape the layout.** Parent-child links are the strongest.
    Blockers and discovered-from are weaker. They always pull, but they only draw
    for the item in focus (or with All links on): drawn faintly everywhere, they
-   made the map unreadable in the design pass.
+   made the map unreadable in the design pass. An open blocker also orders: the
+   blocked item sits right of what blocks it, since it can't happen first. Inside
+   a family, blocked siblings form a chain that hangs off its first item, and
+   chains that relate to each other pull together.
 5. **Labeled Map, as a third planning view beside Board and Table.** `?view=map` on
    the planning route, picked from the same view toggle and remembered the same
    way, opening items in the same drawer ([kanban-ui.md](kanban-ui.md#item-urls)).
@@ -192,13 +195,23 @@ build.
 3. **Links.** Parent-child links are strong, short springs, so a family clusters.
    Blocker and discovered-from links are weaker and longer: they draw related work
    toward each other without merging families.
-4. **Spacing.** Dots repel each other a little and never overlap, so work that
+4. **Order.** An item sits right of every open item that blocks it, by at least a
+   small gap, since it can't happen first. Work waiting on something in flight sits
+   past now, where the ruler reads Next. Blocker cycles can't be ordered, so they're
+   exempt and show as deadlocks ([needs a person](#needs-a-person)).
+5. **Chains.** Inside a family, siblings that block one another form a chain. Only
+   the chain's first item keeps its link to the parent; each later item hangs off
+   what blocks it, and the chain holds itself level, so it reads as a row in the
+   order the work can happen. Chains whose items relate in any way (a shared
+   parent, a parent-child link, a blocker, or discovered-from) pull into one band,
+   a row apart, so they read as associated.
+6. **Spacing.** Dots repel each other a little and never overlap, so work that
    landed in one burst blooms into a cloud instead of stacking in a column, and
    families keep their own room.
-5. **Containment.** A weak pull toward a horizontal midline keeps the Map a band
+7. **Containment.** A weak pull toward a horizontal midline keeps the Map a band
    you can scan rather than a cloud that spreads forever. Vertical position means
-   nothing else.
-6. **Seeded start.** A dot starts at its time anchor, at a height hashed from its
+   nothing beyond grouping.
+8. **Seeded start.** A dot starts at its time anchor, at a height hashed from its
    key. Together with the simulation's fixed-seed randomness, the same data at the
    same moment produces the same map on every device.
 
@@ -215,6 +228,11 @@ What that produces:
 - A computer picking up three items in parallel: the computer at the right edge,
   its two sessions beside it, and the three items gathered on amber lines, each
   still tied to its family.
+- A chain of blocked tasks in an epic: the epic, the chain's first task, then each
+  task after it a step to the right, in a row. A second chain in the same epic
+  runs parallel, a row away.
+- A task waiting on one an agent is working on now: just past now, under Next,
+  beside the work it waits on.
 
 ### Starting values
 
@@ -228,12 +246,16 @@ to fit; r is a dot's radius.
 | Quiet break | No activity for more than 12 hours |
 | Parent-child link | Rest length r1 + r2 + 16, strength 0.7 |
 | Blocker and discovered-from links | Rest length r1 + r2 + 70, strength 0.05 |
+| Order | A blocked item at least r1 + r2 + 10 right of each open blocker, enforced after every tick |
+| Chain link | Rest length r1 + r2 + 16, strength 0.7, in place of the later item's parent link |
+| Chain row | Strength 0.6 pulling each later item level with what blocks it |
+| Related chains | Strength 0.25 toward one row apart (their largest radii plus 10) |
 | Session to item | Rest length r1 + r2 + 30, strength 0.9 |
 | Computer to session | Rest length r1 + r2 + 26, strength 1 |
 | Repulsion | 40, ignored past 260 |
 | Collision | Radii plus 4 |
 | Midline | Strength 0.03 |
-| Computers | Held past now, one row each, 150 apart |
+| Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart |
 | Velocity | 0.6 kept per tick (`d3-force` velocity decay 0.4) |
 | Ticks | 280 from cold, alpha 1 decaying to 0.001; 140 for a local pass, from alpha 0.25 |
 | Radius | 5.5 for a leaf; 6 + 2.3 times the square root of the descendant count for a parent; 8.5 for an in-flight leaf; in-flight parents 15% larger; 8 for a session, 14 for a computer |
@@ -245,11 +267,13 @@ hour after its last write.
 ### Layout requirements
 
 1. Left is earlier and right is now, everywhere on the Map. The forces can displace
-   a dot from its moment but not carry it weeks away from it.
+   a dot from its moment but not carry it weeks away from it, and nothing sits left
+   of an open blocker.
 2. A ruler of dates runs along the bottom at the same scale, ticks at least 90 px
    apart, so "roughly when" is always readable. When nothing has happened for more
    than half a day, the Map ends at the last activity and the gap to now is a
-   labeled break ("then quiet 6 days") instead of empty canvas.
+   labeled break ("then quiet 6 days") instead of empty canvas. Past now, where
+   work waits on what's in flight, it reads Next instead of a date.
 3. Deterministic: same data, same moment, same map, on every device.
 4. Stable: an update starts from the current positions, and only the changed items
    and their neighbors move. Time drift, everything sliding left as time passes, is
@@ -363,9 +387,11 @@ status vocabulary.
 
 ### Relationships
 
-- Parent-child links draw as hairlines between dots.
-- Blocker and discovered-from links draw only for the item in focus, or for every
-  item while All links is on (decision 4).
+- Parent-child links draw as hairlines between dots. In a chain, the parent's
+  hairline goes to the first item and the chain's own links draw as hairlines from
+  there, in order.
+- Other blocker links, and discovered-from links, draw only for the item in focus,
+  or for every item while All links is on (decision 4).
 - Selecting an item lights its whole blocker chain in both directions (what it
   waits on, transitively, and what waits on it) and its discovered-from lineage both
   ways, and dims everything else, like a path preview in a game's skill tree.
@@ -387,8 +413,8 @@ marker at once and was unreadable; these rules are the fix.
 |---|---|---|---|---|
 | Status glyph | Always. In-progress items draw larger; ready and blocked items get smaller and lighter the further down the plan they sit | Always, larger | The dot grows and gets an ink ring | Same, held until cleared |
 | Labels | In-progress items first (unless their computer's block names them), in-review items if there's room, then up to 8 of the largest families, set above or below the family's cluster. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; families stay bold | No extra label; the card names the item | Same |
-| Parent-child links | Hairline | Hairline | The item's family darkens | Same |
-| Blocker and discovered-from links | Hidden; they still pull | Hidden | The whole blocker chain both ways, discovered-from both ways (dotted) | Same |
+| Parent-child links and chains | Hairline; a chain's links replace its later items' parent links | Hairline | The item's family darkens | Same |
+| Other blocker and discovered-from links | Hidden; they still pull, and a blocker still sits left of what it blocks | Hidden | The whole blocker chain both ways, discovered-from both ways (dotted) | Same |
 | Everything else | Full strength | Full strength | Fades to 30% (40% on dark) | Same, and the drawer opens |
 | Rollup ring | Families of three or more that have started | Same, slightly heavier | The card spells it out | Same |
 | Needs a person | Ink ring | Ring plus a reason tag | The card leads with the reason | Same |
@@ -408,8 +434,8 @@ session. When one computer picks up several items in parallel they gather around
 it, and both the computer and its sessions are on the Map.
 
 - A computer (the agent actor's device name) is a node while any of its sessions
-  has written in the last hour. Computers sit at the right edge, past now, one row
-  each. Their strip is reserved from the start, so the Map doesn't rescale when
+  has written in the last hour. Computers sit at the right edge, past now and past
+  any work waiting on what's in flight, one row each. Their strip is reserved from the start, so the Map doesn't rescale when
   work begins.
 - Each session is a numbered dot tied to its computer, with an amber line to every
   item it's working on. Items are pulled toward their session, so a session's
@@ -742,9 +768,13 @@ Input for the technical design, not decisions.
   requirement; the hashed starting positions are the other half. Starting each dot
   at its anchor puts it near its final spot, which keeps the tick count, and the
   cold-start time, down. Run it in a Web Worker.
+- `d3-force` has no ordering constraint. The prototype's was a few lines: after
+  each tick, walk the open blockers in dependency order and push any blocked item
+  that sits too far left back to the minimum gap. Chains and related chains are
+  two small custom forces on `vy`.
 - Alternatives if `d3-force` falls short: ForceAtlas2 through graphology (Gephi's
-  organic layout, about 3 KB plus graphology), or WebCoLa (about 21 KB), whose hard
-  constraints could enforce left-of-in-time if the soft pull proves too loose.
+  organic layout, about 3 KB plus graphology), or WebCoLa (about 21 KB), whose
+  separation constraints are the ordering rule built in.
 - Rendering cost is per item, not per API. In a 2018 benchmark of trees drawn at
   about 15 primitives per node, SVG and Canvas both dropped frames above roughly
   400 nodes, and WebGL held up only once text was removed
