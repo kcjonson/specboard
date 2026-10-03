@@ -59,7 +59,8 @@ them doesn't belong in v1.
    made the map unreadable in the design pass. An open blocker also orders: the
    blocked item sits right of what blocks it, since it can't happen first. Inside
    a family, blocked siblings form a chain that hangs off its first item, and
-   chains that relate to each other pull together.
+   chains that relate to each other pull together. A dependency stays drawn after
+   it's satisfied: finishing the work doesn't erase the relation.
 5. **Labeled Map, as a third planning view beside Board and Table.** `?view=map` on
    the planning route, picked from the same view toggle and remembered the same
    way, opening items in the same drawer ([kanban-ui.md](kanban-ui.md#item-urls)).
@@ -82,6 +83,10 @@ them doesn't belong in v1.
 12. **Polling until push exists.** Same cadence and visibility rule as the board
     (every 10 s while the window has focus) until SPE-203 replaces polling for
     both.
+13. **An item with children is a region, not a dot.** With children it's more
+    container than item, so it's drawn as a curved, bulbous outline fitted around
+    them, with its label, status, and progress on the outline. An item with no
+    children, an epic included, is a dot. See [Regions](#regions).
 
 ---
 
@@ -198,12 +203,14 @@ build.
    want. In-progress and in-review items haven't closed, so they sit right of the
    last completion. After every tick a pass restores both orders with the least
    movement, so the forces still shape everything else.
-4. **Links.** Parent-child links are strong, short springs, so a family clusters.
+4. **Links.** A parent holds its children with strong, short springs from an unseen
+   center (with children, it isn't a dot), so a family clusters.
    Blocker and discovered-from links are weaker and longer: they draw related work
    toward each other without merging families.
-5. **Dependencies.** An item sits right of every open item that blocks it, by at
-   least a small gap, since it can't happen first; work waiting on something in
-   flight sits past now, right of what it waits on. Blocker cycles can't be ordered,
+5. **Dependencies.** Until it's done, an item sits right of everything that blocks
+   it or blocked it, by at least a small gap, since it can't happen first; work
+   waiting on something in flight sits past now, right of what it waits on. Once
+   it's done, completion order places it. Blocker cycles can't be ordered,
    so they're exempt and show as deadlocks ([needs a person](#needs-a-person)).
 6. **Chains.** Inside a family, siblings that block one another form a chain. Only
    the chain's first item keeps its link to the parent; each later item hangs off
@@ -225,8 +232,8 @@ What that produces:
 
 - A new project's ten unrelated items: a loose cloud of ten dots near the right
   edge.
-- An epic in progress: a comet, the epic and its live tasks at now and its finished
-  tasks trailing back to where each was done.
+- An epic in progress: a region stretched from its live tasks at now back through
+  its finished tasks, each where it was done.
 - A finished epic: a compact cluster in the past, collapsed to one dot by default.
 - A backlog item nobody has touched since it was filed: a lone dot out on the left.
 - An in-progress task whose agent went quiet: drifting left as time passes, but
@@ -253,10 +260,10 @@ to fit; r is a dot's radius.
 | Time pull | Strength 0.14 toward the anchor, 0.6 of that for a parent |
 | Time scale | Log of age with an 8-hour time constant, blended with the equalized scale at 60% equalized |
 | Quiet break | No activity for more than 12 hours |
-| Parent-child link | Rest length r1 + r2 + 16, strength 0.7 |
+| Parent to child | The parent is an unseen hub with no size, no spacing, and no time pull of its own; rest length r + 16 to each child, strength 0.7 |
 | Blocker and discovered-from links | Rest length r1 + r2 + 70, strength 0.05 |
 | Date order | After every tick, done items go back into completion order by pooling adjacent violators (the least movement that fixes an order), and in-flight items stay r + 10 right of the last completion |
-| Dependencies | A blocked item at least r1 + r2 + 10 right of each open blocker, enforced after every tick |
+| Dependencies | An unfinished item at least r1 + r2 + 10 right of each blocker, open or satisfied, enforced after every tick |
 | Chain link | Rest length r1 + r2 + 16, strength 0.7, in place of the later item's parent link |
 | Chain row | Strength 0.6 pulling each later item level with what blocks it |
 | Related chains | Strength 0.25 toward one row apart (their largest radii plus 10) |
@@ -279,7 +286,7 @@ hour after its last write.
 1. Left is earlier and right is now, everywhere on the Map. The forces can displace
    a dot from its moment but not carry it weeks away from it. Done items are
    strictly in the order they closed, work in flight sits right of all of them, and
-   nothing sits left of an open blocker.
+   nothing unfinished sits left of what blocks or blocked it.
 2. A ruler of dates runs along the bottom at the same scale, ticks at least 90 px
    apart, so "roughly when" is always readable. When nothing has happened for more
    than half a day, the Map ends at the last activity and the gap to now is a
@@ -296,20 +303,36 @@ hour after its last write.
    hysteresis, so they don't flicker at a boundary.
 6. Dense: no long empty stretches, and a viewport with nothing in it offers a jump
    to the nearest dots.
-7. A parent's dot grows with its subtree, sublinearly, so an epic with a hundred
-   children reads as big without swallowing the Map. Its children condense at far
-   zoom.
+7. A region's size comes from its children. Collapsed, a parent is a dot that grows
+   with its subtree, sublinearly, so a finished epic of a hundred reads as big
+   without swallowing the Map.
 8. No fisheye or other distortion. Focus comes from dimming and collapse.
 9. Holds up at ten unrelated items, at one huge epic, and at a few thousand items.
 
+### Regions
+
+- An item with visible children is drawn as a region: a curved, bulbous outline
+  fitted around its children, the way Bubble Sets (Collins, Penn, and Carpendale,
+  2009) draws a set over an existing layout. Each child raises a field around
+  itself, a spanning tree between the children keeps the region in one piece,
+  anything that isn't a member pushes the outline away, and the outline is traced
+  where the field crosses a threshold and smoothed. It bends around non-members
+  instead of swallowing them, and holes stay holes.
+- Regions nest. A child with children of its own is a region inside its parent's,
+  and each level out gets a little more padding and a slightly deeper tint.
+- The label sits on the outline, at the top where there's room: the parent's status
+  glyph, its title, and a short rollup bar split by phase (done, in flight, next,
+  later). It takes the ink ring when the parent itself needs a person.
+- Hovering a region lights its family and shows the parent's card; clicking it opens
+  the parent in the drawer. Hovering a child lights its region.
+- An item with no children, an epic included, is a dot.
+
 ### Collapse
 
-- Any parent collapses into its own dot, carrying its rollup; its children fold in.
+- Any region collapses into a dot, carrying its rollup; its children fold in, and
+  expanding turns it back into a region.
 - Finished families (a parent and every descendant done) start collapsed, as one
   done dot with the family's count inside; everything else starts open.
-- An open family of three or more wears a rollup ring once it has started
-  (anything below it done or in flight). A family that hasn't started is just its
-  glyph, since an all-ready ring only repeats it.
 - A person's expand and collapse choices persist per project on their device.
 
 ---
@@ -355,7 +378,7 @@ only signal.
 - Blocked, from the derived `blocked` flag (status hold or open blocker row). What
   it's waiting on is one step away: blocking items by key, text blockers by text.
 - Live agent sessions (see [Agents](#agents)).
-- On a parent, a rollup of its whole subtree split by phase rather than a single
+- On a region's label, a rollup of its whole subtree split by phase rather than a single
   done fraction.
 - A PR link when `pr_url` is set.
 - At near zoom: a linked spec, and whether an agent or a person created the item
@@ -398,22 +421,22 @@ status vocabulary.
 
 ### Relationships
 
-- Parent-child links draw as hairlines between dots. In a chain, the parent's
-  hairline goes to the first item and the chain's own links draw as hairlines from
-  there, in order.
+- Parent and child aren't joined by lines: the child sits inside the parent's
+  [region](#regions). A chain's links draw as hairlines inside it, in order.
 - Other blocker links, and discovered-from links, draw only for the item in focus,
   or for every item while All links is on (decision 4).
-- Links curve. A parent's links leave it as one trunk per side, aimed at the middle
-  of that side's children, and fan out to each child, so a family reads as one
-  sweep instead of a burst of spokes. Chain links and agent lines flow
-  horizontally, the way time runs. Blocker and discovered-from links arc, bowed a
-  fifth of their length. Curves are what let positions follow dates strictly and
-  still read as families: the lines bend so the dots don't have to.
+- Links curve. Chain links and agent lines flow horizontally, the way time runs;
+  blocker and discovered-from links arc, bowed a fifth of their length. Curves and
+  regions are what let positions follow dates strictly and still read as families:
+  the shapes bend so the dots don't have to.
 - Selecting an item lights its whole blocker chain in both directions (what it
   waits on, transitively, and what waits on it) and its discovered-from lineage both
   ways, and dims everything else, like a path preview in a game's skill tree.
 - Text blockers aren't links; they show on the dot they hold.
-- Cleared blockers neither draw nor pull.
+- A blocker that cleared because the work finished keeps drawing and pulling, in a
+  lighter, satisfied style, so a finished sequence still reads as one and a chain
+  keeps its shape after it's done. Only a blocker someone removed by hand
+  disappears.
 - The blockers service rejects an item blocking itself but not a longer cycle (A
   blocks B, B blocks A). A cycle shows as a deadlock, which
   [needs a person](#needs-a-person).
@@ -429,11 +452,10 @@ marker at once and was unreadable; these rules are the fix.
 | Layer | At rest, fit all | At rest, zoomed in | Hover or keyboard focus | Selected |
 |---|---|---|---|---|
 | Status glyph | Always. In-progress items draw larger; ready and blocked items get smaller and lighter the further down the plan they sit | Always, larger | The dot grows and gets an ink ring | Same, held until cleared |
-| Labels | In-progress items first (unless their computer's block names them), in-review items if there's room, then up to 8 of the largest families, set above or below the family's cluster. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; families stay bold | No extra label; the card names the item | Same |
-| Parent-child links and chains | Curved hairline, fanned from the parent; a chain's links replace its later items' parent links | Curved hairline | The item's family darkens | Same |
+| Labels | In-progress items first (unless their computer's block names them), in-review items if there's room, then up to 8 of the largest regions, on their outlines. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; every region with room gets its label | No extra label; the card names the item | Same |
+| Regions and chains | A region around each family, its label carrying status and a rollup bar; chain links as curved hairlines inside | Same | A region or any of its children lights the family and darkens the outline | Same, and the drawer opens on the parent if the region was picked |
 | Other blocker and discovered-from links | Hidden; they still pull, and a blocker still sits left of what it blocks | Hidden | The whole blocker chain both ways, discovered-from both ways (dotted) | Same |
 | Everything else | Full strength | Full strength | Fades to 30% (40% on dark) | Same, and the drawer opens |
-| Rollup ring | Families of three or more that have started | Same, slightly heavier | The card spells it out | Same |
 | Needs a person | Ink ring | Ring plus a reason tag | The card leads with the reason | Same |
 | Up next | Numbers 1 to 3 | Same | The card says which number | Same |
 | Live session | A still amber glow behind the item and its session | Same | Client, device, and time since the last write | Same |
@@ -697,8 +719,9 @@ and nothing moves for more than a second.
 5. **One request for the whole project.** Every item at any depth, carrying only
    what the Map draws: key, type, title, status, sub-status, blocked, parent key,
    rank, created, started, and completed times, time anchor, open worker episodes
-   (device name, client, branch, last write, and session key), open item-blocker
-   links, text-blocker count, discovered-from key, origin actor type, PR URL, and
+   (device name, client, branch, last write, and session key), item-blocker links
+   open and cleared (with whether a clear came from finished work or from someone
+   removing it), text-blocker count, discovered-from key, origin actor type, PR URL, and
    spec count. No descriptions, activity log, or checklist.
 6. **An opaque session key.** Browser responses strip the MCP session id today,
    and the Map has to tell two sessions on one computer apart. Each episode carries
@@ -791,9 +814,12 @@ Input for the technical design, not decisions.
   and a walk over open blockers in dependency order. Chains and related chains are
   two small custom forces on `vy`.
 - Curves cost one quadratic or cubic Bezier per link (`quadraticCurveTo` and
-  `bezierCurveTo` on the canvas). The fans are a cheap form of hierarchical edge
-  bundling (Holten, 2006). If All links gets busy, force-directed edge bundling
-  (Holten and van Wijk, 2009), computed in the worker, is the next step.
+  `bezierCurveTo` on the canvas). If All links gets busy, force-directed edge
+  bundling (Holten and van Wijk, 2009), computed in the worker, is the next step.
+- Regions are a field sampled on a coarse grid around each family and traced with
+  marching squares, a few hundred lines with no dependency. The prototype's whole
+  render, 14 regions included, took about 30 ms for 173 dots; outlines only change
+  when positions or zoom do, so they're computed once per layout and cached.
 - Alternatives if `d3-force` falls short: ForceAtlas2 through graphology (Gephi's
   organic layout, about 3 KB plus graphology), or WebCoLa (about 21 KB), whose
   separation constraints are the ordering rule built in.
