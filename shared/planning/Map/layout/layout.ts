@@ -29,6 +29,7 @@ import {
 	PARENT_TIME_PULL,
 	REFIT_ALPHA,
 	REFIT_TICKS,
+	REPULSION,
 	RESERVED_STRIP,
 	SESSION_MIDLINE,
 	SESSION_PULL,
@@ -184,9 +185,11 @@ function buildGraph(model: MapModel, scale: MapTimeScale): Graph {
 		.map(repNode);
 	// The date order holds in-progress and in-review work past the last completion; a
 	// started hold is in flight for the counts but drifts with its moment like the rest.
-	const inFlight = model.items
-		.filter((item) => item.rep === item && !item.hub && (item.row.status === 'in_progress' || item.row.status === 'in_review'))
-		.map(repNode);
+	const inFlight = stagger(
+		model.items
+			.filter((item) => item.rep === item && !item.hub && (item.row.status === 'in_progress' || item.row.status === 'in_review'))
+			.map(repNode),
+	);
 
 	return { nodes, nodeOf, links, chainLinks, chainGroups, orders: { done, inFlight, dependencies: dependenciesOf(model, nodes, repNode), gap: ORDER_GAP } };
 }
@@ -207,7 +210,7 @@ function dependenciesOf(model: MapModel, nodes: SimNode[], repNode: (item: Model
 		// folded into an open parent doesn't drag the parent right of its old blockers.
 		if (edge.blocked.phase === 'done' || a === b || a.hub || b.hub || b.phase === 'done') continue;
 		const id = `${a.key}\n${b.key}`;
-		if (!pairs.has(id)) pairs.set(id, { a, b, gap: a.r + b.r + ORDER_GAP });
+		if (!pairs.has(id)) pairs.set(id, { a, b, gap: a.r + b.r + ORDER_GAP, lead: 0 });
 	}
 	const candidates = [...pairs.values()];
 	const toEdge = (c: OrderConstraint): Edge => [index.get(c.a)!, index.get(c.b)!];
@@ -220,7 +223,44 @@ function dependenciesOf(model: MapModel, nodes: SimNode[], repNode: (item: Model
 	topologicalOrder(nodes.length, acyclic.map(toEdge)).forEach((v, i) => (position[v] = i));
 	// A blocker's own constraints all come from earlier in the order, so it has settled
 	// by the time the walk reaches what it blocks.
-	return acyclic.sort((x, y) => position[index.get(x.a)!]! - position[index.get(y.a)!]!);
+	acyclic.sort((x, y) => position[index.get(x.a)!]! - position[index.get(y.a)!]!);
+	for (let start = 0; start < acyclic.length; ) {
+		let end = start;
+		while (end < acyclic.length && acyclic[end]!.a === acyclic[start]!.a) end++;
+		const group = acyclic.slice(start, end);
+		const leads = stagger(group.map((c) => c.b));
+		group.forEach((c, i) => (c.lead = leads[i]!.lead));
+		start = end;
+	}
+	return acyclic;
+}
+
+/**
+ * Half the width a group of dots takes when one target pulls them all. Repulsion
+ * falls off as 1/d, so a group under the time pull and the midline settles as a
+ * uniformly filled ellipse whose half-width is sqrt(2 * Q * ky / (kx * (kx + ky))),
+ * Q being the group's total repulsion. A single dot has none.
+ */
+function bloomWidth(count: number): number {
+	const kx = TIME_PULL;
+	const ky = MIDLINE_STRENGTH;
+	return Math.sqrt((2 * REPULSION * Math.max(0, count - 1) * ky) / (kx * (kx + ky)));
+}
+
+/**
+ * A floor is a minimum, not a destination. When every dot one floor holds shares it,
+ * the dots pressed against it (pulled left by their families, or by a moment the floor
+ * overrules) line up on one x, a fence. So each dot's minimum leads the floor by its
+ * own amount, spread evenly over the width the group would bloom to, in time order
+ * with ties broken by a hash of the key: pressed against its floor, the group keeps
+ * the shape of a cloud. Returns the dots in the order given, with their leads.
+ */
+function stagger(dots: SimNode[]): Array<{ node: SimNode; lead: number }> {
+	const width = 2 * bloomWidth(dots.length);
+	const ranked = [...dots].sort((a, b) => a.tx - b.tx || hashUnit(a.key) - hashUnit(b.key));
+	const rank = new Map(ranked.map((n, i) => [n, i]));
+	const step = dots.length > 1 ? width / (dots.length - 1) : 0;
+	return dots.map((node) => ({ node, lead: rank.get(node)! * step }));
 }
 
 /** Raise time-pull targets to the orders before the run, so the pull and the orders agree. */
@@ -229,9 +269,9 @@ function raiseTargets(graph: Graph, scale: MapTimeScale): void {
 	if (done.length) {
 		let edge = -Infinity;
 		for (const n of done) edge = Math.max(edge, n.tx + n.r);
-		for (const n of inFlight) n.tx = Math.max(n.tx, edge + n.r + gap);
+		for (const { node, lead } of inFlight) node.tx = Math.max(node.tx, edge + node.r + gap + lead);
 	}
-	for (const { a, b, gap: min } of dependencies) b.tx = Math.max(b.tx, a.tx + min);
+	for (const { a, b, gap: min, lead } of dependencies) b.tx = Math.max(b.tx, a.tx + min + lead);
 	let rightmost = 0;
 	for (const n of graph.nodes) if (n.kind === 'item') rightmost = Math.max(rightmost, n.tx);
 	for (const n of graph.nodes) if (n.kind === 'computer') n.tx = Math.max(scale.unit * COMPUTER_X, rightmost + COMPUTER_CLEARANCE);

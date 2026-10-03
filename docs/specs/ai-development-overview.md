@@ -288,6 +288,14 @@ its dots. When the trial lands within 10% of the fit, it stands; otherwise the
 second pass starts from the first, stretched to the fitted width, rather than from
 cold. A session stays in its computer's cluster for an hour after its last write.
 
+The in-flight floor and the dependency gap are minimums, not destinations. Dots
+pressed against one shared floor (in-flight children whose family pulls them back,
+or everything waiting on one blocker) line up on one x, a fence. So each dot one
+floor holds gets its own minimum, staggered past the floor in time order over the
+width the group would naturally take (half of it is sqrt(2QK / (k(k + K))) for the
+group's total repulsion Q, time pull k, and midline K), and its time pull aims
+there too. Held against the floor, a burst still reads as a cloud.
+
 ### Layout requirements
 
 1. Left is earlier and right is now, everywhere on the Map. The forces can displace
