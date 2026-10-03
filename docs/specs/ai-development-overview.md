@@ -645,10 +645,11 @@ and nothing moves for more than a second.
    `completed_at` anchors at its latest event, which is how the design pass placed
    this board's history (78 of 86 done items had an activity-log entry to anchor
    on).
-4. **A time anchor per item**, computed server-side from the item's own events as
+4. **A time anchor per item**, computed by the read from the item's own events as
    [The layout](#the-layout) defines them, from data that already exists or that
    this spec adds: the two times, the transition log, activity-log entries,
-   blocker rows, and worker episodes. A parent's subtree anchor is the layout's
+   blocker rows, and worker episodes. It's never stored; the only dates written
+   are the ones a status change sets. A parent's subtree anchor is the layout's
    job, since the read carries the whole tree.
 5. **One request for the whole project.** Every item at any depth, carrying only
    what the Map draws: key, type, title, status, sub-status, blocked, parent key,
