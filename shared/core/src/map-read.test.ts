@@ -39,8 +39,8 @@ describe('the map read on the wire', () => {
 		expect(wire.workers[1]![0]!.lastWriteAt).toBe(Date.parse('2026-09-05T12:00:00.999Z'));
 	});
 
-	it('refuses a key from another project rather than sending a wrong number', () => {
-		expect(() => encodeMapRead({ summarized: false, items: [row({ key: 'XX-1' })] }, 'SPE')).toThrow('XX-1');
+	it.each(['XX-1', 'SPE-', 'SPE-0', 'SPE--3', 'SPE-01', 'spe-1'])('refuses %s rather than sending a number that decodes to another key', (key) => {
+		expect(() => encodeMapRead({ summarized: false, items: [row({ key })] }, 'SPE')).toThrow(key);
 	});
 
 	it('encodes an empty project', () => {

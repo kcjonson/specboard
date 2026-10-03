@@ -2,8 +2,11 @@
  * The whole-project read the Map draws from (docs/specs/ai-development-overview.md,
  * Data, requirement 5): every item at any depth, carrying only what the Map draws.
  * The API produces these rows and the planning client lays them out, so the shape
- * lives here where both can import it. Times are ISO 8601 strings, as JSON sends them.
+ * lives here where both can import it. Row times are ISO 8601 strings; on the wire
+ * (MapReadWire) they are epoch milliseconds.
  */
+
+import { formatItemKey, itemNumberInProject } from './identifiers.ts';
 
 export type MapItemType = 'epic' | 'task' | 'bug';
 
@@ -125,10 +128,10 @@ const isoOf = (ms: number): string => new Date(ms).toISOString();
 const isoOrNull = (ms: number | null): string | null => (ms === null ? null : isoOf(ms));
 
 export function encodeMapRead(read: MapRead, projectKey: string): MapReadWire {
-	const prefix = `${projectKey}-`;
+	// Only a canonical key survives the trip: `SPE-01` or `spe-1` would decode as `SPE-1`.
 	const numberOf = (key: string): number => {
-		const number = key.startsWith(prefix) ? Number(key.slice(prefix.length)) : NaN;
-		if (!Number.isSafeInteger(number)) throw new Error(`${key} is not an item key in ${projectKey}`);
+		const number = itemNumberInProject(key, projectKey);
+		if (number === null || formatItemKey(projectKey, number) !== key) throw new Error(`${key} is not an item key in ${projectKey}`);
 		return number;
 	};
 	const rows = read.items;
