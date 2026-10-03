@@ -172,16 +172,18 @@ export function relatedChains(pairs: ReadonlyArray<readonly [SimNode[], SimNode[
 export interface OrderConstraint {
 	/** The blocker. */
 	a: SimNode;
-	/** The unfinished item it blocks, held at least `gap` to its right. */
+	/** The unfinished item it blocks, held at least `gap + lead` to its right. */
 	b: SimNode;
 	gap: number;
+	/** How far past the plain gap this dot's minimum sits, so a blocker's dependents don't fence. */
+	lead: number;
 }
 
 export interface Orders {
 	/** Done dots in completion order. */
 	done: SimNode[];
-	/** In-progress and in-review dots, held past the last completion. */
-	inFlight: SimNode[];
+	/** In-progress and in-review dots, each held `lead` further past the last completion than the plain floor. */
+	inFlight: Array<{ node: SimNode; lead: number }>;
 	/** Sorted so a walk in this order settles every constraint in one pass. */
 	dependencies: OrderConstraint[];
 	gap: number;
@@ -241,8 +243,8 @@ export function createOrderPass(orders: Orders): () => void {
 		if (done.length) {
 			let edge = -Infinity;
 			for (const n of done) edge = Math.max(edge, n.x + n.r);
-			for (const n of inFlight) {
-				const min = edge + n.r + gap;
+			for (const { node: n, lead } of inFlight) {
+				const min = edge + n.r + gap + lead;
 				if (n.x < min) {
 					place(n, min);
 					if (n.vx < 0) n.vx = 0;
@@ -250,9 +252,9 @@ export function createOrderPass(orders: Orders): () => void {
 			}
 		}
 
-		for (const { a, b, gap: min } of dependencies) {
-			if (b.x < a.x + min) {
-				place(b, a.x + min);
+		for (const { a, b, gap: min, lead } of dependencies) {
+			if (b.x < a.x + min + lead) {
+				place(b, a.x + min + lead);
 				if (b.vx < 0) b.vx = 0;
 			}
 		}
