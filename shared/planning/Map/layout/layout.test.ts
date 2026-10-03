@@ -422,13 +422,16 @@ describe('layoutMap edge cases', () => {
 			expect(ms).toBeLessThan(500);
 		}, 30_000);
 
-		it('with every family open, a dot per item', () => {
+		// The stress case: half again the dots of the board as it opens. It runs about
+		// 250 ms alone but shares the runner with every other test file, so it's held to
+		// the spec's whole budget for 1,000 items, data to first paint in under 1 s.
+		it('with every family open, a dot per item, inside the first-paint budget', () => {
 			const expanded = Object.fromEntries(rows.filter((r) => r.type === 'epic').map((r) => [r.key, false]));
 			const { ms, result } = bestOfThree(expanded);
 			expect(result.collapsed).toEqual([]);
 			expect(result.nodes.length).toBeGreaterThan(1000);
 			expectOrdersHold(result, rows);
-			expect(ms).toBeLessThan(500);
+			expect(ms).toBeLessThan(1000);
 		}, 30_000);
 	});
 });
