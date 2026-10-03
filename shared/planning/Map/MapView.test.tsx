@@ -107,6 +107,76 @@ describe('MapView states', () => {
 	});
 });
 
+describe('MapView zoom keys', () => {
+	// Reduced motion turns the camera flight into a cut, so a keypress lands at once.
+	beforeEach(() => {
+		window.matchMedia = ((query: string) => ({
+			matches: query.includes('reduce'),
+			media: query,
+			addEventListener: () => {},
+			removeEventListener: () => {},
+		})) as unknown as typeof window.matchMedia;
+	});
+
+	afterEach(() => {
+		delete (window as { matchMedia?: unknown }).matchMedia;
+	});
+
+	const scale = (): number => frames.at(-1)!.transform.k;
+	const ready = async (): Promise<number> => {
+		renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		return scale();
+	};
+	const press = (init: Partial<KeyboardEvent>, target: Element = document.body): void => {
+		fireEvent.keyDown(target, { code: 'KeyZ', ...init });
+	};
+
+	it('zooms in on Z and out on Alt+Z, by the buttons\' step', async () => {
+		const start = await ready();
+		press({});
+		await waitFor(() => expect(scale()).toBeCloseTo(start * 1.4));
+		press({ altKey: true, key: 'Ω' });
+		await waitFor(() => expect(scale()).toBeCloseTo(start));
+	});
+
+	it('does nothing on Cmd+Z or Ctrl+Z', async () => {
+		const start = await ready();
+		const painted = frames.length;
+		press({ metaKey: true });
+		press({ ctrlKey: true });
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		expect(frames.length).toBe(painted);
+		expect(scale()).toBe(start);
+	});
+
+	it('does nothing from inside an input', async () => {
+		const start = await ready();
+		const input = document.createElement('input');
+		document.body.appendChild(input);
+		const painted = frames.length;
+		press({}, input);
+		press({ altKey: true }, input);
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		input.remove();
+		expect(frames.length).toBe(painted);
+		expect(scale()).toBe(start);
+	});
+
+	it('zooms about the pointer when it is over the canvas', async () => {
+		const start = await ready();
+		const before = frames.at(-1)!.transform;
+		const canvas = document.querySelector('canvas')!;
+		fireEvent.mouseMove(canvas, { clientX: 200, clientY: 100 });
+		press({});
+		await waitFor(() => expect(scale()).toBeCloseTo(start * 1.4));
+		const after = frames.at(-1)!.transform;
+		// The layout point under the pointer stays under it.
+		expect((200 - after.x) / after.k).toBeCloseTo((200 - before.x) / before.k);
+		expect((100 - after.y) / after.k).toBeCloseTo((100 - before.y) / before.k);
+	});
+});
+
 describe('MapView and the URL', () => {
 	it('opens centered on the item named by ?focus=', async () => {
 		window.history.replaceState(null, '', '/projects/acme/specboard/planning?view=map&focus=map-5');

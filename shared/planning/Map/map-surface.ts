@@ -14,7 +14,7 @@ import {
 } from './camera';
 import { buildDrawList, type DrawDot } from './draw-list';
 import type { MapLayout } from './layout/types';
-import type { MapCamera } from './map-camera';
+import type { MapCamera, ScreenPoint } from './map-camera';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
 import { rulerMarks } from './ruler';
 
@@ -53,6 +53,7 @@ export class MapSurface {
 	private viewportEmpty = false;
 	/** Nobody has panned or zoomed yet, so a resize reopens the default view instead of holding the old center. */
 	private pristine = true;
+	private pointer: ScreenPoint | null = null;
 
 	constructor(deps: MapSurfaceDeps, handlers: MapSurfaceHandlers) {
 		this.renderer = deps.renderer;
@@ -114,12 +115,27 @@ export class MapSurface {
 		this.camera.flyTo(nowTransform(this.layout.frame.bounds, this.dots, this.viewport));
 	}
 
+	/** The on-screen buttons: about the middle of the plot. */
 	zoomIn(): void {
 		this.camera.zoomBy(ZOOM_STEP);
 	}
 
 	zoomOut(): void {
 		this.camera.zoomBy(1 / ZOOM_STEP);
+	}
+
+	/** The zoom keys: about whatever `zoomAnchor` picks. */
+	zoomInByKey(): void {
+		this.camera.zoomBy(ZOOM_STEP, this.zoomAnchor());
+	}
+
+	zoomOutByKey(): void {
+		this.camera.zoomBy(1 / ZOOM_STEP, this.zoomAnchor());
+	}
+
+	/** Where the pointer is over the canvas, or null once it leaves. */
+	setPointer(point: ScreenPoint | null): void {
+		this.pointer = point;
 	}
 
 	/** Moves to an item, with a flight unless told otherwise. False when the Map has no such dot, which includes anything folded into another. */
@@ -176,6 +192,13 @@ export class MapSurface {
 				: null,
 		});
 		this.setViewportEmpty(this.dots.length > 0 && !dotsVisible(this.dots, transform, this.viewport));
+	}
+
+	/** What a keyboard zoom holds still: the pointer if it is over the plot, otherwise the middle (undefined). A focused dot is SPE-236's to add. */
+	private zoomAnchor(): ScreenPoint | undefined {
+		const { pointer, viewport } = this;
+		if (pointer && pointer.x >= 0 && pointer.x <= viewport.width && pointer.y >= 0 && pointer.y <= viewport.height) return pointer;
+		return undefined;
 	}
 
 	private requestPaint(): void {

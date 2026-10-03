@@ -12,7 +12,7 @@ import {
 import { BoardBuilder } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
 import type { MapLayout } from './layout/types';
-import type { MapCamera } from './map-camera';
+import type { MapCamera, ScreenPoint } from './map-camera';
 import { MapSurface } from './map-surface';
 import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
 
@@ -21,7 +21,7 @@ class FakeCamera implements MapCamera {
 	listeners = new Set<() => void>();
 	configured: { viewport: Viewport; minScale: number } | null = null;
 	flights: Transform[] = [];
-	zooms: number[] = [];
+	zooms: Array<{ factor: number; around?: ScreenPoint }> = [];
 
 	onChange(listener: () => void): () => void {
 		this.listeners.add(listener);
@@ -42,8 +42,8 @@ class FakeCamera implements MapCamera {
 		this.set(transform);
 	}
 
-	zoomBy(factor: number): void {
-		this.zooms.push(factor);
+	zoomBy(factor: number, around?: ScreenPoint): void {
+		this.zooms.push({ factor, around });
 	}
 
 	destroy(): void {
@@ -192,7 +192,26 @@ describe('MapSurface', () => {
 
 		surface.zoomIn();
 		surface.zoomOut();
-		expect(camera.zooms).toEqual([ZOOM_STEP, 1 / ZOOM_STEP]);
+		expect(camera.zooms).toEqual([{ factor: ZOOM_STEP }, { factor: 1 / ZOOM_STEP }]);
+	});
+
+	it('zooms by key about the pointer when it is over the plot, and about the middle otherwise', () => {
+		const { surface, camera } = setup();
+		surface.resize(WIDTH, HEIGHT);
+		surface.setPointer({ x: 300, y: 120 });
+		surface.zoomInByKey();
+		surface.zoomOutByKey();
+		expect(camera.zooms).toEqual([
+			{ factor: ZOOM_STEP, around: { x: 300, y: 120 } },
+			{ factor: 1 / ZOOM_STEP, around: { x: 300, y: 120 } },
+		]);
+
+		camera.zooms.length = 0;
+		surface.setPointer({ x: 300, y: 520 + RULER_HEIGHT });
+		surface.zoomInByKey();
+		surface.setPointer(null);
+		surface.zoomOutByKey();
+		expect(camera.zooms).toEqual([{ factor: ZOOM_STEP, around: undefined }, { factor: 1 / ZOOM_STEP, around: undefined }]);
 	});
 
 	it('can move to an item without a flight', () => {

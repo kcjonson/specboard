@@ -652,6 +652,7 @@ them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
 | Enter | Open the focused item in the drawer |
 | Escape | Close the drawer, then clear the selection, the search, or the changes view |
 | `+` and `-` | Zoom in and out around the focused dot |
+| `Z`, Option+`Z` | Zoom in and out, Figma's keys, by the same step as `+` and `-`, around the pointer when it is over the canvas and the middle of the plot otherwise. Never with Cmd or Ctrl held (Cmd+`Z` stays undo) |
 | `0` | Fit all |
 | `T` | Jump to now (Google Calendar's key for today) |
 | `F` | Fit to the selection and its family |

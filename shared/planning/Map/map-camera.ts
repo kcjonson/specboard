@@ -15,6 +15,12 @@ const SETTLE_MS = 250;
 /** Pixels in one "line" of a wheel that scrolls by lines. */
 const WHEEL_LINE = 16;
 
+/** A position in the plot, CSS pixels from its top left. */
+export interface ScreenPoint {
+	x: number;
+	y: number;
+}
+
 export interface MapCamera {
 	/** Where the camera is now. A copy: it changes under every gesture. */
 	readonly transform: Transform;
@@ -26,8 +32,8 @@ export interface MapCamera {
 	set(transform: Transform): void;
 	/** Moves the camera with a short flight, or without one under reduced motion. */
 	flyTo(transform: Transform): void;
-	/** Zooms about the middle of the plot. */
-	zoomBy(factor: number): void;
+	/** Zooms about a point in the plot, or about its middle. */
+	zoomBy(factor: number, around?: ScreenPoint): void;
 	destroy(): void;
 }
 
@@ -111,16 +117,17 @@ export function createCamera(element: HTMLElement, options: CameraOptions): MapC
 			selection.interrupt();
 			behavior.transform(glide(), toZoom(transform));
 		},
-		zoomBy(factor) {
+		zoomBy(factor, around) {
 			selection.interrupt();
 			byPerson = true;
+			const point: [number, number] | undefined = around && [around.x, around.y];
 			if (options.reducedMotion()) {
-				behavior.scaleBy(selection, factor);
+				behavior.scaleBy(selection, factor, point);
 				byPerson = false;
 				return;
 			}
 			// A zoom the person asked for settles like a pinch does, once its flight lands.
-			behavior.scaleBy(glide().on('end.map interrupt.map', () => (byPerson = false)), factor);
+			behavior.scaleBy(glide().on('end.map interrupt.map', () => (byPerson = false)), factor, point);
 		},
 		destroy() {
 			clearTimeout(settleTimer);

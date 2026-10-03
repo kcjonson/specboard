@@ -8,6 +8,7 @@ import { createCamera } from './map-camera';
 import { MapDataModel } from './map-data-model';
 import { createMapSource } from './map-source';
 import { MapSurface } from './map-surface';
+import { zoomKeyOf } from './map-keys';
 import { readFocus, urlWithFocus } from './map-url';
 import { RULER_HEIGHT, createCanvasRenderer } from './renderer';
 import styles from './MapView.module.css';
@@ -86,8 +87,26 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 			if (!key || !surface.focusOn(key, false)) surface.reopen();
 		};
 		window.addEventListener('popstate', onPopState);
+		const onPointerMove = (event: MouseEvent): void => {
+			const { left, top } = canvas.getBoundingClientRect();
+			surface.setPointer({ x: event.clientX - left, y: event.clientY - top });
+		};
+		const onPointerLeave = (): void => surface.setPointer(null);
+		canvas.addEventListener('mousemove', onPointerMove);
+		canvas.addEventListener('mouseleave', onPointerLeave);
+		const onKeyDown = (event: KeyboardEvent): void => {
+			const zoom = zoomKeyOf(event);
+			if (!zoom) return;
+			event.preventDefault();
+			if (zoom === 'in') surface.zoomInByKey();
+			else surface.zoomOutByKey();
+		};
+		document.addEventListener('keydown', onKeyDown);
 
 		return () => {
+			document.removeEventListener('keydown', onKeyDown);
+			canvas.removeEventListener('mousemove', onPointerMove);
+			canvas.removeEventListener('mouseleave', onPointerLeave);
 			window.removeEventListener('popstate', onPopState);
 			colorScheme?.removeEventListener('change', onColorScheme);
 			observer?.disconnect();
