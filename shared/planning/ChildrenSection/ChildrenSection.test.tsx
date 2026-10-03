@@ -7,7 +7,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/preact';
-import { ItemModel } from '@specboard/models';
+import { ItemModel, ITEM_STATUSES } from '@specboard/models';
+import { StatusDot, STATUS_LABELS } from '@specboard/ui';
 import { ChildrenSection } from './ChildrenSection';
 
 const get = vi.fn();
@@ -102,6 +103,20 @@ describe('ChildrenSection', () => {
 		expect(getByLabelText('Bug')).toBeTruthy();
 		expect(getByText('In Progress')).toBeTruthy();
 		expect(getByText('Blocked')).toBeTruthy();
+	});
+
+	it('gives every status its own dot color, In Review included', () => {
+		const item = makeItem('epic', ITEM_STATUSES.map((status, i) =>
+			child({ id: `c${i}`, key: `SB-${i + 2}`, number: i + 2, status })
+		));
+		const { getByText } = render(<ChildrenSection item={item} />);
+
+		for (const status of ITEM_STATUSES) {
+			// Compared against a bare StatusDot so this doesn't depend on how CSS modules name classes.
+			const { container } = render(<StatusDot status={status} />);
+			expect(getByText(STATUS_LABELS[status]).firstElementChild?.className)
+				.toBe(container.firstElementChild?.className);
+		}
 	});
 
 	it('counts done children in the header', () => {

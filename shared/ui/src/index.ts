@@ -55,7 +55,7 @@ export type { NoticeProps, NoticeVariant } from './Notice/Notice';
 // StatusDot
 export { StatusDot } from './StatusDot/StatusDot';
 export type { StatusDotProps, StatusType } from './StatusDot/StatusDot';
-export { STATUS_LABELS, DOT_STATUS } from './status';
+export { STATUS_LABELS } from './status';
 
 // UserMenu
 export { UserMenu } from './UserMenu/UserMenu';

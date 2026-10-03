@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import type { ChildModel } from '@specboard/models';
-import { StatusDot, STATUS_LABELS, DOT_STATUS } from '@specboard/ui';
+import { StatusDot, STATUS_LABELS } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import styles from './Table.module.css';
 
@@ -35,7 +35,7 @@ export function ChildRow({ child, onOpen }: ChildRowProps): JSX.Element {
 				)}
 			</span>
 			<span class={styles.colStatus} role="cell">
-				<StatusDot status={DOT_STATUS[child.status]} />
+				<StatusDot status={child.status} />
 				{STATUS_LABELS[child.status]}
 			</span>
 			<span class={styles.colTasks} role="cell" />

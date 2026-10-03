@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useModel, type ItemModel } from '@specboard/models';
-import { Icon, StatusDot, STATUS_LABELS, DOT_STATUS } from '@specboard/ui';
+import { Icon, StatusDot, STATUS_LABELS } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { ChildRow } from './ChildRow';
 import styles from './Table.module.css';
@@ -97,7 +97,7 @@ export function ItemRow({
 					)}
 				</span>
 				<span class={styles.colStatus} role="cell">
-					<StatusDot status={DOT_STATUS[item.status]} />
+					<StatusDot status={item.status} />
 					{STATUS_LABELS[item.status]}
 				</span>
 				<span class={styles.colTasks} role="cell">{hasChildren ? `${done}/${total}` : '—'}</span>
