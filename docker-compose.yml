@@ -68,9 +68,6 @@ services:
       # Generate with: openssl rand -hex 32
       # For local dev, set in .env file. For production, use AWS Secrets Manager.
       API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:-}
-      # Keys the Map's opaque agent session keys (HMAC). Required: the api won't start
-      # without one. Local dev only; staging and production read theirs from Secrets Manager.
-      AGENT_SESSION_KEY_SECRET: local-dev-agent-session-key-secret-not-for-production
       # Storage service connection (for cloud mode)
       # WARNING: Hardcoded key for local dev only. Use AWS Secrets Manager in production.
       STORAGE_SERVICE_URL: http://storage:3003

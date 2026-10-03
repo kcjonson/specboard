@@ -26,7 +26,6 @@ import { recordWorkerActivity } from './workers.ts';
 import { encodeMapRead, type MapItemRow } from '@specboard/core/map-read';
 import { agentSessionKey, getProjectMap, summarizeFinishedFamilies } from './map.ts';
 
-const SECRET = 'map-test-secret-0123456789abcdef0123456789';
 const USER: UserActor = { type: 'user', userId: '00000000-0000-0000-0000-000000000001' };
 const AGENT: AgentActor = {
 	type: 'agent', userId: USER.userId, clientId: 'oauth-client-7f3a', deviceName: 'personal-laptop',
@@ -46,7 +45,7 @@ async function item(fields: { status?: ItemStatus; parentNumber?: number; type?:
 }
 
 async function read(): Promise<Map<string, MapItemRow>> {
-	const { items } = await getProjectMap(projectId, SECRET);
+	const { items } = await getProjectMap(projectId);
 	return new Map(items.map((row) => [row.key, row]));
 }
 
@@ -272,7 +271,7 @@ describe('worker episodes', () => {
 		const [onTwo] = rows.get(`MP-${two}`)!.workers;
 		const [stored] = await sql<{ last_seen_at: Date }>('SELECT last_seen_at FROM item_workers WHERE item_id = $1', [await idOf(one)]);
 		expect(onOne).toEqual({
-			sessionKey: agentSessionKey(SECRET, AGENT),
+			sessionKey: agentSessionKey(AGENT),
 			deviceName: 'personal-laptop',
 			client: 'claude-code',
 			branch: 'feat/MP-1-map',
@@ -309,27 +308,26 @@ describe('worker episodes', () => {
 		await recordWorkerActivity(projectId, n, OTHER_SESSION);
 		await addBlocker(projectId, n, { text: 'hold' }, AGENT);
 
-		const payload = JSON.stringify(await getProjectMap(projectId, SECRET));
-		for (const secret of [userId, USER.userId, AGENT.clientId, AGENT.sessionId!, OTHER_SESSION.sessionId!, SECRET]) {
-			expect(payload).not.toContain(secret);
+		const payload = JSON.stringify(await getProjectMap(projectId));
+		for (const id of [userId, USER.userId, AGENT.clientId, AGENT.sessionId!, OTHER_SESSION.sessionId!]) {
+			expect(payload).not.toContain(id);
 		}
 		expect(payload).not.toMatch(/"(userId|clientId|sessionId)"/);
 	});
 });
 
 describe('session keys', () => {
-	it('depend on the secret, and on every part of the identity', () => {
-		const base = agentSessionKey(SECRET, AGENT);
-		expect(agentSessionKey(SECRET, { ...AGENT })).toBe(base);
-		expect(agentSessionKey('another-secret-0123456789abcdef0123456789', AGENT)).not.toBe(base);
-		expect(agentSessionKey(SECRET, { ...AGENT, userId: 'someone-else' })).not.toBe(base);
-		expect(agentSessionKey(SECRET, { ...AGENT, clientId: 'another-client' })).not.toBe(base);
-		expect(agentSessionKey(SECRET, { ...AGENT, sessionId: undefined })).not.toBe(base);
+	it('depend on every part of the identity', () => {
+		const base = agentSessionKey(AGENT);
+		expect(agentSessionKey({ ...AGENT })).toBe(base);
+		expect(agentSessionKey({ ...AGENT, userId: 'someone-else' })).not.toBe(base);
+		expect(agentSessionKey({ ...AGENT, clientId: 'another-client' })).not.toBe(base);
+		expect(agentSessionKey({ ...AGENT, sessionId: undefined })).not.toBe(base);
 	});
 
 	it('cannot be made to collide by moving characters between the parts', () => {
 		const split = (clientId: string, sessionId: string): string =>
-			agentSessionKey(SECRET, { userId: 'u', clientId, sessionId });
+			agentSessionKey({ userId: 'u', clientId, sessionId });
 		expect(split('ab', 'c')).not.toBe(split('a', 'bc'));
 		expect(split('a","b', 'c')).not.toBe(split('a', 'b","c'));
 	});
@@ -342,7 +340,7 @@ describe('the payload', () => {
 			{ projectId, userId, items: 2000, now: Date.now() },
 		);
 
-		const map = await getProjectMap(projectId, SECRET);
+		const map = await getProjectMap(projectId);
 		const json = JSON.stringify(encodeMapRead(map, 'MP'));
 		const gzipped = gzipSync(json).length;
 

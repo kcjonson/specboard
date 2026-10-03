@@ -316,8 +316,10 @@ owns. Two Claude Code windows on one machine are two sessions.
   produces exactly the stale rows it is meant to prevent; deriving presence
   from observed writes makes staleness meaningful by construction.
 - **The browser never sees the episode's ids.** The Map tells sessions apart by an
-  opaque key, an HMAC of the episode's user, client, and session id under a server
-  secret ([ai-development-overview.md](ai-development-overview.md#data)).
+  opaque key, a truncated SHA-256 of the episode's user, client, and session id. No
+  secret: the session id is a random correlation token, not a credential, so the
+  hash alone can't be reversed
+  ([ai-development-overview.md](ai-development-overview.md#data)).
 - **Staleness is derived at read time** (`now() - last_seen_at`), never stored.
   The UI dims a worker after 15 minutes without an observed write.
 - `assignee` is untouched and stays a human user FK. `items.branch_name`

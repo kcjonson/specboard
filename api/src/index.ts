@@ -19,7 +19,6 @@ import {
 import { reportError, installErrorHandlers, logRequest } from '@specboard/core';
 import { getCookie } from 'hono/cookie';
 import { registerPlanningRoutes, type AppVariables } from './planning-routes.ts';
-import { loadAgentSessionSecret } from './agent-session-secret.ts';
 
 import {
 	handleLogin,
@@ -108,9 +107,6 @@ import { handleWaitlistSignup, handleListWaitlist } from './handlers/waitlist.ts
 
 // Install global error handlers for uncaught exceptions
 installErrorHandlers('api');
-
-// Required config: a missing secret stops the process here, before it serves anything.
-const agentSessionSecret = loadAgentSessionSecret();
 
 // Redis connection
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -482,7 +478,7 @@ app.post('/api/projects/:owner/:project/sync/initial', (context) => handleGitHub
 app.get('/api/projects/:owner/:project/sync/status', (context) => handleGitHubSyncStatus(context, redis));
 app.post('/api/projects/:owner/:project/github/commit', (context) => handleGitHubCommit(context, redis));
 
-registerPlanningRoutes(app, { redis, agentSessionSecret });
+registerPlanningRoutes(app, { redis });
 
 // AI Chat
 app.get('/api/chat/models', (context) => handleGetChatModels(context, redis));

@@ -26,14 +26,13 @@ import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
 import { getItems, getProjectMap, resolveProject } from '@specboard/db';
 import { registerPlanningRoutes, type AppVariables } from './planning-routes.ts';
 
-const SECRET = 'route-test-secret-0123456789abcdef0123';
 const OWNER = 'owner-1';
 const STRANGER = 'stranger-2';
 const PROJECT = { id: 'proj-1', slug: 'roadmap', ownerSlug: 'acme', key: 'SB' };
 
 function app(): Hono<{ Variables: AppVariables }> {
 	const mounted = new Hono<{ Variables: AppVariables }>();
-	registerPlanningRoutes(mounted, { redis: {} as Redis, agentSessionSecret: SECRET });
+	registerPlanningRoutes(mounted, { redis: {} as Redis });
 	return mounted;
 }
 
@@ -76,11 +75,11 @@ describe('GET /map access', () => {
 		expect(getProjectMap).not.toHaveBeenCalled();
 	});
 
-	it('reads the resolved project for its owner, keyed by the server secret', async () => {
+	it('reads the resolved project for its owner', async () => {
 		const response = await get('map', OWNER);
 
 		expect(response.status).toBe(200);
-		expect(getProjectMap).toHaveBeenCalledWith('proj-1', SECRET);
+		expect(getProjectMap).toHaveBeenCalledWith('proj-1');
 		const wire = await response.json() as MapReadWire;
 		expect(wire).toMatchObject({ projectKey: 'SB', summarized: false });
 		expect(wire.number).toHaveLength(40);

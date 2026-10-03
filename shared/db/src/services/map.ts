@@ -5,7 +5,7 @@
  * the cost is a handful of grouped scans, never a round trip per item.
  */
 
-import { createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { formatItemKey } from '@specboard/core/identifiers';
 import { query } from '../index.ts';
 import type { MapBlockerLink, MapItemRow, MapItemStatus, MapItemSubStatus, MapItemType, MapRead } from '@specboard/core/map-read';
@@ -16,7 +16,7 @@ import type { MapBlockerLink, MapItemRow, MapItemStatus, MapItemSubStatus, MapIt
  */
 export const MAP_READ_CAP = 5000;
 
-/** Bytes of the HMAC kept in a session key: 96 bits, 16 base64url characters. */
+/** Bytes of the hash kept in a session key: 96 bits, 16 base64url characters. */
 const SESSION_KEY_BYTES = 12;
 
 /** The identity of one worker episode, as idx_item_workers_active_session keys it. */
@@ -27,16 +27,17 @@ export interface AgentSessionIdentity {
 }
 
 /**
- * An opaque, stable key for one agent session: HMAC-SHA256 under a server secret over
- * the same (user, OAuth client, session id) triple the worker index keys episodes by,
- * so two sessions on one computer differ and one session reads the same on every item.
- * The JSON array is the separator: no choice of characters inside the ids can make two
- * different triples encode alike. Truncated to 96 bits, which keeps a collision between
- * two sessions on one project out of reach (under 10^-17 at a million sessions) while
- * the secret, not the length, is what makes the key impossible to turn back into the id.
+ * An opaque, stable key for one agent session: SHA-256 of the same (user, OAuth client,
+ * session id) triple the worker index keys episodes by, so two sessions on one computer
+ * differ and one session reads the same on every item. The JSON array is the separator:
+ * no choice of characters inside the ids can make two different triples encode alike.
+ * No secret: the session id is a random UUID the MCP server mints at initialize, a
+ * correlation token rather than a credential, so the hash alone can't be walked back to
+ * it. Truncated to 96 bits, which keeps a collision between two sessions on one project
+ * out of reach (under 10^-17 at a million sessions).
  */
-export function agentSessionKey(secret: string, identity: AgentSessionIdentity): string {
-	return createHmac('sha256', secret)
+export function agentSessionKey(identity: AgentSessionIdentity): string {
+	return createHash('sha256')
 		.update(JSON.stringify([identity.userId, identity.clientId, identity.sessionId ?? '']))
 		.digest()
 		.subarray(0, SESSION_KEY_BYTES)
@@ -215,7 +216,7 @@ const MAP_SQL = `
 
 const iso = (date: Date): string => date.toISOString();
 
-function toRow(row: MapQueryRow, sessionSecret: string): MapItemRow {
+function toRow(row: MapQueryRow): MapItemRow {
 	const key = (number: number): string => formatItemKey(row.project_key, number);
 	return {
 		key: key(row.number),
@@ -231,7 +232,7 @@ function toRow(row: MapQueryRow, sessionSecret: string): MapItemRow {
 		completedAt: row.completed_at ? iso(row.completed_at) : null,
 		timeAnchor: iso(row.time_anchor),
 		workers: row.workers.map((worker) => ({
-			sessionKey: agentSessionKey(sessionSecret, worker),
+			sessionKey: agentSessionKey(worker),
 			deviceName: worker.deviceName,
 			client: worker.client,
 			branch: worker.branch,
@@ -248,13 +249,10 @@ function toRow(row: MapQueryRow, sessionSecret: string): MapItemRow {
 	};
 }
 
-/**
- * The whole project for the Map. `sessionSecret` keys the worker episodes' session keys;
- * no user, client, or session id leaves this function.
- */
-export async function getProjectMap(projectId: string, sessionSecret: string, cap = MAP_READ_CAP): Promise<MapRead> {
+/** The whole project for the Map. No user, client, or session id leaves this function. */
+export async function getProjectMap(projectId: string, cap = MAP_READ_CAP): Promise<MapRead> {
 	const result = await query<MapQueryRow>(MAP_SQL, [projectId]);
-	return summarizeFinishedFamilies(result.rows.map((row) => toRow(row, sessionSecret)), cap);
+	return summarizeFinishedFamilies(result.rows.map(toRow), cap);
 }
 
 interface FamilyNode {

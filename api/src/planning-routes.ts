@@ -62,11 +62,9 @@ export type AppVariables = {
 
 export interface PlanningRouteDeps {
 	redis: Redis;
-	/** Keys the Map's agent session keys (loadAgentSessionSecret). */
-	agentSessionSecret: string;
 }
 
-export function registerPlanningRoutes(app: Hono<{ Variables: AppVariables }>, { redis, agentSessionSecret }: PlanningRouteDeps): void {
+export function registerPlanningRoutes(app: Hono<{ Variables: AppVariables }>, { redis }: PlanningRouteDeps): void {
 	// Authorization gate for project-scoped planning routes (items, specs, notes).
 	// These handlers query by the resolved project alone, so without this wrapper
 	// they are unauthenticated/IDOR-able. Require a valid session AND that the user owns the
@@ -123,7 +121,7 @@ export function registerPlanningRoutes(app: Hono<{ Variables: AppVariables }>, {
 
 	// The Map's whole-project read. The ALB doesn't compress, and the payload budget
 	// (docs/specs/ai-development-overview.md, Data) is a gzipped one.
-	app.get('/api/projects/:owner/:project/map', compress(), requireProjectAccess((context) => handleGetMap(context, agentSessionSecret)));
+	app.get('/api/projects/:owner/:project/map', compress(), requireProjectAccess(handleGetMap));
 
 	// Project-scoped spec link routes
 	app.get('/api/projects/:owner/:project/items/:itemKey/specs', requireProjectAccess(handleListSpecs));

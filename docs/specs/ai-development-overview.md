@@ -759,15 +759,15 @@ and nothing moves for more than a second.
      the whole project, never looked up item by item.
 6. **An opaque session key.** Browser responses strip the MCP session id today,
    and the Map has to tell two sessions on one computer apart. Each episode carries
-   a key the server derives from the session: HMAC-SHA256, under the
-   `AGENT_SESSION_KEY_SECRET` server secret, of the same user, OAuth client, and
-   session id that key the episode's row, encoded as a JSON array so no choice of
-   characters in one id can shift into the next. It's truncated to 96 bits (16
-   base64url characters): a collision between two sessions on one project is out
-   of reach, and the secret, not the length, is what keeps it from being turned
-   back into the id. Stable for the session, different for a second session on the
-   same computer, and meaningless outside. The API refuses to start without the
-   secret; there's no default.
+   a key the server derives from the session: SHA-256 of the same user, OAuth
+   client, and session id that key the episode's row, encoded as a JSON array so no
+   choice of characters in one id can shift into the next, truncated to 96 bits (16
+   base64url characters), where a collision between two sessions on one project is
+   out of reach. There's no server secret. The session id is a random UUID the MCP
+   server mints at initialize, and under the stateless transport it's a correlation
+   token, not a credential, so a plain hash of it is already infeasible to reverse;
+   a key would add an infra dependency and buy nothing. Stable for the session,
+   different for a second session on the same computer, and meaningless outside.
 7. **Payload budget.** 2,000 items in one response at roughly 100 KB gzipped. The
    read goes out in columns (`MapReadWire`: one array per field, keys as numbers
    under the project key, times as epoch milliseconds), and `decodeMapRead` turns
