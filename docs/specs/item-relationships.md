@@ -315,6 +315,11 @@ owns. Two Claude Code windows on one machine are two sessions.
   the item. A heartbeat requires agent cooperation and
   produces exactly the stale rows it is meant to prevent; deriving presence
   from observed writes makes staleness meaningful by construction.
+- **The browser never sees the episode's ids.** The Map tells sessions apart by an
+  opaque key, a truncated SHA-256 of the episode's user, client, and session id. No
+  secret: the session id is a random correlation token, not a credential, so the
+  hash alone can't be reversed
+  ([ai-development-overview.md](ai-development-overview.md#data)).
 - **Staleness is derived at read time** (`now() - last_seen_at`), never stored.
   The UI dims a worker after 15 minutes without an observed write.
 - `assignee` is untouched and stays a human user FK. `items.branch_name`
@@ -510,4 +515,5 @@ time anchor and since-your-last-visit read them
   (`project_id, created_at`). Both also back the cascades.
 - Every item response carries `startedAt` and `completedAt` (REST and MCP alike);
   the item view shows Created, and Started and Completed once they're set. The
-  log has no read path yet; its first readers are the Map's.
+  log's first reader is the Map's whole-project read (`getProjectMap`), which takes
+  each item's latest transition for its time anchor.

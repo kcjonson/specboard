@@ -737,20 +737,43 @@ and nothing moves for more than a second.
    blocker rows, and worker episodes. It's never stored; the only dates written
    are the ones a status change sets. A parent's subtree anchor is the layout's
    job, since the read carries the whole tree.
-5. **One request for the whole project.** Every item at any depth, carrying only
-   what the Map draws: key, type, title, status, sub-status, blocked, parent key,
-   rank, created, started, and completed times, time anchor, open worker episodes
-   (device name, client, branch, last write, and session key), item-blocker links
-   open and cleared (with whether a clear came from finished work or from someone
-   removing it), text-blocker count, discovered-from key, origin actor type, PR URL, and
-   spec count. No descriptions, activity log, or checklist. The row shape is
-   `MapItemRow` in `@specboard/core/map-read`, shared by the API and the layout.
+5. **One request for the whole project.** `GET /api/projects/:owner/:project/map`,
+   beside the items list and behind the same access check. Every item at any depth,
+   carrying only what the Map draws: key, type, title, status, sub-status, blocked,
+   parent key, rank, created, started, and completed times, time anchor, open
+   worker episodes (device name, client, branch, last write, and session key),
+   item-blocker links, text-blocker count, discovered-from key, origin actor type,
+   PR URL, and spec count. No descriptions, activity log, or checklist. The row
+   shape is `MapItemRow` in `@specboard/core/map-read`, shared by the API and the
+   layout.
+   - An item-blocker link comes back open, or satisfied with when it cleared, if
+     the system cleared it because work finished (`blocking_item_done` or
+     `item_completed`). A link someone removed by hand doesn't come back at all.
+     Each pair resolves to its latest row, so a dependency that was satisfied,
+     re-added, and then removed by hand is gone.
+   - Origin actor type is null for an item filed before provenance was recorded
+     (migration 025); nothing says who filed it.
+   - Discovered-from resolves through the source item's id to its current key, and
+     is null once the source is deleted.
+   - The anchors, links, and episodes are aggregated per item in one statement for
+     the whole project, never looked up item by item.
 6. **An opaque session key.** Browser responses strip the MCP session id today,
    and the Map has to tell two sessions on one computer apart. Each episode carries
-   a key the server derives from the session (an HMAC of the session id under a
-   server secret, for example): stable for the session, meaningless outside it,
-   and impossible to turn back into the id.
-7. **Payload budget.** 2,000 items in one response at roughly 100 KB gzipped.
+   a key the server derives from the session: SHA-256 of the same user, OAuth
+   client, and session id that key the episode's row, encoded as a JSON array so no
+   choice of characters in one id can shift into the next, truncated to 96 bits (16
+   base64url characters), where a collision between two sessions on one project is
+   out of reach. There's no server secret. The session id is a random UUID the MCP
+   server mints at initialize, and under the stateless transport it's a correlation
+   token, not a credential, so a plain hash of it is already infeasible to reverse;
+   a key would add an infra dependency and buy nothing. Stable for the session,
+   different for a second session on the same computer, and meaningless outside.
+7. **Payload budget.** 2,000 items in one response at roughly 100 KB gzipped. The
+   read goes out in columns (`MapReadWire`: one array per field, keys as numbers
+   under the project key, times as epoch milliseconds), and `decodeMapRead` turns
+   it back into rows. On a generated 2,000-item project that's 73 KB gzipped,
+   where an array of row objects took 106 KB. The API gzips the response itself,
+   since nothing in front of it does.
 8. **Cheap refresh.** A poll doesn't re-download the project. It asks for what
    changed since the last read, which `updated_at` mostly supports: child writes
    bump the parent, and note and blocker writes bump the item. Worker episodes
@@ -783,8 +806,16 @@ and nothing moves for more than a second.
 - The Map's code loads only when the view opens, so Board and Table don't get
   heavier. Target 60 KB gzipped for the Map's chunk, layout code included; the same
   JavaScript ships to phones ([tech-stack.md](../tech-stack.md)).
-- A project past the read cap still opens. Finished families come back summarized,
-  and the Map says that it's summarizing.
+- A project past the read cap (5,000 rows, the list cap) still opens. Finished
+  families (a parent and every descendant done) fold into their parent's row,
+  oldest first, until the read fits: the row carries `summarizedDescendants`, the
+  family's newest anchor, and the family's blocker links, and links elsewhere that
+  named a folded item name the row. The response's `summarized` flag says so, and
+  the Map says that it's summarizing. Unfinished work never folds, so a project
+  whose open work alone passes the cap comes back whole.
+- The read itself, on Postgres 16 with four other 5,000-item projects in the same
+  tables: about 28 ms in the database and 56 ms end to end for 2,000 items, and
+  64 ms and 115 ms for 5,000.
 
 ---
 

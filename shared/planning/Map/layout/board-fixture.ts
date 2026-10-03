@@ -71,7 +71,9 @@ export class BoardBuilder {
 	}
 
 	block(blocked: MapItemRow, blocker: MapItemRow, state: MapBlockerLink['state'] = blocker.status === 'done' ? 'satisfied' : 'open'): void {
-		blocked.blockers.push({ blockerKey: blocker.key, state });
+		blocked.blockers.push(state === 'open'
+			? { blockerKey: blocker.key, state }
+			: { blockerKey: blocker.key, state, satisfiedAt: blocker.completedAt ?? iso(this.now) });
 		if (state === 'open') blocked.blocked = true;
 	}
 
