@@ -8,7 +8,8 @@
  * own open rows are cleared when IT reaches done; text blockers otherwise clear
  * only when explicitly removed. Cleared rows are tombstones — reopening a done
  * blocking item does not re-block dependents. Deletion is the one operation
- * that erases history (FK cascades remove rows, tombstones included).
+ * that erases history (FK cascades remove rows, tombstones included). Open item
+ * blockers never form a cycle; a write whose new edge would close one is refused.
  *
  * Every blocker mutation bumps the affected item's updated_at: the board's
  * poll reconcile skips items whose updatedAt is unchanged, so without the bump
@@ -42,8 +43,9 @@ export class BlockerConflictError extends Error {
 
 /**
  * Thrown when a blocker references an unusable item: the target doesn't exist in
- * the project, is the item itself, or is already done (it could never clear
- * naturally). Also used when blocking an already-done item.
+ * the project, is the item itself, is already done (it could never clear
+ * naturally), or would close a cycle of open item blockers. Also used when
+ * blocking an already-done item.
  */
 export class BlockerTargetError extends Error {
 	constructor(message: string) {
@@ -149,13 +151,15 @@ export async function listBlockers(
 
 /**
  * Add one blocker to an item. Item blockers must reference a distinct,
- * not-done item in the same project; the blocked item itself must not be done.
- * Returns null if the item doesn't exist in the project.
+ * not-done item in the same project that doesn't close a cycle; the blocked
+ * item itself must not be done. Returns null if the item doesn't exist in the
+ * project.
  *
- * Runs in a transaction that takes FOR SHARE locks on the item rows it
- * validated, so a concurrent completeItem can't slip its status write and
- * auto-clear between the not-done check and the insert (the completion's
- * UPDATE blocks on the lock and, once it proceeds, sees the committed row).
+ * Runs in a transaction under the project's blocker lock (lockProjectBlockers).
+ * It also takes FOR SHARE locks on the item rows it validated, so a concurrent
+ * completeItem can't slip its status write and auto-clear between the not-done
+ * check and the insert (the completion's UPDATE blocks on the lock and, once it
+ * proceeds, sees the committed row).
  */
 export async function addBlocker(
 	projectId: string,
@@ -167,6 +171,7 @@ export async function addBlocker(
 	const actorJson = actor ? JSON.stringify(actor) : null;
 
 	const blockerId = await transaction(async (client) => {
+		await lockProjectBlockers(client, projectId);
 		const itemRow = await lockItem(client, projectId, itemNumber);
 		if (!itemRow) return null;
 		if (itemRow.status === 'done') throw new BlockerTargetError('Cannot block a done item');
@@ -174,6 +179,7 @@ export async function addBlocker(
 		let blockerItemId: string | null = null;
 		if ('itemNumber' in validated) {
 			blockerItemId = await resolveBlockerTarget(client, projectId, itemRow.id, validated.itemNumber);
+			await rejectCycle(client, itemRow.id, blockerItemId);
 		}
 
 		let inserted;
@@ -227,7 +233,9 @@ export async function clearBlocker(
  *
  * Sequential statements inside one transaction on purpose: data-modifying CTEs
  * share a snapshot, so a reconcile written as one statement couldn't see its
- * own clears. Targets are validated under the same locks as addBlocker.
+ * own clears. Targets are validated under the same locks as addBlocker, and
+ * only the item edges the replace adds are cycle-checked: restating an open
+ * blocker creates nothing.
  */
 export async function setBlockers(
 	projectId: string,
@@ -239,6 +247,7 @@ export async function setBlockers(
 	const actorJson = actor ? JSON.stringify(actor) : null;
 
 	const found = await transaction(async (client) => {
+		await lockProjectBlockers(client, projectId);
 		const itemRow = await lockItem(client, projectId, itemNumber);
 		if (!itemRow) return false;
 		if (itemRow.status === 'done' && validated.length > 0) {
@@ -268,6 +277,9 @@ export async function setBlockers(
 				? wantItemIds.delete(row.blocker_item_id)
 				: wantTexts.delete(row.blocker_text!);
 			if (!kept) toClear.push(row.id);
+		}
+		for (const blockerItemId of wantItemIds.keys()) {
+			await rejectCycle(client, itemRow.id, blockerItemId);
 		}
 		if (toClear.length > 0) {
 			await client.query(
@@ -355,6 +367,18 @@ export async function listOpenBlockersByItems(
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Serialize a project's blocker writes until commit. The cycle check reads edges it
+ * doesn't lock, so under row locks alone two writes could each close half of a cycle
+ * without seeing the other's; the check runs in a later statement, so under READ
+ * COMMITTED its snapshot holds every edge committed before this lock was granted.
+ * Taken before any row lock: a write holding a share lock while it waited here could
+ * deadlock with the holder's updated_at bump.
+ */
+async function lockProjectBlockers(client: pg.PoolClient, projectId: string): Promise<void> {
+	await client.query("SELECT pg_advisory_xact_lock(hashtext('item_blockers'), hashtext($1))", [projectId]);
+}
+
 /** Lock the blocked item's row for the duration of a blocker write. */
 async function lockItem(
 	client: pg.PoolClient,
@@ -386,6 +410,55 @@ async function resolveBlockerTarget(
 		throw new BlockerTargetError(`Item ${targetNumber} is already done — it cannot be a blocker`);
 	}
 	return row.id;
+}
+
+/**
+ * Refuse a new edge (itemId blocked by targetId) that would close a cycle of open item
+ * blockers, naming the cycle. It closes one exactly when walking up from the target,
+ * through the items blocking it, reaches the blocked item.
+ */
+async function rejectCycle(client: pg.PoolClient, itemId: string, targetId: string): Promise<void> {
+	// UNION over (item, reached-from) pairs takes each open edge once, so diamonds stay
+	// linear and a cycle that predates this check still ends the walk. Reaching the
+	// blocked item answers the question, so the walk goes no further. Zero rows means no
+	// cycle; otherwise every edge walked comes back, from the same snapshot, to name the
+	// cycle with.
+	const result = await client.query<{ id: string; via: string | null; number: number; project_key: string }>(
+		`WITH RECURSIVE upstream (id, via) AS (
+			SELECT $2::uuid, NULL::uuid
+			UNION
+			SELECT b.blocker_item_id, b.item_id
+			FROM upstream u
+			JOIN item_blockers b ON b.item_id = u.id
+			WHERE u.id <> $1 AND b.cleared_at IS NULL AND b.blocker_item_id IS NOT NULL
+		)
+		SELECT u.id, u.via, i.number, p.key AS project_key
+		FROM upstream u
+		JOIN items i ON i.id = u.id
+		JOIN projects p ON p.id = i.project_id
+		WHERE EXISTS (SELECT 1 FROM upstream WHERE id = $1)`,
+		[itemId, targetId]
+	);
+	if (result.rows.length === 0) return;
+
+	// Breadth-first from the target, so the message names the shortest cycle.
+	const cameFrom = new Map<string, string | null>([[targetId, null]]);
+	const queue = [targetId];
+	for (let i = 0; i < queue.length && !cameFrom.has(itemId); i++) {
+		for (const row of result.rows) {
+			if (row.via === queue[i] && !cameFrom.has(row.id)) {
+				cameFrom.set(row.id, row.via);
+				queue.push(row.id);
+			}
+		}
+	}
+	const chain = [itemId];
+	for (let at = cameFrom.get(itemId); at; at = cameFrom.get(at)) chain.unshift(at);
+	const keys = new Map(result.rows.map((row) => [row.id, formatItemKey(row.project_key, row.number)]));
+	const key = (id: string): string => keys.get(id)!;
+	throw new BlockerTargetError(
+		`Blocking ${key(itemId)} on ${key(targetId)} would create a cycle: ${key(itemId)} is blocked by ${chain.map(key).join(', which is blocked by ')}`
+	);
 }
 
 /** Move an item's updated_at so polling clients reapply it after a derived change. */
