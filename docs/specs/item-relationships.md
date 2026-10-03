@@ -482,7 +482,10 @@ time anchor and since-your-last-visit read them
   update paths, the create's own transaction, each rollup level's), so a status
   write can't commit without it. `writeItem` reads the before from the row it
   locked, not the statement snapshot, so the before is the row the write
-  replaced.
+  replaced. A write that reaches done goes through `writeDone`, which takes the
+  project's blocker lock before `writeItem` (see Blockers above), so the log row
+  adds no lock that order doesn't already cover: it only key-share-locks the item
+  the write already holds and the project row.
 - **Only a real change is a row.** The web client sends status and sub-status
   on every save, so a write that names them logs nothing unless one differs from
   the row. A create that names a status logs a row with no before; one left on
