@@ -152,8 +152,8 @@ dropped its task manager, Shrimp Task Manager hasn't been pushed since 2025-08, 
 [DepViz](https://github.com/moul/depviz) was rebuilt around a morning brief because,
 in its README's words, the point "is a useful daily answer". A graph alone doesn't
 bring people back. That's why the [summary strip](#summary-strip) and
-[since your last visit](#since-your-last-visit) are v1, and why the view
-[measures its own use](#measuring-it). Elsewhere "what changed" exists only as a
+[since your last visit](#since-your-last-visit) are v1. Elsewhere "what changed"
+exists only as a
 digest ([Linear Pulse](https://linear.app/docs/pulse), beads_viewer's snapshot
 diffs), never on the map itself.
 
@@ -734,18 +734,6 @@ and nothing moves for more than a second.
 
 ---
 
-## Measuring it
-
-A view nobody opens is a cost, so it reports through `@specboard/telemetry`: opens,
-time on view, searches, drawer opens from the Map, roster picks, and
-needs-a-person jumps. The next version gets decided on use rather than taste.
-
-That package reports errors only today, so this adds a usage-event call beside
-`captureError` and an ingest path beside the error endpoint's. Events carry counts
-and durations, never item keys or text.
-
----
-
 ## Feasibility notes
 
 Input for the technical design, not decisions.
@@ -793,6 +781,11 @@ Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
 - Replay of history (Gource-style) and metrics (cycle time, throughput, burn-up).
   The transition log makes both possible later.
 - Push updates: SPE-203.
+- Measuring the Map's use. The privacy policy says Specboard runs no analytics, and
+  [logging-monitoring.md](logging-monitoring.md#future-considerations) defers
+  behavior analytics until product-market fit. If that changes, the policy changes
+  first, and usage events get a path of their own; `@specboard/telemetry` is the
+  error pipe, and everything sent through it lands in error tracking.
 - Image export, public share links, and standup snapshots.
 - An AI-written narrative of recent progress.
 - An agent-facing rendering of the Map over MCP. The whole-project read could serve
@@ -814,5 +807,5 @@ Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
 
 Requirements settled after the desktop design pass (a design canvas with a working
 prototype of the layout, run on a real board of about 200 items). Not built. The
-build is SPE-222: sixteen tasks in build order, each blocked by what it needs. The
+build is SPE-222: fifteen tasks in build order, each blocked by what it needs. The
 small-screen Map, SPE-220, waits on it.
