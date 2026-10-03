@@ -320,9 +320,14 @@ function chainsOf(
 		if (ga === undefined || gb === undefined || ga === gb) return;
 		pairs.add(ga < gb ? `${ga}:${gb}` : `${gb}:${ga}`);
 	};
-	for (let i = 0; i < chains.length; i++) {
-		for (let j = i + 1; j < chains.length; j++) if (chains[i]!.parent === chains[j]!.parent) pairs.add(`${i}:${j}`);
-	}
+	// Sibling chains stack as rows in key order, each a row from the next: relating every
+	// pair would be quadratic in chains, and three rows can't all be one row apart.
+	const lastUnder = new Map<ModelItem, number>();
+	chains.forEach((chain, i) => {
+		const previous = lastUnder.get(chain.parent);
+		if (previous !== undefined) pairs.add(`${previous}:${i}`);
+		lastUnder.set(chain.parent, i);
+	});
 	for (const item of groupOf.keys()) {
 		if (item.parent) relate(item, item.parent);
 		for (const child of item.children) relate(item, child);

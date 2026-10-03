@@ -99,6 +99,21 @@ describe('buildModel', () => {
 		expect([...model.chainBlocked].map((i) => i.key)).toEqual([second.key]);
 	});
 
+	it('stacks sibling chains, relating each to the next rather than to all', () => {
+		const b = new BoardBuilder();
+		const epic = b.add({ type: 'epic', status: 'in_progress' });
+		for (let chain = 0; chain < 3; chain++) {
+			const first = b.add({ parentKey: epic.key, status: 'ready' });
+			b.block(b.add({ parentKey: epic.key, status: 'ready' }), first);
+		}
+		const model = buildModel(b.rows, NOW, {});
+		expect(model.chains).toHaveLength(3);
+		expect(model.relatedChains).toEqual([
+			[0, 1],
+			[1, 2],
+		]);
+	});
+
 	it('picks up next in the agents’ order: in-flight parents first, then the ready list', () => {
 		const b = new BoardBuilder();
 		const loose = b.add({ status: 'ready' });

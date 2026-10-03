@@ -290,6 +290,20 @@ describe('layoutMap edge cases', () => {
 		expectOrdersHold(result, b.rows);
 	});
 
+	it('doesn’t hold a collapsed open family right of a done child’s old blocker', () => {
+		const b = new BoardBuilder();
+		const blocker = b.add({ status: 'ready', created: NOW - HOUR });
+		const epic = b.add({ type: 'epic', status: 'ready', created: NOW - 30 * DAY });
+		const child = b.add({ parentKey: epic.key, status: 'done', created: NOW - 30 * DAY, completed: NOW - 29 * DAY });
+		b.add({ parentKey: epic.key, status: 'ready', created: NOW - 30 * DAY });
+		b.block(child, blocker, 'open');
+		for (let i = 0; i < 6; i++) b.add({ status: 'done', completed: NOW - i * 4 * DAY });
+		const folded = layout(b.rows, { [epic.key]: true });
+		const node = nodesOf(folded);
+		expect(folded.representative[child.key]).toBe(epic.key);
+		expect(node.get(epic.key)!.x).toBeLessThan(node.get(blocker.key)!.x);
+	});
+
 	it('scatters ten unrelated items in a loose cloud near the right edge', () => {
 		const b = new BoardBuilder();
 		for (let i = 0; i < 10; i++) b.add({ status: 'ready', created: NOW - i * 2 * HOUR });

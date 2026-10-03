@@ -203,7 +203,9 @@ function dependenciesOf(model: MapModel, nodes: SimNode[], repNode: (item: Model
 		if (edge.cyclic) continue;
 		const a = repNode(edge.blocker);
 		const b = repNode(edge.blocked);
-		if (a === b || a.hub || b.hub || b.phase === 'done') continue;
+		// Whether the order applies is the blocked item's call, not its dot's: a done child
+		// folded into an open parent doesn't drag the parent right of its old blockers.
+		if (edge.blocked.phase === 'done' || a === b || a.hub || b.hub || b.phase === 'done') continue;
 		const id = `${a.key}\n${b.key}`;
 		if (!pairs.has(id)) pairs.set(id, { a, b, gap: a.r + b.r + ORDER_GAP });
 	}
