@@ -8,8 +8,8 @@
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"preview": "vite preview",
-		"lint": "eslint src",
-		"lint:fix": "eslint src --fix",
+		"lint": "eslint src ../shared/planning ../shared/projects",
+		"lint:fix": "eslint src ../shared/planning ../shared/projects --fix",
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
