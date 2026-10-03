@@ -80,6 +80,9 @@ them doesn't belong in v1.
     where in-flight work and most of what needs a person live: at fit all when the
     whole Map fits at a readable scale (the design pass's 200-item board did),
     otherwise zoomed to the most recent stretch that does. Fit all is one key away.
+    Readable means the smallest dot, a leaf, is at least 4 px in radius on screen
+    (8 px across, about the least that still tells a ring from a half-full disc from
+    a check).
 12. **Polling until push exists.** Same cadence and visibility rule as the board
     (every 10 s while the window has focus) until SPE-203 replaces polling for
     both.
@@ -610,10 +613,14 @@ Fixed, outside the Map:
 
 ## Navigation and interaction
 
-- Pan by dragging the background, two-finger scroll, or one-finger touch drag. Zoom
-  by pinch, ctrl/cmd-wheel, on-screen controls, and keys.
+- Pan by dragging the background, two-finger scroll (a plain mouse wheel pans the
+  same way), or one-finger touch drag. Zoom by pinch, ctrl/cmd-wheel, on-screen
+  controls, and keys. Zooming out stops at fit all, and panning stops when the
+  middle of the plot reaches the edge of the Map.
 - Fit all, fit to now, fit to a family, and fit to the selection. Camera flights
-  are short and skippable.
+  are short and skippable. Fit to now puts the right edge of the Map against the
+  plot's, zoomed in to at least 2.4 times fit all, so it differs from the opening
+  view only when the whole Map fit at that view.
 - A minimap appears in the lower left once zoomed in, marking the viewport. At fit
   all it would only repeat the map.
 - Search uses the toolbar's search and the board's matching rules (title,
@@ -636,7 +643,10 @@ Fixed, outside the Map:
   pans the Map to keep the focused dot in view.
 - Links anchor on an item, not on coordinates, since coordinates shift as items
   arrive: `?view=map&focus=SPE-123` reopens centered on that item. Panning replaces
-  the history entry; a jump pushes one.
+  the history entry: once a pan or zoom settles, `focus` names the item nearest the
+  middle of the plot. A jump pushes one: Fit all and Now drop `focus`, and a jump to
+  a dot sets it. Back and Forward move the camera to the entry's item, or to the
+  opening view when it has none.
 
 ### Keys
 
@@ -650,6 +660,7 @@ them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
 | Enter | Open the focused item in the drawer |
 | Escape | Close the drawer, then clear the selection, the search, or the changes view |
 | `+` and `-` | Zoom in and out around the focused dot |
+| `Z`, Option+`Z` | Zoom in and out, Figma's keys, by the same step as `+` and `-`, around the pointer when it is over the canvas and the middle of the plot otherwise. Never with Cmd or Ctrl held (Cmd+`Z` stays undo) |
 | `0` | Fit all |
 | `T` | Jump to now (Google Calendar's key for today) |
 | `F` | Fit to the selection and its family |
