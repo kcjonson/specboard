@@ -1,7 +1,8 @@
 /**
  * Item handler tests — the window contract the planning views rely on (the body
  * stays an array, the match count rides in X-Total-Count, `limit` passes through
- * to the service, which clamps it), and the move route's rejection contract.
+ * to the service, which clamps it), the move route's rejection contract, and whose
+ * actor a status write carries.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -27,8 +28,8 @@ vi.mock('@specboard/db', () => ({
 	ItemCycleError: class extends Error {},
 }));
 
-import { getItems, moveItem, wouldCreateCycle, verifyItemOwnership, ItemCycleError } from '@specboard/db';
-import { handleListItems, handleMoveItem } from './items.ts';
+import { getItems, moveItem, updateItem, startItem, completeItem, blockItem, unblockItem, wouldCreateCycle, verifyItemOwnership, ItemCycleError } from '@specboard/db';
+import { handleListItems, handleMoveItem, handleUpdateItem, handleStartItem, handleCompleteItem, handleBlockItem, handleUnblockItem } from './items.ts';
 
 const PROJECT: ResolvedProject = { id: 'proj-1', slug: 'specboard', ownerSlug: 'acme', key: 'SB' };
 
@@ -41,6 +42,11 @@ function createApp(): Hono<{ Variables: { userId: string; project: ResolvedProje
 	});
 	app.get('/api/projects/:owner/:project/items', handleListItems);
 	app.post('/api/projects/:owner/:project/items/:itemKey/move', handleMoveItem);
+	app.put('/api/projects/:owner/:project/items/:itemKey', handleUpdateItem);
+	app.post('/api/projects/:owner/:project/items/:itemKey/start', handleStartItem);
+	app.post('/api/projects/:owner/:project/items/:itemKey/complete', handleCompleteItem);
+	app.post('/api/projects/:owner/:project/items/:itemKey/block', handleBlockItem);
+	app.post('/api/projects/:owner/:project/items/:itemKey/unblock', handleUnblockItem);
 	return app;
 }
 
@@ -173,5 +179,45 @@ describe('handleMoveItem', () => {
 
 		expect(response.status).toBe(400);
 		expect(await response.json()).toEqual({ error: 'Invalid parentKey' });
+	});
+});
+
+describe('status writes', () => {
+	const USER_ACTOR = { type: 'user', userId: 'user-1' };
+	const STAMPED = { ...ITEM, status: 'done', startedAt: new Date('2026-10-01T10:00:00Z'), completedAt: new Date('2026-10-02T10:00:00Z') };
+
+	function send(method: string, path: string, body?: unknown): Promise<Response> {
+		return Promise.resolve(createApp().request(`http://localhost/api/projects/acme/specboard/items/SB-1${path}`, {
+			method,
+			headers: { 'content-type': 'application/json' },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		}));
+	}
+
+	it('a PUT records the signed-in user as the actor and never passes the stamps through', async () => {
+		vi.mocked(updateItem).mockResolvedValue(STAMPED as never);
+
+		const response = await send('PUT', '', {
+			title: 'One', status: 'done', subStatus: 'complete', startedAt: '2001-01-01T00:00:00Z', completedAt: '2001-01-01T00:00:00Z',
+		});
+
+		expect(response.status).toBe(200);
+		const [, , fields, actor] = vi.mocked(updateItem).mock.calls[0]!;
+		expect(fields).not.toHaveProperty('startedAt');
+		expect(fields).not.toHaveProperty('completedAt');
+		expect(actor).toEqual(USER_ACTOR);
+		expect(await response.json()).toMatchObject({ startedAt: '2026-10-01T10:00:00.000Z', completedAt: '2026-10-02T10:00:00.000Z' });
+	});
+
+	it('the lifecycle routes record the signed-in user as the actor', async () => {
+		for (const fn of [startItem, completeItem, blockItem, unblockItem]) vi.mocked(fn).mockResolvedValue(STAMPED as never);
+
+		for (const route of ['start', 'complete', 'block', 'unblock']) {
+			expect((await send('POST', `/${route}`)).status).toBe(200);
+		}
+
+		for (const fn of [startItem, completeItem, blockItem, unblockItem]) {
+			expect(fn).toHaveBeenCalledWith('proj-1', 1, USER_ACTOR);
+		}
 	});
 });

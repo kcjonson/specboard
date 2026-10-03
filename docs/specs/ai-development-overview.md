@@ -718,6 +718,10 @@ and nothing moves for more than a second.
      actor). The activity log is deliberately separate from status writes; this log
      can't be, since a status write without its row would make since-your-last-visit
      lie.
+   - A save that restates the current status and sub-status isn't a change, and
+     logs nothing. A create that names a status logs a row with no before; one left
+     on the default doesn't. Shipped in migration 033; the details are in
+     [item-relationships.md](item-relationships.md#status-stamps-and-transitions-migration-033).
    - The log starts empty. Nothing before the release is reconstructed.
 3. **No backfill.** Items that changed status before this ships keep empty times
    rather than reconstructed ones. The Map doesn't need them: a done item without

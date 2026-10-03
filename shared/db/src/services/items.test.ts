@@ -22,6 +22,7 @@ const mockTransaction = vi.mocked(transaction);
 
 const ORIGIN: ItemOrigin = { actor: { type: 'user', userId: 'user-1' } };
 const ORIGIN_JSON = JSON.stringify(ORIGIN);
+const ACTOR = ORIGIN.actor;
 
 type ItemRow = Item & { project_key: string };
 
@@ -46,6 +47,8 @@ function makeItem(overrides: Partial<ItemRow> = {}): ItemRow {
 		branch_name: null,
 		created_at: new Date('2026-01-01'),
 		updated_at: new Date('2026-01-01'),
+		started_at: null,
+		completed_at: null,
 		checklist: [],
 		...overrides,
 	} as ItemRow;
@@ -63,13 +66,18 @@ beforeEach(() => {
 });
 
 describe('createItem', () => {
+	const TRANSITION = 'INSERT INTO item_transitions';
+	const inserts = (): unknown[][] => mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes('INSERT INTO items'));
+	const transitions = (): unknown[][] => mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(TRANSITION));
+
 	it('computes rank inside the INSERT for top-level items (single statement, no pre-read)', async () => {
-		mockQuery.mockResolvedValue(insertResult());
+		mockClientQuery.mockResolvedValue(insertResult());
 
 		await createItem('proj-1', { title: 'Epic A', origin: ORIGIN });
 
-		expect(mockQuery).toHaveBeenCalledTimes(1);
-		const [sql, params] = mockQuery.mock.calls[0]!;
+		expect(mockQuery).not.toHaveBeenCalled();
+		expect(mockClientQuery).toHaveBeenCalledTimes(1);
+		const [sql, params] = mockClientQuery.mock.calls[0]!;
 		expect(sql).toContain('INSERT INTO items');
 		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $1 AND parent_id IS NULL)');
 		expect(sql).toContain('UPDATE projects SET item_seq = item_seq + 1');
@@ -77,50 +85,76 @@ describe('createItem', () => {
 	});
 
 	it('computes rank inside the INSERT for child items scoped to the parent', async () => {
-		mockQuery.mockResolvedValue(insertResult({ parent_id: 'parent-1', number: 7, type: 'task' }));
+		mockClientQuery.mockResolvedValueOnce(insertResult({ parent_id: 'parent-1', number: 7, type: 'task' }));
 
 		await createItem('proj-1', { title: 'Task A', type: 'task', parentNumber: 7, origin: ORIGIN });
 
-		expect(mockQuery).toHaveBeenCalledTimes(1);
-		const [sql, params] = mockQuery.mock.calls[0]!;
+		const [[sql, params]] = inserts() as [[string, unknown[]]];
 		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE parent_id = (SELECT id FROM parent))');
 		expect(params).toEqual(['proj-1', 7, 'task', 'Task A', null, 'ready', 'not_started', ORIGIN_JSON, 'default']);
 	});
 
 	it('uses an explicit rank verbatim when provided', async () => {
-		mockQuery.mockResolvedValue(insertResult({ rank: 2.5 }));
+		mockClientQuery.mockResolvedValue(insertResult({ rank: 2.5 }));
 
 		await createItem('proj-1', { title: 'Ranked', rank: 2.5, origin: ORIGIN });
 
-		const [sql, params] = mockQuery.mock.calls[0]!;
+		const [[sql, params]] = inserts() as [[string, unknown[]]];
 		expect(sql).not.toContain('MAX(rank)');
 		expect(sql).toContain('$10');
 		expect(params).toEqual(['proj-1', null, 'epic', 'Ranked', null, 'ready', 'not_started', ORIGIN_JSON, 'default', 2.5]);
 	});
 
 	it('records a named status as explicit and an unnamed one as default, whichever it is', async () => {
-		mockQuery.mockResolvedValue(insertResult());
+		mockClientQuery.mockResolvedValue(insertResult());
 
 		await createItem('proj-1', { title: 'Named', status: 'ready', origin: ORIGIN });
 		await createItem('proj-1', { title: 'Started', status: 'in_progress', origin: ORIGIN });
 		await createItem('proj-1', { title: 'Unnamed', origin: ORIGIN });
 
-		expect(mockQuery.mock.calls.map(([, params]) => (params as unknown[])[8])).toEqual(['explicit', 'explicit', 'default']);
-		const [sql] = mockQuery.mock.calls[0]!;
+		expect(inserts().map(([, params]) => (params as unknown[])[8])).toEqual(['explicit', 'explicit', 'default']);
+		const [[sql]] = inserts() as [[string]];
 		expect(sql).toContain('INSERT INTO items (project_id, parent_id, type, title, description, status, sub_status, status_source, origin, rank, number)');
 		expect(sql).toContain('$7, $9, $8::jsonb');
 	});
 
+	it('logs a named status as a transition from nothing, by the creator, in the insert\'s transaction', async () => {
+		mockClientQuery.mockResolvedValue(insertResult({ id: 'new-1', status: 'in_progress', sub_status: 'in_development' }));
+
+		await createItem('proj-1', { title: 'Started', status: 'in_progress', origin: ORIGIN });
+
+		expect(mockTransaction).toHaveBeenCalledTimes(1);
+		const [[, params]] = transitions() as [[string, unknown[]]];
+		expect(params).toEqual(['new-1', 'proj-1', null, 'in_progress', null, 'in_development', JSON.stringify(ORIGIN.actor)]);
+	});
+
+	it('logs nothing for a create left on the default status', async () => {
+		mockClientQuery.mockResolvedValue(insertResult());
+
+		await createItem('proj-1', { title: 'Unnamed', origin: ORIGIN });
+
+		expect(transitions()).toHaveLength(0);
+	});
+
+	it('logs nothing when the insert wrote nothing', async () => {
+		mockClientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+
+		await expect(createItem('proj-1', { title: 'Orphan', status: 'done', parentNumber: 99, origin: ORIGIN })).rejects.toThrow();
+
+		expect(transitions()).toHaveLength(0);
+	});
+
 	it('snapshots discoveredFrom into origin before the INSERT', async () => {
-		mockQuery
-			.mockResolvedValueOnce({ rows: [{ id: 'source-id', key: 'SB' }], rowCount: 1 } as never)
-			.mockResolvedValueOnce(insertResult());
+		mockQuery.mockResolvedValueOnce({ rows: [{ id: 'source-id', key: 'SB' }], rowCount: 1 } as never);
+		mockClientQuery.mockResolvedValue(insertResult());
 
 		await createItem('proj-1', { title: 'Found', origin: ORIGIN, discoveredFromNumber: 12 });
 
-		expect(mockQuery).toHaveBeenCalledTimes(2);
-		const [, insertParams] = mockQuery.mock.calls[1]!;
-		expect(insertParams![7]).toBe(JSON.stringify({
+		expect(mockQuery).toHaveBeenCalledTimes(1);
+		expect(mockQuery.mock.invocationCallOrder[0]!).toBeLessThan(mockClientQuery.mock.invocationCallOrder[0]!);
+		const [[, insertParams]] = inserts() as [[string, unknown[]]];
+		expect(insertParams[7]).toBe(JSON.stringify({
 			...ORIGIN,
 			discoveredFrom: { itemId: 'source-id', itemKey: 'SB-12' },
 		}));
@@ -540,7 +574,7 @@ describe('reaching done', () => {
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never)
 			.mockResolvedValueOnce({ rows: [detailRow], rowCount: 1 } as never);
 
-		await completeItem('proj-1', 1);
+		await completeItem('proj-1', 1, ACTOR);
 
 		expect(mockTransaction).toHaveBeenCalledTimes(1);
 		const calls = mockClientQuery.mock.calls;
@@ -570,38 +604,39 @@ describe('reaching done', () => {
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never)
 			.mockResolvedValueOnce({ rows: [detailRow], rowCount: 1 } as never);
 
-		await updateItem('proj-1', 1, { subStatus: 'complete' });
+		await updateItem('proj-1', 1, { subStatus: 'complete' }, ACTOR);
 		const calls = mockClientQuery.mock.calls;
 		expect(calls[0]).toEqual([expect.stringContaining('pg_advisory_xact_lock'), ['proj-1']]);
 		expect(calls[1]![0]).toContain('UPDATE items SET');
 		expect(calls[2]![0]).toContain('WHERE blocker_item_id = $1');
 		expect(calls[3]![0]).toContain('WHERE item_id = $1 AND cleared_at IS NULL');
 
-		const transactions = mockTransaction.mock.calls.length;
 		mockClientQuery.mockClear();
+		mockClientQuery.mockResolvedValueOnce({ rows: [{ id: 'item-1' }], rowCount: 1 });
 		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
-		await updateItem('proj-1', 1, { title: 'renamed' });
-		expect(mockTransaction).toHaveBeenCalledTimes(transactions);
-		expect(mockClientQuery).not.toHaveBeenCalled();
+		await updateItem('proj-1', 1, { title: 'renamed' }, ACTOR);
+		// Its own transaction, for the transition log, but no lock and no clears.
+		expect(mockClientQuery.mock.calls.map(([sql]) => sql as string)).toEqual([expect.stringMatching(/^UPDATE items SET title = \$1/)]);
 	});
 
 	it('updateItem ends worker episodes on any status transition out of in_progress', async () => {
 		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
+		mockClientQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 });
 
-		await updateItem('proj-1', 1, { status: 'ready' });
+		await updateItem('proj-1', 1, { status: 'ready' }, ACTOR);
 		const endCall = mockQuery.mock.calls.find(([sql]) => (sql as string).includes('UPDATE item_workers'));
 		expect(endCall).toBeDefined();
 
 		mockQuery.mockClear();
 		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
-		await updateItem('proj-1', 1, { status: 'in_progress' });
+		await updateItem('proj-1', 1, { status: 'in_progress' }, ACTOR);
 		expect(mockQuery.mock.calls.some(([sql]) => (sql as string).includes('UPDATE item_workers'))).toBe(false);
 	});
 });
 
 describe('parent status rollup', () => {
 	const ROLLUP = 'WITH children AS';
-	const LOCK = 'SELECT parent_id FROM items WHERE id = $1 FOR NO KEY UPDATE';
+	const LOCK = 'SELECT parent_id, status, sub_status FROM items WHERE id = $1 FOR NO KEY UPDATE';
 	const BUMP = 'UPDATE items SET updated_at = NOW() WHERE id = $1';
 	const detailRow = {
 		...makeItem({ parent_id: 'epic-1', type: 'task' }),
@@ -650,7 +685,7 @@ describe('parent status rollup', () => {
 	it('recomputes from the child set: ready rolls up on any started child, in_progress rolls back on none', async () => {
 		route({ parent_id: 'epic-1' });
 
-		await startItem('proj-1', 1);
+		await startItem('proj-1', 1, ACTOR);
 
 		const [[sql, params]] = rollupCalls() as [[string, unknown[]]];
 		expect(sql).toContain(`SET status = CASE WHEN (SELECT started FROM children) THEN 'in_progress' ELSE 'ready' END`);
@@ -662,7 +697,7 @@ describe('parent status rollup', () => {
 	it('counts in_progress, in_review, and done children as started, and blocked as not', async () => {
 		route({ parent_id: 'epic-1' });
 
-		await blockItem('proj-1', 1);
+		await blockItem('proj-1', 1, ACTOR);
 
 		const [[, params]] = rollupCalls() as [[string, unknown[]]];
 		expect(params![1]).toEqual(['in_progress', 'in_review', 'done']);
@@ -671,7 +706,7 @@ describe('parent status rollup', () => {
 	it("never rolls back a parent whose own sub_status claims it is active", async () => {
 		route({ parent_id: 'epic-1' });
 
-		await unblockItem('proj-1', 1);
+		await unblockItem('proj-1', 1, ACTOR);
 
 		const [[sql, params]] = rollupCalls() as [[string, unknown[]]];
 		expect(sql).toContain('AND (sub_status IS NULL OR sub_status <> ALL($3::text[]))');
@@ -681,7 +716,7 @@ describe('parent status rollup', () => {
 	it('leaves blocked, in_review, and done parents alone: only ready and in_progress are matched', async () => {
 		route({ parent_id: 'epic-1' });
 
-		await updateItem('proj-1', 1, { status: 'ready' });
+		await updateItem('proj-1', 1, { status: 'ready' }, ACTOR);
 
 		const [[sql]] = rollupCalls() as [[string]];
 		const where = sql.slice(sql.indexOf('WHERE id = $1'));
@@ -691,7 +726,7 @@ describe('parent status rollup', () => {
 	it('a child back to ready rolls the parent back and ends its worker episodes', async () => {
 		route({ id: 'item-1', parent_id: 'epic-1', status_changed: true }, { moved: { 'epic-1': { project_id: 'proj-1', number: 7, status: 'ready' } } });
 
-		await updateItem('proj-1', 1, { status: 'ready' });
+		await updateItem('proj-1', 1, { status: 'ready' }, ACTOR);
 
 		expect(mockQuery.mock.calls.filter(([sql]) => (sql as string).includes('UPDATE item_workers')).map(([, params]) => params)).toEqual([['proj-1', 1]]);
 		const parentEnd = mockClientQuery.mock.calls.find(([sql]) => (sql as string).includes('UPDATE item_workers'));
@@ -704,17 +739,18 @@ describe('parent status rollup', () => {
 			moved: { 'task-1': { project_id: 'proj-1', number: 5, status: 'in_progress' } },
 		});
 
-		await startItem('proj-1', 9);
+		await startItem('proj-1', 9, ACTOR);
 
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['task-1', 'epic-1', 'root-1']);
-		expect(mockTransaction).toHaveBeenCalledTimes(3);
+		// The start's own write, then one per level.
+		expect(mockTransaction).toHaveBeenCalledTimes(4);
 		expect(workerEnds()).toHaveLength(0);
 	});
 
 	it("touches the changed child's parent when its status holds, and nothing above it", async () => {
 		route({ parent_id: 'epic-1' }, { parents: { 'epic-1': 'root-1' } });
 
-		await blockItem('proj-1', 1);
+		await blockItem('proj-1', 1, ACTOR);
 
 		expect(touched()).toEqual(['epic-1']);
 	});
@@ -725,7 +761,7 @@ describe('parent status rollup', () => {
 			moved: { 'task-1': { project_id: 'proj-1', number: 5, status: 'in_progress' } },
 		});
 
-		await startItem('proj-1', 9);
+		await startItem('proj-1', 9, ACTOR);
 
 		// task-1's own recompute wrote its updated_at; epic-1's child counts moved with it.
 		expect(touched()).toEqual(['epic-1']);
@@ -741,26 +777,26 @@ describe('parent status rollup', () => {
 	});
 
 	it('updateItem touches the parent only when the status actually moved', async () => {
-		route({ id: 'item-1', parent_id: 'epic-1', status_changed: false });
-		await updateItem('proj-1', 1, { title: 'renamed', status: 'ready' });
+		route({ id: 'item-1', parent_id: 'epic-1', status: 'ready', previous_status: 'ready' });
+		await updateItem('proj-1', 1, { title: 'renamed', status: 'ready' }, ACTOR);
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
 		expect(touched()).toEqual([]);
 
 		mockClientQuery.mockClear();
-		route({ id: 'item-1', parent_id: 'epic-1', status_changed: true });
-		await updateItem('proj-1', 1, { status: 'blocked' });
+		route({ id: 'item-1', parent_id: 'epic-1', status: 'blocked', previous_status: 'ready' });
+		await updateItem('proj-1', 1, { status: 'blocked' }, ACTOR);
 		expect(touched()).toEqual(['epic-1']);
 	});
 
 	it('updateItem reports the move against the row as locked, not the statement snapshot', async () => {
-		route({ id: 'item-1', parent_id: 'epic-1', status_changed: false });
+		route({ id: 'item-1', parent_id: 'epic-1', status: 'ready', previous_status: 'ready' });
 
-		await updateItem('proj-1', 1, { status: 'ready' });
+		await updateItem('proj-1', 1, { status: 'ready' }, ACTOR);
 
-		const [write] = mockQuery.mock.calls.find(([sql]) => (sql as string).startsWith('UPDATE items SET'))!;
-		expect(write).toContain('FROM (SELECT id AS previous_id, status AS previous_status FROM items');
+		const [write] = mockClientQuery.mock.calls.find(([sql]) => (sql as string).startsWith('UPDATE items SET'))!;
+		expect(write).toContain('FROM (SELECT id AS previous_id, status AS previous_status, sub_status AS previous_sub_status FROM items');
 		expect(write).toContain('FOR NO KEY UPDATE) previous');
-		expect(write).toContain('RETURNING id, parent_id, status IS DISTINCT FROM previous.previous_status AS status_changed');
+		expect(write).toContain('previous.previous_status, previous.previous_sub_status');
 	});
 
 	it('the parent hears of a sub_status write whose recompute moved the item, even when the write did not', async () => {
@@ -769,7 +805,7 @@ describe('parent status rollup', () => {
 			moved: { 'item-1': { project_id: 'proj-1', number: 1, status: 'ready' } },
 		});
 
-		await updateItem('proj-1', 1, { subStatus: 'not_started' });
+		await updateItem('proj-1', 1, { subStatus: 'not_started' }, ACTOR);
 
 		expect(touched()).toEqual(['epic-1']);
 	});
@@ -777,9 +813,10 @@ describe('parent status rollup', () => {
 	it('locks the parent row before recomputing, as a separate statement in the same transaction', async () => {
 		route({ parent_id: 'epic-1' });
 
-		await startItem('proj-1', 1);
+		await startItem('proj-1', 1, ACTOR);
 
-		expect(mockTransaction).toHaveBeenCalledTimes(1);
+		// The start's own write, then the parent's level.
+		expect(mockTransaction).toHaveBeenCalledTimes(2);
 		const statements = mockClientQuery.mock.calls.map(([sql]) => sql as string);
 		const lockAt = statements.findIndex((sql) => sql.includes(LOCK));
 		const rollupAt = statements.findIndex((sql) => sql.includes(ROLLUP));
@@ -793,9 +830,9 @@ describe('parent status rollup', () => {
 	it('commits each level before locking the next, so a walk holds one parent lock at a time', async () => {
 		route({ parent_id: 'task-1' }, { parents: { 'task-1': 'epic-1' } });
 
-		await startItem('proj-1', 9);
+		await startItem('proj-1', 9, ACTOR);
 
-		expect(mockTransaction).toHaveBeenCalledTimes(2);
+		expect(mockTransaction).toHaveBeenCalledTimes(3);
 		const locks = mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(LOCK));
 		expect(locks.map(([, params]) => (params as unknown[])[0])).toEqual(['task-1', 'epic-1']);
 	});
@@ -805,7 +842,7 @@ describe('parent status rollup', () => {
 		const respond = mockClientQuery.getMockImplementation()!;
 		mockClientQuery.mockImplementation(async (sql: string, params?: unknown[]) => (sql.includes(LOCK) ? { rows: [], rowCount: 0 } : respond(sql, params)));
 
-		await startItem('proj-1', 1);
+		await startItem('proj-1', 1, ACTOR);
 
 		expect(rollupCalls()).toHaveLength(0);
 	});
@@ -813,7 +850,7 @@ describe('parent status rollup', () => {
 	it('completing a child recomputes its parent after the completion transaction', async () => {
 		route({ id: 'item-1', parent_id: 'epic-1' });
 
-		await completeItem('proj-1', 1);
+		await completeItem('proj-1', 1, ACTOR);
 
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['epic-1']);
 	});
@@ -821,11 +858,11 @@ describe('parent status rollup', () => {
 	it('updateItem recomputes only on a status or sub_status write', async () => {
 		route({ id: 'item-1', parent_id: 'epic-1' }, { parents: { 'item-1': 'epic-1' } });
 
-		await updateItem('proj-1', 1, { title: 'renamed' });
+		await updateItem('proj-1', 1, { title: 'renamed' }, ACTOR);
 		expect(rollupCalls()).toHaveLength(0);
 
 		// The item itself first (its sub_status is an input), then the parent its derived status moved.
-		await updateItem('proj-1', 1, { subStatus: 'in_development' });
+		await updateItem('proj-1', 1, { subStatus: 'in_development' }, ACTOR);
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['item-1', 'epic-1']);
 	});
 
@@ -843,7 +880,7 @@ describe('parent status rollup', () => {
 	it('records every status the rollup moves as its own', async () => {
 		route({ parent_id: 'epic-1' });
 
-		await startItem('proj-1', 1);
+		await startItem('proj-1', 1, ACTOR);
 
 		const [[sql]] = rollupCalls() as [[string]];
 		expect(sql).toContain(`status_source = 'rollup', updated_at = NOW()`);
@@ -865,11 +902,11 @@ describe('parent status rollup', () => {
 			moved: { 'item-1': { project_id: 'proj-1', number: 1, status: 'ready' } },
 		});
 
-		await updateItem('proj-1', 1, { subStatus: 'not_started' });
+		await updateItem('proj-1', 1, { subStatus: 'not_started' }, ACTOR);
 
 		const rollups = rollupCalls() as Array<[string, unknown[]]>;
 		expect(rollups.map(([, params]) => params[0])).toEqual(['item-1', 'epic-1']);
-		expect(mockTransaction).toHaveBeenCalledTimes(2);
+		expect(mockTransaction).toHaveBeenCalledTimes(3);
 		const locks = mockClientQuery.mock.calls.filter(([sql]) => (sql as string).includes(LOCK));
 		expect(locks.map(([, params]) => (params as unknown[])[0])).toEqual(['item-1', 'epic-1']);
 		expect(workerEnds().map(([, params]) => params)).toEqual([['proj-1', 1]]);
@@ -880,7 +917,7 @@ describe('parent status rollup', () => {
 		// current status too; that echo must not skip the item's own recompute.
 		route({ id: 'item-1', parent_id: 'epic-1' }, { parents: { 'item-1': 'epic-1' } });
 
-		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'not_started' });
+		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'not_started' }, ACTOR);
 
 		expect(rollupCalls().map(([, params]) => (params as unknown[])[0])).toEqual(['item-1', 'epic-1']);
 	});
@@ -888,8 +925,8 @@ describe('parent status rollup', () => {
 	it('a top-level item has no parent to recompute', async () => {
 		route({ parent_id: null });
 
-		await startItem('proj-1', 1);
-		await updateItem('proj-1', 1, { status: 'ready' });
+		await startItem('proj-1', 1, ACTOR);
+		await updateItem('proj-1', 1, { status: 'ready' }, ACTOR);
 
 		expect(rollupCalls()).toHaveLength(0);
 	});
@@ -949,7 +986,9 @@ describe('parent status rollup', () => {
 
 		await createItem('proj-1', { title: 'Epic', origin: ORIGIN });
 
-		expect(mockTransaction).not.toHaveBeenCalled();
+		// Only the insert's own.
+		expect(mockTransaction).toHaveBeenCalledTimes(1);
+		expect(rollupCalls()).toHaveLength(0);
 	});
 
 	it('a bulk create recomputes its parent once for the whole batch, after the insert', async () => {
@@ -999,44 +1038,44 @@ describe('status source', () => {
 	});
 
 	it('a drag (status moved, the model echoing sub_status not_started) is explicit', async () => {
-		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'not_started', rank: 2 });
+		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'not_started', rank: 2 }, ACTOR);
 
 		expect(sourceWrite()).toMatchObject({ status: 'in_progress', source: 'explicit' });
 	});
 
 	it('a bare status write is explicit', async () => {
-		await updateItem('proj-1', 1, { status: 'in_progress' });
+		await updateItem('proj-1', 1, { status: 'in_progress' }, ACTOR);
 
 		expect(sourceWrite()).toMatchObject({ status: 'in_progress', source: 'explicit' });
 	});
 
 	it('a status derived from sub_status is recorded as the sub_status\'s', async () => {
-		await updateItem('proj-1', 1, { subStatus: 'in_development' });
+		await updateItem('proj-1', 1, { subStatus: 'in_development' }, ACTOR);
 
 		expect(sourceWrite()).toMatchObject({ status: 'in_progress', source: 'sub_status' });
 	});
 
 	it('a status that matches what the sent sub_status derives is the sub_status\'s, as the drawer sends it', async () => {
-		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'scoping' });
+		await updateItem('proj-1', 1, { status: 'in_progress', subStatus: 'scoping' }, ACTOR);
 
 		expect(sourceWrite()).toMatchObject({ status: 'in_progress', source: 'sub_status' });
 	});
 
 	it('a named status that differs from the derived one wins, and is explicit', async () => {
-		await updateItem('proj-1', 1, { status: 'blocked', subStatus: 'in_development' });
+		await updateItem('proj-1', 1, { status: 'blocked', subStatus: 'in_development' }, ACTOR);
 
 		expect(sourceWrite()).toMatchObject({ status: 'blocked', source: 'explicit' });
 	});
 
 	it('restating the current status keeps its source: the CASE only fires when the value moves', async () => {
-		await updateItem('proj-1', 1, { title: 'renamed', status: 'in_progress' });
+		await updateItem('proj-1', 1, { title: 'renamed', status: 'in_progress' }, ACTOR);
 
 		const { sql } = sourceWrite();
 		expect(sql).toMatch(/ELSE status_source END/);
 	});
 
 	it('writes no source when no status is written', async () => {
-		await updateItem('proj-1', 1, { title: 'renamed' });
+		await updateItem('proj-1', 1, { title: 'renamed' }, ACTOR);
 
 		const [sql] = mockQuery.mock.calls[0]!;
 		expect(sql).not.toContain('status_source');
@@ -1048,10 +1087,10 @@ describe('status source', () => {
 			sql.startsWith('UPDATE items') ? { rows: [{ parent_id: null }], rowCount: 1 } : { rows: [detailRow], rowCount: 1 }
 		)) as never);
 
-		await startItem('proj-1', 1);
-		await completeItem('proj-1', 1);
-		await blockItem('proj-1', 1);
-		await unblockItem('proj-1', 1);
+		await startItem('proj-1', 1, ACTOR);
+		await completeItem('proj-1', 1, ACTOR);
+		await blockItem('proj-1', 1, ACTOR);
+		await unblockItem('proj-1', 1, ACTOR);
 
 		const writes = [...mockQuery.mock.calls, ...mockClientQuery.mock.calls]
 			.map(([sql]) => sql as string)

@@ -1,8 +1,9 @@
 # Item relationships and provenance
 
-Blockers (blocked-by), creation origin, worker presence, the activity log, and
-the checklist on planning items. Introduced by migrations 024-029; this records
-the design and the reasoning so the shapes don't get reinvented.
+Blockers (blocked-by), creation origin, worker presence, the activity log, the
+checklist, and the status stamps and transition log on planning items. Introduced
+by migrations 024-029 and 033; this records the design and the reasoning so the
+shapes don't get reinvented.
 
 ## The two shared shapes
 
@@ -22,8 +23,8 @@ Decided once, used everywhere:
    at initialize, plus the session correlation id the client echoes) and never accepted
    from a client payload. Request-path construction happens in exactly two
    places — the API's `requireProjectAccess`-gated handlers and the MCP server's
-   per-call actor — plus the system actor the services stamp on auto-clears and
-   the user actor the seed script writes. Browser-facing responses strip actor
+   per-call actor — plus the system actors the services stamp on auto-clears and
+   parent-rollup transitions, and the user actor the seed script writes. Browser-facing responses strip actor
    internals (user id, OAuth client id, MCP session id) down to what the UI
    renders: type, device name, client info.
 
@@ -346,7 +347,8 @@ first everywhere it is read.
   their `note` parameter; appending is one function, `addItemNote`, called after
   the transition. The note is therefore not in the same transaction as the status
   flip. Losing a log entry to a partial failure is acceptable; losing a status
-  write is not.
+  write is not. The transition log below is the opposite case, and commits with
+  the status write.
 - **Blocking needs a reason** on the MCP path: `status: 'blocked'` requires a
   `note` or a non-empty `blockers` array. `POST /items/:itemKey/block` requires
   neither, matching the blocker rule above.
@@ -448,3 +450,64 @@ nothing more.
   has nothing to check off yet.
 - **Present only when requested**, like `notes`/`blockers`/`workers`. An absent
   key means "not loaded"; `[]` means the item genuinely has no todos.
+
+## Status stamps and transitions (migration 033)
+
+When an item started and finished, and a row for every status move. The Map's
+time anchor and since-your-last-visit read them
+([ai-development-overview.md](ai-development-overview.md#data)).
+
+- **`items.started_at` and `items.completed_at` belong to the status change.**
+  `started_at` is the first entry into `in_progress` or `in_review`, and a reopen
+  doesn't move it; an item that goes straight from `ready` to `done` never
+  started. `completed_at` is the most recent entry into `done`, cleared on the
+  way out, so it's set exactly when the status is `done`. Both come from the
+  `items_status_stamps` trigger (BEFORE INSERT OR UPDATE), the way
+  `items_updated_at` owns `updated_at`: status is written by several statements
+  (the creates, the general update, the four lifecycle routes, the rollup), and
+  the trigger is the one place that sees every one. An UPDATE can't write either
+  column, whatever its SET says. An INSERT may carry them, so a seed or a test can
+  put history in the past, but `completed_at` survives only on a `done` row. No
+  update path maps them from a request either, since the web client restates the
+  whole item on every save.
+- **`item_transitions` is append-only, one row per change of status or
+  sub-status**: `from_status`/`to_status`, `from_sub_status`/`to_sub_status`,
+  an Actor, and `created_at`. A `CHECK` refuses a row whose before and after
+  match. Only item or project deletion removes rows, by FK cascade, as with the
+  activity log.
+- **The service writes the row, not the trigger**, because the actor is a fact
+  about the request: the agent on MCP writes, the signed-in user on REST writes,
+  `{ type: 'system', cause: 'parent_rollup' }` for a parent the rollup moves.
+  Every status write runs in a transaction with its row (`writeItem` for the
+  update paths, the create's own transaction, each rollup level's), so a status
+  write can't commit without it. `writeItem` reads the before from the row it
+  locked, not the statement snapshot, so the before is the row the write
+  replaced. A write that reaches done goes through `writeDone`, which takes the
+  project's blocker lock before `writeItem` (see Blockers above), so the log row
+  adds no lock that order doesn't already cover: it only key-share-locks the item
+  the write already holds and the project row.
+- **Only a real change is a row.** The web client sends status and sub-status
+  on every save, so a write that names them logs nothing unless one differs from
+  the row. A create that names a status logs a row with no before; one left on
+  the default (`ready`, `not_started`) doesn't, the same line `status_source`
+  draws. A sub-status move under a status that holds (`in_development` to
+  `needs_input`) is a row, since that's what a person steering by exception needs
+  to see.
+- **The rollup's moves are the system's.** A sub-status write that leaves the
+  item's own recompute to drop it back to `ready` produces two rows: the
+  caller's sub-status change and the system's status move.
+- **Times are `clock_timestamp()`, not `NOW()`.** `NOW()` is when the transaction
+  began, and a write that began first can take the row lock second, so two moves
+  of one item, or two completions the Map has to order strictly, could be stamped
+  out of the order they happened. The trigger fires with the row locked and the
+  log row goes in before the transaction lets go, so both follow lock order. The
+  log row's time is a few microseconds after the stamp it accompanies, never
+  before.
+- **No backfill.** Items that moved before 033 keep empty times and the log
+  starts empty. A done item with no `completed_at` predates the stamps.
+- **Indexes** serve the two reads that come next: one item's history in order
+  (`item_id, created_at`) and a project's moves since a moment
+  (`project_id, created_at`). Both also back the cascades.
+- Every item response carries `startedAt` and `completedAt` (REST and MCP alike);
+  the item view shows Created, and Started and Completed once they're set. The
+  log has no read path yet; its first readers are the Map's.

@@ -186,7 +186,8 @@ export type SpecType = 'product' | 'technical';
 
 /**
  * Actor — who or what performed an action. Stored as JSONB (items.origin.actor,
- * item_blockers.created_by/cleared_by, item_workers.actor). Always constructed
+ * item_blockers.created_by/cleared_by, item_workers.actor, item_notes.actor,
+ * item_transitions.actor). Always constructed
  * server-side from the authenticated context, never accepted from a client
  * payload; an event record, so it deliberately holds snapshots, not FKs.
  */
@@ -264,6 +265,10 @@ export interface Item {
 	branch_name: string | null;
 	created_at: Date;
 	updated_at: Date;
+	/** First entry into in_progress or in_review; a reopen doesn't move it. Set by trigger (033), never by a write. */
+	started_at: Date | null;
+	/** Most recent entry into done, NULL whenever the status isn't done. Set by trigger (033), never by a write. */
+	completed_at: Date | null;
 	/** Ordered scratch todos; array order is display order. Distinct from child items. */
 	checklist: ChecklistEntry[];
 }
@@ -315,6 +320,20 @@ export interface ChecklistEntry {
 	id: string;
 	text: string;
 	status: ChecklistStatus;
+}
+
+// One change of status or sub-status (item_transitions, append-only). from_* NULL
+// means a create that named its status.
+export interface ItemTransition {
+	id: string;
+	item_id: string;
+	project_id: string;
+	from_status: ItemStatus | null;
+	to_status: ItemStatus;
+	from_sub_status: SubStatus | null;
+	to_sub_status: SubStatus | null;
+	actor: Actor;
+	created_at: Date;
 }
 
 // One entry in an item's append-only activity log. actor NULL means the entry

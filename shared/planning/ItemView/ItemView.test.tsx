@@ -1,6 +1,6 @@
 /**
  * ItemView's header: the title field (a textarea so long titles wrap, but the
- * value stays one line) and the Parent field.
+ * value stays one line), the Parent field, and the dates.
  *
  * @vitest-environment jsdom
  */
@@ -222,5 +222,36 @@ describe('ItemView parent', () => {
 		const { container } = render(<ItemView item={item} />);
 
 		expect(container.textContent).not.toContain('Parent');
+	});
+});
+
+describe('ItemView dates', () => {
+	const at = (container: Element, label: string): string | null => {
+		const field = [...container.querySelectorAll('time')].find((t) => t.previousElementSibling?.textContent === label);
+		return field?.getAttribute('datetime') ?? null;
+	};
+
+	it('shows when the item was created, started, and completed', () => {
+		const item = makeItem('Done', {
+			status: 'done',
+			createdAt: '2026-09-28T09:00:00.000Z',
+			startedAt: '2026-09-29T14:30:00.000Z',
+			completedAt: '2026-10-01T17:05:00.000Z',
+		});
+		const { container } = render(<ItemView item={item} />);
+
+		expect(at(container, 'Created')).toBe('2026-09-28T09:00:00.000Z');
+		expect(at(container, 'Started')).toBe('2026-09-29T14:30:00.000Z');
+		expect(at(container, 'Completed')).toBe('2026-10-01T17:05:00.000Z');
+	});
+
+	it('leaves out a date that was never set, rather than claiming it never happened', () => {
+		const item = makeItem('Fresh', { createdAt: '2026-09-28T09:00:00.000Z', startedAt: null, completedAt: null });
+		const { container } = render(<ItemView item={item} />);
+
+		expect(at(container, 'Created')).toBe('2026-09-28T09:00:00.000Z');
+		expect(container.querySelectorAll('time')).toHaveLength(1);
+		expect(at(container, 'Started')).toBeNull();
+		expect(at(container, 'Completed')).toBeNull();
 	});
 });

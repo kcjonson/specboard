@@ -132,6 +132,13 @@ export class ItemModel extends SyncModel {
 	@prop accessor branchName!: string | undefined;
 	@prop accessor createdAt!: string;
 	@prop accessor updatedAt!: string;
+	/**
+	 * First entry into in_progress or in_review, and the most recent entry into done.
+	 * Read-only: the server stamps both on status changes and ignores them on writes.
+	 * Null when it never happened, or happened before the server kept them.
+	 */
+	@prop accessor startedAt!: string | null | undefined;
+	@prop accessor completedAt!: string | null | undefined;
 
 	/**
 	 * Child counts from the server (list + detail endpoints) under the API key
