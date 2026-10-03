@@ -294,12 +294,16 @@ export function summarizeFinishedFamilies(rows: MapItemRow[], cap: number): MapR
 		}
 	}
 
+	// Children before parents, built with an explicit stack: nesting has no depth limit,
+	// and recursion on a deep enough tree would overflow the call stack.
 	const postOrder: FamilyNode[] = [];
-	const visit = (node: FamilyNode): void => {
-		for (const child of node.children) visit(child);
+	const pending = [...nodes.values()].filter((node) => !node.parent);
+	while (pending.length) {
+		const node = pending.pop()!;
 		postOrder.push(node);
-	};
-	for (const node of nodes.values()) if (!node.parent) visit(node);
+		pending.push(...node.children);
+	}
+	postOrder.reverse();
 
 	for (const node of postOrder) {
 		node.finished = node.row.status === 'done' && node.children.every((child) => child.finished);
@@ -372,5 +376,5 @@ export function summarizeFinishedFamilies(rows: MapItemRow[], cap: number): MapR
 /** Two links to one blocker merged by folding: open beats satisfied, then the later clear wins. */
 function linkOutranks(link: MapBlockerLink, prior: MapBlockerLink): boolean {
 	if (link.state !== prior.state) return link.state === 'open';
-	return (link.satisfiedAt ?? '') > (prior.satisfiedAt ?? '');
+	return link.state === 'satisfied' && prior.state === 'satisfied' && link.satisfiedAt > prior.satisfiedAt;
 }

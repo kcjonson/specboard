@@ -403,6 +403,16 @@ describe('past the read cap', () => {
 		expect(items.find((r) => r.key === 'MP-7')!.summarizedDescendants).toBeUndefined();
 	});
 
+	it('folds a family nested deeper than the call stack would allow', () => {
+		const depth = 50_000;
+		const rows = Array.from({ length: depth }, (_, i) =>
+			base(`MP-${i + 1}`, { parentKey: i ? `MP-${i}` : null, timeAnchor: at(1 + (i % 20)) }));
+
+		const { items } = summarizeFinishedFamilies(rows, 1);
+
+		expect(items).toEqual([expect.objectContaining({ key: 'MP-1', summarizedDescendants: depth - 1, timeAnchor: at(20) })]);
+	});
+
 	it('gives a folded row its members\' links, minus any inside the family', () => {
 		const rows = board();
 		rows[1] = { ...rows[1]!, blockers: [{ blockerKey: 'MP-6', state: 'satisfied', satisfiedAt: at(9) }] };

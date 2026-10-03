@@ -23,12 +23,10 @@ export type MapItemSubStatus =
  * because the work finished (the blocker completed, or the blocked item completed over
  * it), which keeps drawing and pulling. A link someone removed by hand isn't sent at all.
  */
-export interface MapBlockerLink {
-	blockerKey: string;
-	state: 'open' | 'satisfied';
-	/** When a satisfied link cleared; absent on an open one. */
-	satisfiedAt?: string;
-}
+export type MapBlockerLink =
+	| { blockerKey: string; state: 'open' }
+	/** satisfiedAt: when the link cleared. */
+	| { blockerKey: string; state: 'satisfied'; satisfiedAt: string };
 
 /** An open agent-session episode on an item. */
 export interface MapWorkerEpisode {
@@ -149,7 +147,7 @@ export function encodeMapRead(read: MapRead, projectKey: string): MapReadWire {
 		workers: rows.map((r) => r.workers),
 		blockers: rows.map((r) => r.blockers.map((link): MapBlockerLinkWire => (link.state === 'open'
 			? numberOf(link.blockerKey)
-			: [numberOf(link.blockerKey), msOf(link.satisfiedAt!)]))),
+			: [numberOf(link.blockerKey), msOf(link.satisfiedAt)]))),
 		textBlockerCount: rows.map((r) => r.textBlockerCount),
 		discoveredFrom: rows.map((r) => (r.discoveredFromKey === null ? null : numberOf(r.discoveredFromKey))),
 		originActorType: rows.map((r) => r.originActorType),
