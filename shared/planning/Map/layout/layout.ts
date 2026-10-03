@@ -397,10 +397,12 @@ function localLayout(model: MapModel, previous: MapLayoutPrevious): Settled {
 export function layoutMap(input: MapLayoutInput): MapLayout {
 	const model = buildModel(input.rows, input.now, input.collapse);
 	const quiet = quietOf(model.newest, input.now);
-	const previous = input.previous?.frame.quiet === (quiet !== null) ? input.previous : undefined;
-	const { graph, scale, bounds, ticks, settle } = previous
-		? localLayout(model, previous)
-		: coldLayout(model, edgeOf(model.newest, input.now), input.aspect);
+	const edge = edgeOf(model.newest, input.now);
+	// A local pass keeps the frame, which only holds while the edge does: a live board's
+	// edge is frozen at the last pass's now, a quiet board's sits at its last activity.
+	const frame = input.previous?.frame;
+	const previous = frame && frame.quiet === (quiet !== null) && (!frame.quiet || frame.scale.edge === edge) ? input.previous : undefined;
+	const { graph, scale, bounds, ticks, settle } = previous ? localLayout(model, previous) : coldLayout(model, edge, input.aspect);
 
 	const phases: MapLayout['phases'] = {};
 	const representative: MapLayout['representative'] = {};

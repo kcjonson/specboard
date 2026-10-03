@@ -331,6 +331,16 @@ describe('layoutMap edge cases', () => {
 		expect(woke.frame.scale.edge).toBe(NOW);
 	});
 
+	it('runs cold when a quiet board’s last activity moves', () => {
+		const b = new BoardBuilder();
+		for (let i = 0; i < 8; i++) b.add({ status: 'done', completed: NOW - 3 * DAY - i * HOUR });
+		const before = layout(b.rows);
+		const rows = b.rows.slice(1);
+		const after = layoutMap({ rows, now: NOW, collapse: {}, aspect: ASPECT, previous: { frame: before.frame, positions: positions(before), changed: [] } });
+		expect(after.quiet!.since).toBe(NOW - 3 * DAY - HOUR);
+		expect(after.frame.scale.edge).toBe(after.quiet!.since + HOUR);
+	});
+
 	it('lets every computer find its row when a local pass adds one', () => {
 		const b = new BoardBuilder();
 		const first = b.add({ status: 'in_progress' });
