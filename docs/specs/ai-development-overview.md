@@ -331,9 +331,10 @@ there too. Held against the floor, a burst still reads as a cloud.
   Carpendale, 2009) draws a set over an existing layout. Each child raises a field
   around itself and a spanning tree between the children keeps the region in one
   piece, so a long-running epic shows as bulbs on a thin neck. A closing pass
-  (grow 20 px, shrink back) fills narrow inlets, so the edge stays simple, and the
-  outline is traced where the field crosses a threshold. It sits loose around its
-  children, not shrink-wrapped.
+  (grow 20 layout units, shrink back) fills narrow inlets, so the edge stays
+  simple, and the outline is traced where the field crosses a threshold. Its
+  distances are layout units, so a region scales with its dots (see the
+  feasibility notes). It sits loose around its children, not shrink-wrapped.
 - A region is always one solid shape: no holes, no islands.
 - Regions don't overlap. Where two unrelated regions would, each keeps the ground
   nearer its own children and they meet at a shared edge with a hairline gap. The

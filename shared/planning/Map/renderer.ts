@@ -324,9 +324,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 	const drawLinks = (links: readonly DrawLink[], lighting: LinkLighting, transform: Transform): void => {
 		const screen = (p: { x: number; y: number }): { x: number; y: number } => ({ x: transform.x + transform.k * p.x, y: transform.y + transform.k * p.y });
 		// Satisfied links first, so an open one crossing them stays on top.
-		const ordered = [...links].sort((a, b) => Number(b.satisfied) - Number(a.satisfied));
+		const ordered = links.filter((link) => linkShows(link.kind, link.id, lighting)).sort((a, b) => Number(b.satisfied) - Number(a.satisfied));
 		for (const link of ordered) {
-			if (!linkShows(link.kind, link.id, lighting)) continue;
 			const curve = linkCurve(link.kind, screen(link.from), screen(link.to));
 			// A curve stays inside the hull of its control points, so it's off screen only when they all are, past one edge.
 			const hull = curve.type === 'cubic' ? [curve.from, curve.c1, curve.c2, curve.to] : [curve.from, curve.c, curve.to];
