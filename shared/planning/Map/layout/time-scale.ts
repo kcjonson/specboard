@@ -19,11 +19,15 @@ function logAge(scale: Pick<MapTimeScale, 'edge' | 'tau'>, time: number): number
 	return Math.log(1 + Math.max(0, scale.edge - time) / scale.tau);
 }
 
-/** `times` must be ascending. */
+/**
+ * `times` must be ascending. Anything past the edge (clock skew between server and
+ * browser, or work since the frame was set) counts as at the edge, so the edge stays at 0.
+ */
 export function createTimeScale(edge: number, times: number[], unit: number): MapTimeScale {
-	const oldest = times[0];
+	const clamped = times.map((time) => Math.min(time, edge));
+	const oldest = clamped[0];
 	const logSpan = oldest === undefined ? 1 : logAge({ edge, tau: TIME_CONSTANT }, oldest) || 1;
-	return { edge, unit, tau: TIME_CONSTANT, equalized: EQUALIZED, times, logSpan };
+	return { edge, unit, tau: TIME_CONSTANT, equalized: EQUALIZED, times: clamped, logSpan };
 }
 
 /** Fraction of the sample at or before `time`. */
@@ -43,7 +47,7 @@ function cumulative(times: readonly number[], time: number): number {
  * happened in it) mixed with log of age (recent work gets room).
  */
 export function timeToX(scale: MapTimeScale, time: number): number {
-	const equal = (1 - cumulative(scale.times, time)) * scale.logSpan;
+	const equal = (1 - cumulative(scale.times, Math.min(time, scale.edge))) * scale.logSpan;
 	return -scale.unit * (scale.equalized * equal + (1 - scale.equalized) * logAge(scale, time));
 }
 

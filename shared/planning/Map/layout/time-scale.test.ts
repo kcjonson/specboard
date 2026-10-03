@@ -41,6 +41,13 @@ describe('time scale', () => {
 		expect(quietOf(NOW - 11 * HOUR, NOW)).toBeNull();
 	});
 
+	it('keeps the edge at 0 when an anchor runs ahead of it', () => {
+		const skewed = createTimeScale(NOW, [...times, NOW + 5 * 60_000], 120);
+		expect(timeToX(skewed, NOW)).toBeCloseTo(0);
+		expect(timeToX(skewed, NOW + 5 * 60_000)).toBeCloseTo(0);
+		expect(timeToX(skewed, NOW - DAY)).toBeLessThan(0);
+	});
+
 	it('survives an empty board', () => {
 		const empty = createTimeScale(NOW, [], 120);
 		expect(timeToX(empty, NOW)).toBeCloseTo(0);
