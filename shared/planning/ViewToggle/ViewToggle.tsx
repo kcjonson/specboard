@@ -1,26 +1,29 @@
 import type { JSX } from 'preact';
 import styles from './ViewToggle.module.css';
 
-/** The two ways to view planning work items. */
-export type PlanningView = 'board' | 'table';
+/** The ways to view planning work items. */
+export type PlanningView = 'board' | 'table' | 'map';
 
 const VIEWS: { value: PlanningView; label: string }[] = [
 	{ value: 'board', label: 'Board' },
 	{ value: 'table', label: 'Table' },
+	{ value: 'map', label: 'Map' },
 ];
 
 export interface ViewToggleProps {
 	view: PlanningView;
 	onChange: (view: PlanningView) => void;
+	/** False on small screens, where the Map isn't offered (spec decision 8). */
+	mapAvailable: boolean;
 }
 
 /**
- * Segmented control switching between the Board and Table planning views.
+ * Segmented control switching between the Board, Table, and Map planning views.
  */
-export function ViewToggle({ view, onChange }: ViewToggleProps): JSX.Element {
+export function ViewToggle({ view, onChange, mapAvailable }: ViewToggleProps): JSX.Element {
 	return (
 		<div class={styles.toggle} role="group" aria-label="View">
-			{VIEWS.map(({ value, label }) => (
+			{VIEWS.filter(({ value }) => value !== 'map' || mapAvailable).map(({ value, label }) => (
 				<button
 					key={value}
 					type="button"

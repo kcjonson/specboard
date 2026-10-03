@@ -1,0 +1,153 @@
+/**
+ * MapView: the states around the canvas (loading, empty, error), the controls, and the
+ * history rules for panning and jumping. jsdom has no canvas, so the renderer is a fake.
+ *
+ * @vitest-environment jsdom
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/preact';
+import { BoardBuilder } from './layout/board-fixture';
+import { layoutMap } from './layout/layout';
+import type { MapLayoutWorker } from './layout/layout-worker-client';
+import { MapView } from './MapView';
+import { MapDataModel, type MapRead } from './map-data-model';
+import type { MapFrame, MapRenderer } from './renderer';
+
+const frames: MapFrame[] = [];
+const renderer: MapRenderer = {
+	resize: vi.fn(),
+	refreshTheme: vi.fn(),
+	draw: (frame) => {
+		frames.push(frame);
+	},
+};
+
+vi.mock('./renderer', async (importOriginal) => ({
+	...(await importOriginal<typeof import('./renderer')>()),
+	createCanvasRenderer: () => renderer,
+}));
+
+const worker: MapLayoutWorker = {
+	layout: (input) => Promise.resolve({ layout: layoutMap(input), ms: 1 }),
+	terminate: vi.fn(),
+};
+
+function board(count: number): MapRead {
+	const b = new BoardBuilder();
+	for (let i = 0; i < count; i++) b.add({ status: i % 3 === 0 ? 'done' : i % 3 === 1 ? 'in_progress' : 'ready', created: b.now - i * 86_400_000 });
+	return { items: b.rows, summarized: false };
+}
+
+function renderMap(source: () => Promise<MapRead>): { model: MapDataModel } & ReturnType<typeof render> {
+	const model = new MapDataModel(source, () => worker);
+	return { model, ...render(<MapView projectRef="acme/specboard" model={model} />) };
+}
+
+beforeEach(() => {
+	frames.length = 0;
+	window.history.replaceState(null, '', '/projects/acme/specboard/planning?view=map');
+	vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+		x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 532, width: 1000, height: 532, toJSON: () => ({}),
+	});
+});
+
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+});
+
+const control = (container: HTMLElement, name: string): HTMLButtonElement =>
+	Array.from(container.querySelectorAll('button')).find((b) => b.textContent === name || b.getAttribute('aria-label') === name) as HTMLButtonElement;
+
+describe('MapView states', () => {
+	it('draws the ruler frame and says it is loading while the read and layout run', async () => {
+		const { container, getByRole } = renderMap(() => new Promise(() => {}));
+		expect(getByRole('status').textContent).toBe('Loading the map...');
+		expect(container.querySelector('canvas')).not.toBeNull();
+		await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+		expect(frames.at(-1)).toMatchObject({ dots: [], ruler: null });
+		expect(control(container, 'Fit all').disabled).toBe(true);
+		expect(control(container, 'Now').disabled).toBe(true);
+	});
+
+	it('brings every dot in at once and enables the controls', async () => {
+		const { container, queryByRole } = renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(queryByRole('status')).toBeNull());
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBe(9));
+		expect(frames.every((frame) => frame.dots.length === 0 || frame.dots.length === 9)).toBe(true);
+		expect(frames.at(-1)!.ruler).not.toBeNull();
+		expect(container.querySelector('canvas')!.getAttribute('aria-label')).toBe('Map of 9 items');
+		for (const name of ['Fit all', 'Now', 'Zoom out', 'Zoom in']) expect(control(container, name).disabled).toBe(false);
+	});
+
+	it('says so on the canvas when the project has no items', async () => {
+		const { container, findByText } = renderMap(() => Promise.resolve({ items: [], summarized: false }));
+		await findByText(/Nothing on the map yet/);
+		expect(control(container, 'Fit all').disabled).toBe(true);
+		await waitFor(() => expect(frames.at(-1)).toMatchObject({ dots: [], ruler: null }));
+	});
+
+	it('shows the error state with a retry that loads the map', async () => {
+		const source = vi.fn<() => Promise<MapRead>>().mockRejectedValueOnce(new Error('HTTP 500: Internal Server Error')).mockResolvedValue(board(4));
+		const { findByRole, queryByRole } = renderMap(source);
+		const alert = await findByRole('alert');
+		expect(alert.textContent).toContain('Error: HTTP 500: Internal Server Error');
+
+		fireEvent.click(await findByRole('button', { name: 'Retry' }));
+		await waitFor(() => expect(queryByRole('alert')).toBeNull());
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBe(4));
+	});
+
+	it('stops the layout worker when it unmounts', async () => {
+		const { unmount } = renderMap(() => Promise.resolve(board(3)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(3));
+		unmount();
+		expect(worker.terminate).toHaveBeenCalled();
+	});
+});
+
+describe('MapView and the URL', () => {
+	it('opens centered on the item named by ?focus=', async () => {
+		window.history.replaceState(null, '', '/projects/acme/specboard/planning?view=map&focus=map-5');
+		const read = board(9);
+		renderMap(() => Promise.resolve(read));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const dot = frames.at(-1)!.dots.find((d) => d.key === 'MAP-5')!;
+		const { transform } = frames.at(-1)!;
+		expect(transform.x + transform.k * dot.x).toBeCloseTo(500, 0);
+		expect(transform.y + transform.k * dot.y).toBeCloseTo(250, 0);
+	});
+
+	it('replaces the history entry as the person pans, anchoring on the item in the middle', async () => {
+		renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const entries = window.history.length;
+		expect(window.location.search).toBe('?view=map');
+
+		const canvas = document.querySelector('canvas')!;
+		fireEvent.wheel(canvas, { deltaX: 40, deltaY: 10 });
+		await waitFor(() => expect(new URLSearchParams(window.location.search).get('focus')).toMatch(/^MAP-\d+$/), { timeout: 2000 });
+		expect(new URLSearchParams(window.location.search).get('view')).toBe('map');
+		expect(window.history.length).toBe(entries);
+	});
+
+	it('pushes an entry for a jump, and drops the anchor for fit all', async () => {
+		window.history.replaceState(null, '', '/projects/acme/specboard/planning?view=map&focus=MAP-3');
+		const { container } = renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const entries = window.history.length;
+
+		fireEvent.click(control(container, 'Fit all'));
+		expect(window.location.search).toBe('?view=map');
+		expect(window.history.length).toBe(entries + 1);
+	});
+
+	it('does not push an entry for a jump that changes nothing in the URL', async () => {
+		const { container } = renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const entries = window.history.length;
+		fireEvent.click(control(container, 'Now'));
+		expect(window.history.length).toBe(entries);
+	});
+});

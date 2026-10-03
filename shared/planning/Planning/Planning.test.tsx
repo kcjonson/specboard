@@ -4,9 +4,10 @@
  * @vitest-environment jsdom
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/preact';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, waitFor, cleanup } from '@testing-library/preact';
 import { FetchError } from '@specboard/fetch';
+import { memoryStorage } from '../test-support/memory-storage';
 import { Planning } from './Planning';
 
 const getResponse = vi.fn();
@@ -30,6 +31,7 @@ vi.mock('@specboard/fetch', async (importOriginal) => {
 
 vi.mock('../Board/Board', () => ({ Board: () => <div data-testid="board" />, BOARD_PAGE_SIZE: 20 }));
 vi.mock('../Table/Table', () => ({ Table: () => <div data-testid="table" />, TABLE_PAGE_SIZE: 50 }));
+vi.mock('../Map/MapView', () => ({ MapView: () => <div data-testid="map" /> }));
 vi.mock('../ItemDrawer/ItemDrawer', () => ({ ItemDrawer: () => null }));
 vi.mock('../NewItemDialog/NewItemDialog', () => ({ NewItemDialog: () => null }));
 
@@ -97,5 +99,102 @@ describe('Planning load failures', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
 		expect(getResponse.mock.calls.length).toBe(callsBefore);
+	});
+});
+
+describe('Planning views', () => {
+	/** Stands in for matchMedia, which jsdom lacks, at one width. */
+	function setWidth(small: boolean): void {
+		window.matchMedia = ((query: string) => ({
+			matches: small && query.includes('768'),
+			media: query,
+			addEventListener: () => {},
+			removeEventListener: () => {},
+		})) as unknown as typeof window.matchMedia;
+	}
+
+	beforeEach(() => {
+		getResponse.mockReset();
+		succeedEmpty();
+		vi.stubGlobal('localStorage', memoryStorage());
+		setWidth(false);
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning');
+	});
+
+	afterEach(() => {
+		cleanup();
+		delete (window as { matchMedia?: unknown }).matchMedia;
+		vi.unstubAllGlobals();
+	});
+
+	it('offers Board, Table, and Map', async () => {
+		const { findByTestId, getAllByRole } = renderPlanning();
+		await findByTestId('board');
+		const toggle = getAllByRole('group').find((group: HTMLElement) => group.getAttribute('aria-label') === 'View') as HTMLElement;
+		expect(Array.from(toggle.querySelectorAll('button')).map((button) => button.textContent)).toEqual(['Board', 'Table', 'Map']);
+	});
+
+	it('loads the Map when it is picked, and remembers the pick', async () => {
+		const { findByTestId, findByRole, queryByTestId } = renderPlanning();
+		await findByTestId('board');
+
+		fireEvent.click(await findByRole('button', { name: 'Map' }));
+		expect(await findByTestId('map')).toBeTruthy();
+		expect(queryByTestId('board')).toBeNull();
+		expect(window.location.search).toBe('?view=map');
+		expect(globalThis.localStorage.getItem('specboard.planning.view')).toBe('map');
+	});
+
+	it('opens on the Map from ?view=map', async () => {
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning?view=map');
+		const { findByTestId, queryByTestId } = renderPlanning();
+		expect(await findByTestId('map')).toBeTruthy();
+		expect(queryByTestId('board')).toBeNull();
+	});
+
+	it('opens on the Map when it was the last view picked', async () => {
+		globalThis.localStorage.setItem('specboard.planning.view', 'map');
+		const { findByTestId } = renderPlanning();
+		expect(await findByTestId('map')).toBeTruthy();
+	});
+
+	it('lands on the Board below 768 px, with no Map in the toggle', async () => {
+		setWidth(true);
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning?view=map');
+		const { findByTestId, queryByTestId, queryByRole } = renderPlanning();
+		expect(await findByTestId('board')).toBeTruthy();
+		expect(queryByTestId('map')).toBeNull();
+		expect(queryByRole('button', { name: 'Map' })).toBeNull();
+		expect(queryByRole('button', { name: 'Table' })).not.toBeNull();
+		// The request stays in the URL, so a wider window brings the Map back.
+		expect(window.location.search).toBe('?view=map');
+	});
+
+	it('shows the Map even when the board failed to load', async () => {
+		failWith(new FetchError('HTTP 500: Internal Server Error', 500));
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning?view=map');
+		const { findByTestId, queryByRole } = renderPlanning();
+		expect(await findByTestId('map')).toBeTruthy();
+		expect(queryByRole('alert')).toBeNull();
+	});
+
+	it('hides the board filters on the Map, where they would do nothing', async () => {
+		const { container, findByTestId, findByRole } = renderPlanning();
+		await findByTestId('board');
+		// The toolbar's copy, and the small-screen popover's, which CSS hides on desktop.
+		const searchBoxes = (): number => container.querySelectorAll('input[type="search"]').length;
+		expect(searchBoxes()).toBe(2);
+		fireEvent.click(await findByRole('button', { name: 'Map' }));
+		await findByTestId('map');
+		expect(searchBoxes()).toBe(1);
+	});
+
+	it('drops a Map anchor when leaving for another view', async () => {
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning?view=map&focus=SPE-4');
+		const { findByTestId, findByRole } = renderPlanning();
+		await findByTestId('map');
+		fireEvent.click(await findByRole('button', { name: 'Board' }));
+		expect(await findByTestId('board')).toBeTruthy();
+		expect(window.location.search).toBe('?view=board');
 	});
 });

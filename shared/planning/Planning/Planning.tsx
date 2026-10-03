@@ -4,15 +4,17 @@ import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
 import { navigate } from '@specboard/router';
 import { useModel, ItemsCollection, ItemModel, type ItemType } from '@specboard/models';
-import { FetchError } from '@specboard/fetch';
 import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption, type SelectOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
 import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import type { NewItemData } from '../NewItemForm/NewItemForm';
+import { LoadError } from '../LoadError/LoadError';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
-import { VIEW_PREF, readPref, writePref } from './prefs';
+import { VIEW_PREF, writePref } from './prefs';
+import { useMapView } from './useMapView';
+import { readView, resolveView, useSmallScreen } from './view';
 import styles from './Planning.module.css';
 
 /** Duration to flash an item that was just created or changed by a refresh (ms) */
@@ -57,22 +59,6 @@ interface PlanningFilters {
 const DRAWER_MIN_WIDTH = 320;
 const BOARD_MIN_WIDTH = 360;
 
-function readStoredView(): PlanningView | undefined {
-	const stored = readPref(VIEW_PREF);
-	return stored === 'table' || stored === 'board' ? stored : undefined;
-}
-
-/**
- * The active view. An explicit `?view=` wins so links stay shareable and
- * back/forward lands where it should; without one, fall back to whichever view
- * the user last picked, then to the board.
- */
-function readView(): PlanningView {
-	const param = new URLSearchParams(window.location.search).get('view');
-	if (param === 'table' || param === 'board') return param;
-	return readStoredView() || 'board';
-}
-
 /**
  * Planning page container — the route entry for both `/projects/:owner/:project/planning`
  * and `/projects/:owner/:project/planning/items/:itemKey`.
@@ -112,7 +98,11 @@ export function Planning(props: RouteProps): JSX.Element {
 	);
 	useModel(items);
 
-	const [view, setView] = useState<PlanningView>(readView);
+	// The view the person asked for. The Map asked for on a small screen shows the Board,
+	// without forgetting the request, so widening the window brings the Map back.
+	const [requestedView, setRequestedView] = useState<PlanningView>(() => readView());
+	const small = useSmallScreen();
+	const view = resolveView(requestedView, small);
 
 	// The table shows more per section than the board per column; switching to it
 	// widens the windows that had more. Windows never shrink, so board -> table ->
@@ -244,17 +234,19 @@ export function Planning(props: RouteProps): JSX.Element {
 	// router re-renders this same component on popstate without remounting it,
 	// so `view` would otherwise drift from `?view=`.
 	useEffect(() => {
-		const syncView = (): void => setView(readView());
+		const syncView = (): void => setRequestedView(readView());
 		window.addEventListener('popstate', syncView);
 		return () => window.removeEventListener('popstate', syncView);
 	}, []);
 
 	const handleChangeView = useCallback((next: PlanningView): void => {
-		setView(next);
+		setRequestedView(next);
 		writePref(VIEW_PREF, next);
-		// Both views are written explicitly so a history entry is never ambiguous.
+		// The view is always written explicitly so a history entry is never ambiguous.
 		const params = new URLSearchParams(window.location.search);
 		params.set('view', next);
+		// A Map anchor means nothing on the other views.
+		if (next !== 'map') params.delete('focus');
 		const search = params.toString();
 		navigate(window.location.pathname + (search ? `?${search}` : '') + window.location.hash);
 	}, []);
@@ -465,32 +457,21 @@ export function Planning(props: RouteProps): JSX.Element {
 	// signing back in. Replacing the page would unmount the search box and give a
 	// signed-out user nothing to act on.
 	const loadError = items.$meta.error;
-	const sessionExpired = loadError instanceof FetchError && loadError.status === 401;
-	const handleSignIn = useCallback((): void => {
-		const next = window.location.pathname + window.location.search + window.location.hash;
-		window.location.href = `/login?next=${encodeURIComponent(next)}`;
-	}, []);
 	const handleRetry = useCallback((): void => {
 		void items.fetch({ force: true });
 	}, [items]);
 
+	// The Map is a lazy chunk with a read of its own, so it sits outside the collection's
+	// loading and error states: a failed board fetch says nothing about the Map.
+	const { MapView, error: mapError, retry: retryMap } = useMapView(view === 'map');
+
 	const renderViewArea = (): JSX.Element => {
-		if (sessionExpired) {
-			return (
-				<div class={styles.error} role="alert">
-					<p>Your session has expired. Sign in to keep working.</p>
-					<Button class="secondary" onClick={handleSignIn}>Sign in</Button>
-				</div>
-			);
+		if (view === 'map') {
+			if (mapError) return <LoadError error={mapError} onRetry={retryMap} />;
+			if (!MapView) return <div class={styles.loading}>Loading...</div>;
+			return <MapView projectRef={projectRef} />;
 		}
-		if (loadError) {
-			return (
-				<div class={styles.error} role="alert">
-					<p>Error: {loadError.message}</p>
-					<Button class="secondary" onClick={handleRetry}>Retry</Button>
-				</div>
-			);
-		}
+		if (loadError) return <LoadError error={loadError} onRetry={handleRetry} />;
 		// First load only: a later fetch that returns nothing (an empty search, a poll
 		// after one) keeps the empty columns rather than swapping in a spinner.
 		if (items.$meta.working && items.$meta.lastFetched === null) {
@@ -523,8 +504,8 @@ export function Planning(props: RouteProps): JSX.Element {
 		<Page projectRef={projectRef} activeTab="Planning">
 			<div class={styles.toolbar}>
 				<div class={styles.controls}>
-					<ViewToggle view={view} onChange={handleChangeView} />
-					<div class={styles.filters}>{renderFilters(false)}</div>
+					<ViewToggle view={view} onChange={handleChangeView} mapAvailable={!small} />
+					{view !== 'map' && <div class={styles.filters}>{renderFilters(false)}</div>}
 				</div>
 				<div class={styles.toolbarEnd}>
 					<SplitButton options={createOptions} prefix="+ New" />

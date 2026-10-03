@@ -71,6 +71,11 @@ export default [
 				ResizeObserver: 'readonly',
 				PointerEvent: 'readonly',
 				Worker: 'readonly',
+				WheelEvent: 'readonly',
+				HTMLCanvasElement: 'readonly',
+				MediaQueryList: 'readonly',
+				Path2D: 'readonly',
+				Storage: 'readonly',
 			},
 		},
 		plugins: {
