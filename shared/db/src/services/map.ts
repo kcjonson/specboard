@@ -2,55 +2,13 @@
  * Map read — every item in a project at any depth, carrying only what the Map draws
  * (docs/specs/ai-development-overview.md, Data). One statement reads the whole project:
  * anchors, blocker links, and open worker episodes are aggregated per item in SQL, so
- * the cost is a handful of grouped scans, never a lookup per item.
+ * the cost is a handful of grouped scans, never a round trip per item.
  */
 
 import { createHmac } from 'node:crypto';
 import { formatItemKey } from '@specboard/core/identifiers';
 import { query } from '../index.ts';
-import type { ItemStatus, ItemType, SubStatus } from '../types.ts';
-
-export interface MapBlockerLink {
-	blockerKey: string;
-	state: 'open' | 'satisfied';
-	satisfiedAt?: string;
-}
-
-export interface MapWorkerEpisode {
-	sessionKey: string;
-	deviceName: string | null;
-	client: string | null;
-	branch: string | null;
-	lastWriteAt: string;
-}
-
-export interface MapItemRow {
-	key: string;
-	type: ItemType;
-	title: string;
-	status: ItemStatus;
-	subStatus: SubStatus | null;
-	blocked: boolean;
-	parentKey: string | null;
-	rank: number;
-	createdAt: string;
-	startedAt: string | null;
-	completedAt: string | null;
-	timeAnchor: string;
-	workers: MapWorkerEpisode[];
-	blockers: MapBlockerLink[];
-	textBlockerCount: number;
-	discoveredFromKey: string | null;
-	originActorType: 'user' | 'agent' | 'system' | null;
-	prUrl: string | null;
-	specCount: number;
-	summarizedDescendants?: number;
-}
-
-export interface MapRead {
-	items: MapItemRow[];
-	summarized: boolean;
-}
+import type { MapBlockerLink, MapItemRow, MapItemStatus, MapItemSubStatus, MapItemType, MapRead } from '@specboard/core/map-read';
 
 /**
  * Rows one Map read returns before finished families fold, the same ceiling as a list
@@ -65,7 +23,7 @@ const SESSION_KEY_BYTES = 12;
 export interface AgentSessionIdentity {
 	userId: string;
 	clientId: string;
-	sessionId: string | null;
+	sessionId?: string | null;
 }
 
 /**
@@ -74,7 +32,7 @@ export interface AgentSessionIdentity {
  * so two sessions on one computer differ and one session reads the same on every item.
  * The JSON array is the separator: no choice of characters inside the ids can make two
  * different triples encode alike. Truncated to 96 bits, which keeps a collision between
- * two sessions on one project out of reach (about 2^-60 at a million sessions) while
+ * two sessions on one project out of reach (under 10^-17 at a million sessions) while
  * the secret, not the length, is what makes the key impossible to turn back into the id.
  */
 export function agentSessionKey(secret: string, identity: AgentSessionIdentity): string {
@@ -99,10 +57,10 @@ interface MapQueryRow {
 	project_key: string;
 	number: number;
 	parent_number: number | null;
-	type: ItemType;
+	type: MapItemType;
 	title: string;
-	status: ItemStatus;
-	sub_status: SubStatus | null;
+	status: MapItemStatus;
+	sub_status: MapItemSubStatus | null;
 	blocked: boolean;
 	rank: number;
 	created_at: Date;
@@ -132,9 +90,12 @@ interface MapQueryRow {
  * when; a clear someone made by hand drops the link, even when an older satisfied row
  * for the same pair exists, since the last word on that dependency was to remove it.
  *
- * item_blockers and item_notes have no full project index, so they are reached through
- * the project's item ids (their item_id indexes); item_transitions, item_workers, and
- * epic_specs are scanned by their project indexes.
+ * item_transitions, item_workers, and epic_specs are read by their project indexes.
+ * item_blockers has no full project index, so its rows are reached through the
+ * project's item ids. item_notes has no project column at all: grouped, the planner
+ * hashes the whole table, every project's log, so the newest entry is instead one probe
+ * of idx_item_notes_item_created per item, and only for items the anchor still needs
+ * (not one done since completions were stamped).
  */
 const MAP_SQL = `
 	WITH project_items AS (
@@ -145,12 +106,6 @@ const MAP_SQL = `
 		FROM item_transitions
 		WHERE project_id = $1
 		GROUP BY item_id
-	),
-	note_at AS (
-		SELECT n.item_id, MAX(n.created_at) AS at
-		FROM item_notes n
-		JOIN project_items p ON p.id = n.item_id
-		GROUP BY n.item_id
 	),
 	blocker_rows AS MATERIALIZED (
 		SELECT b.item_id, b.blocker_item_id, b.blocker_text, b.created_at, b.cleared_at, b.cleared_by
@@ -232,7 +187,10 @@ const MAP_SQL = `
 		i.completed_at,
 		CASE
 			WHEN i.status = 'done' AND i.completed_at IS NOT NULL THEN i.completed_at
-			ELSE GREATEST(i.created_at, t.at, n.at, b.at, w.at)
+			ELSE GREATEST(
+				i.created_at, t.at, b.at, w.at,
+				(SELECT MAX(n.created_at) FROM item_notes n WHERE n.item_id = i.id)
+			)
 		END AS time_anchor,
 		COALESCE(b.open_text, 0)::int AS text_blocker_count,
 		src.number AS discovered_from_number,
@@ -243,10 +201,9 @@ const MAP_SQL = `
 		COALESCE(ow.workers, '[]'::json) AS workers
 	FROM items i
 	JOIN projects proj ON proj.id = i.project_id
-	LEFT JOIN items parent ON parent.id = i.parent_id
+	LEFT JOIN items parent ON parent.id = i.parent_id AND parent.project_id = i.project_id
 	LEFT JOIN items src ON src.id = (i.origin->'discoveredFrom'->>'itemId')::uuid AND src.project_id = i.project_id
 	LEFT JOIN transition_at t ON t.item_id = i.id
-	LEFT JOIN note_at n ON n.item_id = i.id
 	LEFT JOIN blocker_at b ON b.item_id = i.id
 	LEFT JOIN worker_at w ON w.item_id = i.id
 	LEFT JOIN link_lists ll ON ll.item_id = i.id

@@ -23,7 +23,8 @@ import { createItem, completeItem, startItem, updateItem } from './items.ts';
 import { addBlocker, clearBlocker } from './blockers.ts';
 import { addSpec } from './specs.ts';
 import { recordWorkerActivity } from './workers.ts';
-import { agentSessionKey, getProjectMap, summarizeFinishedFamilies, type MapItemRow } from './map.ts';
+import { encodeMapRead, type MapItemRow } from '@specboard/core/map-read';
+import { agentSessionKey, getProjectMap, summarizeFinishedFamilies } from './map.ts';
 
 const SECRET = 'map-test-secret-0123456789abcdef0123456789';
 const USER: UserActor = { type: 'user', userId: '00000000-0000-0000-0000-000000000001' };
@@ -151,7 +152,8 @@ describe('the time anchor', () => {
 	it.each([
 		['a transition', `INSERT INTO item_transitions (item_id, project_id, from_status, to_status, actor, created_at)
 			VALUES ($1, $2, 'ready', 'in_progress', '{"type":"user","userId":"u"}', $3)`],
-		['an activity-log entry', 'INSERT INTO item_notes (item_id, note, created_at) VALUES ($1, \'note\', $3)'],
+		['an activity-log entry', `INSERT INTO item_notes (item_id, note, created_at)
+			SELECT id, 'note', $3 FROM items WHERE id = $1 AND project_id = $2`],
 		['a blocker opened', `INSERT INTO item_blockers (item_id, project_id, blocker_text, created_at)
 			VALUES ($1, $2, 'hold', $3)`],
 		['a blocker cleared', `INSERT INTO item_blockers (item_id, project_id, blocker_text, created_at, cleared_at, cleared_by)
@@ -341,7 +343,7 @@ describe('the payload', () => {
 		);
 
 		const map = await getProjectMap(projectId, SECRET);
-		const json = JSON.stringify(map);
+		const json = JSON.stringify(encodeMapRead(map, 'MP'));
 		const gzipped = gzipSync(json).length;
 
 		expect(map.items).toHaveLength(2000);
@@ -351,7 +353,7 @@ describe('the payload', () => {
 		expect(map.items.some((r) => r.status === 'done' && r.completedAt === null)).toBe(true);
 		for (const id of identifiers) expect(json).not.toContain(id);
 		console.log(`map payload, 2,000 items: ${json.length} bytes, ${gzipped} gzipped`);
-		expect(gzipped).toBeLessThan(110 * 1024);
+		expect(gzipped).toBeLessThan(100 * 1024);
 	}, 60_000);
 });
 

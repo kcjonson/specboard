@@ -84,14 +84,23 @@ describe('buildModel', () => {
 		expect(model.chains).toEqual([]);
 	});
 
-	it('ignores links someone removed and counts satisfied ones', () => {
+	it('sizes a family the read folded like the same family collapsed', () => {
+		const b = new BoardBuilder();
+		const epic = b.add({ type: 'epic', status: 'done' });
+		for (let i = 0; i < 3; i++) b.add({ parentKey: epic.key, status: 'done' });
+		const folded = b.add({ type: 'epic', status: 'done', summarizedDescendants: 3 });
+		const { byKey } = buildModel(b.rows, NOW, {});
+		expect(byKey.get(folded.key)!.descendants).toBe(3);
+		expect(byKey.get(folded.key)!.radius).toBe(byKey.get(epic.key)!.radius);
+	});
+
+	it('counts satisfied links in a chain', () => {
 		const b = new BoardBuilder();
 		const epic = b.add({ type: 'epic', status: 'in_progress' });
 		const first = b.add({ parentKey: epic.key, status: 'done' });
 		const second = b.add({ parentKey: epic.key, status: 'ready' });
-		const third = b.add({ parentKey: epic.key, status: 'ready' });
+		b.add({ parentKey: epic.key, status: 'ready' });
 		b.block(second, first, 'satisfied');
-		b.block(third, second, 'removed');
 		const model = buildModel(b.rows, NOW, {});
 		expect(model.edges).toHaveLength(1);
 		expect(model.chains).toHaveLength(1);

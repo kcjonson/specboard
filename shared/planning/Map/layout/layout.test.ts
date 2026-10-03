@@ -59,7 +59,7 @@ function expectOrdersHold(result: MapLayout, rows: readonly MapItemRow[]): void 
 		if (row.status === 'done') continue;
 		const blocked = node.get(result.representative[row.key]!)!;
 		for (const link of row.blockers) {
-			if (link.state === 'removed' || (cyclic.has(row.key) && cyclic.has(link.blockerKey))) continue;
+			if (cyclic.has(row.key) && cyclic.has(link.blockerKey)) continue;
 			const blocker = node.get(result.representative[link.blockerKey]!)!;
 			if (blocker === blocked || blocker.hub || blocked.hub) continue;
 			expect(blocked.x).toBeGreaterThanOrEqual(blocker.x + blocker.r + blocked.r + ORDER_GAP - 1e-9);

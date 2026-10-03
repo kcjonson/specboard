@@ -83,6 +83,10 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 In production, this key is stored in AWS Secrets Manager and injected automatically.
 
+#### Agent Session Key Secret
+
+`AGENT_SESSION_KEY_SECRET` keys the opaque session keys the Map read sends in place of MCP session ids (an HMAC, so the secret is what keeps them from being recomputed). The API refuses to start without it, at least 32 characters, and there is no default. `docker-compose.yml` sets a fixed local-dev value; staging and production read a generated one from Secrets Manager (`<prefix>/agent-session-key`). Rotating it changes every session key at once, which the Map reads as the old sessions going quiet and new ones starting.
+
 ---
 
 ## Database
