@@ -55,6 +55,10 @@ const PAD_RIGHT = 4;
 const MAX_TITLE = 180;
 /** Labels and dots keep this much clear of each other. */
 const CLEARANCE = 2;
+/** A dot's marks reach this far past its radius: the needs-a-person ring at its widest. */
+const MARK_REACH = 3.5;
+/** A folded family's rollup bar hangs this far further below its dot. */
+const FOLDED_BAR_REACH = 8;
 /** How far either side of a point on the outline counts as the outline there, in layout units. */
 const EDGE_REACH = 6;
 
@@ -140,19 +144,24 @@ export interface LabelPlacement {
 	measure(text: string): number;
 	/** At most this many labels, null for every one with room. */
 	cap: number | null;
+	/** Other marks a label must keep off, the expand controls. */
+	occupied: readonly Circle[];
 }
 
 /** Labels for the regions with room, largest regions first. */
-export function placeRegionLabels({ regions, outlines, dots, transform, viewport, measure, cap }: LabelPlacement): RegionLabel[] {
+export function placeRegionLabels({ regions, outlines, dots, transform, viewport, measure, cap, occupied }: LabelPlacement): RegionLabel[] {
 	const { k } = transform;
 	const screen = (p: MapPoint): MapPoint => ({ x: transform.x + k * p.x, y: transform.y + k * p.y });
 	const taken: Box[] = [];
 	for (const dot of dots) {
-		const r = Math.max(dot.r * k, MIN_DRAW_RADIUS) + CLEARANCE;
+		// The whole drawn dot: its surface disc or ink ring, and a folded family's rollup bar under it.
+		const r = Math.max(dot.r * k, MIN_DRAW_RADIUS) + MARK_REACH + CLEARANCE;
+		const below = dot.folded ? FOLDED_BAR_REACH : 0;
 		const { x, y } = screen(dot);
 		if (x + r < 0 || x - r > viewport.width || y + r < 0 || y - r > viewport.height) continue;
-		taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r });
+		taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r + below });
 	}
+	for (const { x, y, r } of occupied) taken.push({ x: x - r - CLEARANCE, y: y - r - CLEARANCE, w: 2 * (r + CLEARANCE), h: 2 * (r + CLEARANCE) });
 	const fits = (box: Box): boolean =>
 		box.x >= 0 && box.y >= 0 && box.x + box.w <= viewport.width && box.y + box.h <= viewport.height && !taken.some((other) => intersects(box, other));
 

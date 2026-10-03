@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Transform } from './camera';
-import { collapseControls, controlAt } from './collapse-controls';
+import { controlAt, expandControls, labelControls } from './collapse-controls';
 import type { DrawDot, DrawRegion } from './draw-list';
 import { BAR_WIDTH, LABEL_HEIGHT, fitText, placeRegionLabels, rollupSegments, type Box } from './region-labels';
 import { traceRegions, type RegionOutline } from './regions/outline';
@@ -41,7 +41,7 @@ describe('region labels', () => {
 	const a = outlineFor('A', [[300, 300], [340, 310], [380, 300]]);
 
 	it('sits on the outline at its top, centered, with glyph, title, rollup bar, and control in a row', () => {
-		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null });
+		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeCloseTo(a.top.y);
 		expect(label!.box.x + label!.box.w / 2).toBeCloseTo(a.top.x);
 		expect(label!.glyph.x).toBeLessThan(label!.titleAt.x);
@@ -53,12 +53,12 @@ describe('region labels', () => {
 
 	it('moves off a dot sitting where the label would go, and drops the label when there is no room at all', () => {
 		const blocking = dot('X', a.top.x, a.top.y);
-		const [moved] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [blocking], transform: identity, viewport, measure, cap: null });
+		const [moved] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [blocking], transform: identity, viewport, measure, cap: null, occupied: [] });
 		expect(moved).toBeDefined();
 		expect(overlap(moved!.box, { x: a.top.x - 6, y: a.top.y - 6, w: 12, h: 12 })).toBe(false);
 
 		const crowd = Array.from({ length: 200 }, (_, i) => dot(`C${i}`, (i % 40) * 25, Math.floor(i / 40) * 120 + 60, { r: 60 }));
-		expect(placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: crowd, transform: identity, viewport, measure, cap: null })).toEqual([]);
+		expect(placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: crowd, transform: identity, viewport, measure, cap: null, occupied: [] })).toEqual([]);
 	});
 
 	it('slides along the bottom edge when the top and the middle of the bottom are taken', () => {
@@ -66,10 +66,19 @@ describe('region labels', () => {
 		// A wall of dots over the whole top edge, and one under the middle of the bottom.
 		const wall = Array.from({ length: 30 }, (_, i) => dot(`T${i}`, 140 + i * 12, wide.top.y));
 		const under = dot('U', wide.bottom.x, wide.bottom.y, { r: 20 });
-		const [label] = placeRegionLabels({ regions: [region('W', 5, 'W')], outlines: new Map([['W', wide]]), dots: [...wall, under], transform: identity, viewport, measure, cap: null });
+		const [label] = placeRegionLabels({ regions: [region('W', 5, 'W')], outlines: new Map([['W', wide]]), dots: [...wall, under], transform: identity, viewport, measure, cap: null, occupied: [] });
 		expect(label).toBeDefined();
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(wide.top.y + 20);
 		expect(overlap(label!.box, { x: under.x - 22, y: under.y - 22, w: 44, h: 44 })).toBe(false);
+	});
+
+	it('keeps off an expand control and off a dot\'s ink ring', () => {
+		const ringed = dot('N', a.top.x, a.top.y - 14, { needsPerson: true });
+		const control = { x: a.top.x + 60, y: a.top.y, r: 6 };
+		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [ringed], transform: identity, viewport, measure, cap: null, occupied: [control] });
+		expect(label).toBeDefined();
+		expect(overlap(label!.box, { x: control.x - 6, y: control.y - 6, w: 12, h: 12 })).toBe(false);
+		expect(overlap(label!.box, { x: ringed.x - 9, y: ringed.y - 9, w: 18, h: 18 })).toBe(false);
 	});
 
 	it('labels the largest regions first, never overlapping, up to the cap', () => {
@@ -79,15 +88,15 @@ describe('region labels', () => {
 			['C', outlineFor('C', [[320, 450]])],
 		]);
 		const regions = [region('C', 1), region('A', 3), region('B', 2)];
-		const all = placeRegionLabels({ regions, outlines, dots: [], transform: identity, viewport, measure, cap: null });
+		const all = placeRegionLabels({ regions, outlines, dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
 		expect(all.map((label) => label.key)).toEqual(['A', 'B', 'C']);
 		for (const x of all) for (const y of all) if (x !== y) expect(overlap(x.box, y.box)).toBe(false);
-		expect(placeRegionLabels({ regions, outlines, dots: [], transform: identity, viewport, measure, cap: 2 }).map((l) => l.key)).toEqual(['A', 'B']);
+		expect(placeRegionLabels({ regions, outlines, dots: [], transform: identity, viewport, measure, cap: 2, occupied: [] }).map((l) => l.key)).toEqual(['A', 'B']);
 	});
 
 	it('follows the camera: the label stays on the outline in screen space', () => {
 		const transform = { k: 2, x: -100, y: -50 };
-		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform, viewport, measure, cap: null });
+		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform, viewport, measure, cap: null, occupied: [] });
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeCloseTo(-50 + 2 * a.top.y);
 	});
 
@@ -110,12 +119,14 @@ describe('region labels', () => {
 
 describe('collapse controls', () => {
 	const a = outlineFor('A', [[300, 300], [340, 310]]);
-	const labels = placeRegionLabels({ regions: [region('A', 2)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null });
-	const folded = dot('F', 700, 300, { r: 12, status: 'done', folded: { count: 9, rollup: { done: 8, in_flight: 0, next: 0, later: 0 } } });
-	const small = dot('S', 800, 300, { r: 3, status: 'done', folded: { count: 3, rollup: { done: 2, in_flight: 0, next: 0, later: 0 } } });
+	const labels = placeRegionLabels({ regions: [region('A', 2)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
+	const folded = dot('F', 700, 300, { r: 12, status: 'done', folded: { count: 9, rollup: { done: 8, in_flight: 0, next: 0, later: 0 }, expandable: true } });
+	const small = dot('S', 800, 300, { r: 3, status: 'done', folded: { count: 3, rollup: { done: 2, in_flight: 0, next: 0, later: 0 }, expandable: true } });
+	// A family the read summarized past its cap: its children never came, so it can't open.
+	const summarized = dot('R', 600, 200, { r: 12, status: 'done', folded: { count: 40, rollup: { done: 39, in_flight: 0, next: 0, later: 0 }, expandable: false } });
 
-	it('puts a collapse control on each region label and an expand control on each folded dot big enough for one', () => {
-		const controls = collapseControls(labels, [folded, small, dot('L', 100, 100)], identity, viewport);
+	it('puts a collapse control on each region label and an expand control on each folded dot that can open and is big enough for one', () => {
+		const controls = [...labelControls(labels), ...expandControls([folded, small, summarized, dot('L', 100, 100)], identity, viewport)];
 		expect(controls.map((c) => [c.key, c.collapse])).toEqual([['A', true], ['F', false]]);
 		const expand = controls[1]!.at;
 		expect(expand.x).toBeGreaterThan(folded.x + 6);
@@ -123,7 +134,7 @@ describe('collapse controls', () => {
 	});
 
 	it('hits a control within a little slop, and nothing elsewhere', () => {
-		const controls = collapseControls(labels, [folded], identity, viewport);
+		const controls = [...labelControls(labels), ...expandControls([folded], identity, viewport)];
 		const toggle = labels[0]!.toggle;
 		expect(controlAt(controls, { x: toggle.x + toggle.r + 2, y: toggle.y })).toMatchObject({ key: 'A', collapse: true });
 		expect(controlAt(controls, { x: 10, y: 10 })).toBeUndefined();

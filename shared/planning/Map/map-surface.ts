@@ -12,7 +12,7 @@ import {
 	openTransform,
 	type Viewport,
 } from './camera';
-import { collapseControls, controlAt, type CollapseControl } from './collapse-controls';
+import { controlAt, expandControls, labelControls, type CollapseControl } from './collapse-controls';
 import { buildDrawList, type DrawList } from './draw-list';
 import type { MapLayout, MapPoint } from './layout/types';
 import { NO_LIGHTING, type LinkLighting } from './links';
@@ -90,6 +90,9 @@ export class MapSurface {
 
 	destroy(): void {
 		this.unsubscribe();
+		// A deferred outline task still pending finds the token moved and does nothing.
+		this.deferred++;
+		this.outlines = null;
 	}
 
 	/** The canvas's CSS size, ruler band included. */
@@ -227,6 +230,7 @@ export class MapSurface {
 		const layout = this.layout;
 		const { dots, regions, links } = this.drawing;
 		const outlines = this.outlinesFor(transform.k);
+		const expand = expandControls(dots, transform, this.viewport);
 		const labels = layout
 			? placeRegionLabels({
 				regions,
@@ -236,9 +240,10 @@ export class MapSurface {
 				viewport: this.viewport,
 				measure: (text) => this.renderer.measureLabel(text),
 				cap: transform.k <= this.minScale(layout) * REST_ZOOM ? REST_LABELS : null,
+				occupied: expand.map((control) => control.at),
 			})
 			: [];
-		this.controls = collapseControls(labels, dots, transform, this.viewport);
+		this.controls = [...labelControls(labels), ...expand];
 		this.renderer.draw({
 			dots,
 			regions: outlines,

@@ -17,6 +17,8 @@ export interface FoldedFamily {
 	/** The parent and everything under it. */
 	count: number;
 	rollup: Rollup;
+	/** False for a finished family the read summarized past its cap: its children never arrived, so there is nothing to open. */
+	expandable: boolean;
 }
 
 /** One glyph for the renderer, in layout units. The renderer knows nothing of rows, layouts, or the model. */
@@ -104,9 +106,10 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 		if (!row) continue;
 		const weight = weights.get(node.key) ?? 1;
 		let folded: FoldedFamily | null = null;
-		if (collapsed.has(node.key)) {
+		const expandable = collapsed.has(node.key);
+		if (expandable || row.summarizedDescendants) {
 			const rollup = rollupOf(node.key);
-			folded = { count: 1 + rollup.done + rollup.in_flight + rollup.next + rollup.later, rollup };
+			folded = { count: 1 + rollup.done + rollup.in_flight + rollup.next + rollup.later, rollup, expandable };
 		}
 		dots.push({
 			key: node.key,

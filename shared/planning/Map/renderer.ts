@@ -287,8 +287,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.fillRect(-size / 2, -size / 2, size, size);
 			ctx.restore();
 		}
-		// A collapsed family that isn't all done carries its rollup under it.
-		if (dot.folded && r >= COUNT_MIN_RADIUS && dot.folded.rollup.done < dot.folded.count - 1) {
+		// Any collapsed family but a finished one (the parent and everything under it done) carries its rollup under it.
+		if (dot.folded && r >= COUNT_MIN_RADIUS && !(dot.status === 'done' && dot.folded.rollup.done === dot.folded.count - 1)) {
 			const { rollup } = dot.folded;
 			const total = dot.folded.count - 1;
 			const w = Math.max(16, 1.6 * r);

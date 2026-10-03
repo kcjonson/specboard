@@ -21,11 +21,17 @@ const EXPAND_MIN_DOT = 5;
 /** Targets reach this far past what's drawn, so a small control is still easy to hit. */
 const HIT_SLOP = 4;
 
-export function collapseControls(labels: readonly RegionLabel[], dots: readonly DrawDot[], transform: Transform, viewport: Viewport): CollapseControl[] {
-	const controls: CollapseControl[] = labels.map((label) => ({ key: label.key, collapse: true, at: label.toggle }));
+/** The collapse control on each placed region label. */
+export function labelControls(labels: readonly RegionLabel[]): CollapseControl[] {
+	return labels.map((label) => ({ key: label.key, collapse: true, at: label.toggle }));
+}
+
+/** The expand control on each folded dot that can open, placed before labels so a label never covers one. */
+export function expandControls(dots: readonly DrawDot[], transform: Transform, viewport: Viewport): CollapseControl[] {
+	const controls: CollapseControl[] = [];
 	const { k } = transform;
 	for (const dot of dots) {
-		if (!dot.folded) continue;
+		if (!dot.folded?.expandable) continue;
 		const r = Math.max(dot.r * k, MIN_DRAW_RADIUS);
 		if (r < EXPAND_MIN_DOT) continue;
 		const x = transform.x + k * dot.x;

@@ -80,7 +80,7 @@ describe('draw list', () => {
 	it('folds a finished family into one dot carrying its count', () => {
 		const dot = byKey.get(finished.key)!;
 		expect(layout.collapsed).toContain(finished.key);
-		expect(dot.folded).toEqual({ count: 5, rollup: { done: 4, in_flight: 0, next: 0, later: 0 } });
+		expect(dot.folded).toEqual({ count: 5, rollup: { done: 4, in_flight: 0, next: 0, later: 0 }, expandable: true });
 		expect(byKey.get(child.key)!.folded).toBeNull();
 	});
 
@@ -126,5 +126,17 @@ describe('draw list links', () => {
 		const lineage = links.find((link) => link.id === `discovered:${folded.key}>${later.key}`)!;
 		const dot = layout.nodes.find((node) => node.key === finished.key)!;
 		expect(lineage.from).toEqual({ x: dot.x, y: dot.y });
+	});
+});
+
+describe('draw list, past the read cap', () => {
+	it('draws a summarized finished family as a folded dot carrying its count, with nothing to open', () => {
+		const b = new BoardBuilder();
+		const summarized = b.add({ type: 'epic', status: 'done', summarizedDescendants: 40 });
+		const rows = new Map(b.rows.map((row) => [row.key, row]));
+		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 });
+		const [dot] = buildDrawList(layout, rows).dots;
+		expect(dot!.key).toBe(summarized.key);
+		expect(dot!.folded).toEqual({ count: 41, rollup: { done: 40, in_flight: 0, next: 0, later: 0 }, expandable: false });
 	});
 });

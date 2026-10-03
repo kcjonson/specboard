@@ -1,13 +1,10 @@
 /**
  * Weight follows the plan (spec, Status encoding): ready and blocked items draw
  * smaller and lighter the further down the plan order they sit. Weight runs from 1 at
- * the top of the plan to MIN_WEIGHT at the bottom, and everything else (in flight,
+ * the top of the plan to 0 at the bottom, and everything else (in flight,
  * done) stays at 1. The tint goes toward the surface and stops where the mark still
  * clears 3:1, so most of the falloff is size and ring weight.
  */
-
-/** Weight at the bottom of the plan. */
-export const MIN_WEIGHT = 0.3;
 
 /** Under 1, the falloff is quick near the top of the plan and flattens out further down. */
 const FALLOFF_CURVE = 0.7;
@@ -27,7 +24,7 @@ export function planWeights(planOrder: readonly string[]): Map<string, number> {
 	const last = planOrder.length - 1;
 	planOrder.forEach((key, index) => {
 		const depth = last > 0 ? index / last : 0;
-		weights.set(key, 1 - (1 - MIN_WEIGHT) * depth ** FALLOFF_CURVE);
+		weights.set(key, 1 - depth ** FALLOFF_CURVE);
 	});
 	return weights;
 }

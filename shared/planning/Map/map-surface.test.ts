@@ -409,6 +409,23 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		expect(renderer.frames.at(-1)!.regions).toBe(opened);
 	});
 
+	it('drops a deferred outline task once destroyed', () => {
+		const { surface, renderer, camera, flush, frames, deferred } = setup();
+		const { layout, rows } = familyBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		const at = camera.transform;
+		camera.set({ ...at, k: gridStep(at.k) === gridStep(0.5) ? 3 : 0.5 });
+		flush();
+		expect(deferred).toHaveLength(1);
+		const painted = renderer.frames.length;
+		surface.destroy();
+		deferred[0]!();
+		expect(frames).toHaveLength(0);
+		expect(renderer.frames.length).toBe(painted);
+	});
+
 	it('takes a new layout where the camera already is, as a collapse does', () => {
 		const { surface, renderer, camera, flush } = setup();
 		const { layout, rows, epic } = familyBoard();
