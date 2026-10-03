@@ -373,8 +373,8 @@ export async function updateItem(
 	// Status-transition shortcuts. Worker episodes are recorded/ended inside the
 	// services (any transition out of in_progress ends them, whichever surface).
 	if (status === 'in_progress') {
-		if (hasFields) await updateItemService(project.id, number, fields);
-		const item = await startItemService(project.id, number);
+		if (hasFields) await updateItemService(project.id, number, fields, actor);
+		const item = await startItemService(project.id, number, actor);
 		if (!item) return err('Item not found');
 		const noteError = await appendNote();
 		if (noteError) return noteError;
@@ -388,8 +388,8 @@ export async function updateItem(
 		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item started' });
 	}
 	if (status === 'done') {
-		if (hasFields) await updateItemService(project.id, number, fields);
-		const item = await completeItemService(project.id, number);
+		if (hasFields) await updateItemService(project.id, number, fields, actor);
+		const item = await completeItemService(project.id, number, actor);
 		if (!item) return err('Item not found');
 		const noteError = await appendNote();
 		if (noteError) return noteError;
@@ -406,8 +406,8 @@ export async function updateItem(
 		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist, ...specs }, message: 'Item completed' });
 	}
 	if (status === 'blocked') {
-		if (hasFields) await updateItemService(project.id, number, fields);
-		const item = await blockItemService(project.id, number);
+		if (hasFields) await updateItemService(project.id, number, fields, actor);
+		const item = await blockItemService(project.id, number, actor);
 		if (!item) return err('Item not found');
 		const noteError = await appendNote();
 		if (noteError) return noteError;
@@ -420,7 +420,7 @@ export async function updateItem(
 		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item blocked' });
 	}
 	if (status === 'ready' && !hasFields && !note) {
-		const item = await unblockItemService(project.id, number);
+		const item = await unblockItemService(project.id, number, actor);
 		if (!item) return err('Item not found');
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
@@ -435,7 +435,7 @@ export async function updateItem(
 	const updateData: UpdateItemInput = { ...fields };
 	if (status !== undefined) updateData.status = status;
 
-	const item = await updateItemService(project.id, number, updateData);
+	const item = await updateItemService(project.id, number, updateData, actor);
 	if (!item) return err('Item not found');
 	const noteError = await appendNote();
 	if (noteError) return noteError;

@@ -20,9 +20,11 @@
 
 	/* Colors - Status */
 	--color-ready: #3b82f6;
-	--color-in-progress: #f59e0b;
-	--color-in-review: #8b5cf6;
-	--color-done: #10b981;
+	--color-in-progress: #d97706;
+	--color-in-review: #c026d3;
+	--color-done: #5f9e86;
+	--color-blocked: #64748b;
+	--color-needs-person: #1a1a1a;
 
 	/* Colors - Interactive */
 	--color-primary: #3b82f6;
@@ -142,11 +144,11 @@
 		/* Colors - Border */
 		--color-border: #333333;
 
-		/* Colors - Status (slightly muted for dark mode) */
-		--color-ready: #60a5fa;
-		--color-in-progress: #fbbf24;
-		--color-in-review: #a78bfa;
-		--color-done: #34d399;
+		/* Colors - Status. Ready, In progress, and In review clear 3:1 on both
+		   surfaces, so they keep their light values; only the muted states move. */
+		--color-done: #3f7a63;
+		--color-blocked: #94a3b8;
+		--color-needs-person: #f0f0f0;
 
 		/* Colors - Interactive */
 		--color-primary: #60a5fa;

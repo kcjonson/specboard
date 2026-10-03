@@ -16,13 +16,23 @@ export async function applyMigration(db: PGlite, file: string): Promise<void> {
 	});
 }
 
+function migrationFiles(): string[] {
+	return readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
+}
+
 /** A database migrated up to, but not including, `stopBefore` (every migration when omitted). */
 export async function migratedDb(stopBefore?: string): Promise<PGlite> {
 	const db = new PGlite({ extensions: { pgcrypto } });
-	const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
-	for (const file of files) {
+	for (const file of migrationFiles()) {
 		if (file === stopBefore) break;
 		await applyMigration(db, file);
 	}
 	return db;
+}
+
+/** Apply every migration after `last`, bringing a part-migrated database up to the current code. */
+export async function applyMigrationsAfter(db: PGlite, last: string): Promise<void> {
+	for (const file of migrationFiles().filter((f) => f > last)) {
+		await applyMigration(db, file);
+	}
 }

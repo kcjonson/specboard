@@ -61,30 +61,30 @@ describe('update_item status shortcuts', () => {
 	it('names the shortcut status when sub_status rides along, so nothing is derived', async () => {
 		await updateItem(PROJECT, { item_key: 'SB-1', status: 'in_progress', sub_status: 'complete' }, ACTOR);
 
-		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { subStatus: 'complete', status: 'in_progress' });
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { subStatus: 'complete', status: 'in_progress' }, ACTOR);
 		expect(vi.mocked(startItem)).toHaveBeenCalled();
 	});
 
 	it('applies branch_name sent with status in_progress', async () => {
 		await updateItem(PROJECT, { item_key: 'SB-1', status: 'in_progress', branch_name: 'feat/x' }, ACTOR);
 
-		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { branchName: 'feat/x' });
-		expect(vi.mocked(startItem)).toHaveBeenCalledWith('proj-1', 1);
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { branchName: 'feat/x' }, ACTOR);
+		expect(vi.mocked(startItem)).toHaveBeenCalledWith('proj-1', 1, ACTOR);
 	});
 
 	it('applies pr_url and appends the note sent with status done', async () => {
 		await updateItem(PROJECT, { item_key: 'SB-1', status: 'done', note: 'merged #1', pr_url: 'https://x/1' }, ACTOR);
 
-		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { prUrl: 'https://x/1' });
-		expect(vi.mocked(completeItem)).toHaveBeenCalledWith('proj-1', 1);
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { prUrl: 'https://x/1' }, ACTOR);
+		expect(vi.mocked(completeItem)).toHaveBeenCalledWith('proj-1', 1, ACTOR);
 		expect(mockAddNote).toHaveBeenCalledWith('proj-1', 1, 'merged #1', ACTOR);
 	});
 
 	it('applies branch_name and appends the note sent with status blocked', async () => {
 		await updateItem(PROJECT, { item_key: 'SB-1', status: 'blocked', note: 'needs API key', branch_name: 'fix/auth' }, ACTOR);
 
-		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { branchName: 'fix/auth' });
-		expect(vi.mocked(blockItem)).toHaveBeenCalledWith('proj-1', 1);
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { branchName: 'fix/auth' }, ACTOR);
+		expect(vi.mocked(blockItem)).toHaveBeenCalledWith('proj-1', 1, ACTOR);
 		expect(mockAddNote).toHaveBeenCalledWith('proj-1', 1, 'needs API key', ACTOR);
 	});
 
@@ -99,7 +99,7 @@ describe('update_item status shortcuts', () => {
 		const result = await updateItem(PROJECT, { item_key: 'SB-1', status: 'blocked', blockers: [{ text: 'waiting on design' }] }, ACTOR);
 
 		expect(result.isError).toBeUndefined();
-		expect(vi.mocked(blockItem)).toHaveBeenCalledWith('proj-1', 1);
+		expect(vi.mocked(blockItem)).toHaveBeenCalledWith('proj-1', 1, ACTOR);
 		expect(mockAddNote).not.toHaveBeenCalled();
 	});
 
@@ -107,22 +107,33 @@ describe('update_item status shortcuts', () => {
 		await updateItem(PROJECT, { item_key: 'SB-1', status: 'ready', title: 'Renamed' }, ACTOR);
 
 		expect(vi.mocked(unblockItem)).not.toHaveBeenCalled();
-		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { title: 'Renamed', status: 'ready' });
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { title: 'Renamed', status: 'ready' }, ACTOR);
 	});
 
 	it('falls through to the general update when status ready carries a note', async () => {
 		await updateItem(PROJECT, { item_key: 'SB-1', status: 'ready', note: 'unblocked by hand' }, ACTOR);
 
 		expect(vi.mocked(unblockItem)).not.toHaveBeenCalled();
-		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { status: 'ready' });
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { status: 'ready' }, ACTOR);
 		expect(mockAddNote).toHaveBeenCalledWith('proj-1', 1, 'unblocked by hand', ACTOR);
 	});
 
 	it('still takes the bare unblock shortcut for a plain status ready', async () => {
 		await updateItem(PROJECT, { item_key: 'SB-1', status: 'ready' }, ACTOR);
 
-		expect(vi.mocked(unblockItem)).toHaveBeenCalledWith('proj-1', 1);
+		expect(vi.mocked(unblockItem)).toHaveBeenCalledWith('proj-1', 1, ACTOR);
 		expect(mockUpdate).not.toHaveBeenCalled();
+	});
+
+	it('hands the session\'s actor to every status write, so the transition log names the agent', async () => {
+		for (const status of ['in_progress', 'done', 'blocked', 'ready', 'in_review']) {
+			await updateItem(PROJECT, { item_key: 'SB-1', status, note: 'why' }, ACTOR);
+		}
+		await updateItem(PROJECT, { item_key: 'SB-1', sub_status: 'pr_open' }, ACTOR);
+
+		const writes: unknown[][] = [startItem, completeItem, blockItem, updateItemService].flatMap((fn) => vi.mocked(fn).mock.calls as unknown[][]);
+		expect(writes).toHaveLength(6);
+		for (const call of writes) expect(call.at(-1)).toBe(ACTOR);
 	});
 });
 
@@ -134,7 +145,7 @@ describe('update_item move', () => {
 		const result = await updateItem(PROJECT, { item_key: 'SB-1', parent_key: 'SB-9', title: 'Renamed', pr_url: 'https://x/1' }, ACTOR);
 
 		expect(vi.mocked(moveItem)).toHaveBeenCalledWith('proj-1', 1, 9);
-		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { title: 'Renamed', prUrl: 'https://x/1' });
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { title: 'Renamed', prUrl: 'https://x/1' }, ACTOR);
 		expect(payload(result).updated).toMatchObject({ parentKey: 'SB-9' });
 	});
 
@@ -142,7 +153,7 @@ describe('update_item move', () => {
 		const result = await updateItem(PROJECT, { item_key: 'SB-1', parent_key: 'SB-9', status: 'done' }, ACTOR);
 
 		expect(vi.mocked(moveItem)).toHaveBeenCalledWith('proj-1', 1, 9);
-		expect(vi.mocked(completeItem)).toHaveBeenCalledWith('proj-1', 1);
+		expect(vi.mocked(completeItem)).toHaveBeenCalledWith('proj-1', 1, ACTOR);
 		expect(payload(result).updated).toMatchObject({ status: 'done', parentKey: 'SB-9' });
 	});
 

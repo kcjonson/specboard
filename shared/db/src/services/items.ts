@@ -9,8 +9,8 @@
 import type pg from 'pg';
 import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
-import type { Item, ItemType, ItemStatus, SubStatus, StatusSource, SpecType, ItemOrigin, ChecklistEntry } from '../types.ts';
-import { bumpItem, clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
+import type { Actor, Item, ItemType, ItemStatus, SubStatus, StatusSource, SpecType, ItemOrigin, ChecklistEntry, SystemActor } from '../types.ts';
+import { bumpItem, clearBlockersForCompletion, listOpenBlockersByItems, lockProjectBlockers, type BlockerSummary } from './blockers.ts';
 import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
 
@@ -83,6 +83,10 @@ export interface ItemResponse {
 	branchName: string | null;
 	createdAt: Date;
 	updatedAt: Date;
+	/** First entry into in_progress or in_review; null if never started, or last moved before stamps existed. */
+	startedAt: Date | null;
+	/** Most recent entry into done; null whenever the status isn't done, and on items done before stamps existed. */
+	completedAt: Date | null;
 	childStats: ChildStats;
 }
 
@@ -262,6 +266,8 @@ function transformItem(item: ItemRow): Omit<ItemResponse, 'childStats' | 'blocke
 		branchName: item.branch_name,
 		createdAt: item.created_at,
 		updatedAt: item.updated_at,
+		startedAt: item.started_at,
+		completedAt: item.completed_at,
 	};
 }
 
@@ -503,6 +509,69 @@ const STARTED_CHILD_STATUSES: ItemStatus[] = ['in_progress', 'in_review', 'done'
 /** Sub-statuses by which an item claims in_progress for itself, whatever its children are doing. */
 const ACTIVE_SUB_STATUSES: SubStatus[] = ['scoping', 'in_development', 'needs_input', 'paused', 'pr_open'];
 
+/** Who moves a parent the rollup moves: nobody asked for it, its children's statuses did. */
+const ROLLUP_ACTOR: SystemActor = { type: 'system', cause: 'parent_rollup' };
+
+/** An item's status and sub-status on either side of one write. A null before is a create. */
+interface StatusMove {
+	id: string;
+	project_id: string;
+	status: ItemStatus;
+	sub_status: SubStatus | null;
+	previous_status: ItemStatus | null;
+	previous_sub_status: SubStatus | null;
+}
+
+/** The row an item write leaves, with the status and sub-status it replaced. */
+interface WrittenRow extends StatusMove {
+	parent_id: string | null;
+	previous_status: ItemStatus;
+}
+
+/**
+ * Log a write in item_transitions when it moved the status or the sub-status, on the
+ * write's own transaction so the two commit together. The web client restates both on
+ * every save, so naming them isn't a move; only a value that differs from the row's is.
+ */
+async function recordTransition(client: pg.PoolClient, move: StatusMove, actor: Actor): Promise<void> {
+	if (move.status === move.previous_status && move.sub_status === move.previous_sub_status) return;
+	await client.query(
+		`INSERT INTO item_transitions (item_id, project_id, from_status, to_status, from_sub_status, to_sub_status, actor)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		[move.id, move.project_id, move.previous_status, move.status, move.previous_sub_status, move.sub_status, JSON.stringify(actor)]
+	);
+}
+
+/**
+ * Update one item by number and log the move, inside the caller's transaction. `set` is
+ * the SET list, numbered from $1 against `values`; its expressions read the row as it
+ * was, so `status` there is the old value. The locking sub-select reads the row as it
+ * stands once any concurrent write has committed, so the before it reports is the row
+ * this write replaced; a plain one would report against the statement's older snapshot.
+ * started_at and completed_at are the items_status_stamps trigger's, not the SET's.
+ */
+async function writeItem(
+	client: pg.PoolClient,
+	projectId: string,
+	itemNumber: number,
+	set: string,
+	values: unknown[],
+	actor: Actor
+): Promise<WrittenRow | undefined> {
+	const result = await client.query<WrittenRow>(
+		`UPDATE items SET ${set}
+		FROM (SELECT id AS previous_id, status AS previous_status, sub_status AS previous_sub_status FROM items
+			WHERE number = $${values.length + 1} AND project_id = $${values.length + 2} FOR NO KEY UPDATE) previous
+		WHERE items.id = previous.previous_id
+		RETURNING items.id, items.project_id, items.parent_id, items.status, items.sub_status,
+			previous.previous_status, previous.previous_sub_status`,
+		[...values, itemNumber, projectId]
+	);
+	const row = result.rows[0];
+	if (row) await recordTransition(client, row, actor);
+	return row;
+}
+
 /**
  * Recompute an item's status from its current children, then its parent's, and so on
  * up to the root. Called with the parent after every write that can change a child's
@@ -524,6 +593,9 @@ const ACTIVE_SUB_STATUSES: SubStatus[] = ['scoping', 'in_development', 'needs_in
  * its updated_at moves even when its status holds: list reads carry per-status child
  * counts, and clients only reapply a polled row whose updated_at moved. Each level up
  * is touched only when the level below it changed status.
+ *
+ * A level it moves gets a transition row, as the system: the move is the rollup's, not
+ * the caller whose child write set it off.
  *
  * Each level is its own transaction that locks the row before recomputing, so rollups
  * of one item run one at a time. Every rollup starts after the write that triggered it
@@ -555,8 +627,8 @@ interface RollUpStep {
 async function rollUpLevel(client: pg.PoolClient, itemId: string, touch: boolean): Promise<RollUpStep> {
 	// NO KEY UPDATE, not UPDATE: it still excludes other rollups but doesn't block the
 	// FK's KEY SHARE lock, so children can be created under or moved into this item meanwhile.
-	const locked = await client.query<{ parent_id: string | null }>(
-		'SELECT parent_id FROM items WHERE id = $1 FOR NO KEY UPDATE',
+	const locked = await client.query<{ parent_id: string | null; status: ItemStatus; sub_status: SubStatus | null }>(
+		'SELECT parent_id, status, sub_status FROM items WHERE id = $1 FOR NO KEY UPDATE',
 		[itemId]
 	);
 	const lockedRow = locked.rows[0];
@@ -582,6 +654,15 @@ async function rollUpLevel(client: pg.PoolClient, itemId: string, touch: boolean
 		if (touch) await bumpItem(client, itemId);
 		return { parentId: lockedRow.parent_id, changed: false };
 	}
+	// The row is locked, so what the lock read is what this write replaced.
+	await recordTransition(client, {
+		id: itemId,
+		project_id: row.project_id,
+		status: row.status,
+		sub_status: lockedRow.sub_status,
+		previous_status: lockedRow.status,
+		previous_sub_status: lockedRow.sub_status,
+	}, ROLLUP_ACTOR);
 	if (row.status !== 'in_progress') await endWorkers(row.project_id, row.number, client);
 	return { parentId: lockedRow.parent_id, changed: true };
 }
@@ -618,9 +699,8 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 
 	// The allocator's UPDATE is gated on the parent resolving, so a parentNumber that
 	// names nothing produces zero rows *and writes nothing* — no phantom top-level item,
-	// no consumed number. Checking the returned row instead would be too late: this runs
-	// in autocommit, so the insert would already be durable by the time JS saw it.
-	const result = await query<ItemRow>(
+	// no consumed number.
+	const insertSql =
 		`WITH parent AS (
 			SELECT id, title FROM items WHERE project_id = $1 AND number = $2
 		), allocated AS (
@@ -635,11 +715,24 @@ export async function createItem(projectId: string, data: CreateItemInput): Prom
 		)
 		SELECT inserted.*, (SELECT key FROM allocated) AS project_key,
 			$2::int AS parent_number, (SELECT title FROM parent) AS parent_title
-		FROM inserted`,
-		values
-	);
+		FROM inserted`;
 
-	const row = result.rows[0];
+	// A named status is the item's first transition, logged with no before. One left
+	// on the default isn't a move, the same line status_source draws.
+	const row = await transaction(async (client) => {
+		const inserted = (await client.query<ItemRow>(insertSql, values)).rows[0];
+		if (inserted && data.status !== undefined) {
+			await recordTransition(client, {
+				id: inserted.id,
+				project_id: projectId,
+				status: inserted.status,
+				sub_status: inserted.sub_status,
+				previous_status: null,
+				previous_sub_status: null,
+			}, data.origin.actor);
+		}
+		return inserted;
+	});
 	if (!row) await throwCreateFailure(projectId, parentNumber);
 	await rollUpStatus(row!.parent_id, true);
 	return { ...transformItem(row!), blocked: row!.status === 'blocked', childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } };
@@ -719,15 +812,30 @@ export async function createItems(
 		.map((row) => ({ ...transformItem(row), blocked: false, childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } }));
 }
 
-interface UpdatedRow {
-	id: string;
-	parent_id: string | null;
-	status_changed: boolean;
+/**
+ * A write that reaches done, with its blocker clears, under the project's blocker lock
+ * in the caller's transaction. The lock is taken before the write: a completion holding
+ * its item's row while it waited for the lock would deadlock with a replace that holds
+ * the lock and wants that row.
+ */
+async function writeDone(
+	client: pg.PoolClient,
+	projectId: string,
+	itemNumber: number,
+	set: string,
+	values: unknown[],
+	actor: Actor
+): Promise<WrittenRow | undefined> {
+	await lockProjectBlockers(client, projectId);
+	const row = await writeItem(client, projectId, itemNumber, set, values, actor);
+	if (row) await clearBlockersForCompletion(client, row.id);
+	return row;
 }
 
 /**
  * Update an item. Setting subStatus auto-derives board status at key transitions;
- * a status the caller names wins over the derived one.
+ * a status the caller names wins over the derived one. `actor` is who the transition
+ * log records, if the write moves the status or sub-status.
  *
  * A status write records its source only when it moves the status. The web client
  * saves by PUTting the whole model, so every title edit or in-column reorder restates
@@ -736,7 +844,7 @@ interface UpdatedRow {
  * recorded as the sub_status's, since the drawer mirrors the derive client-side and
  * sends both.
  */
-export async function updateItem(projectId: string, itemNumber: number, data: UpdateItemInput): Promise<ItemResponse | null> {
+export async function updateItem(projectId: string, itemNumber: number, data: UpdateItemInput, actor: Actor): Promise<ItemResponse | null> {
 	const derived = data.subStatus === undefined ? undefined : deriveStatusFromSubStatus(data.subStatus);
 	const status = data.status ?? derived;
 
@@ -765,33 +873,16 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 	}
 
 	updates.push('updated_at = NOW()');
-	values.push(itemNumber, projectId);
-	// The parent is touched only when the status actually moves, not on every restating
-	// PUT, so the write reports whether it did. The locking sub-select reads the row as
-	// it stands once any concurrent write has committed; a plain one would report against
-	// the statement's older snapshot.
-	const sql = `UPDATE items SET ${updates.join(', ')}
-		FROM (SELECT id AS previous_id, status AS previous_status FROM items
-			WHERE number = $${i++} AND project_id = $${i} FOR NO KEY UPDATE) previous
-		WHERE items.id = previous.previous_id
-		RETURNING id, parent_id, status IS DISTINCT FROM previous.previous_status AS status_changed`;
 
 	// Reaching done (directly or via subStatus 'complete') auto-clears blockers —
 	// dependents' and the item's own — in the same transaction as the status write.
-	let updated: UpdatedRow | undefined;
-	if (status === 'done') {
-		updated = await transaction(async (client) => {
-			const result = await client.query<UpdatedRow>(sql, values);
-			const row = result.rows[0];
-			if (row) await clearBlockersForCompletion(client, row.id);
-			return row;
-		});
-	} else {
-		const result = await query<UpdatedRow>(sql, values);
-		updated = result.rows[0];
-	}
+	const updated = await transaction((client) => (status === 'done' ? writeDone : writeItem)(
+		client, projectId, itemNumber, updates.join(', '), values, actor
+	));
 	if (!updated) return null;
-	const { id, parent_id: parentId, status_changed: statusChanged } = updated;
+	const { id, parent_id: parentId } = updated;
+	// The parent is touched only when the status actually moves, not on every restating PUT.
+	const statusChanged = updated.status !== updated.previous_status;
 
 	// Any status transition out of in_progress ends worker episodes — the item
 	// is no longer being worked, whichever surface moved it.
@@ -898,12 +989,10 @@ export async function deleteItem(projectId: string, itemNumber: number): Promise
 // ── Status lifecycle (applies to any item) ──────────────────────────────────
 
 /** Start an item: in_progress, then roll its parent up. */
-export async function startItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
-	const result = await query<{ parent_id: string | null }>(
-		`UPDATE items SET status = 'in_progress', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
-		[itemNumber, projectId]
-	);
-	const started = result.rows[0];
+export async function startItem(projectId: string, itemNumber: number, actor: Actor): Promise<ItemResponse | null> {
+	const started = await transaction((client) => writeItem(
+		client, projectId, itemNumber, `status = 'in_progress', status_source = 'explicit', updated_at = NOW()`, [], actor
+	));
 	if (!started) return null;
 	await rollUpStatus(started.parent_id, true);
 	return getItemByNumber(projectId, itemNumber);
@@ -913,16 +1002,10 @@ export async function startItem(projectId: string, itemNumber: number): Promise<
  * Complete an item. Auto-clears blockers (dependents' and its own, same
  * transaction) and ends active worker episodes.
  */
-export async function completeItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
-	const completed = await transaction(async (client) => {
-		const result = await client.query<{ id: string; parent_id: string | null }>(
-			`UPDATE items SET status = 'done', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id, parent_id`,
-			[itemNumber, projectId]
-		);
-		const row = result.rows[0];
-		if (row) await clearBlockersForCompletion(client, row.id);
-		return row;
-	});
+export async function completeItem(projectId: string, itemNumber: number, actor: Actor): Promise<ItemResponse | null> {
+	const completed = await transaction((client) => writeDone(
+		client, projectId, itemNumber, `status = 'done', status_source = 'explicit', updated_at = NOW()`, [], actor
+	));
 	if (!completed) return null;
 	await endWorkers(projectId, itemNumber);
 	await rollUpStatus(completed.parent_id, true);
@@ -930,12 +1013,10 @@ export async function completeItem(projectId: string, itemNumber: number): Promi
 }
 
 /** Block an item (a manual status-level hold). Ends worker episodes (no longer being worked). */
-export async function blockItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
-	const result = await query<{ parent_id: string | null }>(
-		`UPDATE items SET status = 'blocked', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
-		[itemNumber, projectId]
-	);
-	const row = result.rows[0];
+export async function blockItem(projectId: string, itemNumber: number, actor: Actor): Promise<ItemResponse | null> {
+	const row = await transaction((client) => writeItem(
+		client, projectId, itemNumber, `status = 'blocked', status_source = 'explicit', updated_at = NOW()`, [], actor
+	));
 	if (!row) return null;
 	await endWorkers(projectId, itemNumber);
 	await rollUpStatus(row.parent_id, true);
@@ -950,14 +1031,12 @@ export async function blockItem(projectId: string, itemNumber: number): Promise<
  * status=ready to it) is a deliberate move to Ready and is explicit. The SET reads
  * the row as it was, so `status` in the CASE is the old value.
  */
-export async function unblockItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
-	const result = await query<{ parent_id: string | null }>(
-		`UPDATE items SET status = 'ready',
-			status_source = CASE WHEN status = 'blocked' THEN 'default' ELSE 'explicit' END, updated_at = NOW()
-		WHERE number = $1 AND project_id = $2 RETURNING parent_id`,
-		[itemNumber, projectId]
-	);
-	const row = result.rows[0];
+export async function unblockItem(projectId: string, itemNumber: number, actor: Actor): Promise<ItemResponse | null> {
+	const row = await transaction((client) => writeItem(
+		client, projectId, itemNumber,
+		`status = 'ready', status_source = CASE WHEN status = 'blocked' THEN 'default' ELSE 'explicit' END, updated_at = NOW()`,
+		[], actor
+	));
 	if (!row) return null;
 	await endWorkers(projectId, itemNumber);
 	await rollUpStatus(row.parent_id, true);

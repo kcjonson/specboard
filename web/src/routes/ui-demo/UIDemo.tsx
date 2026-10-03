@@ -9,7 +9,7 @@ import {
 	Select,
 	Card,
 	Badge,
-	StatusDot,
+	StatusGlyph,
 	Icon,
 	SplitButton,
 	Checkbox,
@@ -293,27 +293,26 @@ export function UIDemo(): JSX.Element {
 					</div>
 				</section>
 
-				{/* StatusDot */}
+				{/* StatusGlyph */}
 				<section class={styles.section}>
-					<h2 class={styles.sectionTitle}>StatusDot</h2>
-					<p class={styles.sectionDesc}>Visual status indicators. Status prop determines color.</p>
+					<h2 class={styles.sectionTitle}>StatusGlyph</h2>
+					<p class={styles.sectionDesc}>Item status as a shape, so hue is never the only signal. The blocked prop takes an item's derived blocked flag.</p>
 
 					<div class={styles.subsection}>
 						<h3 class={styles.subsectionTitle}>Status Types (via prop)</h3>
 						<div class={styles.row}>
-							<span class={styles.statusItem}><StatusDot status="default" /> Default</span>
-							<span class={styles.statusItem}><StatusDot status="ready" /> Ready</span>
-							<span class={styles.statusItem}><StatusDot status="in_progress" /> In Progress</span>
-							<span class={styles.statusItem}><StatusDot status="done" /> Done</span>
+							<span class={styles.statusItem}><StatusGlyph status="ready" decorative /> Ready</span>
+							<span class={styles.statusItem}><StatusGlyph status="in_progress" decorative /> In Progress</span>
+							<span class={styles.statusItem}><StatusGlyph status="in_review" decorative /> In Review</span>
+							<span class={styles.statusItem}><StatusGlyph status="done" decorative /> Done</span>
+							<span class={styles.statusItem}><StatusGlyph status="blocked" decorative /> Blocked</span>
 						</div>
 					</div>
 
 					<div class={styles.subsection}>
-						<h3 class={styles.subsectionTitle}>Sizes (via class)</h3>
+						<h3 class={styles.subsectionTitle}>Blocked flag on a Ready item</h3>
 						<div class={styles.row}>
-							<span class={styles.statusItem}><StatusDot status="ready" class="size-sm" /> Small</span>
-							<span class={styles.statusItem}><StatusDot status="ready" /> Medium (default)</span>
-							<span class={styles.statusItem}><StatusDot status="ready" class="size-lg" /> Large</span>
+							<span class={styles.statusItem}><StatusGlyph status="ready" blocked decorative /> Ready, with an open blocker</span>
 						</div>
 					</div>
 				</section>

@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/preact';
 import { ItemModel, ITEM_STATUSES } from '@specboard/models';
-import { StatusDot, STATUS_LABELS } from '@specboard/ui';
+import { STATUS_GLYPHS, STATUS_LABELS } from '@specboard/ui';
 import { ChildrenSection } from './ChildrenSection';
 
 const get = vi.fn();
@@ -105,18 +105,28 @@ describe('ChildrenSection', () => {
 		expect(getByText('Blocked')).toBeTruthy();
 	});
 
-	it('gives every status its own dot color, In Review included', () => {
+	it('draws every status as its own glyph, In Review included', () => {
 		const item = makeItem('epic', ITEM_STATUSES.map((status, i) =>
 			child({ id: `c${i}`, key: `SB-${i + 2}`, number: i + 2, status })
 		));
 		const { getByText } = render(<ChildrenSection item={item} />);
 
 		for (const status of ITEM_STATUSES) {
-			// Compared against a bare StatusDot so this doesn't depend on how CSS modules name classes.
-			const { container } = render(<StatusDot status={status} />);
-			expect(getByText(STATUS_LABELS[status]).firstElementChild?.className)
-				.toBe(container.firstElementChild?.className);
+			const glyph = getByText(STATUS_LABELS[status]).querySelector('svg');
+			const { stroke, fill, token } = STATUS_GLYPHS[status];
+			expect(glyph?.style.color).toBe(`var(${token})`);
+			expect(glyph?.querySelector('path[fill=none]')?.getAttribute('d') ?? undefined).toBe(stroke);
+			expect(glyph?.querySelector('path[fill-rule]')?.getAttribute('d') ?? undefined).toBe(fill);
 		}
+	});
+
+	it('draws the blocked glyph for an unblocked-status child with an open blocker', () => {
+		const item = makeItem('epic', [child({ status: 'ready', blocked: true })]);
+		const { getByText } = render(<ChildrenSection item={item} />);
+
+		const glyph = getByText('Ready').querySelector('svg');
+		expect(glyph?.style.color).toBe(`var(${STATUS_GLYPHS.blocked.token})`);
+		expect(glyph?.querySelector('path')?.getAttribute('d')).toBe(STATUS_GLYPHS.blocked.fill);
 	});
 
 	it('counts done children in the header', () => {

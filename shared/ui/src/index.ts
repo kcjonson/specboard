@@ -52,10 +52,19 @@ export type { BadgeProps } from './Badge/Badge';
 export { Notice } from './Notice/Notice';
 export type { NoticeProps, NoticeVariant } from './Notice/Notice';
 
-// StatusDot
-export { StatusDot } from './StatusDot/StatusDot';
-export type { StatusDotProps, StatusType } from './StatusDot/StatusDot';
+// Status glyphs
+export { StatusGlyph } from './StatusGlyph/StatusGlyph';
+export type { StatusGlyphProps } from './StatusGlyph/StatusGlyph';
 export { STATUS_LABELS } from './status';
+export {
+	GLYPH_BOX,
+	RING_WIDTH,
+	STATUS_TOKENS,
+	NEEDS_PERSON_TOKEN,
+	STATUS_GLYPHS,
+	glyphStatus,
+} from './status-glyph';
+export type { StatusGlyphSpec } from './status-glyph';
 
 // UserMenu
 export { UserMenu } from './UserMenu/UserMenu';

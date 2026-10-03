@@ -14,7 +14,7 @@ import { NotesSection } from '../NotesSection/NotesSection';
 import { actorLabel } from '../utils/actor';
 import { TYPE_LABELS } from '../utils/itemType';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
-import { formatTimeAgo } from '../utils/time';
+import { formatDateTime, formatTimeAgo } from '../utils/time';
 import styles from './ItemView.module.css';
 
 /** Titles stay one line of text; the textarea is only there so it wraps visually. */
@@ -55,6 +55,12 @@ function deriveStatusFromSubStatus(subStatus: SubStatus): ItemStatus | undefined
 			return undefined;
 	}
 }
+
+const DATE_FIELDS: { label: string; value: (item: ItemModel) => string | null | undefined }[] = [
+	{ label: 'Created', value: (item) => item.createdAt },
+	{ label: 'Started', value: (item) => item.startedAt },
+	{ label: 'Completed', value: (item) => item.completedAt },
+];
 
 /** Milliseconds after which an agent session with no observed writes reads as stale. */
 const WORKER_STALE_MS = 15 * 60 * 1000;
@@ -312,6 +318,19 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 						<span class={styles.fieldLabel}>Assignee</span>
 						<span class={styles.fieldValue}>{item.assignee || 'Unassigned'}</span>
 					</div>
+					{/* A date shows only once it's set. Empty doesn't mean never: items
+					    that moved before the server stamped these have none. */}
+					{DATE_FIELDS.map(({ label, value }) => {
+						const at = value(item);
+						return at ? (
+							<div key={label} class={styles.field}>
+								<span class={styles.fieldLabel}>{label}</span>
+								<time class={styles.fieldValue} dateTime={at} title={new Date(at).toLocaleString()}>
+									{formatDateTime(at)}
+								</time>
+							</div>
+						) : null;
+					})}
 					{item.prUrl && (
 						<div class={styles.field}>
 							<span class={styles.fieldLabel}>Pull Request</span>

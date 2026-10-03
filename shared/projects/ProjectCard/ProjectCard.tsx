@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
-import { Card, StatusDot, Icon } from '@specboard/ui';
+import { Card, StatusGlyph, Icon } from '@specboard/ui';
 import styles from './ProjectCard.module.css';
 
 export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
@@ -157,25 +157,25 @@ export function ProjectCard({ project, onClick, onEdit, onRetrySync }: ProjectCa
 						<div class={styles.epicStats}>
 							{itemCounts.ready > 0 && (
 								<span class={styles.statItem}>
-									<StatusDot status="ready" />
+									<StatusGlyph status="ready" />
 									<span class={styles.statCount}>{itemCounts.ready}</span>
 								</span>
 							)}
 							{itemCounts.in_progress > 0 && (
 								<span class={styles.statItem}>
-									<StatusDot status="in_progress" />
+									<StatusGlyph status="in_progress" />
 									<span class={styles.statCount}>{itemCounts.in_progress}</span>
 								</span>
 							)}
 							{itemCounts.in_review > 0 && (
 								<span class={styles.statItem}>
-									<StatusDot status="in_review" />
+									<StatusGlyph status="in_review" />
 									<span class={styles.statCount}>{itemCounts.in_review}</span>
 								</span>
 							)}
 							{itemCounts.done > 0 && (
 								<span class={styles.statItem}>
-									<StatusDot status="done" />
+									<StatusGlyph status="done" />
 									<span class={styles.statCount}>{itemCounts.done}</span>
 								</span>
 							)}
