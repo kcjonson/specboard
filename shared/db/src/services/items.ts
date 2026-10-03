@@ -10,7 +10,7 @@ import type pg from 'pg';
 import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Actor, Item, ItemType, ItemStatus, SubStatus, StatusSource, SpecType, ItemOrigin, ChecklistEntry, SystemActor } from '../types.ts';
-import { bumpItem, clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
+import { bumpItem, clearBlockersForCompletion, listOpenBlockersByItems, lockProjectBlockers, type BlockerSummary } from './blockers.ts';
 import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
 
@@ -813,6 +813,26 @@ export async function createItems(
 }
 
 /**
+ * A write that reaches done, with its blocker clears, under the project's blocker lock
+ * in the caller's transaction. The lock is taken before the write: a completion holding
+ * its item's row while it waited for the lock would deadlock with a replace that holds
+ * the lock and wants that row.
+ */
+async function writeDone(
+	client: pg.PoolClient,
+	projectId: string,
+	itemNumber: number,
+	set: string,
+	values: unknown[],
+	actor: Actor
+): Promise<WrittenRow | undefined> {
+	await lockProjectBlockers(client, projectId);
+	const row = await writeItem(client, projectId, itemNumber, set, values, actor);
+	if (row) await clearBlockersForCompletion(client, row.id);
+	return row;
+}
+
+/**
  * Update an item. Setting subStatus auto-derives board status at key transitions;
  * a status the caller names wins over the derived one. `actor` is who the transition
  * log records, if the write moves the status or sub-status.
@@ -856,11 +876,9 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 
 	// Reaching done (directly or via subStatus 'complete') auto-clears blockers —
 	// dependents' and the item's own — in the same transaction as the status write.
-	const updated = await transaction(async (client) => {
-		const row = await writeItem(client, projectId, itemNumber, updates.join(', '), values, actor);
-		if (row && status === 'done') await clearBlockersForCompletion(client, row.id);
-		return row;
-	});
+	const updated = await transaction((client) => (status === 'done' ? writeDone : writeItem)(
+		client, projectId, itemNumber, updates.join(', '), values, actor
+	));
 	if (!updated) return null;
 	const { id, parent_id: parentId } = updated;
 	// The parent is touched only when the status actually moves, not on every restating PUT.
@@ -985,13 +1003,9 @@ export async function startItem(projectId: string, itemNumber: number, actor: Ac
  * transaction) and ends active worker episodes.
  */
 export async function completeItem(projectId: string, itemNumber: number, actor: Actor): Promise<ItemResponse | null> {
-	const completed = await transaction(async (client) => {
-		const row = await writeItem(
-			client, projectId, itemNumber, `status = 'done', status_source = 'explicit', updated_at = NOW()`, [], actor
-		);
-		if (row) await clearBlockersForCompletion(client, row.id);
-		return row;
-	});
+	const completed = await transaction((client) => writeDone(
+		client, projectId, itemNumber, `status = 'done', status_source = 'explicit', updated_at = NOW()`, [], actor
+	));
 	if (!completed) return null;
 	await endWorkers(projectId, itemNumber);
 	await rollUpStatus(completed.parent_id, true);

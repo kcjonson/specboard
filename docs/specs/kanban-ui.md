@@ -466,8 +466,10 @@ Two consequences worth knowing:
 | `--color-text-muted` | #6b7280 | Secondary text |
 | `--color-border` | #e5e7eb | Borders |
 | `--color-ready` | #3b82f6 | Ready status |
-| `--color-in-progress` | #f59e0b | In Progress status |
-| `--color-done` | #10b981 | Done status |
+| `--color-in-progress` | #d97706 | In Progress status |
+| `--color-in-review` | #c026d3 | In Review status |
+| `--color-done` | #5f9e86 (dark #3f7a63) | Done status |
+| `--color-blocked` | #64748b (dark #94a3b8) | Blocked status |
 | `--color-primary` | #3b82f6 | Primary actions |
 | `--color-primary-hover` | #2563eb | Primary hover |
 | `--color-success` | #10b981 | Success states |

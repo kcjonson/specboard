@@ -417,15 +417,21 @@ contrast (WCAG 1.4.11), against `#ffffff` and `#1a1a1a`:
 
 Every status token but light Ready moves. In progress was `#f59e0b`, 2.15:1
 against white. In review was violet `#8b5cf6`, which deuteranopes can't tell from
-Ready's blue (and which sits under the normal-vision floor too); `status.ts` also
-maps it to the neutral dot in table rows and child lists. Done was `#10b981`, as
+Ready's blue (and which sits under the normal-vision floor too). Done was `#10b981`, as
 loud as the live hues. Blocked borrowed `--color-error`'s red and gets a slate token
 of its own, since blocked is a state rather than an error. Dark mode lightened all
 of them, and the three live hues no longer need it: each clears 3:1 against
-`#1a1a1a` too. Board, Table, child lists, and project cards show status with
-`StatusDot`, an 8 px dot that encodes it by hue alone. The Map's glyphs and these
-values replace it in every view rather than living beside it, so there's one
-status vocabulary.
+`#1a1a1a` too. Against the app's tinted surfaces, `--color-background` and
+`--color-surface-hover`, four pairs land just under 3:1: light In progress on hover
+(2.86), light Done on background and hover (2.96, 2.81), and dark Done on hover
+(2.85). The list views write the status beside the glyph, so none of them leans on
+the glyph alone; the Map has no such label at far zoom, so it should draw on
+`--color-surface` or a ground that clears these. Board, Table, child lists, and project cards draw the same glyphs
+and tokens as the Map, so there's one status vocabulary. They come from
+`status-glyph.ts` in `@specboard/ui`, which holds each glyph's geometry (as SVG path
+data a canvas can draw with `Path2D`) and token names; the `StatusGlyph` component
+and the Map's renderer both read it. Where a view has an item's derived `blocked`
+flag, the glyph shows Blocked whatever the status.
 
 ### Relationships
 
