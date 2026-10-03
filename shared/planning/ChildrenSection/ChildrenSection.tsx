@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { useModel, ItemModel, type ChildModel, type ItemType } from '@specboard/models';
-import { SplitButton, StatusDot, STATUS_LABELS, type SplitButtonOption } from '@specboard/ui';
+import { SplitButton, StatusGlyph, STATUS_LABELS, type SplitButtonOption } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import type { NewItemData } from '../NewItemForm/NewItemForm';
@@ -101,7 +101,7 @@ export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX
 					<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
 				)}
 				<span class={styles.status}>
-					<StatusDot status={child.status} />
+					<StatusGlyph status={child.status} blocked={child.blocked} decorative />
 					{STATUS_LABELS[child.status]}
 				</span>
 			</div>

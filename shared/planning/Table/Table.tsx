@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
-import { Button, Icon, StatusDot } from '@specboard/ui';
+import { Button, Icon, StatusGlyph } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
 import { SHOW_DONE_PREF, readPref, writePref } from '../Planning/prefs';
 import styles from './Table.module.css';
@@ -170,7 +170,7 @@ export function Table({
 						<div key={status} class={styles.group} role="rowgroup">
 							<div class={styles.groupHeader} role="row">
 								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={5}>
-									<StatusDot status={status} />
+									<StatusGlyph status={status} decorative />
 									<span class={styles.groupLabel}>{label}</span>
 									<span class={styles.groupCount}>{items.totalFor(status)}</span>
 								</span>
