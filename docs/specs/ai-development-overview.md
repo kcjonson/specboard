@@ -51,7 +51,8 @@ them doesn't belong in v1.
    layout algorithm (a pull toward the item's moment in time, springs along its
    relationships, and spacing between dots) rather than from slots, columns, or
    fixed constants. Ten unrelated items in a new project are ten dots in a loose
-   cloud. See [The layout](#the-layout).
+   cloud. Dates are the exception: finished work is strictly in the order it closed,
+   and work in flight sits after all of it. See [The layout](#the-layout).
 4. **All relationships shape the layout.** Parent-child links are the strongest.
    Blockers and discovered-from are weaker. They always pull, but they only draw
    for the item in focus (or with All links on): drawn faintly everywhere, they
@@ -191,27 +192,32 @@ build.
    compress. On real data the log scale alone spent a third of the width on a
    nearly empty week; the blend (about 60% equalized) keeps the map dense. The pull
    is soft: it sets a dot's neighborhood in time, and the other forces settle where
-   exactly it sits.
-3. **Links.** Parent-child links are strong, short springs, so a family clusters.
+   exactly it sits, inside the orders below.
+3. **Date order.** Done items sit in the order they closed, strictly: one that
+   closed earlier is never right of one that closed later, whatever the other forces
+   want. In-progress and in-review items haven't closed, so they sit right of the
+   last completion. After every tick a pass restores both orders with the least
+   movement, so the forces still shape everything else.
+4. **Links.** Parent-child links are strong, short springs, so a family clusters.
    Blocker and discovered-from links are weaker and longer: they draw related work
    toward each other without merging families.
-4. **Order.** An item sits right of every open item that blocks it, by at least a
-   small gap, since it can't happen first. Work waiting on something in flight sits
-   past now, where the ruler reads Next. Blocker cycles can't be ordered, so they're
-   exempt and show as deadlocks ([needs a person](#needs-a-person)).
-5. **Chains.** Inside a family, siblings that block one another form a chain. Only
+5. **Dependencies.** An item sits right of every open item that blocks it, by at
+   least a small gap, since it can't happen first; work waiting on something in
+   flight sits past now, right of what it waits on. Blocker cycles can't be ordered,
+   so they're exempt and show as deadlocks ([needs a person](#needs-a-person)).
+6. **Chains.** Inside a family, siblings that block one another form a chain. Only
    the chain's first item keeps its link to the parent; each later item hangs off
    what blocks it, and the chain holds itself level, so it reads as a row in the
    order the work can happen. Chains whose items relate in any way (a shared
    parent, a parent-child link, a blocker, or discovered-from) pull into one band,
    a row apart, so they read as associated.
-6. **Spacing.** Dots repel each other a little and never overlap, so work that
+7. **Spacing.** Dots repel each other a little and never overlap, so work that
    landed in one burst blooms into a cloud instead of stacking in a column, and
    families keep their own room.
-7. **Containment.** A weak pull toward a horizontal midline keeps the Map a band
+8. **Containment.** A weak pull toward a horizontal midline keeps the Map a band
    you can scan rather than a cloud that spreads forever. Vertical position means
    nothing beyond grouping.
-8. **Seeded start.** A dot starts at its time anchor, at a height hashed from its
+9. **Seeded start.** A dot starts at its time anchor, at a height hashed from its
    key. Together with the simulation's fixed-seed randomness, the same data at the
    same moment produces the same map on every device.
 
@@ -223,16 +229,19 @@ What that produces:
   tasks trailing back to where each was done.
 - A finished epic: a compact cluster in the past, collapsed to one dot by default.
 - A backlog item nobody has touched since it was filed: a lone dot out on the left.
-- An in-progress task whose agent went quiet: sliding left of now, its session
-  dimmed.
+- An in-progress task whose agent went quiet: drifting left as time passes, but
+  never past the last thing finished; its session dims and it wears the
+  needs-a-person ring.
+- A burst of work closed in one sitting: a run of done dots in the order they
+  closed, stacked where they closed close together.
 - A computer picking up three items in parallel: the computer at the right edge,
   its two sessions beside it, and the three items gathered on amber lines, each
   still tied to its family.
 - A chain of blocked tasks in an epic: the epic, the chain's first task, then each
   task after it a step to the right, in a row. A second chain in the same epic
   runs parallel, a row away.
-- A task waiting on one an agent is working on now: just past now, under Next,
-  beside the work it waits on.
+- A task waiting on one an agent is working on now: past now, just right of the
+  work it waits on.
 
 ### Starting values
 
@@ -246,7 +255,8 @@ to fit; r is a dot's radius.
 | Quiet break | No activity for more than 12 hours |
 | Parent-child link | Rest length r1 + r2 + 16, strength 0.7 |
 | Blocker and discovered-from links | Rest length r1 + r2 + 70, strength 0.05 |
-| Order | A blocked item at least r1 + r2 + 10 right of each open blocker, enforced after every tick |
+| Date order | After every tick, done items go back into completion order by pooling adjacent violators (the least movement that fixes an order), and in-flight items stay r + 10 right of the last completion |
+| Dependencies | A blocked item at least r1 + r2 + 10 right of each open blocker, enforced after every tick |
 | Chain link | Rest length r1 + r2 + 16, strength 0.7, in place of the later item's parent link |
 | Chain row | Strength 0.6 pulling each later item level with what blocks it |
 | Related chains | Strength 0.25 toward one row apart (their largest radii plus 10) |
@@ -267,13 +277,14 @@ hour after its last write.
 ### Layout requirements
 
 1. Left is earlier and right is now, everywhere on the Map. The forces can displace
-   a dot from its moment but not carry it weeks away from it, and nothing sits left
-   of an open blocker.
+   a dot from its moment but not carry it weeks away from it. Done items are
+   strictly in the order they closed, work in flight sits right of all of them, and
+   nothing sits left of an open blocker.
 2. A ruler of dates runs along the bottom at the same scale, ticks at least 90 px
    apart, so "roughly when" is always readable. When nothing has happened for more
    than half a day, the Map ends at the last activity and the gap to now is a
-   labeled break ("then quiet 6 days") instead of empty canvas. Past now, where
-   work waits on what's in flight, it reads Next instead of a date.
+   labeled break ("then quiet 6 days") instead of empty canvas. Past now there are
+   no dates: what sits there is in flight or waiting on it.
 3. Deterministic: same data, same moment, same map, on every device.
 4. Stable: an update starts from the current positions, and only the changed items
    and their neighbors move. Time drift, everything sliding left as time passes, is
@@ -392,6 +403,12 @@ status vocabulary.
   there, in order.
 - Other blocker links, and discovered-from links, draw only for the item in focus,
   or for every item while All links is on (decision 4).
+- Links curve. A parent's links leave it as one trunk per side, aimed at the middle
+  of that side's children, and fan out to each child, so a family reads as one
+  sweep instead of a burst of spokes. Chain links and agent lines flow
+  horizontally, the way time runs. Blocker and discovered-from links arc, bowed a
+  fifth of their length. Curves are what let positions follow dates strictly and
+  still read as families: the lines bend so the dots don't have to.
 - Selecting an item lights its whole blocker chain in both directions (what it
   waits on, transitively, and what waits on it) and its discovered-from lineage both
   ways, and dims everything else, like a path preview in a game's skill tree.
@@ -413,7 +430,7 @@ marker at once and was unreadable; these rules are the fix.
 |---|---|---|---|---|
 | Status glyph | Always. In-progress items draw larger; ready and blocked items get smaller and lighter the further down the plan they sit | Always, larger | The dot grows and gets an ink ring | Same, held until cleared |
 | Labels | In-progress items first (unless their computer's block names them), in-review items if there's room, then up to 8 of the largest families, set above or below the family's cluster. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; families stay bold | No extra label; the card names the item | Same |
-| Parent-child links and chains | Hairline; a chain's links replace its later items' parent links | Hairline | The item's family darkens | Same |
+| Parent-child links and chains | Curved hairline, fanned from the parent; a chain's links replace its later items' parent links | Curved hairline | The item's family darkens | Same |
 | Other blocker and discovered-from links | Hidden; they still pull, and a blocker still sits left of what it blocks | Hidden | The whole blocker chain both ways, discovered-from both ways (dotted) | Same |
 | Everything else | Full strength | Full strength | Fades to 30% (40% on dark) | Same, and the drawer opens |
 | Rollup ring | Families of three or more that have started | Same, slightly heavier | The card spells it out | Same |
@@ -768,10 +785,15 @@ Input for the technical design, not decisions.
   requirement; the hashed starting positions are the other half. Starting each dot
   at its anchor puts it near its final spot, which keeps the tick count, and the
   cold-start time, down. Run it in a Web Worker.
-- `d3-force` has no ordering constraint. The prototype's was a few lines: after
-  each tick, walk the open blockers in dependency order and push any blocked item
-  that sits too far left back to the minimum gap. Chains and related chains are
+- `d3-force` has no ordering constraints. The prototype's were a few lines each,
+  run after every tick: pool adjacent violators over done items sorted by
+  completion (the least-squares fix for an order), a floor for in-flight items,
+  and a walk over open blockers in dependency order. Chains and related chains are
   two small custom forces on `vy`.
+- Curves cost one quadratic or cubic Bezier per link (`quadraticCurveTo` and
+  `bezierCurveTo` on the canvas). The fans are a cheap form of hierarchical edge
+  bundling (Holten, 2006). If All links gets busy, force-directed edge bundling
+  (Holten and van Wijk, 2009), computed in the worker, is the next step.
 - Alternatives if `d3-force` falls short: ForceAtlas2 through graphology (Gephi's
   organic layout, about 3 KB plus graphology), or WebCoLa (about 21 KB), whose
   separation constraints are the ordering rule built in.
