@@ -36,8 +36,6 @@ them doesn't belong in v1.
 
 ## Decisions
 
-### Settled
-
 1. **Every item gets `started_at` and `completed_at`, as part of this feature.**
    Items carry only `created_at` and `updated_at` today, so when something started
    or finished isn't stored anywhere. They're item fields, not Map internals: every
@@ -66,20 +64,18 @@ them doesn't belong in v1.
 8. **Desktop only in v1.** Below 768 px the view toggle offers Board and Table, and
    `?view=map` opened on a small screen lands on the Board. The small-screen Map is
    SPE-220; [Platforms](#platforms) keeps its requirements.
-
-### Proposed
-
-Confirm or redline before the design pass.
-
 9. **One project per map.** A cross-project portfolio asks different questions and
    is a different view.
 10. **Read-only.** Nothing on the Map changes an item in v1. Dragging a dot to pull
     a tangle apart is allowed; it springs back on release and nothing is saved.
     Edits happen in the drawer, under its existing role rules.
-11. **The default viewport is now.** The Map opens on its right edge, where
-    in-flight work and most of what needs a person live. Fit-all is one key away.
+11. **The default viewport is now.** The Map opens with now at its right edge,
+    where in-flight work and most of what needs a person live: at fit all when the
+    whole Map fits at a readable scale (the design pass's 200-item board did),
+    otherwise zoomed to the most recent stretch that does. Fit all is one key away.
 12. **Polling until push exists.** Same cadence and visibility rule as the board
-    (every 10 s while the page is visible) until SPE-203 replaces polling for both.
+    (every 10 s while the window has focus) until SPE-203 replaces polling for
+    both.
 
 ---
 
@@ -165,8 +161,9 @@ diffs), never on the map itself.
 
 ## The layout
 
-A force simulation places every dot. This is the starting heuristic; the design
-pass tunes it against real projects.
+A force simulation places every dot. The design pass tuned it on a real board of
+about 200 items, and its values are the [starting values](#starting-values) for the
+build.
 
 1. **Time anchor.** Each item belongs to a moment:
    - a done item: `completed_at`
@@ -212,6 +209,35 @@ What that produces:
 - A backlog item nobody has touched since it was filed: a lone dot out on the left.
 - An in-progress task whose agent went quiet: sliding left of now, its session
   dimmed.
+- A computer picking up three items in parallel: the computer at the right edge,
+  its two sessions beside it, and the three items gathered on amber lines, each
+  still tied to its family.
+
+### Starting values
+
+What the prototype settled on. Distances are in layout units before the Map scales
+to fit; r is a dot's radius.
+
+| Force | Value |
+|---|---|
+| Time pull | Strength 0.14 toward the anchor, 0.6 of that for a parent |
+| Time scale | Log of age with an 8-hour time constant, blended with the equalized scale at 60% equalized |
+| Quiet break | No activity for more than 12 hours |
+| Parent-child link | Rest length r1 + r2 + 16, strength 0.7 |
+| Blocker and discovered-from links | Rest length r1 + r2 + 70, strength 0.05 |
+| Session to item | Rest length r1 + r2 + 30, strength 0.9 |
+| Computer to session | Rest length r1 + r2 + 26, strength 1 |
+| Repulsion | 40, ignored past 260 |
+| Collision | Radii plus 4 |
+| Midline | Strength 0.03 |
+| Computers | Held past now, one row each, 150 apart |
+| Velocity | 0.6 kept per tick (`d3-force` velocity decay 0.4) |
+| Ticks | 280 from cold, alpha 1 decaying to 0.001; 140 for a local pass, from alpha 0.25 |
+| Radius | 5.5 for a leaf; 6 + 2.3 times the square root of the descendant count for a parent; 8.5 for an in-flight leaf; in-flight parents 15% larger; 8 for a session, 14 for a computer |
+
+The width the time scale maps onto is fitted in two passes so the settled Map
+matches the canvas's aspect ratio. A session stays in its computer's cluster for an
+hour after its last write.
 
 ### Layout requirements
 
@@ -272,7 +298,7 @@ by rank), which is where agents pick up work.
 The up-next marker goes on the next ready child, by rank, of each in-flight parent,
 then on the top of the project-wide ready list. That's
 `/specboard:whats-next`'s order: continue work that's started before picking up
-new work. How many items carry the marker is the design pass's call. Since time
+new work. Three items carry the marker, numbered 1 to 3 in that order. Since time
 places dots, an up-next item filed long ago sits far left; the marker and its
 off-screen indicator are what find it.
 
@@ -296,6 +322,15 @@ only signal.
 - A PR link when `pr_url` is set.
 - At near zoom: a linked spec, and whether an agent or a person created the item
   (`origin.actor.type`).
+- Weight follows the plan. Ready and blocked items draw smaller and lighter the
+  further down the planning order they sit: the agents' up-next order first, then
+  the board's rank order, parent before children. Lighter is a tint toward the
+  surface, never opacity, which is reserved for dimming, and it stops where the
+  mark still clears 3:1. Light Ready reaches that floor at 86% of its color, so
+  most of the falloff is size and ring weight. The prototype tints to 35%, about
+  1.5:1, which this rules out.
+- In-flight items draw larger than anything around them, and an in-progress item
+  always carries a label, or its computer's block names it.
 
 Three hues carry the live work and are the same in both themes; done and blocked
 step back; ink is reserved for what needs a person. Every pair was checked for
@@ -311,12 +346,17 @@ contrast (WCAG 1.4.11), against `#ffffff` and `#1a1a1a`:
 | Blocked | octagon, slate | `#64748b` | `#94a3b8` |
 | Needs a person | ink ring around the dot | `#1a1a1a` | `#f0f0f0` |
 
-Two app tokens move. In progress was `#f59e0b`, 2.15:1 against white. In review was
-violet `#8b5cf6`, which deuteranopes can't tell from Ready's blue (and which sits
-under the normal-vision floor too); `status.ts` also maps it to the neutral dot
-today. Board and Table show status with `StatusDot`, an 8 px dot that encodes it
-by hue alone. The Map's glyphs and these values replace it in every view rather
-than living beside it, so there's one status vocabulary.
+Every status token but light Ready moves. In progress was `#f59e0b`, 2.15:1
+against white. In review was violet `#8b5cf6`, which deuteranopes can't tell from
+Ready's blue (and which sits under the normal-vision floor too); `status.ts` also
+maps it to the neutral dot in table rows and child lists. Done was `#10b981`, as
+loud as the live hues. Blocked borrowed `--color-error`'s red and gets a slate token
+of its own, since blocked is a state rather than an error. Dark mode lightened all
+of them, and the three live hues no longer need it: each clears 3:1 against
+`#1a1a1a` too. Board, Table, child lists, and project cards show status with
+`StatusDot`, an 8 px dot that encodes it by hue alone. The Map's glyphs and these
+values replace it in every view rather than living beside it, so there's one
+status vocabulary.
 
 ### Relationships
 
@@ -342,15 +382,16 @@ marker at once and was unreadable; these rules are the fix.
 
 | Layer | At rest, fit all | At rest, zoomed in | Hover or keyboard focus | Selected |
 |---|---|---|---|---|
-| Status glyph | Always | Always, larger | The dot grows and gets an ink ring | Same, held until cleared |
-| Labels | Up to 8, on the largest families only, set above or below the family's cluster. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; families stay bold | No extra label; the card names the item | Same |
+| Status glyph | Always. In-progress items draw larger; ready and blocked items get smaller and lighter the further down the plan they sit | Always, larger | The dot grows and gets an ink ring | Same, held until cleared |
+| Labels | In-progress items first (unless their computer's block names them), in-review items if there's room, then up to 8 of the largest families, set above or below the family's cluster. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; families stay bold | No extra label; the card names the item | Same |
 | Parent-child links | Hairline | Hairline | The item's family darkens | Same |
 | Blocker and discovered-from links | Hidden; they still pull | Hidden | The whole blocker chain both ways, discovered-from both ways (dotted) | Same |
 | Everything else | Full strength | Full strength | Fades to 30% (40% on dark) | Same, and the drawer opens |
 | Rollup ring | Families of three or more that have started | Same, slightly heavier | The card spells it out | Same |
 | Needs a person | Ink ring | Ring plus a reason tag | The card leads with the reason | Same |
 | Up next | Numbers 1 to 3 | Same | The card says which number | Same |
-| Live session | A still amber glow | Same | Client, device, and time since the last write | Same |
+| Live session | A still amber glow behind the item and its session | Same | Client, device, and time since the last write | Same |
+| Computers and sessions | Each computer with a session that wrote in the last hour sits at the right edge, its sessions as numbered dots with amber lines to their items, and one text block naming them | Same, with the agent's name on each session | A computer or session lights its items; an item lights its session and computer | Same |
 
 The detail card opens beside the item, on whichever side covers the fewest of its
 related items.
@@ -359,32 +400,47 @@ related items.
 
 ## Agents
 
-- A live worker episode (`item_workers` with no `ended_at`) shows on its dot: client
-  and device ("claude-code on dev-laptop"), branch, how long it has been on the
-  item, and how long since its last observed write, so a stalled session reads
-  differently from a slow one.
+Work in progress clusters by where it's happening: by computer, then by agent
+session. When one computer picks up several items in parallel they gather around
+it, and both the computer and its sessions are on the Map.
+
+- A computer (the agent actor's device name) is a node while any of its sessions
+  has written in the last hour. Computers sit at the right edge, past now, one row
+  each. Their strip is reserved from the start, so the Map doesn't rescale when
+  work begins.
+- Each session is a numbered dot tied to its computer, with an amber line to every
+  item it's working on. Items are pulled toward their session, so a session's
+  items cluster and a computer's sessions cluster around it, while each item stays
+  tied to its family. When the session goes quiet for an hour, or the item leaves
+  in progress, the item is released back to its family and its moment in time.
+- One text block per computer names the work: "personal-laptop", then "Session 1:
+  SPE-206, SPE-209" and "Session 2: SPE-207". Items in a cluster don't get their
+  own floating labels; the block names them and hover gives full titles.
+- The hover card for a session, its computer, or any of its items gives the
+  details: client, device, branch, how long it has been on the item, and time
+  since its last write, so a stalled session reads differently from a slow one.
 - Every observed write refreshes the item's time anchor, so live work sits at now
   without a rule for it.
-- Several sessions on one item stack rather than overlap.
 - A session with no observed write for 15 minutes dims, the threshold the drawer
   already uses
-  ([item-relationships.md](item-relationships.md#workers-item_workers-migration-026)).
-  An in-progress item whose only session has gone quiet is what an agent that
-  crashed, or stopped updating the board, looks like.
+  ([item-relationships.md](item-relationships.md#workers-item_workers-migration-026)),
+  and after an hour it leaves the cluster. An in-progress item whose sessions have
+  all gone quiet is what an agent that crashed, or stopped updating the board,
+  looks like, and it wears the needs-a-person ring.
 - Calm by default. A live session is a still amber glow behind its dot. Each
   observed write sends one ring outward from the dot and that is the only motion
   it makes; nothing loops, which also keeps the Map inside WCAG 2.2.2 without a
   pause control. The loudest treatment belongs to
   [needs a person](#needs-a-person).
-- At far zoom, each family shows a count of its live sessions.
-- The summary strip's Live sessions button opens a roster: live sessions first,
-  then items whose sessions went quiet, each with client, device, and time since
-  the last write. Picking one selects the item and flies the Map there.
+- The summary strip's "Agents at work" button opens a roster grouped by computer:
+  each session with the items it's on, live ones first, then quiet ones. Picking a
+  row selects the item and flies the Map there.
 - Live sessions and needs-a-person items outside the viewport get edge markers
   pointing toward them.
 - The Map shows item state and session presence. It never streams tool calls.
-- The browser sees the sanitized actor only (type, device name, client), as it
-  does today. When People
+- The browser sees the sanitized actor (type, device name, client) as it does
+  today, plus an opaque per-session key so two sessions on one computer can be told
+  apart (see [Data](#data)). When People
   ([multi-user-collaboration.md](multi-user-collaboration.md#implementation-phases),
   phase 6) lands, the session's owner shows too.
 
@@ -419,6 +475,21 @@ Fixed, outside the Map:
 - live agent sessions
 - since your last visit: what changed, by kind; it opens the changes view
 - freshness: when the data last refreshed
+
+---
+
+## Loading, empty, and errors
+
+- While the first read and layout run, the toolbar, the summary strip, and the
+  ruler's frame draw; the dots arrive together once the layout settles, never one
+  at a time.
+- A project with no items says so on the canvas. New item works from the Map as
+  from every planning view, and the first dot grows in at the right edge.
+- A search or filter with no matches says so in the stepping bar and dims nothing.
+- A failed first load shows the board's error state with a retry. A failed
+  refresh keeps the Map as it is and turns the freshness note into "Updated 4 min
+  ago, retrying".
+- Past the read cap, see [Performance](#performance).
 
 ---
 
@@ -468,15 +539,30 @@ Fixed, outside the Map:
   blockers, progress, and the latest activity-log entry, fetched on demand.
 - Dragging a dot pulls it and its links along; on release it springs back
   (decision 10).
-- Keyboard-complete, with one tab stop into the Map. Arrows move to the nearest dot
-  in that direction, Enter opens, Escape closes or clears, `+`, `-`, and `0` zoom, a
-  key returns to now, and keys step through needs-a-person items and live sessions.
-  Focus pans the Map to keep the focused dot in view. The planning page's global
-  shortcuts (`N`, `C`, `/`, `?`, Escape) keep their meanings, so Map keys can't
-  reuse them ([kanban-ui.md](kanban-ui.md#keyboard-shortcuts)).
+- Keyboard-complete, with one tab stop into the Map; the keys are below. Focus
+  pans the Map to keep the focused dot in view.
 - Links anchor on an item, not on coordinates, since coordinates shift as items
   arrive: `?view=map&focus=SPE-123` reopens centered on that item. Panning replaces
   the history entry; a jump pushes one.
+
+### Keys
+
+The planning page's shortcuts keep their meanings, so the Map's keys stay clear of
+them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
+([kanban-ui.md](kanban-ui.md#keyboard-shortcuts)).
+
+| Key | Does |
+|---|---|
+| Arrows | Move focus to the nearest dot in that direction |
+| Enter | Open the focused item in the drawer |
+| Escape | Close the drawer, then clear the selection, the search, or the changes view |
+| `+` and `-` | Zoom in and out around the focused dot |
+| `0` | Fit all |
+| `T` | Jump to now (Google Calendar's key for today) |
+| `F` | Fit to the selection and its family |
+| `P`, Shift+`P` | Next and previous item that needs a person |
+| `L`, Shift+`L` | Next and previous live session |
+| `]` and `[` | Next and previous step in the changes view or the search matches |
 
 ---
 
@@ -485,9 +571,11 @@ Fixed, outside the Map:
 - The same poll as the board. The Map consumes change notifications rather than
   the poll itself, so SPE-203 can swap the transport without touching the Map.
 - Changes buffer and apply at most about once a second, as a short, low-energy
-  pass of the simulation started from the current positions. On real data,
-  starting one item moved it, its parent, and its siblings, and left 141 of 173
-  dots within 4 px of where they were.
+  pass of the simulation started from the current positions. The pass is local:
+  only the changed items, their sessions and computers, and anything within two
+  links of them may move; everything else is pinned. In the prototype, three
+  simulated pickups moved those items, their epic, and its nearest relations, and
+  left 164 of 173 dots within 4 px of where they were.
 - Transitions run in stages, a few hundred milliseconds each: exits, then moves,
   then entries. A status change restyles a dot in place; activity moves it toward
   now.
@@ -562,26 +650,35 @@ and nothing moves for more than a second.
    exist only for legacy rows. The verbatim backfill expression runs read-only
    against prod before release, since staging has too little data to prove a
    backfill ([verification.md](../verification.md#when-a-manual-pass-is-required)).
-4. **A time anchor per item**, computed server-side as [The layout](#the-layout)
-   defines it, from data that already exists or that this spec adds: the two
-   times, the transition log, activity-log entries, blocker rows, and worker
-   episodes.
+4. **A time anchor per item**, computed server-side from the item's own events as
+   [The layout](#the-layout) defines them, from data that already exists or that
+   this spec adds: the two times, the transition log, activity-log entries,
+   blocker rows, and worker episodes. A parent's subtree anchor is the layout's
+   job, since the read carries the whole tree.
 5. **One request for the whole project.** Every item at any depth, carrying only
    what the Map draws: key, type, title, status, sub-status, blocked, parent key,
-   rank, created, started, and completed times, time anchor, live sessions
-   (sanitized), open item-blocker links, text-blocker count, discovered-from key,
-   origin actor type, PR URL, and spec count. No descriptions, activity log, or
-   checklist.
-6. **Payload budget.** 2,000 items in one response at roughly 100 KB gzipped.
-7. **Cheap refresh.** A poll doesn't re-download the project. It asks for what
-   changed since the last read, which `updated_at` already supports: child writes
-   bump the parent and blocker writes bump the item. Deletions don't show up in an
-   `updated_at` delta (the board has the same blind spot), so they need their own
-   signal, and the Map reflects a deletion within a few minutes at worst.
-8. **A per-account last-visit baseline** (decision 7): one timestamp per person per
+   rank, created, started, and completed times, time anchor, open worker episodes
+   (device name, client, branch, last write, and session key), open item-blocker
+   links, text-blocker count, discovered-from key, origin actor type, PR URL, and
+   spec count. No descriptions, activity log, or checklist.
+6. **An opaque session key.** Browser responses strip the MCP session id today,
+   and the Map has to tell two sessions on one computer apart. Each episode carries
+   a key the server derives from the session (an HMAC of the session id under a
+   server secret, for example): stable for the session, meaningless outside it,
+   and impossible to turn back into the id.
+7. **Payload budget.** 2,000 items in one response at roughly 100 KB gzipped.
+8. **Cheap refresh.** A poll doesn't re-download the project. It asks for what
+   changed since the last read, which `updated_at` mostly supports: child writes
+   bump the parent, and note and blocker writes bump the item. Worker episodes
+   don't, so the delta also carries every episode whose last write or end falls
+   after the cursor. Deletions and spec links don't show up in an `updated_at`
+   delta either (the board has the same blind spot), so they need their own
+   signal, and the Map reflects them within a few minutes at worst.
+9. **A per-account last-visit baseline** (decision 7): one timestamp per person per
    project, read when the Map opens and moved forward when they leave it or mark
    everything seen.
-9. **Same read access as the board.** Any member role, viewers included.
+10. **Same read access as the board.** That's the project's owner today; once
+    multi-user lands, every member role, viewers included.
 
 ---
 
@@ -643,6 +740,10 @@ A view nobody opens is a cost, so it reports through `@specboard/telemetry`: ope
 time on view, searches, drawer opens from the Map, roster picks, and
 needs-a-person jumps. The next version gets decided on use rather than taste.
 
+That package reports errors only today, so this adds a usage-event call beside
+`captureError` and an ingest path beside the error endpoint's. Events carry counts
+and durations, never item keys or text.
+
 ---
 
 ## Feasibility notes
@@ -670,6 +771,10 @@ Input for the technical design, not decisions.
 - Ruled out: tldraw (production use needs a license key; React-only; about
   530 KB), Excalidraw (React-only; about 350 KB), and React Flow (React-only, and a
   node editor rather than a layout engine).
+- The app has no code splitting and no Web Worker yet, so the Map adds the first of
+  each: a dynamic import for the view and a module worker for the layout.
+  `shared/planning` has no package of its own, so `d3-force` and `d3-zoom` go in
+  `web/package.json`, pinned like every dependency.
 
 Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
 
@@ -694,16 +799,6 @@ Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
   it later, more likely as a `get_items` parameter than a new tool, since every
   tool schema is resident context on every agent request.
 
-## Open questions
-
-1. Does a parent anchor at the newest activity in its subtree (the comet), or at
-   its own events, leaving the epic where it was filed while its children stretch
-   toward now? This spec proposes the subtree.
-2. How hard should time pull against the links? Settle it on real projects in the
-   design pass, where a strong pull keeps the Map honest about when and a weak one
-   keeps families tight.
-3. How many up-next markers?
-
 ## Dependencies
 
 - [Item relationships](item-relationships.md): blockers, origin, workers, the
@@ -717,6 +812,7 @@ Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
 
 ## Status
 
-Requirements draft, revised by the desktop design pass (a design canvas with a
-working prototype of the layout, run on a real board of about 200 items). Not built. The
-ticket breakdown follows the design pass.
+Requirements settled after the desktop design pass (a design canvas with a working
+prototype of the layout, run on a real board of about 200 items). Not built. The
+build is SPE-222: sixteen tasks in build order, each blocked by what it needs. The
+small-screen Map, SPE-220, waits on it.
