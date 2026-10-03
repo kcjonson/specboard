@@ -116,6 +116,14 @@ describe('region outlines', () => {
 		expect(gap).toBeLessThan(4);
 	});
 
+	it('weighs each neighbor against the region\'s own field, so a second neighbor on the same ground takes nothing more', () => {
+		const a = region('A', [[0, 0], [20, 10]]);
+		const b: Array<[number, number]> = [[50, 0], [70, -10]];
+		const alone = traceRegions([a, region('B', b)], 5).find((o) => o.key === 'A')!;
+		const twice = traceRegions([a, region('B', b), region('C', b)], 5).find((o) => o.key === 'A')!;
+		expect(Array.from(twice.loop)).toEqual(Array.from(alone.loop));
+	});
+
 	it('keeps one shape when a neighbor cuts across a neck, the side holding most members', () => {
 		const inputs = [
 			region('A', [[0, 0], [10, 8], [-8, 10], [300, 0]]),

@@ -7,7 +7,7 @@ import type { MapPoint } from './layout/types';
  * the middle by a fifth of the link's length.
  */
 
-/** Chain links draw at rest; the others wait for focus or All links. */
+/** Chain links and agent lines draw at rest (spec, What shows when); the others wait for focus or All links. */
 export type LinkKind = 'chain' | 'blocker' | 'discovered' | 'agent';
 
 export type LinkCurve =

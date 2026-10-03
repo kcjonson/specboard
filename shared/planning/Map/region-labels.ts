@@ -61,14 +61,14 @@ const EDGE_REACH = 6;
 /** Label centers tried along the top edge, in label widths from the top point. */
 const SHIFTS = [0, -0.25, 0.25, -0.5, 0.5, -0.75, 0.75, -1, 1, -1.5, 1.5, -2, 2];
 
-/** The outline's highest on-curve point within a few units of `x`, in layout units; null where the outline doesn't reach. */
-function topAt(outline: RegionOutline, x: number): number | null {
+/** The outline's highest (or lowest) on-curve point within a few units of `x`, in layout units; null where the outline doesn't reach. */
+function edgeAt(outline: RegionOutline, x: number, side: 'top' | 'bottom'): number | null {
 	const { curve } = outline;
 	let best: number | null = null;
 	for (let i = 4; i < curve.length; i += 4) {
 		if (Math.abs(curve[i]! - x) > EDGE_REACH) continue;
 		const y = curve[i + 1]!;
-		if (best === null || y < best) best = y;
+		if (best === null || (side === 'top' ? y < best : y > best)) best = y;
 	}
 	return best;
 }
@@ -167,14 +167,15 @@ export function placeRegionLabels({ regions, outlines, dots, transform, viewport
 		const width = layoutLabel(region, title, titleWidth, 0, 0).box.w;
 		const top = screen(outline.top);
 		const bottom = screen(outline.bottom);
-		// Centered on the top, then along the top edge either way, then on the bottom.
+		// Centered on the top, then along the top edge either way, then the same along the bottom.
 		const candidates: MapPoint[] = [];
-		for (const shift of SHIFTS) {
-			const x = top.x + shift * width;
-			const y = topAt(outline, (x - transform.x) / k);
-			if (y !== null) candidates.push({ x: x - width / 2, y: transform.y + k * y });
+		for (const [side, from] of [['top', top], ['bottom', bottom]] as const) {
+			for (const shift of SHIFTS) {
+				const x = from.x + shift * width;
+				const y = edgeAt(outline, (x - transform.x) / k, side);
+				if (y !== null) candidates.push({ x: x - width / 2, y: transform.y + k * y });
+			}
 		}
-		candidates.push({ x: bottom.x - width / 2, y: bottom.y });
 		for (const at of candidates) {
 			const label = layoutLabel(region, title, titleWidth, at.x, at.y);
 			const clear = { x: label.box.x - CLEARANCE, y: label.box.y - CLEARANCE, w: label.box.w + 2 * CLEARANCE, h: label.box.h + 2 * CLEARANCE };

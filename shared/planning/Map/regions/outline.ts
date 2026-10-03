@@ -451,11 +451,13 @@ export function traceRegions(inputs: readonly RegionInput[], step: number): Regi
 		for (let j = 0; j < ny; j++) {
 			for (let i = 0; i < nx; i++) {
 				const k = j * nx + i;
-				let v = values[k]!;
-				if (v <= 0) continue;
+				const own = values[k]!;
+				if (own <= 0) continue;
+				// Each rival is weighed against this region's own field, so penalties never stack.
+				let v = own;
 				for (const rival of rivals) {
 					const other = sample(rival.closed, i0 + i, j0 + j);
-					if (other > 0) v = Math.min(v, REGION_LEVEL + (v - other) - RIVAL_MARGIN);
+					if (other > 0) v = Math.min(v, REGION_LEVEL + (own - other) - RIVAL_MARGIN);
 				}
 				if (parent) v = Math.min(v, sample(parent, i0 + i, j0 + j) - NEST_MARGIN);
 				values[k] = v;

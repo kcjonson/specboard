@@ -332,11 +332,11 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		const ordered = [...links].sort((a, b) => Number(b.satisfied) - Number(a.satisfied));
 		for (const link of ordered) {
 			if (!linkShows(link.kind, link.id, lighting)) continue;
-			const from = screen(link.from);
-			const to = screen(link.to);
-			if ((from.x < 0 && to.x < 0) || (from.x > width && to.x > width) || (from.y < 0 && to.y < 0) || (from.y > plotHeight() && to.y > plotHeight())) continue;
+			const curve = linkCurve(link.kind, screen(link.from), screen(link.to));
+			// A curve stays inside the hull of its control points, so it's off screen only when they all are, past one edge.
+			const hull = curve.type === 'cubic' ? [curve.from, curve.c1, curve.c2, curve.to] : [curve.from, curve.c, curve.to];
+			if (hull.every((p) => p.x < 0) || hull.every((p) => p.x > width) || hull.every((p) => p.y < 0) || hull.every((p) => p.y > plotHeight())) continue;
 			const lit = lighting.lit?.has(link.id) ?? false;
-			const curve = linkCurve(link.kind, from, to);
 			ctx.strokeStyle = lit && !link.satisfied ? theme.text : link.satisfied ? theme.linkSatisfied : theme.link;
 			ctx.lineWidth = lit ? 1.5 : 1;
 			ctx.setLineDash(link.kind === 'discovered' ? DISCOVERED_DASH : []);

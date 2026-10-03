@@ -61,6 +61,17 @@ describe('region labels', () => {
 		expect(placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: crowd, transform: identity, viewport, measure, cap: null })).toEqual([]);
 	});
 
+	it('slides along the bottom edge when the top and the middle of the bottom are taken', () => {
+		const wide = outlineFor('W', [[200, 300], [260, 300], [320, 300], [380, 300], [440, 300]]);
+		// A wall of dots over the whole top edge, and one under the middle of the bottom.
+		const wall = Array.from({ length: 30 }, (_, i) => dot(`T${i}`, 140 + i * 12, wide.top.y));
+		const under = dot('U', wide.bottom.x, wide.bottom.y, { r: 20 });
+		const [label] = placeRegionLabels({ regions: [region('W', 5, 'W')], outlines: new Map([['W', wide]]), dots: [...wall, under], transform: identity, viewport, measure, cap: null });
+		expect(label).toBeDefined();
+		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(wide.top.y + 20);
+		expect(overlap(label!.box, { x: under.x - 22, y: under.y - 22, w: 44, h: 44 })).toBe(false);
+	});
+
 	it('labels the largest regions first, never overlapping, up to the cap', () => {
 		const outlines = new Map([
 			['A', a],
