@@ -81,6 +81,9 @@ export interface MapRead {
 	summarized: boolean;
 }
 
+/** An episode on the wire: lastWriteAt in epoch ms, like every other time. */
+export type MapWorkerEpisodeWire = Omit<MapWorkerEpisode, 'lastWriteAt'> & { lastWriteAt: number };
+
 /** An open link is the blocker's number; a satisfied one is [number, cleared at, epoch ms]. */
 export type MapBlockerLinkWire = number | [number, number];
 
@@ -106,7 +109,7 @@ export interface MapReadWire {
 	startedAt: (number | null)[];
 	completedAt: (number | null)[];
 	timeAnchor: number[];
-	workers: MapWorkerEpisode[][];
+	workers: MapWorkerEpisodeWire[][];
 	blockers: MapBlockerLinkWire[][];
 	textBlockerCount: number[];
 	discoveredFrom: (number | null)[];
@@ -144,7 +147,7 @@ export function encodeMapRead(read: MapRead, projectKey: string): MapReadWire {
 		startedAt: rows.map((r) => msOrNull(r.startedAt)),
 		completedAt: rows.map((r) => msOrNull(r.completedAt)),
 		timeAnchor: rows.map((r) => msOf(r.timeAnchor)),
-		workers: rows.map((r) => r.workers),
+		workers: rows.map((r) => r.workers.map((w) => ({ ...w, lastWriteAt: msOf(w.lastWriteAt) }))),
 		blockers: rows.map((r) => r.blockers.map((link): MapBlockerLinkWire => (link.state === 'open'
 			? numberOf(link.blockerKey)
 			: [numberOf(link.blockerKey), msOf(link.satisfiedAt)]))),
@@ -176,7 +179,7 @@ export function decodeMapRead(wire: MapReadWire): MapRead {
 			startedAt: isoOrNull(wire.startedAt[i]!),
 			completedAt: isoOrNull(wire.completedAt[i]!),
 			timeAnchor: isoOf(wire.timeAnchor[i]!),
-			workers: wire.workers[i]!,
+			workers: wire.workers[i]!.map((w) => ({ ...w, lastWriteAt: isoOf(w.lastWriteAt) })),
 			blockers: wire.blockers[i]!.map((link): MapBlockerLink => (typeof link === 'number'
 				? { blockerKey: key(link), state: 'open' }
 				: { blockerKey: key(link[0]), state: 'satisfied', satisfiedAt: isoOf(link[1]) })),

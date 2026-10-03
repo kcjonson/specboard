@@ -36,6 +36,7 @@ describe('the map read on the wire', () => {
 		expect(wire.timeAnchor).toEqual([Date.parse('2026-09-04T08:30:00.456Z'), Date.parse('2026-09-05T12:00:00.999Z')]);
 		expect(wire.blockers).toEqual([[], [[1, Date.parse('2026-09-03T00:00:00.000Z')], 3]]);
 		expect(wire.summarizedDescendants).toEqual([12, null]);
+		expect(wire.workers[1]![0]!.lastWriteAt).toBe(Date.parse('2026-09-05T12:00:00.999Z'));
 	});
 
 	it('refuses a key from another project rather than sending a wrong number', () => {
