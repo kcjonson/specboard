@@ -135,6 +135,21 @@ describe('region outlines', () => {
 		for (const [x, y] of points(a.loop)) expect(insideLoop(x, y, outlines.find((o) => o.key === 'B')!.loop)).toBe(false);
 	});
 
+	it('keeps a nested region off a piece of its parent that a neighbor cut away', () => {
+		const inputs = [
+			region('P', [[0, 0], [10, 8], [-8, 10], [300, 0]], { height: 2 }),
+			region('C', [[300, 0]], { parentKey: 'P' }),
+			region('B', Array.from({ length: 9 }, (_, i): [number, number] => [150 + 12 * (i % 3), -12 + 12 * Math.floor(i / 3)]), { height: 3 }),
+		];
+		const outlines = traceRegions(inputs, 5);
+		const parent = outlines.find((o) => o.key === 'P')!;
+		// The parent's island around (300, 0) was dropped, so its child has nowhere to draw.
+		expect(insideLoop(300, 0, parent.loop)).toBe(false);
+		const child = outlines.find((o) => o.key === 'C');
+		if (child) for (const [x, y] of points(child.loop)) expect(insideLoop(x, y, parent.loop)).toBe(true);
+		expect(child).toBeUndefined();
+	});
+
 	it('nests a region inside its parent, with more room for the parent', () => {
 		const inputs = [
 			region('P', [[0, 0], [20, 20], [60, 0], [70, 15]], { height: 2 }),

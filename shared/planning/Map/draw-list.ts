@@ -39,6 +39,10 @@ export interface DrawRegion {
 	key: string;
 	title: string;
 	status: MapItemStatus;
+	/** The parent's plan weight, cue, and PR mark, which its label glyph carries as a dot would. */
+	weight: number;
+	cue: GlyphCue | null;
+	pr: boolean;
 	needsPerson: boolean;
 	rollup: Rollup;
 	/** Dots inside, nested regions' included; bigger regions get their labels first. */
@@ -66,6 +70,11 @@ const LAYER: Record<MapItemStatus, number> = { done: 0, blocked: 1, ready: 1, in
 
 const emptyRollup = (): Rollup => ({ done: 0, in_flight: 0, next: 0, later: 0 });
 
+const cueOf = (row: MapItemRow): GlyphCue | null =>
+	row.status === 'done' ? null : row.subStatus === 'scoping' ? 'scoping' : row.subStatus === 'paused' ? 'paused' : null;
+
+const prOf = (row: MapItemRow): boolean => row.prUrl !== null || row.subStatus === 'pr_open';
+
 /**
  * Everything the far and middle zoom levels draw from a settled layout: a glyph per
  * dot, a label per region (the outline itself comes from the region outlines), and
@@ -86,10 +95,14 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 	// Past the read cap a finished family comes back as one row carrying its count; those are all done.
 	const rollupOf = (key: string): Rollup => {
 		const rollup = emptyRollup();
-		// An explicit stack: nesting has no depth limit, so a recursive walk could run out of stack.
+		// An explicit stack: nesting has no depth limit, so a recursive walk could run out of
+		// stack. Visited keys stop a parent loop in bad data, which the layout drops too.
 		const stack = [key];
+		const seen = new Set(stack);
 		for (let parent = stack.pop(); parent !== undefined; parent = stack.pop()) {
 			for (const child of children.get(parent) ?? []) {
+				if (seen.has(child.key)) continue;
+				seen.add(child.key);
 				rollup[layout.phases[child.key]!]++;
 				rollup.done += child.summarizedDescendants ?? 0;
 				stack.push(child.key);
@@ -120,8 +133,8 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 			status: glyphStatus(row.status, row.blocked),
 			weight,
 			needsPerson: needs.has(node.key),
-			cue: row.status === 'done' ? null : row.subStatus === 'scoping' ? 'scoping' : row.subStatus === 'paused' ? 'paused' : null,
-			pr: row.prUrl !== null || row.subStatus === 'pr_open',
+			cue: cueOf(row),
+			pr: prOf(row),
 			folded,
 		});
 	}
@@ -135,6 +148,9 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 			key: region.key,
 			title: row.title,
 			status: glyphStatus(row.status, row.blocked),
+			weight: weights.get(region.key) ?? 1,
+			cue: cueOf(row),
+			pr: prOf(row),
 			needsPerson: needs.has(region.key),
 			rollup: rollupOf(region.key),
 			size: region.members.length,

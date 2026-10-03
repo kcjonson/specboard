@@ -256,6 +256,20 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		}
 	};
 
+	/** A small diamond at the lower right of a glyph: the item has a PR. */
+	const drawPrMark = (x: number, y: number, r: number): void => {
+		const size = Math.max(2, r * 0.38);
+		const at = (r + size * 0.4) * Math.SQRT1_2;
+		ctx.save();
+		ctx.translate(x + at, y + at);
+		ctx.rotate(Math.PI / 4);
+		ctx.fillStyle = theme.surface;
+		ctx.fillRect(-size / 2 - 1, -size / 2 - 1, size + 2, size + 2);
+		ctx.fillStyle = theme.muted;
+		ctx.fillRect(-size / 2, -size / 2, size, size);
+		ctx.restore();
+	};
+
 	const drawRollupBar = (x: number, y: number, w: number, h: number, segments: ReadonlyArray<{ phase: MapPhase; x: number; w: number }>): void => {
 		ctx.fillStyle = theme.border;
 		ctx.fillRect(x, y, w, h);
@@ -274,19 +288,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		if (dot.needsPerson) ring(x, y, r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
 		const count = dot.folded && r >= COUNT_MIN_RADIUS ? dot.folded.count : null;
 		drawGlyph(x, y, r, dot.status, { weight: dot.weight, cue: dot.cue, count });
-		if (dot.pr) {
-			// A small diamond at the lower right: the item has a PR.
-			const size = Math.max(2, r * 0.38);
-			const at = (r + size * 0.4) * Math.SQRT1_2;
-			ctx.save();
-			ctx.translate(x + at, y + at);
-			ctx.rotate(Math.PI / 4);
-			ctx.fillStyle = theme.surface;
-			ctx.fillRect(-size / 2 - 1, -size / 2 - 1, size + 2, size + 2);
-			ctx.fillStyle = theme.muted;
-			ctx.fillRect(-size / 2, -size / 2, size, size);
-			ctx.restore();
-		}
+		if (dot.pr) drawPrMark(x, y, r);
 		// Any collapsed family but a finished one (the parent and everything under it done) carries its rollup under it.
 		if (dot.folded && r >= COUNT_MIN_RADIUS && !(dot.status === 'done' && dot.folded.rollup.done === dot.folded.count - 1)) {
 			const { rollup } = dot.folded;
@@ -376,7 +378,9 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 				disc(glyph.x, glyph.y, glyph.r + INK_GAP + INK_WIDTH + 0.5, theme.surface);
 				ring(glyph.x, glyph.y, glyph.r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
 			}
-			drawGlyph(glyph.x, glyph.y, glyph.r, region.status);
+			// The label's glyph keeps its size, so the title stays legible, but takes the parent's ring weight, tint, and cues.
+			drawGlyph(glyph.x, glyph.y, glyph.r, region.status, { weight: region.weight, cue: region.cue });
+			if (region.pr) drawPrMark(glyph.x, glyph.y, glyph.r);
 			ctx.fillStyle = theme.text;
 			ctx.font = regionFont();
 			ctx.textAlign = 'left';

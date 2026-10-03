@@ -458,6 +458,40 @@ function smooth(loop: Float64Array): Pick<RegionOutline, 'curve' | 'bounds' | 't
 	return { curve, bounds, top, bottom };
 }
 
+/**
+ * Zeroes every cell above the level that isn't connected (4-way) to the cell under
+ * `seed`, so the field holds one piece of ground. Without a seed above the level it
+ * leaves the field alone.
+ */
+function keepComponent(field: Field, seed: MapPoint | undefined, step: number): void {
+	if (!seed) return;
+	const { i0, j0, nx, ny, values } = field;
+	let start = -1;
+	const ci = Math.round(seed.x / step) - i0;
+	const cj = Math.round(seed.y / step) - j0;
+	for (let dj = -1; dj <= 1 && start < 0; dj++) {
+		for (let di = -1; di <= 1 && start < 0; di++) {
+			const i = ci + di;
+			const j = cj + dj;
+			if (i >= 0 && j >= 0 && i < nx && j < ny && values[j * nx + i]! > REGION_LEVEL) start = j * nx + i;
+		}
+	}
+	if (start < 0) return;
+	const kept = new Uint8Array(nx * ny);
+	kept[start] = 1;
+	const queue = [start];
+	while (queue.length) {
+		const k = queue.pop()!;
+		const i = k % nx;
+		for (const next of [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx]) {
+			if (next < 0 || next >= nx * ny || kept[next] || values[next]! <= REGION_LEVEL) continue;
+			kept[next] = 1;
+			queue.push(next);
+		}
+	}
+	for (let k = 0; k < nx * ny; k++) if (!kept[k] && values[k]! > REGION_LEVEL) values[k] = 0;
+}
+
 interface Working {
 	input: RegionInput;
 	depth: number;
@@ -544,6 +578,8 @@ export function traceRegions(inputs: readonly RegionInput[], step: number): Regi
 				area = size;
 			}
 		}
+		// Nested regions are clamped under this field, so it keeps only the ground the drawn loop holds: a child on a dropped island would sit outside its parent.
+		if (loops.length > 1) keepComponent(final, region.input.members.find((m) => insideLoop(m.x, m.y, loop)), step);
 		outlines.push({ key: region.input.key, depth: region.depth, height: region.input.height, loop, ...smooth(loop) });
 	}
 	return outlines;

@@ -129,6 +129,29 @@ describe('draw list links', () => {
 	});
 });
 
+describe('draw list, region glyphs and bad data', () => {
+	it('gives a region\'s label glyph the parent\'s cue, PR mark, and plan weight', () => {
+		const b = new BoardBuilder();
+		const epic = b.add({ type: 'epic', status: 'in_progress', subStatus: 'scoping', prUrl: 'https://example.com/pr/9' });
+		b.add({ parentKey: epic.key, status: 'ready' });
+		const rows = new Map(b.rows.map((row) => [row.key, row]));
+		const [region] = buildDrawList(layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 }), rows).regions;
+		expect(region).toMatchObject({ key: epic.key, cue: 'scoping', pr: true, weight: 1 });
+	});
+
+	it('stops a rollup at a parent loop in the rows instead of walking it forever', () => {
+		const b = new BoardBuilder();
+		const one = b.add({ type: 'epic', status: 'in_progress' });
+		const two = b.add({ type: 'epic', status: 'in_progress', parentKey: one.key });
+		one.parentKey = two.key;
+		b.add({ status: 'ready', parentKey: two.key });
+		const rows = new Map(b.rows.map((row) => [row.key, row]));
+		const { regions } = buildDrawList(layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 }), rows);
+		expect(regions.length).toBeGreaterThan(0);
+		for (const region of regions) expect(region.rollup.in_flight + region.rollup.next).toBeLessThanOrEqual(3);
+	});
+});
+
 describe('draw list, past the read cap', () => {
 	it('draws a summarized finished family as a folded dot carrying its count, with nothing to open', () => {
 		const b = new BoardBuilder();
