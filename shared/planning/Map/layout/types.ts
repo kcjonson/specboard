@@ -40,6 +40,8 @@ export interface MapLayoutFrame {
 	scale: MapTimeScale;
 	/** Extent of the settled Map in layout units, the reserved strip past now included. */
 	bounds: MapBounds;
+	/** The edge sits at the last activity rather than now (see MapQuiet). */
+	quiet: boolean;
 }
 
 export interface MapLayoutInput {
@@ -50,7 +52,10 @@ export interface MapLayoutInput {
 	collapse: Readonly<Record<string, boolean>>;
 	/** Plot width over height; the two-pass width fit matches it. Ignored by a local pass. */
 	aspect: number;
-	/** Present for a local pass: start from these positions and move only what changed. */
+	/**
+	 * Present for a local pass: start from these positions and move only what changed.
+	 * A board that went quiet or woke up since gets a cold pass instead, since its edge moved.
+	 */
 	previous?: MapLayoutPrevious;
 }
 

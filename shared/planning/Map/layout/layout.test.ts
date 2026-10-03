@@ -304,6 +304,51 @@ describe('layoutMap edge cases', () => {
 		expect(node.get(epic.key)!.x).toBeLessThan(node.get(blocker.key)!.x);
 	});
 
+	it('runs cold instead of locally when a quiet board wakes up', () => {
+		const b = new BoardBuilder();
+		for (let i = 0; i < 8; i++) b.add({ status: i % 2 ? 'done' : 'ready', created: NOW - (3 + i) * DAY, completed: NOW - 3 * DAY - i * HOUR });
+		const quiet = layout(b.rows);
+		expect(quiet.quiet).not.toBeNull();
+		expect(quiet.frame.quiet).toBe(true);
+		const picked = b.rows.map((row) => ({ ...row }));
+		picked[0] = { ...picked[0]!, status: 'in_progress', startedAt: iso(NOW), timeAnchor: iso(NOW) };
+		const woke = layoutMap({
+			rows: picked,
+			now: NOW,
+			collapse: {},
+			aspect: ASPECT,
+			previous: { frame: quiet.frame, positions: positions(quiet), changed: [picked[0]!.key] },
+		});
+		expect(woke.quiet).toBeNull();
+		expect(woke.frame.quiet).toBe(false);
+		expect(woke.frame.scale.edge).toBe(NOW);
+	});
+
+	it('lets every computer find its row when a local pass adds one', () => {
+		const b = new BoardBuilder();
+		const first = b.add({ status: 'in_progress' });
+		const second = b.add({ status: 'ready' });
+		for (let i = 0; i < 6; i++) b.add({ status: 'done', completed: NOW - (i + 1) * DAY });
+		b.work(first, 's-1', 'laptop');
+		const before = layout(b.rows);
+		const rows = b.rows.map((row) => ({ ...row, workers: [...row.workers] }));
+		const picked = rows.find((row) => row.key === second.key)!;
+		picked.status = 'in_progress';
+		picked.startedAt = iso(NOW);
+		picked.timeAnchor = iso(NOW);
+		picked.workers = [{ sessionKey: 's-2', deviceName: 'desk', client: 'claude-code', branch: null, lastWriteAt: iso(NOW) }];
+		const after = layoutMap({
+			rows,
+			now: NOW,
+			collapse: {},
+			aspect: ASPECT,
+			previous: { frame: before.frame, positions: positions(before), changed: [second.key] },
+		});
+		const node = nodesOf(after);
+		const gap = Math.abs(node.get('computer:desk')!.y - node.get('computer:laptop')!.y);
+		expect(gap).toBeGreaterThan(100);
+	});
+
 	it('scatters ten unrelated items in a loose cloud near the right edge', () => {
 		const b = new BoardBuilder();
 		for (let i = 0; i < 10; i++) b.add({ status: 'ready', created: NOW - i * 2 * HOUR });

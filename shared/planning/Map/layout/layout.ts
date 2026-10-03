@@ -370,6 +370,9 @@ function localLayout(model: MapModel, previous: MapLayoutPrevious): Settled {
 		}
 		for (const n of reached) mobile.add(n);
 	}
+	// Computer rows and their clearance past the work are set across all computers, so
+	// one arriving moves every computer's target; they settle without pulling others along.
+	for (const n of graph.nodes) if (n.kind === 'computer') mobile.add(n);
 
 	for (const n of graph.nodes) {
 		let start = before[n.key];
@@ -393,8 +396,10 @@ function localLayout(model: MapModel, previous: MapLayoutPrevious): Settled {
 /** Lays out the Map: positions for every visible node, the time scale, and the sets the renderer draws from. */
 export function layoutMap(input: MapLayoutInput): MapLayout {
 	const model = buildModel(input.rows, input.now, input.collapse);
-	const { graph, scale, bounds, ticks, settle } = input.previous
-		? localLayout(model, input.previous)
+	const quiet = quietOf(model.newest, input.now);
+	const previous = input.previous?.frame.quiet === (quiet !== null) ? input.previous : undefined;
+	const { graph, scale, bounds, ticks, settle } = previous
+		? localLayout(model, previous)
 		: coldLayout(model, edgeOf(model.newest, input.now), input.aspect);
 
 	const phases: MapLayout['phases'] = {};
@@ -419,9 +424,9 @@ export function layoutMap(input: MapLayoutInput): MapLayout {
 
 	return {
 		nodes: graph.nodes.map((n) => ({ key: n.key, kind: n.kind, x: n.x, y: n.y, r: n.r, hub: n.hub })),
-		frame: { scale, bounds },
+		frame: { scale, bounds, quiet: quiet !== null },
 		ticks: ticksOf(scale),
-		quiet: quietOf(model.newest, input.now),
+		quiet,
 		phases,
 		upNext: model.upNext,
 		planOrder: model.planOrder,
