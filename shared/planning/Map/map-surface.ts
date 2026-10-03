@@ -12,11 +12,19 @@ import {
 	openTransform,
 	type Viewport,
 } from './camera';
-import { buildDrawList, type DrawDot } from './draw-list';
+import { collapseControls, controlAt, type CollapseControl } from './collapse-controls';
+import { buildDrawList, type DrawList } from './draw-list';
 import type { MapLayout, MapPoint } from './layout/types';
+import { NO_LIGHTING, type LinkLighting } from './links';
 import type { MapCamera, ScreenPoint } from './map-camera';
+import { REST_LABELS, placeRegionLabels } from './region-labels';
+import type { RegionOutline } from './regions/outline';
+import { RegionOutlines, gridStep } from './regions/region-outlines';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
 import { rulerMarks } from './ruler';
+
+/** Region labels are capped at rest while the camera is within this factor of fit all (spec, What shows when). */
+const REST_ZOOM = 1.25;
 
 export interface MapSurfaceHandlers {
 	/** The plot has no dot in it, or has one again. */
@@ -30,24 +38,39 @@ export interface MapSurfaceDeps {
 	camera: MapCamera;
 	/** Runs a repaint on the next frame. Only ever called when something changed. */
 	schedule(paint: () => void): void;
+	/** Runs a task once the current gesture's frames have gone by: outlines for a new zoom are computed there. */
+	defer(task: () => void): void;
 	timeZone?: string;
 }
 
+/** A collapse or expand control the person hit. */
+export interface CollapseRequest {
+	key: string;
+	collapse: boolean;
+}
+
 /**
- * Everything between the data and the pixels: the draw list, the camera's targets, the
- * ruler, and when to repaint. The renderer and camera come in through their interfaces,
- * so this is the part a test drives, and later layers (regions, labels, selection) add
- * to what `paint` draws without touching the camera.
+ * Everything between the data and the pixels: the draw list, region outlines and
+ * labels, the collapse controls, the camera's targets, the ruler, and when to repaint.
+ * The renderer and camera come in through their interfaces, so this is the part a
+ * test drives, and later layers (labels, selection) add to what `paint` draws without
+ * touching the camera.
  */
 export class MapSurface {
 	private readonly renderer: MapRenderer;
 	private readonly camera: MapCamera;
 	private readonly schedule: (paint: () => void) => void;
+	private readonly defer: (task: () => void) => void;
 	private readonly handlers: MapSurfaceHandlers;
 	private readonly timeZone: string | undefined;
 	private readonly unsubscribe: () => void;
 	private layout: MapLayout | null = null;
-	private dots: DrawDot[] = [];
+	private drawing: DrawList = { dots: [], regions: [], links: [] };
+	private outlines: RegionOutlines | null = null;
+	/** Bumped by every frame and every new layout, so only the last frame's deferred outline task runs. */
+	private deferred = 0;
+	private lighting: LinkLighting = NO_LIGHTING;
+	private controls: CollapseControl[] = [];
 	private viewport: Viewport = { width: 0, height: 0 };
 	private painting = false;
 	private viewportEmpty = false;
@@ -59,6 +82,7 @@ export class MapSurface {
 		this.renderer = deps.renderer;
 		this.camera = deps.camera;
 		this.schedule = deps.schedule;
+		this.defer = deps.defer;
 		this.timeZone = deps.timeZone;
 		this.handlers = handlers;
 		this.unsubscribe = this.camera.onChange(() => this.requestPaint());
@@ -86,23 +110,47 @@ export class MapSurface {
 		this.requestPaint();
 	}
 
+	/** A layout is on the Map, so a new one is an update rather than an opening. */
+	get showing(): boolean {
+		return this.layout !== null;
+	}
+
 	/** Draws a settled layout, opening on `focusKey` if the Map has it and on now otherwise. */
 	show(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>, focusKey: string | null): void {
-		this.layout = layout;
-		this.dots = buildDrawList(layout, rows);
+		this.take(layout, rows);
 		this.pristine = true;
-		this.configureCamera(layout);
 		const target = focusKey ? this.placeOf(focusKey) : undefined;
-		this.camera.set(target ? focusTransform(target, layout.frame.bounds, this.dots, null, this.viewport) : this.openView(layout));
+		this.camera.set(target ? focusTransform(target, layout.frame.bounds, this.drawing.dots, null, this.viewport) : this.openView(layout));
+		this.requestPaint();
+	}
+
+	/** Draws a new layout of the same Map, a collapse or a refresh, where the camera already is. */
+	update(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): void {
+		this.take(layout, rows);
 		this.requestPaint();
 	}
 
 	/** Back to the ruler's frame alone: loading, an empty project, or an error. */
 	clear(): void {
 		this.layout = null;
-		this.dots = [];
+		this.drawing = { dots: [], regions: [], links: [] };
+		this.outlines = null;
+		this.deferred++;
+		this.controls = [];
 		this.setViewportEmpty(false);
 		this.requestPaint();
+	}
+
+	/** Which blocker and discovered-from links draw besides chains: all of them, or the ones focus lights. */
+	setLighting(lighting: LinkLighting): void {
+		this.lighting = lighting;
+		this.requestPaint();
+	}
+
+	/** The collapse or expand control under a point in the plot, as of the last paint. */
+	controlAt(point: ScreenPoint): CollapseRequest | null {
+		const control = controlAt(this.controls, point);
+		return control ? { key: control.key, collapse: control.collapse } : null;
 	}
 
 	fitAll(): void {
@@ -112,7 +160,7 @@ export class MapSurface {
 
 	now(): void {
 		if (!this.layout) return;
-		this.camera.flyTo(nowTransform(this.layout.frame.bounds, this.dots, this.viewport));
+		this.camera.flyTo(nowTransform(this.layout.frame.bounds, this.drawing.dots, this.viewport));
 	}
 
 	/** The on-screen buttons: about the middle of the plot. */
@@ -142,7 +190,7 @@ export class MapSurface {
 	focusOn(key: string, fly = true): boolean {
 		const target = this.placeOf(key);
 		if (!this.layout || !target) return false;
-		const view = focusTransform(target, this.layout.frame.bounds, this.dots, fly ? this.camera.transform : null, this.viewport);
+		const view = focusTransform(target, this.layout.frame.bounds, this.drawing.dots, fly ? this.camera.transform : null, this.viewport);
 		if (fly) this.camera.flyTo(view);
 		else this.camera.set(view);
 		return true;
@@ -157,7 +205,7 @@ export class MapSurface {
 
 	/** The item nearest the middle of the plot. */
 	centerKey(): string | null {
-		return nearestDot(this.dots, centerOf(this.camera.transform, this.viewport))?.key ?? null;
+		return nearestDot(this.drawing.dots, centerOf(this.camera.transform, this.viewport))?.key ?? null;
 	}
 
 	/** The camera's person-driven moves have stopped. */
@@ -177,8 +225,27 @@ export class MapSurface {
 		this.painting = false;
 		const transform = this.camera.transform;
 		const layout = this.layout;
+		const { dots, regions, links } = this.drawing;
+		const outlines = this.outlinesFor(transform.k);
+		const labels = layout
+			? placeRegionLabels({
+				regions,
+				outlines: new Map(outlines.map((outline) => [outline.key, outline])),
+				dots,
+				transform,
+				viewport: this.viewport,
+				measure: (text) => this.renderer.measureLabel(text),
+				cap: transform.k <= this.minScale(layout) * REST_ZOOM ? REST_LABELS : null,
+			})
+			: [];
+		this.controls = collapseControls(labels, dots, transform, this.viewport);
 		this.renderer.draw({
-			dots: this.dots,
+			dots,
+			regions: outlines,
+			links,
+			lighting: this.lighting,
+			labels,
+			controls: this.controls,
 			transform,
 			ruler: layout
 				? rulerMarks({
@@ -191,7 +258,37 @@ export class MapSurface {
 				})
 				: null,
 		});
-		this.setViewportEmpty(this.dots.length > 0 && !dotsVisible(this.dots, transform, this.viewport));
+		this.setViewportEmpty(dots.length > 0 && !dotsVisible(dots, transform, this.viewport));
+	}
+
+	private take(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): void {
+		this.layout = layout;
+		this.drawing = buildDrawList(layout, rows);
+		this.outlines = new RegionOutlines(layout);
+		this.deferred++;
+		this.configureCamera(layout);
+	}
+
+	/**
+	 * Outlines change only with the layout and the zoom bucket, never during a pan. The
+	 * first draw of a layout computes them; after that a zoom into a new bucket draws the
+	 * nearest cached outlines (they're in layout units, so they still fit) and computes
+	 * the new bucket's once frames stop asking for it, which is when the gesture ends.
+	 */
+	private outlinesFor(k: number): RegionOutline[] {
+		const outlines = this.outlines;
+		if (!outlines || outlines.empty) return [];
+		const step = gridStep(k);
+		const token = ++this.deferred;
+		if (outlines.has(step)) return outlines.at(step);
+		const cached = outlines.nearest(step);
+		if (!cached) return outlines.at(step);
+		this.defer(() => {
+			if (token !== this.deferred) return;
+			outlines.at(step);
+			this.requestPaint();
+		});
+		return cached;
 	}
 
 	/**
@@ -227,7 +324,7 @@ export class MapSurface {
 	}
 
 	private openView(layout: MapLayout): ReturnType<typeof openTransform> {
-		return openTransform(layout.frame.bounds, this.dots, this.viewport);
+		return openTransform(layout.frame.bounds, this.drawing.dots, this.viewport);
 	}
 
 	private minScale(layout: MapLayout): number {

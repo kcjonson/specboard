@@ -14,6 +14,7 @@ import { layoutMap } from './layout/layout';
 import type { MapLayout } from './layout/types';
 import type { MapCamera, ScreenPoint } from './map-camera';
 import { MapSurface } from './map-surface';
+import { gridStep } from './regions/region-outlines';
 import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
 
 class FakeCamera implements MapCamera {
@@ -64,6 +65,10 @@ class FakeRenderer implements MapRenderer {
 		this.themeReads++;
 	}
 
+	measureLabel(text: string): number {
+		return text.length * 7;
+	}
+
 	draw(frame: MapFrame): void {
 		this.frames.push(frame);
 	}
@@ -77,17 +82,19 @@ function setup(): {
 	empty: ReturnType<typeof vi.fn>;
 	settle: ReturnType<typeof vi.fn>;
 	flush: () => void;
+	deferred: Array<() => void>;
 } {
 	const camera = new FakeCamera();
 	const renderer = new FakeRenderer();
 	const frames: Array<() => void> = [];
+	const deferred: Array<() => void> = [];
 	const empty = vi.fn();
 	const settle = vi.fn();
 	const surface = new MapSurface(
-		{ renderer, camera, schedule: (paint) => frames.push(paint), timeZone: 'UTC' },
+		{ renderer, camera, schedule: (paint) => frames.push(paint), defer: (task) => deferred.push(task), timeZone: 'UTC' },
 		{ onViewportEmpty: empty, onSettle: settle },
 	);
-	return { surface, camera, renderer, frames, empty, settle, flush: () => frames.splice(0).forEach((paint) => paint()) };
+	return { surface, camera, renderer, frames, empty, settle, deferred, flush: () => frames.splice(0).forEach((paint) => paint()) };
 }
 
 const WIDTH = 1000;
@@ -315,5 +322,120 @@ describe('MapSurface', () => {
 		surface.show(layout, rows, keys[0]!);
 		surface.reopen();
 		expect(camera.transform).toEqual(fitTransform(layout.frame.bounds, plot));
+	});
+});
+
+function familyBoard(): { layout: MapLayout; rows: Map<string, ReturnType<BoardBuilder['add']>>; epic: string; finished: string; chain: [string, string] } {
+	const b = new BoardBuilder();
+	const epic = b.add({ type: 'epic', status: 'in_progress', title: 'Open family' });
+	const first = b.add({ parentKey: epic.key, status: 'in_progress' });
+	const second = b.add({ parentKey: epic.key, status: 'ready' });
+	b.block(second, first);
+	b.add({ parentKey: epic.key, status: 'done' });
+	const finished = b.add({ type: 'epic', status: 'done' });
+	for (let i = 0; i < 30; i++) b.add({ parentKey: finished.key, status: 'done' });
+	const loose = b.add({ status: 'ready' });
+	b.block(loose, first);
+	const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: WIDTH / 500 });
+	return { layout, rows: new Map(b.rows.map((row) => [row.key, row])), epic: epic.key, finished: finished.key, chain: [first.key, second.key] };
+}
+
+describe('MapSurface regions, links, and collapse controls', () => {
+	it('draws a region around each family, labels it, and draws its chain links at rest', () => {
+		const { surface, renderer, flush } = setup();
+		const { layout, rows, epic, chain } = familyBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		const frame = renderer.frames.at(-1)!;
+		expect(frame.regions.map((r) => r.key)).toEqual([epic]);
+		expect(frame.labels.map((l) => l.key)).toEqual([epic]);
+		expect(frame.labels[0]!.title).toBe('Open family');
+		expect(frame.lighting).toEqual({ all: false, lit: null });
+		expect(frame.links.map((l) => l.id)).toContain(`chain:${chain[0]}>${chain[1]}`);
+	});
+
+	it('offers collapse on a region label and expand on a folded family, and names the one under the pointer', () => {
+		const { surface, renderer, camera, flush } = setup();
+		const { layout, rows, epic, finished } = familyBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		const { controls, labels } = renderer.frames.at(-1)!;
+		expect(controls.map((c) => [c.key, c.collapse])).toEqual([[epic, true], [finished, false]]);
+		expect(surface.controlAt(labels[0]!.toggle)).toEqual({ key: epic, collapse: true });
+		expect(surface.controlAt({ x: 1, y: 1 })).toBeNull();
+
+		// Controls follow the camera.
+		camera.set({ ...camera.transform, x: camera.transform.x + 50 });
+		flush();
+		expect(surface.controlAt(labels[0]!.toggle)).toBeNull();
+	});
+
+	it('computes outlines once per layout and zoom bucket, never during a pan, and defers a new bucket past the gesture', () => {
+		const { surface, renderer, camera, flush, deferred } = setup();
+		const { layout, rows } = familyBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		const opened = renderer.frames.at(-1)!.regions;
+		const at = camera.transform;
+
+		for (let i = 1; i <= 3; i++) {
+			camera.set({ ...at, x: at.x + 30 * i });
+			flush();
+			expect(renderer.frames.at(-1)!.regions).toBe(opened);
+		}
+		expect(deferred).toHaveLength(0);
+
+		// Into another bucket: the cached outlines draw until the gesture is over.
+		const k = gridStep(at.k) === gridStep(0.5) ? 3 : 0.5;
+		expect(gridStep(k)).not.toBe(gridStep(at.k));
+		camera.set({ ...at, k });
+		flush();
+		camera.set({ ...at, k: k * 1.05 });
+		flush();
+		expect(renderer.frames.at(-1)!.regions).toBe(opened);
+		expect(deferred).toHaveLength(2);
+		deferred.splice(0).forEach((task) => task());
+		flush();
+		const finer = renderer.frames.at(-1)!.regions;
+		expect(finer).not.toBe(opened);
+		expect(finer.map((r) => r.key)).toEqual(opened.map((r) => r.key));
+
+		// Back out: both buckets are cached now.
+		camera.set(at);
+		flush();
+		expect(renderer.frames.at(-1)!.regions).toBe(opened);
+	});
+
+	it('takes a new layout where the camera already is, as a collapse does', () => {
+		const { surface, renderer, camera, flush } = setup();
+		const { layout, rows, epic } = familyBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		expect(surface.showing).toBe(true);
+		camera.set({ k: 3, x: -200, y: 40 });
+		const collapsed = layoutMap({ rows: [...rows.values()], now: layout.frame.scale.edge, collapse: { [epic]: true }, aspect: WIDTH / 500 });
+		surface.update(collapsed, rows);
+		flush();
+		expect(camera.transform).toEqual({ k: 3, x: -200, y: 40 });
+		const frame = renderer.frames.at(-1)!;
+		expect(frame.regions).toEqual([]);
+		expect(frame.dots.find((d) => d.key === epic)!.folded).not.toBeNull();
+
+		surface.clear();
+		expect(surface.showing).toBe(false);
+	});
+
+	it('shows the links focus lights, or every link with All links on', () => {
+		const { surface, renderer, flush } = setup();
+		const { layout, rows } = familyBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		const lit = { all: false, lit: new Set(['blocker:X>Y']) };
+		surface.setLighting(lit);
+		flush();
+		expect(renderer.frames.at(-1)!.lighting).toBe(lit);
 	});
 });

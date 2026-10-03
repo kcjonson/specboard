@@ -356,6 +356,9 @@ there too. Held against the floor, a burst still reads as a cloud.
 - Finished families (a parent and every descendant done) start collapsed, as one
   done dot with the family's count inside; everything else starts open.
 - A person's expand and collapse choices persist per project on their device.
+- The control is a minus at the end of a region's label and a plus on a collapsed
+  dot big enough to carry one. A toggle reruns the layout as a local pass from the
+  current positions, so the rest of the Map holds still and the camera stays.
 
 ---
 
@@ -403,6 +406,11 @@ only signal.
 - On a region's label, a rollup of its whole subtree split by phase rather than a single
   done fraction.
 - A PR link when `pr_url` is set.
+- On the canvas the sub-status cues are shapes on the glyph: scoping dashes the
+  ring, paused swaps a ring's fill for two bars (or cuts them out of a solid
+  glyph), and needs input and PR open take the ink ring. A small diamond at the
+  lower right is the PR mark, on any item with `pr_url` or PR open. Every dot sits
+  on a disc of `--color-surface`, so a region's tint never lowers its contrast.
 - At near zoom: a linked spec, and whether an agent or a person created the item
   (`origin.actor.type`).
 - Weight follows the plan. Ready and blocked items draw smaller and lighter the
@@ -899,6 +907,28 @@ Input for the technical design, not decisions.
   marching squares: a few hundred lines with no dependency. The prototype's whole
   render, 14 regions included, took about 45 ms for 173 dots; outlines only change
   when positions or zoom do, so they're computed once per layout and cached.
+- As built (SPE-229), the region distances (the 32 pad, 12 per nesting level, the
+  20 disk) are layout units, the units the layout spaces families in, so a region
+  scales with its dots; only the grid follows the zoom: 5 units below 1.4x, 2.5
+  above, never coarser, since a coarser grid can't resolve a long-running epic's
+  neck and the epic breaks into islands. The disk filter was nine tenths of the
+  cost, so the closing runs on a 10-unit grid and is read back bilinearly, the
+  fine field's own detail kept where it's larger. A nested region keeps only
+  ground where its parent's field clears the level by 0.06, which is what
+  guarantees it sits inside. Of the loops one region traces, the one holding the
+  most members stands. Outlines are computed on the main thread, once per layout
+  and grid step, never during a pan; a zoom into a new step draws the nearest
+  cached outlines (they're in layout units, so they still fit) and computes the
+  new step once the gesture stops. On a generated 1,000-item board (682 nodes,
+  17 regions with finished epics folded) a step costs about 21 ms at 5 units and
+  56 ms at 2.5; with every family open (34 regions, 610 members), 35 ms and
+  104 ms.
+- Where the layout lets two families interleave, a member can sit on ground its
+  neighbor's field wins, and the drawing can't fix that without overlapping: on
+  that generated board, whose open epics have children spread over 120 days,
+  about a quarter of region members land outside their own outline. The
+  realistic 200-item board loses none. Keeping families apart is the layout's
+  job.
 - Alternatives if `d3-force` falls short: ForceAtlas2 through graphology (Gephi's
   organic layout, about 3 KB plus graphology), or WebCoLa (about 21 KB), whose
   separation constraints are the ordering rule built in.
