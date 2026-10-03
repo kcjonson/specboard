@@ -126,7 +126,7 @@ export function phaseOf(row: MapItemRow): MapPhase {
 function radiusOf(item: ModelItem): number {
 	if (item.hub) return 0;
 	const inFlight = item.phase === 'in_flight';
-	if (!item.children.length) return inFlight ? IN_FLIGHT_RADIUS : LEAF_RADIUS;
+	if (!item.children.length && !item.descendants) return inFlight ? IN_FLIGHT_RADIUS : LEAF_RADIUS;
 	const base = PARENT_RADIUS_BASE + PARENT_RADIUS_GROWTH * Math.sqrt(item.descendants);
 	return inFlight ? base * IN_FLIGHT_PARENT_SCALE : base;
 }
@@ -149,7 +149,7 @@ export function buildModel(rows: readonly MapItemRow[], now: number, collapse: R
 			parent: null,
 			children: [],
 			phase: phaseOf(row),
-			descendants: 0,
+			descendants: row.summarizedDescendants ?? 0,
 			anchor: own,
 			completion: own,
 			collapsed: false,
@@ -238,7 +238,6 @@ function blockerEdges(items: readonly ModelItem[], byKey: ReadonlyMap<string, Mo
 	for (const blocked of items) {
 		const seen = new Map<ModelItem, BlockerEdge>();
 		for (const link of blocked.row.blockers) {
-			if (link.state === 'removed') continue;
 			const blocker = byKey.get(link.blockerKey);
 			if (!blocker || blocker === blocked) continue;
 			const satisfied = link.state === 'satisfied';
