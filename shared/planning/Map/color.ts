@@ -13,6 +13,9 @@ export interface Rgb {
 /** WCAG 1.4.11's floor for graphical objects, which every status mark has to clear. */
 export const NON_TEXT_CONTRAST = 3;
 
+/** WCAG AA for normal-size text. */
+export const TEXT_CONTRAST = 4.5;
+
 /** Reads `#rgb`, `#rrggbb`, `rgb(r, g, b)`, and `rgba(r, g, b, a)` (alpha ignored), the forms a canvas normalizes colors to. */
 export function parseColor(value: string): Rgb | null {
 	const text = value.trim().toLowerCase();
@@ -68,4 +71,13 @@ export function contrastFloor(color: Rgb, ground: Rgb, ratio = NON_TEXT_CONTRAST
 		else lo = middle;
 	}
 	return hi;
+}
+
+/**
+ * Ink for text on `fill`: the first of `inks` that clears text contrast, then black or
+ * white, and failing all of those, whichever comes closest.
+ */
+export function readableInk(fill: Rgb, inks: readonly Rgb[], ratio = TEXT_CONTRAST): Rgb {
+	const candidates = [...inks, { r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }];
+	return candidates.find((ink) => contrast(ink, fill) >= ratio) ?? candidates.reduce((a, b) => (contrast(a, fill) >= contrast(b, fill) ? a : b));
 }

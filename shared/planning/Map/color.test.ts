@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NON_TEXT_CONTRAST, contrast, contrastFloor, formatColor, mix, parseColor } from './color';
+import { NON_TEXT_CONTRAST, TEXT_CONTRAST, contrast, contrastFloor, formatColor, mix, parseColor, readableInk } from './color';
 
 const rgb = (hex: string): ReturnType<typeof parseColor> & object => parseColor(hex)!;
 
@@ -36,6 +36,14 @@ describe('color', () => {
 		expect(contrastFloor(rgb('#64748b'), rgb('#ffffff'))).toBeCloseTo(0.756, 2);
 		expect(contrastFloor(rgb('#3b82f6'), rgb('#1a1a1a'))).toBeCloseTo(0.709, 2);
 		expect(contrastFloor(rgb('#94a3b8'), rgb('#1a1a1a'))).toBeCloseTo(0.555, 2);
+	});
+
+	it('finds text ink that clears 4.5:1 on the done fill in both themes, the theme\'s own first', () => {
+		const light = readableInk(rgb('#5f9e86'), [rgb('#ffffff'), rgb('#1a1a1a')]);
+		expect(formatColor(light)).toBe('#1a1a1a');
+		const dark = readableInk(rgb('#3f7a63'), [rgb('#1a1a1a'), rgb('#f0f0f0')]);
+		expect(contrast(dark, rgb('#3f7a63'))).toBeGreaterThanOrEqual(TEXT_CONTRAST);
+		expect(formatColor(dark)).toBe('#ffffff');
 	});
 
 	it('never tints a color that doesn\'t clear the floor at full strength', () => {

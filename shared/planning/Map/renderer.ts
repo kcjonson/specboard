@@ -2,12 +2,12 @@ import type { MapItemStatus } from '@specboard/core/map-read';
 import { DONE_DISC, GLYPH_BOX, NEEDS_PERSON_TOKEN, PAUSE_BARS, RING_WIDTH, STATUS_GLYPHS, STATUS_TOKENS } from '@specboard/ui';
 import { MIN_DRAW_RADIUS, type Transform } from './camera';
 import type { CollapseControl } from './collapse-controls';
-import { contrastFloor, formatColor, mix, parseColor, type Rgb } from './color';
+import { contrastFloor, formatColor, mix, parseColor, readableInk, type Rgb } from './color';
 import type { DrawDot, DrawLink } from './draw-list';
 import type { MapPhase } from './layout/types';
 import { linkCurve, linkShows, type LinkLighting } from './links';
 import { ringScale, tintAmount } from './plan-weight';
-import type { Circle, RegionLabel } from './region-labels';
+import { rollupSegments, type Circle, type RegionLabel } from './region-labels';
 import type { RegionOutline } from './regions/outline';
 import type { RulerMarks } from './ruler';
 
@@ -63,6 +63,8 @@ interface MapTheme {
 	regionStroke: string;
 	link: string;
 	linkSatisfied: string;
+	/** The count on a folded finished family: whichever ink clears text contrast on the done fill. */
+	countInk: string;
 }
 
 /**
@@ -104,6 +106,7 @@ function readTheme(element: Element, normalize: (color: string) => string): MapT
 			formatColor(mix(textRgb, surfaceRgb, REGION_TINT + REGION_TINT_STEP * level)),
 		),
 		regionStroke: formatColor(mix(textRgb, surfaceRgb, REGION_STROKE)),
+		countInk: formatColor(readableInk(statusRgb.done, [surfaceRgb, textRgb])),
 		link: formatColor(mix(mutedRgb, surfaceRgb, 0.85)),
 		linkSatisfied: formatColor(mix(mutedRgb, surfaceRgb, 0.4)),
 	};
@@ -248,7 +251,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		}
 		ctx.restore();
 		if (count !== null && status === 'done') {
-			ctx.fillStyle = theme.surface;
+			ctx.fillStyle = theme.countInk;
 			ctx.font = `700 ${Math.min(13, Math.round(r * 0.85))}px ${theme.font}`;
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
@@ -291,18 +294,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		if (dot.pr) drawPrMark(x, y, r);
 		// Any collapsed family but a finished one (the parent and everything under it done) carries its rollup under it.
 		if (dot.folded && r >= COUNT_MIN_RADIUS && !(dot.status === 'done' && dot.folded.rollup.done === dot.folded.count - 1)) {
-			const { rollup } = dot.folded;
-			const total = dot.folded.count - 1;
 			const w = Math.max(16, 1.6 * r);
-			let at = x - w / 2;
-			const segments = (['done', 'in_flight', 'next', 'later'] as const)
-				.filter((phase) => rollup[phase] > 0)
-				.map((phase) => {
-					const segment = { phase, x: at, w: (w * rollup[phase]) / total };
-					at += segment.w;
-					return segment;
-				});
-			drawRollupBar(x - w / 2, y + r + 4, w, 3, segments);
+			drawRollupBar(x - w / 2, y + r + 4, w, 3, rollupSegments(dot.folded.rollup, x - w / 2, w));
 		}
 	};
 
@@ -479,8 +472,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.beginPath();
 			ctx.rect(0, 0, width, plotHeight());
 			ctx.clip();
-			if (ruler) drawEdgeLine(ruler);
 			drawRegions(regions, transform);
+			if (ruler) drawEdgeLine(ruler);
 			drawLinks(links, lighting, transform);
 			for (const dot of dots) drawDot(dot, transform);
 			drawLabels(labels);

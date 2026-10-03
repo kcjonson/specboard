@@ -120,6 +120,9 @@ describe('region labels', () => {
 		expect(segments.at(-1)!.x + segments.at(-1)!.w).toBeCloseTo(42);
 		for (const s of segments) expect(s.w).toBeGreaterThanOrEqual(2);
 		expect(rollupSegments({ done: 0, in_flight: 0, next: 0, later: 0 }, 0, 32)).toEqual([]);
+		// One live child in a hundred still shows, as a folded family's bar.
+		const folded = rollupSegments({ done: 99, in_flight: 1, next: 0, later: 0 }, 0, 16);
+		expect(folded.find((s) => s.phase === 'in_flight')!.w).toBeGreaterThanOrEqual(2);
 	});
 });
 
