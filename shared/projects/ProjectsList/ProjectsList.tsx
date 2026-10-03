@@ -147,7 +147,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			// with it) for a full-screen retry panel — a taken slug would discard the form.
 			// A taken slug or key comes back as a 409 whose body says which one; FetchError's
 			// own message is just "HTTP 409: Conflict", so prefer the server's wording.
-			throw new Error(apiErrorMessage(err, 'Failed to save project'));
+			throw new Error(apiErrorMessage(err, 'Failed to save project'), { cause: err });
 		}
 	}
 
@@ -161,7 +161,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		} catch (err) {
 			// Rethrow for the same reason handleSaveProject does: the page-level error
 			// swaps the list — and the open confirm dialog with it — for a retry panel.
-			throw new Error(apiErrorMessage(err, 'Failed to delete project'));
+			throw new Error(apiErrorMessage(err, 'Failed to delete project'), { cause: err });
 		}
 	}
 
