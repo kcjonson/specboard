@@ -38,8 +38,10 @@ them doesn't belong in v1.
 
 1. **Every item gets `started_at` and `completed_at`, as part of this feature.**
    Items carry only `created_at` and `updated_at` today, so when something started
-   or finished isn't stored anywhere. They're item fields, not Map internals: every
-   item response carries them and the item view shows them. See [Data](#data).
+   or finished isn't stored anywhere. The status change sets them, from the day
+   this ships; nothing reconstructs them for older items. They're item fields, not
+   Map internals: every item response carries them and the item view shows them.
+   See [Data](#data).
 2. **Every status transition is recorded.** One row per change of status or
    sub-status, from the day this ships. A transition nobody recorded can't be
    reconstructed later, and it's what lets
@@ -166,7 +168,8 @@ about 200 items, and its values are the [starting values](#starting-values) for 
 build.
 
 1. **Time anchor.** Each item belongs to a moment:
-   - a done item: `completed_at`
+   - a done item: `completed_at`, or its latest event if it finished before the
+     stamps existed
    - anything else: its latest meaningful event, whichever is newest of being
      filed (`created_at`), a status or sub-status transition, an activity-log
      entry, a blocker added or cleared, and an observed agent write
@@ -623,6 +626,9 @@ and nothing moves for more than a second.
      `done` never started, and its `started_at` stays empty.
    - `completed_at` is the most recent entry into `done`, cleared when the item
      leaves `done`, so it's set exactly when the status is `done`.
+   - The status change sets both, on every path that writes a status, the way the
+     `items_updated_at` trigger sets `updated_at`. Neither is ever accepted from a
+     client payload, since the web client restates the whole item on every save.
    - Every item response carries both, REST and MCP alike, and the drawer and the
      standalone item view show them.
 2. **A status transition log** (decision 2). One append-only row per change of
@@ -633,23 +639,12 @@ and nothing moves for more than a second.
      actor). The activity log is deliberately separate from status writes; this log
      can't be, since a status write without its row would make since-your-last-visit
      lie.
-   - `started_at` and `completed_at` are written by the same code in the same
-     transaction, so they can't disagree with the log. Neither is ever accepted from
-     a client payload.
    - The log starts empty. Nothing before the release is reconstructed.
-3. **Best-effort backfill of the two times.** Done items take the later of their
-   last worker episode's end and their last activity-log entry, else `created_at`
-   as a lower bound. Never `updated_at`: the trigger moves it on every `UPDATE`,
-   migration backfills included, so on a real board most rows carry the date of
-   the release that ran 023. Items that have started take their first worker
-   episode's start, else their first activity-log entry, else stay empty. Entries
-   carried over by 027 keep their real dates but invented times, so pre-027 history
-   is good to the day. In the real board the design pass sampled, 78 of 86 done
-   items had an activity-log entry to use. Times before the release are approximate and
-   deliberately unflagged: the Map reads them loosely, and a flag column would
-   exist only for legacy rows. The verbatim backfill expression runs read-only
-   against prod before release, since staging has too little data to prove a
-   backfill ([verification.md](../verification.md#when-a-manual-pass-is-required)).
+3. **No backfill.** Items that changed status before this ships keep empty times
+   rather than reconstructed ones. The Map doesn't need them: a done item without
+   `completed_at` anchors at its latest event, which is how the design pass placed
+   this board's history (78 of 86 done items had an activity-log entry to anchor
+   on).
 4. **A time anchor per item**, computed server-side from the item's own events as
    [The layout](#the-layout) defines them, from data that already exists or that
    this spec adds: the two times, the transition log, activity-log entries,
@@ -807,5 +802,5 @@ Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
 
 Requirements settled after the desktop design pass (a design canvas with a working
 prototype of the layout, run on a real board of about 200 items). Not built. The
-build is SPE-222: fifteen tasks in build order, each blocked by what it needs. The
+build is SPE-222: fourteen tasks in build order, each blocked by what it needs. The
 small-screen Map, SPE-220, waits on it.
