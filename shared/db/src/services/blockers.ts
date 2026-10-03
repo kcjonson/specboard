@@ -156,10 +156,10 @@ export async function listBlockers(
  * project.
  *
  * Runs in a transaction under the project's blocker lock (lockProjectBlockers).
- * It also takes FOR SHARE locks on the item rows it validated, so a concurrent
- * completeItem can't slip its status write and auto-clear between the not-done
- * check and the insert (the completion's UPDATE blocks on the lock and, once it
- * proceeds, sees the committed row).
+ * Completions take it too, so neither item can reach done between the not-done
+ * checks and the insert. The FOR SHARE locks hold the rows it validated until
+ * commit, so a concurrent delete can't remove one and fail the insert on its
+ * foreign key.
  */
 export async function addBlocker(
 	projectId: string,
@@ -315,13 +315,13 @@ export async function setBlockers(
 }
 
 /**
- * Completion side effect, run inside the caller's status-write transaction:
- * tombstone every open blocker pointing AT the completed item (its dependents
- * unblock, pure SQL), and the completed item's OWN open rows (done and blocked
- * must not coexist; addBlocker refuses done items, so completion may not
- * manufacture that state either). Dependents get their updated_at bumped so
- * polling boards pick up the derived change; the completed item's own bump
- * comes from the status write itself.
+ * Completion side effect, run under the project's blocker lock inside the
+ * caller's status-write transaction: tombstone every open blocker pointing AT
+ * the completed item (its dependents unblock, pure SQL), and the completed
+ * item's OWN open rows (done and blocked must not coexist; addBlocker refuses
+ * done items, so completion may not manufacture that state either). Dependents
+ * get their updated_at bumped so polling boards pick up the derived change; the
+ * completed item's own bump comes from the status write itself.
  */
 export async function clearBlockersForCompletion(client: pg.PoolClient, itemId: string): Promise<void> {
 	const cleared = await client.query<{ item_id: string }>(
@@ -368,14 +368,17 @@ export async function listOpenBlockersByItems(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Serialize a project's blocker writes until commit. The cycle check reads edges it
- * doesn't lock, so under row locks alone two writes could each close half of a cycle
- * without seeing the other's; the check runs in a later statement, so under READ
+ * Serialize a project's blocker writes until commit. Completions take it too, since
+ * reaching done clears blockers and bumps the items they blocked. The cycle check reads
+ * edges it doesn't lock, so under row locks alone two writes could each close half of a
+ * cycle without seeing the other's; the check runs in a later statement, so under READ
  * COMMITTED its snapshot holds every edge committed before this lock was granted.
- * Taken before any row lock: a write holding a share lock while it waited here could
- * deadlock with the holder's updated_at bump.
+ * Always a transaction's first lock: the writes it serializes take rows in opposite
+ * orders (a replace share-locks the blocked item, then its targets; completing a target
+ * writes it, then bumps the items it blocked), so one that held a row while it waited
+ * here could deadlock with the holder.
  */
-async function lockProjectBlockers(client: pg.PoolClient, projectId: string): Promise<void> {
+export async function lockProjectBlockers(client: pg.PoolClient, projectId: string): Promise<void> {
 	await client.query("SELECT pg_advisory_xact_lock(hashtext('item_blockers'), hashtext($1))", [projectId]);
 }
 
