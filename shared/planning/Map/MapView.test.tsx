@@ -82,6 +82,18 @@ describe('MapView states', () => {
 		for (const name of ['Fit all', 'Now', 'Zoom out', 'Zoom in']) expect(control(container, name).disabled).toBe(false);
 	});
 
+	it('says so when the read came back summarized, and does not offer its row count as the item count', async () => {
+		const { findByText, container } = renderMap(() => Promise.resolve({ ...board(5), summarized: true }));
+		expect((await findByText(/finished families are summarized/)).getAttribute('role')).toBe('status');
+		expect(container.querySelector('canvas')!.getAttribute('aria-label')).toBe('Map of 5 items, with finished families summarized');
+	});
+
+	it('shows no such notice for a read that was not summarized', async () => {
+		const { container, queryByRole } = renderMap(() => Promise.resolve(board(5)));
+		await waitFor(() => expect(container.querySelector('canvas')!.getAttribute('aria-label')).toBe('Map of 5 items'));
+		expect(queryByRole('status')).toBeNull();
+	});
+
 	it('says so on the canvas when the project has no items', async () => {
 		const { container, findByText } = renderMap(() => Promise.resolve({ items: [], summarized: false }));
 		await findByText(/Nothing on the map yet/);

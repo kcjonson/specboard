@@ -214,6 +214,33 @@ describe('MapSurface', () => {
 		expect(camera.zooms).toEqual([{ factor: ZOOM_STEP, around: undefined }, { factor: 1 / ZOOM_STEP, around: undefined }]);
 	});
 
+	it('focuses an item that is not a dot of its own: a region\'s parent, and a child folded into its family', () => {
+		const b = new BoardBuilder();
+		const open = b.add({ type: 'epic', status: 'in_progress' });
+		b.add({ parentKey: open.key, status: 'ready' });
+		b.add({ parentKey: open.key, status: 'done' });
+		const finished = b.add({ type: 'epic', status: 'done' });
+		const folded = b.add({ parentKey: finished.key, status: 'done' });
+		b.add({ parentKey: finished.key, status: 'done' });
+		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: WIDTH / 500 });
+		const rows = new Map(b.rows.map((row) => [row.key, row]));
+		const { surface, camera } = setup();
+		surface.resize(WIDTH, HEIGHT);
+
+		const at = (key: string): { x: number; y: number } => layout.nodes.find((n) => n.key === key)!;
+		expect(at(open.key).x).toBeDefined();
+		surface.show(layout, rows, open.key);
+		expect(centerOf(camera.transform, plot)).toEqual({ x: expect.closeTo(at(open.key).x), y: expect.closeTo(at(open.key).y) });
+
+		surface.show(layout, rows, folded.key);
+		expect(layout.representative[folded.key]).toBe(finished.key);
+		expect(centerOf(camera.transform, plot)).toEqual({ x: expect.closeTo(at(finished.key).x), y: expect.closeTo(at(finished.key).y) });
+
+		expect(surface.focusOn(open.key, false)).toBe(true);
+		expect(surface.focusOn(folded.key, false)).toBe(true);
+		expect(surface.focusOn('NOPE-1')).toBe(false);
+	});
+
 	it('can move to an item without a flight', () => {
 		const { surface, camera } = setup();
 		const { layout, rows, keys } = realBoard();

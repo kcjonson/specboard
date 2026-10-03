@@ -130,8 +130,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		}
 	};
 
-	const drawEdge = (ruler: RulerMarks): void => {
-		const { x, label } = ruler.edge;
+	const drawEdgeLine = (ruler: RulerMarks): void => {
+		const { x } = ruler.edge;
 		if (x < 0 || x > width) return;
 		const top = height - RULER_HEIGHT;
 		ctx.save();
@@ -143,6 +143,12 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.lineTo(x + 0.5, top);
 		ctx.stroke();
 		ctx.restore();
+	};
+
+	// After the dots, so a dot near the edge can't paint over the label.
+	const drawEdgeLabel = (ruler: RulerMarks): void => {
+		const { x, label } = ruler.edge;
+		if (x < 0 || x > width) return;
 		ctx.fillStyle = theme.muted;
 		ctx.font = `600 ${LABEL_SIZE}px ${theme.font}`;
 		ctx.textBaseline = 'top';
@@ -175,8 +181,9 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.beginPath();
 			ctx.rect(0, 0, width, height - RULER_HEIGHT);
 			ctx.clip();
-			if (ruler) drawEdge(ruler);
+			if (ruler) drawEdgeLine(ruler);
 			for (const dot of dots) drawGlyph(dot, transform);
+			if (ruler) drawEdgeLabel(ruler);
 			ctx.restore();
 			drawRuler(ruler);
 		},

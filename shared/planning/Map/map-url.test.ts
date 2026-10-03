@@ -12,6 +12,12 @@ describe('map URLs', () => {
 		expect(readFocus('?focus=')).toBeNull();
 		expect(readFocus('?focus=../etc')).toBeNull();
 		expect(readFocus('?focus=SPE-')).toBeNull();
+		expect(readFocus('?focus=SPE-0')).toBeNull();
+		expect(readFocus('?focus=S-4')).toBeNull();
+	});
+
+	it('canonicalizes the number the way the shared parser does', () => {
+		expect(readFocus('?focus=SPE-007')).toBe('SPE-7');
 	});
 
 	const at = { pathname: '/projects/acme/specboard/planning', search: '?view=map', hash: '#top' };

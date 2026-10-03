@@ -74,6 +74,9 @@ export class MapDataModel implements Observable {
 			this.state = 'ready';
 		} catch (error) {
 			if (generation !== this.generation) return;
+			// A worker that failed is dead for good, so Retry starts a fresh one.
+			this.worker?.terminate();
+			this.worker = null;
 			this.error = error instanceof Error ? error : new Error(String(error));
 			this.state = 'error';
 		}

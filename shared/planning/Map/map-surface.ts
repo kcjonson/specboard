@@ -13,7 +13,7 @@ import {
 	type Viewport,
 } from './camera';
 import { buildDrawList, type DrawDot } from './draw-list';
-import type { MapLayout } from './layout/types';
+import type { MapLayout, MapPoint } from './layout/types';
 import type { MapCamera, ScreenPoint } from './map-camera';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
 import { rulerMarks } from './ruler';
@@ -92,7 +92,7 @@ export class MapSurface {
 		this.dots = buildDrawList(layout, rows);
 		this.pristine = true;
 		this.configureCamera(layout);
-		const target = focusKey ? this.dots.find((dot) => dot.key === focusKey) : undefined;
+		const target = focusKey ? this.placeOf(focusKey) : undefined;
 		this.camera.set(target ? focusTransform(target, layout.frame.bounds, this.dots, null, this.viewport) : this.openView(layout));
 		this.requestPaint();
 	}
@@ -138,9 +138,9 @@ export class MapSurface {
 		this.pointer = point;
 	}
 
-	/** Moves to an item, with a flight unless told otherwise. False when the Map has no such dot, which includes anything folded into another. */
+	/** Moves to an item, with a flight unless told otherwise. False when the Map has no such item. */
 	focusOn(key: string, fly = true): boolean {
-		const target = this.dots.find((dot) => dot.key === key);
+		const target = this.placeOf(key);
 		if (!this.layout || !target) return false;
 		const view = focusTransform(target, this.layout.frame.bounds, this.dots, fly ? this.camera.transform : null, this.viewport);
 		if (fly) this.camera.flyTo(view);
@@ -192,6 +192,19 @@ export class MapSurface {
 				: null,
 		});
 		this.setViewportEmpty(this.dots.length > 0 && !dotsVisible(this.dots, transform, this.viewport));
+	}
+
+	/**
+	 * Where an item is on the Map: its own node, or the one that draws it. A parent with open
+	 * children is a region around its family and sits at its unseen center, and the children of
+	 * a collapsed family sit in their collapsed parent's dot.
+	 */
+	private placeOf(key: string): MapPoint | undefined {
+		const layout = this.layout;
+		if (!layout) return undefined;
+		const drawnBy = layout.representative[key];
+		if (!drawnBy) return undefined;
+		return layout.nodes.find((node) => node.kind === 'item' && node.key === drawnBy);
 	}
 
 	/** What a keyboard zoom holds still: the pointer if it is over the plot, otherwise the middle (undefined). A focused dot is SPE-236's to add. */

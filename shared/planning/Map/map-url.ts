@@ -1,9 +1,10 @@
-const ITEM_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 
-/** The item `?focus=` names, normalized the way the planning route normalizes keys. */
+/** The item `?focus=` names, in the canonical key form the rest of the app uses, or null if it names nothing valid. */
 export function readFocus(search: string): string | null {
 	const value = new URLSearchParams(search).get('focus');
-	return value && ITEM_KEY.test(value) ? value.toUpperCase() : null;
+	const parsed = value ? parseItemKey(value) : null;
+	return parsed ? formatItemKey(parsed.projectKey, parsed.number) : null;
 }
 
 /** The same page with `focus` set to an item, or dropped for `null`. Everything else in the URL stays. */

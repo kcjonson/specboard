@@ -104,6 +104,23 @@ describe('MapDataModel', () => {
 		expect(model.error!.message).toBe('Map layout worker failed');
 	});
 
+	it('starts a fresh worker on Retry after the layout failed, since a failed worker never answers again', async () => {
+		const dead = fakeWorker();
+		dead.layout = () => Promise.reject(new Error('Map layout worker failed'));
+		const fresh = fakeWorker();
+		const workers = [dead, fresh];
+		const model = new MapDataModel(() => Promise.resolve(board(2)), () => workers.shift()!);
+		await model.load(2);
+		expect(model.state).toBe('error');
+		expect(dead.terminated).toBe(true);
+
+		const retrying = model.retry();
+		await flush();
+		fresh.pending.shift()!();
+		await retrying;
+		expect(model.state).toBe('ready');
+	});
+
 	it('drops an answer that a newer load has overtaken', async () => {
 		const worker = fakeWorker();
 		const reads = [board(2), board(5)];

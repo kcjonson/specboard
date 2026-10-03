@@ -140,6 +140,8 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 	const handleRetry = useCallback((): void => void model.retry(), [model]);
 
 	const interactive = state === 'ready' && !model.isEmpty;
+	// Past the read cap, finished families come back folded into one row, so the count is of rows, not of items.
+	const summarized = interactive && model.read?.summarized === true;
 
 	return (
 		<div class={styles.map} ref={containerRef}>
@@ -147,7 +149,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 				ref={canvasRef}
 				class={styles.canvas}
 				role="img"
-				aria-label={interactive ? `Map of ${rows.size} items` : 'Map'}
+				aria-label={interactive ? `Map of ${rows.size} items${summarized ? ', with finished families summarized' : ''}` : 'Map'}
 			/>
 			<div class={styles.controls} role="group" aria-label="Map view">
 				<button type="button" class={styles.control} disabled={!interactive} onClick={handleFitAll}>Fit all</button>
@@ -155,6 +157,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom out" onClick={() => surface().zoomOut()}>&minus;</button>
 				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom in" onClick={() => surface().zoomIn()}>+</button>
 			</div>
+			{summarized && <p class={styles.notice} role="status">This project is past the read cap, so finished families are summarized.</p>}
 			<div class={styles.overlay} style={{ bottom: `${RULER_HEIGHT}px` }}>
 				{state === 'loading' && <p class={styles.message} role="status">Loading the map...</p>}
 				{state === 'error' && model.error && <LoadError error={model.error} onRetry={handleRetry} />}
