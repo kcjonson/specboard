@@ -377,8 +377,9 @@ related items.
   pause control. The loudest treatment belongs to
   [needs a person](#needs-a-person).
 - At far zoom, each family shows a count of its live sessions.
-- A roster lists every live session in the project with the item it's on. Picking
-  one flies the Map there.
+- The summary strip's Live sessions button opens a roster: live sessions first,
+  then items whose sessions went quiet, each with client, device, and time since
+  the last write. Picking one selects the item and flies the Map there.
 - Live sessions and needs-a-person items outside the viewport get edge markers
   pointing toward them.
 - The Map shows item state and session presence. It never streams tool calls.
@@ -416,8 +417,7 @@ Fixed, outside the Map:
 
 - counts per phase, plus blocked and needs-a-person
 - live agent sessions
-- since your last visit: what changed, by kind, each of which highlights those
-  items and steps through them
+- since your last visit: what changed, by kind; it opens the changes view
 - freshness: when the data last refreshed
 
 ---
@@ -426,14 +426,21 @@ Fixed, outside the Map:
 
 - A visit is the time this person spends on the Map for a project. The baseline is
   stored per account (decision 7), so it's the same on every device.
-- On return, the Map marks what changed since the baseline: items completed,
-  started, or created (agent-filed ones called out, with what they were discovered
-  from), newly blocked or held, questions raised (`needs_input`), and PRs opened.
-  The transition log is what dates the last three.
-- Opening a marked item clears its mark for the rest of the visit. The baseline
-  moves forward when the person leaves the Map or marks everything seen.
-- Each marked item's quick card shows its latest activity-log entry, usually the
-  agent's own account of what it did and why.
+- A change is an item finished, worked on, or filed since the baseline (agent-filed
+  ones called out, with what they were discovered from), newly blocked or held, a
+  question raised (`needs_input`), or a PR opened. The transition log is what dates
+  the last three.
+- On arrival with changes waiting, the Map opens in the changes view: changed items
+  at full strength, everything else dimmed, and the at-rest labels given to the
+  most recent changes instead of the families. A bar on the canvas names the
+  baseline ("Since your last visit, Sep 19") and steps through the changes in the
+  order they happened; each step focuses the item, and its card says what changed
+  and when.
+- "Mark all seen" closes the view and moves the baseline forward, as leaving the
+  Map does. Until then, the summary strip's "Since Sep 19: 11 finished, 1 worked
+  on, 9 filed" reopens it.
+- Each changed item's card shows its latest activity-log entry, usually the agent's
+  own account of what it did and why.
 
 ---
 
@@ -443,15 +450,20 @@ Fixed, outside the Map:
   by pinch, ctrl/cmd-wheel, on-screen controls, and keys.
 - Fit all, fit to now, fit to a family, and fit to the selection. Camera flights
   are short and skippable.
-- A minimap on large screens, marking the viewport, search hits, and live sessions.
+- A minimap appears in the lower left once zoomed in, marking the viewport. At fit
+  all it would only repeat the map.
 - Search uses the toolbar's search and the board's matching rules (title,
-  description, or key, at any depth). It dims non-matches, flies to the first hit,
-  and steps through the rest.
+  description, or key, at any depth). It dims non-matches, labels the matches, and
+  puts the changes view's stepping bar on the canvas ("Matches for "checklist", 2
+  of 5"), so a match buried in a dense cluster is still one step away.
 - Filters dim what doesn't match instead of removing it, so filtering never
   re-lays out the Map: type, phase, needs a person, live sessions. Collapse is what
   saves space.
 - Selecting a dot (click, or Enter on the focused one) opens the drawer, the same
-  component the board uses, and lights its relationships.
+  component the board uses, and lights its relationships. On the Map the drawer
+  overlays the right side of the canvas instead of narrowing it, and the camera
+  pans just far enough to keep the selection in view. Every related item in the
+  drawer (parent, children, blockers, lineage) is a link that moves the selection.
 - Hover or keyboard focus shows a quick card: title, status, sub-status, sessions,
   blockers, progress, and the latest activity-log entry, fetched on demand.
 - Dragging a dot pulls it and its links along; on release it springs back
