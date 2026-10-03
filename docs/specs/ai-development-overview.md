@@ -271,16 +271,19 @@ to fit; r is a dot's radius.
 | Computer to session | Rest length r1 + r2 + 26, strength 1 |
 | Repulsion | 40, ignored past 260 |
 | Collision | Radii plus 4 |
-| Family separation | Repulsion 2.5 times stronger between dots of different families, or a loose dot and a family, within 60 |
+| Family separation | An extra 2.5 times the repulsion between dots of different families, or a loose dot and a family, within 60 |
 | Midline | Strength 0.03 |
 | Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart; the strip past now is reserved at 0.6 of the time scale's unit width, computers at half of it and sessions at a quarter |
 | Velocity | 0.6 kept per tick (`d3-force` velocity decay 0.4) |
-| Ticks | 280 from cold, alpha 1 decaying to 0.001; 140 for a local pass, from alpha 0.25 |
+| Ticks | 280 from cold, alpha 1 decaying to 0.001; 140 for a local pass, or the width fit's second pass, from alpha 0.25 |
 | Radius | 5.5 for a leaf; 6 + 2.3 times the square root of the descendant count for a parent; 8.5 for an in-flight leaf; in-flight parents 15% larger; 8 for a session, 14 for a computer |
 
 The width the time scale maps onto is fitted in two passes so the settled Map
-matches the canvas's aspect ratio. A session stays in its computer's cluster for an
-hour after its last write.
+matches the canvas's aspect ratio. The trial width is 68 per unit of aspect, widened
+by the square root of the dot count past 150, since a settled Map's area grows with
+its dots. When the trial lands within 10% of the fit, it stands; otherwise the
+second pass starts from the first, stretched to the fitted width, rather than from
+cold. A session stays in its computer's cluster for an hour after its last write.
 
 ### Layout requirements
 
@@ -730,7 +733,8 @@ and nothing moves for more than a second.
    (device name, client, branch, last write, and session key), item-blocker links
    open and cleared (with whether a clear came from finished work or from someone
    removing it), text-blocker count, discovered-from key, origin actor type, PR URL, and
-   spec count. No descriptions, activity log, or checklist.
+   spec count. No descriptions, activity log, or checklist. The row shape is
+   `MapItemRow` in `@specboard/core/map-read`, shared by the API and the layout.
 6. **An opaque session key.** Browser responses strip the MCP session id today,
    and the Map has to tell two sessions on one computer apart. Each episode carries
    a key the server derives from the session (an HMAC of the session id under a
@@ -811,11 +815,14 @@ and nothing moves for more than a second.
 
 Input for the technical design, not decisions.
 
-- `d3-force` (ISC, about 5.5 KB gzipped) covers the whole heuristic: `forceX` for
-  the time pull (the beeswarm technique), `forceLink` with a strength and distance
-  per link type, `forceManyBody` (Barnes-Hut, so it scales to thousands of nodes),
-  `forceCollide` sized per dot, and a weak `forceY` for the midline. Its simulation
-  defaults to a fixed-seed random generator, which is half of the determinism
+- `d3-force` (ISC, about 5.5 KB gzipped) runs the simulation: `forceX` for the time
+  pull (the beeswarm technique), `forceLink` with a strength and distance per link
+  type, and a weak `forceY` for the midline. Its `forceManyBody` and `forceCollide`
+  measured about 7 ms and 2 ms a tick at 1,000 nodes, far over budget, so spacing
+  and collision are custom forces over a uniform grid: collision exact, and
+  repulsion exact within the neighboring cells (which covers family separation) and
+  summarized per cell past them, the way Barnes-Hut summarizes a quadtree. The
+  simulation's random generator is fixed-seed, which is half of the determinism
   requirement; the hashed starting positions are the other half. Starting each dot
   at its anchor puts it near its final spot, which keeps the tick count, and the
   cold-start time, down. Run it in a Web Worker.

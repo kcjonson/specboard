@@ -20,6 +20,7 @@
 		"@specboard/router": "*",
 		"@specboard/telemetry": "*",
 		"@specboard/ui": "*",
+		"d3-force": "3.0.0",
 		"is-hotkey": "0.2.0",
 		"preact": "10.29.8",
 		"slate": "0.120.0",
@@ -29,6 +30,7 @@
 	"devDependencies": {
 		"@babel/plugin-proposal-decorators": "7.29.7",
 		"@preact/preset-vite": "2.10.6",
+		"@types/d3-force": "3.0.10",
 		"@types/is-hotkey": "0.1.10",
 		"typescript": "5.9.3",
 		"vite": "7.3.6"
