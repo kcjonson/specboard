@@ -80,12 +80,13 @@ function expectNoOverlaps(result: MapLayout): void {
 
 /**
  * The renderer draws a region as a field around its dots, so the proxy for "inside a
- * region" is a dot's center within a member's radius plus the region's pad.
+ * region" is a dot's center within a member's radius plus the region's pad. That holds
+ * for nested regions too: a parent's own children stay out of a sub-epic's region.
  */
 function strangersInRegions(result: MapLayout): string[] {
 	const node = nodesOf(result);
 	const strangers: string[] = [];
-	for (const region of result.regions.filter((r) => r.depth === 0)) {
+	for (const region of result.regions) {
 		const members = new Set(region.members);
 		for (const dot of dots(result)) {
 			if (members.has(dot.key)) continue;

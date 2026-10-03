@@ -36,7 +36,7 @@ export interface ModelItem {
 	rep: ModelItem;
 	/** Visible with visible children: an unseen center for a region. */
 	hub: boolean;
-	/** Top-level ancestor's key for a dot inside a region, null for a loose dot. */
+	/** The region a dot is drawn in (its parent's key), null for a loose dot. */
 	family: string | null;
 	radius: number;
 }
@@ -205,11 +205,8 @@ export function buildModel(rows: readonly MapItemRow[], now: number, collapse: R
 		const parent = item.parent;
 		if (parent) item.rep = parent.rep !== parent ? parent.rep : parent.collapsed ? parent : item;
 		item.hub = item.rep === item && item.children.length > 0 && !item.collapsed;
-		if (item.rep === item && parent) {
-			let root = parent;
-			while (root.parent) root = root.parent;
-			item.family = root.key;
-		}
+		// A visible dot's parent is always a region, the one it's drawn in.
+		if (item.rep === item && parent) item.family = parent.key;
 		item.radius = radiusOf(item);
 	}
 

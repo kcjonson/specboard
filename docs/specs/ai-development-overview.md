@@ -271,7 +271,7 @@ to fit; r is a dot's radius.
 | Computer to session | Rest length r1 + r2 + 26, strength 1 |
 | Repulsion | 40, ignored past 260 |
 | Collision | Radii plus 4 |
-| Family separation | An extra 2.5 times the repulsion between dots of different families, or a loose dot and a family, within 60 |
+| Family separation | An extra 2.5 times the repulsion between dots of different families, or a loose dot and a family, within 60; a dot's family is the region it's drawn in, so a sub-epic's children also keep apart from their grandparent's own |
 | Midline | Strength 0.03 |
 | Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart; the strip past now is reserved at 0.6 of the time scale's unit width, computers at half of it and sessions at a quarter |
 | Velocity | 0.6 kept per tick (`d3-force` velocity decay 0.4) |

@@ -22,7 +22,7 @@ export interface SimNode extends SimulationNodeDatum {
 	kx: number;
 	ty: number;
 	ky: number;
-	/** Top-level family for a dot in a region, null for a loose dot, undefined for sessions and computers. */
+	/** The region a dot is drawn in, null for a loose dot, undefined for sessions and computers. */
 	family: string | null | undefined;
 	x: number;
 	y: number;
