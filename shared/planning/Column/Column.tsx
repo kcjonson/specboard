@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Status, ItemStatus, ItemModel } from '@specboard/models';
-import { StatusDot } from '@specboard/ui';
+import { StatusGlyph } from '@specboard/ui';
 import { ItemCard } from '../ItemCard/ItemCard';
 import styles from './Column.module.css';
 
@@ -115,7 +115,7 @@ export function Column({
 		<div class={styles.column}>
 			<div class={styles.header}>
 				<h2 class={styles.title}>
-					<StatusDot status={status} />
+					<StatusGlyph status={status} decorative />
 					{title}
 				</h2>
 				<span class={styles.count}>{count}</span>
