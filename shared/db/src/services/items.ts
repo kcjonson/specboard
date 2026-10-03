@@ -10,7 +10,7 @@ import type pg from 'pg';
 import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { Item, ItemType, ItemStatus, SubStatus, StatusSource, SpecType, ItemOrigin, ChecklistEntry } from '../types.ts';
-import { bumpItem, clearBlockersForCompletion, listOpenBlockersByItems, type BlockerSummary } from './blockers.ts';
+import { bumpItem, clearBlockersForCompletion, listOpenBlockersByItems, lockProjectBlockers, type BlockerSummary } from './blockers.ts';
 import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
 
@@ -719,6 +719,21 @@ export async function createItems(
 		.map((row) => ({ ...transformItem(row), blocked: false, childStats: { total: 0, done: 0, inProgress: 0, blocked: 0 } }));
 }
 
+/**
+ * A write that reaches done, run with its blocker clears in one transaction under the
+ * project's blocker lock. The lock is taken before the write: a completion holding its
+ * item's row while it waited for the lock would deadlock with a replace that holds the
+ * lock and wants that row.
+ */
+async function writeDone<T extends { id: string }>(projectId: string, sql: string, values: unknown[]): Promise<T | undefined> {
+	return transaction(async (client) => {
+		await lockProjectBlockers(client, projectId);
+		const row = (await client.query<T>(sql, values)).rows[0];
+		if (row) await clearBlockersForCompletion(client, row.id);
+		return row;
+	});
+}
+
 interface UpdatedRow {
 	id: string;
 	parent_id: string | null;
@@ -778,18 +793,9 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 
 	// Reaching done (directly or via subStatus 'complete') auto-clears blockers —
 	// dependents' and the item's own — in the same transaction as the status write.
-	let updated: UpdatedRow | undefined;
-	if (status === 'done') {
-		updated = await transaction(async (client) => {
-			const result = await client.query<UpdatedRow>(sql, values);
-			const row = result.rows[0];
-			if (row) await clearBlockersForCompletion(client, row.id);
-			return row;
-		});
-	} else {
-		const result = await query<UpdatedRow>(sql, values);
-		updated = result.rows[0];
-	}
+	const updated = status === 'done'
+		? await writeDone<UpdatedRow>(projectId, sql, values)
+		: (await query<UpdatedRow>(sql, values)).rows[0];
 	if (!updated) return null;
 	const { id, parent_id: parentId, status_changed: statusChanged } = updated;
 
@@ -914,15 +920,11 @@ export async function startItem(projectId: string, itemNumber: number): Promise<
  * transaction) and ends active worker episodes.
  */
 export async function completeItem(projectId: string, itemNumber: number): Promise<ItemResponse | null> {
-	const completed = await transaction(async (client) => {
-		const result = await client.query<{ id: string; parent_id: string | null }>(
-			`UPDATE items SET status = 'done', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id, parent_id`,
-			[itemNumber, projectId]
-		);
-		const row = result.rows[0];
-		if (row) await clearBlockersForCompletion(client, row.id);
-		return row;
-	});
+	const completed = await writeDone<{ id: string; parent_id: string | null }>(
+		projectId,
+		`UPDATE items SET status = 'done', status_source = 'explicit', updated_at = NOW() WHERE number = $1 AND project_id = $2 RETURNING id, parent_id`,
+		[itemNumber, projectId]
+	);
 	if (!completed) return null;
 	await endWorkers(projectId, itemNumber);
 	await rollUpStatus(completed.parent_id, true);

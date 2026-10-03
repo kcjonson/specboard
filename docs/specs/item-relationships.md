@@ -73,18 +73,24 @@ One row per blocker; an item can hold any mix of item and text blockers.
   replace is rewriting, can't change the answer, since a cycle through a new
   edge comes back through other items' blockers.
 
-  Blocker writes run in transactions that take a per-project advisory lock
-  (`pg_advisory_xact_lock`) and then lock the item rows they validated
-  (`FOR SHARE`). The row locks keep a concurrent completion from slipping
-  between the not-done check and the insert, but they can't keep cycles out:
-  the walk reads edges it doesn't lock, so two writes can each close half of a
-  cycle, even through four different rows (A blocked by B and C blocked by D,
-  with B blocked by C and D blocked by A already open). The project lock
-  serializes blocker writes, and the check runs in a later statement, so under
-  READ COMMITTED its snapshot holds every edge committed before the lock was
-  granted. It comes before any row lock, since a write holding a share lock
-  while it waited could deadlock with the holder's `updated_at` bump;
-  serializing also ends the deadlock two writes to one item used to hit, each
+  Blocker writes and completions (which tombstone the rows on both sides of
+  the completed item and bump the items it blocked) run in transactions that
+  take a per-project advisory lock (`pg_advisory_xact_lock`) before any row
+  lock. Row locks alone can't keep cycles out: the walk reads edges it doesn't
+  lock, so two writes can each close half of a cycle, even through four
+  different rows (A blocked by B and C blocked by D, with B blocked by C and D
+  blocked by A already open). The project lock serializes them, and the check
+  runs in a later statement, so under READ COMMITTED its snapshot holds every
+  edge committed before the lock was granted. The lock also keeps any item
+  from reaching done between a write's not-done checks and its insert, and
+  blocker writes then lock the item rows they validated (`FOR SHARE`) until
+  commit, so a concurrent delete can't fail the insert on its foreign key.
+  Because the project lock comes first, a transaction waiting for it holds no
+  rows and can't be half of a deadlock. The writes it serializes take rows in
+  opposite orders (a replace share-locks the blocked item, then its targets;
+  completing a target writes it, then bumps the items it blocked), so without
+  the lock a replace restating X while X completed deadlocked, as did
+  completing X alongside an item it blocks, and two writes to one item, each
   holding the share lock the other's bump needed. Clears don't take it:
   removing an edge can't close a cycle, and a stale read can at worst refuse a
   write that a concurrent clear would have allowed. Every blocker mutation

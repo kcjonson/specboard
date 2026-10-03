@@ -15,6 +15,7 @@ vi.mock('../index.ts', () => ({
 
 import { query, transaction } from '../index.ts';
 import { createItem, createItems, getItems, moveItem, completeItem, updateItem, startItem, blockItem, unblockItem, deleteItem } from './items.ts';
+import { setBlockers } from './blockers.ts';
 
 const mockQuery = vi.mocked(query);
 const mockTransaction = vi.mocked(transaction);
@@ -522,11 +523,19 @@ describe('reaching done', () => {
 		blocked_count: '0',
 	};
 
-	it('completeItem clears dependent and own blockers in the same transaction, then ends workers', async () => {
+	// The deadlock this order prevents needs concurrent connections, out of reach of the
+	// PGlite tests (one connection), so the project lock's place in the order is pinned here.
+	const LOCKED = { rows: [{}], rowCount: 1 };
+
+	it('completeItem takes the blocker writes\' project lock first, then writes the status and clears blockers under it, then ends workers', async () => {
+		await setBlockers('proj-1', 2, []);
+		const [blockerWriteLock] = mockClientQuery.mock.calls;
+		mockClientQuery.mockClear();
+		mockTransaction.mockClear();
 		mockClientQuery
-			.mockResolvedValueOnce({ rows: [{ id: 'item-1' }], rowCount: 1 })
-			.mockResolvedValueOnce({ rows: [], rowCount: 0 })
-			.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+			.mockResolvedValueOnce(LOCKED)
+			.mockResolvedValueOnce({ rows: [{ id: 'item-1', parent_id: null }], rowCount: 1 })
+			.mockResolvedValueOnce({ rows: [{ item_id: 'dependent-1' }], rowCount: 1 });
 		mockQuery
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never)
 			.mockResolvedValueOnce({ rows: [detailRow], rowCount: 1 } as never);
@@ -534,21 +543,26 @@ describe('reaching done', () => {
 		await completeItem('proj-1', 1);
 
 		expect(mockTransaction).toHaveBeenCalledTimes(1);
-		const [updateSql] = mockClientQuery.mock.calls[0]!;
-		expect(updateSql).toContain(`SET status = 'done'`);
-		const [depSql, depParams] = mockClientQuery.mock.calls[1]!;
+		const calls = mockClientQuery.mock.calls;
+		expect(calls).toHaveLength(5);
+		expect(calls[0]).toEqual([expect.stringContaining('pg_advisory_xact_lock'), ['proj-1']]);
+		expect(calls[0]).toEqual(blockerWriteLock);
+		expect(calls[1]![0]).toContain(`SET status = 'done'`);
+		const [depSql, depParams] = calls[2]!;
 		expect(depSql).toContain(`'{"type":"system","cause":"blocking_item_done"}'::jsonb`);
 		expect(depSql).toContain('WHERE blocker_item_id = $1 AND cleared_at IS NULL');
 		expect(depParams).toEqual(['item-1']);
-		const [ownSql, ownParams] = mockClientQuery.mock.calls[2]!;
+		expect(calls[3]).toEqual(['UPDATE items SET updated_at = NOW() WHERE id = ANY($1)', [['dependent-1']]]);
+		const [ownSql, ownParams] = calls[4]!;
 		expect(ownSql).toContain(`'{"type":"system","cause":"item_completed"}'::jsonb`);
 		expect(ownParams).toEqual(['item-1']);
 		const [endWorkersSql] = mockQuery.mock.calls[0]!;
 		expect(endWorkersSql).toContain('UPDATE item_workers');
 	});
 
-	it('updateItem to done runs the same clear inside a transaction; other statuses do not', async () => {
+	it('updateItem to done takes the same lock first, inside its transaction; a write that doesn\'t reach done takes neither', async () => {
 		mockClientQuery
+			.mockResolvedValueOnce(LOCKED)
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1' }], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 })
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 });
@@ -557,14 +571,18 @@ describe('reaching done', () => {
 			.mockResolvedValueOnce({ rows: [detailRow], rowCount: 1 } as never);
 
 		await updateItem('proj-1', 1, { subStatus: 'complete' });
-		const [writeSql] = mockClientQuery.mock.calls[0]!;
-		expect(writeSql).toContain(`UPDATE items SET`);
-		expect(mockClientQuery.mock.calls[1]![0]).toContain('WHERE blocker_item_id = $1');
+		const calls = mockClientQuery.mock.calls;
+		expect(calls[0]).toEqual([expect.stringContaining('pg_advisory_xact_lock'), ['proj-1']]);
+		expect(calls[1]![0]).toContain('UPDATE items SET');
+		expect(calls[2]![0]).toContain('WHERE blocker_item_id = $1');
+		expect(calls[3]![0]).toContain('WHERE item_id = $1 AND cleared_at IS NULL');
 
 		const transactions = mockTransaction.mock.calls.length;
+		mockClientQuery.mockClear();
 		mockQuery.mockResolvedValue({ rows: [detailRow], rowCount: 1 } as never);
 		await updateItem('proj-1', 1, { title: 'renamed' });
 		expect(mockTransaction).toHaveBeenCalledTimes(transactions);
+		expect(mockClientQuery).not.toHaveBeenCalled();
 	});
 
 	it('updateItem ends worker episodes on any status transition out of in_progress', async () => {
