@@ -260,7 +260,7 @@ to fit; r is a dot's radius.
 | Time pull | Strength 0.14 toward the anchor, 0.6 of that for a parent |
 | Time scale | Log of age with an 8-hour time constant, blended with the equalized scale at 60% equalized |
 | Quiet break | No activity for more than 12 hours |
-| Parent to child | The parent is an unseen hub with no size, no spacing, and no time pull of its own; rest length r + 16 to each child, strength 0.7 |
+| Parent to child | The parent is an unseen hub with no size, no spacing, and no time pull of its own; rest length 0 to each child, strength 0.7, so children pack around it instead of ringing it |
 | Blocker and discovered-from links | Rest length r1 + r2 + 70, strength 0.05 |
 | Date order | After every tick, done items go back into completion order by pooling adjacent violators (the least movement that fixes an order), and in-flight items stay r + 10 right of the last completion |
 | Dependencies | An unfinished item at least r1 + r2 + 10 right of each blocker, open or satisfied, enforced after every tick |
@@ -271,9 +271,9 @@ to fit; r is a dot's radius.
 | Computer to session | Rest length r1 + r2 + 26, strength 1 |
 | Repulsion | 40, ignored past 260 |
 | Collision | Radii plus 4 |
-| Family separation | Repulsion 1.5 times stronger between dots of different families, or a loose dot and a family, within 45 |
+| Family separation | Repulsion 2.5 times stronger between dots of different families, or a loose dot and a family, within 60 |
 | Midline | Strength 0.03 |
-| Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart |
+| Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart; the strip past now is reserved at 0.6 of the time scale's unit width, computers at half of it and sessions at a quarter |
 | Velocity | 0.6 kept per tick (`d3-force` velocity decay 0.4) |
 | Ticks | 280 from cold, alpha 1 decaying to 0.001; 140 for a local pass, from alpha 0.25 |
 | Radius | 5.5 for a leaf; 6 + 2.3 times the square root of the descendant count for a parent; 8.5 for an in-flight leaf; in-flight parents 15% larger; 8 for a session, 14 for a computer |
@@ -651,7 +651,7 @@ them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
   only the changed items, their sessions and computers, and anything within two
   links of them may move; everything else is pinned. In the prototype, three
   simulated pickups moved those items, their epic, and its nearest relations, and
-  left 158 of 173 dots within 4 px of where they were.
+  left 162 of 173 dots within 4 px of where they were.
 - Transitions run in stages, a few hundred milliseconds each: exits, then moves,
   then entries. A status change restyles a dot in place; activity moves it toward
   now.
@@ -760,6 +760,9 @@ and nothing moves for more than a second.
   recent phone.
 - The simulation runs off the main thread. A refresh never drops frames during a
   pan or zoom.
+- The prototype ran on a second, 272-item board with a 96-child finished epic:
+  272 items folded to 151 nodes, layout and first render in about 270 ms, no
+  overlapping regions, and done items in strict order.
 - At fit-all every dot is on screen, so culling to the viewport saves nothing there.
   The far and middle zoom levels draw one or two shapes per item; only near zoom
   draws cards.
