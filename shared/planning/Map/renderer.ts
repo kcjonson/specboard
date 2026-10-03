@@ -148,6 +148,11 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.textBaseline = 'top';
 		const room = width - x > 150;
 		ctx.textAlign = room ? 'left' : 'right';
+		// A halo of the surface color keeps the label legible over a dot.
+		ctx.lineJoin = 'round';
+		ctx.lineWidth = 3;
+		ctx.strokeStyle = theme.surface;
+		ctx.strokeText(label, room ? x + 8 : x - 8, 10);
 		ctx.fillText(label, room ? x + 8 : x - 8, 10);
 	};
 
