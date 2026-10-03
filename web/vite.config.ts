@@ -41,6 +41,10 @@ export default defineConfig({
 	css: {
 		devSourcemap: true,
 	},
+	// The Map's layout runs in a module worker (`{ type: 'module' }`), so its bundle is ESM.
+	worker: {
+		format: 'es',
+	},
 	build: {
 		outDir: 'dist',
 		manifest: '.vite/manifest.json',
