@@ -271,6 +271,7 @@ to fit; r is a dot's radius.
 | Computer to session | Rest length r1 + r2 + 26, strength 1 |
 | Repulsion | 40, ignored past 260 |
 | Collision | Radii plus 4 |
+| Family separation | Repulsion 1.5 times stronger between dots of different families, or a loose dot and a family, within 45 |
 | Midline | Strength 0.03 |
 | Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart |
 | Velocity | 0.6 kept per tick (`d3-force` velocity decay 0.4) |
@@ -311,13 +312,20 @@ hour after its last write.
 
 ### Regions
 
-- An item with visible children is drawn as a region: a curved, bulbous outline
-  fitted around its children, the way Bubble Sets (Collins, Penn, and Carpendale,
-  2009) draws a set over an existing layout. Each child raises a field around
-  itself, a spanning tree between the children keeps the region in one piece,
-  anything that isn't a member pushes the outline away, and the outline is traced
-  where the field crosses a threshold and smoothed. It bends around non-members
-  instead of swallowing them, and holes stay holes.
+- An item with visible children is drawn as a region: a curved, bulbous, solid
+  shape around its children, built the way Bubble Sets (Collins, Penn, and
+  Carpendale, 2009) draws a set over an existing layout. Each child raises a field
+  around itself and a spanning tree between the children keeps the region in one
+  piece, so a long-running epic shows as bulbs on a thin neck. A closing pass
+  (grow 20 px, shrink back) fills narrow inlets, so the edge stays simple, and the
+  outline is traced where the field crosses a threshold. It sits loose around its
+  children, not shrink-wrapped.
+- A region is always one solid shape: no holes, no islands.
+- Regions don't overlap. Where two unrelated regions would, each keeps the ground
+  nearer its own children and they meet at a shared edge with a hairline gap. The
+  layout keeps loose dots and other families out of a region with a short-range
+  push between families, so the drawing never has to dent its edge around a
+  stranger.
 - Regions nest. A child with children of its own is a region inside its parent's,
   and each level out gets a little more padding and a slightly deeper tint.
 - The label sits on the outline, at the top where there's room: the parent's status
@@ -643,7 +651,7 @@ them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
   only the changed items, their sessions and computers, and anything within two
   links of them may move; everything else is pinned. In the prototype, three
   simulated pickups moved those items, their epic, and its nearest relations, and
-  left 164 of 173 dots within 4 px of where they were.
+  left 158 of 173 dots within 4 px of where they were.
 - Transitions run in stages, a few hundred milliseconds each: exits, then moves,
   then entries. A status change restyles a dot in place; activity moves it toward
   now.
@@ -816,9 +824,10 @@ Input for the technical design, not decisions.
 - Curves cost one quadratic or cubic Bezier per link (`quadraticCurveTo` and
   `bezierCurveTo` on the canvas). If All links gets busy, force-directed edge
   bundling (Holten and van Wijk, 2009), computed in the worker, is the next step.
-- Regions are a field sampled on a coarse grid around each family and traced with
-  marching squares, a few hundred lines with no dependency. The prototype's whole
-  render, 14 regions included, took about 30 ms for 173 dots; outlines only change
+- Regions are a field sampled on a 5 px grid around each family, closed with a
+  20 px disk, compared against neighboring regions' fields, and traced with
+  marching squares: a few hundred lines with no dependency. The prototype's whole
+  render, 14 regions included, took about 45 ms for 173 dots; outlines only change
   when positions or zoom do, so they're computed once per layout and cached.
 - Alternatives if `d3-force` falls short: ForceAtlas2 through graphology (Gephi's
   organic layout, about 3 KB plus graphology), or WebCoLa (about 21 KB), whose
