@@ -23,7 +23,10 @@ export interface FoldedFamily {
 
 /** One glyph for the renderer, in layout units. The renderer knows nothing of rows, layouts, or the model. */
 export interface DrawDot extends Dot {
+	title: string;
 	status: MapItemStatus;
+	/** The board status when the item is in flight, whatever the glyph shows: a blocked in-progress item still sorts as in progress. */
+	flight: 'in_progress' | 'in_review' | null;
 	/** Plan weight, 1 at full strength (see plan-weight.ts). `r` already carries it. */
 	weight: number;
 	needsPerson: boolean;
@@ -106,7 +109,9 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 			x: node.x,
 			y: node.y,
 			r: weightedRadius(node.r, weight),
+			title: row.title,
 			status: glyphStatus(row.status, row.blocked),
+			flight: row.status === 'in_progress' || row.status === 'in_review' ? row.status : null,
 			weight,
 			needsPerson: needs.has(node.key),
 			cue: cueOf(row),

@@ -1,0 +1,19 @@
+/* Over the plot, under the controls and the minimap; the pointer goes to the canvas so dragging still pans. */
+.cards {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.layer {
+	position: absolute;
+	top: 0;
+	left: 0;
+	margin: 0;
+	padding: 0;
+	opacity: 0;
+	will-change: transform;
+}

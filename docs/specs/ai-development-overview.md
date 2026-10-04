@@ -490,7 +490,7 @@ marker at once and was unreadable; these rules are the fix.
 | Layer | At rest, fit all | At rest, zoomed in | Hover or keyboard focus | Selected |
 |---|---|---|---|---|
 | Status glyph | Always. In-progress items draw larger; ready and blocked items get smaller and lighter the further down the plan they sit | Always, larger | The dot grows and gets an ink ring | Same, held until cleared |
-| Labels | In-progress items first (unless their computer's block names them), in-review items if there's room, then up to 8 of the largest regions, on their outlines. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; every region with room gets its label | No extra label; the card names the item | Same |
+| Labels | In-progress items first (unless their computer's block names them), then up to 8 of the largest regions, on their outlines, then in-review items if there's room. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; every region with room gets its label | No extra label; the card names the item | Same |
 | Regions and chains | A region around each family, its label carrying status and a rollup bar; chain links as curved hairlines inside | Same | A region or any of its children lights the family and darkens the outline | Same, and the drawer opens on the parent if the region was picked |
 | Other blocker and discovered-from links | Hidden; they still pull, and a blocker still sits left of what it blocks | Hidden | The whole blocker chain both ways, discovered-from both ways (dotted) | Same |
 | Everything else | Full strength | Full strength | Fades to 30% (40% on dark) | Same, and the drawer opens |
@@ -501,6 +501,53 @@ marker at once and was unreadable; these rules are the fix.
 
 The detail card opens beside the item, on whichever side covers the fewest of its
 related items.
+
+### Zoom levels
+
+Three levels, picked by how big a leaf dot (the smallest, 5.5 layout units) is on
+screen, so a 2,000-item board and a ten-item one change level when their dots look
+the same size and not when their zoom factors match. Each level has a size it starts at
+and a smaller one it ends at, so a camera resting on a boundary stays in whichever
+level it was in:
+
+| Level | Starts at a leaf radius of | Ends below | What it draws |
+|---|---|---|---|
+| Far | | | The at-rest column of the table above: in-progress and in-review labels, up to 8 region labels |
+| Middle | 8 px | 7 px | Key and short title on every dot with room, every region with room gets its label |
+| Near | 22 px | 19 px | A card for every item in view in place of its dot and label (below); region labels as in the middle level |
+
+At 22 px dots sit about 130 px apart, which is what a card needs. A flight that
+crosses two boundaries lands in the last one; there's no pause in the middle.
+
+Labels fade for the new level over the same 450 ms as the camera flight, on its
+curve: a label both levels draw holds still, one only the new level draws fades in,
+one only the old level drew fades out, and cards fade in or out the same way. Under
+`prefers-reduced-motion` they cut. At rest nothing animates.
+
+**Placement.** Every label at a level is placed in one pass against the same set of
+taken boxes: every drawn dot (disc, ink ring, and a folded family's rollup bar), every
+label already placed, the expand controls, and the minimap's box. The order is the
+priority: in-progress dots, regions largest first, in-review dots, then every other
+dot, bigger first. Regions go ahead of in-review dots, whatever the table's wording
+suggests: on the generated 14-region board a crowd of in-review labels took every
+spot on the outlines, leaving 3 of the 8 region labels; with regions first it is 6. A label takes the first of eight spots around its dot that is whole
+inside the plot and clear of everything taken, and with none it gets no label. Text is
+measured with the canvas's own font metrics and cut with an ellipsis. Text sits on a
+halo of the surface so it clears 4.5:1 whatever tint the region under it has; the
+muted ink clears that on the surface in both themes (4.8:1 light, 6.9:1 dark), and the
+renderer falls back to full ink in a theme where it doesn't. An item named by another
+layer (a computer's text block) gets no label of its own at any level.
+
+**Cards.** At the near level each item in view is a card of real DOM over the canvas,
+built from `@specboard/ui`'s `StatusGlyph`, `Badge`, and `Icon`, with its status glyph
+centered where its dot was so links still meet it. A card says the key and title, the
+status in words, the sub-status (scoping, PR open, needs input, paused), what a blocked
+item waits on by key (text holds as a count, since their text isn't in the Map's
+read), the PR as `PR #n`, a linked spec, whether an agent or a person made the item,
+a folded family's size, and the ink ring when it needs a person. Cards are display
+only until the interaction task: the layer ignores the pointer so the canvas keeps
+panning. Only cards within 48 px of the plot are mounted, at most 300, and a pan moves
+the one element they sit in rather than the cards.
 
 ---
 
@@ -632,7 +679,12 @@ Fixed, outside the Map:
   plot's, zoomed in to at least 2.4 times fit all, so it differs from the opening
   view only when the whole Map fit at that view.
 - A minimap appears in the lower left once zoomed in, marking the viewport. At fit
-  all it would only repeat the map.
+  all it would only repeat the map, so it shows from 1.2 times fit all and hides again
+  below 1.1. It is the whole Map in miniature, at most 200 by 112 px in the Map's
+  own shape, with a speck per dot in its status color. Its box is reserved: labels
+  are placed around it, and it sits above the cards. Clicking it flies the camera to
+  that point at the current scale, and dragging in it moves the camera with no
+  flight.
 - Search uses the toolbar's search and the board's matching rules (title,
   description, or key, at any depth). It dims non-matches, labels the matches, and
   puts the changes view's stepping bar on the canvas ("Matches for "checklist", 2
@@ -944,6 +996,14 @@ Input for the technical design, not decisions.
   So one Canvas 2D layer draws dots and links at far and middle zoom, and Preact
   components draw cards at near zoom, culled to the viewport (real text, real
   focus, and `@specboard/ui` reuse). `d3-zoom` (about 15 KB) runs the camera.
+- As built (SPE-230), the cards sit in one translated element, so a pan is one style
+  write and the cards re-render only when the set in view changes. On a generated
+  2,000-item board at near zoom with 52 to 61 cards in view, panning at 1x pixel ratio
+  held 60 fps (median frame 16.7 ms, 95th percentile 18 ms, the Map's paint 4 ms of
+  it on average) with one 100 ms stall in four 400-frame runs. At 2x the same pan runs
+  at 30 fps with or without cards, since the 2,560 px canvas fill is what a software
+  rasterizer can't keep up with, not the cards. Label placement is a grid lookup per
+  candidate spot, redone each frame.
 - Ruled out: tldraw (production use needs a license key; React-only; about
   530 KB), Excalidraw (React-only; about 350 KB), and React Flow (React-only, and a
   node editor rather than a layout engine).

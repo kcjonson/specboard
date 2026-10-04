@@ -3,6 +3,7 @@ import {
 	FIT_PADDING,
 	ZOOM_STEP,
 	centerOf,
+	centeredOn,
 	fitTransform,
 	openTransform,
 	readableScale,
@@ -10,12 +11,16 @@ import {
 	type Viewport,
 } from './camera';
 import { BoardBuilder } from './layout/board-fixture';
+import { LEAF_RADIUS } from './layout/constants';
 import { layoutMap } from './layout/layout';
 import type { MapLayout } from './layout/types';
 import type { MapCamera, ScreenPoint } from './map-camera';
 import { MapSurface } from './map-surface';
+import { OverlayStore } from './overlay';
+import { edgeLabelAt } from './ruler';
 import { gridStep } from './regions/region-outlines';
 import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
+import { FADE_MS, NEAR_ENTER, NEAR_EXIT } from './zoom-levels';
 
 class FakeCamera implements MapCamera {
 	transform: Transform = { k: 1, x: 0, y: 0 };
@@ -78,6 +83,8 @@ function setup(): {
 	surface: MapSurface;
 	camera: FakeCamera;
 	renderer: FakeRenderer;
+	overlay: OverlayStore;
+	clock: { now: number; reduced: boolean };
 	frames: Array<() => void>;
 	empty: ReturnType<typeof vi.fn>;
 	settle: ReturnType<typeof vi.fn>;
@@ -90,11 +97,22 @@ function setup(): {
 	const deferred: Array<() => void> = [];
 	const empty = vi.fn();
 	const settle = vi.fn();
+	const overlay = new OverlayStore();
+	const clock = { now: 0, reduced: false };
 	const surface = new MapSurface(
-		{ renderer, camera, schedule: (paint) => frames.push(paint), defer: (task) => deferred.push(task), timeZone: 'UTC' },
+		{
+			renderer,
+			camera,
+			overlay,
+			now: () => clock.now,
+			reducedMotion: () => clock.reduced,
+			schedule: (paint) => frames.push(paint),
+			defer: (task) => deferred.push(task),
+			timeZone: 'UTC',
+		},
 		{ onViewportEmpty: empty, onSettle: settle },
 	);
-	return { surface, camera, renderer, frames, empty, settle, deferred, flush: () => frames.splice(0).forEach((paint) => paint()) };
+	return { surface, camera, renderer, overlay, clock, frames, empty, settle, deferred, flush: () => frames.splice(0).forEach((paint) => paint()) };
 }
 
 const WIDTH = 1000;
@@ -127,8 +145,8 @@ describe('MapSurface', () => {
 		expect(frames).toHaveLength(0);
 		const before = renderer.frames.length;
 
-		camera.set({ k: 2, x: 0, y: 0 });
-		camera.set({ k: 3, x: 0, y: 0 });
+		camera.set({ k: 1.2, x: 0, y: 0 });
+		camera.set({ k: 1.3, x: 0, y: 0 });
 		surface.refreshTheme();
 		expect(frames).toHaveLength(1);
 		flush();
@@ -410,7 +428,8 @@ describe('MapSurface regions, links, and collapse controls', () => {
 	});
 
 	it('drops a deferred outline task once destroyed', () => {
-		const { surface, renderer, camera, flush, frames, deferred } = setup();
+		const { surface, renderer, camera, flush, frames, deferred, clock } = setup();
+		clock.reduced = true;
 		const { layout, rows } = familyBoard();
 		surface.resize(WIDTH, HEIGHT);
 		surface.show(layout, rows, null);
@@ -454,5 +473,262 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		surface.setLighting(lit);
 		flush();
 		expect(renderer.frames.at(-1)!.lighting).toBe(lit);
+	});
+});
+
+describe('MapSurface labels, levels, cards, and the minimap', () => {
+	const at = (layout: MapLayout, key: string): { x: number; y: number } => layout.nodes.find((n) => n.key === key)!;
+	/** A view at scale k with an item in the middle of the plot. */
+	const viewOf = (layout: MapLayout, key: string, k: number): Transform => centeredOn(at(layout, key), k, plot);
+	const scaleFor = (radius: number): number => radius / LEAF_RADIUS;
+
+	it('labels the in-progress item at fit all with its key and title, and not the ready ones', () => {
+		const { surface, renderer, flush } = setup();
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		const frame = renderer.frames.at(-1)!;
+		const inProgress = keys.at(-1)!;
+		expect(frame.dotLabels.map((label) => label.key)).toEqual([inProgress]);
+		expect(frame.dotLabels[0]!.text.startsWith(`${inProgress} `)).toBe(true);
+		expect(frame.dotLabels[0]!.alpha).toBe(1);
+	});
+
+	it('labels every dot with room once zoomed in to the middle level', () => {
+		const { surface, camera, renderer, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		camera.set(viewOf(layout, keys[6]!, scaleFor(12)));
+		flush();
+		const labelled = renderer.frames.at(-1)!.dotLabels.map((label) => label.key);
+		expect(labelled.length).toBeGreaterThan(1);
+		expect(labelled).toContain(keys[6]);
+	});
+
+	it('leaves a named item without a label', () => {
+		const { surface, camera, renderer, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		const inProgress = keys.at(-1)!;
+		surface.setNamed(new Set([inProgress]));
+		flush();
+		expect(renderer.frames.at(-1)!.dotLabels.map((label) => label.key)).not.toContain(inProgress);
+		camera.set(viewOf(layout, keys[6]!, scaleFor(12)));
+		flush();
+		expect(renderer.frames.at(-1)!.dotLabels.map((label) => label.key)).not.toContain(inProgress);
+	});
+
+	it('mounts no cards before the near level, and cards for the dots in view at it', () => {
+		const { surface, camera, renderer, overlay, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		expect(overlay.frame.cards).toBeNull();
+
+		camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + 2)));
+		flush();
+		const { cards, cardAlpha } = overlay.frame;
+		expect(cards).not.toBeNull();
+		expect(cardAlpha).toBe(1);
+		expect(cards!.dots.map((dot) => dot.key)).toContain(keys[6]);
+		expect(cards!.k).toBeCloseTo(scaleFor(NEAR_ENTER + 2));
+		expect(overlay.frame.rows).toBe(rows);
+		// The canvas leaves a carded dot to its card, and draws the ones without.
+		const drawn = renderer.frames.at(-1)!;
+		expect(drawn.cards!.keys.has(keys[6]!)).toBe(true);
+		expect(drawn.cards!.alpha).toBe(1);
+		expect(drawn.dotLabels).toEqual([]);
+	});
+
+	it('keeps the same card set for a pan and makes a new one for a zoom', () => {
+		const { surface, camera, overlay, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		const view = viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + 2));
+		camera.set(view);
+		flush();
+		const first = overlay.frame.cards;
+		camera.set({ ...view, x: view.x + 3 });
+		flush();
+		expect(overlay.frame.cards).toBe(first);
+		expect(overlay.frame.transform.x).toBe(view.x + 3);
+
+		camera.set({ ...view, k: view.k * 1.1 });
+		flush();
+		expect(overlay.frame.cards).not.toBe(first);
+	});
+
+	it('fades labels and cards with a level switch, a frame at a time, then stops asking for frames', () => {
+		const { surface, camera, renderer, overlay, flush, frames, clock } = setup();
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		expect(frames).toHaveLength(0);
+
+		camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + 2)));
+		flush();
+		// Just switched: the cards are not there yet, and a frame is asked for to carry the fade on.
+		expect(overlay.frame.cardAlpha).toBeCloseTo(0, 1);
+		expect(frames).toHaveLength(1);
+
+		clock.now += FADE_MS / 4;
+		flush();
+		const rising = overlay.frame.cardAlpha;
+		expect(rising).toBeGreaterThan(0);
+		expect(rising).toBeLessThan(1);
+		expect(renderer.frames.at(-1)!.cards!.alpha).toBe(rising);
+		expect(frames).toHaveLength(1);
+
+		clock.now += FADE_MS;
+		flush();
+		expect(overlay.frame.cardAlpha).toBe(1);
+		// At rest nothing animates: no further frame is asked for.
+		expect(frames).toHaveLength(0);
+	});
+
+	it('cuts, with no fade frames, under reduced motion', () => {
+		const { surface, camera, overlay, flush, frames, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + 2)));
+		flush();
+		expect(overlay.frame.cardAlpha).toBe(1);
+		expect(frames).toHaveLength(0);
+	});
+
+	it('shows cards fading out and the middle level\'s labels fading in on the way back', () => {
+		const { surface, camera, renderer, overlay, flush, clock } = setup();
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + 2)));
+		flush();
+		clock.now += FADE_MS * 2;
+		flush();
+		expect(overlay.frame.cardAlpha).toBe(1);
+
+		camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_EXIT - 2)));
+		clock.now += 1;
+		flush();
+		clock.now += FADE_MS / 4;
+		flush();
+		const falling = overlay.frame.cardAlpha;
+		expect(falling).toBeGreaterThan(0);
+		expect(falling).toBeLessThan(1);
+		const arriving = renderer.frames.at(-1)!.dotLabels.filter((label) => label.alpha < 1);
+		expect(arriving.length).toBeGreaterThan(0);
+
+		clock.now += FADE_MS * 2;
+		flush();
+		expect(overlay.frame.cards).toBeNull();
+	});
+
+	it('does not change level for a camera hovering at a boundary', () => {
+		const { surface, camera, overlay, flush, clock } = setup();
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		clock.reduced = true;
+		let flips = 0;
+		let last: boolean | null = null;
+		for (let i = 0; i < 40; i++) {
+			camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + (i % 2 === 0 ? 0.3 : -0.3))));
+			flush();
+			const has = overlay.frame.cards !== null;
+			if (last !== null && has !== last) flips++;
+			last = has;
+		}
+		// The first frame crosses into near; after that it holds.
+		expect(flips).toBe(0);
+		expect(last).toBe(true);
+	});
+
+	it('shows the minimap only once zoomed in past fit all, and reserves its box against labels', () => {
+		const { surface, camera, overlay, renderer, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		expect(overlay.frame.minimap).toBeNull();
+
+		const fit = fitTransform(layout.frame.bounds, plot).k;
+		camera.set(viewOf(layout, keys[6]!, fit * 2.4));
+		flush();
+		const { minimap } = overlay.frame;
+		expect(minimap).not.toBeNull();
+		expect(minimap!.panel.x).toBeLessThan(plot.width / 4);
+		expect(minimap!.panel.y + minimap!.panel.h).toBeLessThanOrEqual(plot.height);
+		expect(minimap!.dots).toHaveLength(13);
+		// Labels keep off it, wherever the camera puts them.
+		const { panel } = minimap!;
+		for (const label of renderer.frames.at(-1)!.dotLabels) {
+			const hits = label.box.x < panel.x + panel.w && label.box.x + label.box.w > panel.x && label.box.y < panel.y + panel.h && label.box.y + label.box.h > panel.y;
+			expect(hits).toBe(false);
+		}
+
+		camera.set(fitTransform(layout.frame.bounds, plot));
+		flush();
+		expect(overlay.frame.minimap).toBeNull();
+	});
+
+	it('moves the camera to a point picked in the minimap, flying for a click and cutting for a drag, and names what is there', () => {
+		const { surface, camera, flush, settle } = setup();
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		const k = camera.transform.k * 2;
+		camera.set({ ...camera.transform, k });
+		flush();
+
+		const target = at(layout, keys[3]!);
+		surface.centerOn(target, true);
+		expect(camera.flights).toHaveLength(1);
+		expect(camera.transform.k).toBe(k);
+		expect(centerOf(camera.transform, plot)).toEqual({ x: expect.closeTo(target.x), y: expect.closeTo(target.y) });
+		expect(settle).toHaveBeenLastCalledWith(keys[3]);
+
+		surface.centerOn(at(layout, keys[5]!), false);
+		expect(camera.flights).toHaveLength(1);
+		expect(centerOf(camera.transform, plot).x).toBeCloseTo(at(layout, keys[5]!).x);
+	});
+
+	it('keeps labels off the edge\'s own label, which the renderer draws last', () => {
+		const { surface, camera, renderer, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		// Zoomed in on the in-flight item, which sits at the edge, so labels crowd its label.
+		camera.set(viewOf(layout, keys.at(-1)!, scaleFor(14)));
+		flush();
+		const frame = renderer.frames.at(-1)!;
+		const edge = edgeLabelAt(frame.ruler!.edge.x, renderer.measureLabel(frame.ruler!.edge.label), plot.width)!;
+		expect(frame.dotLabels.length).toBeGreaterThan(0);
+		for (const label of frame.dotLabels) {
+			const { box } = label;
+			expect(box.x < edge.box.x + edge.box.w && box.x + box.w > edge.box.x && box.y < edge.box.y + edge.box.h && box.y + box.h > edge.box.y).toBe(false);
+		}
+	});
+
+	it('draws nothing as overlay while there is no layout', () => {
+		const { surface, overlay, flush } = setup();
+		surface.resize(WIDTH, HEIGHT);
+		surface.clear();
+		flush();
+		expect(overlay.frame).toMatchObject({ cards: null, minimap: null, cardAlpha: 0 });
 	});
 });

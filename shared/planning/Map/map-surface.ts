@@ -10,21 +10,24 @@ import {
 	nearestDot,
 	nowTransform,
 	openTransform,
+	type Transform,
 	type Viewport,
 } from './camera';
+import { visibleCards } from './cards/card-culling';
 import { controlAt, expandControls, labelControls, type CollapseControl } from './collapse-controls';
+import type { Box } from './box-index';
 import { buildDrawList, type DrawList } from './draw-list';
+import { crossFade, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
 import type { MapLayout, MapPoint } from './layout/types';
 import { NO_LIGHTING, type LinkLighting } from './links';
 import type { MapCamera, ScreenPoint } from './map-camera';
-import { REST_LABELS, placeRegionLabels } from './region-labels';
+import { minimapPanel, minimapShows, minimapSize, minimapViewport, type MinimapSize } from './minimap/minimap';
+import { EMPTY_OVERLAY, type CardSet, type MapOverlay, type MinimapFrame } from './overlay';
 import type { RegionOutline } from './regions/outline';
 import { RegionOutlines, gridStep } from './regions/region-outlines';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
-import { rulerMarks } from './ruler';
-
-/** Region labels are capped at rest while the camera is within this factor of fit all (spec, What shows when). */
-const REST_ZOOM = 1.25;
+import { edgeLabelAt, rulerMarks } from './ruler';
+import { LABEL_RULES, ZoomLevels, type LevelFrame } from './zoom-levels';
 
 export interface MapSurfaceHandlers {
 	/** The plot has no dot in it, or has one again. */
@@ -36,6 +39,12 @@ export interface MapSurfaceHandlers {
 export interface MapSurfaceDeps {
 	renderer: MapRenderer;
 	camera: MapCamera;
+	/** Receives what draws as DOM over the canvas: near-level cards and the minimap. */
+	overlay: MapOverlay;
+	/** The clock label fades run on, in ms. */
+	now(): number;
+	/** Level switches cut instead of fading. */
+	reducedMotion(): boolean;
 	/** Runs a repaint on the next frame. Only ever called when something changed. */
 	schedule(paint: () => void): void;
 	/** Runs a task once the current gesture's frames have gone by: outlines for a new zoom are computed there. */
@@ -63,8 +72,11 @@ export class MapSurface {
 	private readonly defer: (task: () => void) => void;
 	private readonly handlers: MapSurfaceHandlers;
 	private readonly timeZone: string | undefined;
+	private readonly overlay: MapOverlay;
+	private readonly levels: ZoomLevels;
 	private readonly unsubscribe: () => void;
 	private layout: MapLayout | null = null;
+	private rows: ReadonlyMap<string, MapItemRow> = EMPTY_OVERLAY.rows;
 	private drawing: DrawList = { dots: [], regions: [], links: [] };
 	private outlines: RegionOutlines | null = null;
 	/** Bumped by every frame and every new layout, so only the last frame's deferred outline task runs. */
@@ -77,12 +89,18 @@ export class MapSurface {
 	/** Nobody has panned or zoomed yet, so a resize reopens the default view instead of holding the old center. */
 	private pristine = true;
 	private pointer: ScreenPoint | null = null;
+	/** Items another layer has already named, which get no label of their own. */
+	private named: ReadonlySet<string> = new Set();
+	private minimapOn = false;
+	private cards: CardSet | null = null;
 
 	constructor(deps: MapSurfaceDeps, handlers: MapSurfaceHandlers) {
 		this.renderer = deps.renderer;
 		this.camera = deps.camera;
 		this.schedule = deps.schedule;
 		this.defer = deps.defer;
+		this.overlay = deps.overlay;
+		this.levels = new ZoomLevels(deps.now, deps.reducedMotion);
 		this.timeZone = deps.timeZone;
 		this.handlers = handlers;
 		this.unsubscribe = this.camera.onChange(() => this.requestPaint());
@@ -123,7 +141,10 @@ export class MapSurface {
 		this.take(layout, rows);
 		this.pristine = true;
 		const target = focusKey ? this.placeOf(focusKey) : undefined;
-		this.camera.set(target ? focusTransform(target, layout.frame.bounds, this.drawing.dots, null, this.viewport) : this.openView(layout));
+		const view = target ? focusTransform(target, layout.frame.bounds, this.drawing.dots, null, this.viewport) : this.openView(layout);
+		// The Map opens at its level, with no fade from another one.
+		this.levels.reset(view.k);
+		this.camera.set(view);
 		this.requestPaint();
 	}
 
@@ -136,10 +157,13 @@ export class MapSurface {
 	/** Back to the ruler's frame alone: loading, an empty project, or an error. */
 	clear(): void {
 		this.layout = null;
+		this.rows = EMPTY_OVERLAY.rows;
 		this.drawing = { dots: [], regions: [], links: [] };
 		this.outlines = null;
 		this.deferred++;
 		this.controls = [];
+		this.cards = null;
+		this.minimapOn = false;
 		this.setViewportEmpty(false);
 		this.requestPaint();
 	}
@@ -147,6 +171,15 @@ export class MapSurface {
 	/** Which blocker and discovered-from links draw besides chains: all of them, or the ones focus lights. */
 	setLighting(lighting: LinkLighting): void {
 		this.lighting = lighting;
+		this.requestPaint();
+	}
+
+	/**
+	 * Item keys another layer has already named, such as a computer's text block, so an
+	 * item among them carries no label of its own. Empty until sessions land.
+	 */
+	setNamed(keys: ReadonlySet<string>): void {
+		this.named = keys;
 		this.requestPaint();
 	}
 
@@ -187,6 +220,16 @@ export class MapSurface {
 	/** Where the pointer is over the canvas, or null once it leaves. */
 	setPointer(point: ScreenPoint | null): void {
 		this.pointer = point;
+	}
+
+	/** Puts a layout point in the middle of the plot at the current scale: a click or drag in the minimap. */
+	centerOn(point: MapPoint, fly: boolean): void {
+		if (!this.layout) return;
+		const view = centeredOn(point, this.camera.transform.k, this.viewport);
+		if (fly) this.camera.flyTo(view);
+		else this.camera.set(view);
+		this.pristine = false;
+		this.handlers.onSettle(nearestDot(this.drawing.dots, point)?.key ?? null);
 	}
 
 	/** Moves to an item, with a flight unless told otherwise. False when the Map has no such item. */
@@ -230,44 +273,94 @@ export class MapSurface {
 		const layout = this.layout;
 		const { dots, regions, links } = this.drawing;
 		const outlines = this.outlinesFor(transform.k);
+		const level = this.levels.frame(transform.k);
+		const minimap = layout ? this.minimapFor(layout, transform) : null;
 		const expand = expandControls(dots, transform, this.viewport);
+		const ruler = layout
+			? rulerMarks({
+				ticks: layout.ticks,
+				edge: layout.frame.scale.edge,
+				quiet: layout.quiet,
+				transform,
+				width: this.viewport.width,
+				timeZone: this.timeZone,
+			})
+			: null;
+		const reserved = [...(minimap ? [minimap.panel] : [])];
+		if (ruler) {
+			const edge = edgeLabelAt(ruler.edge.x, this.renderer.measureLabel(ruler.edge.label, 'dot-strong'), this.viewport.width);
+			if (edge) reserved.push(edge.box);
+		}
 		const labels = layout
-			? placeRegionLabels({
+			? this.labelsFor(level, {
 				regions,
 				outlines: new Map(outlines.map((outline) => [outline.key, outline])),
 				dots,
 				transform,
 				viewport: this.viewport,
-				measure: (text) => this.renderer.measureLabel(text),
-				cap: transform.k <= this.minScale(layout) * REST_ZOOM ? REST_LABELS : null,
-				occupied: expand.map((control) => control.at),
+				measure: (text, font) => this.renderer.measureLabel(text, font),
+				named: this.named,
+				occupied: { circles: expand.map((control) => control.at), boxes: reserved },
 			})
-			: [];
-		this.controls = [...labelControls(labels), ...expand];
+			: { regions: [], dots: [] };
+		this.controls = [...labelControls(labels.regions), ...expand];
+		const cards = this.cardsFor(level, dots, transform);
 		this.renderer.draw({
 			dots,
 			regions: outlines,
 			links,
 			lighting: this.lighting,
-			labels,
+			labels: labels.regions,
+			dotLabels: labels.dots,
 			controls: this.controls,
+			cards: cards.set ? { keys: cards.set.keys, alpha: cards.alpha } : null,
 			transform,
-			ruler: layout
-				? rulerMarks({
-					ticks: layout.ticks,
-					edge: layout.frame.scale.edge,
-					quiet: layout.quiet,
-					transform,
-					width: this.viewport.width,
-					timeZone: this.timeZone,
-				})
-				: null,
+			ruler,
 		});
+		this.overlay.publish({ transform, rows: this.rows, cards: cards.set, cardAlpha: cards.alpha, minimap: minimap?.frame ?? null });
 		this.setViewportEmpty(dots.length > 0 && !dotsVisible(dots, transform, this.viewport));
+		// A fade has to be walked frame by frame; at rest nothing asks for another.
+		if (level.from !== null) this.requestPaint();
+	}
+
+	/** The labels at this level, and while a switch is fading, those of the level it came from. */
+	private labelsFor(level: LevelFrame, input: Omit<LabelInput, 'rules'>): PlacedLabels {
+		const placed = placeLabels({ ...input, rules: LABEL_RULES[level.level] });
+		if (level.from === null) return placed;
+		const previous = placeLabels({ ...input, rules: LABEL_RULES[level.from] });
+		return {
+			regions: crossFade(placed.regions, previous.regions, level.progress),
+			dots: crossFade(placed.dots, previous.dots, level.progress),
+		};
+	}
+
+	/** The cards in view and how opaque they are: the near level has them, and a switch to or from it fades them. */
+	private cardsFor(level: LevelFrame, dots: DrawList['dots'], transform: Transform): { set: CardSet | null; alpha: number } {
+		const alpha = level.level === 'near' ? level.progress : level.from === 'near' ? 1 - level.progress : 0;
+		if (alpha <= 0) {
+			this.cards = null;
+			return { set: null, alpha: 0 };
+		}
+		const inView = visibleCards(dots, transform, this.viewport);
+		const previous = this.cards;
+		const same = previous !== null && previous.k === transform.k && previous.dots.length === inView.length && previous.dots.every((dot, i) => dot === inView[i]);
+		if (!same) this.cards = { dots: inView, keys: new Set(inView.map((dot) => dot.key)), k: transform.k };
+		return { set: this.cards, alpha };
+	}
+
+	/** The minimap's panel and what it shows, or null while the camera is at (or near) fit all. */
+	private minimapFor(layout: MapLayout, transform: Transform): { panel: Box; frame: MinimapFrame } | null {
+		this.minimapOn = this.drawing.dots.length > 0 && minimapShows(transform.k, this.minScale(layout), this.minimapOn);
+		if (!this.minimapOn) return null;
+		const { bounds } = layout.frame;
+		const size: MinimapSize = minimapSize(bounds);
+		const panel = minimapPanel(size, this.viewport);
+		return { panel, frame: { panel, size, bounds, viewport: minimapViewport(size, bounds, transform, this.viewport), dots: this.drawing.dots } };
 	}
 
 	private take(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): void {
 		this.layout = layout;
+		this.rows = rows;
 		this.drawing = buildDrawList(layout, rows);
 		this.outlines = new RegionOutlines(layout);
 		this.deferred++;

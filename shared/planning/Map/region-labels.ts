@@ -1,5 +1,7 @@
-import { MIN_DRAW_RADIUS, type Transform, type Viewport } from './camera';
-import type { DrawDot, DrawRegion, Rollup } from './draw-list';
+import { BoxIndex, type Box } from './box-index';
+import type { Transform, Viewport } from './camera';
+import { CLEARANCE, screenPoint } from './dot-boxes';
+import type { DrawRegion, Rollup } from './draw-list';
 import type { MapPhase, MapPoint } from './layout/types';
 import type { RegionOutline } from './regions/outline';
 
@@ -10,13 +12,6 @@ import type { RegionOutline } from './regions/outline';
  * phase, and the collapse control. Placement is in screen pixels, redone per frame,
  * which is cheap next to the outlines it sits on.
  */
-
-export interface Box {
-	x: number;
-	y: number;
-	w: number;
-	h: number;
-}
 
 export interface Circle {
 	x: number;
@@ -42,6 +37,8 @@ export interface RegionLabel {
 	segments: RollupSegment[];
 	/** The collapse control. */
 	toggle: Circle;
+	/** 1 at rest; below 1 while the label fades with a level switch. */
+	alpha: number;
 }
 
 export const LABEL_HEIGHT = 18;
@@ -53,12 +50,6 @@ export const BAR_HEIGHT = 4;
 const TOGGLE_SIZE = 12;
 const PAD_RIGHT = 4;
 const MAX_TITLE = 180;
-/** Labels and dots keep this much clear of each other. */
-const CLEARANCE = 2;
-/** A dot's marks reach this far past its radius: the needs-a-person ring at its widest. */
-const MARK_REACH = 3.5;
-/** A folded family's rollup bar hangs this far further below its dot. */
-const FOLDED_BAR_REACH = 8;
 /** Points sampled along each of the outline's curves when finding its edge. */
 const CURVE_SAMPLES = 4;
 /** How far either side of a point on the outline counts as the outline there, in layout units. */
@@ -93,9 +84,6 @@ function edgeAt(outline: RegionOutline, x: number, side: 'top' | 'bottom'): numb
 	}
 	return best;
 }
-
-/** At rest at fit all, only the largest regions get labels (spec, What shows when). */
-export const REST_LABELS = 8;
 
 /** The phases in the order the bar shows them. */
 const PHASES: readonly MapPhase[] = ['done', 'in_flight', 'next', 'later'];
@@ -133,8 +121,6 @@ export function rollupSegments(rollup: Rollup, x: number, width: number): Rollup
 	return segments;
 }
 
-const intersects = (a: Box, b: Box): boolean => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-
 /** One region's label laid out with its box's left edge at `x` and its middle at `y`. */
 function layoutLabel(region: DrawRegion, title: string, titleWidth: number, x: number, y: number): RegionLabel {
 	const width = PAD_LEFT + GLYPH_SIZE + GAP + titleWidth + GAP + BAR_WIDTH + GAP + TOGGLE_SIZE + PAD_RIGHT;
@@ -152,67 +138,44 @@ function layoutLabel(region: DrawRegion, title: string, titleWidth: number, x: n
 		bar: { x: barX, y: y - BAR_HEIGHT / 2, w: BAR_WIDTH, h: BAR_HEIGHT },
 		segments: rollupSegments(region.rollup, barX, BAR_WIDTH),
 		toggle: { x: barX + BAR_WIDTH + GAP + TOGGLE_SIZE / 2, y, r: TOGGLE_SIZE / 2 },
+		alpha: 1,
 	};
 }
 
-export interface LabelPlacement {
-	regions: readonly DrawRegion[];
+export interface RegionPlacement {
 	outlines: ReadonlyMap<string, RegionOutline>;
-	dots: readonly DrawDot[];
 	transform: Transform;
 	viewport: Viewport;
 	measure(text: string): number;
-	/** At most this many labels, null for every one with room. */
-	cap: number | null;
-	/** Other marks a label must keep off, the expand controls. */
-	occupied: readonly Circle[];
 }
 
-/** Labels for the regions with room, largest regions first. */
-export function placeRegionLabels({ regions, outlines, dots, transform, viewport, measure, cap, occupied }: LabelPlacement): RegionLabel[] {
+/**
+ * The label for one region, at the first spot that clears `taken` and lies inside the
+ * plot; the spot is added to `taken`. Null when the region has no outline or no room.
+ */
+export function placeRegionLabel(region: DrawRegion, { outlines, transform, viewport, measure }: RegionPlacement, taken: BoxIndex): RegionLabel | null {
 	const { k } = transform;
-	const screen = (p: MapPoint): MapPoint => ({ x: transform.x + k * p.x, y: transform.y + k * p.y });
-	const taken: Box[] = [];
-	for (const dot of dots) {
-		// The whole drawn dot: its surface disc or ink ring, and a folded family's rollup bar under it.
-		const r = Math.max(dot.r * k, MIN_DRAW_RADIUS) + MARK_REACH + CLEARANCE;
-		const below = dot.folded ? FOLDED_BAR_REACH : 0;
-		const { x, y } = screen(dot);
-		if (x + r < 0 || x - r > viewport.width || y + r < 0 || y - r > viewport.height) continue;
-		taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r + below });
-	}
-	for (const { x, y, r } of occupied) taken.push({ x: x - r - CLEARANCE, y: y - r - CLEARANCE, w: 2 * (r + CLEARANCE), h: 2 * (r + CLEARANCE) });
-	const fits = (box: Box): boolean =>
-		box.x >= 0 && box.y >= 0 && box.x + box.w <= viewport.width && box.y + box.h <= viewport.height && !taken.some((other) => intersects(box, other));
+	const outline = outlines.get(region.key);
+	if (!outline) return null;
+	const fits = (box: Box): boolean => box.x >= 0 && box.y >= 0 && box.x + box.w <= viewport.width && box.y + box.h <= viewport.height && !taken.hits(box);
 
-	const labels: RegionLabel[] = [];
-	const ordered = [...regions].sort((a, b) => b.size - a.size || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-	for (const region of ordered) {
-		if (cap !== null && labels.length >= cap) break;
-		const outline = outlines.get(region.key);
-		if (!outline) continue;
-		const title = fitText(region.title, MAX_TITLE, measure);
-		const titleWidth = Math.min(MAX_TITLE, measure(title));
-		const width = layoutLabel(region, title, titleWidth, 0, 0).box.w;
-		const top = screen(outline.top);
-		const bottom = screen(outline.bottom);
-		// Centered on the top, then along the top edge either way, then the same along the bottom.
-		const candidates: MapPoint[] = [];
-		for (const [side, from] of [['top', top], ['bottom', bottom]] as const) {
-			for (const shift of SHIFTS) {
-				const x = from.x + shift * width;
-				const y = edgeAt(outline, (x - transform.x) / k, side);
-				if (y !== null) candidates.push({ x: x - width / 2, y: transform.y + k * y });
-			}
-		}
-		for (const at of candidates) {
-			const label = layoutLabel(region, title, titleWidth, at.x, at.y);
+	const title = fitText(region.title, MAX_TITLE, measure);
+	const titleWidth = Math.min(MAX_TITLE, measure(title));
+	const width = layoutLabel(region, title, titleWidth, 0, 0).box.w;
+	const top = screenPoint(transform, outline.top);
+	const bottom = screenPoint(transform, outline.bottom);
+	// Centered on the top, then along the top edge either way, then the same along the bottom.
+	for (const [side, from] of [['top', top], ['bottom', bottom]] as const) {
+		for (const shift of SHIFTS) {
+			const x = from.x + shift * width;
+			const y = edgeAt(outline, (x - transform.x) / k, side);
+			if (y === null) continue;
+			const label = layoutLabel(region, title, titleWidth, x - width / 2, transform.y + k * y);
 			const clear = { x: label.box.x - CLEARANCE, y: label.box.y - CLEARANCE, w: label.box.w + 2 * CLEARANCE, h: label.box.h + 2 * CLEARANCE };
 			if (!fits(clear)) continue;
-			taken.push(clear);
-			labels.push(label);
-			break;
+			taken.add(clear);
+			return label;
 		}
 	}
-	return labels;
+	return null;
 }

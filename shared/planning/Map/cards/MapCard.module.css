@@ -1,0 +1,82 @@
+.card {
+	position: absolute;
+	left: 0;
+	top: 0;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	padding: var(--space-2);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	background: var(--color-surface);
+	box-shadow: var(--shadow-card);
+	color: var(--color-text);
+	font-size: var(--text-xs);
+	list-style: none;
+}
+
+.head {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	height: 16px;
+}
+
+/* Centered on the dot's position: the card is anchored by this. */
+.glyph {
+	display: inline-flex;
+	flex-shrink: 0;
+	border-radius: 50%;
+}
+
+.status {
+	width: 16px;
+	height: 16px;
+}
+
+/* The same ink ring the canvas draws: a gap of surface, then ink. */
+.needsPerson {
+	box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 3.5px var(--color-needs-person);
+}
+
+.key {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	color: var(--color-text-muted);
+}
+
+.origin {
+	display: inline-flex;
+	color: var(--color-text-muted);
+}
+
+.title {
+	margin: 0;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	overflow: hidden;
+	font-weight: var(--font-medium);
+	line-height: 16px;
+	overflow-wrap: anywhere;
+}
+
+.marks {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1);
+}
+
+/* Ink on the badge's tint clears text contrast; the badge's muted gray does not. */
+.card .chip {
+	gap: 2px;
+	padding: 1px var(--space-2);
+	color: var(--color-text);
+}

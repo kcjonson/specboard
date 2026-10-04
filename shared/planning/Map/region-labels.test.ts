@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import type { Box } from './box-index';
 import type { Transform } from './camera';
 import { controlAt, expandControls, labelControls } from './collapse-controls';
+import { drawDot } from './draw-dot.fixture';
 import type { DrawDot, DrawRegion } from './draw-list';
-import { BAR_WIDTH, LABEL_HEIGHT, fitText, placeRegionLabels, rollupSegments, type Box } from './region-labels';
+import { placeLabels } from './label-placement';
+import { BAR_WIDTH, LABEL_HEIGHT, fitText, rollupSegments, type Circle, type RegionLabel } from './region-labels';
 import { traceRegions, type RegionOutline } from './regions/outline';
 
 const measure = (text: string): number => text.length * 7;
@@ -21,22 +24,34 @@ const region = (key: string, size: number, title = `Region ${key}`): DrawRegion 
 	size,
 });
 
-const dot = (key: string, x: number, y: number, extra: Partial<DrawDot> = {}): DrawDot => ({
-	key,
-	x,
-	y,
-	r: 5.5,
-	status: 'ready',
-	weight: 1,
-	needsPerson: false,
-	cue: null,
-	pr: false,
-	folded: null,
-	...extra,
-});
+const dot = drawDot;
 
 const outlineFor = (key: string, members: Array<[number, number]>): RegionOutline =>
 	traceRegions([{ key, parentKey: null, height: 1, members: members.map(([x, y]) => ({ x, y, r: 5.5 })) }], 5)[0]!;
+
+interface RegionLabelCase {
+	regions: DrawRegion[];
+	outlines: Map<string, RegionOutline>;
+	dots: DrawDot[];
+	transform: Transform;
+	viewport: { width: number; height: number };
+	measure: (text: string) => number;
+	cap: number | null;
+	occupied: Circle[];
+}
+
+const regionLabels = ({ regions, outlines, dots, transform, viewport, measure, cap, occupied }: RegionLabelCase): RegionLabel[] =>
+	placeLabels({
+		rules: { dots: 'none', regions: cap },
+		regions,
+		outlines,
+		dots,
+		transform,
+		viewport,
+		measure,
+		named: new Set(),
+		occupied: { circles: occupied, boxes: [] },
+	}).regions;
 
 const overlap = (a: Box, b: Box): boolean => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
@@ -44,7 +59,7 @@ describe('region labels', () => {
 	const a = outlineFor('A', [[300, 300], [340, 310], [380, 300]]);
 
 	it('sits on the outline at its top, centered, with glyph, title, rollup bar, and control in a row', () => {
-		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
+		const [label] = regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
 		// On the curve at its top: at or a hair above the highest point the curve passes through at a segment end.
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeLessThanOrEqual(a.top.y);
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(a.top.y - 2);
@@ -58,12 +73,12 @@ describe('region labels', () => {
 
 	it('moves off a dot sitting where the label would go, and drops the label when there is no room at all', () => {
 		const blocking = dot('X', a.top.x, a.top.y);
-		const [moved] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [blocking], transform: identity, viewport, measure, cap: null, occupied: [] });
+		const [moved] = regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [blocking], transform: identity, viewport, measure, cap: null, occupied: [] });
 		expect(moved).toBeDefined();
 		expect(overlap(moved!.box, { x: a.top.x - 6, y: a.top.y - 6, w: 12, h: 12 })).toBe(false);
 
 		const crowd = Array.from({ length: 200 }, (_, i) => dot(`C${i}`, (i % 40) * 25, Math.floor(i / 40) * 120 + 60, { r: 60 }));
-		expect(placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: crowd, transform: identity, viewport, measure, cap: null, occupied: [] })).toEqual([]);
+		expect(regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: crowd, transform: identity, viewport, measure, cap: null, occupied: [] })).toEqual([]);
 	});
 
 	it('slides along the bottom edge when the top and the middle of the bottom are taken', () => {
@@ -71,7 +86,7 @@ describe('region labels', () => {
 		// A wall of dots over the whole top edge, and one under the middle of the bottom.
 		const wall = Array.from({ length: 30 }, (_, i) => dot(`T${i}`, 140 + i * 12, wide.top.y));
 		const under = dot('U', wide.bottom.x, wide.bottom.y, { r: 20 });
-		const [label] = placeRegionLabels({ regions: [region('W', 5, 'W')], outlines: new Map([['W', wide]]), dots: [...wall, under], transform: identity, viewport, measure, cap: null, occupied: [] });
+		const [label] = regionLabels({ regions: [region('W', 5, 'W')], outlines: new Map([['W', wide]]), dots: [...wall, under], transform: identity, viewport, measure, cap: null, occupied: [] });
 		expect(label).toBeDefined();
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(wide.top.y + 20);
 		expect(overlap(label!.box, { x: under.x - 22, y: under.y - 22, w: 44, h: 44 })).toBe(false);
@@ -80,7 +95,7 @@ describe('region labels', () => {
 	it('keeps off an expand control and off a dot\'s ink ring', () => {
 		const ringed = dot('N', a.top.x, a.top.y - 14, { needsPerson: true });
 		const control = { x: a.top.x + 60, y: a.top.y, r: 6 };
-		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [ringed], transform: identity, viewport, measure, cap: null, occupied: [control] });
+		const [label] = regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [ringed], transform: identity, viewport, measure, cap: null, occupied: [control] });
 		expect(label).toBeDefined();
 		expect(overlap(label!.box, { x: control.x - 6, y: control.y - 6, w: 12, h: 12 })).toBe(false);
 		expect(overlap(label!.box, { x: ringed.x - 9, y: ringed.y - 9, w: 18, h: 18 })).toBe(false);
@@ -93,15 +108,15 @@ describe('region labels', () => {
 			['C', outlineFor('C', [[320, 450]])],
 		]);
 		const regions = [region('C', 1), region('A', 3), region('B', 2)];
-		const all = placeRegionLabels({ regions, outlines, dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
+		const all = regionLabels({ regions, outlines, dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
 		expect(all.map((label) => label.key)).toEqual(['A', 'B', 'C']);
 		for (const x of all) for (const y of all) if (x !== y) expect(overlap(x.box, y.box)).toBe(false);
-		expect(placeRegionLabels({ regions, outlines, dots: [], transform: identity, viewport, measure, cap: 2, occupied: [] }).map((l) => l.key)).toEqual(['A', 'B']);
+		expect(regionLabels({ regions, outlines, dots: [], transform: identity, viewport, measure, cap: 2, occupied: [] }).map((l) => l.key)).toEqual(['A', 'B']);
 	});
 
 	it('follows the camera: the label stays on the outline in screen space', () => {
 		const transform = { k: 2, x: -100, y: -50 };
-		const [label] = placeRegionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform, viewport, measure, cap: null, occupied: [] });
+		const [label] = regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform, viewport, measure, cap: null, occupied: [] });
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeLessThanOrEqual(-50 + 2 * a.top.y);
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(-50 + 2 * a.top.y - 4);
 	});
@@ -131,7 +146,7 @@ describe('region labels', () => {
 
 describe('collapse controls', () => {
 	const a = outlineFor('A', [[300, 300], [340, 310]]);
-	const labels = placeRegionLabels({ regions: [region('A', 2)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
+	const labels = regionLabels({ regions: [region('A', 2)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
 	const folded = dot('F', 700, 300, { r: 12, status: 'done', folded: { count: 9, rollup: { done: 8, in_flight: 0, next: 0, later: 0 }, expandable: true } });
 	const small = dot('S', 800, 300, { r: 3, status: 'done', folded: { count: 3, rollup: { done: 2, in_flight: 0, next: 0, later: 0 }, expandable: true } });
 	// A family the read summarized past its cap: its children never came, so it can't open.

@@ -3,12 +3,16 @@ import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
 import { useModel } from '@specboard/models';
 import { LoadError } from '../LoadError/LoadError';
+import { MapCards } from './cards/MapCards';
 import { createCollapseStore } from './collapse-store';
 import { createLayoutWorker } from './layout/layout-worker-client';
+import type { MapPoint } from './layout/types';
 import { createCamera } from './map-camera';
 import { MapDataModel } from './map-data-model';
 import { createMapSource } from './map-source';
 import { MapSurface } from './map-surface';
+import { Minimap } from './minimap/Minimap';
+import { OverlayStore } from './overlay';
 import { zoomKeyOf } from './map-keys';
 import { readFocus, urlWithFocus } from './map-url';
 import { RULER_HEIGHT, createCanvasRenderer } from './renderer';
@@ -31,8 +35,9 @@ const media = (query: string): MediaQueryList | null => (typeof window.matchMedi
 /**
  * The Map: one canvas drawing every item's status glyph where the layout put it, a
  * region around every family with its label and collapse control, the links that
- * show, a ruler of dates along its bottom, and a camera on d3-zoom. The page loads
- * this module lazily, so Board and Table don't carry it.
+ * show, labels that fade with the zoom level, a ruler of dates along its bottom, and
+ * a camera on d3-zoom; over it, DOM cards at the near level and a minimap once zoomed
+ * in. The page loads this module lazily, so Board and Table don't carry it.
  */
 export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Element {
 	const model = useMemo(
@@ -45,6 +50,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const surfaceRef = useRef<MapSurface | null>(null);
 	const [viewportEmpty, setViewportEmpty] = useState(false);
+	const overlay = useMemo(() => new OverlayStore(), []);
 
 	// Panning and zooming replace the history entry, so a copied URL anchors on the item in
 	// the middle of the plot (spec, Navigation and interaction); a jump pushes one.
@@ -70,6 +76,9 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 			{
 				renderer: createCanvasRenderer(canvas),
 				camera,
+				overlay,
+				now: () => window.performance.now(),
+				reducedMotion: () => reducedMotion?.matches ?? false,
 				schedule: (paint) => window.requestAnimationFrame(paint),
 				defer: (task) => window.setTimeout(task, DEFER_MS),
 			},
@@ -140,7 +149,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 			surfaceRef.current = null;
 			model.dispose();
 		};
-	}, [model, anchor]);
+	}, [model, anchor, overlay]);
 
 	const { state, layout, rows } = model;
 	useEffect(() => {
@@ -163,6 +172,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 		const key = surface().jumpToNearest();
 		if (key) anchor(key, true);
 	}, [anchor]);
+	const handleCenter = useCallback((point: MapPoint, fly: boolean): void => surface().centerOn(point, fly), []);
 	const handleRetry = useCallback((): void => void model.retry(), [model]);
 
 	const interactive = state === 'ready' && !model.isEmpty;
@@ -177,6 +187,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 				role="img"
 				aria-label={interactive ? `Map of ${rows.size} items${summarized ? ', with finished families summarized' : ''}` : 'Map'}
 			/>
+			<MapCards store={overlay} bottom={RULER_HEIGHT} />
 			<div class={styles.controls} role="group" aria-label="Map view">
 				<button type="button" class={styles.control} disabled={!interactive} onClick={handleFitAll}>Fit all</button>
 				<button type="button" class={styles.control} disabled={!interactive} onClick={handleNow}>Now</button>
@@ -192,6 +203,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 					<button type="button" class={styles.jump} onClick={handleJumpToNearest}>Jump to the nearest dots</button>
 				)}
 			</div>
+			<Minimap store={overlay} onCenter={handleCenter} />
 		</div>
 	);
 }

@@ -1,3 +1,4 @@
+import type { Box } from './box-index';
 import { HOUR } from './layout/constants';
 import type { MapQuiet, MapTick } from './layout/types';
 
@@ -11,6 +12,31 @@ export const QUIET_LABEL_ROOM = 120;
 const LABEL_MARGIN = 28;
 
 const DAY = 24 * HOUR;
+
+/** The edge's label sits this far in from the edge line, a hair under the plot's top, and flips to the line's left when the right has less than EDGE_LABEL_ROOM. */
+const EDGE_LABEL_GAP = 8;
+export const EDGE_LABEL_TOP = 10;
+const EDGE_LABEL_ROOM = 150;
+/** Text height at the label's size, plus the surface halo it draws on. */
+const EDGE_LABEL_HEIGHT = 14;
+const EDGE_LABEL_HALO = 3;
+
+/**
+ * Where the edge's label draws for a line at `x` in a plot `plotWidth` wide: the text's
+ * anchor, which side it hangs from, and the box labels elsewhere keep off. Null when the
+ * line is outside the plot.
+ */
+export function edgeLabelAt(x: number, textWidth: number, plotWidth: number): { anchor: number; align: 'left' | 'right'; box: Box } | null {
+	if (x < 0 || x > plotWidth) return null;
+	const room = plotWidth - x > EDGE_LABEL_ROOM;
+	const anchor = room ? x + EDGE_LABEL_GAP : x - EDGE_LABEL_GAP;
+	const left = room ? anchor : anchor - textWidth;
+	return {
+		anchor,
+		align: room ? 'left' : 'right',
+		box: { x: left - EDGE_LABEL_HALO, y: EDGE_LABEL_TOP - EDGE_LABEL_HALO, w: textWidth + 2 * EDGE_LABEL_HALO, h: EDGE_LABEL_HEIGHT + 2 * EDGE_LABEL_HALO },
+	};
+}
 
 export interface RulerMark {
 	/** Screen x, in CSS pixels. */
