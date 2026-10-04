@@ -126,4 +126,36 @@ describe('MapCards', () => {
 		act(() => store.publish(frame({ rows: new Map(), cards: set(4), cardAlpha: 1 })));
 		expect(container.querySelectorAll('li')).toHaveLength(0);
 	});
+
+	it('fades the cards outside what focus lit and marks the one it is on', () => {
+		const store = new OverlayStore();
+		const { container } = render(<MapCards store={store} bottom={32} />);
+		const { rows, set, keys } = scene();
+		const cards = set(4);
+		const focus = { key: keys[1]!, region: false, dots: new Set([keys[1]!, keys[2]!]), regions: new Set<string>(), outline: null, links: new Set<string>() };
+		act(() => store.publish(frame({ rows, cards, cardAlpha: 1, focus })));
+		const items = Array.from(container.querySelectorAll('li'));
+		const faded = items.map((li) => li.className.includes('faded'));
+		expect(faded).toEqual([true, false, false, true]);
+		expect(items[1]!.className).toContain('lit');
+		expect(items[2]!.className).not.toContain('lit');
+
+		act(() => store.publish(frame({ rows, cards, cardAlpha: 1, focus: null })));
+		expect(Array.from(container.querySelectorAll('li')).some((li) => li.className.includes('faded'))).toBe(false);
+	});
+
+	it('moves a dragged dot\'s card with it, apart from its place, and lets go when the drag ends', () => {
+		const store = new OverlayStore();
+		const { container } = render(<MapCards store={store} bottom={32} />);
+		const { rows, set, keys } = scene();
+		const cards = set(4);
+		act(() => store.publish(frame({ rows, cards, cardAlpha: 1, transform: { k: 4, x: 0, y: 0 }, drag: { key: keys[1]!, dx: 10, dy: -5 } })));
+		const second = container.querySelectorAll('li')[1] as HTMLElement;
+		expect(second.style.translate).toBe('40px -20px');
+		expect(second.style.transform).toContain('translate(');
+		act(() => store.publish(frame({ rows, cards, cardAlpha: 1, transform: { k: 4, x: 0, y: 0 }, drag: { key: keys[1]!, dx: 2, dy: 0 } })));
+		expect(second.style.translate).toBe('8px 0px');
+		act(() => store.publish(frame({ rows, cards, cardAlpha: 1, transform: { k: 4, x: 0, y: 0 }, drag: null })));
+		expect(second.style.translate).toBe('');
+	});
 });

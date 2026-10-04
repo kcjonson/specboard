@@ -31,8 +31,18 @@ vi.mock('@specboard/fetch', async (importOriginal) => {
 
 vi.mock('../Board/Board', () => ({ Board: () => <div data-testid="board" />, BOARD_PAGE_SIZE: 20 }));
 vi.mock('../Table/Table', () => ({ Table: () => <div data-testid="table" />, TABLE_PAGE_SIZE: 50 }));
-vi.mock('../Map/MapView', () => ({ MapView: () => <div data-testid="map" /> }));
-vi.mock('../ItemDrawer/ItemDrawer', () => ({ ItemDrawer: () => null }));
+vi.mock('../Map/MapView', () => ({
+	MapView: ({ openItemKey, covered }: { openItemKey?: string; covered: number }) => <div data-testid="map" data-open={openItemKey ?? ''} data-covered={covered} />,
+}));
+vi.mock('../ItemDrawer/ItemDrawer', async () => {
+	const { useEffect } = await import('preact/hooks');
+	return {
+		ItemDrawer: ({ onResize }: { onResize?: (width: number) => void }) => {
+			useEffect(() => onResize?.(420), [onResize]);
+			return <div data-testid="drawer" />;
+		},
+	};
+});
 vi.mock('../NewItemDialog/NewItemDialog', () => ({ NewItemDialog: () => null }));
 
 function failWith(error: Error): void {
@@ -43,8 +53,8 @@ function succeedEmpty(): void {
 	getResponse.mockResolvedValue({ data: [], headers: new Headers() });
 }
 
-function renderPlanning(): ReturnType<typeof render> {
-	return render(<Planning params={{ owner: 'acme', project: 'specboard' }} />);
+function renderPlanning(itemKey?: string): ReturnType<typeof render> {
+	return render(<Planning params={{ owner: 'acme', project: 'specboard', ...(itemKey ? { itemKey } : {}) }} />);
 }
 
 describe('Planning load failures', () => {
@@ -196,5 +206,30 @@ describe('Planning views', () => {
 		fireEvent.click(await findByRole('button', { name: 'Board' }));
 		expect(await findByTestId('board')).toBeTruthy();
 		expect(window.location.search).toBe('?view=board');
+	});
+
+	it('has the drawer overlay the Map, and tells the Map the item and how much of it the drawer covers', async () => {
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning/items/SPE-5?view=map');
+		const { findByTestId } = renderPlanning('SPE-5');
+		const drawer = await findByTestId('drawer');
+		expect(drawer.parentElement!.className).toContain('drawerOverlay');
+		const map = await findByTestId('map');
+		expect(map.getAttribute('data-open')).toBe('SPE-5');
+		await waitFor(() => expect(map.getAttribute('data-covered')).toBe('420'));
+	});
+
+	it('keeps the drawer beside the Board, where it narrows the view', async () => {
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning/items/SPE-5?view=board');
+		const { findByTestId } = renderPlanning('SPE-5');
+		const drawer = await findByTestId('drawer');
+		expect(drawer.parentElement!.className).toContain('drawerSlot');
+	});
+
+	it('tells the Map nothing is covered while no item is open', async () => {
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning?view=map');
+		const { findByTestId } = renderPlanning();
+		const map = await findByTestId('map');
+		expect(map.getAttribute('data-open')).toBe('');
+		expect(map.getAttribute('data-covered')).toBe('0');
 	});
 });

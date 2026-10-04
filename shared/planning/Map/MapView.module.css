@@ -21,9 +21,14 @@
 	cursor: grabbing;
 }
 
-/* Over a collapse or expand control. */
-.canvas[data-control] {
+/* Over a dot, a region, or a control: all of them take a click. */
+.canvas[data-target] {
 	cursor: pointer;
+}
+
+/* A dot held by the pointer; it springs back on release. */
+.canvas[data-dragging] {
+	cursor: grabbing;
 }
 
 .controls {

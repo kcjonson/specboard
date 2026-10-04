@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
 	FIT_PADDING,
 	FIT_TOP_PADDING,
@@ -9,117 +9,17 @@ import {
 	openTransform,
 	readableScale,
 	type Transform,
-	type Viewport,
 } from './camera';
 import { BoardBuilder } from './layout/board-fixture';
 import { LEAF_RADIUS } from './layout/constants';
 import { layoutMap } from './layout/layout';
 import type { MapLayout } from './layout/types';
-import type { MapCamera, ScreenPoint } from './map-camera';
-import { MapSurface } from './map-surface';
-import { OverlayStore } from './overlay';
+import { setup, WIDTH, HEIGHT, plot } from './map-surface.fixture';
 import { edgeLabelAt } from './ruler';
 import { RegionOutlines, gridStep } from './regions/region-outlines';
-import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
+import { RULER_HEIGHT } from './renderer';
 import { cardBox } from './cards/card-culling';
 import { FADE_MS, NEAR_ENTER, NEAR_EXIT } from './zoom-levels';
-
-class FakeCamera implements MapCamera {
-	transform: Transform = { k: 1, x: 0, y: 0 };
-	listeners = new Set<() => void>();
-	configured: { viewport: Viewport; minScale: number } | null = null;
-	flights: Transform[] = [];
-	zooms: Array<{ factor: number; around?: ScreenPoint }> = [];
-
-	onChange(listener: () => void): () => void {
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
-	}
-
-	configure(viewport: Viewport, _bounds: unknown, minScale: number): void {
-		this.configured = { viewport, minScale };
-	}
-
-	set(transform: Transform): void {
-		this.transform = transform;
-		for (const listener of this.listeners) listener();
-	}
-
-	flyTo(transform: Transform): void {
-		this.flights.push(transform);
-		this.set(transform);
-	}
-
-	zoomBy(factor: number, around?: ScreenPoint): void {
-		this.zooms.push({ factor, around });
-	}
-
-	destroy(): void {
-		this.listeners.clear();
-	}
-}
-
-class FakeRenderer implements MapRenderer {
-	frames: MapFrame[] = [];
-	size = { width: 0, height: 0 };
-	themeReads = 0;
-
-	resize(width: number, height: number): void {
-		this.size = { width, height };
-	}
-
-	refreshTheme(): void {
-		this.themeReads++;
-	}
-
-	measureLabel(text: string): number {
-		return text.length * 7;
-	}
-
-	draw(frame: MapFrame): void {
-		this.frames.push(frame);
-	}
-}
-
-function setup(): {
-	surface: MapSurface;
-	camera: FakeCamera;
-	renderer: FakeRenderer;
-	overlay: OverlayStore;
-	clock: { now: number; reduced: boolean };
-	frames: Array<() => void>;
-	empty: ReturnType<typeof vi.fn>;
-	settle: ReturnType<typeof vi.fn>;
-	flush: () => void;
-	deferred: Array<() => void>;
-} {
-	const camera = new FakeCamera();
-	const renderer = new FakeRenderer();
-	const frames: Array<() => void> = [];
-	const deferred: Array<() => void> = [];
-	const empty = vi.fn();
-	const settle = vi.fn();
-	const overlay = new OverlayStore();
-	const clock = { now: 0, reduced: false };
-	const surface = new MapSurface(
-		{
-			renderer,
-			camera,
-			overlay,
-			now: () => clock.now,
-			reducedMotion: () => clock.reduced,
-			schedule: (paint) => frames.push(paint),
-			defer: (task) => deferred.push(task),
-			timeZone: 'UTC',
-		},
-		{ onViewportEmpty: empty, onSettle: settle },
-	);
-	return { surface, camera, renderer, overlay, clock, frames, empty, settle, deferred, flush: () => frames.splice(0).forEach((paint) => paint()) };
-}
-
-const WIDTH = 1000;
-const HEIGHT = 500 + RULER_HEIGHT;
-const plot: Viewport = { width: WIDTH, height: 500 };
 
 function realBoard(): { layout: MapLayout; rows: Map<string, ReturnType<BoardBuilder['add']>>; keys: string[] } {
 	const b = new BoardBuilder();
@@ -225,7 +125,7 @@ describe('MapSurface', () => {
 	it('zooms by key about the pointer when it is over the plot, and about the middle otherwise', () => {
 		const { surface, camera } = setup();
 		surface.resize(WIDTH, HEIGHT);
-		surface.setPointer({ x: 300, y: 120 });
+		surface.hoverAt({ x: 300, y: 120 });
 		surface.zoomInByKey();
 		surface.zoomOutByKey();
 		expect(camera.zooms).toEqual([
@@ -234,9 +134,9 @@ describe('MapSurface', () => {
 		]);
 
 		camera.zooms.length = 0;
-		surface.setPointer({ x: 300, y: 520 + RULER_HEIGHT });
+		surface.hoverAt({ x: 300, y: 520 + RULER_HEIGHT });
 		surface.zoomInByKey();
-		surface.setPointer(null);
+		surface.hoverAt(null);
 		surface.zoomOutByKey();
 		expect(camera.zooms).toEqual([{ factor: ZOOM_STEP, around: undefined }, { factor: 1 / ZOOM_STEP, around: undefined }]);
 	});
@@ -391,7 +291,7 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		expect(frame.regions.map((r) => r.key)).toEqual([epic]);
 		expect(frame.labels.map((l) => l.key)).toEqual([epic]);
 		expect(frame.labels[0]!.title).toBe('Open family');
-		expect(frame.lighting).toEqual({ all: false, lit: null });
+		expect(frame.allLinks).toBe(false);
 		expect(frame.links.map((l) => l.id)).toContain(`chain:${chain[0]}>${chain[1]}`);
 	});
 
@@ -403,13 +303,13 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		flush();
 		const { controls, labels } = renderer.frames.at(-1)!;
 		expect(controls.map((c) => [c.key, c.collapse])).toEqual([[epic, true], [finished, false]]);
-		expect(surface.controlAt(labels[0]!.toggle)).toEqual({ key: epic, collapse: true });
-		expect(surface.controlAt({ x: 1, y: 1 })).toBeNull();
+		expect(surface.hitAt(labels[0]!.toggle, false)).toEqual({ type: 'control', key: epic, collapse: true });
+		expect(surface.hitAt({ x: 1, y: 1 }, false)).toBeNull();
 
 		// Controls follow the camera.
 		camera.set({ ...camera.transform, x: camera.transform.x + 50 });
 		flush();
-		expect(surface.controlAt(labels[0]!.toggle)).toBeNull();
+		expect(surface.hitAt(labels[0]!.toggle, false)?.type).not.toBe('control');
 	});
 
 	it('computes outlines once per layout and zoom bucket, never during a pan, and defers a new bucket past the gesture', () => {
@@ -486,15 +386,14 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		expect(surface.showing).toBe(false);
 	});
 
-	it('shows the links focus lights, or every link with All links on', () => {
+	it('draws every blocker and discovered-from link with All links on', () => {
 		const { surface, renderer, flush } = setup();
 		const { layout, rows } = familyBoard();
 		surface.resize(WIDTH, HEIGHT);
 		surface.show(layout, rows, null);
-		const lit = { all: false, lit: new Set(['blocker:X>Y']) };
-		surface.setLighting(lit);
+		surface.setAllLinks(true);
 		flush();
-		expect(renderer.frames.at(-1)!.lighting).toBe(lit);
+		expect(renderer.frames.at(-1)!.allLinks).toBe(true);
 	});
 });
 

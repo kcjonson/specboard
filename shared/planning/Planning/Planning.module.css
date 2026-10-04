@@ -21,6 +21,24 @@
 	flex: 1;
 	display: flex;
 	min-height: 0;
+	position: relative;
+}
+
+/* The drawer's own box, which takes its place in the row beside the Board or Table. */
+.drawerSlot {
+	display: flex;
+	flex-shrink: 0;
+}
+
+/* On the Map the drawer lies over the plot's right side instead of narrowing it. */
+.drawerOverlay {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 2;
+	display: flex;
+	box-shadow: var(--shadow-md);
 }
 
 /*

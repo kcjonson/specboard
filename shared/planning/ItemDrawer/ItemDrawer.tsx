@@ -18,6 +18,8 @@ export interface ItemDrawerProps {
 	/** Upper bound for the drawer width, so it can't fully crowd out the board. */
 	maxWidth?: number;
 	onClose: () => void;
+	/** Called with the drawer's width whenever it changes, for a host that lays something out around it. */
+	onResize?: (width: number) => void;
 	onDelete?: (item: ItemModel) => void;
 	/** Open a child's detail by key (children are first-class items). */
 	onOpenItem?: (itemKey: string) => void;
@@ -37,7 +39,7 @@ function unresolvedMessage(itemKey: string, error: Error | null): string {
  * Board and Table views. The content is the same {@link ItemView} used by the
  * full-screen item route; only the surrounding chrome differs.
  */
-export function ItemDrawer({ item, listed, projectRef, maxWidth, onClose, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
+export function ItemDrawer({ item, listed, projectRef, maxWidth, onClose, onResize, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
 	useModel(item);
 
 	// An unlisted key has nothing behind it until its fetch lands, and may have
@@ -79,6 +81,7 @@ export function ItemDrawer({ item, listed, projectRef, maxWidth, onClose, onDele
 			defaultWidth={420}
 			minWidth={320}
 			maxWidth={maxWidth}
+			onResize={onResize}
 			label="Resize detail panel"
 			class={styles.drawer}
 		>
