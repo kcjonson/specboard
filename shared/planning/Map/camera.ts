@@ -39,6 +39,9 @@ export const MIN_DRAW_RADIUS = 2;
 /** Space kept clear around the Map at fit all, in pixels. */
 export const FIT_PADDING = 24;
 
+/** The toolbar sits over the plot's top left, so fit all starts below it. */
+export const FIT_TOP_PADDING = 64;
+
 export const MAX_SCALE = 8;
 
 /** Now zooms in to at least this multiple of fit all (the prototype's value). */
@@ -54,14 +57,15 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 export function fitScale(bounds: MapBounds, viewport: Viewport): number {
 	const width = Math.max(1, bounds.maxX - bounds.minX);
 	const height = Math.max(1, bounds.maxY - bounds.minY);
-	const k = Math.min((viewport.width - 2 * FIT_PADDING) / width, (viewport.height - 2 * FIT_PADDING) / height);
+	const k = Math.min((viewport.width - 2 * FIT_PADDING) / width, (viewport.height - FIT_TOP_PADDING - FIT_PADDING) / height);
 	return Math.max(k, 0.01);
 }
 
-/** Scales the Map to fit and centers it. */
+/** Scales the Map to fit and centers it in the plot below the toolbar. */
 export function fitTransform(bounds: MapBounds, viewport: Viewport): Transform {
 	const k = fitScale(bounds, viewport);
-	return centeredOn({ x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 }, k, viewport);
+	const middle = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+	return { k, x: viewport.width / 2 - k * middle.x, y: (FIT_TOP_PADDING + viewport.height - FIT_PADDING) / 2 - k * middle.y };
 }
 
 /** The view that puts a layout point in the middle of the plot. */

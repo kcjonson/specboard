@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	FIT_PADDING,
+	FIT_TOP_PADDING,
 	MAX_SCALE,
 	NOW_ZOOM,
 	READABLE_DOT_RADIUS,
@@ -44,11 +45,18 @@ describe('fit all', () => {
 		expect(fitScale(small, viewport)).toBeCloseTo((1000 - 2 * FIT_PADDING) / 1200);
 	});
 
-	it('centers the bounds', () => {
+	it('centers the bounds in the plot below the toolbar', () => {
 		const t = fitTransform(small, viewport);
 		expect(screen(t, -400, 0).x).toBeCloseTo(500);
-		expect(screen(t, 0, 0).y).toBeCloseTo(250);
-		expect(centerOf(t, viewport)).toEqual({ x: expect.closeTo(-400), y: expect.closeTo(0) });
+		expect(screen(t, 0, 0).y).toBeCloseTo((FIT_TOP_PADDING + viewport.height - FIT_PADDING) / 2);
+	});
+
+	it('keeps the bounds clear of the toolbar and the ruler', () => {
+		for (const bounds of [small, wide, { minX: -300, maxX: 100, minY: -4000, maxY: 4000 }]) {
+			const t = fitTransform(bounds, viewport);
+			expect(screen(t, 0, bounds.minY).y).toBeGreaterThanOrEqual(FIT_TOP_PADDING - 1e-6);
+			expect(screen(t, 0, bounds.maxY).y).toBeLessThanOrEqual(viewport.height - FIT_PADDING + 1e-6);
+		}
 	});
 
 	it('keeps every edge of the bounds inside the plot', () => {
