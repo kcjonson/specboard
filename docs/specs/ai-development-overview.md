@@ -1005,9 +1005,10 @@ Input for the technical design, not decisions.
   focus, and `@specboard/ui` reuse). `d3-zoom` (about 15 KB) runs the camera.
 - As built (SPE-230), the cards sit in one translated element, so a pan is one style
   write and the cards re-render only when the set in view changes. On a generated
-  2,000-item board at near zoom with 52 to 61 cards in view, panning at 1x pixel ratio
-  held 60 fps (median frame 16.7 ms, 95th percentile 18 ms, the Map's paint 4 ms of
-  it on average) with one 100 ms stall in four 400-frame runs. At 2x the same pan runs
+  2,000-item board at near zoom with 34 to 58 cards in view, panning at 1x pixel ratio
+  held 60 fps (median frame 16.7 ms, 95th percentile 18.4 ms, the Map's paint 4 ms of
+  it on average), with an occasional stall of up to 66 ms (a handful of frames in
+  four 400-frame runs). At 2x the same pan runs
   at 30 fps with or without cards, since the 2,560 px canvas fill is what a software
   rasterizer can't keep up with, not the cards. Label placement is a grid lookup per
   candidate spot, redone each frame.
