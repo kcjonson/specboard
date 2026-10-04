@@ -418,7 +418,9 @@ function stackedHeight(model: MapModel, unitScale: MapTimeScale): number {
 function coldLayout(model: MapModel, edge: number, aspect: number): Settled {
 	const dotCount = model.items.filter((item) => item.rep === item && !item.hub).length;
 	const unitScale = createTimeScale(edge, model.times, 1);
-	const trialUnit = Math.max(FIT_UNIT * aspect * Math.sqrt(Math.max(1, dotCount / FIT_DOTS)), aspect * stackedHeight(model, unitScale) / Math.max(1e-6, -timeToX(unitScale, model.times[0] ?? edge)));
+	// The Map's width per unit, as boundsOf measures it: the span of time plus the reserved strip past now.
+	const unitWidth = -timeToX(unitScale, model.times[0] ?? edge) + RESERVED_STRIP;
+	const trialUnit = Math.max(FIT_UNIT * aspect * Math.sqrt(Math.max(1, dotCount / FIT_DOTS)), (aspect * stackedHeight(model, unitScale)) / unitWidth);
 	const trial = createTimeScale(edge, model.times, trialUnit);
 	const first = buildGraph(model, trial);
 	raiseTargets(first, trial);

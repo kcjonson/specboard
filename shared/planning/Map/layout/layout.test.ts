@@ -291,6 +291,20 @@ describe('layoutMap on a realistic board', () => {
 });
 
 describe('layoutMap edge cases', () => {
+	it('fits a new board whose items were all filed this moment', () => {
+		const b = new BoardBuilder();
+		for (let epic = 0; epic < 2; epic++) {
+			const parent = b.add({ type: 'epic', status: 'ready', created: NOW });
+			for (let i = 0; i < 5; i++) b.add({ parentKey: parent.key, status: 'ready', created: NOW });
+		}
+		const result = layout(b.rows);
+		const { minX, maxX, minY, maxY } = result.frame.bounds;
+		// No stretch of time to spread over: the width is the reserved strip and the dots, not a runaway unit.
+		expect(result.frame.scale.unit).toBeLessThan(5_000);
+		expect((maxX - minX) / (maxY - minY)).toBeLessThan(2 * ASPECT);
+		expectNoOverlaps(result);
+	});
+
 	it('lays out an empty board', () => {
 		const result = layout([]);
 		expect(result.nodes).toEqual([]);

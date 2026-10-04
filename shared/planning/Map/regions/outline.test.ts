@@ -208,6 +208,18 @@ describe('region outlines', () => {
 		for (const [x, y] of points(outlines.find((o) => o.key === 'N1')!.loop)) expect(insideLoop(x, y, outer.loop)).toBe(false);
 	});
 
+	it('carries nested corridors up a deep chain over many members once each', () => {
+		// Every level holds the same twenty members, so every level's tree is the same
+		// tree; inherited corridors that weren't shared would pile up a level at a time.
+		const members: Array<[number, number]> = Array.from({ length: 20 }, (_, i) => [i * 40, (i % 3) * 15]);
+		const levels = 300;
+		const inputs = Array.from({ length: levels }, (_, i) => region(`R${i}`, members, { parentKey: i ? `R${i - 1}` : null, height: levels - i }));
+		const outlines = traceRegions(inputs, 5);
+		const outer = outlines.find((o) => o.key === 'R0')!;
+		for (const [x, y] of members) expect(insideLoop(x, y, outer.loop)).toBe(true);
+		for (const o of outlines) if (o !== outer) for (const [x, y] of points(o.loop, 4)) expect(insideLoop(x, y, outer.loop)).toBe(true);
+	});
+
 	it('draws nothing for a region with no members', () => {
 		expect(traceRegions([region('A', [])], 5)).toEqual([]);
 	});
@@ -289,6 +301,21 @@ describe('every member inside its own outline', () => {
 		}
 		return { outside: found, members };
 	};
+	it('after a local pass that changes a leaf of a nested family', () => {
+		const board = realisticBoard();
+		const before = layoutMap({ rows: board.rows, now, collapse: {}, aspect: 2.5 });
+		const nested = board.rows.find((row) => row.key === before.regions.find((r) => r.depth === 1)!.key)!;
+		const rows = board.rows.map((row) => ({ ...row }));
+		const leaf = rows.find((row) => row.parentKey === nested.key && row.status === 'ready')!;
+		leaf.status = 'in_progress';
+		leaf.startedAt = new Date(now).toISOString();
+		leaf.timeAnchor = leaf.startedAt;
+		const positions = Object.fromEntries(before.nodes.map((n) => [n.key, { x: n.x, y: n.y }]));
+		const after = layoutMap({ rows, now, collapse: {}, aspect: 2.5, previous: { frame: before.frame, positions, changed: [leaf.key] } });
+		const { outside: lost } = outside(after);
+		expect(lost, lost.join('; ')).toEqual([]);
+	});
+
 	const boards = [
 		['the realistic board', realisticBoard().rows],
 		['a generated 1,000-item board', syntheticBoard(1000, 7)],

@@ -19,6 +19,10 @@ export interface Band {
  * row, with room for a stranger between any two. So each tick, every pair of siblings
  * that share time and sit closer than their half-heights plus a gap is pushed apart,
  * each region moving as one, nested regions with it.
+ *
+ * A region with any dot pinned (a local pass holds everything it didn't reach) isn't
+ * pushed: it can only move as a whole, and a push that moved only its free part would
+ * bend it. Its neighbors still feel it.
  */
 export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 	const count = bands.length;
@@ -34,6 +38,7 @@ export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 		else groups.set(band.parent, [i]);
 	});
 	const siblings = [...groups.values()].filter((group) => group.length > 1);
+	const held = bands.map((band) => band.hubs.some((n) => n.fx != null) || band.members.some((n) => n.fx != null));
 
 	return (alpha: number): void => {
 		if (!siblings.length) return;
@@ -57,15 +62,18 @@ export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 			push[i] = 0;
 		}
 		for (const group of siblings) {
+			// A sweep along x, so only siblings whose stretches of time meet are compared.
+			group.sort((a, b) => minX[a]! - minX[b]! || a - b);
 			for (let p = 0; p < group.length; p++) {
-				const a = group[p]!;
-				for (let q = p + 1; q < group.length; q++) {
-					const b = group[q]!;
-					if (maxX[a]! + REGION_BAND_GAP < minX[b]! || maxX[b]! + REGION_BAND_GAP < minX[a]!) continue;
+				const left = group[p]!;
+				for (let q = p + 1; q < group.length && minX[group[q]!]! <= maxX[left]! + REGION_BAND_GAP; q++) {
+					const right = group[q]!;
+					// Level regions part in list order, which is key order, so it's deterministic.
+					const a = Math.min(left, right);
+					const b = Math.max(left, right);
 					const want = half[a]! + half[b]! + REGION_BAND_GAP;
 					const dy = centerY[b]! - centerY[a]!;
 					if (Math.abs(dy) >= want) continue;
-					// Level regions part in list order, which is key order, so it's deterministic.
 					const f = ((dy >= 0 ? 1 : -1) * want - dy) * alpha * REGION_BAND_STRENGTH;
 					push[a]! -= f / 2;
 					push[b]! += f / 2;
@@ -75,7 +83,7 @@ export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 		// Members include nested regions' dots, so a nested region moves with each region around it.
 		for (let i = 0; i < count; i++) {
 			const shift = push[i]!;
-			if (shift === 0) continue;
+			if (shift === 0 || held[i]) continue;
 			for (const n of bands[i]!.hubs) n.vy += shift;
 			for (const n of bands[i]!.members) n.vy += shift;
 		}

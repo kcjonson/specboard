@@ -569,19 +569,30 @@ function fieldBounds(field: Field, step: number): MapBounds {
  * time (done work back where it closed, live work at now) breaks into islands.
  */
 function corridorsOf(inputs: readonly RegionInput[]): Map<string, Segment[]> {
-	const corridors = new Map<string, Segment[]>();
+	// Keyed by endpoints, so a corridor a region shares with the regions nested in it
+	// is splatted once however deep the nesting runs.
+	const corridors = new Map<string, Map<string, Segment>>();
+	const listFor = (key: string): Map<string, Segment> => {
+		let list = corridors.get(key);
+		if (!list) corridors.set(key, (list = new Map()));
+		return list;
+	};
+	const point = (p: MapPoint): string => `${p.x},${p.y}`;
 	// Innermost first, so a region's nested corridors are in by the time it's reached.
 	// Only corridors climb, so a deep chain of one-member regions costs nothing extra.
 	for (const input of [...inputs].sort((a, b) => a.height - b.height)) {
-		let list = corridors.get(input.key);
-		if (!list) corridors.set(input.key, (list = []));
-		for (const [a, b] of spanningTree(input.members)) list.push([input.members[a]!, input.members[b]!]);
-		if (!input.parentKey || !list.length) continue;
-		let up = corridors.get(input.parentKey);
-		if (!up) corridors.set(input.parentKey, (up = []));
-		for (const segment of list) up.push(segment);
+		const list = listFor(input.key);
+		for (const [a, b] of spanningTree(input.members)) {
+			const p = input.members[a]!;
+			const q = input.members[b]!;
+			const id = point(p) < point(q) ? `${point(p)} ${point(q)}` : `${point(q)} ${point(p)}`;
+			if (!list.has(id)) list.set(id, [p, q]);
+		}
+		if (!input.parentKey || !list.size) continue;
+		const up = listFor(input.parentKey);
+		for (const [id, segment] of list) if (!up.has(id)) up.set(id, segment);
 	}
-	return corridors;
+	return new Map([...corridors].map(([key, list]) => [key, [...list.values()]]));
 }
 
 /**
