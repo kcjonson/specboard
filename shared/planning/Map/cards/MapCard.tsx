@@ -47,8 +47,9 @@ function MapCardView({ row, dot, k }: MapCardProps): JSX.Element {
 					</Badge>
 				))}
 				{hidden > 0 && (
-					<Badge class={`size-sm ${styles.chip}`} title={card.chips.slice(shown.length).map((chip) => chip.text).join(', ')}>
-						+{hidden}
+					<Badge class={`size-sm ${styles.chip}`}>
+						<span aria-hidden="true">+{hidden}</span>
+						<span class={styles.more}>{`Also: ${card.chips.slice(shown.length).map((chip) => chip.text).join(', ')}`}</span>
 					</Badge>
 				)}
 			</div>

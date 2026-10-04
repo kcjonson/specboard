@@ -15,15 +15,11 @@ describe('glyph sizes', () => {
 		expect(screenRadius(leaf, 0.1, 'far')).toBe(MIN_DRAW_RADIUS);
 	});
 
-	it('holds still at the near level, whatever the scale: a card carries the same glyph', () => {
-		expect(screenRadius(leaf, 4, 'near')).toBe(NEAR_GLYPH_RADIUS);
-		expect(screenRadius(leaf, 7.9, 'near')).toBe(NEAR_GLYPH_RADIUS);
-		expect(screenRadius(light, 5, 'near')).toBe(NEAR_GLYPH_RADIUS);
-	});
-
-	it('keeps larger things larger at the near level, up to one and a half times', () => {
-		expect(screenRadius(live, 5, 'near')).toBeGreaterThan(NEAR_GLYPH_RADIUS);
-		expect(screenRadius(big, 5, 'near')).toBeCloseTo(NEAR_GLYPH_RADIUS * 1.5);
+	it('holds one size at the near level, whatever the scale or the item: a card carries the same glyph', () => {
+		for (const dot of [leaf, live, big, light]) {
+			expect(screenRadius(dot, 4, 'near')).toBe(NEAR_GLYPH_RADIUS);
+			expect(screenRadius(dot, 7.9, 'near')).toBe(NEAR_GLYPH_RADIUS);
+		}
 	});
 
 	it('boxes the whole drawn dot at the level it is drawn', () => {

@@ -18,11 +18,6 @@ import type { LabelRules, ZoomLevel } from './zoom-levels';
 /** Dots farther past the plot's edge than a label is wide can't reach into it. */
 const EDGE_MARGIN = MAX_DOT_LABEL + 16;
 
-/** A circle already spoken for, such as an expand control; `owner` is the dot it belongs to, which a card on that dot may sit over. */
-export interface TakenCircle extends Circle {
-	owner?: string;
-}
-
 export interface LabelInput {
 	rules: LabelRules;
 	level: ZoomLevel;
@@ -36,7 +31,7 @@ export interface LabelInput {
 	/** Items another layer already names (a computer's block, say), so they get no label of their own. */
 	named: ReadonlySet<string>;
 	/** Screen marks a label or card keeps off: expand controls, and boxes reserved outright such as the toolbar's and the minimap's. */
-	occupied: { circles: readonly TakenCircle[]; boxes: readonly Box[] };
+	occupied: { circles: readonly Circle[]; boxes: readonly Box[] };
 }
 
 export interface PlacedLabels {
@@ -62,7 +57,7 @@ export function placeLabels({ rules, level, regions, outlines, dots, transform, 
 		taken.add(box, dot.key);
 		near.push(dot);
 	}
-	for (const { x, y, r, owner } of occupied.circles) taken.add({ x: x - r - CLEARANCE, y: y - r - CLEARANCE, w: 2 * (r + CLEARANCE), h: 2 * (r + CLEARANCE) }, owner);
+	for (const { x, y, r } of occupied.circles) taken.add({ x: x - r - CLEARANCE, y: y - r - CLEARANCE, w: 2 * (r + CLEARANCE), h: 2 * (r + CLEARANCE) });
 	for (const box of occupied.boxes) taken.add(box);
 
 	const placed: PlacedLabels = { regions: [], dots: [], cards: [] };
@@ -70,7 +65,8 @@ export function placeLabels({ rules, level, regions, outlines, dots, transform, 
 	// Cards first: a card is the biggest thing on the plot, and it says everything a label would. One that has no room
 	// is not squeezed in; its dot stays a glyph and gets a one-line label below, if there is room for that.
 	if (rules.cards) {
-		const candidates = new Set(visibleCards(near, transform, viewport).map((dot) => dot.key));
+		// A family folded into a dot that can be opened keeps its glyph and its plus: a card would cover the control, and cards aren't operable yet.
+		const candidates = new Set(visibleCards(near.filter((dot) => !dot.folded?.expandable), transform, viewport).map((dot) => dot.key));
 		const ordered = near.filter((dot) => candidates.has(dot.key)).sort((a, b) => cardRank(a) - cardRank(b) || b.r - a.r || byKey(a, b));
 		for (const dot of ordered) {
 			const clear = inflate(cardBox(dot, transform), CARD_GAP / 2);
@@ -111,21 +107,32 @@ export function placeLabels({ rules, level, regions, outlines, dots, transform, 
 	return placed;
 }
 
-/** The labels mid-fade between two levels, both kinds together; see `crossFade`. */
-export function crossFadeAll(next: PlacedLabels, previous: PlacedLabels, progress: number): PlacedLabels {
+/** Where the cards are on each side of a level switch, in screen pixels: those the new level draws and those the old one did. */
+export interface FadingCards {
+	arriving: readonly Box[];
+	leaving: readonly Box[];
+}
+
+/**
+ * The labels mid-fade between two levels, both kinds together; see `crossFade`. The two
+ * levels were placed apart, so what fades can land on something that doesn't:
+ * - a label that is leaving where a label or card is arriving goes at once, rather than draw under it;
+ * - a label that is arriving where a card is leaving waits until that card is mostly gone.
+ */
+export function crossFadeAll(next: PlacedLabels, previous: PlacedLabels, progress: number, cards: FadingCards = { arriving: [], leaving: [] }): PlacedLabels {
 	const regions = crossFade(next.regions, previous.regions, progress);
 	const dots = crossFade(next.dots, previous.dots, progress);
-	// The two levels were placed apart, so a label that is leaving can sit where one arriving does; the leaver goes at once rather than draw over it.
-	const arriving = [...next.regions, ...next.dots].map((label) => label.box);
-	const keep = (label: { box: Box; alpha: number }, still: ReadonlySet<string>, key: string): boolean =>
-		still.has(key) || !arriving.some((box) => intersects(box, label.box));
+	const arriving = [...next.regions, ...next.dots].map((label) => label.box).concat(cards.arriving);
 	const stillRegions = new Set(next.regions.map((label) => label.key));
 	const stillDots = new Set(next.dots.map((label) => label.key));
-	return {
-		regions: regions.filter((label) => keep(label, stillRegions, label.key)),
-		dots: dots.filter((label) => keep(label, stillDots, label.key)),
-		cards: next.cards,
-	};
+	const settle = Math.max(0, Math.min(1, (progress - 0.5) * 2));
+	const adjust = <T extends { key: string; box: Box; alpha: number }>(labels: T[], still: ReadonlySet<string>): T[] =>
+		labels.flatMap((label) => {
+			if (!still.has(label.key)) return arriving.some((box) => intersects(box, label.box)) ? [] : [label];
+			// Arriving (or kept) where a card is leaving: held back until the card has mostly faded.
+			return cards.leaving.some((box) => intersects(box, label.box)) ? [{ ...label, alpha: Math.min(label.alpha, settle) }] : [label];
+		});
+	return { regions: adjust(regions, stillRegions), dots: adjust(dots, stillDots), cards: next.cards };
 }
 
 /**

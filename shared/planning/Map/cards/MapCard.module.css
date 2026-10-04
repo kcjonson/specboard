@@ -21,7 +21,7 @@
 	display: flex;
 	align-items: center;
 	gap: var(--space-2);
-	height: 16px;
+	height: 17px;
 }
 
 /* Centered on the dot's position: the card is anchored by this. */
@@ -31,9 +31,10 @@
 	border-radius: 50%;
 }
 
+/* The canvas draws this glyph at a radius of 8 px, which is 17 px across its 16-unit box. */
 .status {
-	width: 16px;
-	height: 16px;
+	width: 17px;
+	height: 17px;
 }
 
 /* The same ink ring the canvas draws: a gap of surface, then ink. */
@@ -76,6 +77,16 @@
 	gap: var(--space-1);
 	margin-top: auto;
 	overflow: hidden;
+}
+
+/* What the "+N" stands for, for assistive tech: the card has no hover or focus until it becomes operable. */
+.more {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
 }
 
 /* Ink on the badge's tint clears text contrast; the badge's muted gray does not. */

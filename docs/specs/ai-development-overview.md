@@ -558,25 +558,27 @@ outline gave 2 to 6. Text is measured with the canvas's own font metrics and cut
 an ellipsis. Text sits on a halo of the surface so it clears 4.5:1 whatever tint the
 region under it has; the muted ink clears that on the surface in both themes (4.8:1
 light, 6.9:1 dark), and the renderer falls back to full ink in a theme where it
-doesn't. Labels arriving in a fade never draw over labels leaving it: a leaving label
-that sits where an arriving one does goes at once. An item named by another layer (a
+doesn't. Nothing fading draws over something else fading: a label that is leaving
+where a label or a card is arriving goes at once, and one that is arriving where a card
+is leaving waits until that card is mostly gone. An item named by another layer (a
 computer's text block) gets no label of its own at any level.
 
 **Cards.** At the near level an item with room gets a card of real DOM over the
 canvas, built from `@specboard/ui`'s `StatusGlyph`, `Badge`, and `Icon`, with its
 status glyph on its dot so links still meet it. At that level every glyph is drawn at
-one size whatever the scale (8 px in radius for a leaf, up to 1.5 times that for
-in-flight work and folded families), so a card's glyph, a compact label's glyph, and a
-bare glyph match. A card is 184 px wide and exactly 92 px tall, so its box is known
+one size whatever the scale or the item (8 px in radius, which is the 17 px the card's
+SVG is), so nothing changes size when it gains or loses a card. A card is 184 px wide and exactly 92 px tall, so its box is known
 before it renders, and keeps 6 px from every other card. It says the key and title
 (two lines), then one row of marks: the status in words, the sub-status (scoping, PR
 open, needs input, paused), what a blocked item waits on by key (text holds as a
 count, since their text isn't in the Map's read), a linked spec, the PR as `PR #n`, a
-folded family's size, cut to a "+N" (with the rest in its tooltip) when they don't fit
-the row. The corner says whether an agent or a person made the item, and the ink ring
+folded family's size, cut to a "+N" when they don't fit the row (the rest are in the
+card's text for assistive tech; hover and focus come when cards become operable). The corner says whether an agent or a person made the item, and the ink ring
 goes on the glyph when it needs a person. A card never covers another dot's glyph,
 another card, or anything on the taken list; one that doesn't fit leaves its dot as a
-glyph with a one-line label, or as a bare glyph where that has no room either. A card
+glyph with a one-line label, or as a bare glyph where that has no room either. A
+folded family that can be opened stays a glyph with its plus control and a one-line
+label, since a card would cover the control and cards can't be operated yet. A card
 may run past the plot's own outer edge. Cards are display only until the interaction
 task: the layer ignores the pointer so the canvas keeps panning. Cards within 48 px of
 the plot are placed, at most 300, and a pan moves the one element they sit in rather
@@ -719,7 +721,7 @@ Fixed, outside the Map:
   are placed around it, and it sits above the cards. Clicking it flies the camera to
   that point at the current scale, and dragging in it moves the camera with no
   flight. It takes keyboard focus, and the arrow keys move the view by a quarter of
-  the plot.
+  the plot; a target past the Map's edge is held to the edge, as a pan is.
 - Search uses the toolbar's search and the board's matching rules (title,
   description, or key, at any depth). It dims non-matches, labels the matches, and
   puts the changes view's stepping bar on the canvas ("Matches for "checklist", 2

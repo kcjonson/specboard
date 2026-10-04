@@ -18,7 +18,7 @@ function scene(): { rows: OverlayFrame['rows']; set: (k: number, keys?: string[]
 	const b = new BoardBuilder();
 	const rows = new Map<string, ReturnType<BoardBuilder['add']>>();
 	for (let i = 0; i < 4; i++) {
-		const row = b.add({ status: i === 0 ? 'in_progress' : 'ready', title: `Card title ${i}`, subStatus: i === 0 ? 'scoping' : null, specCount: i === 1 ? 1 : 0, prUrl: i === 2 ? 'https://github.com/a/b/pull/7' : null, originActorType: i === 3 ? 'user' : 'agent' });
+		const row = b.add({ status: i === 0 ? 'in_progress' : 'ready', title: `Card title ${i}`, subStatus: i === 0 ? 'scoping' : null, specCount: i === 0 ? 2 : i === 1 ? 1 : 0, prUrl: i === 0 || i === 2 ? 'https://github.com/a/b/pull/7' : null, originActorType: i === 3 ? 'user' : 'agent' });
 		rows.set(row.key, row);
 	}
 	const keys = [...rows.keys()];
@@ -48,8 +48,10 @@ describe('MapCards', () => {
 		const first = cards[0]!.textContent!;
 		expect(first).toContain(keys[0]);
 		expect(first).toContain('Card title 0');
-		expect(first).toContain('Scoping');
 		expect(first).toContain('In Progress');
+		// Too many marks for one row: the rest are said in text for assistive tech, behind a +N.
+		expect(first).toContain('+3');
+		expect(first).toContain('Also: Scoping, 2 specs, PR #7');
 		expect(cards[1]!.textContent).toContain('Ready');
 		expect(cards[1]!.textContent).toContain('Spec');
 		expect(cards[2]!.textContent).toContain('PR #7');

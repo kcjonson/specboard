@@ -828,6 +828,26 @@ describe('MapSurface labels, levels, cards, and the minimap', () => {
 		expect(minimap!.span.height).toBeCloseTo(plot.height / view.k);
 	});
 
+	it('holds a minimap target to the Map: stepping past an edge again and again never leaves it', () => {
+		const { surface, camera, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		const { bounds } = layout.frame;
+		camera.set({ ...camera.transform, k: camera.transform.k * 3 });
+		flush();
+		for (let i = 0; i < 6; i++) {
+			const middle = centerOf(camera.transform, plot);
+			surface.centerOn({ x: middle.x - (bounds.maxX - bounds.minX), y: middle.y }, false);
+			flush();
+			const now = centerOf(camera.transform, plot);
+			expect(now.x).toBeGreaterThanOrEqual(bounds.minX - 1e-6);
+			expect(now.x).toBeLessThanOrEqual(bounds.maxX + 1e-6);
+		}
+		expect(centerOf(camera.transform, plot).x).toBeCloseTo(bounds.minX);
+	});
+
 	it('draws nothing as overlay while there is no layout', () => {
 		const { surface, overlay, flush } = setup();
 		surface.resize(WIDTH, HEIGHT);

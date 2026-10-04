@@ -3,6 +3,7 @@ import {
 	ZOOM_STEP,
 	centerOf,
 	centeredOn,
+	constrainTransform,
 	dotsVisible,
 	fitScale,
 	fitTransform,
@@ -15,6 +16,7 @@ import {
 } from './camera';
 import { controlAt, expandControls, labelControls, type CollapseControl } from './collapse-controls';
 import type { Box } from './box-index';
+import { cardBox } from './cards/card-culling';
 import { buildDrawList, type DrawDot, type DrawList } from './draw-list';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
 import type { MapLayout, MapPoint } from './layout/types';
@@ -239,11 +241,12 @@ export class MapSurface {
 	/** Puts a layout point in the middle of the plot at the current scale: a click or drag in the minimap. */
 	centerOn(point: MapPoint, fly: boolean): void {
 		if (!this.layout) return;
-		const view = centeredOn(point, this.camera.transform.k, this.viewport);
+		// The camera's own pan limit applies to gestures; a target set directly has to be held to it here.
+		const view = constrainTransform(centeredOn(point, this.camera.transform.k, this.viewport), this.layout.frame.bounds, this.viewport);
 		if (fly) this.camera.flyTo(view);
 		else this.camera.set(view);
 		this.pristine = false;
-		this.handlers.onSettle(nearestDot(this.drawing.dots, point)?.key ?? null);
+		this.handlers.onSettle(nearestDot(this.drawing.dots, centerOf(view, this.viewport))?.key ?? null);
 	}
 
 	/** Moves to an item, with a flight unless told otherwise. False when the Map has no such item. */
@@ -317,13 +320,12 @@ export class MapSurface {
 				viewport: this.viewport,
 				measure: (text, font) => this.renderer.measureLabel(text, font),
 				named: this.named,
-				occupied: { circles: expand.map((control) => ({ ...control.at, owner: control.key })), boxes: reserved },
+				occupied: { circles: expand.map((control) => control.at), boxes: reserved },
 			})
 			: { labels: { regions: [], dots: [], cards: [] }, cards: [] };
 		const { labels } = placed;
 		const cards = this.cardsFor(level, placed.cards, transform);
-		// A card sits over its dot's expand control, so that control isn't offered while the card is there.
-		this.controls = [...labelControls(labels.regions), ...expand.filter((control) => !cards.set?.keys.has(control.key))];
+		this.controls = [...labelControls(labels.regions), ...expand];
 		this.renderer.draw({
 			dots,
 			regions: outlines,
@@ -348,8 +350,11 @@ export class MapSurface {
 		const placed = placeLabels({ ...input, rules: LABEL_RULES[level.level] });
 		if (level.from === null) return { labels: placed, cards: placed.cards };
 		const previous = placeLabels({ ...input, level: level.from, rules: LABEL_RULES[level.from] });
+		const boxes = (dots: readonly DrawDot[]): Box[] => dots.map((dot) => cardBox(dot, input.transform));
+		const arriving = level.level === 'near' ? placed.cards : [];
+		const leaving = level.from === 'near' ? previous.cards : [];
 		return {
-			labels: crossFadeAll(placed, previous, level.progress),
+			labels: crossFadeAll(placed, previous, level.progress, { arriving: boxes(arriving), leaving: boxes(leaving) }),
 			cards: level.level === 'near' ? placed.cards : level.from === 'near' ? previous.cards : [],
 		};
 	}

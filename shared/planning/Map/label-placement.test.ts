@@ -267,12 +267,35 @@ describe('card placement at the near level', () => {
 		expect(placeLabels(input({ dots: scatter(40, 1), level: 'middle', rules: LABEL_RULES.middle })).cards).toEqual([]);
 	});
 
-	it('lets a dot\'s own card sit over its own expand control, and keeps every other card off it', () => {
+	it('leaves a family that can be opened as a glyph with its plus, and a one-line label, not a card', () => {
 		const folded = drawDot('F', 500, 250, { folded: { count: 9, rollup: { done: 8, in_flight: 0, next: 0, later: 0 }, expandable: true } });
-		const owned = { x: 512, y: 238, r: 6, owner: 'F' };
-		expect(placeLabels(nearInput([folded], { occupied: { circles: [owned], boxes: [] } })).cards).toEqual([folded]);
-		// The same control belonging to nobody here is just something in the way.
-		expect(placeLabels(nearInput([folded], { occupied: { circles: [{ ...owned, owner: 'elsewhere' }], boxes: [] } })).cards).toEqual([]);
+		const summarized = drawDot('S', 800, 250, { folded: { count: 40, rollup: { done: 39, in_flight: 0, next: 0, later: 0 }, expandable: false } });
+		const control = { x: 512, y: 238, r: 6 };
+		const placed = placeLabels(nearInput([folded, summarized], { occupied: { circles: [control], boxes: [] } }));
+		// One that can't be opened has no control to cover, so it gets its card.
+		expect(placed.cards).toEqual([summarized]);
+		expect(placed.dots.map((label) => label.key)).toEqual(['F']);
+		expect(placed.dots[0]!.box.x < control.x + control.r && placed.dots[0]!.box.x + placed.dots[0]!.box.w > control.x - control.r && placed.dots[0]!.box.y < control.y + control.r && placed.dots[0]!.box.y + placed.dots[0]!.box.h > control.y - control.r).toBe(false);
+	});
+});
+
+describe('crossFadeAll around cards', () => {
+	const label = (key: string, x: number): { key: string; text: string; box: Box; strong: boolean; alpha: number } => ({ key, text: key, box: { x, y: 100, w: 40, h: 14 }, strong: false, alpha: 1 });
+	const card: Box = { x: 90, y: 60, w: 184, h: 92 };
+
+	it('drops a leaving label that lands under an arriving card (middle to near)', () => {
+		const faded = crossFadeAll({ regions: [], dots: [], cards: [] }, { regions: [], dots: [label('under', 150), label('clear', 400)], cards: [] }, 0.3, { arriving: [card], leaving: [] });
+		expect(faded.dots.map((l) => l.key)).toEqual(['clear']);
+	});
+
+	it('holds an arriving label back while a card that is leaving still covers it (near to middle)', () => {
+		const next = { regions: [], dots: [label('under', 150), label('clear', 400)], cards: [] };
+		const early = crossFadeAll(next, { regions: [], dots: [], cards: [] }, 0.4, { arriving: [], leaving: [card] });
+		expect(early.dots.find((l) => l.key === 'under')!.alpha).toBe(0);
+		expect(early.dots.find((l) => l.key === 'clear')!.alpha).toBeCloseTo(0.4);
+		const late = crossFadeAll(next, { regions: [], dots: [], cards: [] }, 0.9, { arriving: [], leaving: [card] });
+		expect(late.dots.find((l) => l.key === 'under')!.alpha).toBeCloseTo(0.8);
+		expect(crossFadeAll(next, { regions: [], dots: [], cards: [] }, 1, { arriving: [], leaving: [card] }).dots.find((l) => l.key === 'under')!.alpha).toBe(1);
 	});
 });
 
