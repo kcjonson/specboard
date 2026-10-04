@@ -408,8 +408,9 @@ only signal.
   done fraction.
 - A PR link when `pr_url` is set.
 - On the canvas the sub-status cues are shapes on the glyph: scoping dashes the
-  ring, paused swaps a ring's fill for two bars (or cuts them out of a solid
-  glyph), and needs input and PR open take the ink ring. A small diamond at the
+  ring (or draws a dashed ring around a solid glyph), paused swaps a ring's fill
+  for two bars (or cuts them out of a solid glyph), and needs input and PR open
+  take the ink ring. A small diamond at the
   lower right is the PR mark, on any item with `pr_url` or PR open. Every dot sits
   on a disc of `--color-surface`, so a region's tint never lowers its contrast.
 - At near zoom: a linked spec, and whether an agent or a person created the item

@@ -426,13 +426,14 @@ export function insideLoop(x: number, y: number, loop: Float64Array): boolean {
 }
 
 /**
- * Smooths a traced loop: every other point becomes the control point of a quadratic
- * curve through the midpoints around it, which rounds off the grid's corners.
+ * Smooths a traced loop: each point becomes the control point of a quadratic curve
+ * through the midpoints around it, which rounds off the grid's corners. A curve cuts
+ * a concave corner by at most a quarter of a grid edge, which the hairline between
+ * neighbors and the nesting margin both absorb; the outline tests check the drawn
+ * curves as well as the traced loops.
  */
 function smooth(loop: Float64Array): Pick<RegionOutline, 'curve' | 'bounds' | 'top' | 'bottom'> {
-	const n = loop.length / 2;
-	const ring: number[] = [];
-	for (let i = 0; i < n; i += 2) ring.push(loop[2 * i]!, loop[2 * i + 1]!);
+	const ring = loop;
 	const m = ring.length / 2;
 	const curve = new Float64Array(2 + 4 * m);
 	const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };

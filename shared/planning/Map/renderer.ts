@@ -126,6 +126,8 @@ const INK_WIDTH = 1.5;
 /** A folded dot writes its count inside once it's this big on screen. */
 const COUNT_MIN_RADIUS = 8;
 const SCOPING_DASH = [2.2, 1.4];
+/** The dashed scoping ring around a solid glyph, in glyph units: just outside the octagon. */
+const SCOPING_RING = 8.75;
 const DISCOVERED_DASH = [2, 3];
 
 const PHASE_STATUS: Record<MapPhase, MapItemStatus> = { done: 'done', in_flight: 'in_progress', next: 'ready', later: 'blocked' };
@@ -235,6 +237,13 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		if (stroke) {
 			if (cue === 'scoping') ctx.setLineDash(SCOPING_DASH);
 			ctx.stroke(stroke);
+			ctx.setLineDash([]);
+		} else if (cue === 'scoping') {
+			// A solid glyph (blocked, say) has no ring to dash, so scoping gets a dashed ring around it.
+			ctx.setLineDash(SCOPING_DASH);
+			ctx.beginPath();
+			ctx.arc(GLYPH_BOX / 2, GLYPH_BOX / 2, SCOPING_RING, 0, 2 * Math.PI);
+			ctx.stroke();
 			ctx.setLineDash([]);
 		}
 		if (count !== null && status === 'done') {

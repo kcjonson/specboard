@@ -28,6 +28,20 @@ function boxesMeet(a: Float64Array, b: Float64Array): boolean {
 	return ax0! <= bx1! && ax1! >= bx0! && ay0! <= by1! && ay1! >= by0!;
 }
 
+/** The smoothed curve the renderer draws, sampled along each quadratic into a polygon. */
+function drawn(outline: RegionOutline): Float64Array {
+	const { curve } = outline;
+	const out: number[] = [];
+	for (let i = 2; i < curve.length; i += 4) {
+		const [sx, sy, cx, cy, ex, ey] = [curve[i - 2]!, curve[i - 1]!, curve[i]!, curve[i + 1]!, curve[i + 2]!, curve[i + 3]!];
+		for (const t of [0, 0.25, 0.5, 0.75]) {
+			const u = 1 - t;
+			out.push(u * u * sx + 2 * u * t * cx + t * t * ex, u * u * sy + 2 * u * t * cy + t * t * ey);
+		}
+	}
+	return Float64Array.from(out);
+}
+
 /** The loop's width across a vertical line at x: the span between its crossings. */
 function heightAt(outline: RegionOutline, x: number): number {
 	let low = Infinity;
@@ -42,7 +56,7 @@ function heightAt(outline: RegionOutline, x: number): number {
 
 /**
  * Every structural promise the spec makes about outlines (spec, Regions), checked on
- * traced loops. Members land inside their own outline only where the layout kept
+ * the traced loops and again on the smoothed curves the renderer draws. Members land inside their own outline only where the layout kept
  * families apart; where it lets two families interleave, the neighbor wins that ground.
  */
 function expectSolidAndApart(inputs: readonly RegionInput[], outlines: readonly RegionOutline[], { membersInside = true, every = 1 } = {}): void {
@@ -59,17 +73,21 @@ function expectSolidAndApart(inputs: readonly RegionInput[], outlines: readonly 
 		const outline = byKey.get(i.key)!;
 		for (const m of i.members) expect(insideLoop(m.x, m.y, outline.loop), `${m.x},${m.y} in ${i.key}`).toBe(true);
 	}
-	for (const a of outlines) {
-		const above = ancestors(a.key);
-		for (const b of outlines) {
-			if (a === b) continue;
-			if (above.has(b.key)) {
-				// Nested regions sit inside every region around them.
-				for (const [x, y] of points(a.loop, every)) expect(insideLoop(x, y, b.loop), `${a.key} inside ${b.key}`).toBe(true);
-			} else if (!ancestors(b.key).has(a.key)) {
-				// Unrelated regions never overlap.
-				if (!boxesMeet(a.loop, b.loop)) continue;
-				for (const [x, y] of points(a.loop, every)) expect(insideLoop(x, y, b.loop), `${a.key} apart from ${b.key}`).toBe(false);
+	for (const shape of [(o: RegionOutline): Float64Array => o.loop, drawn]) {
+		for (const a of outlines) {
+			const above = ancestors(a.key);
+			const own = shape(a);
+			for (const b of outlines) {
+				if (a === b) continue;
+				const theirs = shape(b);
+				if (above.has(b.key)) {
+					// Nested regions sit inside every region around them.
+					for (const [x, y] of points(own, every)) expect(insideLoop(x, y, theirs), `${a.key} inside ${b.key}`).toBe(true);
+				} else if (!ancestors(b.key).has(a.key)) {
+					// Unrelated regions never overlap.
+					if (!boxesMeet(own, theirs)) continue;
+					for (const [x, y] of points(own, every)) expect(insideLoop(x, y, theirs), `${a.key} apart from ${b.key}`).toBe(false);
+				}
 			}
 		}
 	}
