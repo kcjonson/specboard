@@ -765,6 +765,42 @@ describe('MapSurface labels, levels, cards, and the minimap', () => {
 		}
 	});
 
+	it('stops painting and asking for frames once torn down, even in the middle of a fade', () => {
+		const { surface, camera, renderer, overlay, flush, frames, clock } = setup();
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		flush();
+		camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + 2)));
+		flush();
+		expect(frames).toHaveLength(1);
+		const painted = renderer.frames.length;
+		const published = overlay.frame;
+
+		surface.destroy();
+		clock.now += FADE_MS / 4;
+		flush();
+		expect(renderer.frames.length).toBe(painted);
+		expect(overlay.frame).toBe(published);
+		expect(frames).toHaveLength(0);
+	});
+
+	it('carries the camera\'s own center and the plot\'s span for the minimap\'s keys', () => {
+		const { surface, camera, overlay, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		const fit = fitTransform(layout.frame.bounds, plot).k;
+		const view = viewOf(layout, keys[6]!, fit * 2.4);
+		camera.set(view);
+		flush();
+		const { minimap } = overlay.frame;
+		expect(minimap!.center).toEqual(centerOf(view, plot));
+		expect(minimap!.span.width).toBeCloseTo(plot.width / view.k);
+		expect(minimap!.span.height).toBeCloseTo(plot.height / view.k);
+	});
+
 	it('draws nothing as overlay while there is no layout', () => {
 		const { surface, overlay, flush } = setup();
 		surface.resize(WIDTH, HEIGHT);

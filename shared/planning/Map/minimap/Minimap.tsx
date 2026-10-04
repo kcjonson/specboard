@@ -72,7 +72,7 @@ export function Minimap({ store, onCenter }: MinimapProps): JSX.Element | null {
 	}, [dots, scale]);
 
 	if (!frame) return null;
-	const { panel, size, bounds, viewport } = frame;
+	const { panel, size, bounds, viewport, center, span } = frame;
 	const point = (event: PointerEvent): MapPoint => {
 		const rect = specks.current!.getBoundingClientRect();
 		return fromMinimap(size, bounds, { x: event.clientX - rect.left, y: event.clientY - rect.top });
@@ -81,8 +81,7 @@ export function Minimap({ store, onCenter }: MinimapProps): JSX.Element | null {
 		const step = ARROWS[event.key];
 		if (!step || event.ctrlKey || event.metaKey || event.altKey) return;
 		event.preventDefault();
-		const center = fromMinimap(size, bounds, { x: viewport.x + viewport.w / 2, y: viewport.y + viewport.h / 2 });
-		onCenter({ x: center.x + step.x * KEY_STEP * (viewport.w / size.scale), y: center.y + step.y * KEY_STEP * (viewport.h / size.scale) }, true);
+		onCenter({ x: center.x + step.x * KEY_STEP * span.width, y: center.y + step.y * KEY_STEP * span.height }, true);
 	};
 	return (
 		<div

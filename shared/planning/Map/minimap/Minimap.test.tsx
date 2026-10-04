@@ -20,6 +20,8 @@ const size = minimapSize(bounds);
 
 function frameAt(transform: { k: number; x: number; y: number }): MinimapFrame {
 	return {
+		center: centerOf(transform, plot),
+		span: { width: plot.width / transform.k, height: plot.height / transform.k },
 		panel: minimapPanel(size, plot),
 		size,
 		bounds,
@@ -129,6 +131,19 @@ describe('Minimap', () => {
 		fireEvent.keyDown(panel, { key: 'a' });
 		fireEvent.keyDown(panel, { key: 'ArrowRight', metaKey: true });
 		expect(onCenter).not.toHaveBeenCalled();
+	});
+
+	it('moves by the whole plot\'s span from the camera\'s own center, even where the Map\'s edge cuts the rectangle', () => {
+		// The plot's middle is at layout x = -1000, the Map's left edge, so half the rectangle is off the Map.
+		const transform = { k: 3, x: 3600, y: 350 };
+		const store = new OverlayStore();
+		const onCenter = vi.fn();
+		const { container } = render(<Minimap store={store} onCenter={onCenter} />);
+		act(() => store.publish({ ...EMPTY_OVERLAY, minimap: frameAt(transform) }));
+		fireEvent.keyDown(container.firstChild as HTMLElement, { key: 'ArrowLeft' });
+		expect(onCenter.mock.lastCall![0].x).toBeCloseTo(-1000 - 0.25 * (plot.width / transform.k));
+		fireEvent.keyDown(container.firstChild as HTMLElement, { key: 'ArrowRight' });
+		expect(onCenter.mock.lastCall![0].x).toBeCloseTo(-1000 + 0.25 * (plot.width / transform.k));
 	});
 
 	it('maps the miniature to the viewport rectangle it draws: what a click on the rectangle\'s middle centers is the plot\'s middle', () => {

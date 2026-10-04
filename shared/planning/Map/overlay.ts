@@ -2,7 +2,7 @@ import type { MapItemRow } from '@specboard/core/map-read';
 import type { Box } from './box-index';
 import type { Transform } from './camera';
 import type { DrawDot } from './draw-list';
-import type { MapBounds } from './layout/types';
+import type { MapBounds, MapPoint } from './layout/types';
 import type { MinimapSize } from './minimap/minimap';
 
 /**
@@ -25,8 +25,11 @@ export interface MinimapFrame {
 	panel: Box;
 	size: MinimapSize;
 	bounds: MapBounds;
-	/** What the plot shows, in the miniature's pixels. */
+	/** What the plot shows, in the miniature's pixels, cut to the miniature: for drawing only. */
 	viewport: Box;
+	/** The layout point in the middle of the plot and how much of the Map the plot covers, whole even where the Map's edge cuts the rectangle: what the keys move by. */
+	center: MapPoint;
+	span: { width: number; height: number };
 	dots: readonly DrawDot[];
 }
 

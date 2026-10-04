@@ -96,6 +96,8 @@ export class MapSurface {
 	/** How opaque the cards were on the last frame, and what they were when the fade now running began, so a fade turned around halfway goes back from where it was. */
 	private cardAlpha = 0;
 	private cardFadeFrom = 0;
+	/** Torn down: a frame already queued paints nothing and queues no more. */
+	private disposed = false;
 
 	constructor(deps: MapSurfaceDeps, handlers: MapSurfaceHandlers) {
 		this.renderer = deps.renderer;
@@ -110,6 +112,7 @@ export class MapSurface {
 	}
 
 	destroy(): void {
+		this.disposed = true;
 		this.unsubscribe();
 		// A deferred outline task still pending finds the token moved and does nothing.
 		this.deferred++;
@@ -273,6 +276,7 @@ export class MapSurface {
 
 	paint(): void {
 		this.painting = false;
+		if (this.disposed) return;
 		const transform = this.camera.transform;
 		const layout = this.layout;
 		const { dots, regions, links } = this.drawing;
@@ -359,7 +363,11 @@ export class MapSurface {
 		const { bounds } = layout.frame;
 		const size: MinimapSize = minimapSize(bounds);
 		const panel = minimapPanel(size, this.viewport);
-		return { panel, frame: { panel, size, bounds, viewport: minimapViewport(size, bounds, transform, this.viewport), dots: this.drawing.dots } };
+		const span = { width: this.viewport.width / transform.k, height: this.viewport.height / transform.k };
+		return {
+			panel,
+			frame: { panel, size, bounds, viewport: minimapViewport(size, bounds, transform, this.viewport), center: centerOf(transform, this.viewport), span, dots: this.drawing.dots },
+		};
 	}
 
 	private take(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): void {
