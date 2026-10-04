@@ -103,7 +103,7 @@
 	overflow: hidden;
 }
 
-/* What the "+N" stands for, for assistive tech: the card has no hover or focus until it becomes operable. */
+/* What the "+N" stands for, for assistive tech. */
 .more {
 	position: absolute;
 	width: 1px;

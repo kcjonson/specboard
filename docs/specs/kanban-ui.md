@@ -498,6 +498,10 @@ a document load of it (pasted link, reload, new tab) is redirected by the fronte
 service to the standalone page, so following a link to an item never lands on a
 board with a sidebar.
 
+On the Map (`?view=map`) the same drawer overlays the right side of the plot instead of
+narrowing it, and the selected item stays in view
+([ai-development-overview.md](ai-development-overview.md#navigation-and-interaction)).
+
 ---
 
 ## Responsive Behavior
