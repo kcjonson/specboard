@@ -35,6 +35,11 @@ export const COLLISION_PAD = 4;
 export const COLLISION_STRENGTH = 0.7;
 export const SEPARATION_FACTOR = 2.5;
 export const SEPARATION_RANGE = 60;
+/** Sibling regions sharing a stretch of time sit at least this far apart, edge to edge, pushed at this strength. */
+export const REGION_BAND_GAP = 50;
+export const REGION_BAND_STRENGTH = 3;
+/** About how tall a family's row stands, for estimating a stack of them before laying anything out. */
+export const ROW_HEIGHT = 40;
 export const MIDLINE_STRENGTH = 0.03;
 
 /** Fractions of the time scale's unit width past now. */

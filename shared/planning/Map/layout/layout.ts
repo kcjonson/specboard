@@ -12,7 +12,6 @@ import {
 	COMPUTER_X,
 	CROSS_LINK_GAP,
 	CROSS_LINK_STRENGTH,
-	FAMILY_STRENGTH,
 	FIT_DOTS,
 	FIT_MAX,
 	FIT_MIN,
@@ -29,8 +28,9 @@ import {
 	PARENT_TIME_PULL,
 	REFIT_ALPHA,
 	REFIT_TICKS,
-	REPULSION,
+	REGION_BAND_GAP,
 	RESERVED_STRIP,
+	ROW_HEIGHT,
 	SESSION_MIDLINE,
 	SESSION_PULL,
 	SESSION_RADIUS,
@@ -42,9 +42,11 @@ import {
 	WORK_STRENGTH,
 } from './constants';
 import {
+	bloomWidth,
 	chainRow,
 	collision,
 	createOrderPass,
+	familyRows,
 	relatedChains,
 	type OrderConstraint,
 	type Orders,
@@ -52,6 +54,7 @@ import {
 	type SimNode,
 } from './forces';
 import { stronglyConnected, topologicalOrder, type Edge } from './graph';
+import { regionBands, type Band } from './bands';
 import { buildModel, type MapModel, type ModelItem } from './model';
 import { spacing } from './spacing';
 import { createTimeScale, edgeOf, quietOf, ticksOf, timeToX } from './time-scale';
@@ -80,8 +83,11 @@ interface Graph {
 	nodes: SimNode[];
 	nodeOf: Map<string, SimNode>;
 	links: SimLink[];
+	/** Parent hub to child. */
+	familyLinks: Array<[SimNode, SimNode]>;
 	chainLinks: Array<[SimNode, SimNode]>;
 	chainGroups: Array<[SimNode[], SimNode[]]>;
+	bands: Band[];
 	orders: Orders;
 }
 
@@ -141,19 +147,28 @@ function buildGraph(model: MapModel, scale: MapTimeScale): Graph {
 	const repNode = (item: ModelItem): SimNode => nodeOf.get(item.rep.key)!;
 	const links: SimLink[] = [];
 	const linked = new Set<string>();
+	const pairId = (a: SimNode, b: SimNode): string => (a.key < b.key ? `${a.key}\n${b.key}` : `${b.key}\n${a.key}`);
 	const link = (source: SimNode, target: SimNode, gap: number, strength: number): void => {
 		if (source === target) return;
-		const id = source.key < target.key ? `${source.key}\n${target.key}` : `${target.key}\n${source.key}`;
+		const id = pairId(source, target);
 		if (linked.has(id)) return;
 		linked.add(id);
 		const distance = source.hub || target.hub ? 0 : source.r + target.r + gap;
 		links.push({ source, target, distance, strength });
 	};
 
-	// Strongest first: a pair keeps the first link it gets.
+	// Strongest first: a pair keeps the first link it gets. Family links pull across time
+	// only (see familyRows), so they're kept apart from the springs, but they still claim
+	// their pair.
+	const familyLinks: Array<[SimNode, SimNode]> = [];
 	for (const item of model.items) {
 		if (!item.hub) continue;
-		for (const child of item.children) if (!model.chainBlocked.has(child)) link(repNode(item), repNode(child), 0, FAMILY_STRENGTH);
+		for (const child of item.children) {
+			if (model.chainBlocked.has(child)) continue;
+			const pair: [SimNode, SimNode] = [repNode(item), repNode(child)];
+			linked.add(pairId(...pair));
+			familyLinks.push(pair);
+		}
 	}
 	const chainLinks: Array<[SimNode, SimNode]> = [];
 	for (const chain of model.chains) {
@@ -191,7 +206,32 @@ function buildGraph(model: MapModel, scale: MapTimeScale): Graph {
 			.map(repNode),
 	);
 
-	return { nodes, nodeOf, links, chainLinks, chainGroups, orders: { done, inFlight, dependencies: dependenciesOf(model, nodes, repNode), gap: ORDER_GAP } };
+	return { nodes, nodeOf, links, familyLinks, chainLinks, chainGroups, bands: bandsOf(model, repNode), orders: { done, inFlight, dependencies: dependenciesOf(model, nodes, repNode), gap: ORDER_GAP } };
+}
+
+/**
+ * Each region's center and direct dots, for keeping sibling regions apart. A parent
+ * with regions nested in it also gets a band of its own direct children, a sibling to
+ * those regions: a nested region's outline has to stay inside its parent's, and that
+ * holds when the parent's own children keep a row of their own rather than sitting
+ * between the nested region's dots. Its direct dots then belong to that band.
+ */
+function bandsOf(model: MapModel, repNode: (item: ModelItem) => SimNode): Band[] {
+	const hubs = model.items.filter((item) => item.hub);
+	const index = new Map(hubs.map((item, i) => [item, i]));
+	const bands: Band[] = hubs.map((item) => ({ hub: repNode(item), direct: [], parent: item.parent ? index.get(item.parent)! : -1 }));
+	const ownBand = new Map<ModelItem, Band>();
+	for (const hub of hubs) {
+		if (!hub.children.some((child) => child.hub) || hub.children.every((child) => child.hub)) continue;
+		const band: Band = { hub: null, direct: [], parent: index.get(hub)! };
+		ownBand.set(hub, band);
+		bands.push(band);
+	}
+	for (const item of model.items) {
+		if (item.rep !== item || item.hub || !item.parent) continue;
+		(ownBand.get(item.parent) ?? bands[index.get(item.parent)!]!).direct.push(repNode(item));
+	}
+	return bands;
 }
 
 /**
@@ -233,18 +273,6 @@ function dependenciesOf(model: MapModel, nodes: SimNode[], repNode: (item: Model
 		start = end;
 	}
 	return acyclic;
-}
-
-/**
- * Half the width a group of dots takes when one target pulls them all. Repulsion
- * falls off as 1/d, so a group under the time pull and the midline settles as a
- * uniformly filled ellipse whose half-width is sqrt(2 * Q * ky / (kx * (kx + ky))),
- * Q being the group's total repulsion. A single dot has none.
- */
-function bloomWidth(count: number): number {
-	const kx = TIME_PULL;
-	const ky = MIDLINE_STRENGTH;
-	return Math.sqrt((2 * REPULSION * Math.max(0, count - 1) * ky) / (kx * (kx + ky)));
 }
 
 /**
@@ -290,8 +318,10 @@ function simulate(graph: Graph, ticks: number, alpha: number): number {
 		.force('time', forceX<SimNode>((n) => n.tx).strength((n) => n.kx))
 		.force('midline', forceY<SimNode>((n) => n.ty).strength((n) => n.ky))
 		.force('links', forceLink<SimNode, SimLink>(graph.links).distance((l) => l.distance).strength((l) => l.strength))
+		.force('family', familyRows(graph.familyLinks))
 		.force('chainRow', chainRow(graph.chainLinks))
 		.force('relatedChains', relatedChains(graph.chainGroups))
+		.force('bands', regionBands(graph.bands))
 		.force('spacing', spacing())
 		.force('collision', collision());
 	const enforce = createOrderPass(graph.orders);
@@ -342,6 +372,39 @@ interface Settled {
 }
 
 /**
+ * How tall the stacked rows of the busiest stretch of time will stand: top-level
+ * families sharing time sit one above another (see regionBands), so the most families
+ * alive at any one moment, each a row plus the gap between rows, is the Map's least
+ * height. Measured on the scale's unit width of 1, since it doesn't depend on the width.
+ */
+function stackedHeight(model: MapModel, unitScale: MapTimeScale): number {
+	const spans = new Map<ModelItem, { from: number; to: number }>();
+	for (const item of model.items) {
+		if (item.rep !== item || item.hub || !item.parent) continue;
+		let top = item.parent;
+		while (top.parent) top = top.parent;
+		const x = timeToX(unitScale, item.anchor);
+		const span = spans.get(top);
+		if (span) {
+			span.from = Math.min(span.from, x);
+			span.to = Math.max(span.to, x);
+		} else spans.set(top, { from: x, to: x });
+	}
+	const events = [...spans.values()].flatMap(({ from, to }): Array<[number, number]> => [
+		[from, 1],
+		[to, -1],
+	]);
+	events.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+	let alive = 0;
+	let most = 0;
+	for (const [, change] of events) {
+		alive += change;
+		most = Math.max(most, alive);
+	}
+	return most * (ROW_HEIGHT + REGION_BAND_GAP);
+}
+
+/**
  * A cold start, fitted in two passes so the settled Map matches the canvas: lay out
  * at a trial width, then rescale time so the width the dots take matches the height
  * they took. A settled Map's area grows with its dots, so the trial width grows with
@@ -352,7 +415,10 @@ interface Settled {
  */
 function coldLayout(model: MapModel, edge: number, aspect: number): Settled {
 	const dotCount = model.items.filter((item) => item.rep === item && !item.hub).length;
-	const trialUnit = FIT_UNIT * aspect * Math.max(1, Math.sqrt(dotCount / FIT_DOTS));
+	const unitScale = createTimeScale(edge, model.times, 1);
+	// The Map's width per unit, as boundsOf measures it: the span of time plus the reserved strip past now.
+	const unitWidth = -timeToX(unitScale, model.times[0] ?? edge) + RESERVED_STRIP;
+	const trialUnit = Math.max(FIT_UNIT * aspect * Math.sqrt(Math.max(1, dotCount / FIT_DOTS)), (aspect * stackedHeight(model, unitScale)) / unitWidth);
 	const trial = createTimeScale(edge, model.times, trialUnit);
 	const first = buildGraph(model, trial);
 	raiseTargets(first, trial);
@@ -404,7 +470,7 @@ function localLayout(model: MapModel, previous: MapLayoutPrevious): Settled {
 	for (const n of graph.nodes) if (!before[n.key]) mobile.add(n);
 	for (let hop = 0; hop < 2; hop++) {
 		const reached: SimNode[] = [];
-		for (const { source, target } of graph.links) {
+		for (const [source, target] of [...graph.links.map((l): [SimNode, SimNode] => [l.source, l.target]), ...graph.familyLinks]) {
 			if (mobile.has(source) && !mobile.has(target)) reached.push(target);
 			if (mobile.has(target) && !mobile.has(source)) reached.push(source);
 		}
