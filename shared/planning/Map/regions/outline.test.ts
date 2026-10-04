@@ -178,6 +178,21 @@ describe('region outlines', () => {
 		expectSolidAndApart(inputs, outlines);
 	});
 
+	it('stops widening at four levels of nesting, so a deep hierarchy stays nested and cheap', () => {
+		const levels = 12;
+		const inputs = Array.from({ length: levels }, (_, i) =>
+			region(`R${i}`, [[0, 0], [30, 10]], { parentKey: i ? `R${i - 1}` : null, height: levels - i }),
+		);
+		const outlines = traceRegions(inputs, 5);
+		expect(outlines).toHaveLength(levels);
+		const width = (o: RegionOutline): number => o.bounds.maxX - o.bounds.minX;
+		const outer = outlines.find((o) => o.key === 'R0')!;
+		// The outermost is as wide as a lone region with four levels inside it, not eleven.
+		const [four] = traceRegions([region('S', [[0, 0], [30, 10]], { height: 5 })], 5);
+		expect(width(outer)).toBeCloseTo(width(four!), 0);
+		expectSolidAndApart(inputs, outlines);
+	});
+
 	it('draws nothing for a region with no members', () => {
 		expect(traceRegions([region('A', [])], 5)).toEqual([]);
 	});

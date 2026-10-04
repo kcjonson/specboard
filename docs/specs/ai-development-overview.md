@@ -909,8 +909,9 @@ Input for the technical design, not decisions.
   marching squares: a few hundred lines with no dependency. The prototype's whole
   render, 14 regions included, took about 45 ms for 173 dots; outlines only change
   when positions or zoom do, so they're computed once per layout and cached.
-- As built (SPE-229), the region distances (the 32 pad, 12 per nesting level, the
-  20 disk) are layout units, the units the layout spaces families in, so a region
+- As built (SPE-229), the region distances (the 32 pad, 12 per nesting level for
+  up to four levels, so a deep hierarchy can't grow a grid without bound, the 20
+  disk) are layout units, the units the layout spaces families in, so a region
   scales with its dots; only the grid follows the zoom: 5 units below 1.4x, 2.5
   above, never coarser, since a coarser grid can't resolve a long-running epic's
   neck and the epic breaks into islands. The disk filter was nine tenths of the

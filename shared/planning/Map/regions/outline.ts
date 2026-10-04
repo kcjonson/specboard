@@ -17,6 +17,8 @@ import type { MapBounds, MapPoint } from '../layout/types';
 /** A member's field reaches its radius plus this, plus NEST_PAD per level of nesting inside. */
 export const REGION_PAD = 32;
 export const NEST_PAD = 12;
+/** Padding grows for this many levels of nesting and no more, so a deep hierarchy can't grow a region's grid without bound. */
+const NEST_PAD_LEVELS = 4;
 /** The spanning tree's corridor reaches this share of the pad, at this strength. */
 const CORRIDOR_REACH = 0.375;
 const CORRIDOR_STRENGTH = 0.7;
@@ -526,7 +528,7 @@ export function traceRegions(inputs: readonly RegionInput[], step: number): Regi
 		if (!input.members.length) continue;
 		const ancestors = new Set<string>();
 		for (let p = input.parentKey; p && !ancestors.has(p); p = byKey.get(p)?.parentKey ?? null) ancestors.add(p);
-		const closed = closedField(input.members, REGION_PAD + NEST_PAD * (input.height - 1), step);
+		const closed = closedField(input.members, REGION_PAD + NEST_PAD * Math.min(input.height - 1, NEST_PAD_LEVELS), step);
 		working.push({ input, depth: ancestors.size, ancestors, closed, final: null, bounds: fieldBounds(closed, step) });
 	}
 	working.sort((a, b) => a.depth - b.depth || (a.input.key < b.input.key ? -1 : a.input.key > b.input.key ? 1 : 0));
