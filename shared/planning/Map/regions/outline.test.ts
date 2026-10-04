@@ -193,6 +193,22 @@ describe('region outlines', () => {
 		expectSolidAndApart(inputs, outlines);
 	});
 
+	it('traces a nesting thousands deep without an ancestor set per region or a scan of every pair', () => {
+		const levels = 2_000;
+		const inputs = Array.from({ length: levels }, (_, i) =>
+			region(`R${i}`, [[0, 0]], { parentKey: i ? `R${i - 1}` : null, height: levels - i }),
+		);
+		// Two unrelated neighbors beside the chain, so the rival sweep has work to do.
+		inputs.push(region('N1', [[60, 0]]), region('N2', [[-60, 0]]));
+		const outlines = traceRegions(inputs, 5);
+		// Each level keeps a margin inside the one around it, so with one member between them all,
+		// a dozen or so levels in there is no ground left to draw; what does draw still nests.
+		expect(outlines.length).toBeGreaterThan(10);
+		const outer = outlines.find((o) => o.key === 'R0')!;
+		for (const o of outlines) if (o.key.startsWith('R') && o !== outer) for (const [x, y] of points(o.loop)) expect(insideLoop(x, y, outer.loop)).toBe(true);
+		for (const [x, y] of points(outlines.find((o) => o.key === 'N1')!.loop)) expect(insideLoop(x, y, outer.loop)).toBe(false);
+	});
+
 	it('draws nothing for a region with no members', () => {
 		expect(traceRegions([region('A', [])], 5)).toEqual([]);
 	});

@@ -498,11 +498,56 @@ function keepComponent(field: Field, seed: MapPoint | undefined, step: number): 
 interface Working {
 	input: RegionInput;
 	depth: number;
-	ancestors: Set<string>;
+	/** Preorder entry and exit in the region tree: a is an ancestor of b exactly when a's span holds b's. */
+	enter: number;
+	exit: number;
 	closed: Field;
-	final: Field | null;
 	bounds: MapBounds;
+	rivals: Working[];
 }
+
+/**
+ * Each region's depth and preorder span in the region tree, walked with an explicit
+ * stack since nesting has no depth limit. A parent key that names no region, or that
+ * loops, makes a root.
+ */
+function regionTree(inputs: readonly RegionInput[]): Map<string, { depth: number; enter: number; exit: number }> {
+	const keys = new Set(inputs.map((input) => input.key));
+	const children = new Map<string, string[]>();
+	const roots: string[] = [];
+	for (const input of inputs) {
+		if (input.parentKey && keys.has(input.parentKey)) {
+			const siblings = children.get(input.parentKey) ?? [];
+			siblings.push(input.key);
+			children.set(input.parentKey, siblings);
+		} else {
+			roots.push(input.key);
+		}
+	}
+	const tree = new Map<string, { depth: number; enter: number; exit: number }>();
+	let clock = 0;
+	const walk = (root: string): void => {
+		const stack: Array<{ key: string; depth: number; next: number }> = [{ key: root, depth: 0, next: 0 }];
+		tree.set(root, { depth: 0, enter: clock++, exit: 0 });
+		while (stack.length) {
+			const top = stack[stack.length - 1]!;
+			const child = children.get(top.key)?.[top.next++];
+			if (child === undefined) {
+				tree.get(top.key)!.exit = clock++;
+				stack.pop();
+			} else if (!tree.has(child)) {
+				tree.set(child, { depth: top.depth + 1, enter: clock++, exit: 0 });
+				stack.push({ key: child, depth: top.depth + 1, next: 0 });
+			}
+		}
+	};
+	for (const root of roots) walk(root);
+	for (const input of inputs) if (!tree.has(input.key)) walk(input.key);
+	return tree;
+}
+
+const related = (a: Working, b: Working): boolean =>
+	(a.enter <= b.enter && b.exit <= a.exit) || (b.enter <= a.enter && a.exit <= b.exit);
 
 const overlaps = (a: MapBounds, b: MapBounds): boolean => a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
 
@@ -522,28 +567,30 @@ function fieldBounds(field: Field, step: number): MapBounds {
  * cell (i, j) is the same point as any other's.
  */
 export function traceRegions(inputs: readonly RegionInput[], step: number): RegionOutline[] {
-	const byKey = new Map(inputs.map((input) => [input.key, input]));
+	const tree = regionTree(inputs);
 	const working: Working[] = [];
 	for (const input of inputs) {
 		if (!input.members.length) continue;
-		const ancestors = new Set<string>();
-		for (let p = input.parentKey; p && !ancestors.has(p); p = byKey.get(p)?.parentKey ?? null) ancestors.add(p);
 		const closed = closedField(input.members, REGION_PAD + NEST_PAD * Math.min(input.height - 1, NEST_PAD_LEVELS), step);
-		working.push({ input, depth: ancestors.size, ancestors, closed, final: null, bounds: fieldBounds(closed, step) });
+		working.push({ input, ...tree.get(input.key)!, closed, bounds: fieldBounds(closed, step), rivals: [] });
+	}
+	// Rivals are unrelated regions whose grids overlap, found with a sweep along x rather than every pair.
+	const byLeft = [...working].sort((a, b) => a.bounds.minX - b.bounds.minX);
+	for (let a = 0; a < byLeft.length; a++) {
+		const region = byLeft[a]!;
+		for (let b = a + 1; b < byLeft.length && byLeft[b]!.bounds.minX < region.bounds.maxX; b++) {
+			const other = byLeft[b]!;
+			if (!overlaps(region.bounds, other.bounds) || related(region, other)) continue;
+			region.rivals.push(other);
+			other.rivals.push(region);
+		}
 	}
 	working.sort((a, b) => a.depth - b.depth || (a.input.key < b.input.key ? -1 : a.input.key > b.input.key ? 1 : 0));
 	const finals = new Map<string, Field>();
 
 	const outlines: RegionOutline[] = [];
 	for (const region of working) {
-		const { closed } = region;
-		const rivals = working.filter(
-			(other) =>
-				other !== region &&
-				!region.ancestors.has(other.input.key) &&
-				!other.ancestors.has(region.input.key) &&
-				overlaps(region.bounds, other.bounds),
-		);
+		const { closed, rivals } = region;
 		const parent = region.input.parentKey ? finals.get(region.input.parentKey) : undefined;
 		const values = Float32Array.from(closed.values);
 		const { i0, j0, nx, ny } = closed;
