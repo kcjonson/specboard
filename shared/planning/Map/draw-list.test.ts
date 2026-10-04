@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BoardBuilder } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
-import { buildDrawList } from './draw-list';
+import { buildDrawList, subtreeRollups } from './draw-list';
 import { LEAF_RADIUS } from './layout/constants';
 
 describe('draw list', () => {
@@ -161,5 +161,29 @@ describe('draw list, past the read cap', () => {
 		const [dot] = buildDrawList(layout, rows).dots;
 		expect(dot!.key).toBe(summarized.key);
 		expect(dot!.folded).toEqual({ count: 41, rollup: { done: 40, in_flight: 0, next: 0, later: 0 }, expandable: false });
+	});
+});
+
+describe('subtree rollups', () => {
+	it('folds a chain tens of thousands deep in one pass, with no recursion', () => {
+		const b = new BoardBuilder();
+		let parent: string | null = null;
+		for (let i = 0; i < 20_000; i++) parent = b.add({ status: i % 2 ? 'ready' : 'done', parentKey: parent }).key;
+		const rows = new Map(b.rows.map((row) => [row.key, row]));
+		const phases = Object.fromEntries(b.rows.map((row) => [row.key, row.status === 'done' ? 'done' : 'next'] as const));
+		const rollups = subtreeRollups(rows, phases);
+		expect(rollups.get(b.rows[0]!.key)).toEqual({ done: 9_999, in_flight: 0, next: 10_000, later: 0 });
+		expect(rollups.get(b.rows.at(-1)!.key)).toEqual({ done: 0, in_flight: 0, next: 0, later: 0 });
+	});
+
+	it('counts each row once on a parent loop', () => {
+		const b = new BoardBuilder();
+		const one = b.add({ status: 'ready' });
+		const two = b.add({ status: 'ready', parentKey: one.key });
+		one.parentKey = two.key;
+		const rows = new Map(b.rows.map((row) => [row.key, row]));
+		const rollups = subtreeRollups(rows, { [one.key]: 'next', [two.key]: 'next' });
+		const total = (key: string): number => Object.values(rollups.get(key)!).reduce((sum, n) => sum + n, 0);
+		expect(total(one.key) + total(two.key)).toBe(1);
 	});
 });

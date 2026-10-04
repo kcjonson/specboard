@@ -85,32 +85,8 @@ const prOf = (row: MapItemRow): boolean => row.prUrl !== null || row.subStatus =
 export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): DrawList {
 	const weights = planWeights(layout.planOrder);
 	const needs = needsPerson(rows.values());
-	const children = new Map<string, MapItemRow[]>();
-	for (const row of rows.values()) {
-		if (!row.parentKey || !rows.has(row.parentKey)) continue;
-		const siblings = children.get(row.parentKey) ?? [];
-		siblings.push(row);
-		children.set(row.parentKey, siblings);
-	}
-	// Past the read cap a finished family comes back as one row carrying its count; those are all done.
-	const rollupOf = (key: string): Rollup => {
-		const rollup = emptyRollup();
-		// An explicit stack: nesting has no depth limit, so a recursive walk could run out of
-		// stack. Visited keys stop a parent loop in bad data, which the layout drops too.
-		const stack = [key];
-		const seen = new Set(stack);
-		for (let parent = stack.pop(); parent !== undefined; parent = stack.pop()) {
-			for (const child of children.get(parent) ?? []) {
-				if (seen.has(child.key)) continue;
-				seen.add(child.key);
-				rollup[layout.phases[child.key]!]++;
-				rollup.done += child.summarizedDescendants ?? 0;
-				stack.push(child.key);
-			}
-		}
-		rollup.done += rows.get(key)?.summarizedDescendants ?? 0;
-		return rollup;
-	};
+	const rollups = subtreeRollups(rows, layout.phases);
+	const rollupOf = (key: string): Rollup => rollups.get(key) ?? emptyRollup();
 	const collapsed = new Set(layout.collapsed);
 
 	const dots: DrawDot[] = [];
@@ -158,6 +134,69 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 	}
 
 	return { dots, regions, links: linksOf(layout, rows) };
+}
+
+/**
+ * Every row's subtree by phase, in one pass: a breadth-first walk down from the roots
+ * gives each row its place, then the walk in reverse folds each subtree into its
+ * parent's. No recursion, since nesting has no depth limit, and each row is reached
+ * once, so a parent loop in bad data (which the layout drops too) can't spin. Past
+ * the read cap a finished family comes back as one row carrying its count; those
+ * descendants are all done.
+ */
+export function subtreeRollups(rows: ReadonlyMap<string, MapItemRow>, phases: Readonly<Record<string, MapPhase>>): Map<string, Rollup> {
+	const children = new Map<string, MapItemRow[]>();
+	const roots: MapItemRow[] = [];
+	for (const row of rows.values()) {
+		if (!row.parentKey || !rows.has(row.parentKey)) {
+			roots.push(row);
+			continue;
+		}
+		const siblings = children.get(row.parentKey) ?? [];
+		siblings.push(row);
+		children.set(row.parentKey, siblings);
+	}
+	const order: MapItemRow[] = [];
+	const parentOf = new Map<string, string>();
+	const reached = new Set<string>();
+	const walk = (start: MapItemRow): void => {
+		if (reached.has(start.key)) return;
+		reached.add(start.key);
+		const queue = [start];
+		for (let at = 0; at < queue.length; at++) {
+			const row = queue[at]!;
+			order.push(row);
+			for (const child of children.get(row.key) ?? []) {
+				if (reached.has(child.key)) continue;
+				reached.add(child.key);
+				parentOf.set(child.key, row.key);
+				queue.push(child);
+			}
+		}
+	};
+	for (const root of roots) walk(root);
+	// Rows on a parent loop have no root above them.
+	for (const row of rows.values()) walk(row);
+
+	const rollups = new Map<string, Rollup>();
+	for (const row of order) {
+		const rollup = emptyRollup();
+		rollup.done += row.summarizedDescendants ?? 0;
+		rollups.set(row.key, rollup);
+	}
+	for (let i = order.length - 1; i >= 0; i--) {
+		const row = order[i]!;
+		const parent = parentOf.get(row.key);
+		if (parent === undefined) continue;
+		const into = rollups.get(parent)!;
+		const own = rollups.get(row.key)!;
+		into[phases[row.key]!]++;
+		into.done += own.done;
+		into.in_flight += own.in_flight;
+		into.next += own.next;
+		into.later += own.later;
+	}
+	return rollups;
 }
 
 /** Chain links, the other blocker links, and discovered-from, each between the nodes that draw its two items. */
