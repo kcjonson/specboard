@@ -1032,14 +1032,17 @@ Input for the technical design, not decisions.
   components draw cards at near zoom, culled to the viewport (real text, real
   focus, and `@specboard/ui` reuse). `d3-zoom` (about 15 KB) runs the camera.
 - As built (SPE-230), the cards sit in one translated element, so a pan is one style
-  write and the cards re-render only when the set in view changes. On a generated
-  2,000-item board at near zoom with 34 to 58 cards in view, panning at 1x pixel ratio
-  held 60 fps (median frame 16.7 ms, 95th percentile 18.4 ms, the Map's paint 4 ms of
-  it on average), with an occasional stall of up to 66 ms (a handful of frames in
-  four 400-frame runs). At 2x the same pan runs
-  at 30 fps with or without cards, since the 2,560 px canvas fill is what a software
-  rasterizer can't keep up with, not the cards. Label placement is a grid lookup per
-  candidate spot, redone each frame.
+  write and the cards re-render only when the set in view changes. Cards and labels
+  are placed every frame against a grid of taken boxes. On a generated 2,000-item
+  board panning at 1x pixel ratio held 60 fps (median frame 16.7 ms, 95th percentile
+  18 ms) at the near level with 1 to 14 cards and a compact label on most of the
+  rest (the Map's paint 1.5 to 2 ms on average), and at the middle level with a label
+  on every dot with room (2.5 ms), with occasional stalls, the worst 84 ms at near
+  and 150 ms at middle, a few frames in each 400-frame run. A board that dense has
+  few cards, since none may overlap; before cards were placed apart, 34 to 58 of them
+  panned at 60 fps with the same 18 ms 95th percentile. At 2x pixel ratio the same
+  pan runs at 30 fps with or without cards, since the 2,560 px canvas fill is what a
+  software rasterizer can't keep up with.
 - Ruled out: tldraw (production use needs a license key; React-only; about
   530 KB), Excalidraw (React-only; about 350 KB), and React Flow (React-only, and a
   node editor rather than a layout engine).
