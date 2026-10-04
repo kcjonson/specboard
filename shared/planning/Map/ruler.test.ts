@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HOUR, QUIET_PAD } from './layout/constants';
 import { createTimeScale, edgeOf, quietOf, ticksOf } from './layout/time-scale';
-import { MIN_TICK_SPACING, QUIET_LABEL_ROOM, dayLabel, quietLabel, rulerMarks } from './ruler';
+import { MIN_TICK_SPACING, QUIET_LABEL_ROOM, dayLabel, edgeLabelAt, quietLabel, rulerMarks } from './ruler';
 
 const DAY = 24 * HOUR;
 const NOW = Date.parse('2026-09-30T18:00:00Z');
@@ -96,5 +96,24 @@ describe('the edge and the quiet break', () => {
 		expect(quietMarks(1200 - QUIET_LABEL_ROOM + 1).quiet).toBeNull();
 		expect(quietMarks(-50).quiet).toBeNull();
 		expect(quietMarks(1200 - QUIET_LABEL_ROOM).quiet).not.toBeNull();
+	});
+});
+
+describe('edgeLabelAt', () => {
+	it('hangs the label right of the edge line, and left of it when the right has no room', () => {
+		const right = edgeLabelAt(600, 30, 1200)!;
+		expect(right.align).toBe('left');
+		expect(right.anchor).toBeGreaterThan(600);
+		expect(right.box.x).toBeLessThan(right.anchor);
+		const left = edgeLabelAt(1100, 30, 1200)!;
+		expect(left.align).toBe('right');
+		expect(left.anchor).toBeLessThan(1100);
+		expect(left.box.x + left.box.w).toBeGreaterThan(left.anchor);
+		expect(left.box.x + left.box.w).toBeLessThan(1100);
+	});
+
+	it('has no label, and so no box to keep off, when the edge is outside the plot', () => {
+		expect(edgeLabelAt(-1, 30, 1200)).toBeNull();
+		expect(edgeLabelAt(1201, 30, 1200)).toBeNull();
 	});
 });

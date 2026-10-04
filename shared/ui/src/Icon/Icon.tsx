@@ -16,6 +16,7 @@ export type IconName =
 	| 'checkbox-checked'
 	| 'checkbox-unchecked'
 	| 'robot'
+	| 'user'
 	| 'bullet'
 	| 'arrow-left'
 	| 'external-link'
@@ -119,6 +120,12 @@ const icons: Record<IconName, JSX.Element> = {
 			<circle cx="16.5" cy="14" r="1.5" />
 			<line x1="12" y1="3" x2="12" y2="8" />
 			<circle cx="12" cy="3" r="1" />
+		</>
+	),
+	user: (
+		<>
+			<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+			<circle cx="12" cy="7" r="4" />
 		</>
 	),
 	bullet: (

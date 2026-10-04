@@ -1,5 +1,7 @@
-import { MIN_DRAW_RADIUS, type Transform, type Viewport } from './camera';
-import type { DrawDot, DrawRegion, Rollup } from './draw-list';
+import { BoxIndex, type Box } from './box-index';
+import type { Transform, Viewport } from './camera';
+import { CLEARANCE, screenPoint } from './dot-boxes';
+import type { DrawRegion, Rollup } from './draw-list';
 import type { MapPhase, MapPoint } from './layout/types';
 import type { RegionOutline } from './regions/outline';
 
@@ -10,13 +12,6 @@ import type { RegionOutline } from './regions/outline';
  * phase, and the collapse control. Placement is in screen pixels, redone per frame,
  * which is cheap next to the outlines it sits on.
  */
-
-export interface Box {
-	x: number;
-	y: number;
-	w: number;
-	h: number;
-}
 
 export interface Circle {
 	x: number;
@@ -42,6 +37,8 @@ export interface RegionLabel {
 	segments: RollupSegment[];
 	/** The collapse control. */
 	toggle: Circle;
+	/** 1 at rest; below 1 while the label fades with a level switch. */
+	alpha: number;
 }
 
 export const LABEL_HEIGHT = 18;
@@ -53,49 +50,84 @@ export const BAR_HEIGHT = 4;
 const TOGGLE_SIZE = 12;
 const PAD_RIGHT = 4;
 const MAX_TITLE = 180;
-/** Labels and dots keep this much clear of each other. */
-const CLEARANCE = 2;
-/** A dot's marks reach this far past its radius: the needs-a-person ring at its widest. */
-const MARK_REACH = 3.5;
-/** A folded family's rollup bar hangs this far further below its dot. */
-const FOLDED_BAR_REACH = 8;
-/** Points sampled along each of the outline's curves when finding its edge. */
-const CURVE_SAMPLES = 4;
-/** How far either side of a point on the outline counts as the outline there, in layout units. */
-const EDGE_REACH = 6;
+/** Candidate spots along an outline are about this far apart on screen, in px. */
+const SPOT_STEP = 10;
+/** A region tries at most this many spots, so a huge outline at a high zoom stays cheap. */
+const MAX_SPOTS = 160;
+/** A spot on a steep stretch of the outline counts as this many px lower than it is, so flat edges (the top of a bulb) are tried first. */
+const STEEP_PENALTY = 60;
 
-/** Label centers tried along the top edge, in label widths from the top point. */
-const SHIFTS = [0, -0.25, 0.25, -0.5, 0.5, -0.75, 0.75, -1, 1, -1.5, 1.5, -2, 2];
+/** A point on an outline, in screen pixels, and how flat the outline runs there: 1 level, 0 upright. */
+interface EdgeSpot {
+	x: number;
+	y: number;
+	flat: number;
+}
 
-/**
- * The outline's highest (or lowest) point within a few units of `x`, in layout units;
- * null where the outline doesn't reach. Each quadratic is sampled along its length, not
- * just at its ends, since its control point can carry the curve past both.
- */
-function edgeAt(outline: RegionOutline, x: number, side: 'top' | 'bottom'): number | null {
+/** An outline's curve as a polyline of its own: each quadratic's middle and its end, in layout units. Computed once per outline. */
+const polylines = new WeakMap<RegionOutline, Float64Array>();
+
+function polylineOf(outline: RegionOutline): Float64Array {
+	let line = polylines.get(outline);
+	if (line) return line;
 	const { curve } = outline;
-	let best: number | null = null;
+	const quads = (curve.length - 2) / 4;
+	line = new Float64Array(2 + quads * 4);
+	line[0] = curve[0]!;
+	line[1] = curve[1]!;
+	let at = 2;
 	for (let i = 2; i < curve.length; i += 4) {
-		const sx = curve[i - 2]!;
-		const sy = curve[i - 1]!;
+		const sx = line[at - 2]!;
+		const sy = line[at - 1]!;
 		const cx = curve[i]!;
 		const cy = curve[i + 1]!;
 		const ex = curve[i + 2]!;
 		const ey = curve[i + 3]!;
-		for (let s = 0; s <= CURVE_SAMPLES; s++) {
-			const t = s / CURVE_SAMPLES;
-			const u = 1 - t;
-			const px = u * u * sx + 2 * u * t * cx + t * t * ex;
-			if (Math.abs(px - x) > EDGE_REACH) continue;
-			const py = u * u * sy + 2 * u * t * cy + t * t * ey;
-			if (best === null || (side === 'top' ? py < best : py > best)) best = py;
-		}
+		line[at++] = 0.25 * sx + 0.5 * cx + 0.25 * ex;
+		line[at++] = 0.25 * sy + 0.5 * cy + 0.25 * ey;
+		line[at++] = ex;
+		line[at++] = ey;
 	}
-	return best;
+	polylines.set(outline, line);
+	return line;
 }
 
-/** At rest at fit all, only the largest regions get labels (spec, What shows when). */
-export const REST_LABELS = 8;
+/**
+ * Where a label can sit on an outline, best first: the outline's own top point, then points
+ * every few pixels along the whole edge (the top and bottom, both ends, every bulb) that are
+ * inside the plot, flat stretches and high ones before steep and low ones. The label's pill
+ * is centered on one of these, so it always straddles the outline.
+ */
+function edgeSpots(outline: RegionOutline, transform: Transform, viewport: Viewport): EdgeSpot[] {
+	const line = polylineOf(outline);
+	const n = line.length / 2;
+	const { k } = transform;
+	const px = (i: number): number => transform.x + k * line[2 * i]!;
+	const py = (i: number): number => transform.y + k * line[2 * i + 1]!;
+	const inside = (x: number, y: number): boolean => x >= 0 && x <= viewport.width && y >= 0 && y <= viewport.height;
+
+	let length = 0;
+	for (let i = 1; i < n; i++) if (inside(px(i), py(i))) length += Math.hypot(px(i) - px(i - 1), py(i) - py(i - 1));
+	const step = Math.max(SPOT_STEP, length / MAX_SPOTS);
+
+	const spots: EdgeSpot[] = [];
+	let since = step;
+	for (let i = 1; i < n; i++) {
+		const x0 = px(i - 1);
+		const y0 = py(i - 1);
+		const x1 = px(i);
+		const y1 = py(i);
+		const segment = Math.hypot(x1 - x0, y1 - y0);
+		since += segment;
+		if (since < step || !inside(x1, y1)) continue;
+		since = 0;
+		spots.push({ x: x1, y: y1, flat: segment > 0 ? Math.abs(x1 - x0) / segment : 1 });
+	}
+	const score = (spot: EdgeSpot): number => spot.y + (1 - spot.flat) * STEEP_PENALTY;
+	spots.sort((a, b) => score(a) - score(b));
+	const top = screenPoint(transform, outline.top);
+	return [{ x: top.x, y: top.y, flat: 1 }, ...spots];
+}
 
 /** The phases in the order the bar shows them. */
 const PHASES: readonly MapPhase[] = ['done', 'in_flight', 'next', 'later'];
@@ -133,8 +165,6 @@ export function rollupSegments(rollup: Rollup, x: number, width: number): Rollup
 	return segments;
 }
 
-const intersects = (a: Box, b: Box): boolean => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-
 /** One region's label laid out with its box's left edge at `x` and its middle at `y`. */
 function layoutLabel(region: DrawRegion, title: string, titleWidth: number, x: number, y: number): RegionLabel {
 	const width = PAD_LEFT + GLYPH_SIZE + GAP + titleWidth + GAP + BAR_WIDTH + GAP + TOGGLE_SIZE + PAD_RIGHT;
@@ -152,67 +182,39 @@ function layoutLabel(region: DrawRegion, title: string, titleWidth: number, x: n
 		bar: { x: barX, y: y - BAR_HEIGHT / 2, w: BAR_WIDTH, h: BAR_HEIGHT },
 		segments: rollupSegments(region.rollup, barX, BAR_WIDTH),
 		toggle: { x: barX + BAR_WIDTH + GAP + TOGGLE_SIZE / 2, y, r: TOGGLE_SIZE / 2 },
+		alpha: 1,
 	};
 }
 
-export interface LabelPlacement {
-	regions: readonly DrawRegion[];
+export interface RegionPlacement {
 	outlines: ReadonlyMap<string, RegionOutline>;
-	dots: readonly DrawDot[];
 	transform: Transform;
 	viewport: Viewport;
 	measure(text: string): number;
-	/** At most this many labels, null for every one with room. */
-	cap: number | null;
-	/** Other marks a label must keep off, the expand controls. */
-	occupied: readonly Circle[];
 }
 
-/** Labels for the regions with room, largest regions first. */
-export function placeRegionLabels({ regions, outlines, dots, transform, viewport, measure, cap, occupied }: LabelPlacement): RegionLabel[] {
-	const { k } = transform;
-	const screen = (p: MapPoint): MapPoint => ({ x: transform.x + k * p.x, y: transform.y + k * p.y });
-	const taken: Box[] = [];
-	for (const dot of dots) {
-		// The whole drawn dot: its surface disc or ink ring, and a folded family's rollup bar under it.
-		const r = Math.max(dot.r * k, MIN_DRAW_RADIUS) + MARK_REACH + CLEARANCE;
-		const below = dot.folded ? FOLDED_BAR_REACH : 0;
-		const { x, y } = screen(dot);
-		if (x + r < 0 || x - r > viewport.width || y + r < 0 || y - r > viewport.height) continue;
-		taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r + below });
-	}
-	for (const { x, y, r } of occupied) taken.push({ x: x - r - CLEARANCE, y: y - r - CLEARANCE, w: 2 * (r + CLEARANCE), h: 2 * (r + CLEARANCE) });
-	const fits = (box: Box): boolean =>
-		box.x >= 0 && box.y >= 0 && box.x + box.w <= viewport.width && box.y + box.h <= viewport.height && !taken.some((other) => intersects(box, other));
+/**
+ * The label for one region, at the first spot on its outline that clears `taken` and lies
+ * inside the plot; the spot is added to `taken`. Each spot is tried with the pill centered
+ * on it, then hanging off it to the right, then to the left. Null when the region has no
+ * outline or no room anywhere along it.
+ */
+export function placeRegionLabel(region: DrawRegion, { outlines, transform, viewport, measure }: RegionPlacement, taken: BoxIndex): RegionLabel | null {
+	const outline = outlines.get(region.key);
+	if (!outline) return null;
+	const fits = (box: Box): boolean => box.x >= 0 && box.y >= 0 && box.x + box.w <= viewport.width && box.y + box.h <= viewport.height && !taken.hits(box);
 
-	const labels: RegionLabel[] = [];
-	const ordered = [...regions].sort((a, b) => b.size - a.size || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-	for (const region of ordered) {
-		if (cap !== null && labels.length >= cap) break;
-		const outline = outlines.get(region.key);
-		if (!outline) continue;
-		const title = fitText(region.title, MAX_TITLE, measure);
-		const titleWidth = Math.min(MAX_TITLE, measure(title));
-		const width = layoutLabel(region, title, titleWidth, 0, 0).box.w;
-		const top = screen(outline.top);
-		const bottom = screen(outline.bottom);
-		// Centered on the top, then along the top edge either way, then the same along the bottom.
-		const candidates: MapPoint[] = [];
-		for (const [side, from] of [['top', top], ['bottom', bottom]] as const) {
-			for (const shift of SHIFTS) {
-				const x = from.x + shift * width;
-				const y = edgeAt(outline, (x - transform.x) / k, side);
-				if (y !== null) candidates.push({ x: x - width / 2, y: transform.y + k * y });
-			}
-		}
-		for (const at of candidates) {
-			const label = layoutLabel(region, title, titleWidth, at.x, at.y);
+	const title = fitText(region.title, MAX_TITLE, measure);
+	const titleWidth = Math.min(MAX_TITLE, measure(title));
+	const width = layoutLabel(region, title, titleWidth, 0, 0).box.w;
+	for (const spot of edgeSpots(outline, transform, viewport)) {
+		for (const left of [spot.x - width / 2, spot.x, spot.x - width]) {
+			const label = layoutLabel(region, title, titleWidth, left, spot.y);
 			const clear = { x: label.box.x - CLEARANCE, y: label.box.y - CLEARANCE, w: label.box.w + 2 * CLEARANCE, h: label.box.h + 2 * CLEARANCE };
 			if (!fits(clear)) continue;
-			taken.push(clear);
-			labels.push(label);
-			break;
+			taken.add(clear);
+			return label;
 		}
 	}
-	return labels;
+	return null;
 }

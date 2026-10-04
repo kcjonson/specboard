@@ -50,8 +50,12 @@ function renderMap(source: () => Promise<MapRead>): { model: MapDataModel } & Re
 beforeEach(() => {
 	frames.length = 0;
 	window.history.replaceState(null, '', '/projects/acme/specboard/planning?view=map');
-	vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-		x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 532, width: 1000, height: 532, toJSON: () => ({}),
+	// The whole Map is 1000 by 532; the toolbar over its corner is a small box, so labels and cards still have the rest.
+	vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+		const toolbar = this.getAttribute('role') === 'group';
+		return toolbar
+			? { x: 12, y: 12, left: 12, top: 12, right: 200, bottom: 52, width: 188, height: 40, toJSON: () => ({}) }
+			: { x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 532, width: 1000, height: 532, toJSON: () => ({}) };
 	});
 });
 

@@ -3,12 +3,16 @@ import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
 import { useModel } from '@specboard/models';
 import { LoadError } from '../LoadError/LoadError';
+import { MapCards } from './cards/MapCards';
 import { createCollapseStore } from './collapse-store';
 import { createLayoutWorker } from './layout/layout-worker-client';
+import type { MapPoint } from './layout/types';
 import { createCamera } from './map-camera';
 import { MapDataModel } from './map-data-model';
 import { createMapSource } from './map-source';
 import { MapSurface } from './map-surface';
+import { Minimap } from './minimap/Minimap';
+import { OverlayStore } from './overlay';
 import { zoomKeyOf } from './map-keys';
 import { readFocus, urlWithFocus } from './map-url';
 import { RULER_HEIGHT, createCanvasRenderer } from './renderer';
@@ -26,13 +30,17 @@ const FALLBACK_ASPECT = 2;
 /** Outlines for a new zoom wait this long after the last frame that wanted them, so a gesture never stalls on them. */
 const DEFER_MS = 150;
 
+/** Cards and labels keep this far from the toolbar and the notice that sit over the plot. */
+const CHROME_PAD = 8;
+
 const media = (query: string): MediaQueryList | null => (typeof window.matchMedia === 'function' ? window.matchMedia(query) : null);
 
 /**
  * The Map: one canvas drawing every item's status glyph where the layout put it, a
  * region around every family with its label and collapse control, the links that
- * show, a ruler of dates along its bottom, and a camera on d3-zoom. The page loads
- * this module lazily, so Board and Table don't carry it.
+ * show, labels that fade with the zoom level, a ruler of dates along its bottom, and
+ * a camera on d3-zoom; over it, DOM cards at the near level and a minimap once zoomed
+ * in. The page loads this module lazily, so Board and Table don't carry it.
  */
 export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Element {
 	const model = useMemo(
@@ -43,8 +51,11 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
+	const controlsRef = useRef<HTMLDivElement>(null);
+	const noticeRef = useRef<HTMLParagraphElement>(null);
 	const surfaceRef = useRef<MapSurface | null>(null);
 	const [viewportEmpty, setViewportEmpty] = useState(false);
+	const overlay = useMemo(() => new OverlayStore(), []);
 
 	// Panning and zooming replace the history entry, so a copied URL anchors on the item in
 	// the middle of the plot (spec, Navigation and interaction); a jump pushes one.
@@ -54,6 +65,20 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 		else if (url !== window.location.pathname + window.location.search + window.location.hash) {
 			window.history.replaceState(window.history.state, '', url);
 		}
+	}, []);
+
+	// The toolbar and the notice sit over the plot, so cards and labels are placed around them.
+	const reserveChrome = useCallback((): void => {
+		const surface = surfaceRef.current;
+		const container = containerRef.current;
+		if (!surface || !container) return;
+		const origin = container.getBoundingClientRect();
+		const boxes = [controlsRef.current, noticeRef.current].flatMap((element) => {
+			if (!element) return [];
+			const rect = element.getBoundingClientRect();
+			return [{ x: rect.left - origin.left - CHROME_PAD, y: rect.top - origin.top - CHROME_PAD, w: rect.width + 2 * CHROME_PAD, h: rect.height + 2 * CHROME_PAD }];
+		});
+		surface.setChrome(boxes);
 	}, []);
 
 	useEffect(() => {
@@ -70,6 +95,9 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 			{
 				renderer: createCanvasRenderer(canvas),
 				camera,
+				overlay,
+				now: () => window.performance.now(),
+				reducedMotion: () => reducedMotion?.matches ?? false,
 				schedule: (paint) => window.requestAnimationFrame(paint),
 				defer: (task) => window.setTimeout(task, DEFER_MS),
 			},
@@ -85,6 +113,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 		const measure = (): { width: number; height: number } => {
 			const { width, height } = container.getBoundingClientRect();
 			surface.resize(width, height);
+			reserveChrome();
 			return { width, height: height - RULER_HEIGHT };
 		};
 		const { width, height } = measure();
@@ -140,9 +169,11 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 			surfaceRef.current = null;
 			model.dispose();
 		};
-	}, [model, anchor]);
+	}, [model, anchor, overlay, reserveChrome]);
 
 	const { state, layout, rows } = model;
+	const summarizedNotice = state === 'ready' && !model.isEmpty && model.read?.summarized === true;
+	useEffect(reserveChrome, [summarizedNotice, reserveChrome]);
 	useEffect(() => {
 		const surface = surfaceRef.current!;
 		if (state !== 'ready' || !layout) surface.clear();
@@ -163,6 +194,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 		const key = surface().jumpToNearest();
 		if (key) anchor(key, true);
 	}, [anchor]);
+	const handleCenter = useCallback((point: MapPoint, fly: boolean): void => surface().centerOn(point, fly), []);
 	const handleRetry = useCallback((): void => void model.retry(), [model]);
 
 	const interactive = state === 'ready' && !model.isEmpty;
@@ -177,13 +209,14 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 				role="img"
 				aria-label={interactive ? `Map of ${rows.size} items${summarized ? ', with finished families summarized' : ''}` : 'Map'}
 			/>
-			<div class={styles.controls} role="group" aria-label="Map view">
+			<MapCards store={overlay} bottom={RULER_HEIGHT} />
+			<div class={styles.controls} ref={controlsRef} role="group" aria-label="Map view">
 				<button type="button" class={styles.control} disabled={!interactive} onClick={handleFitAll}>Fit all</button>
 				<button type="button" class={styles.control} disabled={!interactive} onClick={handleNow}>Now</button>
 				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom out" onClick={() => surface().zoomOut()}>&minus;</button>
 				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom in" onClick={() => surface().zoomIn()}>+</button>
 			</div>
-			{summarized && <p class={styles.notice} role="status">This project is past the read cap, so finished families are summarized.</p>}
+			{summarized && <p class={styles.notice} ref={noticeRef} role="status">This project is past the read cap, so finished families are summarized.</p>}
 			<div class={styles.overlay} style={{ bottom: `${RULER_HEIGHT}px` }}>
 				{state === 'loading' && <p class={styles.message} role="status">Loading the map...</p>}
 				{state === 'error' && model.error && <LoadError error={model.error} onRetry={handleRetry} />}
@@ -192,6 +225,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 					<button type="button" class={styles.jump} onClick={handleJumpToNearest}>Jump to the nearest dots</button>
 				)}
 			</div>
+			<Minimap store={overlay} onCenter={handleCenter} />
 		</div>
 	);
 }

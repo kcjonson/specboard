@@ -1,15 +1,18 @@
 import type { MapItemStatus } from '@specboard/core/map-read';
 import { DONE_DISC, GLYPH_BOX, NEEDS_PERSON_TOKEN, PAUSE_BARS, RING_WIDTH, STATUS_GLYPHS, STATUS_TOKENS } from '@specboard/ui';
-import { MIN_DRAW_RADIUS, type Transform } from './camera';
+import type { Transform } from './camera';
 import type { CollapseControl } from './collapse-controls';
-import { contrastFloor, formatColor, mix, parseColor, readableInk, type Rgb } from './color';
+import { TEXT_CONTRAST, contrast, contrastFloor, formatColor, mix, parseColor, readableInk, type Rgb } from './color';
+import { screenRadius } from './dot-boxes';
+import { DOT_LABEL_PAD, type DotLabel, type LabelFont } from './dot-labels';
 import type { DrawDot, DrawLink } from './draw-list';
 import type { MapPhase } from './layout/types';
+import type { ZoomLevel } from './zoom-levels';
 import { linkCurve, linkShows, type LinkLighting } from './links';
 import { ringScale, tintAmount } from './plan-weight';
 import { rollupSegments, type Circle, type RegionLabel } from './region-labels';
 import type { RegionOutline } from './regions/outline';
-import type { RulerMarks } from './ruler';
+import { EDGE_LABEL_TOP, edgeLabelAt, type RulerMarks } from './ruler';
 
 /** Height of the ruler band along the bottom of the canvas, in CSS pixels. */
 export const RULER_HEIGHT = 32;
@@ -22,8 +25,13 @@ export interface MapFrame {
 	links: readonly DrawLink[];
 	lighting: LinkLighting;
 	labels: readonly RegionLabel[];
+	dotLabels: readonly DotLabel[];
 	controls: readonly CollapseControl[];
+	/** The dots that near-level cards stand in for, and how opaque those cards are: the canvas draws them as the cards fade out, and not at all once the cards are there. */
+	cards: { keys: ReadonlySet<string>; alpha: number } | null;
 	transform: Transform;
+	/** The zoom level, which sizes the glyphs: at the near level they hold one size whatever the scale. */
+	level: ZoomLevel;
 	/** Null until the layout settles: only the ruler's frame draws. */
 	ruler: RulerMarks | null;
 }
@@ -33,8 +41,8 @@ export interface MapRenderer {
 	resize(width: number, height: number): void;
 	/** Reads the theme tokens again, for a light/dark change. */
 	refreshTheme(): void;
-	/** A region label's title width in CSS pixels, at the label font. */
-	measureLabel(text: string): number;
+	/** A label's text width in CSS pixels, at the font the label draws in. */
+	measureLabel(text: string, font: LabelFont): number;
 	draw(frame: MapFrame): void;
 }
 
@@ -65,6 +73,11 @@ interface MapTheme {
 	linkSatisfied: string;
 	/** The count on a folded finished family: whichever ink clears text contrast on the done fill. */
 	countInk: string;
+	/**
+	 * Dot labels sit on a halo of the surface, so what they have to clear is the surface:
+	 * muted ink if it reaches text contrast there, and full ink if a theme's muted doesn't.
+	 */
+	labelInk: string;
 }
 
 /**
@@ -107,6 +120,7 @@ function readTheme(element: Element, normalize: (color: string) => string): MapT
 		),
 		regionStroke: formatColor(mix(textRgb, surfaceRgb, REGION_STROKE)),
 		countInk: formatColor(readableInk(statusRgb.done, [surfaceRgb, textRgb])),
+		labelInk: formatColor(contrast(mutedRgb, surfaceRgb) >= TEXT_CONTRAST ? mutedRgb : textRgb),
 		link: formatColor(mix(mutedRgb, surfaceRgb, 0.85)),
 		linkSatisfied: formatColor(mix(mutedRgb, surfaceRgb, 0.4)),
 	};
@@ -117,6 +131,8 @@ const GLYPH_REACH = 7.5;
 
 const LABEL_SIZE = 11;
 const REGION_LABEL_SIZE = 12;
+/** The surface halo under dot-label text, in px of stroke. */
+const HALO_WIDTH = 3;
 const TICK_LENGTH = 6;
 /** Every dot sits on a disc of the surface this much wider than itself, so a region's tint never changes its contrast. */
 const BACKING = 1.5;
@@ -199,7 +215,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		return color;
 	};
 
-	const regionFont = (): string => `600 ${REGION_LABEL_SIZE}px ${theme.font}`;
+	const fontOf = (font: LabelFont): string =>
+		font === 'region' ? `600 ${REGION_LABEL_SIZE}px ${theme.font}` : `${font === 'dot-strong' ? 600 : 500} ${LABEL_SIZE}px ${theme.font}`;
 
 	const disc = (x: number, y: number, r: number, color: string): void => {
 		ctx.fillStyle = color;
@@ -291,11 +308,12 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		}
 	};
 
-	const drawDot = (dot: DrawDot, transform: Transform): void => {
-		const r = Math.max(dot.r * transform.k, MIN_DRAW_RADIUS);
+	const drawDot = (dot: DrawDot, transform: Transform, level: ZoomLevel, alpha: number): void => {
+		const r = screenRadius(dot, transform.k, level);
 		const x = transform.x + transform.k * dot.x;
 		const y = transform.y + transform.k * dot.y;
 		if (offscreen(x, y, r + INK_GAP + INK_WIDTH)) return;
+		ctx.globalAlpha = alpha;
 		disc(x, y, r + (dot.needsPerson ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
 		if (dot.needsPerson) ring(x, y, r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
 		// A finished family (the parent and everything under it done) is one done dot with its count inside;
@@ -308,6 +326,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			const w = Math.max(16, 1.6 * r);
 			drawRollupBar(x - w / 2, y + r + 4, w, 3, rollupSegments(dot.folded.rollup, x - w / 2, w));
 		}
+		ctx.globalAlpha = 1;
 	};
 
 	const drawRegions = (regions: readonly RegionOutline[], transform: Transform): void => {
@@ -354,7 +373,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.setLineDash([]);
 	};
 
-	const drawControl = (at: Circle, collapse: boolean): void => {
+	const drawControl = (at: Circle, collapse: boolean, alpha: number): void => {
+		ctx.globalAlpha = alpha;
 		disc(at.x, at.y, at.r, theme.surface);
 		ring(at.x, at.y, at.r - 0.5, theme.muted, 1);
 		ctx.strokeStyle = theme.text;
@@ -368,11 +388,13 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.lineTo(at.x, at.y + arm);
 		}
 		ctx.stroke();
+		ctx.globalAlpha = 1;
 	};
 
 	const drawLabels = (labels: readonly RegionLabel[]): void => {
 		for (const label of labels) {
 			const { box, glyph, region } = label;
+			ctx.globalAlpha = label.alpha;
 			ctx.fillStyle = theme.surface;
 			ctx.beginPath();
 			ctx.roundRect(box.x, box.y, box.w, box.h, box.h / 2);
@@ -385,12 +407,32 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			drawGlyph(glyph.x, glyph.y, glyph.r, region.status, { weight: region.weight, cue: region.cue });
 			if (region.pr) drawPrMark(glyph.x, glyph.y, glyph.r);
 			ctx.fillStyle = theme.text;
-			ctx.font = regionFont();
+			ctx.font = fontOf('region');
 			ctx.textAlign = 'left';
 			ctx.textBaseline = 'middle';
 			ctx.fillText(label.title, label.titleAt.x, label.titleAt.y + 0.5);
 			drawRollupBar(label.bar.x, label.bar.y, label.bar.w, label.bar.h, label.segments);
 		}
+		ctx.globalAlpha = 1;
+	};
+
+	const drawDotLabels = (labels: readonly DotLabel[]): void => {
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'middle';
+		ctx.lineJoin = 'round';
+		ctx.lineWidth = HALO_WIDTH;
+		ctx.strokeStyle = theme.surface;
+		for (const label of labels) {
+			const { box } = label;
+			const x = box.x + DOT_LABEL_PAD;
+			const y = box.y + box.h / 2 + 0.5;
+			ctx.globalAlpha = label.alpha;
+			ctx.font = fontOf(label.strong ? 'dot-strong' : 'dot');
+			ctx.strokeText(label.text, x, y);
+			ctx.fillStyle = label.strong ? theme.text : theme.labelInk;
+			ctx.fillText(label.text, x, y);
+		}
+		ctx.globalAlpha = 1;
 	};
 
 	const drawRuler = (ruler: RulerMarks | null): void => {
@@ -438,18 +480,18 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 	// After the dots, so a dot near the edge can't paint over the label.
 	const drawEdgeLabel = (ruler: RulerMarks): void => {
 		const { x, label } = ruler.edge;
-		if (x < 0 || x > width) return;
+		ctx.font = fontOf('dot-strong');
+		const at = edgeLabelAt(x, ctx.measureText(label).width, width);
+		if (!at) return;
 		ctx.fillStyle = theme.muted;
-		ctx.font = `600 ${LABEL_SIZE}px ${theme.font}`;
 		ctx.textBaseline = 'top';
-		const room = width - x > 150;
-		ctx.textAlign = room ? 'left' : 'right';
+		ctx.textAlign = at.align;
 		// A halo of the surface color keeps the label legible over a dot.
 		ctx.lineJoin = 'round';
 		ctx.lineWidth = 3;
 		ctx.strokeStyle = theme.surface;
-		ctx.strokeText(label, room ? x + 8 : x - 8, 10);
-		ctx.fillText(label, room ? x + 8 : x - 8, 10);
+		ctx.strokeText(label, at.anchor, EDGE_LABEL_TOP);
+		ctx.fillText(label, at.anchor, EDGE_LABEL_TOP);
 	};
 
 	return {
@@ -463,16 +505,17 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			tints.clear();
 			widths.clear();
 		},
-		measureLabel(text) {
-			let measured = widths.get(text);
+		measureLabel(text, font) {
+			const key = `${font}:${text}`;
+			let measured = widths.get(key);
 			if (measured === undefined) {
-				ctx.font = regionFont();
+				ctx.font = fontOf(font);
 				measured = ctx.measureText(text).width;
-				widths.set(text, measured);
+				widths.set(key, measured);
 			}
 			return measured;
 		},
-		draw({ dots, regions, links, lighting, labels, controls, transform, ruler }) {
+		draw({ dots, regions, links, lighting, labels, dotLabels, controls, cards, transform, level, ruler }) {
 			if (width === 0 || height === 0) return;
 			if ((window.devicePixelRatio || 1) !== ratio) fit();
 			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -485,9 +528,13 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			drawRegions(regions, transform);
 			if (ruler) drawEdgeLine(ruler);
 			drawLinks(links, lighting, transform);
-			for (const dot of dots) drawDot(dot, transform);
+			for (const dot of dots) {
+				const alpha = cards?.keys.has(dot.key) ? 1 - cards.alpha : 1;
+				if (alpha > 0) drawDot(dot, transform, level, alpha);
+			}
 			drawLabels(labels);
-			for (const control of controls) drawControl(control.at, control.collapse);
+			drawDotLabels(dotLabels);
+			for (const control of controls) drawControl(control.at, control.collapse, control.alpha);
 			if (ruler) drawEdgeLabel(ruler);
 			ctx.restore();
 			drawRuler(ruler);
