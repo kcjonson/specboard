@@ -210,34 +210,26 @@ function buildGraph(model: MapModel, scale: MapTimeScale): Graph {
 }
 
 /**
- * Each region's center and dots, for keeping sibling regions apart. A parent with
- * regions nested in it also gets a band of its own direct children, a sibling to
+ * Each region's center and direct dots, for keeping sibling regions apart. A parent
+ * with regions nested in it also gets a band of its own direct children, a sibling to
  * those regions: a nested region's outline has to stay inside its parent's, and that
  * holds when the parent's own children keep a row of their own rather than sitting
- * between the nested region's dots.
+ * between the nested region's dots. Its direct dots then belong to that band.
  */
 function bandsOf(model: MapModel, repNode: (item: ModelItem) => SimNode): Band[] {
 	const hubs = model.items.filter((item) => item.hub);
 	const index = new Map(hubs.map((item, i) => [item, i]));
-	const bands: Band[] = hubs.map((item) => ({ hubs: [repNode(item)], members: [], parent: item.parent ? index.get(item.parent)! : -1 }));
+	const bands: Band[] = hubs.map((item) => ({ hub: repNode(item), direct: [], parent: item.parent ? index.get(item.parent)! : -1 }));
+	const ownBand = new Map<ModelItem, Band>();
 	for (const hub of hubs) {
-		if (!hub.children.some((child) => child.hub)) continue;
-		const own = hub.children.filter((child) => !child.hub).map(repNode);
-		if (own.length) bands.push({ hubs: [], members: own, parent: index.get(hub)! });
+		if (!hub.children.some((child) => child.hub) || hub.children.every((child) => child.hub)) continue;
+		const band: Band = { hub: null, direct: [], parent: index.get(hub)! };
+		ownBand.set(hub, band);
+		bands.push(band);
 	}
-	// Only a region with a sibling is ever compared, so only those collect their dots: a
-	// deep chain of only children would otherwise hold every leaf once per level.
-	const siblings = new Map<number, number>();
-	for (const band of bands) siblings.set(band.parent, (siblings.get(band.parent) ?? 0) + 1);
-	const collects = (i: number): boolean => siblings.get(bands[i]!.parent)! > 1;
 	for (const item of model.items) {
-		if (item.rep !== item) continue;
-		for (let p = item.parent; p; p = p.parent) {
-			const i = index.get(p)!;
-			if (!collects(i)) continue;
-			if (item.hub) bands[i]!.hubs.push(repNode(item));
-			else bands[i]!.members.push(repNode(item));
-		}
+		if (item.rep !== item || item.hub || !item.parent) continue;
+		(ownBand.get(item.parent) ?? bands[index.get(item.parent)!]!).direct.push(repNode(item));
 	}
 	return bands;
 }
