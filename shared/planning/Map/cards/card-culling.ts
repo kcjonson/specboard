@@ -8,12 +8,14 @@ import type { DrawDot } from '../draw-list';
  * view are mounted: panning swaps a few at the edges and never touches the rest.
  */
 
-export const CARD_WIDTH = 148;
+export const CARD_WIDTH = 184;
 /**
- * The tallest a card gets, and a limit the card's CSS enforces: padding, the key row, two
- * title lines, and two rows of marks. Culling and label placement both rely on it.
+ * Every card is exactly this tall, so placement knows its box before it renders: padding,
+ * the key row, two title lines, and one row of marks.
  */
-export const CARD_HEIGHT = 120;
+export const CARD_HEIGHT = 92;
+/** Cards keep this far from each other and from everything else, on top of the labels' own clearance. */
+export const CARD_GAP = 6;
 /** Where the card's status glyph is centered, from its top left; the glyph sits on its dot. */
 export const CARD_ANCHOR = { x: 16, y: 16 };
 /** Cards this far past the plot's edge stay mounted, so a pan never shows one arriving. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { drawDot } from '../draw-dot.fixture';
 import { BoardBuilder } from '../layout/board-fixture';
-import { cardContent, type CardContent } from './card-content';
+import { cardContent, fitChips, type CardChip, type CardContent } from './card-content';
 
 const b = new BoardBuilder();
 
@@ -70,3 +70,36 @@ describe('cardContent', () => {
 		expect(cardContent(row, folded)).toMatchObject({ family: 12, needsPerson: true });
 	});
 });
+
+describe('card chips', () => {
+	const chip = (text: string, icon: CardChip['icon'] = null): CardChip => ({ text, icon });
+
+	it('lists the status first, then the marks in the order they matter', () => {
+		const row = b.add({ status: 'ready', subStatus: 'scoping', specCount: 1, prUrl: 'https://github.com/a/b/pull/9', textBlockerCount: 1, blocked: true });
+		const blocker = b.add({ status: 'in_progress' });
+		b.block(row, blocker);
+		const content = cardContent(row, drawDot(row.key, 0, 0, { status: 'blocked' }));
+		expect(content.chips.map((c) => c.text)).toEqual(['Blocked', 'Scoping', `Waiting on ${blocker.key}`, 'Spec', 'PR #9', '1 hold']);
+		expect(content.chips.filter((c) => c.icon).map((c) => c.icon)).toEqual(['file', 'git-branch']);
+	});
+
+	it('shows every chip when they fit one row', () => {
+		expect(fitChips([chip('Done'), chip('Spec', 'file')])).toEqual({ shown: [chip('Done'), chip('Spec', 'file')], hidden: 0 });
+	});
+
+	it('cuts what does not fit to a +N, keeping the status and as many of the next as there is room for', () => {
+		const many = [chip('In Progress'), chip('Needs input'), chip('Waiting on MAP-10, MAP-11'), chip('2 specs', 'file'), chip('PR #123', 'git-branch')];
+		const { shown, hidden } = fitChips(many);
+		expect(shown[0]).toEqual(chip('In Progress'));
+		expect(shown.length).toBeLessThan(many.length);
+		expect(hidden).toBe(many.length - shown.length);
+		expect(hidden).toBeGreaterThan(0);
+	});
+
+	it('always shows the status, even one too wide for the row alone', () => {
+		const { shown, hidden } = fitChips([chip('A status label much longer than any row has room for at all'), chip('Spec', 'file')]);
+		expect(shown).toHaveLength(1);
+		expect(hidden).toBe(1);
+	});
+});
+

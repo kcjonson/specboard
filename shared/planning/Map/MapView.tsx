@@ -30,6 +30,9 @@ const FALLBACK_ASPECT = 2;
 /** Outlines for a new zoom wait this long after the last frame that wanted them, so a gesture never stalls on them. */
 const DEFER_MS = 150;
 
+/** Cards and labels keep this far from the toolbar and the notice that sit over the plot. */
+const CHROME_PAD = 8;
+
 const media = (query: string): MediaQueryList | null => (typeof window.matchMedia === 'function' ? window.matchMedia(query) : null);
 
 /**
@@ -48,6 +51,8 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
+	const controlsRef = useRef<HTMLDivElement>(null);
+	const noticeRef = useRef<HTMLParagraphElement>(null);
 	const surfaceRef = useRef<MapSurface | null>(null);
 	const [viewportEmpty, setViewportEmpty] = useState(false);
 	const overlay = useMemo(() => new OverlayStore(), []);
@@ -60,6 +65,20 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 		else if (url !== window.location.pathname + window.location.search + window.location.hash) {
 			window.history.replaceState(window.history.state, '', url);
 		}
+	}, []);
+
+	// The toolbar and the notice sit over the plot, so cards and labels are placed around them.
+	const reserveChrome = useCallback((): void => {
+		const surface = surfaceRef.current;
+		const container = containerRef.current;
+		if (!surface || !container) return;
+		const origin = container.getBoundingClientRect();
+		const boxes = [controlsRef.current, noticeRef.current].flatMap((element) => {
+			if (!element) return [];
+			const rect = element.getBoundingClientRect();
+			return [{ x: rect.left - origin.left - CHROME_PAD, y: rect.top - origin.top - CHROME_PAD, w: rect.width + 2 * CHROME_PAD, h: rect.height + 2 * CHROME_PAD }];
+		});
+		surface.setChrome(boxes);
 	}, []);
 
 	useEffect(() => {
@@ -94,6 +113,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 		const measure = (): { width: number; height: number } => {
 			const { width, height } = container.getBoundingClientRect();
 			surface.resize(width, height);
+			reserveChrome();
 			return { width, height: height - RULER_HEIGHT };
 		};
 		const { width, height } = measure();
@@ -149,9 +169,11 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 			surfaceRef.current = null;
 			model.dispose();
 		};
-	}, [model, anchor, overlay]);
+	}, [model, anchor, overlay, reserveChrome]);
 
 	const { state, layout, rows } = model;
+	const summarizedNotice = state === 'ready' && !model.isEmpty && model.read?.summarized === true;
+	useEffect(reserveChrome, [summarizedNotice, reserveChrome]);
 	useEffect(() => {
 		const surface = surfaceRef.current!;
 		if (state !== 'ready' || !layout) surface.clear();
@@ -188,13 +210,13 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 				aria-label={interactive ? `Map of ${rows.size} items${summarized ? ', with finished families summarized' : ''}` : 'Map'}
 			/>
 			<MapCards store={overlay} bottom={RULER_HEIGHT} />
-			<div class={styles.controls} role="group" aria-label="Map view">
+			<div class={styles.controls} ref={controlsRef} role="group" aria-label="Map view">
 				<button type="button" class={styles.control} disabled={!interactive} onClick={handleFitAll}>Fit all</button>
 				<button type="button" class={styles.control} disabled={!interactive} onClick={handleNow}>Now</button>
 				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom out" onClick={() => surface().zoomOut()}>&minus;</button>
 				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom in" onClick={() => surface().zoomIn()}>+</button>
 			</div>
-			{summarized && <p class={styles.notice} role="status">This project is past the read cap, so finished families are summarized.</p>}
+			{summarized && <p class={styles.notice} ref={noticeRef} role="status">This project is past the read cap, so finished families are summarized.</p>}
 			<div class={styles.overlay} style={{ bottom: `${RULER_HEIGHT}px` }}>
 				{state === 'loading' && <p class={styles.message} role="status">Loading the map...</p>}
 				{state === 'error' && model.error && <LoadError error={model.error} onRetry={handleRetry} />}

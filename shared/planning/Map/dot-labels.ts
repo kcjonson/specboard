@@ -2,6 +2,7 @@ import { BoxIndex, type Box } from './box-index';
 import { CLEARANCE, FOLDED_BAR_REACH, MARK_REACH, screenPoint, screenRadius } from './dot-boxes';
 import type { Transform, Viewport } from './camera';
 import type { DrawDot } from './draw-list';
+import type { ZoomLevel } from './zoom-levels';
 
 /**
  * Key and short title beside a dot (spec, What shows when). The label goes where
@@ -52,11 +53,11 @@ function spots(x: number, y: number, reach: number, below: number, w: number, h:
  * returns its box; null when no spot is clear. A label stays whole inside the plot, so
  * one beside a dot at the edge goes to the side that has room, not under the edge.
  */
-export function placeDotLabel(dot: DrawDot, textWidth: number, transform: Transform, viewport: Viewport, taken: BoxIndex): Box | null {
+export function placeDotLabel(dot: DrawDot, textWidth: number, transform: Transform, level: ZoomLevel, viewport: Viewport, taken: BoxIndex): Box | null {
 	const w = textWidth + 2 * DOT_LABEL_PAD;
 	const h = DOT_LABEL_HEIGHT;
 	const { x, y } = screenPoint(transform, dot);
-	const reach = screenRadius(dot, transform) + MARK_REACH + CLEARANCE;
+	const reach = screenRadius(dot, transform.k, level) + MARK_REACH + CLEARANCE;
 	for (const spot of spots(x, y, reach, dot.folded ? FOLDED_BAR_REACH : 0, w, h)) {
 		const box = { x: spot.x, y: spot.y, w, h };
 		if (box.x < 0 || box.y < 0 || box.x + w > viewport.width || box.y + h > viewport.height) continue;

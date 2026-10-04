@@ -50,39 +50,83 @@ export const BAR_HEIGHT = 4;
 const TOGGLE_SIZE = 12;
 const PAD_RIGHT = 4;
 const MAX_TITLE = 180;
-/** Points sampled along each of the outline's curves when finding its edge. */
-const CURVE_SAMPLES = 4;
-/** How far either side of a point on the outline counts as the outline there, in layout units. */
-const EDGE_REACH = 6;
+/** Candidate spots along an outline are about this far apart on screen, in px. */
+const SPOT_STEP = 10;
+/** A region tries at most this many spots, so a huge outline at a high zoom stays cheap. */
+const MAX_SPOTS = 160;
+/** A spot on a steep stretch of the outline counts as this many px lower than it is, so flat edges (the top of a bulb) are tried first. */
+const STEEP_PENALTY = 60;
 
-/** Label centers tried along the top edge, in label widths from the top point. */
-const SHIFTS = [0, -0.25, 0.25, -0.5, 0.5, -0.75, 0.75, -1, 1, -1.5, 1.5, -2, 2];
+/** A point on an outline, in screen pixels, and how flat the outline runs there: 1 level, 0 upright. */
+interface EdgeSpot {
+	x: number;
+	y: number;
+	flat: number;
+}
 
-/**
- * The outline's highest (or lowest) point within a few units of `x`, in layout units;
- * null where the outline doesn't reach. Each quadratic is sampled along its length, not
- * just at its ends, since its control point can carry the curve past both.
- */
-function edgeAt(outline: RegionOutline, x: number, side: 'top' | 'bottom'): number | null {
+/** An outline's curve as a polyline of its own: each quadratic's middle and its end, in layout units. Computed once per outline. */
+const polylines = new WeakMap<RegionOutline, Float64Array>();
+
+function polylineOf(outline: RegionOutline): Float64Array {
+	let line = polylines.get(outline);
+	if (line) return line;
 	const { curve } = outline;
-	let best: number | null = null;
+	const quads = (curve.length - 2) / 4;
+	line = new Float64Array(2 + quads * 4);
+	line[0] = curve[0]!;
+	line[1] = curve[1]!;
+	let at = 2;
 	for (let i = 2; i < curve.length; i += 4) {
-		const sx = curve[i - 2]!;
-		const sy = curve[i - 1]!;
+		const sx = line[at - 2]!;
+		const sy = line[at - 1]!;
 		const cx = curve[i]!;
 		const cy = curve[i + 1]!;
 		const ex = curve[i + 2]!;
 		const ey = curve[i + 3]!;
-		for (let s = 0; s <= CURVE_SAMPLES; s++) {
-			const t = s / CURVE_SAMPLES;
-			const u = 1 - t;
-			const px = u * u * sx + 2 * u * t * cx + t * t * ex;
-			if (Math.abs(px - x) > EDGE_REACH) continue;
-			const py = u * u * sy + 2 * u * t * cy + t * t * ey;
-			if (best === null || (side === 'top' ? py < best : py > best)) best = py;
-		}
+		line[at++] = 0.25 * sx + 0.5 * cx + 0.25 * ex;
+		line[at++] = 0.25 * sy + 0.5 * cy + 0.25 * ey;
+		line[at++] = ex;
+		line[at++] = ey;
 	}
-	return best;
+	polylines.set(outline, line);
+	return line;
+}
+
+/**
+ * Where a label can sit on an outline, best first: the outline's own top point, then points
+ * every few pixels along the whole edge (the top and bottom, both ends, every bulb) that are
+ * inside the plot, flat stretches and high ones before steep and low ones. The label's pill
+ * is centered on one of these, so it always straddles the outline.
+ */
+function edgeSpots(outline: RegionOutline, transform: Transform, viewport: Viewport): EdgeSpot[] {
+	const line = polylineOf(outline);
+	const n = line.length / 2;
+	const { k } = transform;
+	const px = (i: number): number => transform.x + k * line[2 * i]!;
+	const py = (i: number): number => transform.y + k * line[2 * i + 1]!;
+	const inside = (x: number, y: number): boolean => x >= 0 && x <= viewport.width && y >= 0 && y <= viewport.height;
+
+	let length = 0;
+	for (let i = 1; i < n; i++) if (inside(px(i), py(i))) length += Math.hypot(px(i) - px(i - 1), py(i) - py(i - 1));
+	const step = Math.max(SPOT_STEP, length / MAX_SPOTS);
+
+	const spots: EdgeSpot[] = [];
+	let since = step;
+	for (let i = 1; i < n; i++) {
+		const x0 = px(i - 1);
+		const y0 = py(i - 1);
+		const x1 = px(i);
+		const y1 = py(i);
+		const segment = Math.hypot(x1 - x0, y1 - y0);
+		since += segment;
+		if (since < step || !inside(x1, y1)) continue;
+		since = 0;
+		spots.push({ x: x1, y: y1, flat: segment > 0 ? Math.abs(x1 - x0) / segment : 1 });
+	}
+	const score = (spot: EdgeSpot): number => spot.y + (1 - spot.flat) * STEEP_PENALTY;
+	spots.sort((a, b) => score(a) - score(b));
+	const top = screenPoint(transform, outline.top);
+	return [{ x: top.x, y: top.y, flat: 1 }, ...spots];
 }
 
 /** The phases in the order the bar shows them. */
@@ -150,11 +194,12 @@ export interface RegionPlacement {
 }
 
 /**
- * The label for one region, at the first spot that clears `taken` and lies inside the
- * plot; the spot is added to `taken`. Null when the region has no outline or no room.
+ * The label for one region, at the first spot on its outline that clears `taken` and lies
+ * inside the plot; the spot is added to `taken`. Each spot is tried with the pill centered
+ * on it, then hanging off it to the right, then to the left. Null when the region has no
+ * outline or no room anywhere along it.
  */
 export function placeRegionLabel(region: DrawRegion, { outlines, transform, viewport, measure }: RegionPlacement, taken: BoxIndex): RegionLabel | null {
-	const { k } = transform;
 	const outline = outlines.get(region.key);
 	if (!outline) return null;
 	const fits = (box: Box): boolean => box.x >= 0 && box.y >= 0 && box.x + box.w <= viewport.width && box.y + box.h <= viewport.height && !taken.hits(box);
@@ -162,15 +207,9 @@ export function placeRegionLabel(region: DrawRegion, { outlines, transform, view
 	const title = fitText(region.title, MAX_TITLE, measure);
 	const titleWidth = Math.min(MAX_TITLE, measure(title));
 	const width = layoutLabel(region, title, titleWidth, 0, 0).box.w;
-	const top = screenPoint(transform, outline.top);
-	const bottom = screenPoint(transform, outline.bottom);
-	// Centered on the top, then along the top edge either way, then the same along the bottom.
-	for (const [side, from] of [['top', top], ['bottom', bottom]] as const) {
-		for (const shift of SHIFTS) {
-			const x = from.x + shift * width;
-			const y = edgeAt(outline, (x - transform.x) / k, side);
-			if (y === null) continue;
-			const label = layoutLabel(region, title, titleWidth, x - width / 2, transform.y + k * y);
+	for (const spot of edgeSpots(outline, transform, viewport)) {
+		for (const left of [spot.x - width / 2, spot.x, spot.x - width]) {
+			const label = layoutLabel(region, title, titleWidth, left, spot.y);
 			const clear = { x: label.box.x - CLEARANCE, y: label.box.y - CLEARANCE, w: label.box.w + 2 * CLEARANCE, h: label.box.h + 2 * CLEARANCE };
 			if (!fits(clear)) continue;
 			taken.add(clear);

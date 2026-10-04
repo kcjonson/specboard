@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { intersects, type Box } from './box-index';
 import type { Transform } from './camera';
+import { CARD_GAP, cardBox } from './cards/card-culling';
+import { screenRadius } from './dot-boxes';
 import { drawDot } from './draw-dot.fixture';
 import { MAX_DOT_LABEL, type LabelFont } from './dot-labels';
 import type { DrawDot, DrawRegion } from './draw-list';
@@ -31,6 +33,7 @@ const outlineFor = (key: string, members: Array<[number, number]>): RegionOutlin
 function input(over: Partial<LabelInput> & Pick<LabelInput, 'dots'>): LabelInput {
 	return {
 		rules: LABEL_RULES.middle,
+		level: 'middle',
 		regions: [],
 		outlines: new Map(),
 		transform: identity,
@@ -125,7 +128,11 @@ describe('label placement', () => {
 		const dots = [drawDot('X', 50, 50), drawDot('R', 150, 50, { flight: 'in_review' }), drawDot('P', 250, 50, { flight: 'in_progress' })];
 		const placed = placeLabels(input({ dots, rules: LABEL_RULES.far }));
 		expect(placed.dots.map((l) => l.key)).toEqual(['P', 'R']);
-		expect(placeLabels(input({ dots, rules: LABEL_RULES.near })).dots).toEqual([]);
+		// Near, dots that have room get a card, which says what a label would.
+		const apart = [drawDot('X', 50, 50), drawDot('R', 350, 50), drawDot('P', 650, 50)];
+		const near = placeLabels(input({ dots: apart, level: 'near', rules: LABEL_RULES.near }));
+		expect(near.cards.map((dot) => dot.key).sort()).toEqual(['P', 'R', 'X']);
+		expect(near.dots).toEqual([]);
 	});
 
 	it('leaves out an item another layer already names, at any level', () => {
@@ -184,18 +191,103 @@ describe('label placement', () => {
 	});
 });
 
+describe('card placement at the near level', () => {
+	const toolbar: Box = { x: 4, y: 4, w: 200, h: 56 };
+	const minimap: Box = { x: 12, y: 470, w: 208, h: 118 };
+	const nearInput = (dots: DrawDot[], extra: Partial<LabelInput> = {}): LabelInput =>
+		input({ dots, level: 'near', rules: LABEL_RULES.near, occupied: { circles: [], boxes: [toolbar, minimap] }, ...extra });
+	const glyph = (dot: DrawDot): Box => {
+		const r = screenRadius(dot, 4, 'near');
+		return { x: dot.x - r, y: dot.y - r, w: 2 * r, h: 2 * r };
+	};
+
+	it('never puts a card over another card, the toolbar, the minimap, or another dot', () => {
+		for (const seed of [1, 2, 3, 4, 5, 6]) {
+			const dots = scatter(40, seed);
+			const { cards } = placeLabels(nearInput(dots));
+			expect(cards.length, `seed ${seed}`).toBeGreaterThan(2);
+			expect(cards.length).toBeLessThan(dots.length);
+			const boxes = cards.map((dot) => cardBox(dot, identity));
+			for (let i = 0; i < boxes.length; i++) {
+				expect(intersects(boxes[i]!, toolbar), `${cards[i]!.key} over the toolbar`).toBe(false);
+				expect(intersects(boxes[i]!, minimap), `${cards[i]!.key} over the minimap`).toBe(false);
+				for (const other of dots) if (other !== cards[i]) expect(intersects(boxes[i]!, glyph(other)), `${cards[i]!.key} over ${other.key}`).toBe(false);
+				for (let j = i + 1; j < boxes.length; j++) expect(intersects(boxes[i]!, boxes[j]!), `${cards[i]!.key} over ${cards[j]!.key}`).toBe(false);
+			}
+		}
+	});
+
+	it('keeps a gap between cards, not just a hair', () => {
+		const { cards } = placeLabels(nearInput(scatter(40, 2)));
+		const boxes = cards.map((dot) => cardBox(dot, identity));
+		for (let i = 0; i < boxes.length; i++) {
+			for (let j = i + 1; j < boxes.length; j++) {
+				const grown = { x: boxes[i]!.x - CARD_GAP + 1, y: boxes[i]!.y - CARD_GAP + 1, w: boxes[i]!.w + 2 * CARD_GAP - 2, h: boxes[i]!.h + 2 * CARD_GAP - 2 };
+				expect(intersects(grown, boxes[j]!)).toBe(false);
+			}
+		}
+	});
+
+	it('gives a lone dot its card, and a card carries what a label would, so the dot has no label', () => {
+		const lone = drawDot('A', 500, 250, { flight: 'in_progress' });
+		const placed = placeLabels(nearInput([lone]));
+		expect(placed.cards).toEqual([lone]);
+		expect(placed.dots).toEqual([]);
+	});
+
+	it('falls back to a one-line label for dots too close for cards, and to the bare glyph where that does not fit either', () => {
+		// A row of glyphs 26 px apart: a 148 px card would cover its neighbors.
+		const row = Array.from({ length: 12 }, (_, i) => drawDot(`R-${i}`, 300 + i * 26, 250));
+		const placed = placeLabels(nearInput(row));
+		expect(placed.cards).toEqual([]);
+		expect(placed.dots.length).toBeGreaterThan(0);
+		expect(placed.dots.length).toBeLessThan(row.length);
+	});
+
+	it('gives a card up where it would sit under the toolbar or the minimap', () => {
+		const underToolbar = drawDot('T', 40, 20);
+		const beside = drawDot('B', 700, 250);
+		const underMinimap = drawDot('M', 60, 500);
+		const placed = placeLabels(nearInput([underToolbar, beside, underMinimap]));
+		expect(placed.cards.map((dot) => dot.key)).toEqual(['B']);
+	});
+
+	it('lets a card reach past the plot\'s own edge', () => {
+		const atEdge = drawDot('E', 960, 250);
+		expect(placeLabels(nearInput([atEdge])).cards).toEqual([atEdge]);
+	});
+
+	it('gives in-progress dots the room first when two cards want the same ground', () => {
+		const ready = drawDot('A-ready', 500, 250);
+		const live = drawDot('Z-live', 560, 250, { flight: 'in_progress' });
+		expect(placeLabels(nearInput([ready, live])).cards).toEqual([live]);
+	});
+
+	it('does not place cards at the other levels', () => {
+		expect(placeLabels(input({ dots: scatter(40, 1), level: 'middle', rules: LABEL_RULES.middle })).cards).toEqual([]);
+	});
+
+	it('lets a dot\'s own card sit over its own expand control, and keeps every other card off it', () => {
+		const folded = drawDot('F', 500, 250, { folded: { count: 9, rollup: { done: 8, in_flight: 0, next: 0, later: 0 }, expandable: true } });
+		const owned = { x: 512, y: 238, r: 6, owner: 'F' };
+		expect(placeLabels(nearInput([folded], { occupied: { circles: [owned], boxes: [] } })).cards).toEqual([folded]);
+		// The same control belonging to nobody here is just something in the way.
+		expect(placeLabels(nearInput([folded], { occupied: { circles: [{ ...owned, owner: 'elsewhere' }], boxes: [] } })).cards).toEqual([]);
+	});
+});
+
 describe('crossFadeAll', () => {
 	const dotLabel = (key: string, x: number): { key: string; text: string; box: Box; strong: boolean; alpha: number } => ({ key, text: key, box: { x, y: 0, w: 40, h: 14 }, strong: false, alpha: 1 });
 
 	it('drops a label that is leaving where one is arriving, so the two never draw over each other, and fades the rest', () => {
-		const next = { regions: [], dots: [dotLabel('new', 100)] };
-		const previous = { regions: [], dots: [dotLabel('overlapped', 110), dotLabel('clear', 300)] };
+		const next = { regions: [], dots: [dotLabel('new', 100)], cards: [] };
+		const previous = { regions: [], dots: [dotLabel('overlapped', 110), dotLabel('clear', 300)], cards: [] };
 		const faded = crossFadeAll(next, previous, 0.4);
 		expect(faded.dots.map((label) => [label.key, label.alpha])).toEqual([['new', 0.4], ['clear', 0.6]]);
 	});
 
 	it('keeps a label both levels draw even where it moved over its own old spot', () => {
-		const faded = crossFadeAll({ regions: [], dots: [dotLabel('same', 100)] }, { regions: [], dots: [dotLabel('same', 105)] }, 0.5);
+		const faded = crossFadeAll({ regions: [], dots: [dotLabel('same', 100)], cards: [] }, { regions: [], dots: [dotLabel('same', 105)], cards: [] }, 0.5);
 		expect(faded.dots.map((label) => [label.key, label.alpha])).toEqual([['same', 1]]);
 	});
 });

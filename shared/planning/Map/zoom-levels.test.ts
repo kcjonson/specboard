@@ -75,10 +75,10 @@ describe('zoom levels', () => {
 		expect(nextLevel('near', scaleFor(MIDDLE_EXIT - 1))).toBe('far');
 	});
 
-	it('draws labels per level as the spec says: in-flight dots and a few regions far out, everything with room in the middle, cards instead near', () => {
-		expect(LABEL_RULES.far).toEqual({ dots: 'in-flight', regions: 8 });
-		expect(LABEL_RULES.middle).toEqual({ dots: 'all', regions: null });
-		expect(LABEL_RULES.near.dots).toBe('none');
+	it('draws labels per level as the spec says: in-flight dots and a few regions far out, everything with room in the middle, cards near with labels for the dots left without one', () => {
+		expect(LABEL_RULES.far).toEqual({ dots: 'in-flight', regions: 8, cards: false });
+		expect(LABEL_RULES.middle).toEqual({ dots: 'all', regions: null, cards: false });
+		expect(LABEL_RULES.near).toEqual({ dots: 'all', regions: null, cards: true });
 	});
 });
 

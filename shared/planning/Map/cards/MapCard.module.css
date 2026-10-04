@@ -69,17 +69,18 @@
 	overflow-wrap: anywhere;
 }
 
-/* Two rows at most, which is what the card's height limit leaves them. */
+/* One row, at the foot of the card: fitChips cuts what doesn't fit to a "+N". */
 .marks {
 	display: flex;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	gap: var(--space-1);
-	max-height: 44px;
+	margin-top: auto;
 	overflow: hidden;
 }
 
 /* Ink on the badge's tint clears text contrast; the badge's muted gray does not. */
 .card .chip {
+	flex-shrink: 0;
 	max-width: 100%;
 	overflow: hidden;
 	white-space: nowrap;

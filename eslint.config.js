@@ -44,6 +44,7 @@ export default [
 				HTMLDialogElement: 'readonly',
 				HTMLDivElement: 'readonly',
 				HTMLUListElement: 'readonly',
+				HTMLParagraphElement: 'readonly',
 				HTMLButtonElement: 'readonly',
 				HTMLInputElement: 'readonly',
 				HTMLTextAreaElement: 'readonly',

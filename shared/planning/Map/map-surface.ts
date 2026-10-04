@@ -13,10 +13,9 @@ import {
 	type Transform,
 	type Viewport,
 } from './camera';
-import { cardBox, visibleCards } from './cards/card-culling';
 import { controlAt, expandControls, labelControls, type CollapseControl } from './collapse-controls';
 import type { Box } from './box-index';
-import { buildDrawList, type DrawList } from './draw-list';
+import { buildDrawList, type DrawDot, type DrawList } from './draw-list';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
 import type { MapLayout, MapPoint } from './layout/types';
 import { NO_LIGHTING, type LinkLighting } from './links';
@@ -96,6 +95,8 @@ export class MapSurface {
 	/** How opaque the cards were on the last frame, and what they were when the fade now running began, so a fade turned around halfway goes back from where it was. */
 	private cardAlpha = 0;
 	private cardFadeFrom = 0;
+	/** Boxes over the plot that belong to the page's own controls, which cards and labels keep out from under. */
+	private chrome: readonly Box[] = [];
 	/** Torn down: a frame already queued paints nothing and queues no more. */
 	private disposed = false;
 
@@ -187,6 +188,12 @@ export class MapSurface {
 	 */
 	setNamed(keys: ReadonlySet<string>): void {
 		this.named = keys;
+		this.requestPaint();
+	}
+
+	/** The boxes (plot pixels) the page's own controls cover, such as the toolbar: cards and labels are placed around them. */
+	setChrome(boxes: readonly Box[]): void {
+		this.chrome = boxes;
 		this.requestPaint();
 	}
 
@@ -283,7 +290,7 @@ export class MapSurface {
 		const outlines = this.outlinesFor(transform.k);
 		const level = this.levels.frame(transform.k);
 		const minimap = layout ? this.minimapFor(layout, transform) : null;
-		const expand = expandControls(dots, transform, this.viewport);
+		const expand = expandControls(dots, transform, this.viewport, level.level);
 		const ruler = layout
 			? rulerMarks({
 				ticks: layout.ticks,
@@ -294,15 +301,15 @@ export class MapSurface {
 				timeZone: this.timeZone,
 			})
 			: null;
-		// Cards are DOM over the canvas, so a label under one is hidden: they are as taken as a dot is.
-		const cards = this.cardsFor(level, dots, transform);
-		const reserved = [...(minimap ? [minimap.panel] : []), ...(cards.set?.dots.map((dot) => cardBox(dot, transform)) ?? [])];
+		// Chrome the canvas sits under (the toolbar, a notice) and the minimap are as taken as a dot is, for cards and labels alike.
+		const reserved = [...this.chrome, ...(minimap ? [minimap.panel] : [])];
 		if (ruler) {
 			const edge = edgeLabelAt(ruler.edge.x, this.renderer.measureLabel(ruler.edge.label, 'dot-strong'), this.viewport.width);
 			if (edge) reserved.push(edge.box);
 		}
-		const labels = layout
-			? this.labelsFor(level, {
+		const placed = layout
+			? this.placeFor(level, {
+				level: level.level,
 				regions,
 				outlines: new Map(outlines.map((outline) => [outline.key, outline])),
 				dots,
@@ -310,10 +317,13 @@ export class MapSurface {
 				viewport: this.viewport,
 				measure: (text, font) => this.renderer.measureLabel(text, font),
 				named: this.named,
-				occupied: { circles: expand.map((control) => control.at), boxes: reserved },
+				occupied: { circles: expand.map((control) => ({ ...control.at, owner: control.key })), boxes: reserved },
 			})
-			: { regions: [], dots: [] };
-		this.controls = [...labelControls(labels.regions), ...expand];
+			: { labels: { regions: [], dots: [], cards: [] }, cards: [] };
+		const { labels } = placed;
+		const cards = this.cardsFor(level, placed.cards, transform);
+		// A card sits over its dot's expand control, so that control isn't offered while the card is there.
+		this.controls = [...labelControls(labels.regions), ...expand.filter((control) => !cards.set?.keys.has(control.key))];
 		this.renderer.draw({
 			dots,
 			regions: outlines,
@@ -324,6 +334,7 @@ export class MapSurface {
 			controls: this.controls,
 			cards: cards.set ? { keys: cards.set.keys, alpha: cards.alpha } : null,
 			transform,
+			level: level.level,
 			ruler,
 		});
 		this.overlay.publish({ transform, rows: this.rows, cards: cards.set, cardAlpha: cards.alpha, minimap: minimap?.frame ?? null });
@@ -332,24 +343,29 @@ export class MapSurface {
 		if (level.from !== null) this.requestPaint();
 	}
 
-	/** The labels at this level, and while a switch is fading, those of the level it came from. */
-	private labelsFor(level: LevelFrame, input: Omit<LabelInput, 'rules'>): PlacedLabels {
+	/** The labels and cards at this level, and while a switch is fading, the labels of the level it came from and the cards of whichever level has them. */
+	private placeFor(level: LevelFrame, input: Omit<LabelInput, 'rules'>): { labels: PlacedLabels; cards: readonly DrawDot[] } {
 		const placed = placeLabels({ ...input, rules: LABEL_RULES[level.level] });
-		if (level.from === null) return placed;
-		return crossFadeAll(placed, placeLabels({ ...input, rules: LABEL_RULES[level.from] }), level.progress);
+		if (level.from === null) return { labels: placed, cards: placed.cards };
+		const previous = placeLabels({ ...input, level: level.from, rules: LABEL_RULES[level.from] });
+		return {
+			labels: crossFadeAll(placed, previous, level.progress),
+			cards: level.level === 'near' ? placed.cards : level.from === 'near' ? previous.cards : [],
+		};
 	}
 
-	/** The cards in view and how opaque they are: the near level has them, and a switch to or from it fades them. */
-	private cardsFor(level: LevelFrame, dots: DrawList['dots'], transform: Transform): { set: CardSet | null; alpha: number } {
+	/** The placed cards and how opaque they are: the near level has them, and a switch to or from it fades them. */
+	private cardsFor(level: LevelFrame, placed: readonly DrawDot[], transform: Transform): { set: CardSet | null; alpha: number } {
 		if (level.began) this.cardFadeFrom = this.cardAlpha;
 		const target = level.level === 'near' ? 1 : 0;
 		const alpha = level.from === null ? target : this.cardFadeFrom + (target - this.cardFadeFrom) * level.progress;
 		this.cardAlpha = alpha;
-		if (alpha <= 0) {
+		if (alpha <= 0 || placed.length === 0) {
 			this.cards = null;
-			return { set: null, alpha: 0 };
+			return { set: null, alpha };
 		}
-		const inView = visibleCards(dots, transform, this.viewport);
+		// Left to right, so a card that does reach under its neighbor's edge is the earlier one.
+		const inView = [...placed].sort((a, b) => a.x - b.x || (a.key < b.key ? -1 : 1));
 		const previous = this.cards;
 		const same = previous !== null && previous.k === transform.k && previous.dots.length === inView.length && previous.dots.every((dot, i) => dot === inView[i]);
 		if (!same) this.cards = { dots: inView, keys: new Set(inView.map((dot) => dot.key)), k: transform.k };

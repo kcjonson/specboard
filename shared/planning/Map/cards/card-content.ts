@@ -19,6 +19,41 @@ const SUB_STATUS_LABELS: Partial<Record<MapItemSubStatus, string>> = {
 /** A card names this many blockers and then counts the rest. */
 const NAMED_BLOCKERS = 2;
 
+/** One mark on a card: a word or two, with the icon some of them carry. */
+export interface CardChip {
+	text: string;
+	icon: 'git-branch' | 'file' | null;
+}
+
+/** What a card's one row of marks has room for, in px, and what each chip costs: its padding, a glyph's width, and about this much a character. */
+const CHIP_ROOM = 166;
+const CHIP_PAD = 16;
+const CHIP_ICON = 14;
+const CHIP_CHAR = 5.9;
+const CHIP_GAP = 4;
+const MORE_WIDTH = 28;
+
+const chipWidth = (chip: CardChip): number => CHIP_PAD + chip.text.length * CHIP_CHAR + (chip.icon ? CHIP_ICON : 0);
+
+/**
+ * The chips that fit one row of the card, in order, and how many were left out. When some
+ * are, the last that fits gives way to a "+N" so the row says it is not the whole story.
+ * The first chip, the status, is always shown.
+ */
+export function fitChips(chips: readonly CardChip[]): { shown: CardChip[]; hidden: number } {
+	const widths = chips.map(chipWidth);
+	const total = widths.reduce((sum, w) => sum + w, 0) + CHIP_GAP * Math.max(0, chips.length - 1);
+	if (total <= CHIP_ROOM) return { shown: [...chips], hidden: 0 };
+	let used = MORE_WIDTH;
+	let count = 0;
+	for (const w of widths) {
+		if (count > 0 && used + w + CHIP_GAP > CHIP_ROOM) break;
+		used += w + CHIP_GAP;
+		count++;
+	}
+	return { shown: chips.slice(0, Math.max(1, count)), hidden: chips.length - Math.max(1, count) };
+}
+
 export interface CardContent {
 	key: string;
 	title: string;
@@ -37,6 +72,8 @@ export interface CardContent {
 	/** An item with its family folded in: how many items that is, itself included. */
 	family: number | null;
 	needsPerson: boolean;
+	/** Every mark the card can carry, most important first, for `fitChips` to cut to its one row. */
+	chips: CardChip[];
 }
 
 function prLabel(url: string): string {
@@ -52,17 +89,30 @@ function waitingOn(row: MapItemRow): string | null {
 }
 
 export function cardContent(row: MapItemRow, dot: DrawDot): CardContent {
+	const statusLabel = STATUS_LABELS[dot.status];
+	const subStatus = row.subStatus ? (SUB_STATUS_LABELS[row.subStatus] ?? null) : null;
+	const waiting = waitingOn(row);
+	const pr = row.prUrl ? prLabel(row.prUrl) : null;
+	const family = dot.folded ? dot.folded.count : null;
+	const chips: CardChip[] = [{ text: statusLabel, icon: null }];
+	if (subStatus) chips.push({ text: subStatus, icon: null });
+	if (waiting) chips.push({ text: waiting, icon: null });
+	if (row.specCount > 0) chips.push({ text: row.specCount === 1 ? 'Spec' : `${row.specCount} specs`, icon: 'file' });
+	if (pr) chips.push({ text: pr, icon: 'git-branch' });
+	if (row.textBlockerCount > 0) chips.push({ text: row.textBlockerCount === 1 ? '1 hold' : `${row.textBlockerCount} holds`, icon: null });
+	if (family !== null) chips.push({ text: `${family} items`, icon: null });
 	return {
 		key: row.key,
 		title: row.title,
-		statusLabel: STATUS_LABELS[dot.status],
-		subStatus: row.subStatus ? (SUB_STATUS_LABELS[row.subStatus] ?? null) : null,
-		waitingOn: waitingOn(row),
+		statusLabel,
+		subStatus,
+		waitingOn: waiting,
 		holds: row.textBlockerCount,
-		pr: row.prUrl ? prLabel(row.prUrl) : null,
+		pr,
 		specs: row.specCount,
 		origin: row.originActorType === 'agent' ? 'agent' : row.originActorType === 'user' ? 'person' : null,
-		family: dot.folded ? dot.folded.count : null,
+		family,
 		needsPerson: dot.needsPerson,
+		chips,
 	};
 }

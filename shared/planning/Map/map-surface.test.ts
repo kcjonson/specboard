@@ -661,6 +661,33 @@ describe('MapSurface labels, levels, cards, and the minimap', () => {
 		expect(overlay.frame.cards).toBeNull();
 	});
 
+	it('places cards and labels around the page\'s own controls and the minimap', () => {
+		const { surface, camera, renderer, overlay, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		const view = viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + 4));
+		// The toolbar over the top left, with the dot in the middle of the plot not under it.
+		const toolbar = { x: 0, y: 0, w: 520, h: 300 };
+		surface.setChrome([toolbar]);
+		camera.set(view);
+		flush();
+		const { cards, minimap } = overlay.frame;
+		expect(cards).not.toBeNull();
+		const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+		for (const dot of cards!.dots) {
+			const box = cardBox(dot, camera.transform);
+			expect(overlaps(box, toolbar), `${dot.key} under the toolbar`).toBe(false);
+			if (minimap) expect(overlaps(box, minimap.panel), `${dot.key} under the minimap`).toBe(false);
+		}
+		const frame = renderer.frames.at(-1)!;
+		for (const label of [...frame.dotLabels.map((l) => l.box), ...frame.labels.map((l) => l.box)]) {
+			expect(overlaps(label, toolbar)).toBe(false);
+			if (minimap) expect(overlaps(label, minimap.panel)).toBe(false);
+		}
+	});
+
 	it('keeps region labels out from under the cards, which are DOM over the canvas', () => {
 		const { surface, camera, renderer, overlay, flush, clock } = setup();
 		clock.reduced = true;

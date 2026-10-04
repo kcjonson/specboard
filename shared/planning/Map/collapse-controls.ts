@@ -1,7 +1,9 @@
-import { MIN_DRAW_RADIUS, type Transform, type Viewport } from './camera';
+import type { Transform, Viewport } from './camera';
+import { screenRadius } from './dot-boxes';
 import type { DrawDot } from './draw-list';
 import type { MapPoint } from './layout/types';
 import type { Circle, RegionLabel } from './region-labels';
+import type { ZoomLevel } from './zoom-levels';
 
 /**
  * The collapse and expand controls (spec, Collapse): a minus on every region label and
@@ -29,12 +31,12 @@ export function labelControls(labels: readonly RegionLabel[]): CollapseControl[]
 }
 
 /** The expand control on each folded dot that can open, placed before labels so a label never covers one. */
-export function expandControls(dots: readonly DrawDot[], transform: Transform, viewport: Viewport): CollapseControl[] {
+export function expandControls(dots: readonly DrawDot[], transform: Transform, viewport: Viewport, level: ZoomLevel): CollapseControl[] {
 	const controls: CollapseControl[] = [];
 	const { k } = transform;
 	for (const dot of dots) {
 		if (!dot.folded?.expandable) continue;
-		const r = Math.max(dot.r * k, MIN_DRAW_RADIUS);
+		const r = screenRadius(dot, k, level);
 		if (r < EXPAND_MIN_DOT) continue;
 		const x = transform.x + k * dot.x;
 		const y = transform.y + k * dot.y;

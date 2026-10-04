@@ -46,18 +46,19 @@ export function nextLevel(current: ZoomLevel, k: number): ZoomLevel {
 	return levelAt(k);
 }
 
-/** What labels a level draws on the canvas; near has cards instead of dot labels. */
+/** What labels a level draws: the canvas's labels, and whether dots get cards where there is room. */
 export interface LabelRules {
-	/** Dots that carry a label: the in-flight ones, every dot, or none. */
+	/** Dots that carry a label: the in-flight ones, every dot, or none. At the near level only the dots with no room for a card are left. */
 	dots: 'in-flight' | 'all' | 'none';
 	/** At most this many region labels; null for every region with room. */
 	regions: number | null;
+	cards: boolean;
 }
 
 export const LABEL_RULES: Record<ZoomLevel, LabelRules> = {
-	far: { dots: 'in-flight', regions: FAR_REGION_LABELS },
-	middle: { dots: 'all', regions: null },
-	near: { dots: 'none', regions: null },
+	far: { dots: 'in-flight', regions: FAR_REGION_LABELS, cards: false },
+	middle: { dots: 'all', regions: null, cards: false },
+	near: { dots: 'all', regions: null, cards: true },
 };
 
 /** Where a level switch is: the level before it, and how far along the fade is. */

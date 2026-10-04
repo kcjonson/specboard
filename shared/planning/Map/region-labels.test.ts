@@ -42,7 +42,8 @@ interface RegionLabelCase {
 
 const regionLabels = ({ regions, outlines, dots, transform, viewport, measure, cap, occupied }: RegionLabelCase): RegionLabel[] =>
 	placeLabels({
-		rules: { dots: 'none', regions: cap },
+		rules: { dots: 'none', regions: cap, cards: false },
+		level: 'middle',
 		regions,
 		outlines,
 		dots,
@@ -90,6 +91,48 @@ describe('region labels', () => {
 		expect(label).toBeDefined();
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(wide.top.y + 20);
 		expect(overlap(label!.box, { x: under.x - 22, y: under.y - 22, w: 44, h: 44 })).toBe(false);
+	});
+
+	/** Whether a point on the outline, at any scale, sits within a pixel of (x, y). */
+	const onOutline = (outline: RegionOutline, transform: Transform, x: number, y: number, tolerance = 1): boolean => {
+		const { curve } = outline;
+		for (let i = 2; i < curve.length; i += 4) {
+			for (let s = 0; s <= 40; s++) {
+				const t = s / 40;
+				const u = 1 - t;
+				const px = u * u * curve[i - 2]! + 2 * u * t * curve[i]! + t * t * curve[i + 2]!;
+				const py = u * u * curve[i - 1]! + 2 * u * t * curve[i + 1]! + t * t * curve[i + 3]!;
+				if (Math.hypot(transform.x + transform.k * px - x, transform.y + transform.k * py - y) <= tolerance) return true;
+			}
+		}
+		return false;
+	};
+
+	it('sits on the outline wherever it goes: its middle line meets the curve inside the pill, at any scale', () => {
+		const wall = Array.from({ length: 12 }, (_, i) => dot(`T${i}`, 270 + i * 12, a.top.y));
+		for (const transform of [identity, { k: 2.5, x: -300, y: -250 }, { k: 5, x: -1000, y: -1000 }]) {
+			// A wall of dots over the top forces the label to another spot on the edge.
+			const blocked = wall.map((d) => ({ ...d }));
+			const [label] = regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: transform === identity ? blocked : [], transform, viewport, measure, cap: null, occupied: [] });
+			expect(label, `k ${transform.k}`).toBeDefined();
+			const y = label!.box.y + label!.box.h / 2;
+			// Some point of the curve is on the label's middle line, between the pill's ends.
+			let met = false;
+			for (let x = label!.box.x; x <= label!.box.x + label!.box.w && !met; x += 0.5) met = onOutline(a, transform, x, y, 1.5);
+			expect(met, `k ${transform.k}`).toBe(true);
+		}
+	});
+
+	it('finds room along the sides when the top and bottom are taken', () => {
+		const tall = outlineFor('Tall', [[300, 100], [300, 160], [300, 220], [300, 280], [300, 340]]);
+		// Dots all along the top and the bottom edge, so only the long sides are left.
+		const top = Array.from({ length: 24 }, (_, i) => dot(`T${i}`, 190 + i * 10, tall.top.y));
+		const bottom = Array.from({ length: 24 }, (_, i) => dot(`B${i}`, 190 + i * 10, tall.bottom.y));
+		const [label] = regionLabels({ regions: [region('Tall', 5, 'Tall')], outlines: new Map([['Tall', tall]]), dots: [...top, ...bottom], transform: identity, viewport, measure, cap: null, occupied: [] });
+		expect(label).toBeDefined();
+		const middle = label!.box.y + label!.box.h / 2;
+		expect(middle).toBeGreaterThan(tall.top.y + 30);
+		expect(middle).toBeLessThan(tall.bottom.y - 30);
 	});
 
 	it('keeps off an expand control and off a dot\'s ink ring', () => {
@@ -153,7 +196,7 @@ describe('collapse controls', () => {
 	const summarized = dot('R', 600, 200, { r: 12, status: 'done', folded: { count: 40, rollup: { done: 39, in_flight: 0, next: 0, later: 0 }, expandable: false } });
 
 	it('puts a collapse control on each region label and an expand control on each folded dot that can open and is big enough for one', () => {
-		const controls = [...labelControls(labels), ...expandControls([folded, small, summarized, dot('L', 100, 100)], identity, viewport)];
+		const controls = [...labelControls(labels), ...expandControls([folded, small, summarized, dot('L', 100, 100)], identity, viewport, 'middle')];
 		expect(controls.map((c) => [c.key, c.collapse])).toEqual([['A', true], ['F', false]]);
 		const expand = controls[1]!.at;
 		expect(expand.x).toBeGreaterThan(folded.x + 6);
@@ -161,7 +204,7 @@ describe('collapse controls', () => {
 	});
 
 	it('hits a control within a little slop, and nothing elsewhere', () => {
-		const controls = [...labelControls(labels), ...expandControls([folded], identity, viewport)];
+		const controls = [...labelControls(labels), ...expandControls([folded], identity, viewport, 'middle')];
 		const toggle = labels[0]!.toggle;
 		expect(controlAt(controls, { x: toggle.x + toggle.r + 2, y: toggle.y })).toMatchObject({ key: 'A', collapse: true });
 		expect(controlAt(controls, { x: 10, y: 10 })).toBeUndefined();

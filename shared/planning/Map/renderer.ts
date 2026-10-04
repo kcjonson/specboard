@@ -1,11 +1,13 @@
 import type { MapItemStatus } from '@specboard/core/map-read';
 import { DONE_DISC, GLYPH_BOX, NEEDS_PERSON_TOKEN, PAUSE_BARS, RING_WIDTH, STATUS_GLYPHS, STATUS_TOKENS } from '@specboard/ui';
-import { MIN_DRAW_RADIUS, type Transform } from './camera';
+import type { Transform } from './camera';
 import type { CollapseControl } from './collapse-controls';
 import { TEXT_CONTRAST, contrast, contrastFloor, formatColor, mix, parseColor, readableInk, type Rgb } from './color';
+import { screenRadius } from './dot-boxes';
 import { DOT_LABEL_PAD, type DotLabel, type LabelFont } from './dot-labels';
 import type { DrawDot, DrawLink } from './draw-list';
 import type { MapPhase } from './layout/types';
+import type { ZoomLevel } from './zoom-levels';
 import { linkCurve, linkShows, type LinkLighting } from './links';
 import { ringScale, tintAmount } from './plan-weight';
 import { rollupSegments, type Circle, type RegionLabel } from './region-labels';
@@ -28,6 +30,8 @@ export interface MapFrame {
 	/** The dots that near-level cards stand in for, and how opaque those cards are: the canvas draws them as the cards fade out, and not at all once the cards are there. */
 	cards: { keys: ReadonlySet<string>; alpha: number } | null;
 	transform: Transform;
+	/** The zoom level, which sizes the glyphs: at the near level they hold one size whatever the scale. */
+	level: ZoomLevel;
 	/** Null until the layout settles: only the ruler's frame draws. */
 	ruler: RulerMarks | null;
 }
@@ -304,8 +308,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		}
 	};
 
-	const drawDot = (dot: DrawDot, transform: Transform, alpha: number): void => {
-		const r = Math.max(dot.r * transform.k, MIN_DRAW_RADIUS);
+	const drawDot = (dot: DrawDot, transform: Transform, level: ZoomLevel, alpha: number): void => {
+		const r = screenRadius(dot, transform.k, level);
 		const x = transform.x + transform.k * dot.x;
 		const y = transform.y + transform.k * dot.y;
 		if (offscreen(x, y, r + INK_GAP + INK_WIDTH)) return;
@@ -511,7 +515,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			}
 			return measured;
 		},
-		draw({ dots, regions, links, lighting, labels, dotLabels, controls, cards, transform, ruler }) {
+		draw({ dots, regions, links, lighting, labels, dotLabels, controls, cards, transform, level, ruler }) {
 			if (width === 0 || height === 0) return;
 			if ((window.devicePixelRatio || 1) !== ratio) fit();
 			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -526,7 +530,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			drawLinks(links, lighting, transform);
 			for (const dot of dots) {
 				const alpha = cards?.keys.has(dot.key) ? 1 - cards.alpha : 1;
-				if (alpha > 0) drawDot(dot, transform, alpha);
+				if (alpha > 0) drawDot(dot, transform, level, alpha);
 			}
 			drawLabels(labels);
 			drawDotLabels(dotLabels);

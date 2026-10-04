@@ -514,46 +514,65 @@ level it was in:
 |---|---|---|---|
 | Far | | | The at-rest column of the table above: in-progress and in-review labels, up to 8 region labels |
 | Middle | 8 px | 7 px | Key and short title on every dot with room, every region with room gets its label |
-| Near | 22 px | 19 px | A card for every item in view in place of its dot and label (below); region labels as in the middle level |
+| Near | 22 px | 19 px | A card on every item with room for one, and a one-line label (the middle level's) on each dot without; glyphs hold one size; region labels as in the middle level |
 
-At 22 px dots sit about 130 px apart, which is what a card needs. A flight that
-crosses two boundaries lands in the last one; there's no pause in the middle.
+A flight that crosses two boundaries lands in the last one; there's no pause in the
+middle. The near threshold is 22 px, not higher, because what decides whether a card
+fits is the room around the item, not the scale: at 22 px a dense burst (leaf dots
+about 60 px apart) gets compact labels and a card appears wherever the ground is
+clear, and a higher threshold would only delay the cards that already have room.
 
 Labels fade for the new level over the same 450 ms as the camera flight, on its
 curve: a label both levels draw holds still, one only the new level draws fades in,
 one only the old level drew fades out, and cards fade in or out the same way. Under
 `prefers-reduced-motion` they cut. At rest nothing animates.
 
-**Placement.** Every label at a level is placed in one pass against the same set of
-taken boxes: every drawn dot (disc, ink ring, and a folded family's rollup bar), every
-label already placed, the expand controls, and the minimap's box. The order is the
-priority: in-progress dots, regions largest first, in-review dots, then every other
-dot, bigger first. Regions go ahead of in-review dots, whatever the table's wording
-suggests: on the generated 14-region board a crowd of in-review labels took every
-spot on the outlines, leaving 3 of the 8 region labels; with regions first it is 6. A label takes the first of eight spots around its dot that is whole
-inside the plot and clear of everything taken, and with none it gets no label. Text is
-measured with the canvas's own font metrics and cut with an ellipsis. Text sits on a
-halo of the surface so it clears 4.5:1 whatever tint the region under it has; the
-muted ink clears that on the surface in both themes (4.8:1 light, 6.9:1 dark), and the
-renderer falls back to full ink in a theme where it doesn't. Labels arriving in a fade
-never draw over labels leaving it: a leaving label that sits where an arriving one does
-goes at once. An item named by another
-layer (a computer's text block) gets no label of its own at any level.
+**Placement.** Every card and label at a level is placed in one pass against the same
+set of taken boxes: every drawn dot (disc, ink ring, and a folded family's rollup bar),
+everything already placed, the expand controls, the edge's "Now" label, the page's
+own controls over the plot (the toolbar, the read-cap notice), and the minimap's
+box. Nothing is ever placed over any of them: no room, no card or label. The order is
+the priority: cards (in-progress first, then review, then what needs a person, then
+the rest, bigger first), in-progress dot labels, regions largest first, in-review dot
+labels, then every other dot, bigger first. Regions go ahead of in-review dots,
+whatever the table's wording suggests: on the generated 14-region board a crowd of
+in-review labels took every spot on the outlines.
 
-**Cards.** At the near level each item in view is a card of real DOM over the canvas,
-built from `@specboard/ui`'s `StatusGlyph`, `Badge`, and `Icon`, with its status glyph
-centered where its dot was so links still meet it. A card says the key and title, the
-status in words, the sub-status (scoping, PR open, needs input, paused), what a blocked
-item waits on by key (text holds as a count, since their text isn't in the Map's
-read), the PR as `PR #n`, a linked spec, whether an agent or a person made the item,
-a folded family's size, and the ink ring when it needs a person. Cards are display
-only until the interaction task: the layer ignores the pointer so the canvas keeps
-panning. A card is at most 120 px tall (the CSS enforces it: two title lines and two
-rows of marks, the rest clipped), so culling and label placement can both use that
-box: cards within 48 px of the plot are mounted, at most 300, and every card's box is
-as taken as a dot is, so a region label is placed where no card will cover it. A pan
-moves the one element the cards sit in rather than the cards. A fade turned around
-halfway (zoom in, then out) goes back from the opacity it had reached.
+A dot label takes the first of eight spots around its dot that is whole inside the
+plot and clear of everything taken. A region label takes the first spot on its
+outline, tried with the pill centered on it and then hanging off either side: the
+outline's own top first, then a point every 10 px along the whole edge inside the
+plot (the sides, both ends, every bulb), flat stretches and high ones before steep and
+low ones, so the pill always straddles the outline. On the generated board that puts
+all 8 allowed region labels at fit all, where taking only the top and bottom of each
+outline gave 2 to 6. Text is measured with the canvas's own font metrics and cut with
+an ellipsis. Text sits on a halo of the surface so it clears 4.5:1 whatever tint the
+region under it has; the muted ink clears that on the surface in both themes (4.8:1
+light, 6.9:1 dark), and the renderer falls back to full ink in a theme where it
+doesn't. Labels arriving in a fade never draw over labels leaving it: a leaving label
+that sits where an arriving one does goes at once. An item named by another layer (a
+computer's text block) gets no label of its own at any level.
+
+**Cards.** At the near level an item with room gets a card of real DOM over the
+canvas, built from `@specboard/ui`'s `StatusGlyph`, `Badge`, and `Icon`, with its
+status glyph on its dot so links still meet it. At that level every glyph is drawn at
+one size whatever the scale (8 px in radius for a leaf, up to 1.5 times that for
+in-flight work and folded families), so a card's glyph, a compact label's glyph, and a
+bare glyph match. A card is 184 px wide and exactly 92 px tall, so its box is known
+before it renders, and keeps 6 px from every other card. It says the key and title
+(two lines), then one row of marks: the status in words, the sub-status (scoping, PR
+open, needs input, paused), what a blocked item waits on by key (text holds as a
+count, since their text isn't in the Map's read), a linked spec, the PR as `PR #n`, a
+folded family's size, cut to a "+N" (with the rest in its tooltip) when they don't fit
+the row. The corner says whether an agent or a person made the item, and the ink ring
+goes on the glyph when it needs a person. A card never covers another dot's glyph,
+another card, or anything on the taken list; one that doesn't fit leaves its dot as a
+glyph with a one-line label, or as a bare glyph where that has no room either. A card
+may run past the plot's own outer edge. Cards are display only until the interaction
+task: the layer ignores the pointer so the canvas keeps panning. Cards within 48 px of
+the plot are placed, at most 300, and a pan moves the one element they sit in rather
+than the cards. A fade turned around halfway (zoom in, then out) goes back from the
+opacity it had reached.
 
 ---
 
