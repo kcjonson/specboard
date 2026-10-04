@@ -289,11 +289,13 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		if (offscreen(x, y, r + INK_GAP + INK_WIDTH)) return;
 		disc(x, y, r + (dot.needsPerson ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
 		if (dot.needsPerson) ring(x, y, r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
-		const count = dot.folded && r >= COUNT_MIN_RADIUS ? dot.folded.count : null;
+		// A finished family (the parent and everything under it done) is one done dot with its count inside;
+		// any other folded family keeps its own glyph and carries its rollup under it.
+		const finished = dot.folded !== null && dot.status === 'done' && dot.folded.rollup.done === dot.folded.count - 1;
+		const count = finished && r >= COUNT_MIN_RADIUS ? dot.folded!.count : null;
 		drawGlyph(x, y, r, dot.status, { weight: dot.weight, cue: dot.cue, count });
 		if (dot.pr) drawPrMark(x, y, r);
-		// Any collapsed family but a finished one (the parent and everything under it done) carries its rollup under it.
-		if (dot.folded && r >= COUNT_MIN_RADIUS && !(dot.status === 'done' && dot.folded.rollup.done === dot.folded.count - 1)) {
+		if (dot.folded && !finished && r >= COUNT_MIN_RADIUS) {
 			const w = Math.max(16, 1.6 * r);
 			drawRollupBar(x - w / 2, y + r + 4, w, 3, rollupSegments(dot.folded.rollup, x - w / 2, w));
 		}
