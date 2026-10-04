@@ -25,16 +25,5 @@ export function linkCurve(kind: LinkKind, from: MapPoint, to: MapPoint): LinkCur
 	return { type: 'quadratic', from, c: { x: (from.x + to.x) / 2 - dy * BOW, y: (from.y + to.y) / 2 + dx * BOW }, to };
 }
 
-/**
- * Which links show besides chains: every one while All links is on, otherwise the
- * ones lit by focus or selection, by link id. Null lights nothing.
- */
-export interface LinkLighting {
-	all: boolean;
-	lit: ReadonlySet<string> | null;
-}
-
-export const NO_LIGHTING: LinkLighting = { all: false, lit: null };
-
-export const linkShows = (kind: LinkKind, id: string, lighting: LinkLighting): boolean =>
-	kind === 'chain' || kind === 'agent' || lighting.all || (lighting.lit?.has(id) ?? false);
+/** Chain links and agent lines draw at rest, and every link does while All links is on; the rest wait for focus to light them. */
+export const linkAtRest = (kind: LinkKind, all: boolean): boolean => all || kind === 'chain' || kind === 'agent';

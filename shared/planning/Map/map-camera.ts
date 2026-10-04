@@ -41,6 +41,8 @@ export interface CameraOptions {
 	reducedMotion(): boolean;
 	/** The person stopped panning or zooming (not a flight, and not a resize). */
 	onSettle(): void;
+	/** A press the Map takes for itself, such as the start of a dot's drag, which the camera then leaves alone instead of panning. */
+	claims?(event: Event): boolean;
 }
 
 const toZoom = (t: Transform): ZoomTransform => zoomIdentity.translate(t.x, t.y).scale(t.k);
@@ -70,6 +72,7 @@ export function createCamera(element: HTMLElement, options: CameraOptions): MapC
 		.extent(() => [[0, 0], [viewport.width, viewport.height]])
 		.filter((event: Event) => {
 			if (event.type === 'wheel') return (event as WheelEvent).ctrlKey || (event as WheelEvent).metaKey;
+			if (options.claims?.(event)) return false;
 			return !(event as MouseEvent).ctrlKey && !(event as MouseEvent).button;
 		})
 		.constrain((transform) => (bounds ? toZoom(constrainTransform(transform, bounds, viewport)) : transform))

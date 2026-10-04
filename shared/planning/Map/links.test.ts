@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NO_LIGHTING, linkCurve, linkShows } from './links';
+import { linkAtRest, linkCurve } from './links';
 
 describe('link curves', () => {
 	it('flows chain links and agent lines horizontally: the ends leave and arrive level', () => {
@@ -17,14 +17,13 @@ describe('link curves', () => {
 	});
 });
 
-describe('which links show', () => {
-	it('draws chain links at rest and holds the others for focus or All links', () => {
-		expect(linkShows('chain', 'chain:A>B', NO_LIGHTING)).toBe(true);
-		expect(linkShows('blocker', 'blocker:A>B', NO_LIGHTING)).toBe(false);
-		expect(linkShows('discovered', 'discovered:A>B', NO_LIGHTING)).toBe(false);
-		expect(linkShows('blocker', 'blocker:A>B', { all: true, lit: null })).toBe(true);
-		const lit = { all: false, lit: new Set(['blocker:A>B']) };
-		expect(linkShows('blocker', 'blocker:A>B', lit)).toBe(true);
-		expect(linkShows('discovered', 'discovered:A>C', lit)).toBe(false);
+describe('which links draw at rest', () => {
+	it('draws chain links and agent lines, and holds the others for focus or All links', () => {
+		expect(linkAtRest('chain', false)).toBe(true);
+		expect(linkAtRest('agent', false)).toBe(true);
+		expect(linkAtRest('blocker', false)).toBe(false);
+		expect(linkAtRest('discovered', false)).toBe(false);
+		expect(linkAtRest('blocker', true)).toBe(true);
+		expect(linkAtRest('discovered', true)).toBe(true);
 	});
 });

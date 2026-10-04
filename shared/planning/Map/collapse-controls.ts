@@ -48,11 +48,11 @@ export function expandControls(dots: readonly DrawDot[], transform: Transform, v
 	return controls;
 }
 
-/** The control under a point in the plot, the last drawn winning. */
-export function controlAt(controls: readonly CollapseControl[], point: MapPoint): CollapseControl | undefined {
+/** The control under a point in the plot, the last drawn winning; `minRadius` is the least a target reaches, which a coarse pointer raises to 22 px. */
+export function controlAt(controls: readonly CollapseControl[], point: MapPoint, minRadius = 0): CollapseControl | undefined {
 	for (let i = controls.length - 1; i >= 0; i--) {
 		const { at } = controls[i]!;
-		if (Math.hypot(point.x - at.x, point.y - at.y) <= at.r + HIT_SLOP) return controls[i];
+		if (Math.hypot(point.x - at.x, point.y - at.y) <= Math.max(at.r + HIT_SLOP, minRadius)) return controls[i];
 	}
 	return undefined;
 }
