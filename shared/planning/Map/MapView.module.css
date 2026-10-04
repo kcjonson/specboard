@@ -21,6 +21,11 @@
 	cursor: grabbing;
 }
 
+/* Over a collapse or expand control. */
+.canvas[data-control] {
+	cursor: pointer;
+}
+
 .controls {
 	position: absolute;
 	top: var(--space-3);

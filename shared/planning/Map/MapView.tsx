@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
 import { useModel } from '@specboard/models';
 import { LoadError } from '../LoadError/LoadError';
+import { createCollapseStore } from './collapse-store';
 import { createLayoutWorker } from './layout/layout-worker-client';
 import { createCamera } from './map-camera';
 import { MapDataModel } from './map-data-model';
@@ -22,15 +23,22 @@ export interface MapViewProps {
 /** The layout fits itself to this plot shape until the container has been measured. */
 const FALLBACK_ASPECT = 2;
 
+/** Outlines for a new zoom wait this long after the last frame that wanted them, so a gesture never stalls on them. */
+const DEFER_MS = 150;
+
 const media = (query: string): MediaQueryList | null => (typeof window.matchMedia === 'function' ? window.matchMedia(query) : null);
 
 /**
  * The Map: one canvas drawing every item's status glyph where the layout put it, a
- * ruler of dates along its bottom, and a camera on d3-zoom. The page loads this module
- * lazily, so Board and Table don't carry it.
+ * region around every family with its label and collapse control, the links that
+ * show, a ruler of dates along its bottom, and a camera on d3-zoom. The page loads
+ * this module lazily, so Board and Table don't carry it.
  */
 export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Element {
-	const model = useMemo(() => provided ?? new MapDataModel(createMapSource(projectRef), createLayoutWorker), [provided, projectRef]);
+	const model = useMemo(
+		() => provided ?? new MapDataModel(createMapSource(projectRef), createLayoutWorker, createCollapseStore(projectRef)),
+		[provided, projectRef],
+	);
 	useModel(model);
 
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -59,7 +67,12 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 			onSettle: () => surfaceRef.current?.settled(),
 		});
 		const surface = new MapSurface(
-			{ renderer: createCanvasRenderer(canvas), camera, schedule: (paint) => window.requestAnimationFrame(paint) },
+			{
+				renderer: createCanvasRenderer(canvas),
+				camera,
+				schedule: (paint) => window.requestAnimationFrame(paint),
+				defer: (task) => window.setTimeout(task, DEFER_MS),
+			},
 			{
 				onViewportEmpty: setViewportEmpty,
 				onSettle: (key) => {
@@ -87,13 +100,24 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 			if (!key || !surface.focusOn(key, false)) surface.reopen();
 		};
 		window.addEventListener('popstate', onPopState);
-		const onPointerMove = (event: MouseEvent): void => {
+		const pointOf = (event: MouseEvent): { x: number; y: number } => {
 			const { left, top } = canvas.getBoundingClientRect();
-			surface.setPointer({ x: event.clientX - left, y: event.clientY - top });
+			return { x: event.clientX - left, y: event.clientY - top };
+		};
+		const onPointerMove = (event: MouseEvent): void => {
+			const point = pointOf(event);
+			surface.setPointer(point);
+			canvas.toggleAttribute('data-control', surface.controlAt(point) !== null);
 		};
 		const onPointerLeave = (): void => surface.setPointer(null);
+		// d3-zoom swallows the click that ends a drag, so a click here is a click in place.
+		const onClick = (event: MouseEvent): void => {
+			const control = surface.controlAt(pointOf(event));
+			if (control) void model.setCollapsed(control.key, control.collapse);
+		};
 		canvas.addEventListener('mousemove', onPointerMove);
 		canvas.addEventListener('mouseleave', onPointerLeave);
+		canvas.addEventListener('click', onClick);
 		const onKeyDown = (event: KeyboardEvent): void => {
 			const zoom = zoomKeyOf(event);
 			if (!zoom) return;
@@ -105,6 +129,7 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 
 		return () => {
 			document.removeEventListener('keydown', onKeyDown);
+			canvas.removeEventListener('click', onClick);
 			canvas.removeEventListener('mousemove', onPointerMove);
 			canvas.removeEventListener('mouseleave', onPointerLeave);
 			window.removeEventListener('popstate', onPopState);
@@ -120,8 +145,9 @@ export function MapView({ projectRef, model: provided }: MapViewProps): JSX.Elem
 	const { state, layout, rows } = model;
 	useEffect(() => {
 		const surface = surfaceRef.current!;
-		if (state === 'ready' && layout) surface.show(layout, rows, readFocus(window.location.search));
-		else surface.clear();
+		if (state !== 'ready' || !layout) surface.clear();
+		else if (surface.showing) surface.update(layout, rows);
+		else surface.show(layout, rows, readFocus(window.location.search));
 	}, [state, layout, rows]);
 
 	const surface = (): MapSurface => surfaceRef.current!;

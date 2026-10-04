@@ -78,6 +78,12 @@ export const STATUS_GLYPHS: Record<ItemStatus, StatusGlyphSpec> = {
 	blocked: { token: STATUS_TOKENS.blocked, filled: 1, fill: octagon() },
 };
 
+/** The done disc without its check: a folded family's dot, which carries its count there instead. */
+export const DONE_DISC = circle(DISC_RADIUS);
+
+/** The paused cue, two bars: drawn in a ring glyph's color in place of its fill, or cut out of a solid glyph. */
+export const PAUSE_BARS = 'M5.25 4.75h2v6.5h-2zM8.75 4.75h2v6.5h-2z';
+
 /**
  * The status a glyph shows. The derived `blocked` flag (a hold, or an open blocker
  * row under any status) wins, so a Ready item waiting on another item reads as blocked.

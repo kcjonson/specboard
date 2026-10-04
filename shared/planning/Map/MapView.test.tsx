@@ -12,6 +12,7 @@ import { layoutMap } from './layout/layout';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { MapView } from './MapView';
 import type { MapRead } from '@specboard/core/map-read';
+import { memoryCollapseStore } from './collapse-store.fixture';
 import { MapDataModel } from './map-data-model';
 import type { MapFrame, MapRenderer } from './renderer';
 
@@ -19,6 +20,7 @@ const frames: MapFrame[] = [];
 const renderer: MapRenderer = {
 	resize: vi.fn(),
 	refreshTheme: vi.fn(),
+	measureLabel: (text) => text.length * 7,
 	draw: (frame) => {
 		frames.push(frame);
 	},
@@ -41,7 +43,7 @@ function board(count: number): MapRead {
 }
 
 function renderMap(source: () => Promise<MapRead>): { model: MapDataModel } & ReturnType<typeof render> {
-	const model = new MapDataModel(source, () => worker);
+	const model = new MapDataModel(source, () => worker, memoryCollapseStore());
 	return { model, ...render(<MapView projectRef="acme/specboard" model={model} />) };
 }
 
@@ -187,6 +189,30 @@ describe('MapView zoom keys', () => {
 		// The layout point under the pointer stays under it.
 		expect((200 - after.x) / after.k).toBeCloseTo((200 - before.x) / before.k);
 		expect((100 - after.y) / after.k).toBeCloseTo((100 - before.y) / before.k);
+	});
+});
+
+describe('MapView collapse', () => {
+	it('collapses a region from its label\'s control, in place, and points at the control', async () => {
+		const b = new BoardBuilder();
+		const epic = b.add({ type: 'epic', status: 'in_progress', title: 'Open family' });
+		for (let i = 0; i < 4; i++) b.add({ parentKey: epic.key, status: i ? 'ready' : 'in_progress' });
+		for (let i = 0; i < 4; i++) b.add({ status: 'ready' });
+		renderMap(() => Promise.resolve({ items: b.rows, summarized: false }));
+		await waitFor(() => expect(frames.at(-1)?.labels.length).toBe(1));
+		const { labels, transform } = frames.at(-1)!;
+		const { toggle } = labels[0]!;
+		const canvas = document.querySelector('canvas')!;
+
+		fireEvent.mouseMove(canvas, { clientX: toggle.x, clientY: toggle.y });
+		expect(canvas.hasAttribute('data-control')).toBe(true);
+		fireEvent.mouseMove(canvas, { clientX: 1, clientY: 1 });
+		expect(canvas.hasAttribute('data-control')).toBe(false);
+
+		fireEvent.click(canvas, { clientX: toggle.x, clientY: toggle.y });
+		await waitFor(() => expect(frames.at(-1)!.dots.find((dot) => dot.key === epic.key)?.folded).toBeTruthy());
+		expect(frames.at(-1)!.regions).toEqual([]);
+		expect(frames.at(-1)!.transform).toEqual(transform);
 	});
 });
 

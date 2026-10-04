@@ -62,6 +62,8 @@ export {
 	STATUS_TOKENS,
 	NEEDS_PERSON_TOKEN,
 	STATUS_GLYPHS,
+	DONE_DISC,
+	PAUSE_BARS,
 	glyphStatus,
 } from './status-glyph';
 export type { StatusGlyphSpec } from './status-glyph';
