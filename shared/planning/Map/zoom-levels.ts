@@ -67,6 +67,8 @@ export interface LevelFrame {
 	from: ZoomLevel | null;
 	/** 0 to 1 along the fade's easing; 1 when `from` is null. */
 	progress: number;
+	/** The level changed on this very frame, so whatever was mid-fade starts a new fade from where it is. */
+	began: boolean;
 }
 
 /**
@@ -94,17 +96,18 @@ export class ZoomLevels {
 
 	frame(k: number): LevelFrame {
 		const next = nextLevel(this.level, k);
-		if (next !== this.level) {
+		const began = next !== this.level;
+		if (began) {
 			this.from = this.reducedMotion() ? null : this.level;
 			this.startedAt = this.now();
 			this.level = next;
 		}
-		if (this.from === null) return { level: this.level, from: null, progress: 1 };
+		if (this.from === null) return { level: this.level, from: null, progress: 1, began };
 		const elapsed = (this.now() - this.startedAt) / FADE_MS;
 		if (elapsed >= 1) {
 			this.from = null;
-			return { level: this.level, from: null, progress: 1 };
+			return { level: this.level, from: null, progress: 1, began };
 		}
-		return { level: this.level, from: this.from, progress: FADE_EASE(Math.max(0, elapsed)) };
+		return { level: this.level, from: this.from, progress: FADE_EASE(Math.max(0, elapsed)), began };
 	}
 }

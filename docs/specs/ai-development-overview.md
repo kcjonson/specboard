@@ -535,7 +535,9 @@ inside the plot and clear of everything taken, and with none it gets no label. T
 measured with the canvas's own font metrics and cut with an ellipsis. Text sits on a
 halo of the surface so it clears 4.5:1 whatever tint the region under it has; the
 muted ink clears that on the surface in both themes (4.8:1 light, 6.9:1 dark), and the
-renderer falls back to full ink in a theme where it doesn't. An item named by another
+renderer falls back to full ink in a theme where it doesn't. Labels arriving in a fade
+never draw over labels leaving it: a leaving label that sits where an arriving one does
+goes at once. An item named by another
 layer (a computer's text block) gets no label of its own at any level.
 
 **Cards.** At the near level each item in view is a card of real DOM over the canvas,
@@ -546,8 +548,12 @@ item waits on by key (text holds as a count, since their text isn't in the Map's
 read), the PR as `PR #n`, a linked spec, whether an agent or a person made the item,
 a folded family's size, and the ink ring when it needs a person. Cards are display
 only until the interaction task: the layer ignores the pointer so the canvas keeps
-panning. Only cards within 48 px of the plot are mounted, at most 300, and a pan moves
-the one element they sit in rather than the cards.
+panning. A card is at most 120 px tall (the CSS enforces it: two title lines and two
+rows of marks, the rest clipped), so culling and label placement can both use that
+box: cards within 48 px of the plot are mounted, at most 300, and every card's box is
+as taken as a dot is, so a region label is placed where no card will cover it. A pan
+moves the one element the cards sit in rather than the cards. A fade turned around
+halfway (zoom in, then out) goes back from the opacity it had reached.
 
 ---
 
@@ -684,7 +690,8 @@ Fixed, outside the Map:
   own shape, with a speck per dot in its status color. Its box is reserved: labels
   are placed around it, and it sits above the cards. Clicking it flies the camera to
   that point at the current scale, and dragging in it moves the camera with no
-  flight.
+  flight. It takes keyboard focus, and the arrow keys move the view by a quarter of
+  the plot.
 - Search uses the toolbar's search and the board's matching rules (title,
   description, or key, at any depth). It dims non-matches, labels the matches, and
   puts the changes view's stepping bar on the canvas ("Matches for "checklist", 2

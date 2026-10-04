@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/preact';
+import { centerOf } from '../camera';
 import { drawDot } from '../draw-dot.fixture';
 import type { MapBounds } from '../layout/types';
 import { EMPTY_OVERLAY, OverlayStore, type MinimapFrame } from '../overlay';
@@ -59,7 +60,8 @@ describe('Minimap', () => {
 		expect(panel.style.left).toBe(`${reserved.x}px`);
 		expect(panel.style.top).toBe(`${reserved.y}px`);
 		expect(panel.style.width).toBe(`${reserved.w}px`);
-		expect(panel.getAttribute('aria-hidden')).toBe('true');
+		expect(panel.getAttribute('aria-label')).toBe('Minimap');
+		expect(panel.tabIndex).toBe(0);
 
 		const marker = panel.lastChild as HTMLElement;
 		const marked = minimapViewport(size, bounds, transform, plot);
@@ -100,6 +102,33 @@ describe('Minimap', () => {
 		// A press past the miniature's edge lands on the Map's edge.
 		fireEvent.pointerDown(panel, { clientX: 100 + size.width + 50, clientY: 200 + size.height + 50, pointerId: 1 });
 		expect(onCenter).toHaveBeenLastCalledWith({ x: bounds.maxX, y: bounds.maxY }, true);
+	});
+
+	it('moves the view a quarter of the plot with the arrow keys, from where it is', () => {
+		// The plot's middle is at layout (-400, 0), well inside the Map.
+		const transform = { k: 3, x: 1800, y: 350 };
+		const store = new OverlayStore();
+		const onCenter = vi.fn();
+		const { container } = render(<Minimap store={store} onCenter={onCenter} />);
+		act(() => store.publish({ ...EMPTY_OVERLAY, minimap: frameAt(transform) }));
+		const panel = container.firstChild as HTMLElement;
+		const middle = centerOf(transform, plot);
+
+		fireEvent.keyDown(panel, { key: 'ArrowRight' });
+		const [right, fly] = onCenter.mock.lastCall!;
+		expect(fly).toBe(true);
+		expect(right.x - middle.x).toBeCloseTo(0.25 * (plot.width / transform.k));
+		expect(right.y).toBeCloseTo(middle.y);
+
+		fireEvent.keyDown(panel, { key: 'ArrowUp' });
+		expect(onCenter.mock.lastCall![0].y).toBeLessThan(middle.y);
+		fireEvent.keyDown(panel, { key: 'ArrowLeft' });
+		expect(onCenter.mock.lastCall![0].x).toBeLessThan(middle.x);
+
+		onCenter.mockClear();
+		fireEvent.keyDown(panel, { key: 'a' });
+		fireEvent.keyDown(panel, { key: 'ArrowRight', metaKey: true });
+		expect(onCenter).not.toHaveBeenCalled();
 	});
 
 	it('maps the miniature to the viewport rectangle it draws: what a click on the rectangle\'s middle centers is the plot\'s middle', () => {

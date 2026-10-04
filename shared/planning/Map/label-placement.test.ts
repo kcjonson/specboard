@@ -4,7 +4,7 @@ import type { Transform } from './camera';
 import { drawDot } from './draw-dot.fixture';
 import { MAX_DOT_LABEL, type LabelFont } from './dot-labels';
 import type { DrawDot, DrawRegion } from './draw-list';
-import { crossFade, placeLabels, type LabelInput } from './label-placement';
+import { crossFade, crossFadeAll, placeLabels, type LabelInput } from './label-placement';
 import type { Circle } from './region-labels';
 import { traceRegions, type RegionOutline } from './regions/outline';
 import { LABEL_RULES } from './zoom-levels';
@@ -181,6 +181,22 @@ describe('label placement', () => {
 		const once = placeLabels(input({ dots }));
 		const again = placeLabels(input({ dots }));
 		expect(again.dots.map((l) => [l.key, l.box.x, l.box.y])).toEqual(once.dots.map((l) => [l.key, l.box.x, l.box.y]));
+	});
+});
+
+describe('crossFadeAll', () => {
+	const dotLabel = (key: string, x: number): { key: string; text: string; box: Box; strong: boolean; alpha: number } => ({ key, text: key, box: { x, y: 0, w: 40, h: 14 }, strong: false, alpha: 1 });
+
+	it('drops a label that is leaving where one is arriving, so the two never draw over each other, and fades the rest', () => {
+		const next = { regions: [], dots: [dotLabel('new', 100)] };
+		const previous = { regions: [], dots: [dotLabel('overlapped', 110), dotLabel('clear', 300)] };
+		const faded = crossFadeAll(next, previous, 0.4);
+		expect(faded.dots.map((label) => [label.key, label.alpha])).toEqual([['new', 0.4], ['clear', 0.6]]);
+	});
+
+	it('keeps a label both levels draw even where it moved over its own old spot', () => {
+		const faded = crossFadeAll({ regions: [], dots: [dotLabel('same', 100)] }, { regions: [], dots: [dotLabel('same', 105)] }, 0.5);
+		expect(faded.dots.map((label) => [label.key, label.alpha])).toEqual([['same', 1]]);
 	});
 });
 

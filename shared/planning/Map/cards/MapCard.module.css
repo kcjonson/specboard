@@ -11,6 +11,7 @@
 	border-radius: var(--radius-lg);
 	background: var(--color-surface);
 	box-shadow: var(--shadow-card);
+	overflow: hidden;
 	color: var(--color-text);
 	font-size: var(--text-xs);
 	list-style: none;
@@ -68,14 +69,21 @@
 	overflow-wrap: anywhere;
 }
 
+/* Two rows at most, which is what the card's height limit leaves them. */
 .marks {
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--space-1);
+	max-height: 44px;
+	overflow: hidden;
 }
 
 /* Ink on the badge's tint clears text contrast; the badge's muted gray does not. */
 .card .chip {
+	max-width: 100%;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
 	gap: 2px;
 	padding: 1px var(--space-2);
 	color: var(--color-text);

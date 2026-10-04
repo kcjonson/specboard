@@ -13,11 +13,11 @@ import {
 	type Transform,
 	type Viewport,
 } from './camera';
-import { visibleCards } from './cards/card-culling';
+import { cardBox, visibleCards } from './cards/card-culling';
 import { controlAt, expandControls, labelControls, type CollapseControl } from './collapse-controls';
 import type { Box } from './box-index';
 import { buildDrawList, type DrawList } from './draw-list';
-import { crossFade, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
+import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
 import type { MapLayout, MapPoint } from './layout/types';
 import { NO_LIGHTING, type LinkLighting } from './links';
 import type { MapCamera, ScreenPoint } from './map-camera';
@@ -93,6 +93,9 @@ export class MapSurface {
 	private named: ReadonlySet<string> = new Set();
 	private minimapOn = false;
 	private cards: CardSet | null = null;
+	/** How opaque the cards were on the last frame, and what they were when the fade now running began, so a fade turned around halfway goes back from where it was. */
+	private cardAlpha = 0;
+	private cardFadeFrom = 0;
 
 	constructor(deps: MapSurfaceDeps, handlers: MapSurfaceHandlers) {
 		this.renderer = deps.renderer;
@@ -163,6 +166,7 @@ export class MapSurface {
 		this.deferred++;
 		this.controls = [];
 		this.cards = null;
+		this.cardAlpha = 0;
 		this.minimapOn = false;
 		this.setViewportEmpty(false);
 		this.requestPaint();
@@ -286,7 +290,9 @@ export class MapSurface {
 				timeZone: this.timeZone,
 			})
 			: null;
-		const reserved = [...(minimap ? [minimap.panel] : [])];
+		// Cards are DOM over the canvas, so a label under one is hidden: they are as taken as a dot is.
+		const cards = this.cardsFor(level, dots, transform);
+		const reserved = [...(minimap ? [minimap.panel] : []), ...(cards.set?.dots.map((dot) => cardBox(dot, transform)) ?? [])];
 		if (ruler) {
 			const edge = edgeLabelAt(ruler.edge.x, this.renderer.measureLabel(ruler.edge.label, 'dot-strong'), this.viewport.width);
 			if (edge) reserved.push(edge.box);
@@ -304,7 +310,6 @@ export class MapSurface {
 			})
 			: { regions: [], dots: [] };
 		this.controls = [...labelControls(labels.regions), ...expand];
-		const cards = this.cardsFor(level, dots, transform);
 		this.renderer.draw({
 			dots,
 			regions: outlines,
@@ -327,16 +332,15 @@ export class MapSurface {
 	private labelsFor(level: LevelFrame, input: Omit<LabelInput, 'rules'>): PlacedLabels {
 		const placed = placeLabels({ ...input, rules: LABEL_RULES[level.level] });
 		if (level.from === null) return placed;
-		const previous = placeLabels({ ...input, rules: LABEL_RULES[level.from] });
-		return {
-			regions: crossFade(placed.regions, previous.regions, level.progress),
-			dots: crossFade(placed.dots, previous.dots, level.progress),
-		};
+		return crossFadeAll(placed, placeLabels({ ...input, rules: LABEL_RULES[level.from] }), level.progress);
 	}
 
 	/** The cards in view and how opaque they are: the near level has them, and a switch to or from it fades them. */
 	private cardsFor(level: LevelFrame, dots: DrawList['dots'], transform: Transform): { set: CardSet | null; alpha: number } {
-		const alpha = level.level === 'near' ? level.progress : level.from === 'near' ? 1 - level.progress : 0;
+		if (level.began) this.cardFadeFrom = this.cardAlpha;
+		const target = level.level === 'near' ? 1 : 0;
+		const alpha = level.from === null ? target : this.cardFadeFrom + (target - this.cardFadeFrom) * level.progress;
+		this.cardAlpha = alpha;
 		if (alpha <= 0) {
 			this.cards = null;
 			return { set: null, alpha: 0 };

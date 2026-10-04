@@ -91,7 +91,7 @@ describe('ZoomLevels fades', () => {
 	it('opens at the level the scale lands in, with no fade', () => {
 		const { levels } = setup();
 		levels.reset(scaleFor(MIDDLE_ENTER + 1));
-		expect(levels.frame(scaleFor(MIDDLE_ENTER + 1))).toEqual({ level: 'middle', from: null, progress: 1 });
+		expect(levels.frame(scaleFor(MIDDLE_ENTER + 1))).toEqual({ level: 'middle', from: null, progress: 1, began: false });
 	});
 
 	it('fades for the new level over the flight\'s length, then rests', () => {
@@ -100,24 +100,25 @@ describe('ZoomLevels fades', () => {
 		expect(levels.frame(scaleFor(2)).from).toBeNull();
 
 		const started = levels.frame(scaleFor(MIDDLE_ENTER + 1));
-		expect(started).toMatchObject({ level: 'middle', from: 'far', progress: 0 });
+		expect(started).toMatchObject({ level: 'middle', from: 'far', progress: 0, began: true });
 
 		clock.now += FADE_MS / 2;
 		const halfway = levels.frame(scaleFor(MIDDLE_ENTER + 1));
 		expect(halfway.from).toBe('far');
+		expect(halfway.began).toBe(false);
 		// The flight's curve is front-loaded: past halfway in progress at half the time.
 		expect(halfway.progress).toBeGreaterThan(0.5);
 		expect(halfway.progress).toBeLessThan(1);
 
 		clock.now += FADE_MS;
-		expect(levels.frame(scaleFor(MIDDLE_ENTER + 1))).toEqual({ level: 'middle', from: null, progress: 1 });
+		expect(levels.frame(scaleFor(MIDDLE_ENTER + 1))).toEqual({ level: 'middle', from: null, progress: 1, began: false });
 	});
 
 	it('cuts under reduced motion', () => {
 		const { levels, clock } = setup();
 		clock.reduced = true;
 		levels.reset(scaleFor(2));
-		expect(levels.frame(scaleFor(MIDDLE_ENTER + 1))).toEqual({ level: 'middle', from: null, progress: 1 });
+		expect(levels.frame(scaleFor(MIDDLE_ENTER + 1))).toEqual({ level: 'middle', from: null, progress: 1, began: true });
 	});
 
 	it('does not start a fade for a move inside one level', () => {

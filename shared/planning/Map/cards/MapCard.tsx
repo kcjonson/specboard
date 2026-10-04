@@ -4,7 +4,7 @@ import type { MapItemRow } from '@specboard/core/map-read';
 import { Badge, Icon, StatusGlyph } from '@specboard/ui';
 import type { DrawDot } from '../draw-list';
 import { cardContent } from './card-content';
-import { CARD_ANCHOR, CARD_WIDTH } from './card-culling';
+import { CARD_ANCHOR, CARD_HEIGHT, CARD_WIDTH } from './card-culling';
 import styles from './MapCard.module.css';
 
 export interface MapCardProps {
@@ -25,7 +25,7 @@ function MapCardView({ row, dot, k }: MapCardProps): JSX.Element {
 	const x = k * dot.x - CARD_ANCHOR.x;
 	const y = k * dot.y - CARD_ANCHOR.y;
 	return (
-		<li class={styles.card} style={{ width: `${CARD_WIDTH}px`, transform: `translate(${x}px, ${y}px)` }}>
+		<li class={styles.card} style={{ width: `${CARD_WIDTH}px`, maxHeight: `${CARD_HEIGHT}px`, transform: `translate(${x}px, ${y}px)` }}>
 			<div class={styles.head}>
 				<span class={card.needsPerson ? `${styles.glyph} ${styles.needsPerson}` : styles.glyph}>
 					<StatusGlyph class={styles.status} status={dot.status} />
@@ -39,6 +39,7 @@ function MapCardView({ row, dot, k }: MapCardProps): JSX.Element {
 			</div>
 			<p class={styles.title}>{card.title}</p>
 			<div class={styles.marks}>
+				<Badge class={`size-sm ${styles.chip}`}>{card.statusLabel}</Badge>
 				{card.subStatus && <Badge class={`size-sm ${styles.chip}`}>{card.subStatus}</Badge>}
 				{card.waitingOn && <Badge class={`size-sm ${styles.chip}`}>{card.waitingOn}</Badge>}
 				{card.holds > 0 && <Badge class={`size-sm ${styles.chip}`}>{card.holds === 1 ? '1 hold' : `${card.holds} holds`}</Badge>}

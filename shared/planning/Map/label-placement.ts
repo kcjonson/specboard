@@ -1,4 +1,4 @@
-import { BoxIndex, type Box } from './box-index';
+import { BoxIndex, intersects, type Box } from './box-index';
 import type { Transform, Viewport } from './camera';
 import { CLEARANCE, dotBox } from './dot-boxes';
 import { MAX_DOT_LABEL, placeDotLabel, type DotLabel, type LabelFont } from './dot-labels';
@@ -80,6 +80,22 @@ export function placeLabels({ rules, regions, outlines, dots, transform, viewpor
 		labelDots(unnamed.filter((dot) => dot.flight === null).sort((a, b) => b.r - a.r || byKey(a, b)));
 	}
 	return placed;
+}
+
+/** The labels mid-fade between two levels, both kinds together; see `crossFade`. */
+export function crossFadeAll(next: PlacedLabels, previous: PlacedLabels, progress: number): PlacedLabels {
+	const regions = crossFade(next.regions, previous.regions, progress);
+	const dots = crossFade(next.dots, previous.dots, progress);
+	// The two levels were placed apart, so a label that is leaving can sit where one arriving does; the leaver goes at once rather than draw over it.
+	const arriving = [...next.regions, ...next.dots].map((label) => label.box);
+	const keep = (label: { box: Box; alpha: number }, still: ReadonlySet<string>, key: string): boolean =>
+		still.has(key) || !arriving.some((box) => intersects(box, label.box));
+	const stillRegions = new Set(next.regions.map((label) => label.key));
+	const stillDots = new Set(next.dots.map((label) => label.key));
+	return {
+		regions: regions.filter((label) => keep(label, stillRegions, label.key)),
+		dots: dots.filter((label) => keep(label, stillDots, label.key)),
+	};
 }
 
 /**

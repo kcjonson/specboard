@@ -49,6 +49,8 @@ describe('MapCards', () => {
 		expect(first).toContain(keys[0]);
 		expect(first).toContain('Card title 0');
 		expect(first).toContain('Scoping');
+		expect(first).toContain('In Progress');
+		expect(cards[1]!.textContent).toContain('Ready');
 		expect(cards[1]!.textContent).toContain('Spec');
 		expect(cards[2]!.textContent).toContain('PR #7');
 		expect(cards[0]!.querySelector('svg[aria-label="In Progress"]')).not.toBeNull();

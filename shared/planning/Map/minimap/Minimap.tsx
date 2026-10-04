@@ -12,6 +12,15 @@ export interface MinimapProps {
 	onCenter(point: MapPoint, fly: boolean): void;
 }
 
+/** Arrow keys move the view by this share of what the plot shows. */
+const KEY_STEP = 0.25;
+const ARROWS: Record<string, MapPoint> = {
+	ArrowLeft: { x: -1, y: 0 },
+	ArrowRight: { x: 1, y: 0 },
+	ArrowUp: { x: 0, y: -1 },
+	ArrowDown: { x: 0, y: 1 },
+};
+
 /** Each dot is a speck this wide; what matters is the shape of the Map, not any one item. */
 const SPECK = 2;
 
@@ -36,8 +45,9 @@ function drawSpecks(canvas: HTMLCanvasElement, frame: MinimapFrame): void {
 /**
  * The whole Map in miniature over the plot's lower left, the viewport marked. It is DOM
  * rather than canvas so it can sit above the cards; its panel is the box the surface
- * keeps labels off. The specks redraw when the Map's dots, size, or theme change, and a
- * pan only moves the rectangle.
+ * keeps labels off. It is a focus stop of its own: the arrow keys move the view a
+ * quarter of the plot, as a click moves it to a point. The specks redraw when the
+ * Map's dots, size, or theme change, and a pan only moves the rectangle.
  */
 export function Minimap({ store, onCenter }: MinimapProps): JSX.Element | null {
 	const [frame, setFrame] = useState<MinimapFrame | null>(store.frame.minimap);
@@ -67,11 +77,22 @@ export function Minimap({ store, onCenter }: MinimapProps): JSX.Element | null {
 		const rect = specks.current!.getBoundingClientRect();
 		return fromMinimap(size, bounds, { x: event.clientX - rect.left, y: event.clientY - rect.top });
 	};
+	const onKeyDown = (event: KeyboardEvent): void => {
+		const step = ARROWS[event.key];
+		if (!step || event.ctrlKey || event.metaKey || event.altKey) return;
+		event.preventDefault();
+		const center = fromMinimap(size, bounds, { x: viewport.x + viewport.w / 2, y: viewport.y + viewport.h / 2 });
+		onCenter({ x: center.x + step.x * KEY_STEP * (viewport.w / size.scale), y: center.y + step.y * KEY_STEP * (viewport.h / size.scale) }, true);
+	};
 	return (
 		<div
 			class={styles.minimap}
 			style={{ left: `${panel.x}px`, top: `${panel.y}px`, width: `${panel.w}px`, height: `${panel.h}px` }}
-			aria-hidden="true"
+			role="group"
+			aria-label="Minimap"
+			aria-description="Arrow keys move the view"
+			tabIndex={0}
+			onKeyDown={onKeyDown}
 			onPointerDown={(event) => {
 				event.currentTarget.setPointerCapture(event.pointerId);
 				onCenter(point(event), true);
@@ -80,8 +101,8 @@ export function Minimap({ store, onCenter }: MinimapProps): JSX.Element | null {
 				if (event.currentTarget.hasPointerCapture(event.pointerId)) onCenter(point(event), false);
 			}}
 		>
-			<canvas ref={specks} class={styles.specks} style={{ width: `${size.width}px`, height: `${size.height}px` }} />
-			<div class={styles.viewport} style={{ width: `${viewport.w}px`, height: `${viewport.h}px`, transform: `translate(${viewport.x}px, ${viewport.y}px)` }} />
+			<canvas ref={specks} class={styles.specks} aria-hidden="true" style={{ width: `${size.width}px`, height: `${size.height}px` }} />
+			<div class={styles.viewport} aria-hidden="true" style={{ width: `${viewport.w}px`, height: `${viewport.h}px`, transform: `translate(${viewport.x}px, ${viewport.y}px)` }} />
 		</div>
 	);
 }

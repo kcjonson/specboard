@@ -9,8 +9,11 @@ import type { DrawDot } from '../draw-list';
  */
 
 export const CARD_WIDTH = 148;
-/** The tallest a card gets: key row, two title lines, and a row of marks. */
-export const CARD_HEIGHT = 92;
+/**
+ * The tallest a card gets, and a limit the card's CSS enforces: padding, the key row, two
+ * title lines, and two rows of marks. Culling and label placement both rely on it.
+ */
+export const CARD_HEIGHT = 120;
 /** Where the card's status glyph is centered, from its top left; the glyph sits on its dot. */
 export const CARD_ANCHOR = { x: 16, y: 16 };
 /** Cards this far past the plot's edge stay mounted, so a pan never shows one arriving. */

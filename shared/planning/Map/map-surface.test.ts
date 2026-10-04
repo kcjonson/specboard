@@ -20,6 +20,7 @@ import { OverlayStore } from './overlay';
 import { edgeLabelAt } from './ruler';
 import { gridStep } from './regions/region-outlines';
 import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
+import { cardBox } from './cards/card-culling';
 import { FADE_MS, NEAR_ENTER, NEAR_EXIT } from './zoom-levels';
 
 class FakeCamera implements MapCamera {
@@ -634,6 +635,46 @@ describe('MapSurface labels, levels, cards, and the minimap', () => {
 		clock.now += FADE_MS * 2;
 		flush();
 		expect(overlay.frame.cards).toBeNull();
+	});
+
+	it('turns a fade around from where it was, not from fully shown', () => {
+		const { surface, camera, overlay, flush, clock } = setup();
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_ENTER + 2)));
+		flush();
+		clock.now += FADE_MS / 4;
+		flush();
+		const partway = overlay.frame.cardAlpha;
+		expect(partway).toBeGreaterThan(0);
+		expect(partway).toBeLessThan(1);
+
+		// Back out before it finished: the cards start fading out from their current opacity.
+		camera.set(viewOf(layout, keys[6]!, scaleFor(NEAR_EXIT - 2)));
+		clock.now += 1;
+		flush();
+		expect(overlay.frame.cardAlpha).toBeLessThanOrEqual(partway + 1e-9);
+		expect(overlay.frame.cardAlpha).toBeGreaterThan(partway - 0.05);
+		clock.now += FADE_MS * 2;
+		flush();
+		expect(overlay.frame.cards).toBeNull();
+	});
+
+	it('keeps region labels out from under the cards, which are DOM over the canvas', () => {
+		const { surface, camera, renderer, overlay, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, chain } = familyBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		camera.set(viewOf(layout, chain[0], scaleFor(NEAR_ENTER + 4)));
+		flush();
+		const { cards } = overlay.frame;
+		expect(cards).not.toBeNull();
+		const boxes = cards!.dots.map((dot) => cardBox(dot, camera.transform));
+		for (const { box } of renderer.frames.at(-1)!.labels) {
+			for (const card of boxes) expect(box.x < card.x + card.w && box.x + box.w > card.x && box.y < card.y + card.h && box.y + box.h > card.y).toBe(false);
+		}
 	});
 
 	it('does not change level for a camera hovering at a boundary', () => {
