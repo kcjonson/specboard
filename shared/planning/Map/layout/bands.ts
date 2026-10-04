@@ -38,11 +38,13 @@ export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 		else groups.set(band.parent, [i]);
 	});
 	const siblings = [...groups.values()].filter((group) => group.length > 1);
+	// Only regions with a sibling are ever compared or pushed.
+	const compared = siblings.flat();
 	const held = bands.map((band) => band.hubs.some((n) => n.fx != null) || band.members.some((n) => n.fx != null));
 
 	return (alpha: number): void => {
 		if (!siblings.length) return;
-		for (let i = 0; i < count; i++) {
+		for (const i of compared) {
 			const { members } = bands[i]!;
 			let lo = Infinity;
 			let hi = -Infinity;
@@ -81,7 +83,7 @@ export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 			}
 		}
 		// Members include nested regions' dots, so a nested region moves with each region around it.
-		for (let i = 0; i < count; i++) {
+		for (const i of compared) {
 			const shift = push[i]!;
 			if (shift === 0 || held[i]) continue;
 			for (const n of bands[i]!.hubs) n.vy += shift;

@@ -220,18 +220,24 @@ function bandsOf(model: MapModel, repNode: (item: ModelItem) => SimNode): Band[]
 	const hubs = model.items.filter((item) => item.hub);
 	const index = new Map(hubs.map((item, i) => [item, i]));
 	const bands: Band[] = hubs.map((item) => ({ hubs: [repNode(item)], members: [], parent: item.parent ? index.get(item.parent)! : -1 }));
-	for (const item of model.items) {
-		if (item.rep !== item) continue;
-		for (let p = item.parent; p; p = p.parent) {
-			const band = bands[index.get(p)!]!;
-			if (item.hub) band.hubs.push(repNode(item));
-			else band.members.push(repNode(item));
-		}
-	}
 	for (const hub of hubs) {
 		if (!hub.children.some((child) => child.hub)) continue;
 		const own = hub.children.filter((child) => !child.hub).map(repNode);
 		if (own.length) bands.push({ hubs: [], members: own, parent: index.get(hub)! });
+	}
+	// Only a region with a sibling is ever compared, so only those collect their dots: a
+	// deep chain of only children would otherwise hold every leaf once per level.
+	const siblings = new Map<number, number>();
+	for (const band of bands) siblings.set(band.parent, (siblings.get(band.parent) ?? 0) + 1);
+	const collects = (i: number): boolean => siblings.get(bands[i]!.parent)! > 1;
+	for (const item of model.items) {
+		if (item.rep !== item) continue;
+		for (let p = item.parent; p; p = p.parent) {
+			const i = index.get(p)!;
+			if (!collects(i)) continue;
+			if (item.hub) bands[i]!.hubs.push(repNode(item));
+			else bands[i]!.members.push(repNode(item));
+		}
 	}
 	return bands;
 }
