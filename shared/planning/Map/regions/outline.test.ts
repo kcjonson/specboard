@@ -56,10 +56,9 @@ function heightAt(outline: RegionOutline, x: number): number {
 
 /**
  * Every structural promise the spec makes about outlines (spec, Regions), checked on
- * the traced loops and again on the smoothed curves the renderer draws. Members land inside their own outline only where the layout kept
- * families apart; where it lets two families interleave, the neighbor wins that ground.
+ * the traced loops and again on the smoothed curves the renderer draws.
  */
-function expectSolidAndApart(inputs: readonly RegionInput[], outlines: readonly RegionOutline[], { membersInside = true, every = 1 } = {}): void {
+function expectSolidAndApart(inputs: readonly RegionInput[], outlines: readonly RegionOutline[], { every = 1 } = {}): void {
 	const byKey = new Map(outlines.map((outline) => [outline.key, outline]));
 	const input = new Map(inputs.map((i) => [i.key, i]));
 	const ancestors = (key: string): Set<string> => {
@@ -69,7 +68,7 @@ function expectSolidAndApart(inputs: readonly RegionInput[], outlines: readonly 
 	};
 	// One outline per region with members, and every member inside it: no member left on an island.
 	expect(outlines.map((o) => o.key).sort()).toEqual(inputs.filter((i) => i.members.length).map((i) => i.key).sort());
-	for (const i of membersInside ? inputs : []) {
+	for (const i of inputs) {
 		const outline = byKey.get(i.key)!;
 		for (const m of i.members) expect(insideLoop(m.x, m.y, outline.loop), `${m.x},${m.y} in ${i.key}`).toBe(true);
 	}
@@ -209,6 +208,18 @@ describe('region outlines', () => {
 		for (const [x, y] of points(outlines.find((o) => o.key === 'N1')!.loop)) expect(insideLoop(x, y, outer.loop)).toBe(false);
 	});
 
+	it('carries nested corridors up a deep chain over many members once each', () => {
+		// Every level holds the same twenty members, so every level's tree is the same
+		// tree; inherited corridors that weren't shared would pile up a level at a time.
+		const members: Array<[number, number]> = Array.from({ length: 20 }, (_, i) => [i * 40, (i % 3) * 15]);
+		const levels = 300;
+		const inputs = Array.from({ length: levels }, (_, i) => region(`R${i}`, members, { parentKey: i ? `R${i - 1}` : null, height: levels - i }));
+		const outlines = traceRegions(inputs, 5);
+		const outer = outlines.find((o) => o.key === 'R0')!;
+		for (const [x, y] of members) expect(insideLoop(x, y, outer.loop)).toBe(true);
+		for (const o of outlines) if (o !== outer) for (const [x, y] of points(o.loop, 4)) expect(insideLoop(x, y, outer.loop)).toBe(true);
+	});
+
 	it('draws nothing for a region with no members', () => {
 		expect(traceRegions([region('A', [])], 5)).toEqual([]);
 	});
@@ -248,7 +259,7 @@ describe('region outlines', () => {
 });
 
 describe('region outlines on laid-out boards', () => {
-	const check = (layout: MapLayout, options?: { membersInside?: boolean; every?: number }): void => {
+	const check = (layout: MapLayout, options?: { every?: number }): void => {
 		const inputs = regionInputs(layout);
 		expect(inputs.length).toBeGreaterThan(0);
 		for (const step of [gridStep(1), gridStep(4)]) expectSolidAndApart(inputs, traceRegions(inputs, step), options);
@@ -267,11 +278,59 @@ describe('region outlines on laid-out boards', () => {
 		check(layout);
 	});
 
-	it('stays solid and apart on a larger generated board whose families interleave, every family open', () => {
+	it('stays solid and apart on a larger generated board, every family open', () => {
 		const rows = syntheticBoard(300, 7);
 		const collapse = Object.fromEntries(rows.filter((row) => row.type === 'epic').map((row) => [row.key, false]));
-		check(layoutMap({ rows, now: Date.parse('2026-09-30T18:00:00Z'), collapse, aspect: 2 }), { membersInside: false, every: 3 });
+		check(layoutMap({ rows, now: Date.parse('2026-09-30T18:00:00Z'), collapse, aspect: 2 }), { every: 3 });
 	});
+});
+
+describe('every member inside its own outline', () => {
+	const now = Date.parse('2026-09-30T18:00:00Z');
+	const outside = (layout: MapLayout): { outside: string[]; members: number } => {
+		const inputs = regionInputs(layout);
+		const outlines = new Map(traceRegions(inputs, gridStep(1)).map((o) => [o.key, o]));
+		const found: string[] = [];
+		let members = 0;
+		for (const input of inputs) {
+			for (const m of input.members) {
+				members++;
+				const outline = outlines.get(input.key);
+				if (!outline || !insideLoop(m.x, m.y, outline.loop)) found.push(`${m.x.toFixed(1)},${m.y.toFixed(1)} outside ${input.key}`);
+			}
+		}
+		return { outside: found, members };
+	};
+	it('after a local pass that changes a leaf of a nested family', () => {
+		const board = realisticBoard();
+		const before = layoutMap({ rows: board.rows, now, collapse: {}, aspect: 2.5 });
+		const nested = board.rows.find((row) => row.key === before.regions.find((r) => r.depth === 1)!.key)!;
+		const rows = board.rows.map((row) => ({ ...row }));
+		const leaf = rows.find((row) => row.parentKey === nested.key && row.status === 'ready')!;
+		leaf.status = 'in_progress';
+		leaf.startedAt = new Date(now).toISOString();
+		leaf.timeAnchor = leaf.startedAt;
+		const positions = Object.fromEntries(before.nodes.map((n) => [n.key, { x: n.x, y: n.y }]));
+		const after = layoutMap({ rows, now, collapse: {}, aspect: 2.5, previous: { frame: before.frame, positions, changed: [leaf.key] } });
+		const { outside: lost } = outside(after);
+		expect(lost, lost.join('; ')).toEqual([]);
+	});
+
+	const boards = [
+		['the realistic board', realisticBoard().rows],
+		['a generated 1,000-item board', syntheticBoard(1000, 7)],
+	] as const;
+	for (const [name, rows] of boards) {
+		const open = Object.fromEntries(rows.filter((row) => row.type === 'epic').map((row) => [row.key, false]));
+		for (const [mode, collapse] of [['as it opens', {}], ['with every family open', open]] as const) {
+			it(`on ${name}, ${mode}`, () => {
+				const { outside: lost, members } = outside(layoutMap({ rows, now, collapse, aspect: 2.5 }));
+				expect(members).toBeGreaterThan(40);
+				// A member a hair over a grid edge from its loop is the grid's rounding, not a stranger's ground.
+				expect(lost.length, lost.join('; ')).toBeLessThanOrEqual(Math.floor(members / 200));
+			}, 30_000);
+		}
+	}
 });
 
 describe('region inputs', () => {

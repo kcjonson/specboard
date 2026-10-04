@@ -2,7 +2,9 @@ import type { MapItemRow } from '@specboard/core/map-read';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BoardBuilder, NOW, iso, realisticBoard, syntheticBoard, type RealisticBoard } from './board-fixture';
 import { COLLISION_PAD, ORDER_GAP } from './constants';
+import { bloomWidth } from './forces';
 import { layoutMap } from './layout';
+import { timeToX } from './time-scale';
 import type { MapLayout, MapNode } from './types';
 
 const HOUR = 3_600_000;
@@ -173,6 +175,21 @@ describe('layoutMap on a realistic board', () => {
 		for (let i = 1; i < keys.length; i++) expect(node.get(keys[i]!)!.x).toBeGreaterThanOrEqual(node.get(keys[i - 1]!)!.x);
 	});
 
+	it('fans a burst of completions out in order instead of stacking it on one x', () => {
+		const node = nodesOf(result);
+		const burst = board.burst.map((row) => node.get(row.key)!);
+		// Closed in order, so left to right in order, each a little past the last.
+		for (let i = 1; i < burst.length; i++) expect(burst[i]!.x - burst[i - 1]!.x).toBeGreaterThan(1);
+		const extent = burst.at(-1)!.x - burst[0]!.x;
+		expect(extent).toBeGreaterThan(3 * 2 * burst[0]!.r);
+		// Never carried further from its moment than the cloud it blooms into.
+		const moment = timeToX(result.frame.scale, Date.parse(board.burst[0]!.completedAt!));
+		for (const n of burst) expect(Math.abs(n.x - moment)).toBeLessThan(2 * bloomWidth(burst.length) + 2 * n.r);
+		const xs = dots(result).filter((n) => result.phases[n.key] === 'done').map((n) => n.x);
+		const crowd = Math.max(...xs.map((x) => xs.filter((other) => Math.abs(other - x) < 2).length));
+		expect(crowd).toBeLessThanOrEqual(3);
+	});
+
 	it('lays each open chain out left to right and keeps two related chains a row apart', () => {
 		const node = nodesOf(result);
 		const rows = board.openChains.map((chain) => chain.map((r) => node.get(r.key)!));
@@ -274,6 +291,20 @@ describe('layoutMap on a realistic board', () => {
 });
 
 describe('layoutMap edge cases', () => {
+	it('fits a new board whose items were all filed this moment', () => {
+		const b = new BoardBuilder();
+		for (let epic = 0; epic < 2; epic++) {
+			const parent = b.add({ type: 'epic', status: 'ready', created: NOW });
+			for (let i = 0; i < 5; i++) b.add({ parentKey: parent.key, status: 'ready', created: NOW });
+		}
+		const result = layout(b.rows);
+		const { minX, maxX, minY, maxY } = result.frame.bounds;
+		// No stretch of time to spread over: the width is the reserved strip and the dots, not a runaway unit.
+		expect(result.frame.scale.unit).toBeLessThan(5_000);
+		expect((maxX - minX) / (maxY - minY)).toBeLessThan(2 * ASPECT);
+		expectNoOverlaps(result);
+	});
+
 	it('lays out an empty board', () => {
 		const result = layout([]);
 		expect(result.nodes).toEqual([]);
