@@ -111,6 +111,9 @@ describe('region labels', () => {
 		const cut = fitText('a title much longer than the room it gets', 100, measure);
 		expect(cut.endsWith('…')).toBe(true);
 		expect(measure(cut)).toBeLessThanOrEqual(100);
+		// An emoji at the cut goes whole or not at all, never half a surrogate pair.
+		const loneHigh = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/;
+		for (let room = 20; room < 120; room++) expect(fitText('Ship 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀 today', room, measure)).not.toMatch(loneHigh);
 	});
 
 	it('splits the rollup bar by phase, in phase order, every phase present at least visible', () => {

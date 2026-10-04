@@ -103,14 +103,17 @@ const PHASES: readonly MapPhase[] = ['done', 'in_flight', 'next', 'later'];
 /** Cut to `max` pixels with an ellipsis, measured by the caller's font. */
 export function fitText(text: string, max: number, measure: (text: string) => number): string {
 	if (measure(text) <= max) return text;
+	// By code point, so a cut never splits a surrogate pair.
+	const chars = Array.from(text);
+	const cut = (n: number): string => `${chars.slice(0, n).join('').trimEnd()}…`;
 	let lo = 0;
-	let hi = text.length;
+	let hi = chars.length;
 	while (lo < hi) {
 		const middle = Math.ceil((lo + hi) / 2);
-		if (measure(`${text.slice(0, middle).trimEnd()}…`) <= max) lo = middle;
+		if (measure(cut(middle)) <= max) lo = middle;
 		else hi = middle - 1;
 	}
-	return `${text.slice(0, lo).trimEnd()}…`;
+	return cut(lo);
 }
 
 /** A bar of `width` split by phase, every phase present at least 2 px so a lone item still shows. */
