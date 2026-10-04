@@ -56,10 +56,9 @@ function heightAt(outline: RegionOutline, x: number): number {
 
 /**
  * Every structural promise the spec makes about outlines (spec, Regions), checked on
- * the traced loops and again on the smoothed curves the renderer draws. Members land inside their own outline only where the layout kept
- * families apart; where it lets two families interleave, the neighbor wins that ground.
+ * the traced loops and again on the smoothed curves the renderer draws.
  */
-function expectSolidAndApart(inputs: readonly RegionInput[], outlines: readonly RegionOutline[], { membersInside = true, every = 1 } = {}): void {
+function expectSolidAndApart(inputs: readonly RegionInput[], outlines: readonly RegionOutline[], { every = 1 } = {}): void {
 	const byKey = new Map(outlines.map((outline) => [outline.key, outline]));
 	const input = new Map(inputs.map((i) => [i.key, i]));
 	const ancestors = (key: string): Set<string> => {
@@ -69,7 +68,7 @@ function expectSolidAndApart(inputs: readonly RegionInput[], outlines: readonly 
 	};
 	// One outline per region with members, and every member inside it: no member left on an island.
 	expect(outlines.map((o) => o.key).sort()).toEqual(inputs.filter((i) => i.members.length).map((i) => i.key).sort());
-	for (const i of membersInside ? inputs : []) {
+	for (const i of inputs) {
 		const outline = byKey.get(i.key)!;
 		for (const m of i.members) expect(insideLoop(m.x, m.y, outline.loop), `${m.x},${m.y} in ${i.key}`).toBe(true);
 	}
@@ -248,7 +247,7 @@ describe('region outlines', () => {
 });
 
 describe('region outlines on laid-out boards', () => {
-	const check = (layout: MapLayout, options?: { membersInside?: boolean; every?: number }): void => {
+	const check = (layout: MapLayout, options?: { every?: number }): void => {
 		const inputs = regionInputs(layout);
 		expect(inputs.length).toBeGreaterThan(0);
 		for (const step of [gridStep(1), gridStep(4)]) expectSolidAndApart(inputs, traceRegions(inputs, step), options);
@@ -267,11 +266,44 @@ describe('region outlines on laid-out boards', () => {
 		check(layout);
 	});
 
-	it('stays solid and apart on a larger generated board whose families interleave, every family open', () => {
+	it('stays solid and apart on a larger generated board, every family open', () => {
 		const rows = syntheticBoard(300, 7);
 		const collapse = Object.fromEntries(rows.filter((row) => row.type === 'epic').map((row) => [row.key, false]));
-		check(layoutMap({ rows, now: Date.parse('2026-09-30T18:00:00Z'), collapse, aspect: 2 }), { membersInside: false, every: 3 });
+		check(layoutMap({ rows, now: Date.parse('2026-09-30T18:00:00Z'), collapse, aspect: 2 }), { every: 3 });
 	});
+});
+
+describe('every member inside its own outline', () => {
+	const now = Date.parse('2026-09-30T18:00:00Z');
+	const outside = (layout: MapLayout): { outside: string[]; members: number } => {
+		const inputs = regionInputs(layout);
+		const outlines = new Map(traceRegions(inputs, gridStep(1)).map((o) => [o.key, o]));
+		const found: string[] = [];
+		let members = 0;
+		for (const input of inputs) {
+			for (const m of input.members) {
+				members++;
+				const outline = outlines.get(input.key);
+				if (!outline || !insideLoop(m.x, m.y, outline.loop)) found.push(`${m.x.toFixed(1)},${m.y.toFixed(1)} outside ${input.key}`);
+			}
+		}
+		return { outside: found, members };
+	};
+	const boards = [
+		['the realistic board', realisticBoard().rows],
+		['a generated 1,000-item board', syntheticBoard(1000, 7)],
+	] as const;
+	for (const [name, rows] of boards) {
+		const open = Object.fromEntries(rows.filter((row) => row.type === 'epic').map((row) => [row.key, false]));
+		for (const [mode, collapse] of [['as it opens', {}], ['with every family open', open]] as const) {
+			it(`on ${name}, ${mode}`, () => {
+				const { outside: lost, members } = outside(layoutMap({ rows, now, collapse, aspect: 2.5 }));
+				expect(members).toBeGreaterThan(40);
+				// A member a hair over a grid edge from its loop is the grid's rounding, not a stranger's ground.
+				expect(lost.length, lost.join('; ')).toBeLessThanOrEqual(Math.floor(members / 200));
+			}, 30_000);
+		}
+	}
 });
 
 describe('region inputs', () => {

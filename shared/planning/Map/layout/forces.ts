@@ -5,9 +5,13 @@ import {
 	CHAIN_ROW_STRENGTH,
 	COLLISION_PAD,
 	COLLISION_STRENGTH,
+	FAMILY_STRENGTH,
+	MIDLINE_STRENGTH,
 	ORDER_EPSILON,
 	RELATED_CHAINS_GAP,
 	RELATED_CHAINS_STRENGTH,
+	REPULSION,
+	TIME_PULL,
 } from './constants';
 
 export interface SimNode extends SimulationNodeDatum {
@@ -133,6 +137,30 @@ export function collision(): Force<SimNode, SimLink> {
 	return force;
 }
 
+/**
+ * A parent's unseen center holds its children with a spring of rest length 0, but a
+ * done child only across time: its x is the completion order's, so finished work stays
+ * where it was done and an epic stretches back through it. Pulling done children along
+ * time too packed a long-running family against that order, which then pooled whole
+ * runs of done work, theirs and their neighbors', onto one x. The center follows its
+ * children both ways.
+ */
+export function familyRows(links: ReadonlyArray<readonly [hub: SimNode, child: SimNode]>): Force<SimNode, SimLink> {
+	const children = new Map<SimNode, number>();
+	for (const [hub] of links) children.set(hub, (children.get(hub) ?? 0) + 1);
+	return (alpha: number): void => {
+		const k = alpha * FAMILY_STRENGTH;
+		for (const [hub, child] of links) {
+			const dy = child.y - hub.y;
+			child.vy -= dy * k;
+			if (child.phase !== 'done') child.vx -= (child.x - hub.x) * k;
+			const share = k / children.get(hub)!;
+			hub.vx += (child.x - hub.x) * share;
+			hub.vy += dy * share;
+		}
+	};
+}
+
 /** Each later item in a chain is pulled level with what blocks it, so the chain reads as a row. */
 export function chainRow(links: ReadonlyArray<readonly [blocker: SimNode, blocked: SimNode]>): Force<SimNode, SimLink> {
 	return (alpha: number): void => {
@@ -196,6 +224,16 @@ function place(n: SimNode, x: number): void {
 }
 
 /**
+ * Half the width a group of dots takes when one target pulls them all. Repulsion
+ * falls off as 1/d, so a group under the time pull and the midline settles as a
+ * uniformly filled ellipse whose half-width is sqrt(2 * Q * ky / (kx * (kx + ky))),
+ * Q being the group's total repulsion. A single dot has none.
+ */
+export function bloomWidth(count: number): number {
+	return Math.sqrt((2 * REPULSION * Math.max(0, count - 1) * MIDLINE_STRENGTH) / (TIME_PULL * (TIME_PULL + MIDLINE_STRENGTH)));
+}
+
+/**
  * Restores the date and dependency orders after a tick with the least movement:
  * pool adjacent violators over done items (the least-squares fix for an order),
  * hold in-flight items past the last completion, then walk the dependencies.
@@ -207,6 +245,7 @@ export function createOrderPass(orders: Orders): () => void {
 	const poolStart = new Int32Array(done.length);
 	const poolCount = new Int32Array(done.length);
 	const poolSum = new Float64Array(done.length);
+	const bloom = Float64Array.from({ length: done.length + 1 }, (_, n) => bloomWidth(n));
 
 	return (): void => {
 		let pools = 0;
@@ -214,7 +253,13 @@ export function createOrderPass(orders: Orders): () => void {
 			let start = i;
 			let count = 1;
 			let sum = done[i]!.x;
-			while (pools > 0 && poolSum[pools - 1]! / poolCount[pools - 1]! >= sum / count) {
+			// A pool fans out over its bloom width around its mean, so it absorbs a neighbor
+			// closer than the fan's step would hold them, not just one out of order.
+			while (pools > 0) {
+				const prevCount = poolCount[pools - 1]!;
+				const merged = prevCount + count;
+				const gap = sum / count - bloom[count]! - (poolSum[pools - 1]! / prevCount + bloom[prevCount]!);
+				if (gap >= (2 * bloom[merged]!) / (merged - 1)) break;
 				pools--;
 				start = poolStart[pools]!;
 				count += poolCount[pools]!;
@@ -229,9 +274,10 @@ export function createOrderPass(orders: Orders): () => void {
 			const count = poolCount[p]!;
 			if (count === 1) continue;
 			const mean = poolSum[p]! / count;
+			const step = (2 * bloom[count]!) / (count - 1);
 			for (let k = 0; k < count; k++) {
 				const n = done[poolStart[p]! + k]!;
-				place(n, mean + (k - (count - 1) / 2) * ORDER_EPSILON);
+				place(n, mean + (k - (count - 1) / 2) * step);
 				n.vx = 0;
 			}
 		}

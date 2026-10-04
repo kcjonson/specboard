@@ -32,6 +32,12 @@ export function spacing(): Force<SimNode, SimLink> {
 	let ay = new Float64Array(0);
 	let centroidX = new Float64Array(0);
 	let centroidY = new Float64Array(0);
+	// The occupied cells in row-major order: their column, weight, and centroid, and where each row's run starts.
+	let occupiedColumn = new Int32Array(0);
+	let occupiedBodies = new Int32Array(0);
+	let occupiedX = new Float64Array(0);
+	let occupiedY = new Float64Array(0);
+	let rowStart = new Int32Array(0);
 	const grid = new CellIndex();
 	const range2 = REPULSION_RANGE * REPULSION_RANGE;
 	const separation2 = SEPARATION_RANGE * SEPARATION_RANGE;
@@ -61,19 +67,42 @@ export function spacing(): Force<SimNode, SimLink> {
 		}
 		const mx = centroidX;
 		const my = centroidY;
-		for (let c = 0; c < cells; c++) {
-			const from = start[c]!;
-			const to = start[c + 1]!;
-			if (from === to) continue;
-			let sx = 0;
-			let sy = 0;
-			for (let k = from; k < to; k++) {
-				sx += x[k]!;
-				sy += y[k]!;
-			}
-			mx[c] = sx / (to - from);
-			my[c] = sy / (to - from);
+		if (occupiedColumn.length < Math.min(cells, count)) {
+			const size = Math.min(cells, count);
+			occupiedColumn = new Int32Array(size);
+			occupiedBodies = new Int32Array(size);
+			occupiedX = new Float64Array(size);
+			occupiedY = new Float64Array(size);
 		}
+		if (rowStart.length < rows + 1) rowStart = new Int32Array(rows + 1);
+		const oc = occupiedColumn;
+		const ob = occupiedBodies;
+		const ox = occupiedX;
+		const oy = occupiedY;
+		let occupied = 0;
+		for (let r = 0; r < rows; r++) {
+			rowStart[r] = occupied;
+			for (let col = 0; col < columns; col++) {
+				const c = col + r * columns;
+				const from = start[c]!;
+				const to = start[c + 1]!;
+				if (from === to) continue;
+				let sx = 0;
+				let sy = 0;
+				for (let k = from; k < to; k++) {
+					sx += x[k]!;
+					sy += y[k]!;
+				}
+				mx[c] = sx / (to - from);
+				my[c] = sy / (to - from);
+				oc[occupied] = col;
+				ob[occupied] = to - from;
+				ox[occupied] = mx[c]!;
+				oy[occupied] = my[c]!;
+				occupied++;
+			}
+		}
+		rowStart[rows] = occupied;
 
 		const charge = -REPULSION * alpha;
 		for (let cy = 0; cy < rows; cy++) {
@@ -126,18 +155,29 @@ export function spacing(): Force<SimNode, SimLink> {
 				const oy0 = my[c]!;
 				let farX = 0;
 				let farY = 0;
-				for (let oy = Math.max(0, cy - reach); oy <= Math.min(rows - 1, cy + reach); oy++) {
-					const near = oy >= cy - 1 && oy <= cy + 1;
-					for (let ox = Math.max(0, cx - reach); ox <= Math.min(columns - 1, cx + reach); ox++) {
-						if (near && ox >= cx - 1 && ox <= cx + 1) continue;
-						const o = ox + oy * columns;
-						const bodies = start[o + 1]! - start[o]!;
-						if (bodies === 0) continue;
-						const dx = mx[o]! - ox0;
-						const dy = my[o]! - oy0;
+				// Only occupied cells: a row's run is found by binary search on its columns,
+				// so a sparse Map doesn't pay for the empty ground between its rows.
+				const lowColumn = cx - reach;
+				const highColumn = cx + reach;
+				for (let row = Math.max(0, cy - reach); row <= Math.min(rows - 1, cy + reach); row++) {
+					const near = row >= cy - 1 && row <= cy + 1;
+					let lo = rowStart[row]!;
+					let hi = rowStart[row + 1]!;
+					while (lo < hi) {
+						const mid = (lo + hi) >> 1;
+						if (oc[mid]! < lowColumn) lo = mid + 1;
+						else hi = mid;
+					}
+					const rowEnd = rowStart[row + 1]!;
+					for (let q = lo; q < rowEnd; q++) {
+						const col = oc[q]!;
+						if (col > highColumn) break;
+						if (near && col >= cx - 1 && col <= cx + 1) continue;
+						const dx = ox[q]! - ox0;
+						const dy = oy[q]! - oy0;
 						const d2 = dx * dx + dy * dy;
 						if (d2 > range2) continue;
-						const w = (charge * bodies) / d2;
+						const w = (charge * ob[q]!) / d2;
 						farX += dx * w;
 						farY += dy * w;
 					}

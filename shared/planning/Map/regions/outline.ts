@@ -177,8 +177,11 @@ function extentOf(members: readonly RegionMember[], pad: number): MapBounds {
 	return bounds;
 }
 
-/** Each member's bump and the tree's corridors, splatted onto a grid of `step` over `extent`. */
-function rawField(members: readonly RegionMember[], tree: ReadonlyArray<[number, number]>, pad: number, extent: MapBounds, step: number): Field {
+/** A corridor between two points. */
+type Segment = readonly [MapPoint, MapPoint];
+
+/** Each member's bump and the corridors, splatted onto a grid of `step` over `extent`. */
+function rawField(members: readonly RegionMember[], corridors: readonly Segment[], pad: number, extent: MapBounds, step: number): Field {
 	const i0 = Math.floor(extent.minX / step);
 	const j0 = Math.floor(extent.minY / step);
 	const nx = Math.ceil(extent.maxX / step) - i0 + 1;
@@ -209,9 +212,7 @@ function rawField(members: readonly RegionMember[], tree: ReadonlyArray<[number,
 	}
 
 	const reach = pad * CORRIDOR_REACH;
-	for (const [a, b] of tree) {
-		const p = members[a]!;
-		const q = members[b]!;
+	for (const [p, q] of corridors) {
 		const vx = q.x - p.x;
 		const vy = q.y - p.y;
 		const length2 = vx * vx + vy * vy || 1;
@@ -293,13 +294,12 @@ function closing(field: Field, radius: number): Field {
  * bilinearly, so the fine detail (a neck, a member at the edge) is the raw field's and
  * only the filling is the closing's. Closing never lowers a field, so neither does this.
  */
-function closedField(members: readonly RegionMember[], pad: number, step: number): Field {
+function closedField(members: readonly RegionMember[], corridors: readonly Segment[], pad: number, step: number): Field {
 	const extent = extentOf(members, pad);
-	const tree = spanningTree(members);
 	const coarseStep = Math.max(step, CLOSE_STEP);
-	const coarse = closing(rawField(members, tree, pad, extent, coarseStep), Math.round(CLOSE_RADIUS / coarseStep));
+	const coarse = closing(rawField(members, corridors, pad, extent, coarseStep), Math.round(CLOSE_RADIUS / coarseStep));
 	if (coarseStep === step) return coarse;
-	const fine = rawField(members, tree, pad, extent, step);
+	const fine = rawField(members, corridors, pad, extent, step);
 	const { i0, j0, nx, ny, values } = fine;
 	for (let j = 0; j < ny; j++) {
 		const gy = ((j0 + j) * step) / coarseStep;
@@ -562,16 +562,40 @@ function fieldBounds(field: Field, step: number): MapBounds {
 }
 
 /**
+ * Each region's corridors: its own spanning tree, plus every corridor of the regions
+ * nested in it. A nested region keeps only ground inside its parent, so the parent
+ * has to run a corridor wherever the nested one does. Its own tree can route
+ * elsewhere, through its own children, and then a nested region stretched across
+ * time (done work back where it closed, live work at now) breaks into islands.
+ */
+function corridorsOf(inputs: readonly RegionInput[]): Map<string, Segment[]> {
+	const corridors = new Map<string, Segment[]>();
+	// Innermost first, so a region's nested corridors are in by the time it's reached.
+	// Only corridors climb, so a deep chain of one-member regions costs nothing extra.
+	for (const input of [...inputs].sort((a, b) => a.height - b.height)) {
+		let list = corridors.get(input.key);
+		if (!list) corridors.set(input.key, (list = []));
+		for (const [a, b] of spanningTree(input.members)) list.push([input.members[a]!, input.members[b]!]);
+		if (!input.parentKey || !list.length) continue;
+		let up = corridors.get(input.parentKey);
+		if (!up) corridors.set(input.parentKey, (up = []));
+		for (const segment of list) up.push(segment);
+	}
+	return corridors;
+}
+
+/**
  * Every region's outline on a grid of `step` layout units, outer regions first. A
  * region with no members draws nothing. Fields share one lattice, so one region's
  * cell (i, j) is the same point as any other's.
  */
 export function traceRegions(inputs: readonly RegionInput[], step: number): RegionOutline[] {
 	const tree = regionTree(inputs);
+	const corridors = corridorsOf(inputs);
 	const working: Working[] = [];
 	for (const input of inputs) {
 		if (!input.members.length) continue;
-		const closed = closedField(input.members, REGION_PAD + NEST_PAD * Math.min(input.height - 1, NEST_PAD_LEVELS), step);
+		const closed = closedField(input.members, corridors.get(input.key)!, REGION_PAD + NEST_PAD * Math.min(input.height - 1, NEST_PAD_LEVELS), step);
 		working.push({ input, ...tree.get(input.key)!, closed, bounds: fieldBounds(closed, step), rivals: [] });
 	}
 	// Rivals are unrelated regions whose grids overlap, found with a sweep along x rather than every pair.

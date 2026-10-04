@@ -207,7 +207,10 @@ build.
    last completion. After every tick a pass restores both orders with the least
    movement, so the forces still shape everything else.
 4. **Links.** A parent holds its children with strong, short springs from an unseen
-   center (with children, it isn't a dot), so a family clusters.
+   center (with children, it isn't a dot), so a family clusters. A done child's
+   spring pulls only across time, since completion order already places it along
+   time: a long-running epic is a row stretched back through its finished work,
+   not a knot that pulls that work out of order.
    Blocker and discovered-from links are weaker and longer: they draw related work
    toward each other without merging families.
 5. **Dependencies.** Until it's done, an item sits right of everything that blocks
@@ -243,7 +246,8 @@ What that produces:
   never past the last thing finished; its session dims and it wears the
   needs-a-person ring.
 - A burst of work closed in one sitting: a run of done dots in the order they
-  closed, stacked where they closed close together.
+  closed, fanned a few units apart across about the width the burst would bloom
+  to, a slanted cloud where they closed rather than a column on one x.
 - A computer picking up three items in parallel: the computer at the right edge,
   its two sessions beside it, and the three items gathered on amber lines, each
   still tied to its family.
@@ -263,9 +267,9 @@ to fit; r is a dot's radius.
 | Time pull | Strength 0.14 toward the anchor, 0.6 of that for a parent |
 | Time scale | Log of age with an 8-hour time constant, blended with the equalized scale at 60% equalized |
 | Quiet break | No activity for more than 12 hours |
-| Parent to child | The parent is an unseen hub with no size, no spacing, and no time pull of its own; rest length 0 to each child, strength 0.7, so children pack around it instead of ringing it |
+| Parent to child | The parent is an unseen hub with no size, no spacing, and no time pull of its own; rest length 0 to each child, strength 0.7, so children pack around it instead of ringing it; a done child is pulled only across time |
 | Blocker and discovered-from links | Rest length r1 + r2 + 70, strength 0.05 |
-| Date order | After every tick, done items go back into completion order by pooling adjacent violators (the least movement that fixes an order), and in-flight items stay r + 10 right of the last completion |
+| Date order | After every tick, done items go back into completion order by pooling adjacent violators, and in-flight items stay r + 10 right of the last completion. A pool fans its items evenly, in order, across twice its bloom half-width (below) around its mean, and takes in a neighbor that sits closer than that fan's step, so a burst never shares one x |
 | Dependencies | An unfinished item at least r1 + r2 + 10 right of each blocker, open or satisfied, enforced after every tick |
 | Chain link | Rest length r1 + r2 + 16, strength 0.7, in place of the later item's parent link |
 | Chain row | Strength 0.6 pulling each later item level with what blocks it |
@@ -275,6 +279,7 @@ to fit; r is a dot's radius.
 | Repulsion | 40, ignored past 260 |
 | Collision | Radii plus 4 |
 | Family separation | An extra 2.5 times the repulsion between dots of different families, or a loose dot and a family, within 60; a dot's family is the region it's drawn in, so a sub-epic's children also keep apart from their grandparent's own |
+| Region bands | Sibling regions whose stretches of time overlap are pushed apart in y, each as a whole, until their half-heights plus 50 separate their centers; strength 3. A parent with nested regions counts its own direct children as one more sibling |
 | Midline | Strength 0.03 |
 | Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart; the strip past now is reserved at 0.6 of the time scale's unit width, computers at half of it and sessions at a quarter |
 | Velocity | 0.6 kept per tick (`d3-force` velocity decay 0.4) |
@@ -284,7 +289,9 @@ to fit; r is a dot's radius.
 The width the time scale maps onto is fitted in two passes so the settled Map
 matches the canvas's aspect ratio. The trial width is 68 per unit of aspect, widened
 by the square root of the dot count past 150, since a settled Map's area grows with
-its dots. When the trial lands within 10% of the fit, it stands; otherwise the
+its dots, and wide enough for the stacked family bands: the most top-level families
+alive at one moment, each a 40-unit row plus the band gap, times the aspect. When
+the trial lands within 10% of the fit, it stands; otherwise the
 second pass starts from the first, stretched to the fitted width, rather than from
 cold. A session stays in its computer's cluster for an hour after its last write.
 
@@ -330,7 +337,9 @@ there too. Held against the floor, a burst still reads as a cloud.
   shape around its children, built the way Bubble Sets (Collins, Penn, and
   Carpendale, 2009) draws a set over an existing layout. Each child raises a field
   around itself and a spanning tree between the children keeps the region in one
-  piece, so a long-running epic shows as bulbs on a thin neck. A closing pass
+  piece, so a long-running epic shows as bulbs on a thin neck. A parent's corridors
+  include every corridor of the regions nested in it, so a nested region stretched
+  across time never runs out of its parent's ground. A closing pass
   (grow 20 layout units, shrink back) fills narrow inlets, so the edge stays
   simple, and the outline is traced where the field crosses a threshold. Its
   distances are layout units, so a region scales with its dots (see the
@@ -339,8 +348,8 @@ there too. Held against the floor, a burst still reads as a cloud.
 - Regions don't overlap. Where two unrelated regions would, each keeps the ground
   nearer its own children and they meet at a shared edge with a hairline gap. The
   layout keeps loose dots and other families out of a region with a short-range
-  push between families, so the drawing never has to dent its edge around a
-  stranger.
+  push between families, and stacks sibling families that share a stretch of time
+  in bands, so the drawing never has to dent its edge around a stranger.
 - Regions nest. A child with children of its own is a region inside its parent's,
   and each level out gets a little more padding and a slightly deeper tint.
 - The label sits on the outline, at the top where there's room: the parent's status

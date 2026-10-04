@@ -102,6 +102,8 @@ export interface RealisticBoard {
 	finished: MapItemRow;
 	/** Ready items a local-pass test can pick up. */
 	pickups: MapItemRow[];
+	/** Twelve loose items closed in one sitting, four minutes apart. */
+	burst: MapItemRow[];
 }
 
 /**
@@ -149,7 +151,7 @@ export function realisticBoard(): RealisticBoard {
 	}
 
 	const burstAt = ago(2);
-	for (let i = 0; i < 12; i++) b.add({ type: 'bug', status: 'done', created: ago(3), completed: burstAt + i * 4 * 60_000 });
+	const burst = Array.from({ length: 12 }, (_, i) => b.add({ type: 'bug', status: 'done', created: ago(3), completed: burstAt + i * 4 * 60_000 }));
 	for (let i = 0; i < 15; i++) b.add({ status: 'done', created: ago(60), completed: between(ago(58), ago(9)) });
 	const looseWork = b.add({ status: 'in_progress', created: ago(2), started: ago(0.2) });
 	b.add({ status: 'in_progress', created: ago(7), started: ago(4) });
@@ -177,6 +179,7 @@ export function realisticBoard(): RealisticBoard {
 		nested,
 		finished,
 		pickups: [ready[13]!, ready[16]!, ready[19]!],
+		burst,
 	};
 }
 
