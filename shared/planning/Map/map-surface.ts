@@ -20,7 +20,7 @@ import { cardBox } from './cards/card-culling';
 import { screenRadius } from './dot-boxes';
 import { buildDrawList, type DrawDot, type DrawList } from './draw-list';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
-import type { MapLayout, MapPoint } from './layout/types';
+import type { MapBounds, MapLayout, MapPoint } from './layout/types';
 import { NO_LIGHTING, type LinkLighting } from './links';
 import type { MapCamera, ScreenPoint } from './map-camera';
 import { minimapPanel, minimapShows, minimapSize, minimapViewport, type MinimapSize } from './minimap/minimap';
@@ -78,6 +78,8 @@ export class MapSurface {
 	private readonly levels: ZoomLevels;
 	private readonly unsubscribe: () => void;
 	private layout: MapLayout | null = null;
+	/** The layout's bounds widened to every region outline: what the camera fits and holds the Map to. */
+	private extent: MapBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 	private rows: ReadonlyMap<string, MapItemRow> = EMPTY_OVERLAY.rows;
 	private drawing: DrawList = { dots: [], regions: [], links: [] };
 	private outlines: RegionOutlines | null = null;
@@ -129,9 +131,9 @@ export class MapSurface {
 		this.viewport = { width, height: Math.max(0, height - RULER_HEIGHT) };
 		this.renderer.resize(width, height);
 		if (this.layout) {
-			this.configureCamera(this.layout);
-			if (this.pristine || !before) this.camera.set(this.openView(this.layout));
-			else this.camera.set(centeredOn(before, Math.max(this.camera.transform.k, this.minScale(this.layout)), this.viewport));
+			this.configureCamera();
+			if (this.pristine || !before) this.camera.set(this.openView());
+			else this.camera.set(centeredOn(before, Math.max(this.camera.transform.k, this.minScale()), this.viewport));
 		}
 		this.requestPaint();
 	}
@@ -151,7 +153,7 @@ export class MapSurface {
 		this.take(layout, rows);
 		this.pristine = true;
 		const target = focusKey ? this.placeOf(focusKey) : undefined;
-		const view = target ? focusTransform(target, layout.frame.bounds, this.drawing.dots, null, this.viewport) : this.openView(layout);
+		const view = target ? focusTransform(target, this.extent, this.drawing.dots, null, this.viewport) : this.openView();
 		// The Map opens at its level, with no fade from another one.
 		this.levels.reset(view.k);
 		this.camera.set(view);
@@ -208,12 +210,12 @@ export class MapSurface {
 
 	fitAll(): void {
 		if (!this.layout) return;
-		this.camera.flyTo(fitTransform(this.layout.frame.bounds, this.viewport));
+		this.camera.flyTo(fitTransform(this.extent, this.viewport));
 	}
 
 	now(): void {
 		if (!this.layout) return;
-		this.camera.flyTo(nowTransform(this.layout.frame.bounds, this.drawing.dots, this.viewport));
+		this.camera.flyTo(nowTransform(this.extent, this.drawing.dots, this.viewport));
 	}
 
 	/** The on-screen buttons: about the middle of the plot. */
@@ -243,7 +245,7 @@ export class MapSurface {
 	centerOn(point: MapPoint, fly: boolean): void {
 		if (!this.layout) return;
 		// The camera's own pan limit applies to gestures; a target set directly has to be held to it here.
-		const view = constrainTransform(centeredOn(point, this.camera.transform.k, this.viewport), this.layout.frame.bounds, this.viewport);
+		const view = constrainTransform(centeredOn(point, this.camera.transform.k, this.viewport), this.extent, this.viewport);
 		if (fly) this.camera.flyTo(view);
 		else this.camera.set(view);
 		this.pristine = false;
@@ -254,7 +256,7 @@ export class MapSurface {
 	focusOn(key: string, fly = true): boolean {
 		const target = this.placeOf(key);
 		if (!this.layout || !target) return false;
-		const view = focusTransform(target, this.layout.frame.bounds, this.drawing.dots, fly ? this.camera.transform : null, this.viewport);
+		const view = focusTransform(target, this.extent, this.drawing.dots, fly ? this.camera.transform : null, this.viewport);
 		if (fly) this.camera.flyTo(view);
 		else this.camera.set(view);
 		return true;
@@ -282,7 +284,7 @@ export class MapSurface {
 	reopen(): void {
 		if (!this.layout) return;
 		this.pristine = true;
-		this.camera.set(this.openView(this.layout));
+		this.camera.set(this.openView());
 	}
 
 	paint(): void {
@@ -293,7 +295,7 @@ export class MapSurface {
 		const { dots, regions, links } = this.drawing;
 		const outlines = this.outlinesFor(transform.k);
 		const level = this.levels.frame(transform.k);
-		const minimap = layout ? this.minimapFor(layout, transform) : null;
+		const minimap = layout ? this.minimapFor(transform) : null;
 		const expand = expandControls(dots, transform, this.viewport, level.level);
 		const ruler = layout
 			? rulerMarks({
@@ -384,10 +386,10 @@ export class MapSurface {
 	}
 
 	/** The minimap's panel and what it shows, or null while the camera is at (or near) fit all. */
-	private minimapFor(layout: MapLayout, transform: Transform): { panel: Box; frame: MinimapFrame } | null {
-		this.minimapOn = this.drawing.dots.length > 0 && minimapShows(transform.k, this.minScale(layout), this.minimapOn);
+	private minimapFor(transform: Transform): { panel: Box; frame: MinimapFrame } | null {
+		this.minimapOn = this.drawing.dots.length > 0 && minimapShows(transform.k, this.minScale(), this.minimapOn);
 		if (!this.minimapOn) return null;
-		const { bounds } = layout.frame;
+		const bounds = this.extent;
 		const size: MinimapSize = minimapSize(bounds);
 		const panel = minimapPanel(size, this.viewport);
 		const span = { width: this.viewport.width / transform.k, height: this.viewport.height / transform.k };
@@ -402,8 +404,11 @@ export class MapSurface {
 		this.rows = rows;
 		this.drawing = buildDrawList(layout, rows);
 		this.outlines = new RegionOutlines(layout);
+		// What fit all, Now, the opening view, and the zoom-out limit frame is the dots and the regions drawn around them, whose padding runs past the dots.
+		this.extent = layout.frame.bounds;
+		for (const { bounds } of this.outlines.at(gridStep(0))) this.extent = unionBounds(this.extent, bounds);
 		this.deferred++;
-		this.configureCamera(layout);
+		this.configureCamera();
 	}
 
 	/**
@@ -460,15 +465,22 @@ export class MapSurface {
 		this.handlers.onViewportEmpty(empty);
 	}
 
-	private openView(layout: MapLayout): ReturnType<typeof openTransform> {
-		return openTransform(layout.frame.bounds, this.drawing.dots, this.viewport);
+	private openView(): ReturnType<typeof openTransform> {
+		return openTransform(this.extent, this.drawing.dots, this.viewport);
 	}
 
-	private minScale(layout: MapLayout): number {
-		return fitScale(layout.frame.bounds, this.viewport);
+	private minScale(): number {
+		return fitScale(this.extent, this.viewport);
 	}
 
-	private configureCamera(layout: MapLayout): void {
-		this.camera.configure(this.viewport, layout.frame.bounds, this.minScale(layout));
+	private configureCamera(): void {
+		this.camera.configure(this.viewport, this.extent, this.minScale());
 	}
 }
+
+const unionBounds = (a: MapBounds, b: MapBounds): MapBounds => ({
+	minX: Math.min(a.minX, b.minX),
+	maxX: Math.max(a.maxX, b.maxX),
+	minY: Math.min(a.minY, b.minY),
+	maxY: Math.max(a.maxY, b.maxY),
+});

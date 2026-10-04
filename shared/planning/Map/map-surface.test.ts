@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
 	FIT_PADDING,
+	FIT_TOP_PADDING,
 	ZOOM_STEP,
 	centerOf,
 	centeredOn,
@@ -18,7 +19,7 @@ import type { MapCamera, ScreenPoint } from './map-camera';
 import { MapSurface } from './map-surface';
 import { OverlayStore } from './overlay';
 import { edgeLabelAt } from './ruler';
-import { gridStep } from './regions/region-outlines';
+import { RegionOutlines, gridStep } from './regions/region-outlines';
 import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
 import { cardBox } from './cards/card-culling';
 import { FADE_MS, NEAR_ENTER, NEAR_EXIT } from './zoom-levels';
@@ -360,6 +361,26 @@ function familyBoard(): { layout: MapLayout; rows: Map<string, ReturnType<BoardB
 }
 
 describe('MapSurface regions, links, and collapse controls', () => {
+	it('fits every region outline in the plot, not just the dots: the pad around a family runs past them', () => {
+		const { surface, camera, flush } = setup();
+		const { layout, rows } = familyBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		surface.fitAll();
+		flush();
+		const outlines = new RegionOutlines(layout).at(gridStep(0));
+		expect(outlines.length).toBeGreaterThan(0);
+		const { k, x, y } = camera.transform;
+		for (const { bounds } of outlines) {
+			expect(x + k * bounds.minX).toBeGreaterThanOrEqual(FIT_PADDING - 1e-6);
+			expect(x + k * bounds.maxX).toBeLessThanOrEqual(plot.width - FIT_PADDING + 1e-6);
+			expect(y + k * bounds.minY).toBeGreaterThanOrEqual(FIT_TOP_PADDING - 1e-6);
+			expect(y + k * bounds.maxY).toBeLessThanOrEqual(plot.height - FIT_PADDING + 1e-6);
+		}
+		// And it is the zoom-out limit, so the camera can't be taken to a view that clips one.
+		expect(camera.configured!.minScale).toBeCloseTo(k);
+	});
+
 	it('draws a region around each family, labels it, and draws its chain links at rest', () => {
 		const { surface, renderer, flush } = setup();
 		const { layout, rows, epic, chain } = familyBoard();
