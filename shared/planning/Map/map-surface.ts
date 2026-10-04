@@ -15,8 +15,9 @@ import {
 	type Viewport,
 } from './camera';
 import { controlAt, expandControls, labelControls, type CollapseControl } from './collapse-controls';
-import type { Box } from './box-index';
+import { intersects, type Box } from './box-index';
 import { cardBox } from './cards/card-culling';
+import { screenRadius } from './dot-boxes';
 import { buildDrawList, type DrawDot, type DrawList } from './draw-list';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
 import type { MapLayout, MapPoint } from './layout/types';
@@ -340,7 +341,11 @@ export class MapSurface {
 			ruler,
 		});
 		this.overlay.publish({ transform, rows: this.rows, cards: cards.set, cardAlpha: cards.alpha, minimap: minimap?.frame ?? null });
-		this.setViewportEmpty(dots.length > 0 && !dotsVisible(dots, transform, this.viewport));
+		// Empty means no glyph at the size it is drawn, and no card body, reaches the plot.
+		const plot = { x: 0, y: 0, w: this.viewport.width, h: this.viewport.height };
+		const glyphInView = dotsVisible(dots, transform, this.viewport, (dot) => screenRadius(dot, transform.k, level.level));
+		const cardInView = cards.set?.dots.some((dot) => intersects(cardBox(dot, transform), plot)) ?? false;
+		this.setViewportEmpty(dots.length > 0 && !glyphInView && !cardInView);
 		// A fade has to be walked frame by frame; at rest nothing asks for another.
 		if (level.from !== null) this.requestPaint();
 	}
@@ -349,7 +354,8 @@ export class MapSurface {
 	private placeFor(level: LevelFrame, input: Omit<LabelInput, 'rules'>): { labels: PlacedLabels; cards: readonly DrawDot[] } {
 		const placed = placeLabels({ ...input, rules: LABEL_RULES[level.level] });
 		if (level.from === null) return { labels: placed, cards: placed.cards };
-		const previous = placeLabels({ ...input, level: level.from, rules: LABEL_RULES[level.from] });
+		// The old level's rules, on the new level's geometry: the renderer already draws the dots at the new level's size.
+		const previous = placeLabels({ ...input, rules: LABEL_RULES[level.from] });
 		const boxes = (dots: readonly DrawDot[]): Box[] => dots.map((dot) => cardBox(dot, input.transform));
 		const arriving = level.level === 'near' ? placed.cards : [];
 		const leaving = level.from === 'near' ? previous.cards : [];

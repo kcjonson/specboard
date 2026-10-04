@@ -128,9 +128,10 @@ export function constrainTransform(transform: Transform, bounds: MapBounds, view
 	return centeredOn({ x, y }, transform.k, viewport);
 }
 
-export function dotsVisible(dots: readonly Dot[], transform: Transform, viewport: Viewport): boolean {
+/** Whether any dot is in the plot, by the radius it is drawn at (`radiusOf`), which depends on the zoom level. */
+export function dotsVisible<T extends Dot>(dots: readonly T[], transform: Transform, viewport: Viewport, radiusOf: (dot: T) => number): boolean {
 	for (const dot of dots) {
-		const r = Math.max(dot.r * transform.k, MIN_DRAW_RADIUS);
+		const r = radiusOf(dot);
 		const x = transform.x + transform.k * dot.x;
 		const y = transform.y + transform.k * dot.y;
 		if (x + r > 0 && x - r < viewport.width && y + r > 0 && y - r < viewport.height) return true;

@@ -10,6 +10,7 @@ import {
 	dotsVisible,
 	fitScale,
 	fitTransform,
+	MIN_DRAW_RADIUS,
 	focusTransform,
 	nearestDot,
 	nowTransform,
@@ -138,17 +139,26 @@ describe('constraining a pan', () => {
 describe('an empty viewport', () => {
 	const dots = [dot('A', 0, 0), dot('B', 2000, 0)];
 
+	const drawnAt = (k: number) => (d: Dot): number => Math.max(d.r * k, MIN_DRAW_RADIUS);
+
 	it('sees a dot in the plot', () => {
-		expect(dotsVisible(dots, { k: 1, x: 100, y: 100 }, viewport)).toBe(true);
+		expect(dotsVisible(dots, { k: 1, x: 100, y: 100 }, viewport, drawnAt(1))).toBe(true);
 	});
 
 	it('sees a dot only partly in the plot, by its drawn radius', () => {
-		expect(dotsVisible([dot('A', 0, 0, 10)], { k: 1, x: -5, y: 100 }, viewport)).toBe(true);
-		expect(dotsVisible([dot('A', 0, 0, 10)], { k: 1, x: -11, y: 100 }, viewport)).toBe(false);
+		expect(dotsVisible([dot('A', 0, 0, 10)], { k: 1, x: -5, y: 100 }, viewport, drawnAt(1))).toBe(true);
+		expect(dotsVisible([dot('A', 0, 0, 10)], { k: 1, x: -11, y: 100 }, viewport, drawnAt(1))).toBe(false);
+	});
+
+	it('uses the radius the dot is drawn at, which at the near level is not its layout size', () => {
+		const edge = [dot('A', 0, 0, 10)];
+		// 30 px past the plot's left edge: a 10 unit dot at scale 8 reaches it, an 8 px glyph does not.
+		expect(dotsVisible(edge, { k: 8, x: -30, y: 100 }, viewport, drawnAt(8))).toBe(true);
+		expect(dotsVisible(edge, { k: 8, x: -30, y: 100 }, viewport, () => 8)).toBe(false);
 	});
 
 	it('sees nothing in a stretch between two clusters', () => {
-		expect(dotsVisible(dots, { k: 1, x: -400, y: 100 }, viewport)).toBe(false);
+		expect(dotsVisible(dots, { k: 1, x: -400, y: 100 }, viewport, drawnAt(1))).toBe(false);
 	});
 
 	it('finds the nearest dot to a point', () => {

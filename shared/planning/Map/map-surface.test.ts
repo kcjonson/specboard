@@ -828,6 +828,23 @@ describe('MapSurface labels, levels, cards, and the minimap', () => {
 		expect(minimap!.span.height).toBeCloseTo(plot.height / view.k);
 	});
 
+	it('offers the jump at the near level by the size glyphs are drawn at there, not their layout size', () => {
+		const { surface, camera, empty, flush, clock } = setup();
+		clock.reduced = true;
+		const { layout, rows, keys } = realBoard();
+		surface.resize(WIDTH, HEIGHT);
+		surface.show(layout, rows, null);
+		const k = scaleFor(NEAR_ENTER + 6);
+		// An item's glyph sits 20 px past the plot's right edge: its layout radius at this scale would reach in, the 8 px glyph does not.
+		const target = at(layout, keys[6]!);
+		camera.set({ k, x: plot.width + 20 - k * target.x, y: plot.height / 2 - k * target.y });
+		flush();
+		expect(empty).toHaveBeenLastCalledWith(true);
+		camera.set(viewOf(layout, keys[6]!, k));
+		flush();
+		expect(empty).toHaveBeenLastCalledWith(false);
+	});
+
 	it('holds a minimap target to the Map: stepping past an edge again and again never leaves it', () => {
 		const { surface, camera, flush, clock } = setup();
 		clock.reduced = true;
