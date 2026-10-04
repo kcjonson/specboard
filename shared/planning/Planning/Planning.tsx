@@ -449,6 +449,8 @@ export function Planning(props: RouteProps): JSX.Element {
 			observerRef.current = observer;
 		}
 	}, []);
+	// The Map has the drawer overlay it rather than narrow it, and needs to know how much it covers.
+	const [drawerWidth, setDrawerWidth] = useState(0);
 	const drawerMaxWidth = workspaceWidth > 0 ? Math.max(DRAWER_MIN_WIDTH, workspaceWidth - BOARD_MIN_WIDTH) : undefined;
 
 	// Loading and load failures render where the board goes, so the toolbar stays
@@ -469,7 +471,15 @@ export function Planning(props: RouteProps): JSX.Element {
 		if (view === 'map') {
 			if (mapError) return <LoadError error={mapError} onRetry={retryMap} />;
 			if (!MapView) return <div class={styles.loading}>Loading...</div>;
-			return <MapView projectRef={projectRef} />;
+			return (
+				<MapView
+					projectRef={projectRef}
+					openItemKey={openItemKey}
+					covered={openItem ? drawerWidth : 0}
+					onOpenItem={handleOpenItemByKey}
+					onCloseItem={handleCloseDrawer}
+				/>
+			);
 		}
 		if (loadError) return <LoadError error={loadError} onRetry={handleRetry} />;
 		// First load only: a later fetch that returns nothing (an empty search, a poll
@@ -532,15 +542,18 @@ export function Planning(props: RouteProps): JSX.Element {
 				<div class={styles.viewArea}>{renderViewArea()}</div>
 
 				{openItem && (
-					<ItemDrawer
-						item={openItem}
-						listed={collectionItem !== undefined}
-						projectRef={projectRef}
-						maxWidth={drawerMaxWidth}
-						onClose={handleCloseDrawer}
-						onDelete={handleDeleteItem}
-						onOpenItem={handleOpenItemByKey}
-					/>
+					<div class={view === 'map' ? styles.drawerOverlay : styles.drawerSlot}>
+						<ItemDrawer
+							item={openItem}
+							listed={collectionItem !== undefined}
+							projectRef={projectRef}
+							maxWidth={drawerMaxWidth}
+							onClose={handleCloseDrawer}
+							onResize={setDrawerWidth}
+							onDelete={handleDeleteItem}
+							onOpenItem={handleOpenItemByKey}
+						/>
+					</div>
 				)}
 			</div>
 

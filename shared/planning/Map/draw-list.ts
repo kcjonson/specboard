@@ -56,6 +56,8 @@ export interface DrawLink {
 	/** `<kind>:<from item>><to item>`, by item key, so focus can name the links it lights. */
 	id: string;
 	kind: LinkKind;
+	/** The nodes that draw its two items, so focus can tell a link inside the related set from one that leaves it. */
+	ends: readonly [string, string];
 	from: MapPoint;
 	to: MapPoint;
 	/** A blocker the work cleared: it keeps drawing, lighter. */
@@ -214,7 +216,7 @@ function linksOf(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): Draw
 		const from = nodes.get(layout.representative[fromKey] ?? '');
 		const to = nodes.get(layout.representative[toKey] ?? '');
 		if (!from || !to || from === to) return;
-		links.push({ id: `${kind}:${fromKey}>${toKey}`, kind, from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, satisfied });
+		links.push({ id: `${kind}:${fromKey}>${toKey}`, kind, ends: [from.key, to.key], from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, satisfied });
 	};
 
 	const inChains = new Set<string>();

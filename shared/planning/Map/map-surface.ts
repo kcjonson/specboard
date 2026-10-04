@@ -14,58 +14,80 @@ import {
 	type Transform,
 	type Viewport,
 } from './camera';
-import { controlAt, expandControls, labelControls, type CollapseControl } from './collapse-controls';
+import { expandControls, labelControls, type CollapseControl } from './collapse-controls';
 import { intersects, type Box } from './box-index';
 import { cardBox } from './cards/card-culling';
-import { screenRadius } from './dot-boxes';
-import { buildDrawList, type DrawDot, type DrawList } from './draw-list';
+import { SPRING_MS, springRemaining } from './drag';
+import { dotBox, screenRadius } from './dot-boxes';
+import { buildDrawList, type DrawDot, type DrawLink, type DrawList, type Rollup } from './draw-list';
+import { FocusFade } from './focus-fade';
+import { HitIndex, type Hit, type HitInput } from './hit-index';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
 import type { MapBounds, MapLayout, MapPoint } from './layout/types';
-import { NO_LIGHTING, type LinkLighting } from './links';
 import type { MapCamera, ScreenPoint } from './map-camera';
 import { minimapPanel, minimapShows, minimapSize, minimapViewport, type MinimapSize } from './minimap/minimap';
-import { EMPTY_OVERLAY, type CardSet, type MapOverlay, type MinimapFrame } from './overlay';
+import { EMPTY_OVERLAY, type CardSet, type DragOffset, type MapOverlay, type MinimapFrame, type QuickFrame } from './overlay';
+import { quickContent, quickHeight, QUICK_WIDTH } from './quick/quick-content';
+import { placeQuickCard } from './quick/quick-card-placement';
 import type { RegionOutline } from './regions/outline';
 import { RegionOutlines, gridStep } from './regions/region-outlines';
+import { RelationIndex, type Relation } from './relations';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
 import { edgeLabelAt, rulerMarks } from './ruler';
-import { LABEL_RULES, ZoomLevels, type LevelFrame } from './zoom-levels';
+import { LABEL_RULES, ZoomLevels, type LevelFrame, type ZoomLevel } from './zoom-levels';
+
+/** What the pointer is over, for the cursor: a collapse or expand control, an item or region, or nothing that takes a click. */
+export type PointerTarget = 'control' | 'item' | null;
 
 export interface MapSurfaceHandlers {
 	/** The plot has no dot in it, or has one again. */
 	onViewportEmpty(empty: boolean): void;
 	/** The person stopped panning or zooming; `key` is the item nearest the middle of the plot, if the Map has any. */
 	onSettle(key: string | null): void;
+	/** A click, Enter on the focused item, or the second tap asked for this item to open in the drawer. */
+	onOpen(key: string): void;
+	/** A collapse or expand control was hit. */
+	onCollapse(key: string, collapse: boolean): void;
+	/** The cursor's target changed. */
+	onPointerTarget(target: PointerTarget): void;
 }
 
 export interface MapSurfaceDeps {
 	renderer: MapRenderer;
 	camera: MapCamera;
-	/** Receives what draws as DOM over the canvas: near-level cards and the minimap. */
+	/** Receives what draws as DOM over the canvas: near-level cards, the quick card, and the minimap. */
 	overlay: MapOverlay;
 	/** The clock label fades run on, in ms. */
 	now(): number;
-	/** Level switches cut instead of fading. */
+	/** Level switches, focus fades, and a dragged dot's return cut instead of running. */
 	reducedMotion(): boolean;
 	/** Runs a repaint on the next frame. Only ever called when something changed. */
 	schedule(paint: () => void): void;
-	/** Runs a task once the current gesture's frames have gone by: outlines for a new zoom are computed there. */
+	/** Runs a task once the current gesture's frames have gone by: outlines for a new zoom, the quick card's opening, and hover after a pan are computed there. */
 	defer(task: () => void): void;
 	timeZone?: string;
 }
 
-/** A collapse or expand control the person hit. */
-export interface CollapseRequest {
+/** After the camera last moved, hover waits this long before it hit-tests: a pan or zoom under way is not a place to relight. */
+export const GESTURE_QUIET_MS = 120;
+
+/** Selecting an item pans only as far as keeps it this far inside the part of the plot the drawer leaves. */
+const REVEAL_MARGIN = 56;
+
+interface Drag {
 	key: string;
-	collapse: boolean;
+	origin: ScreenPoint;
+	dx: number;
+	dy: number;
+	/** Set on release: when it let go and how far from home it was. */
+	release: { at: number; dx: number; dy: number } | null;
 }
 
 /**
  * Everything between the data and the pixels: the draw list, region outlines and
- * labels, the collapse controls, the camera's targets, the ruler, and when to repaint.
- * The renderer and camera come in through their interfaces, so this is the part a
- * test drives, and later layers (labels, selection) add to what `paint` draws without
- * touching the camera.
+ * labels, the collapse controls, the camera's targets, the ruler, hit testing, what
+ * hover, focus, and selection light, a dragged dot, and when to repaint. The renderer
+ * and camera come in through their interfaces, so this is the part a test drives.
  */
 export class MapSurface {
 	private readonly renderer: MapRenderer;
@@ -76,16 +98,21 @@ export class MapSurface {
 	private readonly timeZone: string | undefined;
 	private readonly overlay: MapOverlay;
 	private readonly levels: ZoomLevels;
+	private readonly fade: FocusFade;
+	private readonly clock: () => number;
+	private readonly reducedMotion: () => boolean;
 	private readonly unsubscribe: () => void;
 	private layout: MapLayout | null = null;
 	/** The layout's bounds widened to every region outline: what the camera fits and holds the Map to. */
 	private extent: MapBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 	private rows: ReadonlyMap<string, MapItemRow> = EMPTY_OVERLAY.rows;
 	private drawing: DrawList = { dots: [], regions: [], links: [] };
+	private dotsByKey = new Map<string, DrawDot>();
+	private relations: RelationIndex | null = null;
 	private outlines: RegionOutlines | null = null;
 	/** Bumped by every frame and every new layout, so only the last frame's deferred outline task runs. */
 	private deferred = 0;
-	private lighting: LinkLighting = NO_LIGHTING;
+	private allLinks = false;
 	private controls: CollapseControl[] = [];
 	private viewport: Viewport = { width: 0, height: 0 };
 	private painting = false;
@@ -93,6 +120,7 @@ export class MapSurface {
 	/** Nobody has panned or zoomed yet, so a resize reopens the default view instead of holding the old center. */
 	private pristine = true;
 	private pointer: ScreenPoint | null = null;
+	private pointerCoarse = false;
 	/** Items another layer has already named, which get no label of their own. */
 	private named: ReadonlySet<string> = new Set();
 	private minimapOn = false;
@@ -102,8 +130,27 @@ export class MapSurface {
 	private cardFadeFrom = 0;
 	/** Boxes over the plot that belong to the page's own controls, which cards and labels keep out from under. */
 	private chrome: readonly Box[] = [];
+	/** How much of the plot's right side the drawer covers, in px. */
+	private covered = 0;
 	/** Torn down: a frame already queued paints nothing and queues no more. */
 	private disposed = false;
+
+	/** What the pointer is over; hover lights it. */
+	private hover: Hit | null = null;
+	/** Hover opens the quick card after a beat, so sweeping across dots doesn't open a card on each. */
+	private hoverCardReady = false;
+	private hoverToken = 0;
+	/** Keyboard focus: a key the keyboard layer sets. */
+	private focusKey: string | null = null;
+	private selected: string | null = null;
+	/** The item the drawer shows, which needs no card beside it. */
+	private drawerKey: string | null = null;
+	/** The last frame's marks, which the hit index is built from when something asks. */
+	private snapshot: HitInput | null = null;
+	private hitIndex: HitIndex | null = null;
+	private lastCameraChange = -Infinity;
+	private rehoverPending = false;
+	private drag: Drag | null = null;
 
 	constructor(deps: MapSurfaceDeps, handlers: MapSurfaceHandlers) {
 		this.renderer = deps.renderer;
@@ -111,10 +158,17 @@ export class MapSurface {
 		this.schedule = deps.schedule;
 		this.defer = deps.defer;
 		this.overlay = deps.overlay;
+		this.clock = deps.now;
+		this.reducedMotion = deps.reducedMotion;
 		this.levels = new ZoomLevels(deps.now, deps.reducedMotion);
+		this.fade = new FocusFade(deps.now, deps.reducedMotion);
 		this.timeZone = deps.timeZone;
 		this.handlers = handlers;
-		this.unsubscribe = this.camera.onChange(() => this.requestPaint());
+		this.unsubscribe = this.camera.onChange(() => {
+			this.lastCameraChange = this.clock();
+			this.rehoverSoon();
+			this.requestPaint();
+		});
 	}
 
 	destroy(): void {
@@ -122,6 +176,7 @@ export class MapSurface {
 		this.unsubscribe();
 		// A deferred outline task still pending finds the token moved and does nothing.
 		this.deferred++;
+		this.hoverToken++;
 		this.outlines = null;
 	}
 
@@ -171,19 +226,27 @@ export class MapSurface {
 		this.layout = null;
 		this.rows = EMPTY_OVERLAY.rows;
 		this.drawing = { dots: [], regions: [], links: [] };
+		this.dotsByKey = new Map();
+		this.relations = null;
 		this.outlines = null;
 		this.deferred++;
 		this.controls = [];
 		this.cards = null;
 		this.cardAlpha = 0;
+		this.snapshot = null;
+		this.hitIndex = null;
+		this.hover = null;
+		this.hoverCardReady = false;
+		this.drag = null;
+		this.refocus();
 		this.minimapOn = false;
 		this.setViewportEmpty(false);
 		this.requestPaint();
 	}
 
-	/** Which blocker and discovered-from links draw besides chains: all of them, or the ones focus lights. */
-	setLighting(lighting: LinkLighting): void {
-		this.lighting = lighting;
+	/** Every blocker and discovered-from link draws, or only the ones focus lights. */
+	setAllLinks(all: boolean): void {
+		this.allLinks = all;
 		this.requestPaint();
 	}
 
@@ -202,10 +265,17 @@ export class MapSurface {
 		this.requestPaint();
 	}
 
-	/** The collapse or expand control under a point in the plot, as of the last paint. */
-	controlAt(point: ScreenPoint): CollapseRequest | null {
-		const control = controlAt(this.controls, point);
-		return control ? { key: control.key, collapse: control.collapse } : null;
+	/** How much of the plot's right side the drawer overlays, which the quick card stays out of and selection pans clear of. */
+	setCovered(width: number): void {
+		if (width === this.covered) return;
+		this.covered = width;
+		this.requestPaint();
+	}
+
+	/** The item the drawer is showing, or null when it is closed. */
+	setDrawer(key: string | null): void {
+		this.drawerKey = key;
+		this.requestPaint();
 	}
 
 	fitAll(): void {
@@ -236,9 +306,117 @@ export class MapSurface {
 		this.camera.zoomBy(1 / ZOOM_STEP, this.zoomAnchor());
 	}
 
-	/** Where the pointer is over the canvas, or null once it leaves. */
-	setPointer(point: ScreenPoint | null): void {
+	/** What is at a point in the plot, as of the last paint. A coarse pointer's targets are at least 44 px across. */
+	hitAt(point: ScreenPoint, coarse: boolean): Hit | null {
+		if (!this.snapshot) return null;
+		this.hitIndex ??= new HitIndex(this.snapshot);
+		return this.hitIndex.at(point, coarse);
+	}
+
+	/**
+	 * The pointer moved over the plot (or left it, for null). What it is over lights, once
+	 * the camera has been still a moment: a pan or zoom under way is not hit-tested, and the
+	 * pointer is looked at again when it ends. Nothing changes when it is over the same thing.
+	 */
+	hoverAt(point: ScreenPoint | null, coarse = false): void {
 		this.pointer = point;
+		this.pointerCoarse = coarse;
+		if (!point) {
+			this.setHover(null);
+			return;
+		}
+		if (this.drag) return;
+		if (this.gesturing()) {
+			this.rehoverSoon();
+			return;
+		}
+		this.setHover(this.hitAt(point, coarse));
+	}
+
+	/** A press and release in place on `hit`: a click, or a tap on a coarse pointer, where the first tap selects and shows the card and the second opens the item. */
+	tap(hit: Hit | null, touch: boolean): void {
+		if (!hit) {
+			if (touch && this.selected !== null && this.selected !== this.drawerKey) this.select(null);
+			return;
+		}
+		if (hit.type === 'control') {
+			this.handlers.onCollapse(hit.key, hit.collapse);
+			return;
+		}
+		if (touch && this.selected !== hit.key) {
+			this.select(hit.key);
+			return;
+		}
+		this.open(hit.key);
+	}
+
+	/** Holds an item (or a region's parent) lit, or releases the selection with null. */
+	select(key: string | null): void {
+		if (key === this.selected) return;
+		this.selected = key;
+		this.refocus();
+	}
+
+	get selection(): string | null {
+		return this.selected;
+	}
+
+	/** The key the keyboard has focus on; it lights when the pointer is off everything. */
+	setFocus(key: string | null): void {
+		this.focusKey = key;
+		this.refocus();
+	}
+
+	/** Enter on the focused item: selects it and asks for the drawer. Null when nothing has focus. */
+	activateFocus(): string | null {
+		if (this.focusKey === null) return null;
+		this.open(this.focusKey);
+		return this.focusKey;
+	}
+
+	/** Pans just far enough to bring an item inside the part of the plot the drawer leaves clear. */
+	reveal(key: string): void {
+		const node = this.placeOf(key);
+		if (!this.layout || !node) return;
+		const { k, x, y } = this.camera.transform;
+		const at = { x: x + k * node.x, y: y + k * node.y };
+		const right = Math.max(REVEAL_MARGIN, this.viewport.width - this.covered - REVEAL_MARGIN);
+		const bottom = Math.max(REVEAL_MARGIN, this.viewport.height - REVEAL_MARGIN);
+		const dx = at.x < REVEAL_MARGIN ? REVEAL_MARGIN - at.x : at.x > right ? right - at.x : 0;
+		const dy = at.y < REVEAL_MARGIN ? REVEAL_MARGIN - at.y : at.y > bottom ? bottom - at.y : 0;
+		if (dx === 0 && dy === 0) return;
+		this.pristine = false;
+		this.camera.flyTo(constrainTransform({ k, x: x + dx, y: y + dy }, this.extent, this.viewport));
+	}
+
+	/** A press on a dot has moved far enough to be a drag. Pulls it, and its links, along with the pointer. */
+	beginDrag(key: string, point: ScreenPoint): void {
+		if (!this.dotsByKey.has(key)) return;
+		this.drag = { key, origin: point, dx: 0, dy: 0, release: null };
+		this.setHover({ type: 'dot', key, part: 'glyph' });
+		this.requestPaint();
+	}
+
+	dragTo(point: ScreenPoint): void {
+		const drag = this.drag;
+		if (!drag || drag.release) return;
+		const { k } = this.camera.transform;
+		drag.dx = (point.x - drag.origin.x) / k;
+		drag.dy = (point.y - drag.origin.y) / k;
+		this.requestPaint();
+	}
+
+	/** Released: the dot springs home over about 300 ms, or at once under reduced motion. Nothing is saved. */
+	endDrag(): void {
+		const drag = this.drag;
+		if (!drag || drag.release) return;
+		if (this.reducedMotion()) this.drag = null;
+		else drag.release = { at: this.clock(), dx: drag.dx, dy: drag.dy };
+		this.requestPaint();
+	}
+
+	get dragging(): boolean {
+		return this.drag !== null;
 	}
 
 	/** Puts a layout point in the middle of the plot at the current scale: a click or drag in the minimap. */
@@ -278,6 +456,7 @@ export class MapSurface {
 	settled(): void {
 		this.pristine = false;
 		this.handlers.onSettle(this.centerKey());
+		this.rehover();
 	}
 
 	/** Reopens the default view without a flight, as a Back to an entry with no item does. */
@@ -292,9 +471,12 @@ export class MapSurface {
 		if (this.disposed) return;
 		const transform = this.camera.transform;
 		const layout = this.layout;
-		const { dots, regions, links } = this.drawing;
+		const { dots, regions } = this.drawing;
+		const pull = this.pulled();
+		const links = pull ? this.linksPulled(pull) : this.drawing.links;
 		const outlines = this.outlinesFor(transform.k);
 		const level = this.levels.frame(transform.k);
+		const focus = this.fade.frame();
 		const minimap = layout ? this.minimapFor(transform) : null;
 		const expand = expandControls(dots, transform, this.viewport, level.level);
 		const ruler = layout
@@ -333,23 +515,36 @@ export class MapSurface {
 			dots,
 			regions: outlines,
 			links,
-			lighting: this.lighting,
+			allLinks: this.allLinks,
 			labels: labels.regions,
 			dotLabels: labels.dots,
 			controls: this.controls,
 			cards: cards.set ? { keys: cards.set.keys, alpha: cards.alpha } : null,
+			focus,
+			drag: pull,
 			transform,
 			level: level.level,
 			ruler,
 		});
-		this.overlay.publish({ transform, rows: this.rows, cards: cards.set, cardAlpha: cards.alpha, minimap: minimap?.frame ?? null });
+		this.snapshot = { transform, level: level.level, dots, cards: cards.set?.dots ?? [], labels: labels.regions, controls: this.controls, outlines };
+		this.hitIndex = null;
+		this.overlay.publish({
+			transform,
+			rows: this.rows,
+			cards: cards.set,
+			cardAlpha: cards.alpha,
+			minimap: minimap?.frame ?? null,
+			quick: this.quickFor(transform, level.level, labels.regions, cards.set, minimap?.panel ?? null),
+			focus: this.fade.target,
+			drag: pull,
+		});
 		// Empty means no glyph at the size it is drawn, and no card body, reaches the plot.
 		const plot = { x: 0, y: 0, w: this.viewport.width, h: this.viewport.height };
 		const glyphInView = dotsVisible(dots, transform, this.viewport, (dot) => screenRadius(dot, transform.k, level.level));
 		const cardInView = cards.set?.dots.some((dot) => intersects(cardBox(dot, transform), plot)) ?? false;
 		this.setViewportEmpty(dots.length > 0 && !glyphInView && !cardInView);
 		// A fade has to be walked frame by frame; at rest nothing asks for another.
-		if (level.from !== null) this.requestPaint();
+		if (level.from !== null || this.fade.animating || this.drag?.release) this.requestPaint();
 	}
 
 	/** The labels and cards at this level, and while a switch is fading, the labels of the level it came from and the cards of whichever level has them. */
@@ -403,12 +598,15 @@ export class MapSurface {
 		this.layout = layout;
 		this.rows = rows;
 		this.drawing = buildDrawList(layout, rows);
+		this.dotsByKey = new Map(this.drawing.dots.map((dot) => [dot.key, dot]));
+		this.relations = new RelationIndex(layout, rows);
 		this.outlines = new RegionOutlines(layout);
 		// What fit all, Now, the opening view, and the zoom-out limit frame is the dots and the regions drawn around them, whose padding runs past the dots.
 		this.extent = layout.frame.bounds;
 		for (const { bounds } of this.outlines.at(gridStep(0))) this.extent = unionBounds(this.extent, bounds);
 		this.deferred++;
 		this.configureCamera();
+		this.refocus();
 	}
 
 	/**
@@ -476,6 +674,126 @@ export class MapSurface {
 	private configureCamera(): void {
 		this.camera.configure(this.viewport, this.extent, this.minScale());
 	}
+
+	/** Selects, and asks for the drawer, whose item needs no card beside it. */
+	private open(key: string): void {
+		this.select(key);
+		this.drawerKey = key;
+		this.handlers.onOpen(key);
+	}
+
+	/** The camera moved lately, so what is under a still pointer is about to change and isn't worth testing yet. */
+	private gesturing(): boolean {
+		return this.clock() - this.lastCameraChange < GESTURE_QUIET_MS;
+	}
+
+	/** Once the camera has been still, looks at the pointer again: the dot under it may be another one now. */
+	private rehoverSoon(): void {
+		if (this.rehoverPending || !this.pointer) return;
+		this.rehoverPending = true;
+		this.defer(() => {
+			this.rehoverPending = false;
+			if (this.disposed) return;
+			if (this.gesturing()) this.rehoverSoon();
+			else this.rehover();
+		});
+	}
+
+	private rehover(): void {
+		if (this.pointer && !this.drag && !this.gesturing()) this.setHover(this.hitAt(this.pointer, this.pointerCoarse));
+	}
+
+	private setHover(hit: Hit | null): void {
+		const before = this.hover;
+		if (before?.type === hit?.type && before?.key === hit?.key) return;
+		this.hover = hit;
+		this.handlers.onPointerTarget(hit === null ? null : hit.type === 'control' ? 'control' : 'item');
+		if (before?.key === hit?.key) return;
+		this.hoverCardReady = false;
+		const token = ++this.hoverToken;
+		if (hit) {
+			this.defer(() => {
+				if (token !== this.hoverToken || this.disposed) return;
+				this.hoverCardReady = true;
+				this.requestPaint();
+			});
+		}
+		this.refocus();
+	}
+
+	/** The item whose family lights: whatever the pointer is on, then keyboard focus, then the selection. */
+	private focused(): string | null {
+		return this.hover?.key ?? this.focusKey ?? this.selected;
+	}
+
+	private refocus(): void {
+		const key = this.focused();
+		this.fade.set(key && this.relations ? this.relations.relation(key) : null);
+		this.requestPaint();
+	}
+
+	/** The item whose quick card is open: hover after its beat, keyboard focus, or a selection the drawer isn't already showing. Not while a dot is being pulled. */
+	private cardKey(): string | null {
+		if (this.drag) return null;
+		if (this.hover) return this.hoverCardReady ? this.hover.key : null;
+		if (this.focusKey) return this.focusKey;
+		return this.selected !== null && this.selected !== this.drawerKey ? this.selected : null;
+	}
+
+	private quickFor(transform: Transform, level: ZoomLevel, regionLabels: PlacedLabels['regions'], cards: CardSet | null, minimap: Box | null): QuickFrame | null {
+		const key = this.cardKey();
+		const row = key ? this.rows.get(key) : undefined;
+		const relation: Relation | null = key && this.relations ? this.relations.relation(key) : null;
+		if (!key || !row || !relation) return null;
+		const dot = this.dotsByKey.get(key);
+		const label = regionLabels.find((l) => l.key === key);
+		const progress = progressOf(this.drawing, key, dot);
+		let anchor: Box;
+		if (dot) anchor = cards?.keys.has(key) ? cardBox(dot, transform) : dotBox(dot, transform, level);
+		else if (label) anchor = label.box;
+		else {
+			const node = this.placeOf(key);
+			if (!node) return null;
+			anchor = { x: transform.x + transform.k * node.x - 1, y: transform.y + transform.k * node.y - 1, w: 2, h: 2 };
+		}
+		const related: Box[] = [];
+		for (const other of relation.dots) {
+			const otherDot = other === key ? undefined : this.dotsByKey.get(other);
+			if (otherDot) related.push(dotBox(otherDot, transform, level));
+		}
+		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress)) };
+		const reserved = [...this.chrome, ...(minimap ? [minimap] : [])];
+		const plot = { x: 0, y: 0, w: Math.max(0, this.viewport.width - this.covered), h: this.viewport.height };
+		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress };
+	}
+
+	/** The pull on the dragged dot right now, springing back if it has been released; null once it is home. */
+	private pulled(): DragOffset | null {
+		const drag = this.drag;
+		if (!drag) return null;
+		if (!drag.release) return { key: drag.key, dx: drag.dx, dy: drag.dy };
+		const t = (this.clock() - drag.release.at) / SPRING_MS;
+		if (t >= 1) {
+			this.drag = null;
+			return null;
+		}
+		const left = springRemaining(t);
+		return { key: drag.key, dx: drag.release.dx * left, dy: drag.release.dy * left };
+	}
+
+	/** The links with the dragged dot's ends moved along with it; every other link is as it was. */
+	private linksPulled(pull: DragOffset): readonly DrawLink[] {
+		const move = (p: MapPoint): MapPoint => ({ x: p.x + pull.dx, y: p.y + pull.dy });
+		return this.drawing.links.map((link) =>
+			link.ends[0] === pull.key ? { ...link, from: move(link.from) } : link.ends[1] === pull.key ? { ...link, to: move(link.to) } : link,
+		);
+	}
+}
+
+/** A parent's items by phase, for the quick card: a region's rollup, or a folded dot's; null for an item with no family. */
+function progressOf(drawing: DrawList, key: string, dot: DrawDot | undefined): Rollup | null {
+	const rollup = dot?.folded?.rollup ?? drawing.regions.find((region) => region.key === key)?.rollup ?? null;
+	return rollup && rollup.done + rollup.in_flight + rollup.next + rollup.later > 0 ? rollup : null;
 }
 
 const unionBounds = (a: MapBounds, b: MapBounds): MapBounds => ({

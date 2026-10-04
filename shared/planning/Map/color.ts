@@ -50,6 +50,11 @@ function relativeLuminance({ r, g, b }: Rgb): number {
 	return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
 }
 
+/** Whether a surface is dark enough that marks on it are light: the theme's dark half. */
+export function isDark(surface: Rgb): boolean {
+	return relativeLuminance(surface) < 0.18;
+}
+
 export function contrast(a: Rgb, b: Rgb): number {
 	const la = relativeLuminance(a);
 	const lb = relativeLuminance(b);

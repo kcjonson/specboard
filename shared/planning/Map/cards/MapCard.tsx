@@ -12,21 +12,29 @@ export interface MapCardProps {
 	dot: DrawDot;
 	/** The scale the card sits at; the card's glyph is centered on its dot there. */
 	k: number;
+	/** Hover, focus, or selection has lit something else: this card fades with everything outside the related set. */
+	faded: boolean;
+	/** This is the item hover, focus, or selection is on. */
+	lit: boolean;
 }
 
 /**
  * One item at the near zoom level: its status glyph where its dot is, its key and
  * title, and a mark for each part of the status encoding that has something to say.
- * Display only for now; the layer ignores the pointer so the canvas underneath keeps
- * panning, and hover and selection come with the interaction task.
+ * The layer ignores the pointer: the canvas under it takes hover and clicks on a card as
+ * it does on the card's dot, and a drag from the card's body pans.
  */
-function MapCardView({ row, dot, k }: MapCardProps): JSX.Element {
+function MapCardView({ row, dot, k, faded, lit }: MapCardProps): JSX.Element {
 	const card = cardContent(row, dot);
 	const { shown, hidden } = fitChips(card.chips);
 	const x = k * dot.x - CARD_ANCHOR.x;
 	const y = k * dot.y - CARD_ANCHOR.y;
 	return (
-		<li class={styles.card} style={{ width: `${CARD_WIDTH}px`, height: `${CARD_HEIGHT}px`, transform: `translate(${x}px, ${y}px)` }}>
+		<li
+			class={`${styles.card}${faded ? ` ${styles.faded}` : ''}${lit ? ` ${styles.lit}` : ''}`}
+			data-key={card.key}
+			style={{ width: `${CARD_WIDTH}px`, height: `${CARD_HEIGHT}px`, transform: `translate(${x}px, ${y}px)` }}
+		>
 			<div class={styles.head}>
 				<span class={card.needsPerson ? `${styles.glyph} ${styles.needsPerson}` : styles.glyph}>
 					<StatusGlyph class={styles.status} status={dot.status} />
@@ -58,4 +66,4 @@ function MapCardView({ row, dot, k }: MapCardProps): JSX.Element {
 }
 
 /** A pan leaves every card as it was, so the cards only re-render when their item or the scale changes. */
-export const MapCard = memo(MapCardView, (a, b) => a.row === b.row && a.dot === b.dot && a.k === b.k);
+export const MapCard = memo(MapCardView, (a, b) => a.row === b.row && a.dot === b.dot && a.k === b.k && a.faded === b.faded && a.lit === b.lit);

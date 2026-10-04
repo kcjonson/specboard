@@ -573,14 +573,16 @@ before it renders, and keeps 6 px from every other card. It says the key and tit
 open, needs input, paused), what a blocked item waits on by key (text holds as a
 count, since their text isn't in the Map's read), a linked spec, the PR as `PR #n`, a
 folded family's size, cut to a "+N" when they don't fit the row (the rest are in the
-card's text for assistive tech; hover and focus come when cards become operable). The corner says whether an agent or a person made the item, and the ink ring
+card's text for assistive tech, and the quick card on hover lists every blocker). The corner says whether an agent or a person made the item, and the ink ring
 goes on the glyph when it needs a person. A card never covers another dot's glyph,
 another card, or anything on the taken list; one that doesn't fit leaves its dot as a
 glyph with a one-line label, or as a bare glyph where that has no room either. A
 folded family that can be opened stays a glyph with its plus control and a one-line
-label, since a card would cover the control and cards can't be operated yet. A card
-may run past the plot's own outer edge. Cards are display only until the interaction
-task: the layer ignores the pointer so the canvas keeps panning. Cards within 48 px of
+label, since a card would cover the control. A card
+may run past the plot's own outer edge. The layer ignores the pointer: the canvas under it
+hit-tests a card as it does its dot (hover, focus, click, and tap behave the same), a drag
+that starts on the card's glyph pulls the dot, and a drag that starts anywhere else on the
+card pans the Map, so a screen full of cards can still be panned. Cards within 48 px of
 the plot are placed, at most 300, and a pan moves the one element they sit in rather
 than the cards. A fade turned around halfway (zoom in, then out) goes back from the
 opacity it had reached.
@@ -737,7 +739,34 @@ Fixed, outside the Map:
 - Hover or keyboard focus shows a quick card: title, status, sub-status, sessions,
   blockers, progress, and the latest activity-log entry, fetched on demand.
 - Dragging a dot pulls it and its links along; on release it springs back
-  (decision 10).
+  (decision 10). The pull is a client-side displacement of the dot, its
+  links, and its card (its label stays behind); nothing re-runs the layout and nothing is saved. It
+  springs back over 300 ms with a small overshoot, and cuts under reduced motion. A drag
+  on the background pans, a press has to move 4 px (10 px on touch) to be a drag rather
+  than a click, and a finger always pans: dragging dots is for mouse and pen.
+- One hit test serves every pointer. A control beats a dot, a dot beats a card's body,
+  a card's body beats a region's label, a label beats the region's ground, and the
+  innermost region wins. It is made at the sizes the last frame drew, and not at all
+  while the camera is moving (it looks at the pointer again once the camera has been
+  still for 120 ms), so a pan or zoom never pays for hit testing. A fine pointer reaches
+  a dot from 6 px at least, since a leaf at fit all is 2 px; a coarse one (a touch
+  pointer) reaches it, and a collapse control, from 22 px, which is a 44 px target.
+- Hover leads over keyboard focus, which leads over the selection: the pointer on
+  something lights it, and with the pointer off everything the focus or selection holds.
+  Escape closes the drawer first, and a second Escape clears the selection; a dialog or
+  a field that has the key keeps it.
+- The quick card opens 150 ms after the pointer settles on an item (so sweeping across
+  dots opens none), at once for keyboard focus, and for the selection when the drawer
+  isn't already showing it (a coarse pointer's first tap). It sits beside the item on the
+  side that covers the fewest related items, never under the toolbar, the minimap, or the
+  drawer, and takes no pointer. Its sessions line is the open agent sessions the read
+  carries; text blockers show there as a count and on the dot as the ink ring, since the
+  read has no text. The latest activity entry comes from the item's notes, fetched when
+  the card opens and kept for the life of the view.
+- The selection is the item URL: `/planning/items/:key?view=map` opens that item in the
+  drawer with it selected, and a related item chosen in the drawer moves it. The drawer
+  overlays the plot, and selecting pans only as far as keeps the item 56 px inside the
+  part the drawer leaves clear.
 - Keyboard-complete, with one tab stop into the Map; the keys are below. Focus
   pans the Map to keep the focused dot in view.
 - Links anchor on an item, not on coordinates, since coordinates shift as items

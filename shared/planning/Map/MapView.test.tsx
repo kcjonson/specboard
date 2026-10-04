@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/preact';
+import type { JSX } from 'preact';
 import { BoardBuilder } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
@@ -14,6 +15,7 @@ import { MapView } from './MapView';
 import type { MapRead } from '@specboard/core/map-read';
 import { memoryCollapseStore } from './collapse-store.fixture';
 import { MapDataModel } from './map-data-model';
+import { ActivityCache } from './quick/activity-cache';
 import type { MapFrame, MapRenderer } from './renderer';
 
 const frames: MapFrame[] = [];
@@ -42,13 +44,46 @@ function board(count: number): MapRead {
 	return { items: b.rows, summarized: false };
 }
 
-function renderMap(source: () => Promise<MapRead>): { model: MapDataModel } & ReturnType<typeof render> {
+const opened: string[] = [];
+const closed = vi.fn();
+
+interface MapProps {
+	openItemKey?: string;
+	covered?: number;
+}
+
+type RenderedMap = Omit<ReturnType<typeof render>, 'rerender'> & { model: MapDataModel; rerender(next: MapProps): void };
+
+function renderMap(source: () => Promise<MapRead>, props: MapProps = {}): RenderedMap {
 	const model = new MapDataModel(source, () => worker, memoryCollapseStore());
-	return { model, ...render(<MapView projectRef="acme/specboard" model={model} />) };
+	const activity = new ActivityCache(() => Promise.resolve([]));
+	const view = (next: MapProps): JSX.Element => (
+		<MapView projectRef="acme/specboard" model={model} activity={activity} covered={next.covered ?? 0} openItemKey={next.openItemKey} onOpenItem={(key) => opened.push(key)} onCloseItem={closed} />
+	);
+	const rendered = render(view(props));
+	return { ...rendered, model, rerender: (next) => rendered.rerender(view(next)) };
+}
+
+// jsdom has no pointer events; a mouse event with the pointer fields on it is enough for the handlers.
+if (typeof window.PointerEvent === 'undefined') {
+	class PointerEventShim extends MouseEvent {
+		readonly pointerId: number;
+		readonly pointerType: string;
+		readonly isPrimary: boolean;
+		constructor(type: string, init: NonNullable<ConstructorParameters<typeof MouseEvent>[1]> & { pointerId?: number; pointerType?: string; isPrimary?: boolean } = {}) {
+			super(type, init);
+			this.pointerId = init.pointerId ?? 1;
+			this.pointerType = init.pointerType ?? 'mouse';
+			this.isPrimary = init.isPrimary ?? true;
+		}
+	}
+	Object.defineProperty(window, 'PointerEvent', { value: PointerEventShim, configurable: true });
 }
 
 beforeEach(() => {
 	frames.length = 0;
+	opened.length = 0;
+	closed.mockReset();
 	window.history.replaceState(null, '', '/projects/acme/specboard/planning?view=map');
 	// The whole Map is 1000 by 532; the toolbar over its corner is a small box, so labels and cards still have the rest.
 	vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -186,7 +221,7 @@ describe('MapView zoom keys', () => {
 		const start = await ready();
 		const before = frames.at(-1)!.transform;
 		const canvas = document.querySelector('canvas')!;
-		fireEvent.mouseMove(canvas, { clientX: 200, clientY: 100 });
+		fireEvent.pointerMove(canvas, { clientX: 200, clientY: 100 });
 		press({});
 		await waitFor(() => expect(scale()).toBeCloseTo(start * 1.4));
 		const after = frames.at(-1)!.transform;
@@ -208,12 +243,14 @@ describe('MapView collapse', () => {
 		const { toggle } = labels[0]!;
 		const canvas = document.querySelector('canvas')!;
 
-		fireEvent.mouseMove(canvas, { clientX: toggle.x, clientY: toggle.y });
-		expect(canvas.hasAttribute('data-control')).toBe(true);
-		fireEvent.mouseMove(canvas, { clientX: 1, clientY: 1 });
-		expect(canvas.hasAttribute('data-control')).toBe(false);
+		// The camera has only just been placed, so the pointer is looked at once it has been still a moment.
+		fireEvent.pointerMove(canvas, { clientX: toggle.x, clientY: toggle.y });
+		await waitFor(() => expect(canvas.dataset.target).toBe('control'));
+		fireEvent.pointerMove(canvas, { clientX: 1, clientY: 1 });
+		expect(canvas.dataset.target).toBeUndefined();
 
-		fireEvent.click(canvas, { clientX: toggle.x, clientY: toggle.y });
+		fireEvent.pointerDown(canvas, { clientX: toggle.x, clientY: toggle.y });
+		fireEvent.pointerUp(canvas, { clientX: toggle.x, clientY: toggle.y });
 		await waitFor(() => expect(frames.at(-1)!.dots.find((dot) => dot.key === epic.key)?.folded).toBeTruthy());
 		expect(frames.at(-1)!.regions).toEqual([]);
 		expect(frames.at(-1)!.transform).toEqual(transform);
@@ -262,5 +299,138 @@ describe('MapView and the URL', () => {
 		const entries = window.history.length;
 		fireEvent.click(control(container, 'Now'));
 		expect(window.history.length).toBe(entries);
+	});
+});
+
+describe('MapView interaction', () => {
+	const dotPoint = (key: string): { clientX: number; clientY: number } => {
+		const { dots, transform } = frames.at(-1)!;
+		const dot = dots.find((d) => d.key === key)!;
+		return { clientX: transform.x + transform.k * dot.x, clientY: transform.y + transform.k * dot.y };
+	};
+	const click = (canvas: Element, at: { clientX: number; clientY: number }, pointerType = 'mouse'): void => {
+		fireEvent.pointerDown(canvas, { ...at, pointerType });
+		fireEvent.pointerUp(canvas, { ...at, pointerType });
+	};
+	const lit = (): string | undefined => frames.at(-1)!.focus.to?.key;
+
+	it('opens an item in the drawer on a click, and lights it', async () => {
+		renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const canvas = document.querySelector('canvas')!;
+		click(canvas, dotPoint('MAP-5'));
+		expect(opened).toEqual(['MAP-5']);
+		await waitFor(() => expect(lit()).toBe('MAP-5'));
+	});
+
+	it('does not open anything for a press on empty ground', async () => {
+		renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		click(document.querySelector('canvas')!, { clientX: 2, clientY: 2 });
+		expect(opened).toEqual([]);
+	});
+
+	it('Escape closes the drawer first and clears the selection second', async () => {
+		const { rerender } = renderMap(() => Promise.resolve(board(9)), { openItemKey: 'MAP-5', covered: 400 });
+		await waitFor(() => expect(lit()).toBe('MAP-5'));
+
+		fireEvent.keyDown(document.body, { key: 'Escape' });
+		expect(closed).toHaveBeenCalledTimes(1);
+		// The page closes the drawer; the selection it leaves lit stays.
+		rerender({ covered: 0 });
+		await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+		expect(lit()).toBe('MAP-5');
+
+		fireEvent.keyDown(document.body, { key: 'Escape' });
+		expect(closed).toHaveBeenCalledTimes(1);
+		await waitFor(() => expect(lit()).toBeUndefined());
+	});
+
+	it('leaves Escape to a dialog or a field that has it', async () => {
+		renderMap(() => Promise.resolve(board(9)), { openItemKey: 'MAP-5', covered: 400 });
+		await waitFor(() => expect(lit()).toBe('MAP-5'));
+		const input = document.createElement('input');
+		const dialog = document.createElement('div');
+		dialog.setAttribute('role', 'dialog');
+		const inner = document.createElement('button');
+		dialog.appendChild(inner);
+		document.body.append(input, dialog);
+		fireEvent.keyDown(input, { key: 'Escape' });
+		fireEvent.keyDown(inner, { key: 'Escape' });
+		input.remove();
+		dialog.remove();
+		expect(closed).not.toHaveBeenCalled();
+	});
+
+	it('keeps the selection in step with the item URL as related items in the drawer move it', async () => {
+		const { rerender } = renderMap(() => Promise.resolve(board(9)), { openItemKey: 'MAP-2', covered: 400 });
+		await waitFor(() => expect(lit()).toBe('MAP-2'));
+		rerender({ openItemKey: 'MAP-6', covered: 400 });
+		await waitFor(() => expect(lit()).toBe('MAP-6'));
+	});
+
+	it('pans so the selection clears the drawer that opened over it', async () => {
+		const { rerender } = renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		// The dot furthest right would sit under a 500 px drawer.
+		const right = frames.at(-1)!.dots.reduce((a, b) => (b.x > a.x ? b : a));
+		const before = dotPoint(right.key).clientX;
+		expect(before).toBeGreaterThan(1000 - 500);
+		rerender({ openItemKey: right.key, covered: 500 });
+		await waitFor(() => expect(dotPoint(right.key).clientX).toBeLessThanOrEqual(1000 - 500));
+	});
+
+	it('toggles All links', async () => {
+		const { container } = renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const toggle = control(container, 'All links');
+		expect(toggle.getAttribute('aria-pressed')).toBe('false');
+		fireEvent.click(toggle);
+		expect(toggle.getAttribute('aria-pressed')).toBe('true');
+		await waitFor(() => expect(frames.at(-1)!.allLinks).toBe(true));
+		fireEvent.click(toggle);
+		await waitFor(() => expect(frames.at(-1)!.allLinks).toBe(false));
+	});
+
+	it('on a touch, the first tap selects and the second opens', async () => {
+		renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const canvas = document.querySelector('canvas')!;
+		click(canvas, dotPoint('MAP-5'), 'touch');
+		await waitFor(() => expect(lit()).toBe('MAP-5'));
+		expect(opened).toEqual([]);
+		click(canvas, dotPoint('MAP-5'), 'touch');
+		expect(opened).toEqual(['MAP-5']);
+	});
+
+	it('pulls a dot with a drag, and a drag on empty ground is not a click', async () => {
+		renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const canvas = document.querySelector('canvas')!;
+		const at = dotPoint('MAP-5');
+		fireEvent.pointerDown(canvas, at);
+		fireEvent.pointerMove(canvas, { clientX: at.clientX + 30, clientY: at.clientY });
+		await waitFor(() => expect(frames.at(-1)!.drag).toMatchObject({ key: 'MAP-5' }));
+		expect(canvas.hasAttribute('data-dragging')).toBe(true);
+		fireEvent.pointerUp(canvas, { clientX: at.clientX + 30, clientY: at.clientY });
+		expect(opened).toEqual([]);
+		expect(canvas.hasAttribute('data-dragging')).toBe(false);
+		await waitFor(() => expect(frames.at(-1)!.drag).toBeNull(), { timeout: 2000 });
+
+		fireEvent.pointerDown(canvas, { clientX: 2, clientY: 2 });
+		fireEvent.pointerMove(canvas, { clientX: 60, clientY: 2 });
+		fireEvent.pointerUp(canvas, { clientX: 60, clientY: 2 });
+		expect(opened).toEqual([]);
+	});
+
+	it('does not open on a press that moved past the click threshold', async () => {
+		renderMap(() => Promise.resolve(board(9)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
+		const canvas = document.querySelector('canvas')!;
+		const at = dotPoint('MAP-5');
+		fireEvent.pointerDown(canvas, { ...at, pointerType: 'touch' });
+		fireEvent.pointerMove(canvas, { clientX: at.clientX + 40, clientY: at.clientY, pointerType: 'touch' });
+		fireEvent.pointerUp(canvas, { clientX: at.clientX + 40, clientY: at.clientY, pointerType: 'touch' });
+		expect(opened).toEqual([]);
 	});
 });

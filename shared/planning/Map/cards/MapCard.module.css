@@ -15,6 +15,30 @@
 	color: var(--color-text);
 	font-size: var(--text-xs);
 	list-style: none;
+	transition: opacity 150ms ease-out;
+}
+
+/* Focus fades everything outside the related set: 30% on a light surface, 40% on a dark one. */
+.faded {
+	opacity: 0.3;
+}
+
+/* The item hover, focus, or selection is on takes the ink ring the canvas gives a dot. */
+.lit {
+	border-color: var(--color-text);
+	box-shadow: 0 0 0 1px var(--color-text), var(--shadow-card-hover);
+}
+
+@media (prefers-color-scheme: dark) {
+	.faded {
+		opacity: 0.4;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.card {
+		transition: none;
+	}
 }
 
 .head {
@@ -79,7 +103,7 @@
 	overflow: hidden;
 }
 
-/* What the "+N" stands for, for assistive tech: the card has no hover or focus until it becomes operable. */
+/* What the "+N" stands for, for assistive tech. */
 .more {
 	position: absolute;
 	width: 1px;

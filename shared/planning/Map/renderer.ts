@@ -2,13 +2,15 @@ import type { MapItemStatus } from '@specboard/core/map-read';
 import { DONE_DISC, GLYPH_BOX, NEEDS_PERSON_TOKEN, PAUSE_BARS, RING_WIDTH, STATUS_GLYPHS, STATUS_TOKENS } from '@specboard/ui';
 import type { Transform } from './camera';
 import type { CollapseControl } from './collapse-controls';
-import { TEXT_CONTRAST, contrast, contrastFloor, formatColor, mix, parseColor, readableInk, type Rgb } from './color';
+import { TEXT_CONTRAST, contrast, contrastFloor, formatColor, isDark, mix, parseColor, readableInk, type Rgb } from './color';
 import { screenRadius } from './dot-boxes';
 import { DOT_LABEL_PAD, type DotLabel, type LabelFont } from './dot-labels';
 import type { DrawDot, DrawLink } from './draw-list';
+import { FADE_DARK, FADE_LIGHT, FOCUS_GROW, darkness, dotStrength, growth, linkStrength, regionStrength, type FocusFrame } from './focus-fade';
+import type { DragOffset } from './overlay';
 import type { MapPhase } from './layout/types';
 import type { ZoomLevel } from './zoom-levels';
-import { linkCurve, linkShows, type LinkLighting } from './links';
+import { linkCurve } from './links';
 import { ringScale, tintAmount } from './plan-weight';
 import { rollupSegments, type Circle, type RegionLabel } from './region-labels';
 import type { RegionOutline } from './regions/outline';
@@ -23,12 +25,17 @@ export interface MapFrame {
 	/** Outer regions first, so nested ones draw over them. */
 	regions: readonly RegionOutline[];
 	links: readonly DrawLink[];
-	lighting: LinkLighting;
+	/** Every blocker and discovered-from link draws, not only the ones focus lights. */
+	allLinks: boolean;
 	labels: readonly RegionLabel[];
 	dotLabels: readonly DotLabel[];
 	controls: readonly CollapseControl[];
 	/** The dots that near-level cards stand in for, and how opaque those cards are: the canvas draws them as the cards fade out, and not at all once the cards are there. */
 	cards: { keys: ReadonlySet<string>; alpha: number } | null;
+	/** What hover, focus, or selection has lit and how far its fade has run; everything outside the related set draws at a share of its strength. */
+	focus: FocusFrame;
+	/** A dot being dragged, drawn that far from its place, on top. */
+	drag: DragOffset | null;
 	transform: Transform;
 	/** The zoom level, which sizes the glyphs: at the near level they hold one size whatever the scale. */
 	level: ZoomLevel;
@@ -53,6 +60,7 @@ const REGION_TINT = 0.04;
 const REGION_TINT_STEP = 0.025;
 const REGION_TINT_LEVELS = 4;
 const REGION_STROKE = 0.2;
+const REGION_STROKE_FOCUS = 0.75;
 
 interface MapTheme {
 	surface: string;
@@ -69,6 +77,10 @@ interface MapTheme {
 	/** By height - 1, deeper for regions with more nested inside. */
 	regionFill: string[];
 	regionStroke: string;
+	/** A region's outline when it is the one in focus: darker than at rest. */
+	regionStrokeFocus: string;
+	/** What unrelated marks keep while something is in focus: less on a dark surface, where 30% would vanish. */
+	fade: number;
 	link: string;
 	linkSatisfied: string;
 	/** The count on a folded finished family: whichever ink clears text contrast on the done fill. */
@@ -119,6 +131,8 @@ function readTheme(element: Element, normalize: (color: string) => string): MapT
 			formatColor(mix(textRgb, surfaceRgb, REGION_TINT + REGION_TINT_STEP * level)),
 		),
 		regionStroke: formatColor(mix(textRgb, surfaceRgb, REGION_STROKE)),
+		regionStrokeFocus: formatColor(mix(textRgb, surfaceRgb, REGION_STROKE_FOCUS)),
+		fade: isDark(surfaceRgb) ? FADE_DARK : FADE_LIGHT,
 		countInk: formatColor(readableInk(statusRgb.done, [surfaceRgb, textRgb])),
 		labelInk: formatColor(contrast(mutedRgb, surfaceRgb) >= TEXT_CONTRAST ? mutedRgb : textRgb),
 		link: formatColor(mix(mutedRgb, surfaceRgb, 0.85)),
@@ -141,6 +155,9 @@ const INK_GAP = 2;
 const INK_WIDTH = 1.5;
 /** A folded dot writes its count inside once it's this big on screen. */
 const COUNT_MIN_RADIUS = 8;
+/** The focus ring: a gap of surface, then ink, outside the needs-a-person ring when the dot has one. */
+const FOCUS_GAP = 2;
+const FOCUS_WIDTH = 2;
 const SCOPING_DASH = [2.2, 1.4];
 /** The dashed scoping ring around a solid glyph, in glyph units: just outside the octagon. */
 const SCOPING_RING = 8.75;
@@ -308,14 +325,21 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		}
 	};
 
-	const drawDot = (dot: DrawDot, transform: Transform, level: ZoomLevel, alpha: number): void => {
-		const r = screenRadius(dot, transform.k, level);
-		const x = transform.x + transform.k * dot.x;
-		const y = transform.y + transform.k * dot.y;
-		if (offscreen(x, y, r + INK_GAP + INK_WIDTH)) return;
+	/** `lift` is how far the dot has grown into the focused one, 0 to 1; `offset` is how far a drag has pulled it, in layout units. */
+	const drawDot = (dot: DrawDot, transform: Transform, level: ZoomLevel, alpha: number, lift = 0, offset: { dx: number; dy: number } | null = null): void => {
+		const r = screenRadius(dot, transform.k, level) * (1 + FOCUS_GROW * lift);
+		const x = transform.x + transform.k * (dot.x + (offset?.dx ?? 0));
+		const y = transform.y + transform.k * (dot.y + (offset?.dy ?? 0));
+		const focusAt = r + (dot.needsPerson ? INK_GAP + INK_WIDTH + FOCUS_GAP : FOCUS_GAP) + FOCUS_WIDTH / 2;
+		if (offscreen(x, y, focusAt + FOCUS_WIDTH)) return;
 		ctx.globalAlpha = alpha;
-		disc(x, y, r + (dot.needsPerson ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
+		disc(x, y, lift > 0 ? focusAt + FOCUS_WIDTH : r + (dot.needsPerson ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
 		if (dot.needsPerson) ring(x, y, r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
+		if (lift > 0) {
+			ctx.globalAlpha = alpha * lift;
+			ring(x, y, focusAt, theme.text, FOCUS_WIDTH);
+			ctx.globalAlpha = alpha;
+		}
 		// A finished family (the parent and everything under it done) is one done dot with its count inside;
 		// any other folded family keeps its own glyph and carries its rollup under it.
 		const finished = dot.folded !== null && dot.status === 'done' && dot.folded.rollup.done === dot.folded.count - 1;
@@ -329,7 +353,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.globalAlpha = 1;
 	};
 
-	const drawRegions = (regions: readonly RegionOutline[], transform: Transform): void => {
+	const drawRegions = (regions: readonly RegionOutline[], transform: Transform, focus: FocusFrame): void => {
 		const { k } = transform;
 		for (const outline of regions) {
 			const { bounds } = outline;
@@ -340,36 +364,51 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 				path = outlinePath(outline);
 				outlines.set(outline, path);
 			}
+			const strength = regionStrength(focus, outline.key, theme.fade);
+			const dark = darkness(focus, outline.key);
 			ctx.save();
 			ctx.setTransform(ratio * k, 0, 0, ratio * k, ratio * transform.x, ratio * transform.y);
+			ctx.globalAlpha = strength;
 			ctx.fillStyle = theme.regionFill[Math.min(REGION_TINT_LEVELS, outline.height) - 1]!;
 			ctx.fill(path);
 			ctx.strokeStyle = theme.regionStroke;
 			ctx.lineWidth = 1 / k;
 			ctx.stroke(path);
+			if (dark > 0) {
+				ctx.globalAlpha = strength * dark;
+				ctx.strokeStyle = theme.regionStrokeFocus;
+				ctx.lineWidth = 2 / k;
+				ctx.stroke(path);
+			}
 			ctx.restore();
 		}
 	};
 
-	const drawLinks = (links: readonly DrawLink[], lighting: LinkLighting, transform: Transform): void => {
+	const drawLinks = (links: readonly DrawLink[], all: boolean, transform: Transform, focus: FocusFrame): void => {
 		const screen = (p: { x: number; y: number }): { x: number; y: number } => ({ x: transform.x + transform.k * p.x, y: transform.y + transform.k * p.y });
 		// Satisfied links first, so an open one crossing them stays on top.
-		const ordered = links.filter((link) => linkShows(link.kind, link.id, lighting)).sort((a, b) => Number(b.satisfied) - Number(a.satisfied));
-		for (const link of ordered) {
-			const curve = linkCurve(link.kind, screen(link.from), screen(link.to));
-			// A curve stays inside the hull of its control points, so it's off screen only when they all are, past one edge.
-			const hull = curve.type === 'cubic' ? [curve.from, curve.c1, curve.c2, curve.to] : [curve.from, curve.c, curve.to];
-			if (hull.every((p) => p.x < 0) || hull.every((p) => p.x > width) || hull.every((p) => p.y < 0) || hull.every((p) => p.y > plotHeight())) continue;
-			const lit = lighting.lit?.has(link.id) ?? false;
-			ctx.strokeStyle = lit && !link.satisfied ? theme.text : link.satisfied ? theme.linkSatisfied : theme.link;
-			ctx.lineWidth = lit ? 1.5 : 1;
-			ctx.setLineDash(link.kind === 'discovered' ? DISCOVERED_DASH : []);
-			ctx.beginPath();
-			ctx.moveTo(curve.from.x, curve.from.y);
-			if (curve.type === 'cubic') ctx.bezierCurveTo(curve.c1.x, curve.c1.y, curve.c2.x, curve.c2.y, curve.to.x, curve.to.y);
-			else ctx.quadraticCurveTo(curve.c.x, curve.c.y, curve.to.x, curve.to.y);
-			ctx.stroke();
+		for (const satisfied of [true, false]) {
+			for (const link of links) {
+				if (link.satisfied !== satisfied) continue;
+				const strength = linkStrength(focus, link, all, theme.fade);
+				if (strength <= 0.01) continue;
+				const curve = linkCurve(link.kind, screen(link.from), screen(link.to));
+				// A curve stays inside the hull of its control points, so it's off screen only when they all are, past one edge.
+				const hull = curve.type === 'cubic' ? [curve.from, curve.c1, curve.c2, curve.to] : [curve.from, curve.c, curve.to];
+				if (hull.every((p) => p.x < 0) || hull.every((p) => p.x > width) || hull.every((p) => p.y < 0) || hull.every((p) => p.y > plotHeight())) continue;
+				const lit = focus.to?.links.has(link.id) ?? false;
+				ctx.globalAlpha = strength;
+				ctx.strokeStyle = lit && !link.satisfied ? theme.text : link.satisfied ? theme.linkSatisfied : theme.link;
+				ctx.lineWidth = lit ? 1.5 : 1;
+				ctx.setLineDash(link.kind === 'discovered' ? DISCOVERED_DASH : []);
+				ctx.beginPath();
+				ctx.moveTo(curve.from.x, curve.from.y);
+				if (curve.type === 'cubic') ctx.bezierCurveTo(curve.c1.x, curve.c1.y, curve.c2.x, curve.c2.y, curve.to.x, curve.to.y);
+				else ctx.quadraticCurveTo(curve.c.x, curve.c.y, curve.to.x, curve.to.y);
+				ctx.stroke();
+			}
 		}
+		ctx.globalAlpha = 1;
 		ctx.setLineDash([]);
 	};
 
@@ -391,10 +430,10 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.globalAlpha = 1;
 	};
 
-	const drawLabels = (labels: readonly RegionLabel[]): void => {
+	const drawLabels = (labels: readonly RegionLabel[], focus: FocusFrame): void => {
 		for (const label of labels) {
 			const { box, glyph, region } = label;
-			ctx.globalAlpha = label.alpha;
+			ctx.globalAlpha = label.alpha * regionStrength(focus, label.key, theme.fade);
 			ctx.fillStyle = theme.surface;
 			ctx.beginPath();
 			ctx.roundRect(box.x, box.y, box.w, box.h, box.h / 2);
@@ -416,17 +455,19 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.globalAlpha = 1;
 	};
 
-	const drawDotLabels = (labels: readonly DotLabel[]): void => {
+	const drawDotLabels = (labels: readonly DotLabel[], focus: FocusFrame, dragged: string | null): void => {
 		ctx.textAlign = 'left';
 		ctx.textBaseline = 'middle';
 		ctx.lineJoin = 'round';
 		ctx.lineWidth = HALO_WIDTH;
 		ctx.strokeStyle = theme.surface;
 		for (const label of labels) {
+			// A label stays behind where its dot was, so a dragged dot goes without one.
+			if (label.key === dragged) continue;
 			const { box } = label;
 			const x = box.x + DOT_LABEL_PAD;
 			const y = box.y + box.h / 2 + 0.5;
-			ctx.globalAlpha = label.alpha;
+			ctx.globalAlpha = label.alpha * dotStrength(focus, label.key, theme.fade);
 			ctx.font = fontOf(label.strong ? 'dot-strong' : 'dot');
 			ctx.strokeText(label.text, x, y);
 			ctx.fillStyle = label.strong ? theme.text : theme.labelInk;
@@ -515,7 +556,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			}
 			return measured;
 		},
-		draw({ dots, regions, links, lighting, labels, dotLabels, controls, cards, transform, level, ruler }) {
+		draw({ dots, regions, links, allLinks, labels, dotLabels, controls, cards, focus, drag, transform, level, ruler }) {
 			if (width === 0 || height === 0) return;
 			if ((window.devicePixelRatio || 1) !== ratio) fit();
 			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -525,16 +566,26 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.beginPath();
 			ctx.rect(0, 0, width, plotHeight());
 			ctx.clip();
-			drawRegions(regions, transform);
+			drawRegions(regions, transform, focus);
 			if (ruler) drawEdgeLine(ruler);
-			drawLinks(links, lighting, transform);
+			drawLinks(links, allLinks, transform, focus);
+			let pulled: DrawDot | null = null;
 			for (const dot of dots) {
+				if (dot.key === drag?.key) {
+					pulled = dot;
+					continue;
+				}
 				const alpha = cards?.keys.has(dot.key) ? 1 - cards.alpha : 1;
-				if (alpha > 0) drawDot(dot, transform, level, alpha);
+				if (alpha > 0) drawDot(dot, transform, level, alpha * dotStrength(focus, dot.key, theme.fade), growth(focus, dot.key));
 			}
-			drawLabels(labels);
-			drawDotLabels(dotLabels);
-			for (const control of controls) drawControl(control.at, control.collapse, control.alpha);
+			// On top and at full strength: it is what the person has hold of.
+			if (pulled) drawDot(pulled, transform, level, cards?.keys.has(pulled.key) ? 1 - cards.alpha : 1, 1, drag);
+			drawLabels(labels, focus);
+			drawDotLabels(dotLabels, focus, drag?.key ?? null);
+			for (const control of controls) {
+				const strength = control.collapse ? regionStrength(focus, control.key, theme.fade) : dotStrength(focus, control.key, theme.fade);
+				drawControl(control.at, control.collapse, control.alpha * strength);
+			}
 			if (ruler) drawEdgeLabel(ruler);
 			ctx.restore();
 			drawRuler(ruler);
