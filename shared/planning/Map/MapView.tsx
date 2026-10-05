@@ -103,7 +103,7 @@ const ANCHOR_PAUSE_MS = 300;
  * The Map: one canvas drawing every item's status glyph where the layout put it, a
  * region around every family with its label and collapse control, the links that
  * show, labels that fade with the zoom level, a ruler of dates along its bottom, and
- * a camera on d3-zoom; over it, DOM cards at the near level, the quick card, and a
+ * a camera of its own; over it, DOM cards at the near level, the quick card, and a
  * minimap once zoomed in. Hover, focus, and selection light an item's relations; a
  * click opens the drawer the board uses. The page loads this module lazily, so Board
  * and Table don't carry it.
