@@ -354,7 +354,10 @@ there too. Held against the floor, a burst still reads as a cloud.
   and each level out gets a little more padding and a slightly deeper tint.
 - The label sits on the outline, at the top where there's room: the parent's status
   glyph, its title, and a short rollup bar split by phase (done, in flight, next,
-  later). It takes the ink ring when the parent itself needs a person.
+  later). It takes the ink ring when the parent itself needs a person, its up-next
+  number (between the glyph and the title) when the parent is up next, and a lit outline
+  when the parent matches a search or filter. It carries no reason tag; the card has the
+  reason.
 - Hovering a region lights its family and shows the parent's card; clicking it opens
   the parent in the drawer. Hovering a child lights its region.
 - An item with no children, an epic included, is a dot.
@@ -653,8 +656,15 @@ loudest thing on the Map:
 Each gets an ink ring around its dot. It's the only ink mark on the Map, so it reads
 at any zoom and in either theme without competing with a status hue. Zoomed in, a
 short reason tag joins the ring (? for a question, PR for review, zz for a quiet
-agent, ! for a hold), and the hover card leads with the reason in full. The summary
-counts them, a filter isolates them, and a key jumps to the next one.
+agent, ! for a hold or a deadlock), and the hover card leads with the reason in full.
+The summary counts them, a filter isolates them, and a key jumps to the next one.
+
+- An item with several reasons wears the tag of the most pressing, in the order
+  above (question, deadlock, hold, review, quiet), and its card names them all.
+- A family folded into one dot wears the ring for anything inside it, so a collapsed
+  epic with a question under it still shows. An open family's label wears the ring
+  only when the parent itself needs a person; its children carry their own.
+- The count in the summary is of items, once each, whatever their reasons.
 
 ---
 
@@ -666,6 +676,15 @@ Fixed, outside the Map:
 - live agent sessions
 - since your last visit: what changed, by kind; it opens the changes view
 - freshness: when the data last refreshed
+
+The counts follow [Phases](#phases) exactly, including a started hold in In flight and
+an unstarted one in Later. Blocked counts what reads Blocked, so it overlaps In flight
+and Later, and it is a count only. A session is live if it wrote in the last 15
+minutes, and the count is of distinct sessions. The phase, needs-a-person, and live
+counts are also the filters of the same names: pressing one dims everything that
+isn't in it, and pressing it again puts everything back. The "Agents at work" button
+sits after the live count. Freshness reads "Updated just now" or "Updated 4 min ago"
+from when the read last loaded, and keeps counting between refreshes.
 
 ---
 
@@ -727,10 +746,23 @@ Fixed, outside the Map:
 - Search uses the toolbar's search and the board's matching rules (title,
   description, or key, at any depth). It dims non-matches, labels the matches, and
   puts the changes view's stepping bar on the canvas ("Matches for "checklist", 2
-  of 5"), so a match buried in a dense cluster is still one step away.
+  of 5"), so a match buried in a dense cluster is still one step away. The Map's read
+  carries no descriptions, so the matching is the board's own: once the box has
+  settled (the board's debounce), the Map asks the items list for the keys that match
+  and lights those. A parent drawn as a region that matches gets a lit outline, and a
+  match inside a folded family lights the family's dot.
 - Filters dim what doesn't match instead of removing it, so filtering never
   re-lays out the Map: type, phase, needs a person, live sessions. Collapse is what
-  saves space.
+  saves space. Type is the toolbar's type filter; the other three are the summary
+  strip's counts. A search and the filters together narrow: an item has to pass
+  every one that is on.
+- The stepping bar steps through what is lit, in reading order (left to right across
+  the Map), and a step focuses the item and flies to it. With only filters on, the
+  bar reads "Filtered: needs a person" and steps the same way. `]` and `[` do what
+  its arrows do, wrapping at the ends. Clear, or Escape once the drawer and the
+  selection are closed, ends the search and every filter.
+- While a search or filter is on, hovering or focusing an item lights its family on top
+  of what the search lit, so nothing the search lit goes dim.
 - Selecting a dot (click, or Enter on the focused one) opens the drawer, the same
   component the board uses, and lights its relationships. On the Map the drawer
   overlays the right side of the canvas instead of narrowing it, and the camera

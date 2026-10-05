@@ -71,6 +71,8 @@ const BOARD_MIN_WIDTH = 360;
  * The toolbar's filters are the exception: they stop here. The server filters the
  * collection's windows, so the views never see filter state at all — they render
  * whatever the collection currently holds, which under a search includes child items.
+ * The Map takes the settled search text and the type as props and dims by them instead;
+ * the collection is left alone while the Map is showing.
  *
  * Which item the drawer shows is not local state — it's the `:itemKey` route param.
  * Opening and closing the drawer are navigations, so Back closes it. The router
@@ -128,12 +130,14 @@ export function Planning(props: RouteProps): JSX.Element {
 		const timer = setTimeout(() => setSettledSearch(filters.search), SEARCH_DEBOUNCE);
 		return () => clearTimeout(timer);
 	}, [filters.search, settledSearch]);
+	// The Map takes the same text and type but filters nothing on the server: it dims, and
+	// asks the items list for the matches itself. The board's windows catch up when it returns.
+	const type = isItemType(filters.category) ? filters.category : undefined;
+	const onMap = view === 'map';
 	useEffect(() => {
-		void items.setFilter({
-			search: settledSearch,
-			type: isItemType(filters.category) ? filters.category : undefined,
-		});
-	}, [items, settledSearch, filters.category]);
+		if (onMap) return;
+		void items.setFilter({ search: settledSearch, type });
+	}, [items, onMap, settledSearch, type]);
 
 	// The board selection — the single source of truth for which card is marked.
 	// Seeded from the route so an in-app navigation to an item URL lands with its
@@ -478,6 +482,9 @@ export function Planning(props: RouteProps): JSX.Element {
 					covered={openItem ? drawerWidth : 0}
 					onOpenItem={handleOpenItemByKey}
 					onCloseItem={handleCloseDrawer}
+					search={settledSearch}
+					type={type ?? null}
+					onClear={handleClearFilters}
 				/>
 			);
 		}
@@ -515,7 +522,7 @@ export function Planning(props: RouteProps): JSX.Element {
 			<div class={styles.toolbar}>
 				<div class={styles.controls}>
 					<ViewToggle view={view} onChange={handleChangeView} mapAvailable={!small} />
-					{view !== 'map' && <div class={styles.filters}>{renderFilters(false)}</div>}
+					<div class={styles.filters}>{renderFilters(false)}</div>
 				</div>
 				<div class={styles.toolbarEnd}>
 					<SplitButton options={createOptions} prefix="+ New" />

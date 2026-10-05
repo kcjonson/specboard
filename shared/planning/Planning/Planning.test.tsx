@@ -32,7 +32,11 @@ vi.mock('@specboard/fetch', async (importOriginal) => {
 vi.mock('../Board/Board', () => ({ Board: () => <div data-testid="board" />, BOARD_PAGE_SIZE: 20 }));
 vi.mock('../Table/Table', () => ({ Table: () => <div data-testid="table" />, TABLE_PAGE_SIZE: 50 }));
 vi.mock('../Map/MapView', () => ({
-	MapView: ({ openItemKey, covered }: { openItemKey?: string; covered: number }) => <div data-testid="map" data-open={openItemKey ?? ''} data-covered={covered} />,
+	MapView: ({ openItemKey, covered, search, type, onClear }: { openItemKey?: string; covered: number; search: string; type: string | null; onClear(): void }) => (
+		<div data-testid="map" data-open={openItemKey ?? ''} data-covered={covered} data-search={search} data-type={type ?? ''}>
+			<button type="button" onClick={onClear}>Clear the Map</button>
+		</div>
+	),
 }));
 vi.mock('../ItemDrawer/ItemDrawer', async () => {
 	const { useEffect } = await import('preact/hooks');
@@ -188,15 +192,40 @@ describe('Planning views', () => {
 		expect(queryByRole('alert')).toBeNull();
 	});
 
-	it('hides the board filters on the Map, where they would do nothing', async () => {
+	it('keeps the search box and the type filter on the Map, and hands the Map their settled values', async () => {
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning?view=map');
 		const { container, findByTestId, findByRole } = renderPlanning();
-		await findByTestId('board');
+		const map = await findByTestId('map');
 		// The toolbar's copy, and the small-screen popover's, which CSS hides on desktop.
-		const searchBoxes = (): number => container.querySelectorAll('input[type="search"]').length;
-		expect(searchBoxes()).toBe(2);
-		fireEvent.click(await findByRole('button', { name: 'Map' }));
+		expect(container.querySelectorAll('input[type="search"]').length).toBe(2);
+		const box = container.querySelector('input[type="search"]') as HTMLInputElement;
+		fireEvent.input(box, { target: { value: 'checklist' } });
+		expect(map.getAttribute('data-search')).toBe('');
+		await waitFor(() => expect(map.getAttribute('data-search')).toBe('checklist'));
+
+		const select = container.querySelector('select') as HTMLSelectElement;
+		fireEvent.change(select, { target: { value: 'bug' } });
+		expect(map.getAttribute('data-type')).toBe('bug');
+
+		fireEvent.click(await findByRole('button', { name: 'Clear the Map' }));
+		await waitFor(() => expect(map.getAttribute('data-search')).toBe(''));
+		expect(map.getAttribute('data-type')).toBe('');
+		expect(box.value).toBe('');
+	});
+
+	it('leaves the board\'s own windows alone while the Map searches, and applies the search when the board returns', async () => {
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning?view=map');
+		const { container, findByTestId, findByRole } = renderPlanning();
 		await findByTestId('map');
-		expect(searchBoxes()).toBe(1);
+		getResponse.mockClear();
+		const box = container.querySelector('input[type="search"]') as HTMLInputElement;
+		fireEvent.input(box, { target: { value: 'checklist' } });
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		expect(getResponse).not.toHaveBeenCalled();
+
+		fireEvent.click(await findByRole('button', { name: 'Board' }));
+		await findByTestId('board');
+		await waitFor(() => expect(getResponse.mock.calls.some(([url]) => String(url).includes('search=checklist'))).toBe(true));
 	});
 
 	it('drops a Map anchor when leaving for another view', async () => {

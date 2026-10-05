@@ -10,10 +10,12 @@ import { act, cleanup, render, waitFor } from '@testing-library/preact';
 import { BoardBuilder } from '../layout/board-fixture';
 import { EMPTY_OVERLAY, OverlayStore, type OverlayFrame } from '../overlay';
 import { ActivityCache } from './activity-cache';
-import { quickContent, quickHeight } from './quick-content';
+import { quickContent, quickHeight, type QuickMarks } from './quick-content';
 import { MapQuickCard } from './MapQuickCard';
 
 afterEach(cleanup);
+
+const NO_MARKS: QuickMarks = { reasons: [], upNext: null };
 
 function scene(): { rows: ReadonlyMap<string, MapItemRow>; item: MapItemRow; blocker: MapItemRow } {
 	const b = new BoardBuilder();
@@ -41,7 +43,7 @@ describe('MapQuickCard', () => {
 		const progress = { done: 3, in_flight: 1, next: 2, later: 0 };
 		const store = new OverlayStore();
 		const { container } = render(<MapQuickCard store={store} activity={new ActivityCache(() => new Promise(() => {}))} bottom={32} />);
-		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 40.4, y: 80, side: 'right', progress } })));
+		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 40.4, y: 80, side: 'right', progress, marks: NO_MARKS } })));
 		const card = container.querySelector('article') as HTMLElement;
 		const text = card.textContent!;
 		expect(text).toContain(item.key);
@@ -53,7 +55,7 @@ describe('MapQuickCard', () => {
 		expect(text).toContain('Held by 1 text blocker');
 		expect(text).toContain('3 of 6 done');
 		expect(card.style.transform).toBe('translate(40px, 80px)');
-		expect(card.style.height).toBe(`${quickHeight(quickContent(item, rows, progress))}px`);
+		expect(card.style.height).toBe(`${quickHeight(quickContent(item, rows, progress, NO_MARKS))}px`);
 	});
 
 	it('fetches the latest activity entry when it opens, shows a quiet loading state, and fills it in without blocking the card', async () => {
@@ -62,7 +64,7 @@ describe('MapQuickCard', () => {
 		const source = vi.fn().mockImplementation(() => new Promise((r) => (resolve = r)));
 		const store = new OverlayStore();
 		const { container, findByText } = render(<MapQuickCard store={store} activity={new ActivityCache(source)} bottom={32} />);
-		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 0, y: 0, side: 'right', progress: null } })));
+		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 0, y: 0, side: 'right', progress: null, marks: NO_MARKS } })));
 		expect(container.textContent).toContain('Hover card');
 		expect(container.textContent).toContain('Loading...');
 		expect(source).toHaveBeenCalledWith(item.key);
@@ -76,7 +78,7 @@ describe('MapQuickCard', () => {
 		const { rows, item } = scene();
 		const store = new OverlayStore();
 		const { container } = render(<MapQuickCard store={store} activity={new ActivityCache(() => Promise.reject(new Error('offline')))} bottom={32} />);
-		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 0, y: 0, side: 'right', progress: null } })));
+		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 0, y: 0, side: 'right', progress: null, marks: NO_MARKS } })));
 		await waitFor(() => expect(container.textContent).toContain('Could not load the latest entry.'));
 	});
 
@@ -84,7 +86,7 @@ describe('MapQuickCard', () => {
 		const { rows, item } = scene();
 		const store = new OverlayStore();
 		const { container } = render(<MapQuickCard store={store} activity={new ActivityCache(() => new Promise(() => {}))} bottom={32} />);
-		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 0, y: 0, side: 'left', progress: null } })));
+		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 0, y: 0, side: 'left', progress: null, marks: NO_MARKS } })));
 		expect(container.querySelector('article')).not.toBeNull();
 		act(() => store.publish(frame({ rows, quick: null })));
 		expect(container.querySelector('article')).toBeNull();

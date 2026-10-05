@@ -1,6 +1,7 @@
 import type { MapItemRow, MapItemSubStatus } from '@specboard/core/map-read';
 import { STATUS_LABELS, glyphStatus } from '@specboard/ui';
 import type { Rollup } from '../draw-list';
+import { reasonsText, tagOf, type NeedsReason } from '../needs-person';
 
 /**
  * What the quick card says (spec, Navigation and interaction): title, status,
@@ -42,9 +43,19 @@ export interface QuickContent {
 	holds: number;
 	/** The family's items by phase when the item has children, otherwise null. */
 	progress: Rollup | null;
+	/** Why the item needs a person, in words with the lead reason first, and the short tag the ring wears; null when it needs nobody. The card leads with it. */
+	needs: { tag: string; text: string } | null;
+	/** 1 to 3 for an item that is up next. */
+	upNext: number | null;
 }
 
-export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemRow>, progress: Rollup | null): QuickContent {
+/** What the surface knows about an item that its row doesn't say. */
+export interface QuickMarks {
+	reasons: readonly NeedsReason[];
+	upNext: number | null;
+}
+
+export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemRow>, progress: Rollup | null, marks: QuickMarks): QuickContent {
 	const status = glyphStatus(row.status, row.blocked);
 	const open = row.blockers.filter((link) => link.state === 'open');
 	const sessions = new Set(row.workers.map((worker) => worker.sessionKey)).size;
@@ -59,6 +70,8 @@ export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemR
 		moreBlockers: Math.max(0, open.length - NAMED_BLOCKERS),
 		holds: row.textBlockerCount,
 		progress,
+		needs: marks.reasons.length > 0 ? { tag: tagOf(marks.reasons), text: reasonsText(marks.reasons) } : null,
+		upNext: marks.upNext,
 	};
 }
 
@@ -74,9 +87,15 @@ const LINE = 16;
 const PROGRESS = 18;
 const ACTIVITY = 64;
 
-/** The card's height for this content: fixed parts, plus a line each for sessions, blockers, and holds, plus the progress bar. */
+/** The card's height for this content: fixed parts, plus a line each for the reason it needs a person, its up-next number, sessions, blockers, and holds, plus the progress bar. */
 export function quickHeight(content: QuickContent): number {
-	const lines = (content.sessions !== null ? 1 : 0) + content.blockers.length + (content.moreBlockers > 0 ? 1 : 0) + (content.holds > 0 ? 1 : 0);
+	const lines =
+		(content.needs ? 1 : 0) +
+		(content.upNext !== null ? 1 : 0) +
+		(content.sessions !== null ? 1 : 0) +
+		content.blockers.length +
+		(content.moreBlockers > 0 ? 1 : 0) +
+		(content.holds > 0 ? 1 : 0);
 	const parts = [HEAD, TITLE, CHIPS, ...Array<number>(lines).fill(LINE), ...(content.progress ? [PROGRESS] : []), ACTIVITY];
 	return 2 * PAD + parts.reduce((sum, part) => sum + part, 0) + GAP * (parts.length - 1);
 }

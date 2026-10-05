@@ -1,11 +1,30 @@
 /* The Map draws on the surface color: the status glyphs are checked for contrast against it, and a few fall under 3:1 on the page background. */
 .map {
-	position: relative;
+	display: flex;
+	flex-direction: column;
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
 	background: var(--color-surface);
 	overflow: hidden;
+}
+
+/* Everything the camera moves under, and what sits over it, is placed against the plot: the summary strip above it is fixed. */
+.plot {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+/* The stepping bar, top and center, between the view controls at its left and the notice at its right. */
+.barSlot {
+	position: absolute;
+	top: var(--space-3);
+	left: 50%;
+	transform: translateX(-50%);
+	max-width: calc(100% - 600px);
 }
 
 .canvas {

@@ -22,7 +22,7 @@ function scene(): { rows: OverlayFrame['rows']; set: (k: number, keys?: string[]
 		rows.set(row.key, row);
 	}
 	const keys = [...rows.keys()];
-	const dots = keys.map((key, i) => drawDot(key, i * 40, 10 * i, { status: i === 0 ? 'in_progress' : 'ready', needsPerson: i === 0 }));
+	const dots = keys.map((key, i) => drawDot(key, i * 40, 10 * i, { status: i === 0 ? 'in_progress' : 'ready', reason: i === 0 ? 'question' : null }));
 	return {
 		rows,
 		keys,

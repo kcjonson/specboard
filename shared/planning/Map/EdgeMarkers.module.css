@@ -1,0 +1,68 @@
+/* Over the plot and under the controls; only the markers take the pointer, so the canvas stays draggable. */
+.layer {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.marker {
+	appearance: none;
+	position: absolute;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: 2px solid var(--color-border);
+	border-radius: 50%;
+	background: var(--color-surface);
+	color: var(--color-text);
+	font-family: inherit;
+	font-size: 11px;
+	font-weight: var(--font-bold, 700);
+	box-shadow: var(--shadow-md);
+	cursor: pointer;
+	pointer-events: auto;
+}
+
+.marker:hover {
+	background: var(--color-surface-hover);
+}
+
+.marker:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+.upNext {
+	border-color: var(--color-ready);
+}
+
+.needsPerson {
+	border-color: var(--color-needs-person);
+}
+
+.live {
+	border-color: var(--color-in-progress);
+}
+
+/* A small triangle on the marker's rim, turned toward the item. */
+.arrow {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.arrow::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	right: -7px;
+	margin-top: -4px;
+	border-left: 6px solid var(--color-text);
+	border-top: 4px solid transparent;
+	border-bottom: 4px solid transparent;
+}

@@ -1,0 +1,99 @@
+/* Fixed above the plot, outside the canvas, so it is there while the Map loads and while it pans. */
+.strip {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--space-2) var(--space-3);
+	padding: var(--space-2) var(--space-4);
+	border-bottom: 1px solid var(--color-border);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font-size: var(--text-sm);
+}
+
+/* A count that is also a filter: pressed, it dims everything else on the Map. */
+.chip {
+	appearance: none;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-1) var(--space-2);
+	border: 1px solid transparent;
+	border-radius: var(--radius-md);
+	background: transparent;
+	color: var(--color-text);
+	font-family: inherit;
+	font-size: inherit;
+	cursor: pointer;
+	transition: background var(--transition-fast);
+}
+
+.chip:hover:not(:disabled) {
+	background: var(--color-surface-hover);
+}
+
+.chip[aria-pressed='true'] {
+	border-color: var(--color-primary);
+	background: var(--color-primary-subtle);
+}
+
+.chip:disabled {
+	cursor: default;
+}
+
+.plain {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-1) var(--space-2);
+}
+
+.glyph {
+	width: 14px;
+	height: 14px;
+	flex-shrink: 0;
+}
+
+.label {
+	color: var(--color-text-muted);
+}
+
+.count {
+	font-weight: var(--font-semibold, 600);
+	font-variant-numeric: tabular-nums;
+}
+
+.divider {
+	width: 1px;
+	height: 18px;
+	background: var(--color-border);
+}
+
+/* The ink ring the canvas draws round an item that needs a person. */
+.ring {
+	width: 12px;
+	height: 12px;
+	box-sizing: border-box;
+	flex-shrink: 0;
+	border: 2px solid var(--color-needs-person);
+	border-radius: 50%;
+}
+
+/* The still amber glow behind a live session's item. */
+.glow {
+	width: 12px;
+	height: 12px;
+	flex-shrink: 0;
+	border-radius: 50%;
+	background: var(--color-in-progress);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-in-progress) 25%, transparent);
+}
+
+.spacer {
+	flex: 1;
+}
+
+.fresh {
+	color: var(--color-text-muted);
+	white-space: nowrap;
+}

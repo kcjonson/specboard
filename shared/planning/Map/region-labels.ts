@@ -30,6 +30,8 @@ export interface RegionLabel {
 	region: DrawRegion;
 	box: Box;
 	glyph: Circle;
+	/** An up-next region's number, between the glyph and the title. */
+	badge: Circle | null;
 	title: string;
 	/** Left end of the title, on the box's vertical middle. */
 	titleAt: MapPoint;
@@ -48,6 +50,7 @@ const GAP = 6;
 export const BAR_WIDTH = 32;
 export const BAR_HEIGHT = 4;
 const TOGGLE_SIZE = 12;
+const BADGE_SIZE = 14;
 const PAD_RIGHT = 4;
 const MAX_TITLE = 180;
 /** Candidate spots along an outline are about this far apart on screen, in px. */
@@ -167,16 +170,19 @@ export function rollupSegments(rollup: Rollup, x: number, width: number): Rollup
 
 /** One region's label laid out with its box's left edge at `x` and its middle at `y`. */
 function layoutLabel(region: DrawRegion, title: string, titleWidth: number, x: number, y: number): RegionLabel {
-	const width = PAD_LEFT + GLYPH_SIZE + GAP + titleWidth + GAP + BAR_WIDTH + GAP + TOGGLE_SIZE + PAD_RIGHT;
+	const badged = region.upNext !== null;
+	const lead = badged ? BADGE_SIZE + GAP : 0;
+	const width = PAD_LEFT + GLYPH_SIZE + GAP + lead + titleWidth + GAP + BAR_WIDTH + GAP + TOGGLE_SIZE + PAD_RIGHT;
 	const top = y - LABEL_HEIGHT / 2;
 	const glyphX = x + PAD_LEFT + GLYPH_SIZE / 2;
-	const titleX = x + PAD_LEFT + GLYPH_SIZE + GAP;
+	const titleX = x + PAD_LEFT + GLYPH_SIZE + GAP + lead;
 	const barX = titleX + titleWidth + GAP;
 	return {
 		key: region.key,
 		region,
 		box: { x, y: top, w: width, h: LABEL_HEIGHT },
 		glyph: { x: glyphX, y, r: GLYPH_SIZE / 2 },
+		badge: badged ? { x: glyphX + GLYPH_SIZE / 2 + GAP + BADGE_SIZE / 2, y, r: BADGE_SIZE / 2 } : null,
 		title,
 		titleAt: { x: titleX, y },
 		bar: { x: barX, y: y - BAR_HEIGHT / 2, w: BAR_WIDTH, h: BAR_HEIGHT },
