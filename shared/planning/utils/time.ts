@@ -10,6 +10,16 @@ export function formatTimeAgo(dateString: string): string {
 	return 'just now';
 }
 
+/** A day as a short date, the year only when it isn't this one: "Sep 19". */
+export function formatDate(dateString: string): string {
+	const date = new Date(dateString);
+	return date.toLocaleDateString(undefined, {
+		month: 'short',
+		day: 'numeric',
+		...(date.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }),
+	});
+}
+
 /** A moment as a short date and time, the year only when it isn't this one: "Oct 3, 3:12 PM". */
 export function formatDateTime(dateString: string): string {
 	const date = new Date(dateString);

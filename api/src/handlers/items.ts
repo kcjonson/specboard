@@ -48,11 +48,16 @@ export function requireResolvedProject(context: Context): ResolvedProject {
 	return resolved;
 }
 
-/** The authenticated user as a provenance actor (requireProjectAccess sets userId). */
-export function apiActor(context: Context): UserActor {
+/** The authenticated user's id (requireProjectAccess sets it). */
+export function apiUserId(context: Context): string {
 	const userId = context.get('userId') as string | undefined;
 	if (!userId) throw new Error('Route is missing requireProjectAccess — no userId on context');
-	return { type: 'user', userId };
+	return userId;
+}
+
+/** The authenticated user as a provenance actor. */
+export function apiActor(context: Context): UserActor {
+	return { type: 'user', userId: apiUserId(context) };
 }
 
 const project = requireResolvedProject;

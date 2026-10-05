@@ -86,6 +86,41 @@ describe('labels for what a search or filter lit', () => {
 	});
 });
 
+describe('labels in the changes view', () => {
+	const dots = [
+		drawDot('A', 100, 100), drawDot('B', 300, 100), drawDot('C', 500, 100), drawDot('D', 700, 100),
+		drawDot('R', 100, 300, { flight: 'in_review' }), drawDot('S', 300, 300, { flight: 'in_review' }), drawDot('P', 700, 300, { flight: 'in_progress' }),
+	];
+	const lit = { dots: new Set(['A', 'B', 'C', 'S']), outlined: new Set<string>(), recent: new Set(['B', 'C']) };
+
+	it('names only the most recent changes at rest, ahead of everything else', () => {
+		const placed = placeLabels(input({ dots, lit }));
+
+		expect(placed.dots.map((label) => label.key).sort()).toEqual(['B', 'C', 'P', 'S']);
+	});
+
+	it('leaves in-review dots that did not change unnamed, since the Map dims them', () => {
+		expect(placeLabels(input({ dots, lit })).dots.map((label) => label.key)).not.toContain('R');
+	});
+
+	it('gives the families no label at rest, but keeps one a changed parent earned', () => {
+		const keys = ['R0', 'R1', 'R2'];
+		const regions = keys.map((key, i) => region(key, 10 - i));
+		const outlines = new Map(keys.map((key, i) => [key, outlineFor(key, 40 + i * 90)]));
+
+		expect(placeLabels(input({ dots: [], regions, outlines })).regions).toHaveLength(3);
+		expect(placeLabels(input({ dots: [], regions, outlines, lit: { dots: new Set(), outlined: new Set(), recent: new Set() } })).regions).toEqual([]);
+		const kept = placeLabels(input({ dots: [], regions, outlines, lit: { dots: new Set(), outlined: new Set(['R1']), recent: new Set(['R1']) } }));
+		expect(kept.regions.map((label) => label.key)).toEqual(['R1']);
+	});
+
+	it('names every changed dot with room once zoomed in, where every dot is named anyway', () => {
+		const placed = placeLabels(input({ dots, lit, rules: LABEL_RULES.middle, level: 'middle' }));
+
+		expect(placed.dots.map((label) => label.key)).toEqual(expect.arrayContaining(['A', 'B', 'C', 'S']));
+	});
+});
+
 describe('marks that reach past a dot\'s ring', () => {
 	it('widens the box of an up-next dot at every level, and of one that needs a person once zoomed in', () => {
 		const plain = drawDot('A', 100, 100);

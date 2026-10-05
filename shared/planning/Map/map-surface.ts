@@ -129,6 +129,8 @@ export class MapSurface {
 	private allLinks = false;
 	/** What a search or filter lights; null when none is on or nothing matched, so nothing dims. */
 	private highlight: Highlight | null = null;
+	/** What the changes view says about each changed item on its card, by item key; null when the view is closed. */
+	private changeNotes: ReadonlyMap<string, readonly string[]> | null = null;
 	/** The relation the fade is heading to, kept while neither it nor the highlight changes, so the fade doesn't restart. */
 	private lit: { relation: Relation | null; highlight: Highlight | null; result: Relation | null } | null = null;
 	/** Markers asked for at the plot's edge, which show for the ones that are out of view. */
@@ -275,6 +277,13 @@ export class MapSurface {
 		if (highlight === this.highlight) return;
 		this.highlight = highlight;
 		this.refocus();
+	}
+
+	/** What the changes view says on each changed item's card: a line per change, with its time. Null when the view is closed. */
+	setChangeNotes(notes: ReadonlyMap<string, readonly string[]> | null): void {
+		if (notes === this.changeNotes) return;
+		this.changeNotes = notes;
+		this.requestPaint();
 	}
 
 	/** The items whose edge markers show while they are out of view, in priority order. */
@@ -820,7 +829,7 @@ export class MapSurface {
 			const card = agentCard(key, this.drawing.working, this.rows, this.wallNow);
 			if (!card) return null;
 			const size = { w: QUICK_WIDTH, h: agentCardHeight(card) };
-			return { key, ...placeQuickCard({ anchor: agentBox(agent, transform, level), related, plot, reserved, size }), progress: null, marks: { reasons: [], upNext: null, sessions: [] }, agent: card };
+			return { key, ...placeQuickCard({ anchor: agentBox(agent, transform, level), related, plot, reserved, size }), progress: null, marks: { reasons: [], upNext: null, sessions: [], changes: [] }, agent: card };
 		}
 		const row = this.rows.get(key);
 		if (!row) return null;
@@ -835,7 +844,7 @@ export class MapSurface {
 			if (!node) return null;
 			anchor = { x: transform.x + transform.k * node.x - 1, y: transform.y + transform.k * node.y - 1, w: 2, h: 2 };
 		}
-		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key), sessions: itemSessions(row, this.drawing.working, this.wallNow) };
+		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key), sessions: itemSessions(row, this.drawing.working, this.wallNow), changes: this.changeNotes?.get(key) ?? [] };
 		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress, marks)) };
 		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress, marks, agent: null };
 	}

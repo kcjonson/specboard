@@ -165,3 +165,23 @@ describe('what a lens and a hover light together', () => {
 		expect(both.regions.has(s.epic.key)).toBe(true);
 	});
 });
+
+describe('the changes view\'s highlight', () => {
+	it('lights the changed items like a lens does, and names the nodes the most recent changes drew', () => {
+		const s = scene();
+
+		const highlight = highlightOf([s.bug.key, s.child.key, s.inFolded[0]!.key], s.layout, [s.bug.key, s.inFolded[0]!.key]);
+
+		expect(highlight.dots.has(s.bug.key)).toBe(true);
+		expect(highlight.dots.has(s.child.key)).toBe(true);
+		// A change inside a folded family lights the family's dot, which is also where its label goes.
+		expect(highlight.dots.has(s.folded.key)).toBe(true);
+		expect(highlight.recent).toEqual(new Set([s.bug.key, s.folded.key]));
+	});
+
+	it('has no recent set for a search or filter, which name every dot they lit', () => {
+		const s = scene();
+
+		expect(highlightOf([s.bug.key], s.layout).recent).toBeUndefined();
+	});
+});

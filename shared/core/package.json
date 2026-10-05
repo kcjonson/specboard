@@ -7,6 +7,7 @@
 		".": "./src/index.ts",
 		"./cookies": "./src/cookies.ts",
 		"./identifiers": "./src/identifiers.ts",
+		"./map-changes": "./src/map-changes.ts",
 		"./map-read": "./src/map-read.ts"
 	},
 	"scripts": {
