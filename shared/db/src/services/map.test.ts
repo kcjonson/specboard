@@ -269,12 +269,13 @@ describe('worker episodes', () => {
 		const rows = await read();
 		const [onOne] = rows.get(`MP-${one}`)!.workers;
 		const [onTwo] = rows.get(`MP-${two}`)!.workers;
-		const [stored] = await sql<{ last_seen_at: Date }>('SELECT last_seen_at FROM item_workers WHERE item_id = $1', [await idOf(one)]);
+		const [stored] = await sql<{ started_at: Date; last_seen_at: Date }>('SELECT started_at, last_seen_at FROM item_workers WHERE item_id = $1', [await idOf(one)]);
 		expect(onOne).toEqual({
 			sessionKey: agentSessionKey(AGENT),
 			deviceName: 'personal-laptop',
 			client: 'claude-code',
 			branch: 'feat/MP-1-map',
+			startedAt: stored!.started_at.toISOString(),
 			lastWriteAt: stored!.last_seen_at.toISOString(),
 		});
 		expect(onTwo!.sessionKey).toBe(onOne!.sessionKey);

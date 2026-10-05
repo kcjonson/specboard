@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BoardBuilder } from '../layout/board-fixture';
-import { NAMED_BLOCKERS, progressText, quickContent, quickHeight } from './quick-content';
+import { NAMED_BLOCKERS, NAMED_SESSIONS, progressText, quickContent, quickHeight } from './quick-content';
 
 describe('quick card content', () => {
 	it('says title, status, sub-status, sessions, open blockers by key and title, holds, and progress', () => {
@@ -10,17 +10,15 @@ describe('quick card content', () => {
 		const item = b.add({ status: 'in_progress', subStatus: 'needs_input', title: 'Hover card', textBlockerCount: 2 });
 		b.block(item, first);
 		b.block(item, second);
-		b.work(item, 's1', 'laptop');
-		b.work(item, 's2', 'desktop');
-		b.work(item, 's1', 'laptop');
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
-		const content = quickContent(item, rows, { done: 1, in_flight: 1, next: 2, later: 0 });
+		const sessions = [{ title: 'Session 1, claude-code on laptop', meta: 'a', quiet: false }, { title: 'Session 2, claude-code on desktop', meta: 'b', quiet: true }];
+		const content = quickContent(item, rows, { done: 1, in_flight: 1, next: 2, later: 0 }, sessions);
 		expect(content).toMatchObject({
 			key: item.key,
 			title: 'Hover card',
 			statusLabel: 'Blocked',
 			subStatus: 'Needs input',
-			sessions: 2,
+			moreSessions: 0,
 			holds: 2,
 			moreBlockers: 0,
 		});
@@ -38,11 +36,27 @@ describe('quick card content', () => {
 		const item = b.add({ status: 'ready' });
 		b.block(item, done);
 		for (const blocker of open) b.block(item, blocker);
-		const content = quickContent(item, new Map(b.rows.map((row) => [row.key, row])), null);
+		const content = quickContent(item, new Map(b.rows.map((row) => [row.key, row])), null, []);
 		expect(content.blockers).toHaveLength(NAMED_BLOCKERS);
 		expect(content.moreBlockers).toBe(2);
 		expect(content.blockers.map((blocker) => blocker.key)).not.toContain(done.key);
-		expect(content.sessions).toBeNull();
+		expect(content.sessions).toEqual([]);
+	});
+
+	it('names a couple of sessions, two lines each, and counts the rest', () => {
+		const b = new BoardBuilder();
+		const item = b.add({ status: 'in_progress' });
+		const rows = new Map(b.rows.map((row) => [row.key, row]));
+		const session = (n: number): { title: string; meta: string; quiet: boolean } => ({ title: `Session ${n}`, meta: 'meta', quiet: false });
+		const base = quickHeight(quickContent(item, rows, null, []));
+		const two = quickContent(item, rows, null, [session(1), session(2)]);
+		expect(two).toMatchObject({ moreSessions: 0 });
+		expect(two.sessions).toHaveLength(NAMED_SESSIONS);
+		expect(quickHeight(two)).toBe(base + 2 * (6 + 32));
+		const four = quickContent(item, rows, null, [session(1), session(2), session(3), session(4)]);
+		expect(four).toMatchObject({ moreSessions: 2 });
+		expect(four.sessions.map((s) => s.title)).toEqual(['Session 1', 'Session 2']);
+		expect(quickHeight(four)).toBe(quickHeight(two) + 6 + 16);
 	});
 
 	it('is as tall as the lines it carries, so placement needs no measuring', () => {
@@ -50,8 +64,8 @@ describe('quick card content', () => {
 		const plain = b.add({ status: 'ready' });
 		const withHold = b.add({ status: 'ready', textBlockerCount: 1 });
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
-		const base = quickHeight(quickContent(plain, rows, null));
-		expect(quickHeight(quickContent(withHold, rows, null))).toBe(base + 6 + 16);
-		expect(quickHeight(quickContent(plain, rows, { done: 1, in_flight: 0, next: 0, later: 0 }))).toBe(base + 6 + 18);
+		const base = quickHeight(quickContent(plain, rows, null, []));
+		expect(quickHeight(quickContent(withHold, rows, null, []))).toBe(base + 6 + 16);
+		expect(quickHeight(quickContent(plain, rows, { done: 1, in_flight: 0, next: 0, later: 0 }, []))).toBe(base + 6 + 18);
 	});
 });

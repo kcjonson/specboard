@@ -429,19 +429,27 @@ describe('MapSurface labels, levels, cards, and the minimap', () => {
 		expect(labelled).toContain(keys[6]);
 	});
 
-	it('leaves a named item without a label', () => {
+	it('leaves an item its computer names without a label of its own', () => {
 		const { surface, camera, renderer, flush, clock } = setup();
 		clock.reduced = true;
-		const { layout, rows, keys } = realBoard();
+		const b = new BoardBuilder();
+		const keys: string[] = [];
+		for (let i = 0; i < 12; i++) keys.push(b.add({ status: i < 6 ? 'done' : 'ready', created: b.now - (20 - i) * 86_400_000 }).key);
+		const worked = b.add({ status: 'in_progress' });
+		const alone = b.add({ status: 'in_progress' });
+		b.work(worked, 's1', 'laptop', 2);
+		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: WIDTH / 500 });
 		surface.resize(WIDTH, HEIGHT);
-		surface.show(layout, rows, null);
-		const inProgress = keys.at(-1)!;
-		surface.setNamed(new Set([inProgress]));
+		surface.setNow(b.now);
+		surface.show(layout, new Map(b.rows.map((row) => [row.key, row])), null);
 		flush();
-		expect(renderer.frames.at(-1)!.dotLabels.map((label) => label.key)).not.toContain(inProgress);
-		camera.set(viewOf(layout, keys[6]!, scaleFor(12)));
+		const frame = renderer.frames.at(-1)!;
+		expect(frame.blocks.map((block) => block.lines.map((line) => line.text))).toEqual([['laptop', `Session 1: ${worked.key}`]]);
+		expect(frame.dotLabels.map((label) => label.key)).not.toContain(worked.key);
+		expect(frame.dotLabels.map((label) => label.key)).toContain(alone.key);
+		camera.set({ ...camera.transform, k: camera.transform.k * 1.5 });
 		flush();
-		expect(renderer.frames.at(-1)!.dotLabels.map((label) => label.key)).not.toContain(inProgress);
+		expect(renderer.frames.at(-1)!.dotLabels.map((label) => label.key)).not.toContain(worked.key);
 	});
 
 	it('mounts no cards before the near level, and cards for the dots in view at it', () => {

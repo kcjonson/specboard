@@ -3,9 +3,13 @@ import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
 import { useModel } from '@specboard/models';
 import { LoadError } from '../LoadError/LoadError';
+import { AgentRoster } from './AgentRoster';
+import { AgentsButton } from './AgentsButton';
+import { NO_AGENTS, agentsOf } from './agents';
 import { MapCards } from './cards/MapCards';
 import { createCollapseStore } from './collapse-store';
 import { DRAG_THRESHOLD } from './drag';
+import { EdgeMarkers } from './EdgeMarkers';
 import type { Hit } from './hit-index';
 import { createLayoutWorker } from './layout/layout-worker-client';
 import type { MapPoint } from './layout/types';
@@ -18,6 +22,7 @@ import { OverlayStore } from './overlay';
 import { ActivityCache, createActivitySource } from './quick/activity-cache';
 import { MapQuickCard } from './quick/MapQuickCard';
 import { zoomKeyOf } from './map-keys';
+import { liveCount, rosterOf } from './roster';
 import { readFocus, urlWithFocus } from './map-url';
 import { RULER_HEIGHT, createCanvasRenderer } from './renderer';
 import styles from './MapView.module.css';
@@ -46,6 +51,9 @@ const DEFER_MS = 150;
 
 /** Cards and labels keep this far from the toolbar and the notice that sit over the plot. */
 const CHROME_PAD = 8;
+
+/** Sessions age without a data change, so the Map asks the clock again this often: a repaint only if something crossed 15 minutes or an hour, and never a new layout. */
+const CLOCK_MS = 60_000;
 
 /** A finger moves a little more than a mouse does while it is only pressing. */
 const TOUCH_THRESHOLD = 10;
@@ -93,6 +101,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const surfaceRef = useRef<MapSurface | null>(null);
 	const [viewportEmpty, setViewportEmpty] = useState(false);
 	const [allLinks, setAllLinks] = useState(false);
+	const [rosterOpen, setRosterOpen] = useState(false);
+	// A read stamps its own time; between reads the clock ticks, and whichever is later is now.
+	const [ticked, setTicked] = useState(() => model.clock());
 	const overlay = useMemo(() => new OverlayStore(), []);
 
 	// The surface lives as long as the view, so what it calls back into is read from here.
@@ -282,9 +293,19 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		};
 	}, [model, anchor, overlay, reserveChrome]);
 
+	useEffect(() => {
+		const timer = window.setInterval(() => setTicked(model.clock()), CLOCK_MS);
+		return () => window.clearInterval(timer);
+	}, [model]);
+
 	const { state, layout, rows } = model;
+	const now = Math.max(model.now, ticked);
+	const working = useMemo(() => (layout ? agentsOf(layout, rows, now) : NO_AGENTS), [layout, rows, now]);
+	const liveSessions = liveCount(working);
+	// Before the layout effect, so a new layout is drawn against the right time the first time.
+	useEffect(() => surfaceRef.current!.setNow(now), [now]);
 	const summarizedNotice = state === 'ready' && !model.isEmpty && model.read?.summarized === true;
-	useEffect(reserveChrome, [summarizedNotice, reserveChrome]);
+	useEffect(reserveChrome, [summarizedNotice, liveSessions, reserveChrome]);
 	useEffect(() => {
 		const surface = surfaceRef.current!;
 		if (state !== 'ready' || !layout) surface.clear();
@@ -324,6 +345,16 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const handleCenter = useCallback((point: MapPoint, fly: boolean): void => surface().centerOn(point, fly), []);
 	const handleRetry = useCallback((): void => void model.retry(), [model]);
 	const handleAllLinks = useCallback((): void => setAllLinks((on) => !on), []);
+	const handleRoster = useCallback((): void => setRosterOpen((open) => !open), []);
+	const handleCloseRoster = useCallback((): void => setRosterOpen(false), []);
+	const roster = useMemo(() => (rosterOpen ? rosterOf(working, rows, now) : []), [rosterOpen, working, rows, now]);
+	// A row selects its item, which opens it as a click does, and flies the Map there.
+	const handlePick = useCallback((key: string): void => {
+		setRosterOpen(false);
+		surface().focusOn(key);
+		live.current.onOpenItem(key);
+	}, []);
+	const handleJump = useCallback((key: string): void => void surface().focusOn(key), []);
 
 	// Past the read cap, finished families come back folded into one row, so the count is of rows, not of items.
 	const summarized = interactive && model.read?.summarized === true;
@@ -337,6 +368,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				aria-label={interactive ? `Map of ${rows.size} items${summarized ? ', with finished families summarized' : ''}` : 'Map'}
 			/>
 			<MapCards store={overlay} bottom={RULER_HEIGHT} />
+			<EdgeMarkers store={overlay} bottom={RULER_HEIGHT} onJump={handleJump} />
 			<MapQuickCard store={overlay} activity={activity} bottom={RULER_HEIGHT} />
 			<div class={styles.controls} ref={controlsRef} role="group" aria-label="Map view">
 				<button type="button" class={styles.control} disabled={!interactive} onClick={handleFitAll}>Fit all</button>
@@ -344,7 +376,13 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom out" onClick={() => surface().zoomOut()}>&minus;</button>
 				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom in" onClick={() => surface().zoomIn()}>+</button>
 				<button type="button" class={styles.control} disabled={!interactive} aria-pressed={allLinks} onClick={handleAllLinks}>All links</button>
+				<AgentsButton class={styles.control} count={liveSessions} open={rosterOpen} disabled={!interactive} onClick={handleRoster} />
 			</div>
+			{rosterOpen && (
+				<div class={styles.roster}>
+					<AgentRoster groups={roster} onPick={handlePick} onClose={handleCloseRoster} />
+				</div>
+			)}
 			{summarized && <p class={styles.notice} ref={noticeRef} role="status">This project is past the read cap, so finished families are summarized.</p>}
 			<div class={styles.overlay} style={{ bottom: `${RULER_HEIGHT}px` }}>
 				{state === 'loading' && <p class={styles.message} role="status">Loading the map...</p>}

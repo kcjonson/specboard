@@ -164,3 +164,26 @@
 .quiet {
 	color: var(--color-text-muted);
 }
+
+/* An agent session on a card: a line for the agent and one for what it has been doing, each cut to one line so the block is 32 px. */
+.session {
+	display: flex;
+	flex-direction: column;
+	height: 32px;
+	flex-shrink: 0;
+	overflow: hidden;
+}
+
+.sessionTitle,
+.sessionMeta {
+	margin: 0;
+	height: 16px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	line-height: 16px;
+}
+
+.sessionMeta {
+	color: var(--color-text-muted);
+}

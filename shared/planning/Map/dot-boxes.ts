@@ -1,6 +1,6 @@
 import { MIN_DRAW_RADIUS, type Transform } from './camera';
 import type { Box } from './box-index';
-import type { DrawDot } from './draw-list';
+import type { DrawAgent, DrawDot } from './draw-list';
 import type { MapPoint } from './layout/types';
 import type { ZoomLevel } from './zoom-levels';
 
@@ -32,4 +32,25 @@ export function dotBox(dot: DrawDot, transform: Transform, level: ZoomLevel): Bo
 	const r = screenRadius(dot, transform.k, level) + MARK_REACH + CLEARANCE;
 	const { x, y } = screenPoint(transform, dot);
 	return { x: x - r, y: y - r, w: 2 * r, h: 2 * r + (dot.folded ? FOLDED_BAR_REACH : 0) };
+}
+
+/**
+ * A computer or session never draws smaller than this, since its number or its icon has to
+ * read at fit all, where a leaf is 2 px, and at the near level both hold one size as glyphs do.
+ */
+const AGENT_RADIUS = {
+	session: { min: 7.5, max: 20, near: 9 },
+	computer: { min: 11, max: 28, near: 13 },
+} as const;
+
+export function agentRadius(agent: DrawAgent, k: number, level: ZoomLevel): number {
+	const { min, max, near } = AGENT_RADIUS[agent.kind];
+	return level === 'near' ? near : Math.max(min, Math.min(max, agent.r * k));
+}
+
+/** The whole drawn computer or session as a box, clear of what it sits next to. */
+export function agentBox(agent: DrawAgent, transform: Transform, level: ZoomLevel): Box {
+	const r = agentRadius(agent, transform.k, level) + CLEARANCE + 2;
+	const { x, y } = screenPoint(transform, agent);
+	return { x: x - r, y: y - r, w: 2 * r, h: 2 * r };
 }

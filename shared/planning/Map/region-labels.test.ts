@@ -50,7 +50,8 @@ const regionLabels = ({ regions, outlines, dots, transform, viewport, measure, c
 		transform,
 		viewport,
 		measure,
-		named: new Set(),
+		agents: [],
+		blocks: [],
 		occupied: { circles: occupied, boxes: [] },
 	}).regions;
 

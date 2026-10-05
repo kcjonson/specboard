@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cardBox } from './cards/card-culling';
 import type { CollapseControl } from './collapse-controls';
-import type { DrawDot, DrawRegion } from './draw-list';
+import type { DrawAgent, DrawDot, DrawRegion } from './draw-list';
 import { COARSE_MIN_RADIUS, FINE_MIN_RADIUS, HitIndex, contains, type HitInput } from './hit-index';
 import type { RegionLabel } from './region-labels';
 import type { RegionOutline } from './regions/outline';
@@ -20,8 +20,11 @@ const dot = (key: string, x: number, y: number, r = 5.5): DrawDot => ({
 	needsPerson: false,
 	cue: null,
 	pr: false,
+	live: false,
 	folded: null,
 });
+
+const agent = (key: string, kind: DrawAgent['kind'], x: number, y: number): DrawAgent => ({ key, kind, x, y, r: kind === 'computer' ? 14 : 8, number: kind === 'computer' ? 0 : 1, state: 'live' });
 
 const square = (x0: number, y0: number, x1: number, y1: number): Float64Array => new Float64Array([x0, y0, x1, y0, x1, y1, x0, y1]);
 
@@ -56,7 +59,7 @@ const label = (key: string, box: { x: number; y: number; w: number; h: number },
 const control = (key: string, x: number, y: number, collapse = true): CollapseControl => ({ key, collapse, at: { x, y, r: 6 }, alpha: 1 });
 
 function index(over: Partial<HitInput> = {}): HitIndex {
-	return new HitIndex({ transform, level: 'middle', dots: [], cards: [], labels: [], controls: [], outlines: [], ...over });
+	return new HitIndex({ transform, level: 'middle', dots: [], cards: [], agents: [], labels: [], controls: [], outlines: [], ...over });
 }
 
 describe('hit testing', () => {
@@ -79,6 +82,32 @@ describe('hit testing', () => {
 		const hits = index({ dots: [dot('A', 100, 100), dot('B', 112, 100)] });
 		expect(hits.at({ x: 105, y: 100 }, true)).toMatchObject({ key: 'A' });
 		expect(hits.at({ x: 109, y: 100 }, true)).toMatchObject({ key: 'B' });
+	});
+
+	it('finds a computer or a session where it is drawn, at the size it drew', () => {
+		const hits = index({ agents: [agent('computer:laptop', 'computer', 300, 100), agent('session:a', 'session', 200, 100)] });
+		expect(hits.at({ x: 200, y: 105 }, false)).toEqual({ type: 'agent', key: 'session:a' });
+		expect(hits.at({ x: 308, y: 100 }, false)).toEqual({ type: 'agent', key: 'computer:laptop' });
+		expect(hits.at({ x: 250, y: 100 }, false)).toBeNull();
+		// A computer never draws under 11 px, so it is hit at fit all, where its layout radius is 6 px.
+		expect(index({ transform: { k: 0.4, x: 0, y: 0 }, level: 'far', agents: [agent('computer:laptop', 'computer', 100, 100)] }).at({ x: 40 + 8, y: 40 }, false)).toEqual({ type: 'agent', key: 'computer:laptop' });
+	});
+
+	it('gives a coarse pointer a 44 px target on an agent, and the nearest wins where they overlap', () => {
+		const hits = index({ agents: [agent('session:a', 'session', 100, 100), agent('session:b', 'session', 112, 100)] });
+		expect(hits.at({ x: 105, y: 100 }, true)).toEqual({ type: 'agent', key: 'session:a' });
+		expect(hits.at({ x: 109, y: 100 }, true)).toEqual({ type: 'agent', key: 'session:b' });
+		expect(hits.at({ x: 100 + COARSE_MIN_RADIUS - 1, y: 100 + 0 }, true)).not.toBeNull();
+	});
+
+	it('takes a dot before an agent where they meet, and an agent before a region', () => {
+		const hits = index({
+			dots: [dot('A', 100, 100)],
+			agents: [agent('session:a', 'session', 104, 100)],
+			outlines: [outline('R', square(0, 0, 400, 400), 1, 0)],
+		});
+		expect(hits.at({ x: 100, y: 100 }, false)).toMatchObject({ type: 'dot', key: 'A' });
+		expect(index({ agents: [agent('session:a', 'session', 300, 300)], outlines: [outline('R', square(0, 0, 400, 400), 1, 0)] }).at({ x: 300, y: 300 }, false)).toEqual({ type: 'agent', key: 'session:a' });
 	});
 
 	it('hits a card anywhere on its body, as its dot, and the glyph as the glyph', () => {

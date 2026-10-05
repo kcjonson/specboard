@@ -1,6 +1,7 @@
 // The spec's starting values (docs/specs/ai-development-overview.md, Starting values).
 // Distances are layout units before the Map scales to fit.
 
+export const MINUTE = 60_000;
 export const HOUR = 3_600_000;
 
 export const TIME_PULL = 0.14;
@@ -55,6 +56,8 @@ export const SESSION_PULL = 0.25;
 export const SESSION_MIDLINE = 0.01;
 /** A session stays in its computer's cluster this long after its last write. */
 export const SESSION_LIVE = HOUR;
+/** A session with no write for this long is quiet: it dims, and an in-progress item whose sessions all are needs a person. The drawer's threshold. */
+export const SESSION_QUIET = 15 * MINUTE;
 
 export const VELOCITY_DECAY = 0.4;
 export const COLD_TICKS = 280;

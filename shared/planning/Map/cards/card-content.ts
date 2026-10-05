@@ -72,6 +72,8 @@ export interface CardContent {
 	/** An item with its family folded in: how many items that is, itself included. */
 	family: number | null;
 	needsPerson: boolean;
+	/** A live agent session is on it. */
+	live: boolean;
 	/** Every mark the card can carry, most important first, for `fitChips` to cut to its one row. */
 	chips: CardChip[];
 }
@@ -113,6 +115,7 @@ export function cardContent(row: MapItemRow, dot: DrawDot): CardContent {
 		origin: row.originActorType === 'agent' ? 'agent' : row.originActorType === 'user' ? 'person' : null,
 		family,
 		needsPerson: dot.needsPerson,
+		live: dot.live,
 		chips,
 	};
 }

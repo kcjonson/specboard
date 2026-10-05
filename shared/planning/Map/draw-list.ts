@@ -1,5 +1,6 @@
 import type { MapItemRow, MapItemStatus } from '@specboard/core/map-read';
 import { glyphStatus } from '@specboard/ui';
+import { agentsOf, type Agents } from './agents';
 import type { Dot } from './camera';
 import type { MapLayout, MapNode, MapPhase, MapPoint } from './layout/types';
 import type { LinkKind } from './links';
@@ -33,8 +34,23 @@ export interface DrawDot extends Dot {
 	cue: GlyphCue | null;
 	/** The item has a PR (pr_url set, or sub-status PR open). */
 	pr: boolean;
+	/** A live session is on it: the still amber glow behind the dot. */
+	live: boolean;
 	/** Set on a collapsed parent's dot. */
 	folded: FoldedFamily | null;
+}
+
+/**
+ * A computer or a session, drawn at its layout node. A session is a numbered dot; a
+ * quiet one (no write for 15 minutes) is hollow and dim, and a computer is live while
+ * any of its sessions is.
+ */
+export interface DrawAgent extends Dot {
+	/** The layout node's key, `session:<key>` or `computer:<device>`. */
+	kind: 'session' | 'computer';
+	/** The session's number within its computer; 0 for a computer. */
+	number: number;
+	state: 'live' | 'quiet';
 }
 
 /** What a region's label carries: the parent's status, title, and the rollup bar. */
@@ -62,12 +78,18 @@ export interface DrawLink {
 	to: MapPoint;
 	/** A blocker the work cleared: it keeps drawing, lighter. */
 	satisfied: boolean;
+	/** An agent line from a live session; a quiet one draws dim. */
+	live: boolean;
 }
 
 export interface DrawList {
 	dots: DrawDot[];
 	regions: DrawRegion[];
 	links: DrawLink[];
+	/** Computers and sessions still in the cluster, past now. */
+	agents: DrawAgent[];
+	/** What the agents are, for their text blocks, cards, and roster. */
+	working: Agents;
 }
 
 /** In flight work draws on top of what it overlaps. */
@@ -84,12 +106,14 @@ const prOf = (row: MapItemRow): boolean => row.prUrl !== null || row.subStatus =
  * Everything the far and middle zoom levels draw from a settled layout: a glyph per
  * dot, a label per region (the outline itself comes from the region outlines), and
  * every link, which the frame's lighting decides whether to show. A parent with
- * visible children (a hub) is a region and draws no dot; computers and sessions are
- * a later task's.
+ * visible children (a hub) is a region and draws no dot. Computers and sessions are the
+ * ones still in the cluster at `now`; the layout is as of when it ran, and time passes.
  */
-export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): DrawList {
+export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>, now: number): DrawList {
 	const weights = planWeights(layout.planOrder);
-	const needs = needsPerson(rows.values());
+	const needs = needsPerson(rows.values(), now);
+	const working = agentsOf(layout, rows, now);
+	const live = new Set(working.sessions.filter((session) => session.state === 'live').flatMap((session) => session.items.map((item) => item.drawnBy)));
 	const rollups = subtreeRollups(rows, layout.phases);
 	const rollupOf = (key: string): Rollup => rollups.get(key) ?? emptyRollup();
 	const collapsed = new Set(layout.collapsed);
@@ -118,6 +142,7 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 			needsPerson: needs.has(node.key),
 			cue: cueOf(row),
 			pr: prOf(row),
+			live: live.has(node.key),
 			folded,
 		});
 	}
@@ -140,7 +165,34 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 		});
 	}
 
-	return { dots, regions, links: linksOf(layout, rows) };
+	const placed = new Map(layout.nodes.map((node) => [node.key, node]));
+	const agents: DrawAgent[] = [];
+	for (const computer of working.computers) {
+		const node = placed.get(computer.node);
+		if (node) agents.push({ key: node.key, kind: 'computer', x: node.x, y: node.y, r: node.r, number: 0, state: computer.live ? 'live' : 'quiet' });
+	}
+	for (const session of working.sessions) {
+		const node = placed.get(session.node);
+		if (node) agents.push({ key: node.key, kind: 'session', x: node.x, y: node.y, r: node.r, number: session.number, state: session.state });
+	}
+
+	return { dots, regions, links: [...linksOf(layout, rows), ...agentLinks(working, placed)], agents, working };
+}
+
+/** Each computer's tie to its sessions, and each session's amber line to every item it is on. */
+function agentLinks(working: Agents, placed: ReadonlyMap<string, MapNode>): DrawLink[] {
+	const links: DrawLink[] = [];
+	const add = (kind: 'machine' | 'agent', fromKey: string, toKey: string, live: boolean): void => {
+		const from = placed.get(fromKey);
+		const to = placed.get(toKey);
+		if (!from || !to) return;
+		links.push({ id: `${kind}:${fromKey}>${toKey}`, kind, ends: [fromKey, toKey], from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, satisfied: false, live });
+	};
+	for (const session of working.sessions) {
+		add('machine', session.computer, session.node, session.state === 'live');
+		for (const item of session.items) add('agent', session.node, item.drawnBy, session.state === 'live');
+	}
+	return links;
 }
 
 /**
@@ -216,7 +268,7 @@ function linksOf(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): Draw
 		const from = nodes.get(layout.representative[fromKey] ?? '');
 		const to = nodes.get(layout.representative[toKey] ?? '');
 		if (!from || !to || from === to) return;
-		links.push({ id: `${kind}:${fromKey}>${toKey}`, kind, ends: [from.key, to.key], from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, satisfied });
+		links.push({ id: `${kind}:${fromKey}>${toKey}`, kind, ends: [from.key, to.key], from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, satisfied, live: false });
 	};
 
 	const inChains = new Set<string>();
@@ -234,4 +286,16 @@ function linksOf(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): Draw
 		if (row.discoveredFromKey) add('discovered', row.discoveredFromKey, row.key, false);
 	}
 	return links;
+}
+
+/**
+ * What time can change in a draw list without a new layout: which sessions are live or
+ * quiet or gone, and which items need a person. Two lists with the same key draw alike,
+ * so a clock tick that moves nothing costs no repaint.
+ */
+export function presenceKey(list: DrawList): string {
+	const agents = list.agents.map((agent) => `${agent.key}=${agent.state}`).join(',');
+	const needing = list.dots.filter((dot) => dot.needsPerson).map((dot) => dot.key).join(',');
+	const regions = list.regions.filter((region) => region.needsPerson).map((region) => region.key).join(',');
+	return `${agents}|${needing}|${regions}`;
 }

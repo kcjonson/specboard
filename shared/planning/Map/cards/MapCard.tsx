@@ -36,7 +36,7 @@ function MapCardView({ row, dot, k, faded, lit }: MapCardProps): JSX.Element {
 			style={{ width: `${CARD_WIDTH}px`, height: `${CARD_HEIGHT}px`, transform: `translate(${x}px, ${y}px)` }}
 		>
 			<div class={styles.head}>
-				<span class={card.needsPerson ? `${styles.glyph} ${styles.needsPerson}` : styles.glyph}>
+				<span class={`${styles.glyph}${card.live ? ` ${styles.live}` : ''}${card.needsPerson ? ` ${styles.needsPerson}` : ''}`}>
 					<StatusGlyph class={styles.status} status={dot.status} />
 				</span>
 				<span class={styles.key}>{card.key}</span>

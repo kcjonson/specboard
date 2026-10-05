@@ -1,0 +1,70 @@
+/* Over the plot; only the markers take the pointer, so the canvas under the rest stays draggable. */
+.layer {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.marker {
+	position: absolute;
+	left: 0;
+	top: 0;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: 2px solid var(--marker-color);
+	border-radius: 50%;
+	background: var(--color-surface);
+	color: var(--marker-color);
+	box-shadow: var(--shadow-md);
+	cursor: pointer;
+	pointer-events: auto;
+}
+
+.marker:hover {
+	background: var(--color-surface-hover);
+}
+
+.marker:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+/* Live work is the amber of In progress, ink is reserved for what needs a person, and up next is Ready's blue. */
+.marker[data-kind='live'] {
+	--marker-color: var(--color-in-progress);
+}
+
+.marker[data-kind='needs-person'] {
+	--marker-color: var(--color-needs-person);
+}
+
+.marker[data-kind='up-next'] {
+	--marker-color: var(--color-ready);
+}
+
+.arrow {
+	display: block;
+}
+
+.count {
+	position: absolute;
+	top: -6px;
+	right: -6px;
+	min-width: 16px;
+	height: 16px;
+	box-sizing: border-box;
+	padding: 0 4px;
+	border-radius: 8px;
+	background: var(--marker-color);
+	color: var(--color-surface);
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 16px;
+	text-align: center;
+}

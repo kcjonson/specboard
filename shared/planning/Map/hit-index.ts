@@ -1,8 +1,8 @@
 import type { Box } from './box-index';
 import type { Transform } from './camera';
 import { type CollapseControl, controlAt } from './collapse-controls';
-import { MARK_REACH, screenRadius } from './dot-boxes';
-import type { DrawDot } from './draw-list';
+import { MARK_REACH, agentRadius, screenPoint, screenRadius } from './dot-boxes';
+import type { DrawAgent, DrawDot } from './draw-list';
 import type { MapPoint } from './layout/types';
 import type { RegionLabel } from './region-labels';
 import type { RegionOutline } from './regions/outline';
@@ -13,13 +13,16 @@ import type { ZoomLevel } from './zoom-levels';
  * What is under a point in the plot (spec, Navigation and interaction): one index over
  * the drawn dots, the cards standing in for them, region labels, region outlines, and
  * collapse controls, at the sizes the current frame drew them. Precedence follows what
- * sits on top of what: a control, then a dot, then a card's body, then a region's label,
- * then the region's own ground, the innermost region winning.
+ * sits on top of what: a control, then a dot, then a computer or session (which never
+ * overlap a dot), then a card's body, then a region's label, then the region's own ground,
+ * the innermost region winning.
  */
 export type Hit =
 	| { type: 'control'; key: string; collapse: boolean }
 	/** `part` says which of the dot a point is on: its glyph, or the near-level card that stands in for it. */
 	| { type: 'dot'; key: string; part: 'glyph' | 'card' }
+	/** A computer or a session, by its layout node's key. */
+	| { type: 'agent'; key: string }
 	| { type: 'label'; key: string }
 	| { type: 'region'; key: string };
 
@@ -30,6 +33,7 @@ export interface HitInput {
 	dots: readonly DrawDot[];
 	/** The dots that carry a near-level card. */
 	cards: readonly DrawDot[];
+	agents: readonly DrawAgent[];
 	labels: readonly RegionLabel[];
 	controls: readonly CollapseControl[];
 	outlines: readonly RegionOutline[];
@@ -84,6 +88,8 @@ export class HitIndex {
 		if (control) return { type: 'control', key: control.key, collapse: control.collapse };
 		const dot = this.dotAt(point, coarse);
 		if (dot) return { type: 'dot', key: dot.key, part: 'glyph' };
+		const agent = this.agentAt(point, coarse);
+		if (agent) return { type: 'agent', key: agent.key };
 		const card = this.cardAt(point);
 		if (card) return { type: 'dot', key: card.key, part: 'card' };
 		for (let i = this.labels.length - 1; i >= 0; i--) {
@@ -113,6 +119,23 @@ export class HitIndex {
 						bestDistance = distance;
 					}
 				}
+			}
+		}
+		return best;
+	}
+
+	/** The computer or session whose center is nearest, among those the point is within reach of. */
+	private agentAt(point: MapPoint, coarse: boolean): DrawAgent | null {
+		const { agents, transform, level } = this.input;
+		const floor = coarse ? COARSE_MIN_RADIUS : FINE_MIN_RADIUS;
+		let best: DrawAgent | null = null;
+		let bestDistance = Infinity;
+		for (const agent of agents) {
+			const at = screenPoint(transform, agent);
+			const distance = Math.hypot(point.x - at.x, point.y - at.y);
+			if (distance <= Math.max(agentRadius(agent, transform.k, level) + DOT_SLOP, floor) && distance < bestDistance) {
+				best = agent;
+				bestDistance = distance;
 			}
 		}
 		return best;

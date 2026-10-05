@@ -61,9 +61,18 @@
 	height: 17px;
 }
 
+/* The still amber glow a live session puts behind its item, as the canvas draws it: no animation, ever. */
+.live {
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-in-progress) 32%, transparent), 0 0 10px 4px color-mix(in srgb, var(--color-in-progress) 24%, transparent);
+}
+
 /* The same ink ring the canvas draws: a gap of surface, then ink. */
 .needsPerson {
 	box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 3.5px var(--color-needs-person);
+}
+
+.live.needsPerson {
+	box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 3.5px var(--color-needs-person), 0 0 10px 6px color-mix(in srgb, var(--color-in-progress) 24%, transparent);
 }
 
 .key {

@@ -4,6 +4,8 @@ import type { Transform } from './camera';
 import type { DrawDot, Rollup } from './draw-list';
 import type { MapBounds, MapPoint } from './layout/types';
 import type { MinimapSize } from './minimap/minimap';
+import type { EdgeMarker } from './edge-markers';
+import type { AgentCard, QuickSession } from './quick/agent-content';
 import type { QuickSide } from './quick/quick-card-placement';
 import type { Relation } from './relations';
 
@@ -35,7 +37,11 @@ export interface MinimapFrame {
 	dots: readonly DrawDot[];
 }
 
-/** The quick card's item and where it opens, in plot pixels. */
+/**
+ * The quick card's subject and where it opens, in plot pixels: an item (with the sessions
+ * on it, and its family's progress when it has children), or a session or computer, whose
+ * card is `agent`.
+ */
 export interface QuickFrame {
 	key: string;
 	x: number;
@@ -43,6 +49,8 @@ export interface QuickFrame {
 	side: QuickSide;
 	/** The family's items by phase when the item has children. */
 	progress: Rollup | null;
+	sessions: QuickSession[];
+	agent: AgentCard | null;
 }
 
 /** A dot being dragged and how far it is from home, in layout units. */
@@ -63,6 +71,8 @@ export interface OverlayFrame {
 	minimap: MinimapFrame | null;
 	/** Null while no card is open. */
 	quick: QuickFrame | null;
+	/** Marks at the plot's edge pointing toward live sessions and items that need a person outside the view. */
+	markers: readonly EdgeMarker[];
 	/** What hover, focus, or selection lights, which fades the cards outside it; null when nothing does. */
 	focus: Relation | null;
 	/** The card of a dragged dot moves with it. */
@@ -73,7 +83,7 @@ export interface MapOverlay {
 	publish(frame: OverlayFrame): void;
 }
 
-export const EMPTY_OVERLAY: OverlayFrame = { transform: { k: 1, x: 0, y: 0 }, rows: new Map(), cards: null, cardAlpha: 0, minimap: null, quick: null, focus: null, drag: null };
+export const EMPTY_OVERLAY: OverlayFrame = { transform: { k: 1, x: 0, y: 0 }, rows: new Map(), cards: null, cardAlpha: 0, minimap: null, quick: null, markers: [], focus: null, drag: null };
 
 export class OverlayStore implements MapOverlay {
 	frame: OverlayFrame = EMPTY_OVERLAY;

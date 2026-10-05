@@ -1,12 +1,13 @@
 import type { MapItemRow } from '@specboard/core/map-read';
-import type { MapLayout, MapRegion } from './layout/types';
+import { computerNodeKey, sessionNodeKey, type MapLayout, type MapRegion } from './layout/types';
 
 /**
  * What lights when an item or a region is hovered, focused, or selected (spec,
  * Relationships and What shows when): its region, its whole blocker chain both ways
  * (satisfied links included), transitively, and its discovered-from lineage both ways.
  * Everything else fades. Sets are keyed by the node that draws an item, so a family
- * folded into a dot is the dot.
+ * folded into a dot is the dot. A computer lights its sessions and their items, a session
+ * its computer and its items, and an item the sessions on it and their computers.
  */
 export interface Relation {
 	/** The node that draws the item the person is on. */
@@ -39,6 +40,11 @@ export class RelationIndex {
 	private readonly regions = new Map<string, MapRegion>();
 	/** Each dot's innermost region. */
 	private readonly regionOf = new Map<string, MapRegion>();
+	/** The sessions on each drawn item, by the node that draws it, and each session's drawn items and computer. */
+	private readonly sessionsOn = new Map<string, string[]>();
+	private readonly sessionItems = new Map<string, string[]>();
+	private readonly computerOf = new Map<string, string>();
+	private readonly computerSessions = new Map<string, string[]>();
 	private readonly cache = new Map<string, Relation | null>();
 
 	constructor(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>) {
@@ -57,6 +63,19 @@ export class RelationIndex {
 			if (row.discoveredFromKey && rows.has(row.discoveredFromKey)) {
 				push(this.sourceOf, row.key, row.discoveredFromKey);
 				push(this.spawned, row.discoveredFromKey, row.key);
+			}
+		}
+		for (const session of layout.sessions) {
+			const node = sessionNodeKey(session.key);
+			const computer = computerNodeKey(session.device);
+			this.computerOf.set(node, computer);
+			push(this.computerSessions, computer, node);
+			for (const item of session.items) {
+				const drawn = layout.representative[item];
+				if (!drawn) continue;
+				push(this.sessionsOn, drawn, node);
+				const items = this.sessionItems.get(node);
+				if (!items?.includes(drawn)) push(this.sessionItems, node, drawn);
 			}
 		}
 		for (const region of layout.regions) this.regions.set(region.key, region);
@@ -83,6 +102,8 @@ export class RelationIndex {
 	}
 
 	private compute(key: string): Relation | null {
+		if (this.computerSessions.has(key)) return this.computerRelation(key);
+		if (this.computerOf.has(key)) return this.sessionRelation(key);
 		const node = this.representative[key];
 		if (!node) return null;
 		const region = this.regions.get(node);
@@ -126,7 +147,37 @@ export class RelationIndex {
 		this.walk(this.blocks, key, take, (near, far) => addBlocker(near, far));
 		this.walk(this.sourceOf, key, take, (near, far) => links.add(`discovered:${far}>${near}`));
 		this.walk(this.spawned, key, take, (near, far) => links.add(`discovered:${near}>${far}`));
+		for (const session of this.sessionsOn.get(node) ?? []) {
+			dots.add(session);
+			dots.add(this.computerOf.get(session)!);
+		}
 		return { key: node, region: false, dots, regions, outline: inner?.key ?? null, links };
+	}
+
+	/** A session, its computer, and the items it is on, with the families they are drawn in. */
+	private sessionRelation(session: string): Relation {
+		return this.agentRelation(session, [session], [this.computerOf.get(session)!]);
+	}
+
+	/** A computer, its sessions, and every item they are on. */
+	private computerRelation(computer: string): Relation {
+		return this.agentRelation(computer, this.computerSessions.get(computer)!, []);
+	}
+
+	private agentRelation(key: string, sessions: readonly string[], extra: readonly string[]): Relation {
+		const dots = new Set<string>([key, ...extra, ...sessions]);
+		const regions = new Set<string>();
+		for (const session of sessions) {
+			for (const drawn of this.sessionItems.get(session) ?? []) {
+				if (this.regions.has(drawn)) regions.add(drawn);
+				else dots.add(drawn);
+				// An item is easier to read on its own family's ground, so that stays at full strength too.
+				for (let up: MapRegion | undefined = this.regionOf.get(drawn); up; up = up.parentKey ? this.regions.get(up.parentKey) : undefined) {
+					regions.add(up.key);
+				}
+			}
+		}
+		return { key, region: false, dots, regions, outline: null, links: new Set() };
 	}
 
 	/** Visits everything reachable from `start` along `edges`, once each, naming every edge as (the nearer end, the farther one). */

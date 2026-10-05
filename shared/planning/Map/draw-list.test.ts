@@ -24,7 +24,7 @@ describe('draw list', () => {
 	b.work(blocker, 'session-a', 'laptop');
 	const rows = new Map(b.rows.map((row) => [row.key, row]));
 	const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 });
-	const { dots, regions, links } = buildDrawList(layout, rows);
+	const { dots, regions, links } = buildDrawList(layout, rows, b.now);
 	const byKey = new Map(dots.map((dot) => [dot.key, dot]));
 
 	it('draws nothing for a parent with visible children, which is a region', () => {
@@ -34,7 +34,7 @@ describe('draw list', () => {
 		expect(regions.map((region) => region.key)).toEqual([epic.key]);
 	});
 
-	it('draws nothing for computers and sessions', () => {
+	it('draws computers and sessions as agents, never as dots', () => {
 		expect(layout.nodes.some((node) => node.kind !== 'item')).toBe(true);
 		expect(dots.every((dot) => rows.has(dot.key))).toBe(true);
 	});
@@ -95,7 +95,7 @@ describe('draw list', () => {
 	});
 
 	it('draws chain links inside the region, and every other blocker and discovered-from link by item key', () => {
-		const ids = links.map((link) => link.id).sort();
+		const ids = links.filter((link) => link.kind !== 'agent' && link.kind !== 'machine').map((link) => link.id).sort();
 		expect(ids).toEqual(
 			[`chain:${first.key}>${second.key}`, `blocker:${blocker.key}>${waiting.key}`, `discovered:${blocker.key}>${found.key}`].sort(),
 		);
@@ -104,8 +104,22 @@ describe('draw list', () => {
 		expect(links.every((link) => !link.satisfied)).toBe(true);
 	});
 
+	it('draws a session\'s amber line to each item it is on, and a tie from its computer', () => {
+		const agentLinks = links.filter((link) => link.kind === 'agent' || link.kind === 'machine');
+		expect(agentLinks.map((link) => [link.id, link.live])).toEqual([
+			['machine:computer:laptop>session:session-a', true],
+			[`agent:session:session-a>${blocker.key}`, true],
+		]);
+		const session = layout.nodes.find((node) => node.key === 'session:session-a')!;
+		expect(agentLinks.find((link) => link.kind === 'agent')!.from).toEqual({ x: session.x, y: session.y });
+	});
+
+	it('marks the items a live session is on, and no others', () => {
+		expect(dots.filter((dot) => dot.live).map((dot) => dot.key)).toEqual([blocker.key]);
+	});
+
 	it('skips a node whose row is missing rather than guessing a status', () => {
-		expect(buildDrawList(layout, new Map())).toEqual({ dots: [], regions: [], links: [] });
+		expect(buildDrawList(layout, new Map(), b.now)).toMatchObject({ dots: [], regions: [], links: [], agents: [] });
 	});
 });
 
@@ -120,7 +134,7 @@ describe('draw list links', () => {
 		const later = b.add({ status: 'ready', discoveredFromKey: folded.key });
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
 		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 });
-		const { links } = buildDrawList(layout, rows);
+		const { links } = buildDrawList(layout, rows, b.now);
 
 		expect(links.find((link) => link.id === `blocker:${done.key}>${after.key}`)!.satisfied).toBe(true);
 		const lineage = links.find((link) => link.id === `discovered:${folded.key}>${later.key}`)!;
@@ -158,7 +172,7 @@ describe('draw list, past the read cap', () => {
 		const summarized = b.add({ type: 'epic', status: 'done', summarizedDescendants: 40 });
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
 		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 });
-		const [dot] = buildDrawList(layout, rows).dots;
+		const [dot] = buildDrawList(layout, rows, b.now).dots;
 		expect(dot!.key).toBe(summarized.key);
 		expect(dot!.folded).toEqual({ count: 41, rollup: { done: 40, in_flight: 0, next: 0, later: 0 }, expandable: false });
 	});

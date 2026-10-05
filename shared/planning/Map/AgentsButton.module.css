@@ -1,0 +1,19 @@
+.button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+/* The amber glow behind a live session, as a swatch: still, like the glow. */
+.dot {
+	width: 10px;
+	height: 10px;
+	flex-shrink: 0;
+	border-radius: 50%;
+	background: var(--color-in-progress);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-in-progress) 30%, transparent);
+}
+
+.count {
+	font-weight: var(--font-bold);
+}

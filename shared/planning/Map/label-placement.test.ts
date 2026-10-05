@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { intersects, type Box } from './box-index';
 import type { Transform } from './camera';
 import { CARD_GAP, cardBox } from './cards/card-culling';
-import { screenRadius } from './dot-boxes';
+import type { ComputerBlock } from './computer-blocks';
+import { agentBox, dotBox, screenRadius } from './dot-boxes';
 import { drawDot } from './draw-dot.fixture';
 import { MAX_DOT_LABEL, type LabelFont } from './dot-labels';
-import type { DrawDot, DrawRegion } from './draw-list';
-import { crossFade, crossFadeAll, placeLabels, type LabelInput } from './label-placement';
+import type { DrawAgent, DrawDot, DrawRegion } from './draw-list';
+import { BLOCK_LINE_HEIGHT, MAX_BLOCK_TEXT, crossFade, crossFadeAll, placeLabels, type LabelInput } from './label-placement';
 import type { Circle } from './region-labels';
 import { traceRegions, type RegionOutline } from './regions/outline';
 import { LABEL_RULES } from './zoom-levels';
@@ -30,6 +31,14 @@ const region = (key: string, size: number): DrawRegion => ({
 const outlineFor = (key: string, members: Array<[number, number]>): RegionOutline =>
 	traceRegions([{ key, parentKey: null, height: 1, members: members.map(([x, y]) => ({ x, y, r: 5.5 })) }], 5)[0]!;
 
+const agent = (key: string, x: number, y: number, kind: 'computer' | 'session' = 'computer'): DrawAgent => ({ key, kind, x, y, r: kind === 'computer' ? 14 : 8, number: kind === 'computer' ? 0 : 1, state: 'live' });
+
+const block = (node: string, lines: string[], items: string[]): ComputerBlock => ({
+	node,
+	lines: lines.map((text, i) => ({ text, strong: i === 0 })),
+	items,
+});
+
 function input(over: Partial<LabelInput> & Pick<LabelInput, 'dots'>): LabelInput {
 	return {
 		rules: LABEL_RULES.middle,
@@ -39,7 +48,8 @@ function input(over: Partial<LabelInput> & Pick<LabelInput, 'dots'>): LabelInput
 		transform: identity,
 		viewport,
 		measure,
-		named: new Set(),
+		agents: [],
+		blocks: [],
 		occupied: { circles: [], boxes: [] },
 		...over,
 	};
@@ -135,11 +145,12 @@ describe('label placement', () => {
 		expect(near.dots).toEqual([]);
 	});
 
-	it('leaves out an item another layer already names, at any level', () => {
+	it('leaves out an item a computer\'s block names, at any level', () => {
 		const dots = [drawDot('P1', 100, 100, { flight: 'in_progress' }), drawDot('P2', 100, 300, { flight: 'in_progress' }), drawDot('Q', 400, 300)];
-		const named = new Set(['P1', 'Q']);
+		const computer = agent('computer:laptop', 700, 200);
+		const blocks = [block(computer.key, ['laptop', 'Session 1: P1, Q'], ['P1', 'Q'])];
 		for (const rules of [LABEL_RULES.far, LABEL_RULES.middle]) {
-			expect(placeLabels(input({ dots, rules, named })).dots.map((l) => l.key)).toEqual(['P2']);
+			expect(placeLabels(input({ dots, rules, agents: [computer], blocks })).dots.map((l) => l.key)).toEqual(['P2']);
 		}
 	});
 
@@ -279,23 +290,88 @@ describe('card placement at the near level', () => {
 	});
 });
 
+describe('a computer\'s text block', () => {
+	const laptop = block('computer:laptop', ['personal-laptop', 'Session 1: P1, P2', 'Session 2: Q'], ['P1', 'P2', 'Q']);
+
+	it('goes beside its computer, cut to the line count and the longest line, and never over a dot or the computer', () => {
+		const computer = agent('computer:laptop', 500, 300);
+		const dots = [drawDot('P1', 300, 300, { flight: 'in_progress' }), drawDot('P2', 340, 360, { flight: 'in_progress' })];
+		const placed = placeLabels(input({ dots, agents: [computer], blocks: [laptop] }));
+		const [at] = placed.blocks;
+		expect(at).toMatchObject({ key: 'computer:laptop', lines: [{ text: 'personal-laptop', strong: true }, { text: 'Session 1: P1, P2', strong: false }, { text: 'Session 2: Q', strong: false }] });
+		expect(at!.box.h).toBe(3 * BLOCK_LINE_HEIGHT);
+		expect(at!.box.w).toBeGreaterThanOrEqual('Session 1: P1, P2'.length * 6);
+		for (const other of [agentBox(computer, identity, 'middle'), ...dots.map((dot) => dotBox(dot, identity, 'middle'))]) expect(intersects(at!.box, other)).toBe(false);
+		// The first side tried is to the right.
+		expect(at!.box.x).toBeGreaterThan(500);
+	});
+
+	it('takes the next side when the one it prefers is taken, and slides inward from the edge computers sit at', () => {
+		const computer = agent('computer:laptop', 990, 300);
+		const placed = placeLabels(input({ dots: [], agents: [computer], blocks: [laptop] })).blocks[0]!;
+		// No room to the right of a computer at the plot's edge, so it goes below, held inside the plot.
+		expect(placed.box.y).toBeGreaterThan(300);
+		expect(placed.box.x + placed.box.w).toBeLessThanOrEqual(viewport.width - 4);
+		const boxed = placeLabels(input({ dots: [], agents: [computer], blocks: [laptop], occupied: { circles: [], boxes: [{ x: 700, y: 310, w: 300, h: 100 }] } })).blocks[0]!;
+		expect(boxed.box.y + boxed.box.h).toBeLessThan(300);
+	});
+
+	it('keeps clear of reserved boxes and of other blocks', () => {
+		const a = agent('computer:laptop', 500, 300);
+		const b = agent('computer:desktop', 500, 360);
+		const second = block('computer:desktop', ['studio-desktop', 'Session 1: R'], ['R']);
+		const placed = placeLabels(input({ dots: [], agents: [a, b], blocks: [laptop, second], occupied: { circles: [], boxes: [{ x: 480, y: 200, w: 200, h: 40 }] } })).blocks;
+		expect(placed.map((p) => p.key)).toEqual(['computer:laptop', 'computer:desktop']);
+		expect(intersects(placed[0]!.box, placed[1]!.box)).toBe(false);
+		for (const p of placed) expect(intersects(p.box, { x: 480, y: 200, w: 200, h: 40 })).toBe(false);
+	});
+
+	it('is cut with an ellipsis rather than run past its width', () => {
+		const long = block('computer:laptop', ['a-computer-with-an-extremely-long-name-that-goes-on-and-on-and-on-past-any-sensible-width'], []);
+		const [at] = placeLabels(input({ dots: [], agents: [agent('computer:laptop', 400, 300)], blocks: [long] })).blocks;
+		expect(at!.lines[0]!.text.endsWith('…')).toBe(true);
+		expect(at!.lines[0]!.text.length * 6).toBeLessThanOrEqual(MAX_BLOCK_TEXT);
+	});
+
+	it('is dropped when no side has room, and then the items it would have named get their own labels', () => {
+		const dots = [drawDot('P1', 100, 100, { flight: 'in_progress' })];
+		const crowded = placeLabels(input({ dots, agents: [agent('computer:laptop', 500, 300)], blocks: [block('computer:laptop', ['laptop', 'Session 1: P1'], ['P1'])], occupied: { circles: [], boxes: [{ x: 0, y: 150, w: 1000, h: 300 }] } }));
+		expect(crowded.blocks).toEqual([]);
+		expect(crowded.dots.map((label) => label.key)).toEqual(['P1']);
+	});
+
+	it('is placed before the labels it spares, so the items it names never took its room', () => {
+		const dots = [drawDot('P1', 380, 300, { flight: 'in_progress' })];
+		const placed = placeLabels(input({ dots, agents: [agent('computer:laptop', 500, 300)], blocks: [block('computer:laptop', ['laptop', 'Session 1: P1'], ['P1'])] }));
+		expect(placed.blocks).toHaveLength(1);
+		expect(placed.dots).toEqual([]);
+	});
+
+	it('keeps dot labels off a session\'s mark too', () => {
+		const session = agent('session:a', 300, 300, 'session');
+		const placed = placeLabels(input({ dots: [drawDot('P1', 330, 300, { flight: 'in_progress' })], agents: [session] }));
+		expect(placed.dots).toHaveLength(1);
+		expect(intersects(placed.dots[0]!.box, agentBox(session, identity, 'middle'))).toBe(false);
+	});
+});
+
 describe('crossFadeAll around cards', () => {
 	const label = (key: string, x: number): { key: string; text: string; box: Box; strong: boolean; alpha: number } => ({ key, text: key, box: { x, y: 100, w: 40, h: 14 }, strong: false, alpha: 1 });
 	const card: Box = { x: 90, y: 60, w: 184, h: 92 };
 
 	it('drops a leaving label that lands under an arriving card (middle to near)', () => {
-		const faded = crossFadeAll({ regions: [], dots: [], cards: [] }, { regions: [], dots: [label('under', 150), label('clear', 400)], cards: [] }, 0.3, { arriving: [card], leaving: [] });
+		const faded = crossFadeAll({ regions: [], dots: [], blocks: [], cards: [] }, { regions: [], dots: [label('under', 150), label('clear', 400)], blocks: [], cards: [] }, 0.3, { arriving: [card], leaving: [] });
 		expect(faded.dots.map((l) => l.key)).toEqual(['clear']);
 	});
 
 	it('holds an arriving label back while a card that is leaving still covers it (near to middle)', () => {
-		const next = { regions: [], dots: [label('under', 150), label('clear', 400)], cards: [] };
-		const early = crossFadeAll(next, { regions: [], dots: [], cards: [] }, 0.4, { arriving: [], leaving: [card] });
+		const next = { regions: [], dots: [label('under', 150), label('clear', 400)], blocks: [], cards: [] };
+		const early = crossFadeAll(next, { regions: [], dots: [], blocks: [], cards: [] }, 0.4, { arriving: [], leaving: [card] });
 		expect(early.dots.find((l) => l.key === 'under')!.alpha).toBe(0);
 		expect(early.dots.find((l) => l.key === 'clear')!.alpha).toBeCloseTo(0.4);
-		const late = crossFadeAll(next, { regions: [], dots: [], cards: [] }, 0.9, { arriving: [], leaving: [card] });
+		const late = crossFadeAll(next, { regions: [], dots: [], blocks: [], cards: [] }, 0.9, { arriving: [], leaving: [card] });
 		expect(late.dots.find((l) => l.key === 'under')!.alpha).toBeCloseTo(0.8);
-		expect(crossFadeAll(next, { regions: [], dots: [], cards: [] }, 1, { arriving: [], leaving: [card] }).dots.find((l) => l.key === 'under')!.alpha).toBe(1);
+		expect(crossFadeAll(next, { regions: [], dots: [], blocks: [], cards: [] }, 1, { arriving: [], leaving: [card] }).dots.find((l) => l.key === 'under')!.alpha).toBe(1);
 	});
 });
 
@@ -303,14 +379,14 @@ describe('crossFadeAll', () => {
 	const dotLabel = (key: string, x: number): { key: string; text: string; box: Box; strong: boolean; alpha: number } => ({ key, text: key, box: { x, y: 0, w: 40, h: 14 }, strong: false, alpha: 1 });
 
 	it('drops a label that is leaving where one is arriving, so the two never draw over each other, and fades the rest', () => {
-		const next = { regions: [], dots: [dotLabel('new', 100)], cards: [] };
-		const previous = { regions: [], dots: [dotLabel('overlapped', 110), dotLabel('clear', 300)], cards: [] };
+		const next = { regions: [], dots: [dotLabel('new', 100)], blocks: [], cards: [] };
+		const previous = { regions: [], dots: [dotLabel('overlapped', 110), dotLabel('clear', 300)], blocks: [], cards: [] };
 		const faded = crossFadeAll(next, previous, 0.4);
 		expect(faded.dots.map((label) => [label.key, label.alpha])).toEqual([['new', 0.4], ['clear', 0.6]]);
 	});
 
 	it('keeps a label both levels draw even where it moved over its own old spot', () => {
-		const faded = crossFadeAll({ regions: [], dots: [dotLabel('same', 100)], cards: [] }, { regions: [], dots: [dotLabel('same', 105)], cards: [] }, 0.5);
+		const faded = crossFadeAll({ regions: [], dots: [dotLabel('same', 100)], blocks: [], cards: [] }, { regions: [], dots: [dotLabel('same', 105)], blocks: [], cards: [] }, 0.5);
 		expect(faded.dots.map((label) => [label.key, label.alpha])).toEqual([['same', 1]]);
 	});
 });

@@ -13,6 +13,7 @@ export const drawDot = (key: string, x: number, y: number, extra: Partial<DrawDo
 	needsPerson: false,
 	cue: null,
 	pr: false,
+	live: false,
 	folded: null,
 	...extra,
 });
