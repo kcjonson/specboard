@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BoardBuilder } from '../layout/board-fixture';
-import { Announcer, MIN_GAP_MS, announcementText, summarizeChanges, type ChangeSummary } from './announce';
+import { diffRows } from '../map-update';
+import { Announcer, MIN_GAP_MS, announcementText, summarizeUpdate, type ChangeSummary } from './announce';
 
 const change = (key: string, text = `${key} changed`): ChangeSummary => ({ key, text });
 
@@ -129,46 +130,58 @@ describe('the announcer', () => {
 	});
 });
 
-describe('what a change is', () => {
+describe('what an update says', () => {
 	const rows = (build: (b: BoardBuilder) => void): Map<string, ReturnType<BoardBuilder['add']>> => {
 		const b = new BoardBuilder();
 		build(b);
 		return new Map(b.rows.map((row) => [row.key, { ...row, workers: [...row.workers] }]));
 	};
+	const said = (before: ReturnType<typeof rows>, after: ReturnType<typeof rows>): ChangeSummary[] => summarizeUpdate(diffRows(before, after), after, before);
 
-	it('is nothing when the reads match', () => {
-		const a = rows((b) => b.add({ status: 'ready' }));
-		expect(summarizeChanges(a, new Map(a))).toEqual([]);
+	it('is nothing when nothing changed, or an agent only wrote', () => {
+		const a = rows((b) => {
+			const row = b.add({ status: 'in_progress', title: 'Work' });
+			b.work(row, 'same', 'laptop', 30);
+		});
+		expect(said(a, new Map(a))).toEqual([]);
+		const wrote = rows((b) => {
+			const row = b.add({ status: 'in_progress', title: 'Work, retitled' });
+			b.work(row, 'same', 'laptop', 1);
+		});
+		expect(said(a, wrote)).toEqual([]);
 	});
 
-	it('is an item filed, and an item gone', () => {
+	it('is an item filed, and an item gone, named from the rows the Map had', () => {
 		const before = rows((b) => b.add({ status: 'ready', title: 'Old' }));
 		const after = rows((b) => {
 			b.add({ status: 'ready', title: 'Old' });
 			b.add({ status: 'ready', title: 'New one' });
 		});
-		expect(summarizeChanges(before, after)).toEqual([{ key: 'MAP-2', text: 'MAP-2 New one: filed' }]);
-		expect(summarizeChanges(after, before)).toEqual([{ key: 'MAP-2', text: 'MAP-2 New one: removed' }]);
+		expect(said(before, after)).toEqual([{ key: 'MAP-2', text: 'MAP-2 New one: filed' }]);
+		expect(said(after, before)).toEqual([{ key: 'MAP-2', text: 'MAP-2 New one: removed' }]);
 	});
 
-	it('is a new status, a question, a PR, and an agent arriving, one line per item', () => {
-		const before = rows((b) => b.add({ status: 'in_progress', title: 'Work' }));
-		const after = rows((b) => {
-			const row = b.add({ status: 'in_review', subStatus: 'needs_input', prUrl: 'https://github.com/a/b/pull/4', title: 'Work' });
-			b.work(row, 'new', 'laptop', 1);
-		});
-		expect(summarizeChanges(before, after)).toEqual([{ key: 'MAP-1', text: 'MAP-1 Work: now In Review, needs input, PR opened, an agent started on it' }]);
-	});
-
-	it('leaves alone what isn\'t news: a title edit, an agent writing again, a status that held', () => {
+	it('is what finished, what started, and what was sent to review', () => {
 		const before = rows((b) => {
-			const row = b.add({ status: 'in_progress', title: 'Work' });
-			b.work(row, 'same', 'laptop', 30);
+			b.add({ status: 'in_progress', title: 'Finishes' });
+			b.add({ status: 'ready', title: 'Starts' });
+			b.add({ status: 'in_progress', title: 'Reviewed' });
 		});
 		const after = rows((b) => {
-			const row = b.add({ status: 'in_progress', title: 'Work, retitled' });
-			b.work(row, 'same', 'laptop', 1);
+			b.add({ status: 'done', title: 'Finishes' });
+			b.add({ status: 'in_progress', title: 'Starts' });
+			b.add({ status: 'in_review', subStatus: 'pr_open', title: 'Reviewed' });
 		});
-		expect(summarizeChanges(before, after)).toEqual([]);
+		expect(said(before, after).map((change) => change.text)).toEqual([
+			'MAP-1 Finishes: now Done',
+			'MAP-2 Starts: now In Progress',
+			'MAP-3 Reviewed: now In Review, PR open',
+		]);
+	});
+
+	it('is a question an agent raised', () => {
+		const before = rows((b) => b.add({ status: 'in_progress', title: 'Work' }));
+		const after = rows((b) => b.add({ status: 'in_progress', subStatus: 'needs_input', title: 'Work' }));
+		expect(said(before, after)).toEqual([{ key: 'MAP-1', text: 'MAP-1 Work: now In Progress, needs input' }]);
 	});
 });

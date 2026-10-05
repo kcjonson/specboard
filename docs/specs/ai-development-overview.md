@@ -1170,7 +1170,10 @@ and nothing moves for more than a second.
   transitions, and time drift into cuts. That covers every flight (Fit all, Now, a jump
   to an item, the keys' pans, the minimap's, the stepping bar's), the zoom step, the
   level fades, the hover and focus fade, a dragged dot's return, the card and quick card
-  fades, and the hover colors of the page's own controls.
+  fades, a refresh's staged exits, glides, and entries (with the time drift inside them),
+  the status sweep, the ping ring, a new item's grow-in, a region outline's crossfade, and
+  the hover colors of the page's own controls. What changed carries the board's highlight
+  instead, in the accent color (the palette's link color under forced colors).
 - Remote changes are announced through a polite live region, rate-limited, with a
   setting to turn the announcements off. A change is an item filed or gone, a new status,
   a question to answer, a PR opened, or an agent arriving. The first one after a quiet

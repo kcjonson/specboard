@@ -1333,14 +1333,15 @@ describe('MapView keyboard and screen reader access', () => {
 	});
 
 	describe('the live region', () => {
-		const changedRead = (m: ReturnType<typeof marked>, status: 'done' | 'in_progress' = 'done'): MapRead => ({
-			...m.read,
-			items: m.read.items.map((row) => (row.key === m.live ? { ...row, status, workers: [] } : row)),
-		});
+		/** What a refresh answers when the live item has changed status: a delta of that one row. */
+		const changedRead = (m: ReturnType<typeof marked>, status: 'done' | 'in_progress' = 'done'): MapRead =>
+			deltaRead(m.read.items.filter((row) => row.key === m.live).map((row) => ({ ...row, status, workers: [] })), m.read.items.length);
+		// A refresh buffers its read and applies it as a pass a beat later.
 		const swap = async (map: RenderedMap): Promise<void> => {
 			await act(async () => {
-				await map.model.load(2);
+				await map.model.refresh();
 			});
+			await waitFor(() => expect(map.model.changes).not.toBeNull());
 		};
 		const withReads = (reads: MapRead[]): (() => Promise<MapRead>) => {
 			let at = 0;

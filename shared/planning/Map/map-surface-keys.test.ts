@@ -323,7 +323,7 @@ describe('focus that goes stale', () => {
 		s.surface.setFocus(s.keys.free!);
 		const rows = new Map(s.rows);
 		rows.delete(s.keys.free!);
-		s.surface.update(layoutMap({ rows: [...rows.values()], now: s.b.now, collapse: {}, aspect: WIDTH / 500 }), rows);
+		s.surface.update(layoutMap({ rows: [...rows.values()], now: s.b.now, collapse: {}, aspect: WIDTH / 500 }), rows, null);
 		expect(s.surface.focus).toBeNull();
 		expect(s.focus).toHaveBeenLastCalledWith(null);
 	});
