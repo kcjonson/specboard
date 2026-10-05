@@ -160,7 +160,7 @@ describe('hover and click on the agents', () => {
 			chips: ['claude-code', 'Live'],
 			kicker: 'Agent session · last write 2 min ago',
 		});
-		expect(quick!.agent!.rows).toEqual([{ key: s.m, title: 'Wire the index', meta: `feat/${s.m} · 1 h 35 min on item, last write 2 min ago` }]);
+		expect(quick!.agent!.rows).toEqual([{ key: s.m, title: 'Wire the index', meta: { lead: `feat/${s.m}`, tail: '1 h 35 min on item, last write 2 min ago' } }]);
 	});
 
 	it('shows an item\'s sessions on its card: client, device, branch, time on the item, and time since the last write', () => {
@@ -169,7 +169,7 @@ describe('hover and click on the agents', () => {
 		s.deferred.splice(0).forEach((task) => task());
 		s.flush();
 		expect(s.overlay.frame.quick!.marks.sessions).toEqual([
-			{ title: 'Session 2, codex on laptop, quiet', meta: `feat/${s.q} · 30 min on item, last write 20 min ago`, quiet: true },
+			{ title: 'Session 2, codex on laptop, quiet', meta: { lead: `feat/${s.q}`, tail: '30 min on item, last write 20 min ago' }, quiet: true },
 		]);
 	});
 

@@ -7,7 +7,7 @@ import type { OverlayFrame, OverlayStore } from '../overlay';
 import { actorLabel } from '../../utils/actor';
 import { formatTimeAgo } from '../../utils/time';
 import { ActivityCache, type Activity } from './activity-cache';
-import { agentCardHeight, type AgentCard } from './agent-content';
+import { agentCardHeight, type AgentCard, type QuickMeta } from './agent-content';
 import { QUICK_WIDTH, progressText, quickContent, quickHeight } from './quick-content';
 import styles from './MapQuickCard.module.css';
 
@@ -39,6 +39,17 @@ function Progress({ rollup }: { rollup: Rollup }): JSX.Element {
 	);
 }
 
+/** The line under a session or an item on a card: the lead is cut with an ellipsis before the times are. */
+function MetaLine({ meta }: { meta: QuickMeta }): JSX.Element {
+	return (
+		<p class={styles.sessionMeta}>
+			{meta.lead && <span class={styles.lead}>{meta.lead}</span>}
+			{meta.lead && <span class={styles.sep} aria-hidden="true">{' · '}</span>}
+			<span class={styles.tail}>{meta.tail}</span>
+		</p>
+	);
+}
+
 /** The card for a session or a computer: what it is, and a block for each session or item it holds. */
 function AgentCardView({ card, x, y, side, name }: { card: AgentCard; x: number; y: number; side: string; name: string }): JSX.Element {
 	return (
@@ -63,7 +74,7 @@ function AgentCardView({ card, x, y, side, name }: { card: AgentCard; x: number;
 						<span class={styles.ref}>{row.key}</span>
 						{row.title && ` ${row.title}`}
 					</p>
-					<p class={styles.sessionMeta}>{row.meta}</p>
+					<MetaLine meta={row.meta} />
 				</div>
 			))}
 			{card.more > 0 && <p class={styles.line}>{`and ${card.more} more`}</p>}
@@ -141,7 +152,7 @@ export function MapQuickCard({ store, activity, bottom }: MapQuickCardProps): JS
 				{content.sessions.map((session) => (
 					<div key={session.title} class={styles.session}>
 						<p class={styles.sessionTitle}>{session.title}</p>
-						<p class={styles.sessionMeta}>{session.meta}</p>
+						<MetaLine meta={session.meta} />
 					</div>
 				))}
 				{content.moreSessions > 0 && <p class={styles.line}>{`and ${content.moreSessions} more`}</p>}

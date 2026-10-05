@@ -22,12 +22,12 @@ describe('the hover card for an item\'s sessions', () => {
 		expect(itemSessions(rows.get(keys[0]!)!, working, b.now)).toEqual([
 			{
 				title: 'Session 1, claude-code on personal-laptop',
-				meta: `feat/${keys[0]} · 2 h 10 min on item, last write 3 min ago`,
+				meta: { lead: `feat/${keys[0]}`, tail: '2 h 10 min on item, last write 3 min ago' },
 				quiet: false,
 			},
 			{
 				title: 'Session 2, codex on personal-laptop, quiet',
-				meta: `feat/${keys[0]} · 1 h on item, last write 22 min ago`,
+				meta: { lead: `feat/${keys[0]}`, tail: '1 h on item, last write 22 min ago' },
 				quiet: true,
 			},
 		]);
@@ -58,7 +58,7 @@ describe('the hover card for a session and a computer', () => {
 			chips: ['claude-code', 'Live'],
 			more: 0,
 		});
-		expect(card.rows).toEqual([{ key: keys[0], title: 'Task 1', meta: `feat/${keys[0]} · 2 h 10 min on item, last write 3 min ago` }]);
+		expect(card.rows).toEqual([{ key: keys[0], title: 'Task 1', meta: { lead: `feat/${keys[0]}`, tail: '2 h 10 min on item, last write 3 min ago' } }]);
 	});
 
 	it('a quiet session says so', () => {
@@ -71,8 +71,8 @@ describe('the hover card for a session and a computer', () => {
 		const card = agentCard('computer:personal-laptop', working, rows, b.now)!;
 		expect(card).toMatchObject({ kind: 'computer', title: 'personal-laptop', chips: ['2 sessions', '1 live'], kicker: 'Computer · last write 3 min ago' });
 		expect(card.rows).toEqual([
-			{ key: 'Session 1', title: 'claude-code', meta: `${keys[0]} · last write 3 min ago` },
-			{ key: 'Session 2', title: 'codex', meta: `${keys[0]} · last write 22 min ago, quiet` },
+			{ key: 'Session 1', title: 'claude-code', meta: { lead: `${keys[0]}`, tail: 'last write 3 min ago' } },
+			{ key: 'Session 2', title: 'codex', meta: { lead: `${keys[0]}`, tail: 'last write 22 min ago, quiet' } },
 		]);
 	});
 

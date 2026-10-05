@@ -13,7 +13,7 @@ describe('quick card content', () => {
 		b.block(item, first);
 		b.block(item, second);
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
-		const sessions = [{ title: 'Session 1, claude-code on laptop', meta: 'a', quiet: false }, { title: 'Session 2, claude-code on desktop', meta: 'b', quiet: true }];
+		const sessions = [{ title: 'Session 1, claude-code on laptop', meta: { lead: null, tail: 'a' }, quiet: false }, { title: 'Session 2, claude-code on desktop', meta: { lead: null, tail: 'b' }, quiet: true }];
 		const content = quickContent(item, rows, { done: 1, in_flight: 1, next: 2, later: 0 }, { ...NO_MARKS, sessions });
 		expect(content).toMatchObject({
 			key: item.key,
@@ -49,7 +49,7 @@ describe('quick card content', () => {
 		const b = new BoardBuilder();
 		const item = b.add({ status: 'in_progress' });
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
-		const session = (n: number): { title: string; meta: string; quiet: boolean } => ({ title: `Session ${n}`, meta: 'meta', quiet: false });
+		const session = (n: number): { title: string; meta: { lead: string | null; tail: string }; quiet: boolean } => ({ title: `Session ${n}`, meta: { lead: null, tail: 'meta' }, quiet: false });
 		const base = quickHeight(quickContent(item, rows, null, NO_MARKS));
 		const two = quickContent(item, rows, null, { ...NO_MARKS, sessions: [session(1), session(2)] });
 		expect(two).toMatchObject({ moreSessions: 0 });

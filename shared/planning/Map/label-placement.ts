@@ -146,8 +146,9 @@ export function placeLabels({ rules, level, regions, outlines, dots, agents, blo
 }
 
 /**
- * A computer's block goes beside it, on the first side with room: right, below, above,
- * left. Below and above slide inward from the plot's edge, where computers sit. Adds the
+ * A computer's block goes beside it, on the first spot with room: right, below, above,
+ * left, then below and above again, flush with either side and further out.
+ * Below and above slide inward from the plot's edge, where computers sit. Adds the
  * block's box to `taken`; null when no side is clear.
  */
 function placeBlock(
@@ -169,12 +170,19 @@ function placeBlock(
 	const { x, y } = screenPoint(transform, computer);
 	const reach = agentRadius(computer, transform.k, level) + CLEARANCE + BLOCK_GAP;
 	const inward = (left: number): number => Math.max(BLOCK_MARGIN, Math.min(viewport.width - w - BLOCK_MARGIN, left));
+	// Computers stand at the plot's edge with their sessions on one side, so after the four sides the spots go on: below and
+	// above, centered and then flush with either side, each one a block's height further out every time.
 	const spots = [
 		{ x: x + reach, y: y - h / 2 },
 		{ x: inward(x - w / 2), y: y + reach },
 		{ x: inward(x - w / 2), y: y - reach - h },
 		{ x: x - reach - w, y: y - h / 2 },
 	];
+	for (const out of [0, h]) {
+		for (const left of [x - w / 2, x + reach - w, x - reach]) {
+			spots.push({ x: inward(left), y: y + reach + out }, { x: inward(left), y: y - reach - h - out });
+		}
+	}
 	for (const spot of spots) {
 		const box = { x: spot.x, y: spot.y, w, h };
 		if (box.x < 0 || box.y < 0 || box.x + w > viewport.width || box.y + h > viewport.height) continue;

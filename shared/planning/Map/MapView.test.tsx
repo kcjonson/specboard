@@ -688,12 +688,12 @@ describe('MapView agents', () => {
 		const { container, getByRole } = renderMap(() => Promise.resolve(read), {}, () => b.now);
 		await waitFor(() => expect(frames.at(-1)?.agents.length).toBeGreaterThan(0));
 		fireEvent.click(agentsButton(container));
-		const roster = getByRole('dialog', { name: 'Agents at work' });
-		const groups = Array.from(roster.querySelectorAll('section'));
+		const roster = getByRole('dialog', { name: 'Agents at work' }) as HTMLElement;
+		const groups = Array.from(roster.querySelectorAll<HTMLElement>('section'));
 		expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['build-box', 'personal-laptop']);
 		const laptop = groups[1]!;
 		expect(laptop.querySelector('h3')!.textContent).toBe('personal-laptop1 live of 2');
-		const sessions = Array.from(laptop.querySelectorAll('[data-state]'));
+		const sessions = Array.from(laptop.querySelectorAll<HTMLElement>('[data-state]'));
 		expect(sessions.map((s) => s.getAttribute('data-state'))).toEqual(['live', 'quiet']);
 		expect(sessions[0]!.textContent).toContain('Session 1, claude-code');
 		expect(sessions[0]!.textContent).toContain(items[0]);
@@ -707,7 +707,7 @@ describe('MapView agents', () => {
 		const { container, getByRole, queryByRole } = renderMap(() => Promise.resolve(read), {}, () => b.now);
 		await waitFor(() => expect(frames.at(-1)?.agents.length).toBeGreaterThan(0));
 		fireEvent.click(agentsButton(container));
-		const row = Array.from(getByRole('dialog').querySelectorAll('button')).find((button) => button.textContent?.includes('Draw the cards'))!;
+		const row = Array.from((getByRole('dialog') as HTMLElement).querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('Draw the cards'))!;
 		fireEvent.click(row);
 		expect(opened).toEqual([items[1]]);
 		expect(queryByRole('dialog')).toBeNull();

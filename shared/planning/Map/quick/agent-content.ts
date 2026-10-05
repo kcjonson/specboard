@@ -8,10 +8,16 @@ import { agentState, agoText, clientLabel, deviceLabel, spanText, type AgentComp
  * here against a clock so the card's height follows from them before it renders.
  */
 
+/** The second line of a block on a card: a lead that gives way with an ellipsis when the card is narrow (a branch, a list of items), and a tail that never does (the times). */
+export interface QuickMeta {
+	lead: string | null;
+	tail: string;
+}
+
 /** One session on an item's card: a line naming the agent and one with what it has been doing. */
 export interface QuickSession {
 	title: string;
-	meta: string;
+	meta: QuickMeta;
 	/** No write for 15 minutes, or gone from the cluster after an hour. */
 	quiet: boolean;
 }
@@ -29,7 +35,7 @@ export function itemSessions(row: MapItemRow, working: Agents, now: number): Qui
 			const times = `${spanText(now - Date.parse(worker.startedAt))} on item, last write ${agoText(now - last)}`;
 			return {
 				title: `${number === undefined ? '' : `Session ${number}, `}${place}${state === 'live' ? '' : ', quiet'}`,
-				meta: worker.branch ? `${worker.branch} · ${times}` : times,
+				meta: { lead: worker.branch, tail: times },
 				quiet: state !== 'live',
 			};
 		});
@@ -39,7 +45,7 @@ export function itemSessions(row: MapItemRow, working: Agents, now: number): Qui
 export interface AgentCardRow {
 	key: string;
 	title: string;
-	meta: string;
+	meta: QuickMeta;
 }
 
 export interface AgentCard {
@@ -60,7 +66,7 @@ function sessionCard(session: AgentSession, rows: ReadonlyMap<string, MapItemRow
 	const items = session.items.map((item) => ({
 		key: item.key,
 		title: rows.get(item.key)?.title ?? '',
-		meta: `${item.branch ? `${item.branch} · ` : ''}${spanText(now - item.startedAt)} on item, last write ${agoText(now - item.lastWriteAt)}`,
+		meta: { lead: item.branch, tail: `${spanText(now - item.startedAt)} on item, last write ${agoText(now - item.lastWriteAt)}` },
 	}));
 	return {
 		kind: 'session',
@@ -76,7 +82,7 @@ function computerCard(computer: AgentComputer, now: number): AgentCard {
 	const sessions = computer.sessions.map((session) => ({
 		key: `Session ${session.number}`,
 		title: clientLabel(session.client),
-		meta: `${session.items.map((item) => item.key).join(', ')} · last write ${agoText(now - session.lastWriteAt)}${session.state === 'live' ? '' : ', quiet'}`,
+		meta: { lead: session.items.map((item) => item.key).join(', '), tail: `last write ${agoText(now - session.lastWriteAt)}${session.state === 'live' ? '' : ', quiet'}` },
 	}));
 	const live = computer.sessions.filter((session) => session.state === 'live').length;
 	const newest = computer.sessions.reduce((latest, session) => Math.max(latest, session.lastWriteAt), -Infinity);

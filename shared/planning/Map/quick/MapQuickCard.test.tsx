@@ -54,7 +54,7 @@ describe('MapQuickCard', () => {
 		const progress = { done: 3, in_flight: 1, next: 2, later: 0 };
 		const store = new OverlayStore();
 		const { container } = render(<MapQuickCard store={store} activity={new ActivityCache(() => new Promise(() => {}))} bottom={32} />);
-		const sessions = [{ title: 'Session 1, claude-code on laptop', meta: 'feat/MAP-2 · 1 h 30 min on item, last write 5 min ago', quiet: false }];
+		const sessions = [{ title: 'Session 1, claude-code on laptop', meta: { lead: 'feat/MAP-2', tail: '1 h 30 min on item, last write 5 min ago' }, quiet: false }];
 		act(() => store.publish(frame({ rows, quick: quickOf(item.key, 40.4, 80, 'right', progress, sessions) })));
 		const card = container.querySelector('article') as HTMLElement;
 		const text = card.textContent!;
