@@ -1152,6 +1152,10 @@ wheel event per frame for eight seconds.
   mostly idle in them. The stress shape of 80 open families whose 2,000 dots are all on screen at fit all
   (the layout tests' worst case) pans at 58 fps at its opening view and at the middle level but
   36 fps at fit all, and a zoom through fit all runs 18 to 20 fps, which stays a miss.
+  These were taken on d3-zoom. The hand-rolled camera that replaced it, run back to back against
+  it on the same board and machine, gave the same medians (16.6 to 17.4 ms for pan and zoom at the
+  opening view and fit all, against d3's 16.7 to 17.2; one pan under heavier load, 18.8), and its
+  wheel handler costs 0.11 to 0.24 ms an event against d3's 0.18 to 0.36.
   30 fps on a recent phone has not been measured.
 - **The simulation runs off the main thread, and a refresh never drops frames during a pan or
   zoom.** Three pickups landing while a 1,000-item board was being panned: the delta read came
@@ -1171,13 +1175,12 @@ wheel event per frame for eight seconds.
   draws cards.
 - **The Map's code loads only when the view opens**, so Board and Table don't get
   heavier. Target 60 KB gzipped for the Map's chunk, layout code included; the same
-  JavaScript ships to phones ([tech-stack.md](../tech-stack.md)). **Not met**: from a real
-  `vite build`, the Map's chunk is 189.8 KB, 68.1 KB gzipped, with 3.2 KB of CSS, and the layout
-  worker is another 44.4 KB, 17.4 KB gzipped (d3-force, the layout, and the outline tracing), so
-  the whole is about 89 KB. d3-zoom and the d3 packages it needs (selection, transition,
-  interpolate, color, timer, dispatch, drag) are 47 KB of the chunk before gzip, about 15 KB
-  after; a camera of the Map's own in their place would bring the chunk to about 54 KB, which
-  the spec leaves for a decision.
+  JavaScript ships to phones ([tech-stack.md](../tech-stack.md)). From a real `vite build`, the
+  Map's chunk is 145.7 KB, 53.4 KB gzipped, with 3.2 KB of CSS, and the layout worker is another
+  44.4 KB, 17.5 KB gzipped (d3-force, the layout, and the outline tracing), so the whole is about
+  74 KB. With d3-zoom it was 191.6 KB, 68.9 KB gzipped: d3-zoom and the packages it pulls in
+  (selection, transition, interpolate, color, timer, dispatch, drag) were 46 KB of the chunk
+  before gzip, about 15 KB after, so the camera is the Map's own (see the feasibility notes).
 - A project past the read cap (5,000 rows, the list cap) still opens. Finished
   families (a parent and every descendant done) fold into their parent's row,
   oldest first, until the read fits: the row carries `summarizedDescendants`, the
@@ -1329,7 +1332,12 @@ Input for the technical design, not decisions.
   ([Horak et al.](https://mt.inf.tu-dresden.de/cnt/uploads/Horak-2018-Graph-Performance-Poster.pdf)).
   So one Canvas 2D layer draws dots and links at far and middle zoom, and Preact
   components draw cards at near zoom, culled to the viewport (real text, real
-  focus, and `@specboard/ui` reuse). `d3-zoom` (about 15 KB) runs the camera.
+  focus, and `@specboard/ui` reuse). The camera is hand-rolled, 3.2 KB minified and 1.6 KB gzipped: pointer
+  events with pointer capture for drag and pinch, one non-passive wheel listener that
+  normalizes `deltaMode`, and a requestAnimationFrame flight along van Wijk and Nuij's smooth
+  zoom path, eased by a cubic-bezier solver. `d3-zoom` ran it first, and was about 15 KB
+  gzipped once `d3-transition` came along: it patches `d3-selection`'s prototype on import, so
+  nothing could shake it out, and that alone put the Map's chunk over its 60 KB budget.
 - As built (SPE-230), the cards sit in one translated element, so a pan is one style
   write and the cards re-render only when the set in view changes. Cards and labels
   are placed every frame against a grid of taken boxes. On a generated 2,000-item
@@ -1463,8 +1471,8 @@ Input for the technical design, not decisions.
   node editor rather than a layout engine).
 - The app has no code splitting and no Web Worker yet, so the Map adds the first of
   each: a dynamic import for the view and a module worker for the layout.
-  `shared/planning` has no package of its own, so `d3-force` and `d3-zoom` go in
-  `web/package.json`, pinned like every dependency.
+  `shared/planning` has no package of its own, so `d3-force` goes in `web/package.json`,
+  pinned like every dependency.
 
 Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
 

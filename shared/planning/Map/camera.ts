@@ -3,8 +3,7 @@ import type { MapBounds, MapPoint } from './layout/types';
 
 /**
  * Camera math, with no DOM in it. A transform maps layout units to screen pixels:
- * `screen = (x + k * world.x, y + k * world.y)`, the same convention d3-zoom uses, so
- * the controller can hand these straight to it.
+ * `screen = (x + k * world.x, y + k * world.y)`. The camera in `map-camera.ts` moves it.
  */
 
 /** What the camera needs of a dot: where it is and how big. */

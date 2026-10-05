@@ -25,6 +25,7 @@ import { formatDateTime } from '../utils/time';
 import { baselineDate } from './changes/changes';
 import { MAP_ANNOUNCE_PREF } from '../Planning/prefs';
 import { memoryStorage } from '../test-support/memory-storage';
+import { installPointerEvents } from '../test-support/pointer-events';
 
 const frames: MapFrame[] = [];
 const renderer: MapRenderer = {
@@ -104,21 +105,7 @@ function renderMap(source: () => Promise<MapRead>, props: MapProps = {}, clock?:
 	return { ...rendered, model, changes, advance, rerender: (next) => rendered.rerender(view(next)) };
 }
 
-// jsdom has no pointer events; a mouse event with the pointer fields on it is enough for the handlers.
-if (typeof window.PointerEvent === 'undefined') {
-	class PointerEventShim extends MouseEvent {
-		readonly pointerId: number;
-		readonly pointerType: string;
-		readonly isPrimary: boolean;
-		constructor(type: string, init: NonNullable<ConstructorParameters<typeof MouseEvent>[1]> & { pointerId?: number; pointerType?: string; isPrimary?: boolean } = {}) {
-			super(type, init);
-			this.pointerId = init.pointerId ?? 1;
-			this.pointerType = init.pointerType ?? 'mouse';
-			this.isPrimary = init.isPrimary ?? true;
-		}
-	}
-	Object.defineProperty(window, 'PointerEvent', { value: PointerEventShim, configurable: true });
-}
+installPointerEvents();
 
 beforeEach(() => {
 	frames.length = 0;
@@ -464,10 +451,13 @@ describe('MapView interaction', () => {
 		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
 		const canvas = document.querySelector('canvas')!;
 		const at = dotPoint('MAP-5');
+		const { transform } = frames.at(-1)!;
 		fireEvent.pointerDown(canvas, at);
 		fireEvent.pointerMove(canvas, { clientX: at.clientX + 30, clientY: at.clientY });
 		await waitFor(() => expect(frames.at(-1)!.drag).toMatchObject({ key: 'MAP-5' }));
 		expect(canvas.hasAttribute('data-dragging')).toBe(true);
+		// The dot moves, and the camera, which the press was claimed from, doesn't.
+		expect(frames.at(-1)!.transform).toEqual(transform);
 		fireEvent.pointerUp(canvas, { clientX: at.clientX + 30, clientY: at.clientY });
 		expect(opened).toEqual([]);
 		expect(canvas.hasAttribute('data-dragging')).toBe(false);
@@ -477,6 +467,8 @@ describe('MapView interaction', () => {
 		fireEvent.pointerMove(canvas, { clientX: 60, clientY: 2 });
 		fireEvent.pointerUp(canvas, { clientX: 60, clientY: 2 });
 		expect(opened).toEqual([]);
+		await waitFor(() => expect(frames.at(-1)!.transform.x).toBeCloseTo(transform.x + 58));
+		expect(frames.at(-1)!.drag).toBeNull();
 	});
 
 	it('does not open on a press that moved past the click threshold', async () => {
