@@ -8,16 +8,29 @@ import type { RefObject } from 'preact';
  */
 export const FIT = {
 	full: 0,
+	/** "Agents at work" is the laptop icon, named for assistive tech. */
+	agentsIcon: 1,
 	/** "Since Sep 23: 86 finished, +3 more kinds" */
-	sinceLead: 1,
+	sinceLead: 2,
 	/** "Since Sep 23: 94 items changed" */
-	sinceTotal: 2,
+	sinceTotal: 3,
 	/** "Updated now" */
-	freshShort: 3,
+	freshShort: 4,
 	/** The announce switch is its icon, named for assistive tech. */
-	announceIcon: 4,
-	wrap: 5,
+	announceIcon: 5,
+	wrap: 6,
 } as const;
+
+/**
+ * Whether the line's last item ends past the strip's padding. `scrollWidth` would miss an item
+ * that crowds into the padding without leaving the box, leaving the freshness note touching the edge.
+ */
+function overflows(strip: HTMLElement): boolean {
+	const last = strip.lastElementChild;
+	if (!last) return false;
+	const padding = parseFloat(window.getComputedStyle(strip).paddingRight) || 0;
+	return last.getBoundingClientRect().right > strip.getBoundingClientRect().right - padding;
+}
 
 /**
  * The lowest level at which the strip's one line fits, found by measuring the real layout:
@@ -35,7 +48,7 @@ export function useStripFit(ref: RefObject<HTMLElement>, signature: string): num
 
 	useLayoutEffect(() => {
 		const strip = ref.current;
-		if (strip && level < FIT.wrap && strip.scrollWidth > strip.clientWidth) setState({ signature, level: level + 1 });
+		if (strip && level < FIT.wrap && overflows(strip)) setState({ signature, level: level + 1 });
 	});
 
 	useEffect(() => {

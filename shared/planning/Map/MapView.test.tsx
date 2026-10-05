@@ -854,7 +854,9 @@ describe('MapView since your last visit', () => {
 	it('closes without moving the baseline, and the strip\'s summary reopens it', async () => {
 		const m = marked();
 		const w = waiting(m);
-		const { findByText, getByRole, container, advance } = renderMap(() => Promise.resolve(m.read), { changes: w });
+		const { findByText, getByRole, queryByRole, container, advance } = renderMap(() => Promise.resolve(m.read), { changes: w });
+		await findByText(/^Since your last visit/);
+		expect(queryByRole('button', { name: /^Since / })).toBeNull();
 
 		fireEvent.click(await findByText('Close'));
 		await waitFor(() => expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull());
@@ -862,11 +864,11 @@ describe('MapView since your last visit', () => {
 		expect(advance).not.toHaveBeenCalled();
 
 		const summary = getByRole('button', { name: `Since ${baselineDate(w.baseline)}: 1 finished, 1 worked on, 1 filed, 1 question, 1 PR opened` });
-		expect(summary.getAttribute('aria-pressed')).toBe('false');
 		fireEvent.click(summary);
 		await findByText(`Since your last visit, ${baselineDate(w.baseline)}`);
 		await waitFor(() => expect(litKeys()).toEqual(new Set([m.done, m.asked, m.review, m.upNext])));
-		expect(getByRole('button', { name: /^Since / }).getAttribute('aria-pressed')).toBe('true');
+		expect(queryByRole('button', { name: /^Since / })).toBeNull();
+		expect(document.activeElement).toBe(container.querySelector('[aria-label^="Since your last visit"] button'));
 	});
 
 	it('Escape closes the view once the drawer, the selection, and any search are done with it', async () => {

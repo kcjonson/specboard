@@ -228,8 +228,8 @@ const PING_ALPHA = 0.85;
 const HIGHLIGHT_REACH = 4;
 const HIGHLIGHT_ALPHA = 0.3;
 /** A laptop, in a 20-unit box: the screen, and the base under it. */
-const LAPTOP = 'M4 5.5 H16 V13 H4 Z M2 15.5 H18';
-const LAPTOP_BOX = 20;
+export const LAPTOP = 'M4 5.5 H16 V13 H4 Z M2 15.5 H18';
+export const LAPTOP_BOX = 20;
 
 interface GlyphPaths {
 	stroke?: Path2D;

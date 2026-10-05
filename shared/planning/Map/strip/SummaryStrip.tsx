@@ -21,14 +21,14 @@ export interface SummaryStripProps {
 	updatedAt: number | null;
 	/** The last refresh failed and the Map is showing what it had. */
 	retrying?: boolean;
-	/** The "Agents at work" button, which opens the roster of computers and sessions. */
-	agents?: ComponentChildren;
+	/** The "Agents at work" button, which opens the roster of computers and sessions; told when the strip has no room for its words. */
+	agents?: (compact: boolean) => ComponentChildren;
 	/**
-	 * Since your last visit: what changed, by kind, which opens the changes view and, while it
-	 * is open, is pressed. Absent when nothing is waiting. The text comes at three lengths, for
-	 * a strip with less and less room.
+	 * Since your last visit: what changed, by kind, which opens the changes view. Absent when
+	 * nothing is waiting, and not drawn while that view is open, since its bar says the same.
+	 * The text comes at three lengths, for a strip with less and less room.
 	 */
-	since?: { date: string; text: SummaryText; open: boolean; onToggle(): void };
+	since?: { date: string; text: SummaryText; open: boolean; onOpen(): void };
 	/** Whether changes made elsewhere are said to a screen reader, and the switch for it. Absent, the strip has no such control. */
 	announce?: { on: boolean; onToggle(): void };
 	/** The clock the freshness note reads, so a test can drive it. */
@@ -64,7 +64,7 @@ export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPer
 
 	const stripRef = useRef<HTMLElement>(null);
 	const fullFreshness = updatedAt === null ? '' : freshnessText(updatedAt, now, retrying);
-	const fit = useStripFit(stripRef, [JSON.stringify(summary), since?.date, since?.text.full, fullFreshness, announce !== undefined, agents !== undefined].join('|'));
+	const fit = useStripFit(stripRef, [JSON.stringify(summary), since?.date, since?.text.full, since?.open, fullFreshness, announce !== undefined, agents !== undefined].join('|'));
 
 	const count = (value: number | undefined): string => (value === undefined ? '-' : String(value));
 	const ready = summary !== null;
@@ -92,9 +92,9 @@ export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPer
 				<span class={styles.label}>Live sessions</span>
 				<span class={styles.count}>{count(summary?.liveSessions)}</span>
 			</button>
-			{agents}
-			{since && (
-				<button type="button" class={`${styles.chip} ${styles.since}`} aria-pressed={since.open} title={`Since ${since.date}: ${since.text.full}. Opens the changes view.`} onClick={since.onToggle}>
+			{agents?.(fit >= FIT.agentsIcon)}
+			{since && !since.open && (
+				<button type="button" class={styles.chip} title={`Since ${since.date}: ${since.text.full}. Opens the changes view.`} onClick={since.onOpen}>
 					<span class={styles.label}>
 						{`Since ${since.date}: `}
 						<span class={styles.changes}>{fit >= FIT.sinceTotal ? since.text.total : fit >= FIT.sinceLead ? since.text.lead : since.text.full}</span>

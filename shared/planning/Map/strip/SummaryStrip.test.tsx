@@ -4,11 +4,13 @@
  * @vitest-environment jsdom
  */
 
+import type { JSX } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/preact';
 import type { MapSummary } from '../map-facts';
 import { NO_FILTERS, type MapFilters } from '../map-lens';
 import { SummaryStrip, type SummaryStripProps } from './SummaryStrip';
+import { AgentsButton } from '../AgentsButton';
 import { FIT } from './fit';
 
 afterEach(() => {
@@ -30,6 +32,8 @@ const props = (over: Partial<SummaryStripProps> = {}): SummaryStripProps => ({
 	clock: () => NOW,
 	...over,
 });
+
+const agentsSlot = (compact: boolean): JSX.Element => <AgentsButton compact={compact} open={false} onClick={vi.fn()} />;
 
 const countOf = (container: Element, label: string): string | null =>
 	Array.from(container.querySelectorAll('span')).find((span) => span.textContent === label)?.nextElementSibling?.textContent ?? null;
@@ -79,7 +83,7 @@ describe('SummaryStrip', () => {
 	});
 
 	it('has a slot for the Agents at work button, after the live count', () => {
-		const { getByText, container } = render(<SummaryStrip {...props({ agents: <button type="button">Agents at work</button> })} />);
+		const { getByText, container } = render(<SummaryStrip {...props({ agents: agentsSlot })} />);
 		const live = getByText('Live sessions');
 		const agents = getByText('Agents at work');
 		expect(live.compareDocumentPosition(agents) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -103,17 +107,16 @@ describe('SummaryStrip', () => {
 		expect(container.textContent).toContain('Updated 4 min ago, retrying');
 	});
 
-	it('says what changed since the last visit, and toggles the changes view', () => {
-		const onToggle = vi.fn();
-		const since = { date: 'Sep 19', text: SINCE_TEXT, open: false, onToggle };
-		const { getByRole, rerender } = render(<SummaryStrip {...props({ since })} />);
-		const chip = getByRole('button', { name: 'Since Sep 19: 11 finished, 1 worked on, 9 filed' });
-		expect(chip.getAttribute('aria-pressed')).toBe('false');
-		fireEvent.click(chip);
-		expect(onToggle).toHaveBeenCalledTimes(1);
+	it('says what changed since the last visit, and opens the changes view', () => {
+		const onOpen = vi.fn();
+		const { getByRole } = render(<SummaryStrip {...props({ since: { date: 'Sep 19', text: SINCE_TEXT, open: false, onOpen } })} />);
+		fireEvent.click(getByRole('button', { name: 'Since Sep 19: 11 finished, 1 worked on, 9 filed' }));
+		expect(onOpen).toHaveBeenCalledTimes(1);
+	});
 
-		rerender(<SummaryStrip {...props({ since: { ...since, open: true } })} />);
-		expect(getByRole('button', { name: /^Since Sep 19/ }).getAttribute('aria-pressed')).toBe('true');
+	it('leaves the since summary out while the changes view it opens is open, since that view says the same', () => {
+		const { container } = render(<SummaryStrip {...props({ since: { date: 'Sep 19', text: SINCE_TEXT, open: true, onOpen: vi.fn() } })} />);
+		expect(container.textContent).not.toContain('Since');
 	});
 
 	it('has no since summary when nothing is waiting', () => {
@@ -135,8 +138,14 @@ describe('SummaryStrip when it runs out of room', () => {
 	beforeEach(() => {
 		width = 10_000;
 		observed = null;
-		const measure = (element: Element): number => (element.tagName === 'SECTION' ? element.textContent!.length * CHAR : 0);
-		Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get(this: HTMLElement) { return Math.max(measure(this), width); } });
+		// The strip ends at `width`; its last item ends where the text of the whole line does.
+		Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+			configurable: true,
+			value(this: HTMLElement) {
+				const right = this.tagName === 'SECTION' ? width : this.parentElement!.textContent!.length * CHAR;
+				return { right };
+			},
+		});
 		Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => width });
 		vi.stubGlobal('ResizeObserver', class {
 			constructor(callback: () => void) {
@@ -148,14 +157,14 @@ describe('SummaryStrip when it runs out of room', () => {
 	});
 
 	afterEach(() => {
-		delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+		delete (HTMLElement.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
 		delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
 		vi.unstubAllGlobals();
 	});
 
-	const since = { date: 'Sep 23', text: SINCE_TEXT, open: false, onToggle: vi.fn() };
+	const since = { date: 'Sep 23', text: SINCE_TEXT, open: false, onOpen: vi.fn() };
 	const announce = { on: true, onToggle: vi.fn() };
-	const agents = <button type="button">Agents at work</button>;
+	const agents = agentsSlot;
 	const full = (): SummaryStripProps => props({ since, announce, agents });
 
 	const strip = (container: Element): HTMLElement => container.querySelector('section')!;
@@ -168,6 +177,7 @@ describe('SummaryStrip when it runs out of room', () => {
 		const base = strip(natural.container).textContent!.length;
 		natural.unmount();
 		const steps = [
+			-'Agents at work'.length,
 			SINCE_TEXT.lead.length - SINCE_TEXT.full.length,
 			SINCE_TEXT.total.length - SINCE_TEXT.lead.length,
 			'Updated now'.length - 'Updated just now'.length,
@@ -185,7 +195,16 @@ describe('SummaryStrip when it runs out of room', () => {
 	});
 
 	const SHOWS: Array<[string, number, (c: Element) => void]> = [
-		['shortens the since summary to its lead kind first', FIT.sinceLead, (c) => {
+		['turns the Agents at work button into its laptop first, keeping its name and its roster state', FIT.agentsIcon, (c) => {
+			expect(has(c, 'Agents at work')).toBe(false);
+			const button = c.querySelector('button[aria-label="Agents at work"]')!;
+			expect(button.getAttribute('title')).toBe('Agents at work');
+			expect(button.getAttribute('aria-expanded')).toBe('false');
+			expect(has(c, 'Since Sep 23: 11 finished, 1 worked on, 9 filed')).toBe(true);
+			expect(has(c, 'Updated just now')).toBe(true);
+			expect(has(c, 'Announce changesOn')).toBe(true);
+		}],
+		['then shortens the since summary to its lead kind', FIT.sinceLead, (c) => {
 			expect(has(c, 'Since Sep 23: 11 finished, +2 more kinds')).toBe(true);
 			expect(has(c, 'Updated just now')).toBe(true);
 			expect(has(c, 'Announce changesOn')).toBe(true);
@@ -233,9 +252,10 @@ describe('SummaryStrip when it runs out of room', () => {
 		for (const cells of [10_000, 600, 300, 100, 1]) {
 			width = cells;
 			act(() => observed?.());
-			for (const word of ['Done', 'In flight', 'Next', 'Later', 'Blocked', 'Needs a person', 'Live sessions', 'Agents at work']) {
+			for (const word of ['Done', 'In flight', 'Next', 'Later', 'Blocked', 'Needs a person', 'Live sessions']) {
 				expect(has(container, word), `${word} at ${cells}`).toBe(true);
 			}
+			expect(container.querySelector('button[aria-haspopup]')!.getAttribute('aria-haspopup'), `roster button at ${cells}`).toBe('dialog');
 		}
 	});
 
@@ -250,15 +270,26 @@ describe('SummaryStrip when it runs out of room', () => {
 		expect(has(container, 'Since Sep 23: 11 finished, 1 worked on, 9 filed')).toBe(true);
 		expect(has(container, 'Updated just now')).toBe(true);
 		expect(has(container, 'Announce changesOn')).toBe(true);
+		expect(has(container, 'Agents at work')).toBe(true);
 	});
 
-	it('shortens the freshness note first when there is no since summary', () => {
+	it('with no since summary, the Agents button yields first, then the freshness note, then the announce switch', () => {
 		const { container } = render(<SummaryStrip {...props({ announce, agents })} />);
 		const natural = strip(container).textContent!.length;
+
 		width = (natural - 1) * CHAR;
+		act(() => observed?.());
+		expect(has(container, 'Agents at work')).toBe(false);
+		expect(has(container, 'Updated just now')).toBe(true);
+
+		width = (natural - 'Agents at work'.length - 1) * CHAR;
 		act(() => observed?.());
 		expect(has(container, 'Updated now')).toBe(true);
 		expect(has(container, 'Announce changesOn')).toBe(true);
+
+		width = (natural - 'Agents at work'.length - 'Updated just now'.length + 'Updated now'.length - 1) * CHAR;
+		act(() => observed?.());
+		expect(has(container, 'Announce')).toBe(false);
 		expect(wraps(container)).toBe(false);
 	});
 
