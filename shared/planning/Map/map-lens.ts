@@ -89,7 +89,7 @@ export function lensOf({ layout, rows, facts, filters, search }: LensInput): Len
 }
 
 /** Left to right across the Map, then top to bottom; the key breaks a tie, so a family folded into one dot steps in key order. */
-function inReadingOrder(keys: readonly string[], layout: MapLayout): string[] {
+export function inReadingOrder(keys: readonly string[], layout: MapLayout): string[] {
 	const at = new Map(layout.nodes.filter((node) => node.kind === 'item').map((node) => [node.key, node]));
 	const place = (key: string): { x: number; y: number } => at.get(layout.representative[key]!) ?? { x: 0, y: 0 };
 	return [...keys].sort((a, b) => {

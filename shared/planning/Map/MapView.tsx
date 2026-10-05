@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import type { MapItemType } from '@specboard/core/map-read';
+import type { MapItemRow, MapItemType } from '@specboard/core/map-read';
 import { navigate } from '@specboard/router';
 import { useModel } from '@specboard/models';
 import { LoadError } from '../LoadError/LoadError';
+import { MAP_ANNOUNCE_PREF, readPref, writePref } from '../Planning/prefs';
+import { Announcer, summarizeUpdate } from './access/announce';
+import { MapTree } from './access/MapTree';
+import { activeNode, buildTree } from './access/tree-model';
 import { AgentRoster } from './AgentRoster';
 import { AgentsButton } from './AgentsButton';
 import { NO_AGENTS, agentsOf, deviceLabel } from './agents';
@@ -29,7 +33,7 @@ import { Minimap } from './minimap/Minimap';
 import { OverlayStore } from './overlay';
 import { ActivityCache, createActivitySource } from './quick/activity-cache';
 import { MapQuickCard } from './quick/MapQuickCard';
-import { zoomKeyOf } from './map-keys';
+import { isTypingTarget, mapKeyOf } from './map-keys';
 import { rosterOf } from './roster';
 import { readFocus, urlWithFocus } from './map-url';
 import { RULER_HEIGHT, createCanvasRenderer } from './renderer';
@@ -92,10 +96,8 @@ interface Press {
 	dragging: boolean;
 }
 
-const typing = (target: EventTarget | null): boolean => {
-	const el = target as HTMLElement | null;
-	return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
-};
+/** Moving focus with the keys rewrites the URL's anchor once the person pauses, so holding an arrow doesn't write to history on every repeat. */
+const ANCHOR_PAUSE_MS = 300;
 
 /**
  * The Map: one canvas drawing every item's status glyph where the layout put it, a
@@ -156,6 +158,31 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const [ticked, setTicked] = useState(() => model.clock());
 	const overlay = useMemo(() => new OverlayStore(), []);
 
+	// The accessible tree holds the Map's keyboard focus; `focusKey` is what its active descendant follows.
+	const treeRef = useRef<HTMLDivElement>(null);
+	const treeId = useId();
+	const [focusKey, setFocusKey] = useState<string | null>(null);
+	// Where focus was when it left the Map, so coming back to it lands there.
+	const lastFocus = useRef<string | null>(null);
+	// A press on the canvas hands the tree focus; that isn't a key asking for an item.
+	const pointerFocus = useRef(false);
+	const stepRef = useRef<((delta: 1 | -1) => void) | null>(null);
+	const anchorTimer = useRef<number | undefined>(undefined);
+
+	// Remote changes are said once a second pass of the read shows them, a few at a time; a setting turns that off.
+	const [announcement, setAnnouncement] = useState('');
+	const [announce, setAnnounce] = useState(() => readPref(MAP_ANNOUNCE_PREF) !== 'false');
+	const announcer = useMemo(
+		() => new Announcer({ say: setAnnouncement, now: () => Date.now(), later: (task, ms) => window.setTimeout(task, ms), cancel: (handle) => window.clearTimeout(handle as number) }),
+		[],
+	);
+	useEffect(() => announcer.setEnabled(announce), [announcer, announce]);
+	useEffect(() => () => announcer.dispose(), [announcer]);
+	const handleToggleAnnounce = useCallback((): void => {
+		setAnnounce(!announce);
+		writePref(MAP_ANNOUNCE_PREF, String(!announce));
+	}, [announce]);
+
 	// The surface lives as long as the view, so what it calls back into is read from here.
 	const live = useRef({ openItemKey, onOpenItem, onCloseItem, model, clear: () => {}, lensActive: false, changesShown: false, closeChanges: () => {} });
 	const clearLens = useCallback((): void => {
@@ -196,6 +223,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		const canvas = canvasRef.current!;
 		const reducedMotion = media('(prefers-reduced-motion: reduce)');
 		const colorScheme = media('(prefers-color-scheme: dark)');
+		const forcedColors = media('(forced-colors: active)');
 
 		// A press on a dot's glyph is the start of a drag, which the camera must not pan from.
 		let claimed = false;
@@ -228,6 +256,10 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 					if (target) canvas.dataset.target = target;
 					else delete canvas.dataset.target;
 				},
+				onFocus: (key) => {
+					setFocusKey(key);
+					if (key) lastFocus.current = key;
+				},
 			},
 		);
 		surfaceRef.current = surface;
@@ -245,6 +277,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		observer?.observe(container);
 		const onColorScheme = (): void => surface.refreshTheme();
 		colorScheme?.addEventListener('change', onColorScheme);
+		forcedColors?.addEventListener('change', onColorScheme);
 		// Back and Forward move between anchors; an entry with none is the opening view.
 		const onPopState = (): void => {
 			const key = readFocus(window.location.search);
@@ -264,6 +297,10 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				press.moved = true;
 				return;
 			}
+			// The canvas can't take focus itself, so a press on it hands focus to the tree: the keys work from the first click.
+			pointerFocus.current = true;
+			treeRef.current?.focus({ preventScroll: true });
+			pointerFocus.current = false;
 			const point = pointOf(event);
 			const touch = event.pointerType === 'touch';
 			const hit = surface.hitAt(point, touch);
@@ -310,34 +347,24 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		canvas.addEventListener('pointercancel', onPointerEnd);
 		canvas.addEventListener('pointerleave', onPointerLeave);
 
+		// Escape works from anywhere on the page, the way the board's does; every other key is the focused tree's (see `handleKeyDown`).
 		const onKeyDown = (event: KeyboardEvent): void => {
-			const zoom = zoomKeyOf(event);
-			if (zoom) {
+			if (event.key !== 'Escape' || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+			// A dialog over the page has its own Escape.
+			if ((event.target as HTMLElement | null)?.closest?.('dialog, [role="dialog"]')) return;
+			// The drawer first, then the selection it leaves lit.
+			if (live.current.openItemKey) {
 				event.preventDefault();
-				if (zoom === 'in') surface.zoomInByKey();
-				else surface.zoomOutByKey();
-				return;
-			}
-			if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
-			if (event.key === 'Escape') {
-				// A dialog over the page has its own Escape.
-				if ((event.target as HTMLElement | null)?.closest?.('dialog, [role="dialog"]')) return;
-				// The drawer first, then the selection it leaves lit.
-				if (live.current.openItemKey) {
-					event.preventDefault();
-					live.current.onCloseItem();
-				} else if (surface.selection !== null) {
-					event.preventDefault();
-					surface.select(null);
-				} else if (live.current.lensActive) {
-					event.preventDefault();
-					live.current.clear();
-				} else if (live.current.changesShown) {
-					event.preventDefault();
-					live.current.closeChanges();
-				}
-			} else if (event.key === 'Enter' && (event.target === document.body || event.target === canvas)) {
-				if (surface.activateFocus() !== null) event.preventDefault();
+				live.current.onCloseItem();
+			} else if (surface.selection !== null) {
+				event.preventDefault();
+				surface.select(null);
+			} else if (live.current.lensActive) {
+				event.preventDefault();
+				live.current.clear();
+			} else if (live.current.changesShown) {
+				event.preventDefault();
+				live.current.closeChanges();
 			}
 		};
 		document.addEventListener('keydown', onKeyDown);
@@ -351,6 +378,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 			canvas.removeEventListener('pointerleave', onPointerLeave);
 			window.removeEventListener('popstate', onPopState);
 			colorScheme?.removeEventListener('change', onColorScheme);
+			forcedColors?.removeEventListener('change', onColorScheme);
 			observer?.disconnect();
 			surface.destroy();
 			camera.destroy();
@@ -495,6 +523,108 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const searchFailed = searching && searcher.state === 'error';
 	const lensTitle = searching ? `Matches for "${searcher.query}"` : `Filtered: ${describeFilters(filters).join(', ')}`;
 
+	// The accessible tree, and which of its items the Map's keyboard focus is on.
+	const tree = useMemo(
+		() => (interactive && layout && facts ? buildTree({ layout, rows, needs: facts.needs, liveItems: facts.liveItems, working, now, idPrefix: `map-tree-${treeId}`, summarized }) : null),
+		[interactive, layout, rows, facts, working, now, treeId, summarized],
+	);
+	const activeId = tree && layout ? activeNode(tree, layout, focusKey)?.id : undefined;
+
+	// What each applied refresh changed is news to a listener: the model's update, the same one the canvas moves to. A load or a collapse has none.
+	const shown = useRef<ReadonlyMap<string, MapItemRow>>(rows);
+	const { changes: update } = model;
+	useEffect(() => {
+		const before = shown.current;
+		shown.current = rows;
+		if (update && state === 'ready') announcer.push(summarizeUpdate(update, rows, before));
+	}, [update, state, rows, announcer]);
+
+	const anchorSoon = useCallback((key: string): void => {
+		window.clearTimeout(anchorTimer.current);
+		anchorTimer.current = window.setTimeout(() => anchor(key, false), ANCHOR_PAUSE_MS);
+	}, [anchor]);
+	useEffect(() => () => window.clearTimeout(anchorTimer.current), []);
+
+	// The tree holds the Map's keys while it has focus: arrows, Enter, the zoom and fit keys, P and L, and ] and [. Nothing else on the page hears them, and a field never does.
+	const handleKeyDown = useCallback((event: KeyboardEvent): void => {
+		if (event.defaultPrevented || event.target !== treeRef.current) return;
+		const key = mapKeyOf(event);
+		if (!key) return;
+		event.preventDefault();
+		const map = surface();
+		switch (key.kind) {
+			case 'move': {
+				const to = map.moveFocus(key.direction);
+				if (to) anchorSoon(to);
+				break;
+			}
+			case 'open':
+				map.activateFocus();
+				break;
+			case 'zoom-focus':
+				if (key.direction === 'in') map.zoomInAtFocus();
+				else map.zoomOutAtFocus();
+				break;
+			case 'zoom-pointer':
+				if (key.direction === 'in') map.zoomInByKey();
+				else map.zoomOutByKey();
+				break;
+			case 'fit-all':
+				handleFitAll();
+				break;
+			case 'now':
+				handleNow();
+				break;
+			case 'fit-focus': {
+				const fit = map.fitFamily();
+				if (fit) anchor(fit, true);
+				break;
+			}
+			case 'needs': {
+				const to = map.stepNeedsPerson(key.delta);
+				if (to) anchorSoon(to);
+				else announcer.say('Nothing needs a person right now');
+				break;
+			}
+			case 'live': {
+				// A session isn't an item, so there is nothing for the URL to anchor on.
+				if (!map.stepLiveSession(key.delta)) announcer.say('No live agent sessions right now');
+				break;
+			}
+			case 'step':
+				stepRef.current?.(key.delta);
+				break;
+			case 'collapse':
+				map.collapseFocus();
+				break;
+			case 'expand':
+				map.expandFocus();
+				break;
+		}
+	}, [anchor, anchorSoon, announcer, handleFitAll, handleNow]);
+
+	// Tabbing in brings focus to the last thing it was on, or what is nearest the middle; a click on the Map isn't asking for an item.
+	const handleFocusIn = useCallback((event: FocusEvent): void => {
+		const map = surfaceRef.current;
+		if (!map || pointerFocus.current || event.target !== treeRef.current || map.focus !== null) return;
+		const back = lastFocus.current;
+		if (back && map.canFocus(back)) map.setFocus(back);
+		else map.focusNearCenter();
+	}, []);
+	// Focus leaving the Map for somewhere else puts the Map's own away: nothing stays lit, and no card stays open, for a keyboard that has gone elsewhere.
+	const handleFocusOut = useCallback((event: FocusEvent): void => {
+		const next = event.relatedTarget as Node | null;
+		if (next && containerRef.current?.contains(next)) return;
+		surfaceRef.current?.setFocus(null);
+	}, []);
+	// A screen reader's activate on a tree item is Enter on the focused one.
+	const handleActivate = useCallback((key: string): void => {
+		const map = surface();
+		if (!map.canFocus(key)) return;
+		map.setFocus(key);
+		map.activateFocus();
+	}, []);
+
 	return (
 		<div class={styles.map}>
 			<SummaryStrip
@@ -509,14 +639,11 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				since={interactive && waiting.length > 0 && changesModel.baseline !== null
 					? { date: baselineDate(changesModel.baseline), text: summaryText(waiting), open: !changesClosed, onToggle: handleToggleChanges }
 					: undefined}
+				announce={{ on: announce, onToggle: handleToggleAnnounce }}
 			/>
-			<div class={styles.plot} ref={containerRef}>
-				<canvas
-					ref={canvasRef}
-					class={styles.canvas}
-					role="img"
-					aria-label={interactive ? `Map of ${rows.size} items${summarized ? ', with finished families summarized' : ''}` : 'Map'}
-				/>
+			<div class={styles.plot} ref={containerRef} onKeyDown={handleKeyDown} onFocusIn={handleFocusIn} onFocusOut={handleFocusOut}>
+				{tree && <MapTree tree={tree} activeId={activeId} selectedKey={openItemKey ?? null} onActivate={handleActivate} treeRef={treeRef} />}
+				<canvas ref={canvasRef} class={styles.canvas} aria-hidden="true" />
 				<MapCards store={overlay} bottom={RULER_HEIGHT} />
 				<MapQuickCard store={overlay} activity={activity} bottom={RULER_HEIGHT} />
 				<EdgeMarkers store={overlay} bottom={RULER_HEIGHT} onJump={handleJump} />
@@ -543,6 +670,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 								empty={searchFailed ? 'Search failed' : 'No matches'}
 								busy={searcher.state === 'loading'}
 								onStep={handleStep}
+								stepRef={stepRef}
 								onClose={clearLens}
 								closeLabel="Clear"
 								action={searchFailed ? { label: 'Retry', onClick: handleRetrySearch } : undefined}
@@ -555,6 +683,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 								unit={['change', 'changes']}
 								empty="No changes"
 								onStep={handleStep}
+								stepRef={stepRef}
 								onClose={closeChanges}
 								closeLabel="Close"
 								accept={{ label: 'Mark all seen', onClick: handleMarkSeen }}
@@ -573,6 +702,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				</div>
 				<Minimap store={overlay} onCenter={handleCenter} />
 			</div>
+			<div class={styles.live} aria-live="polite" aria-atomic="true">{announcement}</div>
 		</div>
 	);
 }

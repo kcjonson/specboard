@@ -22,6 +22,8 @@ import type { MapFrame, MapRenderer } from './renderer';
 import type { MapChange } from '@specboard/core/map-changes';
 import { formatDateTime } from '../utils/time';
 import { baselineDate } from './changes/changes';
+import { MAP_ANNOUNCE_PREF } from '../Planning/prefs';
+import { memoryStorage } from '../test-support/memory-storage';
 
 const frames: MapFrame[] = [];
 const renderer: MapRenderer = {
@@ -160,19 +162,20 @@ describe('MapView states', () => {
 		await waitFor(() => expect(frames.at(-1)!.dots.length).toBe(9));
 		expect(frames.every((frame) => frame.dots.length === 0 || frame.dots.length === 9)).toBe(true);
 		expect(frames.at(-1)!.ruler).not.toBeNull();
-		expect(container.querySelector('canvas')!.getAttribute('aria-label')).toBe('Map of 9 items');
+		expect(container.querySelector('[role="tree"]')!.getAttribute('aria-label')).toBe('Map of 9 items');
+		expect(container.querySelector('canvas')!.getAttribute('aria-hidden')).toBe('true');
 		for (const name of ['Fit all', 'Now', 'Zoom out', 'Zoom in']) expect(control(container, name).disabled).toBe(false);
 	});
 
 	it('says so when the read came back summarized, and does not offer its row count as the item count', async () => {
 		const { findByText, container } = renderMap(() => Promise.resolve({ ...board(5), summarized: true }));
 		expect((await findByText(/finished families are summarized/)).getAttribute('role')).toBe('status');
-		expect(container.querySelector('canvas')!.getAttribute('aria-label')).toBe('Map of 5 items, with finished families summarized');
+		expect(container.querySelector('[role="tree"]')!.getAttribute('aria-label')).toBe('Map of 5 items, with finished families summarized');
 	});
 
 	it('shows no such notice for a read that was not summarized', async () => {
 		const { container, queryByRole } = renderMap(() => Promise.resolve(board(5)));
-		await waitFor(() => expect(container.querySelector('canvas')!.getAttribute('aria-label')).toBe('Map of 5 items'));
+		await waitFor(() => expect(container.querySelector('[role="tree"]')!.getAttribute('aria-label')).toBe('Map of 5 items'));
 		expect(queryByRole('status')).toBeNull();
 	});
 
@@ -223,8 +226,8 @@ describe('MapView zoom keys', () => {
 		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
 		return scale();
 	};
-	const press = (init: Partial<KeyboardEvent>, target: Element = document.body): void => {
-		fireEvent.keyDown(target, { code: 'KeyZ', ...init });
+	const press = (init: Partial<KeyboardEvent>, target: Element = document.querySelector('[role="tree"]')!): void => {
+		fireEvent.keyDown(target, { code: 'KeyZ', key: 'z', ...init });
 	};
 
 	it('zooms in on Z and out on Alt+Z, by the buttons\' step', async () => {
@@ -240,6 +243,16 @@ describe('MapView zoom keys', () => {
 		const painted = frames.length;
 		press({ metaKey: true });
 		press({ ctrlKey: true });
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		expect(frames.length).toBe(painted);
+		expect(scale()).toBe(start);
+	});
+
+	it('does nothing unless the Map has the focus: not from the page, not from a button in the toolbar', async () => {
+		const start = await ready();
+		const painted = frames.length;
+		press({}, document.body);
+		press({}, control(document.body, 'Fit all'));
 		await new Promise((resolve) => setTimeout(resolve, 100));
 		expect(frames.length).toBe(painted);
 		expect(scale()).toBe(start);
@@ -788,9 +801,10 @@ describe('MapView since your last visit', () => {
 		await waitFor(() => expect(litKeys()?.size).toBe(4));
 		const focused = (): string | undefined => frames.at(-1)!.focus.to?.key;
 
-		fireEvent.keyDown(document.body, { key: ']' });
+		const tree = document.querySelector('[role="tree"]')!;
+		fireEvent.keyDown(tree, { key: ']' });
 		await waitFor(() => expect(focused()).toBe(m.upNext));
-		fireEvent.keyDown(document.body, { key: '[' });
+		fireEvent.keyDown(tree, { key: '[' });
 		await waitFor(() => expect(focused()).toBe(m.done));
 	});
 
@@ -1043,5 +1057,367 @@ describe('MapView agents', () => {
 		act(() => timers.forEach((tick) => tick()));
 		await waitFor(() => expect(frames.at(-1)!.agents).toEqual([]));
 		expect(layouts).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('MapView keyboard and screen reader access', () => {
+	const mediaListeners = new Map<string, Set<() => void>>();
+	beforeEach(() => {
+		mediaListeners.clear();
+		vi.stubGlobal('localStorage', memoryStorage());
+		window.matchMedia = ((query: string) => ({
+			matches: query.includes('reduce'),
+			media: query,
+			addEventListener: (_type: string, listener: () => void) => {
+				if (!mediaListeners.has(query)) mediaListeners.set(query, new Set());
+				mediaListeners.get(query)!.add(listener);
+			},
+			removeEventListener: (_type: string, listener: () => void) => void mediaListeners.get(query)?.delete(listener),
+		})) as unknown as typeof window.matchMedia;
+	});
+	afterEach(() => {
+		delete (window as { matchMedia?: unknown }).matchMedia;
+		vi.unstubAllGlobals();
+	});
+
+	const tree = (): HTMLElement => document.querySelector('[role="tree"]')!;
+	/** Presses a key on the tree, which is where the Map's keys are heard; true if nothing took it. */
+	const press = (key: string, init: Partial<Pick<KeyboardEvent, 'shiftKey' | 'metaKey' | 'ctrlKey' | 'altKey'>> = {}, target: Element = tree()): boolean => fireEvent.keyDown(target, { key, ...init });
+	/** The accessible name of the tree item the active descendant points at. */
+	const active = (): string | null => {
+		const id = tree().getAttribute('aria-activedescendant');
+		return id ? document.getElementById(id)!.getAttribute('aria-label') : null;
+	};
+	const activeKey = (): string | null => active()?.split(':')[0] ?? null;
+	const scale = (): number => frames.at(-1)!.transform.k;
+	const ready = async (read: MapRead = marked().read): Promise<RenderedMap> => {
+		const map = renderMap(() => Promise.resolve(read));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBeGreaterThan(0));
+		return map;
+	};
+	// Testing library's focusIn/focusOut helpers fire events a Preact listener never hears, so these send the real ones.
+	const focusEvent = (type: 'focusin' | 'focusout', relatedTarget: Element | null = null): void => {
+		act(() => {
+			tree().dispatchEvent(new FocusEvent(type, { bubbles: true, relatedTarget }));
+		});
+	};
+	const tabIn = async (): Promise<string> => {
+		focusEvent('focusin');
+		await waitFor(() => expect(active()).not.toBeNull());
+		return activeKey()!;
+	};
+	const liveRegion = (): string => document.querySelector('[aria-live="polite"]')!.textContent!;
+	const items = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+	/** The tree item for an item key. */
+	const item = (key: string): HTMLElement => items().find((candidate) => candidate.getAttribute('aria-label')!.startsWith(`${key}:`))!;
+
+	describe('the tree', () => {
+		it('is the Map\'s one tab stop: the canvas is hidden from assistive tech, and the edge markers are not stops', async () => {
+			await ready();
+			expect(Array.from(document.querySelectorAll('[tabindex="0"]'))).toEqual([tree()]);
+			expect(document.querySelector('canvas')!.getAttribute('aria-hidden')).toBe('true');
+			expect(Array.from(document.querySelectorAll<HTMLButtonElement>('button[aria-label*="off screen"]')).every((button) => button.tabIndex === -1)).toBe(true);
+		});
+
+		it('mirrors the Map: families as groups holding their children, standalone items beside them, with the ARIA a tree needs', async () => {
+			const m = marked();
+			await ready(m.read);
+			const epic = item(m.epic);
+			expect(epic.getAttribute('aria-level')).toBe('1');
+			expect(epic.getAttribute('aria-expanded')).toBe('true');
+			const children = Array.from(epic.querySelector('[role="group"]')!.children);
+			expect(children).toHaveLength(2);
+			expect(children.map((child) => child.getAttribute('role'))).toEqual(['treeitem', 'treeitem']);
+			expect(children.map((child) => child.getAttribute('aria-level'))).toEqual(['2', '2']);
+			expect(children.map((child) => child.getAttribute('aria-posinset'))).toEqual(['1', '2']);
+			expect(children.every((child) => child.getAttribute('aria-setsize') === '2')).toBe(true);
+			for (const each of items()) {
+				expect(each.getAttribute('aria-level')).not.toBeNull();
+				expect(each.getAttribute('aria-setsize')).not.toBeNull();
+				expect(each.getAttribute('aria-posinset')).not.toBeNull();
+			}
+			// A leaf says nothing of expanded, since it can't open.
+			expect(item(m.done).hasAttribute('aria-expanded')).toBe(false);
+		});
+
+		it('puts status, and why it needs a person, in each item\'s name', async () => {
+			const m = marked();
+			await ready(m.read);
+			expect(item(m.asked).getAttribute('aria-label')).toBe(`${m.asked}: Pick a checklist wording, In Progress, Needs input, Needs a person: An agent asked a question`);
+			expect(item(m.done).getAttribute('aria-label')).toBe(`${m.done}: Old chore, Done`);
+			expect(item(m.live).getAttribute('aria-label')).toBe(`${m.live}: Write webhooks, In Progress, Live agent session`);
+		});
+
+		it('is named for the Map, and gone while the Map has nothing to show', async () => {
+			const loading = renderMap(() => new Promise(() => {}));
+			expect(document.querySelector('[role="tree"]')).toBeNull();
+			loading.unmount();
+			renderMap(() => Promise.resolve(board(3)));
+			await waitFor(() => expect(tree().getAttribute('aria-label')).toBe('Map of 3 items'));
+		});
+
+		it('activates an item the way Enter does, for a screen reader\'s press', async () => {
+			const m = marked();
+			await ready(m.read);
+			fireEvent.click(item(m.done));
+			expect(opened).toEqual([m.done]);
+		});
+
+		it('marks the item the drawer shows as selected', async () => {
+			const m = marked();
+			renderMap(() => Promise.resolve(m.read), { openItemKey: m.done });
+			await waitFor(() => expect(item(m.done).getAttribute('aria-selected')).toBe('true'));
+			expect(item(m.live).getAttribute('aria-selected')).toBe('false');
+		});
+	});
+
+	describe('focus', () => {
+		it('lands on the dot nearest the middle when a key brings it into the Map, and points the active descendant at it', async () => {
+			await ready();
+			const key = await tabIn();
+			expect(key).toMatch(/^MAP-\d+$/);
+			await waitFor(() => expect(frames.at(-1)!.ringed).toBe(key));
+		});
+
+		it('moves with the arrows, and the active descendant follows', async () => {
+			await ready();
+			const start = await tabIn();
+			let moved = false;
+			for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp']) {
+				press(key);
+				if (activeKey() !== start) moved = true;
+			}
+			expect(moved).toBe(true);
+			await waitFor(() => expect(frames.at(-1)!.ringed).toBe(activeKey()));
+		});
+
+		it('puts focus away when it leaves the Map, brings it back to the same place, and keeps it for a move within the Map', async () => {
+			const { container } = await ready();
+			const key = await tabIn();
+			focusEvent('focusout', control(container, 'Fit all'));
+			expect(activeKey()).toBe(key);
+			focusEvent('focusout', document.body);
+			expect(tree().hasAttribute('aria-activedescendant')).toBe(false);
+			await waitFor(() => expect(frames.at(-1)!.ringed).toBeNull());
+			focusEvent('focusin');
+			await waitFor(() => expect(activeKey()).toBe(key));
+		});
+
+		it('opens the focused item on Enter', async () => {
+			await ready();
+			const key = await tabIn();
+			press('Enter');
+			expect(opened).toEqual([key]);
+		});
+
+		it('is not asked for by a click on the Map, which only hands the tree the keys', async () => {
+			await ready();
+			fireEvent.pointerDown(document.querySelector('canvas')!, { clientX: 3, clientY: 3 });
+			expect(tree().hasAttribute('aria-activedescendant')).toBe(false);
+		});
+	});
+
+	describe('P and L', () => {
+		it('step through what needs a person, and Shift goes back', async () => {
+			await ready();
+			await tabIn();
+			press('p');
+			await waitFor(() => expect(active()).toContain('Needs a person'));
+			const first = activeKey();
+			press('p');
+			await waitFor(() => expect(activeKey()).not.toBe(first));
+			expect(active()).toContain('Needs a person');
+			press('P', { shiftKey: true });
+			await waitFor(() => expect(activeKey()).toBe(first));
+		});
+
+		it('reach the live sessions', async () => {
+			await ready();
+			await tabIn();
+			press('l');
+			await waitFor(() => expect(active()).toMatch(/^Session 1 on laptop, live/));
+		});
+
+		it('say so when there is nothing to step through, once, in the live region', async () => {
+			await ready(board(4));
+			await tabIn();
+			press('p');
+			expect(liveRegion()).toBe('Nothing needs a person right now');
+			press('l');
+			expect(liveRegion()).toBe('No live agent sessions right now');
+		});
+	});
+
+	describe('the camera keys', () => {
+		it('zoom with + and -, around the focused dot, and fit all on 0', async () => {
+			await ready(board(9));
+			const start = scale();
+			await tabIn();
+			press('+', { shiftKey: true });
+			await waitFor(() => expect(scale()).toBeCloseTo(start * 1.4));
+			press('-');
+			await waitFor(() => expect(scale()).toBeCloseTo(start));
+			press('=');
+			await waitFor(() => expect(scale()).toBeCloseTo(start * 1.4));
+			press('0');
+			await waitFor(() => expect(scale()).toBeCloseTo(start));
+		});
+
+		it('jump to now on T and fit the focused family on F', async () => {
+			await ready(board(9));
+			const start = scale();
+			await tabIn();
+			press('t');
+			await waitFor(() => expect(scale()).toBeGreaterThan(start));
+			press('0');
+			await waitFor(() => expect(scale()).toBeCloseTo(start));
+			press('F', { shiftKey: false });
+			await waitFor(() => expect(scale()).toBeGreaterThan(start));
+		});
+
+		it('record a jump in the URL, and drop the anchor for fit all and now', async () => {
+			await ready(board(9));
+			await tabIn();
+			press('f');
+			await waitFor(() => expect(window.location.search).toContain('focus='));
+			press('0');
+			await waitFor(() => expect(window.location.search).not.toContain('focus='));
+		});
+	});
+
+	describe('whose keys they are', () => {
+		it('are heard only by the tree: not from the page, a field, or a button', async () => {
+			const { container } = await ready();
+			const focused = await tabIn();
+			await waitFor(() => expect(frames.at(-1)!.ringed).toBe(focused));
+			const before = active();
+			const painted = frames.length;
+			const input = document.createElement('input');
+			container.querySelector('canvas')!.parentElement!.appendChild(input);
+			for (const target of [document.body, input, control(container, 'Now')]) {
+				for (const key of ['ArrowRight', 'ArrowDown', 'p', 'l', 't', 'f', '0', '+', '-', ']', 'Enter']) press(key, {}, target);
+			}
+			input.remove();
+			await new Promise((resolve) => setTimeout(resolve, 60));
+			expect(active()).toBe(before);
+			expect(frames.length).toBe(painted);
+			expect(opened).toEqual([]);
+		});
+
+		it('leave the planning page\'s keys alone: N, C, /, ?, Cmd+K, M, E, and 1 to 3 do nothing, and are not taken', async () => {
+			await ready();
+			const key = await tabIn();
+			await waitFor(() => expect(frames.at(-1)!.ringed).toBe(key));
+			const painted = frames.length;
+			for (const k of ['n', 'N', 'c', 'C', '/', '?', 'm', 'M', 'e', 'E', '1', '2', '3']) expect(press(k)).toBe(true);
+			expect(press('k', { metaKey: true })).toBe(true);
+			expect(press('k', { ctrlKey: true })).toBe(true);
+			await new Promise((resolve) => setTimeout(resolve, 60));
+			expect(activeKey()).toBe(key);
+			expect(frames.length).toBe(painted);
+			expect(opened).toEqual([]);
+		});
+
+		it('take the keys they use, so the page does not also act on them', async () => {
+			await ready();
+			await tabIn();
+			for (const k of ['ArrowRight', 'Enter', 'p', 'l', 't', 'f', '0', '+', '-', ']']) expect(press(k)).toBe(false);
+		});
+
+		it('still let Escape work from anywhere, in the ladder\'s order', async () => {
+			renderMap(() => Promise.resolve(board(3)), { openItemKey: 'MAP-1', covered: 300 });
+			await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(3));
+			fireEvent.keyDown(document.body, { key: 'Escape' });
+			expect(closed).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('the live region', () => {
+		/** What a refresh answers when the live item has changed status: a delta of that one row. */
+		const changedRead = (m: ReturnType<typeof marked>, status: 'done' | 'in_progress' = 'done'): MapRead =>
+			deltaRead(m.read.items.filter((row) => row.key === m.live).map((row) => ({ ...row, status, workers: [] })), m.read.items.length);
+		// A refresh buffers its read and applies it as a pass a beat later.
+		const swap = async (map: RenderedMap): Promise<void> => {
+			await act(async () => {
+				await map.model.refresh();
+			});
+			await waitFor(() => expect(map.model.changes).not.toBeNull());
+		};
+		const withReads = (reads: MapRead[]): (() => Promise<MapRead>) => {
+			let at = 0;
+			return () => Promise.resolve(reads[Math.min(at++, reads.length - 1)]!);
+		};
+
+		it('says nothing for the first read', async () => {
+			const m = marked();
+			await ready(m.read);
+			expect(liveRegion()).toBe('');
+		});
+
+		it('says a remote change, politely, once the next read shows it', async () => {
+			const m = marked();
+			const map = renderMap(withReads([m.read, changedRead(m)]));
+			await waitFor(() => expect(frames.at(-1)?.dots.length).toBeGreaterThan(0));
+			await swap(map);
+			await waitFor(() => expect(liveRegion()).toBe(`${m.live} Write webhooks: now Done`));
+			const region = document.querySelector('[aria-live]')!;
+			expect(region.getAttribute('aria-live')).toBe('polite');
+			expect(region.getAttribute('aria-atomic')).toBe('true');
+		});
+
+		it('is rate limited: a second change straight after the first waits instead of replacing it', async () => {
+			const m = marked();
+			const map = renderMap(withReads([m.read, changedRead(m), changedRead(m, 'in_progress')]));
+			await waitFor(() => expect(frames.at(-1)?.dots.length).toBeGreaterThan(0));
+			await swap(map);
+			await waitFor(() => expect(liveRegion()).toContain('now Done'));
+			await swap(map);
+			await new Promise((resolve) => setTimeout(resolve, 60));
+			expect(liveRegion()).toContain('now Done');
+		});
+
+		it('is switched off from the strip, remembers it, and then says nothing', async () => {
+			const m = marked();
+			const map = renderMap(withReads([m.read, changedRead(m)]));
+			await waitFor(() => expect(frames.at(-1)?.dots.length).toBeGreaterThan(0));
+			const toggle = control(map.container, 'Announce changesOn');
+			expect(toggle.getAttribute('aria-pressed')).toBe('true');
+			fireEvent.click(toggle);
+			expect(toggle.getAttribute('aria-pressed')).toBe('false');
+			expect(toggle.textContent).toBe('Announce changesOff');
+			expect(globalThis.localStorage.getItem(MAP_ANNOUNCE_PREF)).toBe('false');
+			await swap(map);
+			await new Promise((resolve) => setTimeout(resolve, 60));
+			expect(liveRegion()).toBe('');
+		});
+
+		it('opens with announcements off when the device said so, and a turn back on is remembered', async () => {
+			globalThis.localStorage.setItem(MAP_ANNOUNCE_PREF, 'false');
+			const { container } = await ready();
+			const toggle = control(container, 'Announce changesOff');
+			expect(toggle.getAttribute('aria-pressed')).toBe('false');
+			fireEvent.click(toggle);
+			expect(toggle.getAttribute('aria-pressed')).toBe('true');
+			expect(globalThis.localStorage.getItem(MAP_ANNOUNCE_PREF)).toBe('true');
+		});
+
+		it('keeps saying what the person\'s own keys found, with announcements off', async () => {
+			globalThis.localStorage.setItem(MAP_ANNOUNCE_PREF, 'false');
+			await ready(board(4));
+			await tabIn();
+			press('p');
+			expect(liveRegion()).toBe('Nothing needs a person right now');
+		});
+	});
+
+	describe('forced colors', () => {
+		it('reads the theme again when the person turns forced colors on or off', async () => {
+			await ready();
+			vi.mocked(renderer.refreshTheme).mockClear();
+			const listeners = mediaListeners.get('(forced-colors: active)');
+			expect(listeners?.size).toBe(1);
+			act(() => listeners!.forEach((listener) => listener()));
+			expect(renderer.refreshTheme).toHaveBeenCalledTimes(1);
+		});
 	});
 });

@@ -915,19 +915,30 @@ The planning page's shortcuts keep their meanings, so the Map's keys stay clear 
 them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
 ([kanban-ui.md](kanban-ui.md#keyboard-shortcuts)).
 
+The Map has one tab stop, and its keys are heard only while that stop has focus: the
+accessible tree holds it (see [Accessibility](#accessibility)). A click on the canvas
+puts focus there, so the keys work from the first click. Nothing is heard from the
+page around it, from a field, or with Cmd or Ctrl held, and Escape alone works from
+anywhere, as the board's does. Tabbing in lands on the item focus was last on, or on
+the dot nearest the middle of the plot; focus going elsewhere puts the Map's own away,
+so no card stays open for a keyboard that has left.
+
 | Key | Does |
 |---|---|
-| Arrows | Move focus to the nearest dot in that direction |
-| Enter | Open the focused item in the drawer |
+| Arrows | Move focus to the nearest dot or region label in that direction: the nearest within 45 degrees of the arrow, where the distance across counts double, and the nearest of everything ahead when that cone is empty. Focus stops at the last one rather than wrapping. The Map pans just far enough to keep it in view |
+| Enter | Open the focused item in the drawer; on a region's label, its parent |
 | Escape | Close the drawer, then clear the selection, the search, or the changes view |
 | `+` and `-` | Zoom in and out around the focused dot |
 | `Z`, Option+`Z` | Zoom in and out, Figma's keys, by the same step as `+` and `-`, around the pointer when it is over the canvas and the middle of the plot otherwise. Never with Cmd or Ctrl held (Cmd+`Z` stays undo) |
 | `0` | Fit all |
 | `T` | Jump to now (Google Calendar's key for today) |
-| `F` | Fit to the selection and its family |
-| `P`, Shift+`P` | Next and previous item that needs a person |
-| `L`, Shift+`L` | Next and previous live session |
+| `F` | Fit the focused item (the selection, with nothing focused) and its family into the part of the plot the drawer leaves clear |
+| `P`, Shift+`P` | Next and previous item that needs a person, left to right, wrapping |
+| `L`, Shift+`L` | Next and previous live session, wrapping |
 | `]` and `[` | Next and previous step in the changes view or the search matches |
+| Shift+Left, Shift+Right | The tree's collapse and expand, which plain arrows can't be since they move in space. On a region, Left folds it; on a dot, it goes up to its region. On a folded family, Right opens it; on a region, it goes down to its first dot |
+
+`P` and `L` with nothing to step through say so in the live region.
 
 ---
 
@@ -1132,17 +1143,51 @@ and nothing moves for more than a second.
 
 ## Accessibility
 
-- Keyboard-complete (see [Navigation](#navigation-and-interaction)).
+- Keyboard-complete (see [Navigation](#navigation-and-interaction) and [Keys](#keys)).
 - A parallel accessible tree in the DOM mirrors the Map: families and standalone
   items, newest anchor first, using the `tree`, `treeitem`, and `group` roles with
   `aria-level`, `aria-setsize`, `aria-posinset`, and `aria-expanded`, and status in
   each item's name. The Table view stays the visible linear alternative.
+  - The tree is the focus target itself, not a hidden mirror: it is the one tab stop,
+    and it holds DOM focus while `aria-activedescendant` follows the Map's own focus, so
+    a screen reader says the item the keys land on and focus never leaves the Map. A
+    mirror that didn't hold focus would need its own keys and a second focus to keep in
+    step with the first. It is clipped to nothing, not `display: none`, so it stays in
+    the accessibility tree; the canvas is `aria-hidden`, since the tree says everything it
+    draws.
+  - A region is an open item holding a group of its children; a folded family is a
+    closed item with its children out of the tree; a leaf has no `aria-expanded`. An
+    item's name is its key and title, its status, its sub-status, what it waits on, why
+    it needs a person, its up-next number, a live session, and for a family how many
+    items it holds. Computers and their sessions are a group of their own after the items,
+    since `L` lands on a session.
+  - A screen reader's activate on an item does what Enter does on the focused one. The
+    Map's edge markers are not tab stops (`P` and `L` reach what they point at, and the
+    tree lists the rest).
 - Color is never the only carrier of meaning. Text meets WCAG AA contrast and
   glyphs meet 3:1, in both themes.
 - `prefers-reduced-motion` stops presence motion and turns camera flights,
-  transitions, and time drift into cuts.
+  transitions, and time drift into cuts. That covers every flight (Fit all, Now, a jump
+  to an item, the keys' pans, the minimap's, the stepping bar's), the zoom step, the
+  level fades, the hover and focus fade, a dragged dot's return, the card and quick card
+  fades, a refresh's staged exits, glides, and entries (with the time drift inside them),
+  the status sweep, the ping ring, a new item's grow-in, a region outline's crossfade, and
+  the hover colors of the page's own controls. What changed carries the board's highlight
+  instead, in the accent color (the palette's link color under forced colors).
 - Remote changes are announced through a polite live region, rate-limited, with a
-  setting to turn the announcements off.
+  setting to turn the announcements off. A change is an item filed or gone, a new status,
+  a question to answer, a PR opened, or an agent arriving. The first one after a quiet
+  stretch is said at once and the rest wait out a five second gap and go out together
+  (three named, then a count); announcing is off or on per device, on by default, from
+  "Announce changes" at the right of the summary strip. Off drops remote changes, but not
+  the live region's answers to the person's own keys.
+- Under `forced-colors: active` the canvas draws with the person's system colors, which it
+  asks the browser for (`Canvas`, `CanvasText`, `GrayText`, `LinkText`, `VisitedText`)
+  rather than the design tokens, since a canvas never receives the forced palette: every
+  glyph is the text color (status is told by shape), regions are untinted and outlined in
+  it, chain links and the ring that marks needs a person keep their lines, and the
+  rollup bar gives each phase its own system color. A system color that doesn't clear
+  3:1 against the person's canvas gives way to the text color.
 
 ---
 

@@ -280,6 +280,27 @@ describe('what stays put', () => {
 });
 
 describe('under reduced motion', () => {
+	it('has no stages: what left is gone, what moved is home, what arrived is whole, and nothing is left to animate', () => {
+		const { b, loose } = board();
+		const [gone, picked] = loose;
+		let filed = '';
+		const { transition, to } = scene(b.rows, (rows) => {
+			const next = rows.filter((row) => row.key !== gone!.key);
+			const row = next.find((r) => r.key === picked!.key)!;
+			Object.assign(row, { status: 'in_progress', startedAt: iso(LATER - 1000), timeAnchor: iso(LATER - 1000) });
+			const fresh = { ...row, key: 'MAP-99', status: 'ready' as const, startedAt: null, createdAt: iso(LATER), timeAnchor: iso(LATER), workers: [] };
+			filed = fresh.key;
+			return [...next, fresh];
+		}, { reduced: true });
+		const drawing = { dots: [...to.values()], agents: [], links: [], regions: [], working: { computers: [], sessions: [], byNode: new Map() }, needs: new Map() };
+		const first = transition.frame(drawing, T0);
+		expect(at(first, gone!.key)).toBeUndefined();
+		expect(at(first, picked!.key)!.x).toBe(to.get(picked!.key)!.x);
+		expect(at(first, filed)!.x).toBe(to.get(filed)!.x);
+		for (const effect of first.effects.values()) expect(effect).toMatchObject({ alpha: 1, scale: 1, sweep: null, ping: null });
+		expect(transition.animating(T0 + HIGHLIGHT_DURATION)).toBe(false);
+	});
+
 	it('cuts to the new layout, and gives what changed the board\'s 2 s highlight instead', () => {
 		const { b, loose, children } = board();
 		b.work(children[0]!, 'session-a', 'laptop', 30);

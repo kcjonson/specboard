@@ -34,7 +34,9 @@ function drawSpecks(canvas: HTMLCanvasElement, frame: MinimapFrame): void {
 	ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 	const style = window.getComputedStyle(canvas);
 	const colors = new Map<string, string>();
-	for (const [status, token] of Object.entries(STATUS_TOKENS)) colors.set(status, style.getPropertyValue(token).trim());
+	// Under forced colors a speck is the person's text color, whatever its status: the miniature is the shape of the Map, and status is told by the glyphs.
+	const forced = typeof window.matchMedia === 'function' && window.matchMedia('(forced-colors: active)').matches;
+	if (!forced) for (const [status, token] of Object.entries(STATUS_TOKENS)) colors.set(status, style.getPropertyValue(token).trim());
 	for (const dot of frame.dots) {
 		const { x, y } = toMinimap(frame.size, frame.bounds, dot);
 		ctx.fillStyle = colors.get(dot.status) ?? style.color;
@@ -66,9 +68,11 @@ export function Minimap({ store, onCenter }: MinimapProps): JSX.Element | null {
 			if (latest.current) drawSpecks(canvas, latest.current);
 		};
 		redraw();
-		const scheme = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-		scheme?.addEventListener('change', redraw);
-		return () => scheme?.removeEventListener('change', redraw);
+		const queries = typeof window.matchMedia === 'function' ? [window.matchMedia('(prefers-color-scheme: dark)'), window.matchMedia('(forced-colors: active)')] : [];
+		for (const query of queries) query.addEventListener('change', redraw);
+		return () => {
+			for (const query of queries) query.removeEventListener('change', redraw);
+		};
 	}, [dots, scale]);
 
 	if (!frame) return null;

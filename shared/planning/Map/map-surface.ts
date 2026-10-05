@@ -1,5 +1,6 @@
 import type { MapItemRow } from '@specboard/core/map-read';
 import {
+	MAX_SCALE,
 	ZOOM_STEP,
 	centerOf,
 	centeredOn,
@@ -26,9 +27,10 @@ import { FocusFade } from './focus-fade';
 import { HitIndex, type Hit, type HitInput } from './hit-index';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
 import { NO_AGENTS } from './agents';
-import type { MapBounds, MapLayout, MapNode, MapPoint } from './layout/types';
+import type { MapBounds, MapLayout, MapNode, MapPoint, MapRegion } from './layout/types';
 import type { MapCamera, ScreenPoint } from './map-camera';
-import { litRelation, type Highlight } from './map-lens';
+import { inReadingOrder, litRelation, type Highlight } from './map-lens';
+import { cycle, pickInDirection, type Direction, type NavTarget } from './map-nav';
 import type { MapUpdate } from './map-update';
 import { minimapPanel, minimapShows, minimapSize, minimapViewport, type MinimapSize } from './minimap/minimap';
 import { Transition, type Shown } from './motion';
@@ -63,6 +65,8 @@ export interface MapSurfaceHandlers {
 	onOutlineStep(step: number): void;
 	/** The cursor's target changed. */
 	onPointerTarget(target: PointerTarget): void;
+	/** Keyboard focus moved to another item, region, or session, or off all of them (null): what the accessible tree's active descendant follows. */
+	onFocus(key: string | null): void;
 }
 
 export interface MapSurfaceDeps {
@@ -314,7 +318,7 @@ export class MapSurface {
 		this.hover = null;
 		this.hoverCardReady = false;
 		this.drag = null;
-		this.refocus();
+		this.setFocus(null);
 		this.minimapOn = false;
 		this.setViewportEmpty(false);
 		this.requestPaint();
@@ -410,6 +414,15 @@ export class MapSurface {
 		this.camera.zoomBy(1 / ZOOM_STEP, this.zoomAnchor());
 	}
 
+	/** `+` and `-`: about the focused dot, which stays where it is on screen, or the middle of the plot when nothing in view has focus. */
+	zoomInAtFocus(): void {
+		this.camera.zoomBy(ZOOM_STEP, this.focusAnchor());
+	}
+
+	zoomOutAtFocus(): void {
+		this.camera.zoomBy(1 / ZOOM_STEP, this.focusAnchor());
+	}
+
 	/** What is at a point in the plot, as of the last paint. A coarse pointer's targets are at least 44 px across. */
 	hitAt(point: ScreenPoint, coarse: boolean): Hit | null {
 		if (!this.snapshot) return null;
@@ -472,23 +485,138 @@ export class MapSurface {
 
 	/** The key the keyboard has focus on; it lights when the pointer is off everything. */
 	setFocus(key: string | null): void {
-		this.focusKey = key;
+		if (key !== this.focusKey) {
+			this.focusKey = key;
+			this.handlers.onFocus(key);
+		}
 		this.refocus();
 	}
 
-	/** Enter on the focused item: selects it and asks for the drawer. Null when nothing has focus. */
-	activateFocus(): string | null {
-		if (this.focusKey === null) return null;
-		this.open(this.focusKey);
+	get focus(): string | null {
 		return this.focusKey;
 	}
 
-	/** Pans just far enough to bring an item inside the part of the plot the drawer leaves clear. */
+	/** Whether the Map draws something under this key that focus can rest on. */
+	canFocus(key: string): boolean {
+		return this.placeOf(key) !== undefined;
+	}
+
+	/** Enter on the focused item or region: selects it and asks for the drawer. A computer or session has no drawer, so Enter holds it lit and a second one lets go. Null when nothing has focus. */
+	activateFocus(): string | null {
+		const key = this.focusKey;
+		if (key === null) return null;
+		if (this.agentsByKey.has(key)) this.select(this.selected === key ? null : key);
+		else this.open(key);
+		return key;
+	}
+
+	/**
+	 * An arrow key: focus goes to the nearest dot or region label in that direction, among those
+	 * the last frame drew, and the Map pans just far enough to keep it in view. With nothing
+	 * focused yet it lands on what is nearest the middle instead, whichever arrow it was. Stays
+	 * where it is at the edge. Returns the key focus is on, or null on an empty Map.
+	 */
+	moveFocus(direction: Direction): string | null {
+		const from = this.focusKey === null ? undefined : this.pointOf(this.focusKey);
+		if (!from) return this.focusNearCenter();
+		const next = pickInDirection(from, this.navTargets(), direction, this.focusKey);
+		if (!next) return this.focusKey;
+		this.setFocus(next.key);
+		this.reveal(next.key);
+		return next.key;
+	}
+
+	/** Puts focus on the dot nearest the middle of the plot, where the Map is already looking, so nothing pans. */
+	focusNearCenter(): string | null {
+		const dot = nearestDot(this.drawing.dots, centerOf(this.camera.transform, this.viewport));
+		if (!dot) return null;
+		this.setFocus(dot.key);
+		return dot.key;
+	}
+
+	/** P: the next item that needs a person, in reading order, wrapping. Focus goes there and the camera flies to it. */
+	stepNeedsPerson(delta: 1 | -1): string | null {
+		const layout = this.layout;
+		if (!layout) return null;
+		const drawn = new Set<string>();
+		for (const key of this.drawing.needs.keys()) {
+			const node = layout.representative[key];
+			if (node) drawn.add(node);
+		}
+		return this.stepTo(inReadingOrder([...drawn], layout), delta);
+	}
+
+	/** L: the next live agent session, in the roster's order, wrapping. */
+	stepLiveSession(delta: 1 | -1): string | null {
+		return this.stepTo(this.drawing.working.sessions.filter((session) => session.state === 'live').map((session) => session.node), delta);
+	}
+
+	/** Shift+Left: a region folds into its parent's dot; anything else goes up to the region it sits in. */
+	collapseFocus(): void {
+		const node = this.focusedNode();
+		const layout = this.layout;
+		if (!node || !layout) return;
+		if (layout.regions.some((region) => region.key === node)) {
+			this.handlers.onCollapse(node, true);
+			return;
+		}
+		const parent = this.innermostRegion(node);
+		if (!parent) return;
+		this.setFocus(parent.key);
+		this.reveal(parent.key);
+	}
+
+	/** Shift+Right: a folded family opens into a region; a region goes down to its first dot, leftmost first. */
+	expandFocus(): void {
+		const node = this.focusedNode();
+		const layout = this.layout;
+		if (!node || !layout) return;
+		const folded = this.dotsByKey.get(node)?.folded;
+		if (folded) {
+			if (folded.expandable) this.handlers.onCollapse(node, false);
+			return;
+		}
+		const region = layout.regions.find((candidate) => candidate.key === node);
+		const dots = (region?.members ?? []).flatMap((member) => this.dotsByKey.get(member) ?? []);
+		const first = dots.sort((a, b) => a.x - b.x || a.y - b.y)[0];
+		if (!first) return;
+		this.setFocus(first.key);
+		this.reveal(first.key);
+	}
+
+	/** F: the focused item (or the selection) and its whole family fill the part of the plot the drawer leaves. Returns the key it fit. */
+	fitFamily(): string | null {
+		const key = this.focusKey ?? this.selected;
+		const layout = this.layout;
+		if (!key || !layout) return null;
+		const node = this.agentsByKey.has(key) ? key : layout.representative[key];
+		const at = node ? this.nodesByKey.get(node) : undefined;
+		if (!node || !at) return null;
+		const view: Viewport = { width: Math.max(1, this.viewport.width - this.covered), height: this.viewport.height };
+		const region = layout.regions.find((candidate) => candidate.key === node) ?? this.innermostRegion(node);
+		this.pristine = false;
+		if (!region) {
+			this.camera.flyTo(focusTransform(at, this.extent, this.drawing.dots, this.camera.transform, view));
+			return key;
+		}
+		const around = (p: MapNode): MapBounds => ({ minX: p.x - p.r, maxX: p.x + p.r, minY: p.y - p.r, maxY: p.y + p.r });
+		let bounds = around(at);
+		for (const member of region.members) {
+			const placed = this.nodesByKey.get(member);
+			if (placed) bounds = unionBounds(bounds, around(placed));
+		}
+		for (const outline of this.outlines?.at(gridStep(0)) ?? []) if (outline.key === region.key) bounds = unionBounds(bounds, outline.bounds);
+		const fit = fitTransform(bounds, view);
+		const k = Math.min(fit.k, MAX_SCALE);
+		this.camera.flyTo(k === fit.k ? fit : centeredOn({ x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 }, k, view));
+		return key;
+	}
+
+	/** Pans just far enough to bring an item (or a region's label) inside the part of the plot the drawer leaves clear. */
 	reveal(key: string): void {
-		const node = this.placeOf(key);
-		if (!this.layout || !node) return;
+		const at = this.pointOf(key);
+		if (!this.layout || !at) return;
 		const { k, x, y } = this.camera.transform;
-		const at = { x: x + k * node.x, y: y + k * node.y };
 		const right = Math.max(REVEAL_MARGIN, this.viewport.width - this.covered - REVEAL_MARGIN);
 		const bottom = Math.max(REVEAL_MARGIN, this.viewport.height - REVEAL_MARGIN);
 		const dx = at.x < REVEAL_MARGIN ? REVEAL_MARGIN - at.x : at.x > right ? right - at.x : 0;
@@ -643,6 +771,7 @@ export class MapSurface {
 			cards: cards.set ? { keys: cards.set.keys, alpha: cards.alpha } : null,
 			focus,
 			outlined: this.highlight?.outlined ?? NONE,
+			ringed: this.focusKey,
 			drag: pull,
 			effects: motion?.effects ?? null,
 			fading: motion?.regions ?? null,
@@ -749,6 +878,8 @@ export class MapSurface {
 		for (const { bounds } of this.outlines.at(gridStep(0))) this.extent = unionBounds(this.extent, bounds);
 		this.deferred++;
 		this.configureCamera();
+		// An item a refresh took away can't keep the keyboard's focus.
+		if (this.focusKey !== null && !this.placeOf(this.focusKey)) this.setFocus(null);
 		this.refocus();
 	}
 
@@ -759,6 +890,7 @@ export class MapSurface {
 		// A session or computer that has left the cluster can't stay lit or held.
 		if (this.selected?.match(AGENT_KEY) && !this.agentsByKey.has(this.selected)) this.selected = null;
 		if (this.hover?.type === 'agent' && !this.agentsByKey.has(this.hover.key)) this.hover = null;
+		if (this.focusKey?.match(AGENT_KEY) && !this.agentsByKey.has(this.focusKey)) this.setFocus(null);
 	}
 
 	/**
@@ -798,11 +930,66 @@ export class MapSurface {
 		return this.nodesByKey.get(this.agentsByKey.has(key) ? key : (layout.representative[key] ?? ''));
 	}
 
-	/** What a keyboard zoom holds still: the pointer if it is over the plot, otherwise the middle (undefined). A focused dot is SPE-236's to add. */
+	/** What Z holds still: the pointer if it is over the plot, otherwise the middle (undefined). */
 	private zoomAnchor(): ScreenPoint | undefined {
-		const { pointer, viewport } = this;
-		if (pointer && pointer.x >= 0 && pointer.x <= viewport.width && pointer.y >= 0 && pointer.y <= viewport.height) return pointer;
-		return undefined;
+		return this.pointer && this.inPlot(this.pointer) ? this.pointer : undefined;
+	}
+
+	/** What `+` and `-` hold still: the focused item, if it is in view. */
+	private focusAnchor(): ScreenPoint | undefined {
+		const at = this.focusKey === null ? undefined : this.pointOf(this.focusKey);
+		return at && this.inPlot(at) ? at : undefined;
+	}
+
+	private inPlot(point: ScreenPoint): boolean {
+		return point.x >= 0 && point.x <= this.viewport.width && point.y >= 0 && point.y <= this.viewport.height;
+	}
+
+	/** Where something is in the plot now: a region's label if one is drawn (that is what the eye finds), otherwise the node that draws it. */
+	private pointOf(key: string): ScreenPoint | undefined {
+		const label = this.snapshot?.labels.find((candidate) => candidate.key === key);
+		if (label) return { x: label.box.x + label.box.w / 2, y: label.box.y + label.box.h / 2 };
+		const node = this.placeOf(key);
+		if (!node) return undefined;
+		const { k, x, y } = this.camera.transform;
+		return { x: x + k * node.x, y: y + k * node.y };
+	}
+
+	/** What an arrow key can land on, at the positions the last frame drew: every dot, and every region label that was drawn whole. */
+	private navTargets(): NavTarget[] {
+		const frame = this.snapshot;
+		if (!frame) return [];
+		const { transform } = frame;
+		const targets: NavTarget[] = frame.dots.map((dot) => ({ key: dot.key, x: transform.x + transform.k * dot.x, y: transform.y + transform.k * dot.y }));
+		for (const label of frame.labels) {
+			if (label.alpha >= 0.5) targets.push({ key: label.key, x: label.box.x + label.box.w / 2, y: label.box.y + label.box.h / 2 });
+		}
+		return targets;
+	}
+
+	/** The node that draws the focused item: the item itself, a region, a folded family's dot, or a session. */
+	private focusedNode(): string | null {
+		const key = this.focusKey;
+		if (key === null || !this.layout) return null;
+		return this.agentsByKey.has(key) ? key : (this.layout.representative[key] ?? null);
+	}
+
+	/** The deepest region that holds a dot, or null for a dot outside every region. */
+	private innermostRegion(node: string): MapRegion | null {
+		let best: MapRegion | null = null;
+		for (const region of this.layout?.regions ?? []) {
+			if (region.members.includes(node) && (!best || region.depth > best.depth)) best = region;
+		}
+		return best;
+	}
+
+	/** Focus goes to the next of `keys` after the one it is on, and the camera flies there. */
+	private stepTo(keys: readonly string[], delta: 1 | -1): string | null {
+		const key = cycle(keys, this.focusedNode(), delta);
+		if (key === null) return null;
+		this.setFocus(key);
+		this.focusOn(key);
+		return key;
 	}
 
 	private requestPaint(): void {

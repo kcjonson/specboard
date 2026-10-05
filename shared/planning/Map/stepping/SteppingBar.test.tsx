@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/preact';
+import { act, cleanup, fireEvent, render } from '@testing-library/preact';
 import type { SteppingBarProps } from './SteppingBar';
 import { SteppingBar } from './SteppingBar';
 
@@ -54,24 +54,22 @@ describe('SteppingBar', () => {
 		expect(onStep).toHaveBeenCalledWith('A-3');
 	});
 
-	it('steps on ] and [ the way the arrows do', () => {
+	it('steps through the handle the Map\'s ] and [ press, the way the arrows do', () => {
 		const onStep = vi.fn();
-		render(<SteppingBar {...props({ onStep })} />);
-		fireEvent.keyDown(document.body, { key: ']' });
-		fireEvent.keyDown(document.body, { key: ']' });
-		fireEvent.keyDown(document.body, { key: '[' });
+		const stepRef = { current: null as ((delta: 1 | -1) => void) | null };
+		render(<SteppingBar {...props({ onStep, stepRef })} />);
+		// Each press is its own event, with a render between.
+		act(() => stepRef.current!(1));
+		act(() => stepRef.current!(1));
+		act(() => stepRef.current!(-1));
 		expect(onStep.mock.calls.map(([key]) => key)).toEqual(['A-1', 'A-2', 'A-1']);
 	});
 
-	it('leaves ] and [ to a field that is being typed in, and to a held modifier', () => {
+	it('listens to no key of its own: the Map owns the keys', () => {
 		const onStep = vi.fn();
 		render(<SteppingBar {...props({ onStep })} />);
-		const input = document.createElement('input');
-		document.body.appendChild(input);
-		fireEvent.keyDown(input, { key: ']' });
-		input.remove();
-		fireEvent.keyDown(document.body, { key: ']', metaKey: true });
-		fireEvent.keyDown(document.body, { key: ']', ctrlKey: true });
+		fireEvent.keyDown(document.body, { key: ']' });
+		fireEvent.keyDown(document.body, { key: '[' });
 		expect(onStep).not.toHaveBeenCalled();
 	});
 
@@ -89,21 +87,23 @@ describe('SteppingBar', () => {
 
 	it('says there is nothing in the bar when nothing matched, and has no steps to offer', () => {
 		const onStep = vi.fn();
-		const { getByRole, queryByLabelText } = render(<SteppingBar {...props({ keys: [], onStep })} />);
+		const stepRef = { current: null as ((delta: 1 | -1) => void) | null };
+		const { getByRole, queryByLabelText } = render(<SteppingBar {...props({ keys: [], onStep, stepRef })} />);
 		expect(getByRole('status').textContent).toBe('No matches');
 		expect(queryByLabelText('Next')).toBeNull();
 		expect(queryByLabelText('Previous')).toBeNull();
-		fireEvent.keyDown(document.body, { key: ']' });
+		act(() => stepRef.current!(1));
 		expect(onStep).not.toHaveBeenCalled();
 	});
 
 	it('waits while an answer is on its way, and offers an action when it has failed', () => {
 		const onStep = vi.fn();
 		const retry = vi.fn();
-		const { getByRole, getByLabelText, getByText, rerender } = render(<SteppingBar {...props({ onStep, busy: true })} />);
+		const stepRef = { current: null as ((delta: 1 | -1) => void) | null };
+		const { getByRole, getByLabelText, getByText, rerender } = render(<SteppingBar {...props({ onStep, busy: true, stepRef })} />);
 		expect(getByRole('status').textContent).toBe('Searching...');
 		expect((getByLabelText('Next') as HTMLButtonElement).disabled).toBe(true);
-		fireEvent.keyDown(document.body, { key: ']' });
+		act(() => stepRef.current!(1));
 		expect(onStep).not.toHaveBeenCalled();
 
 		rerender(<SteppingBar {...props({ keys: [], empty: 'Search failed', action: { label: 'Retry', onClick: retry } })} />);
@@ -111,15 +111,15 @@ describe('SteppingBar', () => {
 		expect(retry).toHaveBeenCalledTimes(1);
 	});
 
-	it('closes from its button, and stops listening for keys when it is gone', () => {
-		const onStep = vi.fn();
+	it('closes from its button, and hands the Map no step once it is gone', () => {
 		const onClose = vi.fn();
-		const { getByText, unmount } = render(<SteppingBar {...props({ onStep, onClose, closeLabel: 'Mark all seen' })} />);
+		const stepRef = { current: null as ((delta: 1 | -1) => void) | null };
+		const { getByText, unmount } = render(<SteppingBar {...props({ onClose, stepRef, closeLabel: 'Mark all seen' })} />);
+		expect(stepRef.current).not.toBeNull();
 		fireEvent.click(getByText('Mark all seen'));
 		expect(onClose).toHaveBeenCalledTimes(1);
 		unmount();
-		fireEvent.keyDown(document.body, { key: ']' });
-		expect(onStep).not.toHaveBeenCalled();
+		expect(stepRef.current).toBeNull();
 	});
 
 	it('offers an accept button beside close, which does its own thing', () => {

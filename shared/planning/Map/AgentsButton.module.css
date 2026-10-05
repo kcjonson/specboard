@@ -38,3 +38,9 @@
 	background: var(--color-in-progress);
 	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-in-progress) 30%, transparent);
 }
+
+@media (prefers-reduced-motion: reduce) {
+	.button {
+		transition: none;
+	}
+}

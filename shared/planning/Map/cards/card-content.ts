@@ -10,7 +10,7 @@ import { REASON_TAGS, REASON_TEXT } from '../needs-person';
  */
 
 /** The sub-statuses that change what a person should do, in the words the board uses. */
-const SUB_STATUS_LABELS: Partial<Record<MapItemSubStatus, string>> = {
+export const SUB_STATUS_LABELS: Partial<Record<MapItemSubStatus, string>> = {
 	scoping: 'Scoping',
 	pr_open: 'PR open',
 	needs_input: 'Needs input',
@@ -87,7 +87,7 @@ function prLabel(url: string): string {
 	return match ? `PR #${match[1]}` : 'PR';
 }
 
-function waitingOn(row: MapItemRow): string | null {
+export function waitingOn(row: MapItemRow): string | null {
 	const open = row.blockers.filter((link) => link.state === 'open').map((link) => link.blockerKey);
 	if (open.length === 0) return row.blocked && row.textBlockerCount === 0 ? 'Blocked' : null;
 	const named = open.slice(0, NAMED_BLOCKERS).join(', ');
