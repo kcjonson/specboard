@@ -31,7 +31,9 @@ import type { MapBounds, MapLayout, MapNode, MapPoint, MapRegion } from './layou
 import type { MapCamera, ScreenPoint } from './map-camera';
 import { inReadingOrder, litRelation, type Highlight } from './map-lens';
 import { cycle, pickInDirection, type Direction, type NavTarget } from './map-nav';
+import type { MapUpdate } from './map-update';
 import { minimapPanel, minimapShows, minimapSize, minimapViewport, type MinimapSize } from './minimap/minimap';
+import { Transition, type Shown } from './motion';
 import { EMPTY_OVERLAY, type CardSet, type DragOffset, type MapOverlay, type MinimapFrame, type QuickFrame } from './overlay';
 import { agentCard, agentCardHeight, itemSessions } from './quick/agent-content';
 import { quickContent, quickHeight, QUICK_WIDTH } from './quick/quick-content';
@@ -59,6 +61,8 @@ export interface MapSurfaceHandlers {
 	onOpen(key: string): void;
 	/** A collapse or expand control was hit. */
 	onCollapse(key: string, collapse: boolean): void;
+	/** The zoom moved the region outlines to another grid step, which the next layout should be traced at. */
+	onOutlineStep(step: number): void;
 	/** The cursor's target changed. */
 	onPointerTarget(target: PointerTarget): void;
 	/** Keyboard focus moved to another item, region, or session, or off all of them (null): what the accessible tree's active descendant follows. */
@@ -175,6 +179,14 @@ export class MapSurface {
 	private lastCameraChange = -Infinity;
 	private rehoverPending = false;
 	private drag: Drag | null = null;
+	/** A refresh's motion under way, from what the Map showed to the layout it now has. */
+	private transition: Transition | null = null;
+	/** The camera is moving itself to keep a moved dot put on screen. */
+	private following = false;
+	/** The outline step the last frame drew at, which the worker traces with the next layout. */
+	private step = 0;
+	/** Dots by key where the last frame drew them, mid-glide included: what the quick card sits beside. */
+	private framed: ReadonlyMap<string, DrawDot> = new Map();
 
 	constructor(deps: MapSurfaceDeps, handlers: MapSurfaceHandlers) {
 		this.renderer = deps.renderer;
@@ -189,8 +201,12 @@ export class MapSurface {
 		this.timeZone = deps.timeZone;
 		this.handlers = handlers;
 		this.unsubscribe = this.camera.onChange(() => {
-			this.lastCameraChange = this.clock();
-			this.rehoverSoon();
+			// The Map's own follow of a moved dot is no gesture: hover keeps testing, and the follow goes on.
+			if (!this.following) {
+				this.lastCameraChange = this.clock();
+				this.transition?.stopFollowing();
+				this.rehoverSoon();
+			}
 			this.requestPaint();
 		});
 	}
@@ -229,6 +245,7 @@ export class MapSurface {
 
 	/** Draws a settled layout, opening on `focusKey` if the Map has it and on now otherwise. */
 	show(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>, focusKey: string | null): void {
+		this.transition = null;
 		this.take(layout, rows);
 		this.pristine = true;
 		const target = focusKey ? this.placeOf(focusKey) : undefined;
@@ -239,15 +256,52 @@ export class MapSurface {
 		this.requestPaint();
 	}
 
-	/** Draws a new layout of the same Map, a collapse or a refresh, where the camera already is. */
-	update(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): void {
+	/**
+	 * Draws a new layout of the same Map where the camera already is: the viewport, the
+	 * selection, focus, hover, collapse, and whatever the search and filters light all stay.
+	 * With `changes` (a refresh) everything moves there in a transition from where it is
+	 * drawn now, a glide interrupted halfway included; the dot under the pointer stays where
+	 * it is until the pointer leaves it, and a focused or selected dot that moves takes the
+	 * camera with it, so it stays put on screen. Without (a collapse) it cuts.
+	 */
+	update(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>, changes: MapUpdate | null): void {
+		const now = this.clock();
+		const shown = changes && this.layout ? this.shownAt(now) : null;
 		this.take(layout, rows);
+		this.transition = null;
+		if (shown && changes) {
+			const outlines = this.outlines;
+			const step = gridStep(this.camera.transform.k);
+			const held = this.hover?.type === 'dot' || this.hover?.type === 'agent' ? this.hover.key : null;
+			const focus = this.focusKey ?? this.selected;
+			this.transition = new Transition({
+				now,
+				reduced: this.reducedMotion(),
+				from: shown,
+				to: this.drawing,
+				layout,
+				outlines: outlines && !outlines.empty ? (outlines.nearest(step) ?? outlines.at(step)) : [],
+				changes,
+				held,
+				follow: focus && !this.hover ? (this.agentsByKey.has(focus) ? focus : (layout.representative[focus] ?? null)) : null,
+			});
+		}
 		this.requestPaint();
+	}
+
+	/** Where the Map draws everything right now, mid-transition included, for the next transition to start from. */
+	private shownAt(now: number): Shown {
+		const frame = this.transition?.frame(this.drawing, now);
+		const dots = frame?.dots ?? this.drawing.dots;
+		const agents = frame?.agents ?? this.drawing.agents;
+		const outlines = this.outlines && !this.outlines.empty ? (this.outlines.nearest(gridStep(this.camera.transform.k)) ?? []) : [];
+		return { dots: new Map(dots.map((dot) => [dot.key, dot])), agents: new Map(agents.map((agent) => [agent.key, agent])), outlines };
 	}
 
 	/** Back to the ruler's frame alone: loading, an empty project, or an error. */
 	clear(): void {
 		this.layout = null;
+		this.transition = null;
 		this.rows = EMPTY_OVERLAY.rows;
 		this.drawing = EMPTY_DRAWING;
 		this.dotsByKey = new Map();
@@ -652,11 +706,17 @@ export class MapSurface {
 	paint(): void {
 		this.painting = false;
 		if (this.disposed) return;
+		const now = this.clock();
+		this.follow(now);
 		const transform = this.camera.transform;
 		const layout = this.layout;
-		const { dots, regions } = this.drawing;
+		const motion = this.transition?.frame(this.drawing, now) ?? null;
+		const dots = motion?.dots ?? this.drawing.dots;
+		const { regions } = this.drawing;
+		this.framed = motion ? new Map(dots.map((dot) => [dot.key, dot])) : this.dotsByKey;
 		const pull = this.pulled();
-		const links = pull ? this.linksPulled(pull) : this.drawing.links;
+		const settledLinks = motion?.links ?? this.drawing.links;
+		const links = pull ? linksPulled(settledLinks, pull) : settledLinks;
 		const outlines = this.outlinesFor(transform.k);
 		const level = this.levels.frame(transform.k);
 		const focus = this.fade.frame();
@@ -678,7 +738,8 @@ export class MapSurface {
 			const edge = edgeLabelAt(ruler.edge.x, this.renderer.measureLabel(ruler.edge.label, 'dot-strong'), this.viewport.width);
 			if (edge) reserved.push(edge.box);
 		}
-		const { agents, working } = this.drawing;
+		const { working } = this.drawing;
+		const agents = motion?.agents ?? this.drawing.agents;
 		const placed = layout
 			? this.placeFor(level, {
 				level: level.level,
@@ -712,6 +773,8 @@ export class MapSurface {
 			outlined: this.highlight?.outlined ?? NONE,
 			ringed: this.focusKey,
 			drag: pull,
+			effects: motion?.effects ?? null,
+			fading: motion?.regions ?? null,
 			transform,
 			level: level.level,
 			ruler,
@@ -734,8 +797,26 @@ export class MapSurface {
 		const glyphInView = dotsVisible(dots, transform, this.viewport, (dot) => screenRadius(dot, transform.k, level.level));
 		const cardInView = cards.set?.dots.some((dot) => intersects(cardBox(dot, transform), plot)) ?? false;
 		this.setViewportEmpty(dots.length > 0 && !glyphInView && !cardInView);
-		// A fade has to be walked frame by frame; at rest nothing asks for another.
-		if (level.from !== null || this.fade.animating || this.drag?.release) this.requestPaint();
+		// A fade or a transition has to be walked frame by frame; at rest nothing asks for another.
+		if (this.transition?.finished(now)) this.transition = null;
+		if (level.from !== null || this.fade.animating || this.drag?.release || this.transition?.animating(now)) this.requestPaint();
+	}
+
+	/** Moves the camera along with the focused dot's glide, before the frame reads where the camera is. */
+	private follow(now: number): void {
+		const transition = this.transition;
+		if (!transition) return;
+		// A flight the person asked for (Fit all, Now, a jump) is theirs: the camera stops following.
+		if (this.camera.flying) {
+			transition.stopFollowing();
+			return;
+		}
+		const step = transition.followStep(now);
+		if (!step) return;
+		const { k } = this.camera.transform;
+		this.following = true;
+		this.camera.panBy(-step.dx * k, -step.dy * k);
+		this.following = false;
 	}
 
 	/** The labels and cards at this level, and while a switch is fading, the labels of the level it came from and the cards of whichever level has them. */
@@ -822,6 +903,10 @@ export class MapSurface {
 		const outlines = this.outlines;
 		if (!outlines || outlines.empty) return [];
 		const step = gridStep(k);
+		if (step !== this.step) {
+			this.step = step;
+			this.handlers.onOutlineStep(step);
+		}
 		const token = ++this.deferred;
 		if (outlines.has(step)) return outlines.at(step);
 		const cached = outlines.nearest(step);
@@ -965,6 +1050,12 @@ export class MapSurface {
 		this.hover = hit;
 		this.handlers.onPointerTarget(hit === null ? null : hit.type === 'control' ? 'control' : 'item');
 		if (before?.key === hit?.key) return;
+		// A dot a refresh moved stayed put while the pointer was on it; now it goes where it belongs.
+		const transition = this.transition;
+		if (transition && transition.held !== null && transition.held !== hit?.key) {
+			transition.release(this.clock());
+			this.requestPaint();
+		}
 		this.hoverCardReady = false;
 		const token = ++this.hoverToken;
 		if (hit) {
@@ -1008,7 +1099,7 @@ export class MapSurface {
 		const plot = { x: 0, y: 0, w: Math.max(0, this.viewport.width - this.covered), h: this.viewport.height };
 		const related: Box[] = [];
 		for (const other of relation.dots) {
-			const otherDot = other === key ? undefined : this.dotsByKey.get(other);
+			const otherDot = other === key ? undefined : this.framed.get(other);
 			if (otherDot) related.push(dotBox(otherDot, transform, level));
 		}
 		const agent = this.agentsByKey.get(key);
@@ -1020,7 +1111,7 @@ export class MapSurface {
 		}
 		const row = this.rows.get(key);
 		if (!row) return null;
-		const dot = this.dotsByKey.get(key);
+		const dot = this.framed.get(key);
 		const label = regionLabels.find((l) => l.key === key);
 		const progress = progressOf(this.drawing, key, dot);
 		let anchor: Box;
@@ -1063,13 +1154,14 @@ export class MapSurface {
 		return { key: drag.key, dx: drag.release.dx * left, dy: drag.release.dy * left };
 	}
 
-	/** The links with the dragged dot's ends moved along with it; every other link is as it was. */
-	private linksPulled(pull: DragOffset): readonly DrawLink[] {
-		const move = (p: MapPoint): MapPoint => ({ x: p.x + pull.dx, y: p.y + pull.dy });
-		return this.drawing.links.map((link) =>
-			link.ends[0] === pull.key ? { ...link, from: move(link.from) } : link.ends[1] === pull.key ? { ...link, to: move(link.to) } : link,
-		);
-	}
+}
+
+/** The links with the dragged dot's ends moved along with it; every other link is as it was. */
+function linksPulled(links: readonly DrawLink[], pull: DragOffset): readonly DrawLink[] {
+	const move = (p: MapPoint): MapPoint => ({ x: p.x + pull.dx, y: p.y + pull.dy });
+	return links.map((link) =>
+		link.ends[0] === pull.key ? { ...link, from: move(link.from) } : link.ends[1] === pull.key ? { ...link, to: move(link.to) } : link,
+	);
 }
 
 const NONE: ReadonlySet<string> = new Set();

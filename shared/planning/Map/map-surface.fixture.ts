@@ -28,6 +28,14 @@ export class FakeCamera implements MapCamera {
 		for (const listener of this.listeners) listener();
 	}
 
+	flying = false;
+	pans: Array<{ dx: number; dy: number }> = [];
+
+	panBy(dx: number, dy: number): void {
+		this.pans.push({ dx, dy });
+		this.set({ ...this.transform, x: this.transform.x + dx, y: this.transform.y + dy });
+	}
+
 	flyTo(transform: Transform): void {
 		this.flights.push(transform);
 		this.set(transform);
@@ -103,7 +111,7 @@ export function setup(): {
 			defer: (task) => deferred.push(task),
 			timeZone: 'UTC',
 		},
-		{ onViewportEmpty: empty, onSettle: settle, onOpen: open, onCollapse: collapse, onPointerTarget: target, onFocus: focus },
+		{ onViewportEmpty: empty, onSettle: settle, onOpen: open, onCollapse: collapse, onPointerTarget: target, onOutlineStep: () => {}, onFocus: focus },
 	);
 	return { surface, camera, renderer, overlay, clock, frames, empty, settle, open, collapse, target, focus, deferred, flush: () => frames.splice(0).forEach((paint) => paint()) };
 }

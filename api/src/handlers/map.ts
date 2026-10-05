@@ -1,8 +1,9 @@
 /**
- * The Map's whole-project read (docs/specs/ai-development-overview.md, Data): every item
- * at any depth in one response, in the column form MapReadWire describes. Beside it, the
- * person's last-visit baseline and the changes since (Since your last visit): the changes
- * read and the move forward of the baseline, behind the same access check.
+ * The Map's project read (docs/specs/ai-development-overview.md, Data): every item at any
+ * depth in one response, or with `?since=<cursor>` only what changed after an earlier
+ * read, in the column form MapReadWire describes. Beside it, the person's last-visit
+ * baseline and the changes since (Since your last visit): the changes read and the move
+ * forward of the baseline, behind the same access check.
  */
 
 import type { Context } from 'hono';
@@ -15,8 +16,14 @@ import { apiUserId, requireResolvedProject } from './items.ts';
 export async function handleGetMap(context: Context): Promise<Response> {
 	const { id: projectId, key: projectKey } = requireResolvedProject(context);
 
+	const sinceParam = context.req.query('since');
+	const since = sinceParam === undefined ? null : Number(sinceParam);
+	if (since !== null && (!/^\d+$/.test(sinceParam!) || !Number.isSafeInteger(since))) {
+		return context.json({ error: 'since must be the cursor of an earlier map read' }, 400);
+	}
+
 	try {
-		const read = await getProjectMap(projectId);
+		const read = await getProjectMap(projectId, since);
 		return context.json(encodeMapRead(read, projectKey));
 	} catch (error) {
 		console.error('Failed to read the map:', error);

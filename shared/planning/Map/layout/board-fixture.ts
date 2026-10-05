@@ -1,4 +1,4 @@
-import type { MapBlockerLink, MapItemRow, MapWorkerEpisode } from '@specboard/core/map-read';
+import type { MapBlockerLink, MapItemRow, MapRead, MapWorkerEpisode } from '@specboard/core/map-read';
 
 /**
  * Synthesized boards for the layout tests, shaped like a real one but with no real
@@ -10,6 +10,16 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
 export const iso = (time: number): string => new Date(time).toISOString();
+
+/** A whole-project read of these rows, as the server would send it. */
+export const wholeRead = (items: MapItemRow[], fields: Partial<MapRead> = {}): MapRead => ({
+	items, summarized: false, delta: false, cursor: NOW - 1000, total: items.length, specs: '0:', ...fields,
+});
+
+/** What changed since a cursor, as the server would send it: these rows, out of a project of `total`. */
+export const deltaRead = (items: MapItemRow[], total: number, fields: Partial<MapRead> = {}): MapRead => ({
+	items, summarized: false, delta: true, cursor: NOW, total, specs: '0:', ...fields,
+});
 
 /** mulberry32: a small seeded generator for building boards, not for the layout. */
 export function seeded(seed: number): () => number {

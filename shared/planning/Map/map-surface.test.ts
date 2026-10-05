@@ -375,7 +375,7 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		expect(surface.showing).toBe(true);
 		camera.set({ k: 3, x: -200, y: 40 });
 		const collapsed = layoutMap({ rows: [...rows.values()], now: layout.frame.scale.edge, collapse: { [epic]: true }, aspect: WIDTH / 500 });
-		surface.update(collapsed, rows);
+		surface.update(collapsed, rows, null);
 		flush();
 		expect(camera.transform).toEqual({ k: 3, x: -200, y: 40 });
 		const frame = renderer.frames.at(-1)!;

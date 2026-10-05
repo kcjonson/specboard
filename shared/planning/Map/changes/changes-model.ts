@@ -88,6 +88,38 @@ export class MapChangesModel implements Observable {
 		this.emit();
 	}
 
+	/**
+	 * Reads the changes again on the Map's own refresh cycle, keeping what is shown while it
+	 * does: the view, its step, and its dimming follow the new list rather than starting over.
+	 * The baseline never goes back: one marked seen here is ahead of the server's until that
+	 * request lands, and changes from before it stay seen. Resolves false when the read
+	 * failed, which leaves everything as it was.
+	 */
+	async refresh(): Promise<boolean> {
+		if (this.state !== 'ready') return true;
+		const generation = this.generation;
+		try {
+			const read = await this.source.read();
+			if (generation !== this.generation || this.state !== 'ready') return true;
+			const baseline = this.baseline === null || (read.baseline !== null && read.baseline > this.baseline) ? read.baseline : this.baseline;
+			this.baseline = baseline;
+			this.readAt = Math.max(this.readAt, read.readAt);
+			const changes = baseline === null ? read.changes : read.changes.filter((change) => change.at > baseline);
+			// The same list keeps its identity, so an idle poll relights nothing.
+			const same = changes.length === this.changes.length && changes.every((change, i) => {
+				const was = this.changes[i]!;
+				return change.key === was.key && change.kind === was.kind && change.at === was.at;
+			});
+			if (!same) {
+				this.changes = changes;
+				this.emit();
+			}
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	/** Mark all seen: nothing is waiting any more, and the baseline moves up to what was read. */
 	markSeen(): void {
 		if (this.state !== 'ready') return;

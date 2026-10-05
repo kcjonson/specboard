@@ -1,4 +1,5 @@
 import type { MapItemRow } from '@specboard/core/map-read';
+import type { RegionOutline } from '../regions/outline';
 
 /** Every item is in exactly one phase (spec: Phases and up next). */
 export type MapPhase = 'done' | 'in_flight' | 'next' | 'later';
@@ -54,9 +55,12 @@ export interface MapLayoutInput {
 	aspect: number;
 	/**
 	 * Present for a local pass: start from these positions and move only what changed.
-	 * A board that went quiet or woke up since gets a cold pass instead, since its edge moved.
+	 * The scale moves to `now` and the anchors as they are, and every previous position
+	 * is carried onto it first: that is time drift.
 	 */
 	previous?: MapLayoutPrevious;
+	/** Grid steps to trace the region outlines at, off the main thread. */
+	outlineSteps?: readonly number[];
 }
 
 export interface MapLayoutPrevious {
@@ -159,6 +163,13 @@ export interface MapLayout {
 	sessions: MapSession[];
 	computers: MapComputer[];
 	stats: MapLayoutStats;
+	/** Region outlines traced with the layout, at the steps it was asked for. */
+	outlines: MapLayoutOutlines[];
+}
+
+export interface MapLayoutOutlines {
+	step: number;
+	regions: RegionOutline[];
 }
 
 export interface MapLayoutStats {

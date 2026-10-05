@@ -57,7 +57,9 @@ import { stronglyConnected, topologicalOrder, type Edge } from './graph';
 import { regionBands, type Band } from './bands';
 import { buildModel, type MapModel, type ModelItem } from './model';
 import { spacing } from './spacing';
-import { createTimeScale, edgeOf, quietOf, ticksOf, timeToX } from './time-scale';
+import { createTimeScale, edgeOf, quietOf, shiftX, ticksOf, timeToX } from './time-scale';
+import { regionInputs } from '../regions/region-outlines';
+import { traceRegions } from '../regions/outline';
 import { computerNodeKey, sessionNodeKey, type MapBounds, type MapLayout, type MapLayoutInput, type MapLayoutPrevious, type MapPoint, type MapTimeScale } from './types';
 
 /** FNV-1a, folded to [0, 1): a starting height every device agrees on. */
@@ -444,13 +446,24 @@ function coldLayout(model: MapModel, edge: number, aspect: number): Settled {
 /**
  * A local pass: start from the previous positions, let only the changed items, their
  * sessions and computers, new nodes, and anything within two links of them move, and
- * keep the previous frame so nothing rescales. The orders still hold everywhere.
+ * keep the previous unit width so nothing rescales. The orders still hold everywhere.
+ *
+ * Time drift enters here, once per pass: the scale's edge moves to the new now, and every
+ * previous position is carried onto the moved scale (shiftX) before the pass starts,
+ * pinned ones included. The shift keeps each point's moment and never swaps two points,
+ * so the pinned Map slides as one and the orders it held still hold; the main thread then
+ * glides every dot from where it was to where this puts it, drift and all. The equalized
+ * scale keeps the anchors it was fitted to: counting a changed item's new anchor would
+ * move every moment after its old one, and with them dots nothing happened to. Anything
+ * newer than the sample is at the log scale's mercy until the next cold pass.
  */
-function localLayout(model: MapModel, previous: MapLayoutPrevious): Settled {
-	const { scale } = previous.frame;
+function localLayout(model: MapModel, previous: MapLayoutPrevious, edge: number): Settled {
+	const was = previous.frame;
+	const scale = createTimeScale(edge, was.scale.times, was.scale.unit);
 	const graph = buildGraph(model, scale);
 	raiseTargets(graph, scale);
-	const before = previous.positions;
+	const before: Record<string, MapPoint> = {};
+	for (const [key, point] of Object.entries(previous.positions)) before[key] = { x: shiftX(was.scale, scale, point.x), y: point.y };
 	const near = (point: MapPoint | undefined, dx: number, dy: number): MapPoint | undefined =>
 		point && { x: point.x + dx, y: point.y + dy };
 
@@ -493,7 +506,16 @@ function localLayout(model: MapModel, previous: MapLayoutPrevious): Settled {
 			n.fy = n.y;
 		}
 	}
-	return { graph, ...previous.frame, ticks: LOCAL_TICKS, settle: simulate(graph, LOCAL_TICKS, LOCAL_ALPHA) };
+	const settle = simulate(graph, LOCAL_TICKS, LOCAL_ALPHA);
+	// The extent only grows, drifting with the rest, so fit all doesn't shift under a refresh.
+	const fresh = boundsOf(graph.nodes, scale.unit);
+	const bounds = {
+		minX: Math.min(shiftX(was.scale, scale, was.bounds.minX), fresh.minX),
+		maxX: Math.max(was.bounds.maxX, fresh.maxX),
+		minY: Math.min(was.bounds.minY, fresh.minY),
+		maxY: Math.max(was.bounds.maxY, fresh.maxY),
+	};
+	return { graph, scale, bounds, ticks: LOCAL_TICKS, settle };
 }
 
 /** Lays out the Map: positions for every visible node, the time scale, and the sets the renderer draws from. */
@@ -501,11 +523,7 @@ export function layoutMap(input: MapLayoutInput): MapLayout {
 	const model = buildModel(input.rows, input.now, input.collapse);
 	const quiet = quietOf(model.newest, input.now);
 	const edge = edgeOf(model.newest, input.now);
-	// A local pass keeps the frame, which only holds while the edge does: a live board's
-	// edge is frozen at the last pass's now, a quiet board's sits at its last activity.
-	const frame = input.previous?.frame;
-	const previous = frame && frame.quiet === (quiet !== null) && (!frame.quiet || frame.scale.edge === edge) ? input.previous : undefined;
-	const { graph, scale, bounds, ticks, settle } = previous ? localLayout(model, previous) : coldLayout(model, edge, input.aspect);
+	const { graph, scale, bounds, ticks, settle } = input.previous ? localLayout(model, input.previous, edge) : coldLayout(model, edge, input.aspect);
 
 	const phases: MapLayout['phases'] = {};
 	const representative: MapLayout['representative'] = {};
@@ -527,7 +545,7 @@ export function layoutMap(input: MapLayoutInput): MapLayout {
 		for (let p = item.parent; p; p = p.parent) regionOf.get(p)?.members.push(item.key);
 	}
 
-	return {
+	const layout: MapLayout = {
 		nodes: graph.nodes.map((n) => ({ key: n.key, kind: n.kind, x: n.x, y: n.y, r: n.r, hub: n.hub })),
 		frame: { scale, bounds, quiet: quiet !== null },
 		ticks: ticksOf(scale),
@@ -554,5 +572,10 @@ export function layoutMap(input: MapLayoutInput): MapLayout {
 		})),
 		computers: model.computers.map((c) => ({ device: c.device, sessions: c.sessions.map((s) => s.key) })),
 		stats: { ticks, settle },
+		outlines: [],
 	};
+	// Here rather than on the main thread, where tracing a big board's regions would stall a pan the new layout lands in.
+	const inputs = input.outlineSteps?.length ? regionInputs(layout) : [];
+	layout.outlines = (input.outlineSteps ?? []).map((step) => ({ step, regions: traceRegions(inputs, step) }));
+	return layout;
 }

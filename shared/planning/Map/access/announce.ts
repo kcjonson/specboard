@@ -1,11 +1,12 @@
 import type { MapItemRow } from '@specboard/core/map-read';
 import { STATUS_LABELS } from '@specboard/ui';
+import type { MapUpdate } from '../map-update';
 
 /**
  * Remote changes, said to a screen reader (spec, Accessibility): a polite live region, rate
- * limited, with a setting to turn it off. The Map consumes a stream of change summaries and
- * knows nothing of where they come from: today they are the difference between one read and
- * the next, and a live-updates transport that names its own changes can push them directly.
+ * limited, with a setting to turn it off. It listens to the same change notification the
+ * canvas moves to (the model's update per applied refresh), so a push transport changes
+ * nothing here.
  */
 
 export interface ChangeSummary {
@@ -15,27 +16,29 @@ export interface ChangeSummary {
 }
 
 /**
- * What changed between two reads that a person listening would want to know: an item filed or
- * gone, a new status, a question to answer, a PR opened, an agent arriving. One line per item.
+ * What a model's update says a person listening would want to know: an item filed or gone, a
+ * new status (finished, started, sent to review), a question to answer, a PR opened. One line
+ * per item, in the order the update names them. `before` is the rows the Map showed ahead of
+ * the update, which is where a removed item's title is; a bare agent write or a move the layout
+ * makes for time alone says nothing.
  */
-export function summarizeChanges(before: ReadonlyMap<string, MapItemRow>, after: ReadonlyMap<string, MapItemRow>): ChangeSummary[] {
+export function summarizeUpdate(update: MapUpdate, rows: ReadonlyMap<string, MapItemRow>, before: ReadonlyMap<string, MapItemRow>): ChangeSummary[] {
 	const changes: ChangeSummary[] = [];
-	for (const row of after.values()) {
-		const was = before.get(row.key);
-		if (!was) {
-			changes.push({ key: row.key, text: `${row.key} ${row.title}: filed` });
-			continue;
-		}
-		const phrases: string[] = [];
-		if (row.status !== was.status) phrases.push(`now ${STATUS_LABELS[row.status]}`);
-		if (row.subStatus === 'needs_input' && was.subStatus !== 'needs_input') phrases.push('needs input');
-		if (row.prUrl !== null && was.prUrl === null) phrases.push('PR opened');
-		const known = new Set(was.workers.map((worker) => worker.sessionKey));
-		if (row.workers.some((worker) => !known.has(worker.sessionKey))) phrases.push('an agent started on it');
-		if (phrases.length > 0) changes.push({ key: row.key, text: `${row.key} ${row.title}: ${phrases.join(', ')}` });
+	for (const key of update.added) {
+		const row = rows.get(key);
+		if (row) changes.push({ key, text: `${key} ${row.title}: filed` });
 	}
-	for (const row of before.values()) {
-		if (!after.has(row.key)) changes.push({ key: row.key, text: `${row.key} ${row.title}: removed` });
+	for (const key of update.restyled) {
+		const row = rows.get(key);
+		if (!row || update.added.has(key)) continue;
+		const phrases = [`now ${STATUS_LABELS[row.status]}`];
+		if (row.subStatus === 'needs_input') phrases.push('needs input');
+		else if (row.subStatus === 'pr_open') phrases.push('PR open');
+		changes.push({ key, text: `${key} ${row.title}: ${phrases.join(', ')}` });
+	}
+	for (const key of update.removed) {
+		const row = before.get(key);
+		changes.push({ key, text: `${key}${row ? ` ${row.title}` : ''}: removed` });
 	}
 	return changes;
 }

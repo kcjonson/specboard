@@ -28,6 +28,8 @@ export interface ThemeColors {
 	muted: Rgb;
 	text: Rgb;
 	needsPerson: Rgb;
+	/** The accent: the changed-item halo reduced motion shows in place of motion. */
+	highlight: Rgb;
 	/** Live agent work: its glow and its lines. */
 	agent: Rgb;
 	status: Record<MapItemStatus, Rgb>;
@@ -57,6 +59,7 @@ export function themeColors(forced: boolean, source: ColorSource): ThemeColors {
 			muted: source.token('--color-text-muted'),
 			text: source.token('--color-text'),
 			needsPerson: source.token(NEEDS_PERSON_TOKEN),
+			highlight: source.token('--color-primary'),
 			agent: status.in_progress,
 			status,
 			phase,
@@ -77,6 +80,7 @@ export function themeColors(forced: boolean, source: ColorSource): ThemeColors {
 		muted: gray,
 		text,
 		needsPerson: link,
+		highlight: link,
 		agent: link,
 		status,
 		// A rollup bar has nothing but color to split its phases by, so each gets its own system color.

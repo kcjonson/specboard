@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { encodeMapRead } from '@specboard/core/map-read';
-import { BoardBuilder } from './layout/board-fixture';
+import { BoardBuilder, wholeRead } from './layout/board-fixture';
 
 const get = vi.fn();
 
@@ -15,20 +15,30 @@ describe('createMapSource', () => {
 		const waiting = b.add({ status: 'ready' });
 		b.block(waiting, blocker);
 		b.work(blocker, 'session-a', 'laptop');
-		const read = { items: b.rows, summarized: false };
+		const read = wholeRead(b.rows);
 		get.mockResolvedValue(encodeMapRead(read, 'MAP'));
 
-		const result = await createMapSource('acme/specboard')();
+		const result = await createMapSource('acme/specboard')(null);
 
 		expect(get).toHaveBeenCalledWith('/api/projects/acme/specboard/map');
 		expect(result.summarized).toBe(false);
+		expect(result.cursor).toBe(read.cursor);
 		expect(result.items.map((row) => row.key)).toEqual(read.items.map((row) => row.key));
 		expect(result.items[1]!.blockers).toEqual([{ blockerKey: blocker.key, state: 'open' }]);
 		expect(result.items[0]!.workers[0]).toMatchObject({ sessionKey: 'session-a', deviceName: 'laptop' });
 	});
 
+	it('asks for what changed since a cursor', async () => {
+		get.mockResolvedValue(encodeMapRead({ ...wholeRead([]), delta: true, cursor: 1_790_000_009_000 }, 'MAP'));
+
+		const result = await createMapSource('acme/specboard')(1_790_000_000_000);
+
+		expect(get).toHaveBeenCalledWith('/api/projects/acme/specboard/map?since=1790000000000');
+		expect(result).toMatchObject({ delta: true, cursor: 1_790_000_009_000 });
+	});
+
 	it('lets a failed read through for the error state', async () => {
 		get.mockRejectedValue(new Error('HTTP 500'));
-		await expect(createMapSource('acme/specboard')()).rejects.toThrow('HTTP 500');
+		await expect(createMapSource('acme/specboard')(null)).rejects.toThrow('HTTP 500');
 	});
 });

@@ -151,3 +151,56 @@ describe('createChangesSource', () => {
 		expect(fetchClient.post).toHaveBeenCalledWith('/api/projects/acme/specboard/map/seen', { readAt: 1_790_200_000_000 }, { keepalive: true });
 	});
 });
+
+describe('MapChangesModel refresh', () => {
+	const LATER: MapChange = { key: 'SPE-2', kind: 'filed', at: 1_790_300_000_000 };
+
+	function refreshing(...reads: Array<Awaited<ReturnType<ChangesSource['read']>> | Error>): { model: MapChangesModel; advance: ReturnType<typeof vi.fn> } {
+		const advance = vi.fn().mockResolvedValue(undefined);
+		const queue = [{ baseline: 1_790_000_000_000, readAt: 1_790_200_000_000, changes: CHANGES }, ...reads];
+		const model = new MapChangesModel({ read: () => { const next = queue.shift()!; return next instanceof Error ? Promise.reject(next) : Promise.resolve(next); }, advance });
+		return { model, advance };
+	}
+
+	it('takes what changed since, with the newer read time, and stays ready', async () => {
+		const { model } = refreshing({ baseline: 1_790_000_000_000, readAt: 1_790_400_000_000, changes: [...CHANGES, LATER] });
+		await model.load();
+
+		expect(await model.refresh()).toBe(true);
+
+		expect(model).toMatchObject({ state: 'ready', readAt: 1_790_400_000_000, changes: [...CHANGES, LATER] });
+	});
+
+	it('keeps the same list, and says nothing, when nothing new changed', async () => {
+		const { model } = refreshing({ baseline: 1_790_000_000_000, readAt: 1_790_400_000_000, changes: [...CHANGES] });
+		await model.load();
+		const before = model.changes;
+		const changed = vi.fn();
+		model.on('change', changed);
+
+		await model.refresh();
+
+		expect(model.changes).toBe(before);
+		expect(changed).not.toHaveBeenCalled();
+	});
+
+	it('never brings back what was marked seen before the server has heard', async () => {
+		const { model } = refreshing({ baseline: 1_790_000_000_000, readAt: 1_790_400_000_000, changes: [...CHANGES, LATER] });
+		await model.load();
+		model.markSeen();
+
+		await model.refresh();
+
+		expect(model.baseline).toBe(1_790_200_000_000);
+		expect(model.changes).toEqual([LATER]);
+	});
+
+	it('keeps everything as it was when the read fails, and says so', async () => {
+		const { model } = refreshing(new Error('HTTP 503'));
+		await model.load();
+
+		expect(await model.refresh()).toBe(false);
+
+		expect(model).toMatchObject({ state: 'ready', readAt: 1_790_200_000_000, changes: CHANGES });
+	});
+});

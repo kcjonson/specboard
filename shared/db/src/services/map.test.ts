@@ -317,6 +317,156 @@ describe('worker episodes', () => {
 	});
 });
 
+/** Moves every stamp a delta compares an hour back, so a read's cursor lands after all of it. Triggers off, or updated_at would come straight back to now. */
+async function settle(): Promise<void> {
+	await sql('SET session_replication_role = replica');
+	await sql("UPDATE items SET updated_at = updated_at - interval '1 hour' WHERE project_id = $1", [projectId]);
+	await sql(
+		"UPDATE item_workers SET started_at = started_at - interval '1 hour', last_seen_at = last_seen_at - interval '1 hour', ended_at = ended_at - interval '1 hour' WHERE project_id = $1",
+		[projectId]
+	);
+	await sql('SET session_replication_role = DEFAULT');
+}
+
+async function keysSince(cursor: number): Promise<string[]> {
+	const delta = await getProjectMap(projectId, cursor);
+	expect(delta.delta).toBe(true);
+	return delta.items.map((r) => r.key);
+}
+
+describe('a delta', () => {
+	it('carries nothing when nothing changed since the cursor', async () => {
+		await item();
+		await item();
+		await settle();
+		const { cursor, delta } = await getProjectMap(projectId);
+
+		expect(delta).toBe(false);
+		expect(await keysSince(cursor)).toEqual([]);
+	});
+
+	it('takes its cursor from the database clock, a second back, never later', async () => {
+		const [before] = await sql<{ ms: string }>('SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint AS ms');
+		const { cursor } = await getProjectMap(projectId);
+		const [after] = await sql<{ ms: string }>('SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint AS ms');
+
+		expect(cursor).toBeGreaterThanOrEqual(Number(before!.ms) - 1000);
+		expect(cursor).toBeLessThanOrEqual(Number(after!.ms) - 1000);
+	});
+
+	it('carries a changed item whole, as the full read has it, and nothing else', async () => {
+		const one = await item();
+		const two = await item();
+		await item();
+		await settle();
+		const { cursor } = await getProjectMap(projectId);
+
+		await updateItem(projectId, two, { title: 'renamed' }, USER);
+		await addBlocker(projectId, one, { itemNumber: two }, USER);
+
+		const delta = await getProjectMap(projectId, cursor);
+		const whole = await read();
+		expect(delta.items.map((r) => r.key)).toEqual([`MP-${one}`, `MP-${two}`]);
+		for (const changed of delta.items) expect(changed).toEqual(whole.get(changed.key));
+		expect(delta.items[0]!.blockers).toEqual([{ blockerKey: `MP-${two}`, state: 'open' }]);
+	});
+
+	it('includes a row stamped exactly at the cursor, so the overlap is never a gap', async () => {
+		const n = await item();
+		await settle();
+		const [stamp] = await sql<{ ms: string }>(
+			'SELECT FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint AS ms FROM items WHERE project_id = $1 AND number = $2', [projectId, n]
+		);
+
+		expect(await keysSince(Number(stamp!.ms))).toEqual([`MP-${n}`]);
+	});
+
+	it('carries an item an agent wrote to, though the write leaves updated_at alone, with its anchor moved', async () => {
+		const n = await item();
+		await item();
+		await startItem(projectId, n, AGENT);
+		await settle();
+		const { cursor } = await getProjectMap(projectId);
+		const [stamp] = await sql<{ updated_at: Date }>('SELECT updated_at FROM items WHERE project_id = $1 AND number = $2', [projectId, n]);
+
+		await recordWorkerActivity(projectId, n, AGENT);
+
+		const [after] = await sql<{ updated_at: Date }>('SELECT updated_at FROM items WHERE project_id = $1 AND number = $2', [projectId, n]);
+		expect(after!.updated_at).toEqual(stamp!.updated_at);
+		const delta = await getProjectMap(projectId, cursor);
+		expect(delta.items.map((r) => r.key)).toEqual([`MP-${n}`]);
+		const [episode] = delta.items[0]!.workers;
+		expect(Date.parse(episode!.lastWriteAt)).toBeGreaterThanOrEqual(cursor);
+		expect(delta.items[0]!.timeAnchor).toBe(episode!.lastWriteAt);
+	});
+
+	it('carries an item whose episode ended since, without the episode', async () => {
+		const n = await item();
+		await startItem(projectId, n, AGENT);
+		await recordWorkerActivity(projectId, n, AGENT);
+		await settle();
+		const { cursor } = await getProjectMap(projectId);
+
+		await sql('SET session_replication_role = replica');
+		await sql('UPDATE item_workers SET ended_at = now() WHERE project_id = $1', [projectId]);
+		await sql('SET session_replication_role = DEFAULT');
+
+		const delta = await getProjectMap(projectId, cursor);
+		expect(delta.items.map((r) => r.key)).toEqual([`MP-${n}`]);
+		expect(delta.items[0]!.workers).toEqual([]);
+	});
+
+	it('carries what waits on a blocker that finished, whose links and blocked flag moved with it', async () => {
+		const blocker = await item();
+		const waiting = await item();
+		await addBlocker(projectId, waiting, { itemNumber: blocker }, USER);
+		await settle();
+		const { cursor } = await getProjectMap(projectId);
+
+		await completeItem(projectId, blocker, USER);
+
+		const delta = await getProjectMap(projectId, cursor);
+		expect(delta.items.map((r) => r.key)).toEqual([`MP-${blocker}`, `MP-${waiting}`]);
+		expect(delta.items[1]).toMatchObject({ blocked: false, blockers: [{ blockerKey: `MP-${blocker}`, state: 'satisfied' }] });
+	});
+
+	it('counts the project, so a deletion shows, and fingerprints spec links, which updated_at misses', async () => {
+		const kept = await item();
+		const gone = await item();
+		await settle();
+		const first = await getProjectMap(projectId);
+		expect(first.total).toBe(2);
+
+		await sql('DELETE FROM items WHERE project_id = $1 AND number = $2', [projectId, gone]);
+		const afterDelete = await getProjectMap(projectId, first.cursor);
+		expect(afterDelete.total).toBe(1);
+		expect(afterDelete.items).toEqual([]);
+
+		await addSpec(projectId, kept, 'docs/specs/map.md', 'product');
+		const afterSpec = await getProjectMap(projectId, afterDelete.cursor);
+		expect(afterSpec.specs).not.toBe(afterDelete.specs);
+		expect(afterSpec.specs.startsWith('1:')).toBe(true);
+	});
+
+	it('past the read cap stays empty while idle, and answers a change with the whole read', async () => {
+		const parent = await item({ type: 'epic' });
+		for (let i = 0; i < 3; i++) await item({ parentNumber: parent, status: 'done' });
+		await completeItem(projectId, parent, USER);
+		const loose = await item();
+		await settle();
+		const first = await getProjectMap(projectId, null, 2);
+		expect(first.summarized).toBe(true);
+
+		const idle = await getProjectMap(projectId, first.cursor, 2);
+		expect(idle).toMatchObject({ delta: true, items: [], total: 5 });
+
+		await updateItem(projectId, loose, { title: 'renamed' }, USER);
+		const changed = await getProjectMap(projectId, first.cursor, 2);
+		expect(changed).toMatchObject({ delta: false, summarized: true });
+		expect(changed.items.map((r) => r.key)).toEqual(first.items.map((r) => r.key));
+	});
+});
+
 describe('session keys', () => {
 	it('depend on every part of the identity', () => {
 		const base = agentSessionKey(AGENT);
@@ -353,6 +503,26 @@ describe('the payload', () => {
 		for (const id of identifiers) expect(json).not.toContain(id);
 		console.log(`map payload, 2,000 items: ${json.length} bytes, ${gzipped} gzipped`);
 		expect(gzipped).toBeLessThan(100 * 1024);
+	}, 60_000);
+
+	it('keeps a poll small: an idle one, and one with a few changed items', async () => {
+		await generateMapProject((text, params) => state.db!.query(text, params), { projectId, userId, items: 2000, now: Date.now() });
+		await settle();
+		const { cursor } = await getProjectMap(projectId);
+		const size = (read: Awaited<ReturnType<typeof getProjectMap>>): { raw: number; gzipped: number } => {
+			const json = JSON.stringify(encodeMapRead(read, 'MP'));
+			return { raw: json.length, gzipped: gzipSync(json).length };
+		};
+
+		const idle = size(await getProjectMap(projectId, cursor));
+		for (const n of [5, 600, 1400]) await updateItem(projectId, n, { status: 'in_progress' }, AGENT);
+		await recordWorkerActivity(projectId, 600, AGENT);
+		const changed = await getProjectMap(projectId, cursor);
+		const few = size(changed);
+
+		console.log(`map poll, 2,000 items: idle ${idle.raw} bytes (${idle.gzipped} gzipped), ${changed.items.length} changed ${few.raw} bytes (${few.gzipped} gzipped)`);
+		expect(idle.raw).toBeLessThan(1024);
+		expect(few.gzipped).toBeLessThan(2048);
 	}, 60_000);
 });
 
