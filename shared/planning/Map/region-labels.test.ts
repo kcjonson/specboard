@@ -19,7 +19,8 @@ const region = (key: string, size: number, title = `Region ${key}`): DrawRegion 
 	weight: 1,
 	cue: null,
 	pr: false,
-	needsPerson: false,
+	reason: null,
+	upNext: null,
 	rollup: { done: 2, in_flight: 1, next: 1, later: 0 },
 	size,
 });
@@ -136,7 +137,7 @@ describe('region labels', () => {
 	});
 
 	it('keeps off an expand control and off a dot\'s ink ring', () => {
-		const ringed = dot('N', a.top.x, a.top.y - 14, { needsPerson: true });
+		const ringed = dot('N', a.top.x, a.top.y - 14, { reason: 'question' });
 		const control = { x: a.top.x + 60, y: a.top.y, r: 6 };
 		const [label] = regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [ringed], transform: identity, viewport, measure, cap: null, occupied: [control] });
 		expect(label).toBeDefined();

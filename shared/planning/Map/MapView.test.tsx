@@ -12,9 +12,10 @@ import { BoardBuilder } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { MapView } from './MapView';
-import type { MapRead } from '@specboard/core/map-read';
+import type { MapItemType, MapRead } from '@specboard/core/map-read';
 import { memoryCollapseStore } from './collapse-store.fixture';
 import { MapDataModel } from './map-data-model';
+import type { MapSearchSource } from './map-search';
 import { ActivityCache } from './quick/activity-cache';
 import type { MapFrame, MapRenderer } from './renderer';
 
@@ -33,8 +34,12 @@ vi.mock('./renderer', async (importOriginal) => ({
 	createCanvasRenderer: () => renderer,
 }));
 
+const layoutCalls = vi.fn();
 const worker: MapLayoutWorker = {
-	layout: (input) => Promise.resolve({ layout: layoutMap(input), ms: 1 }),
+	layout: (input) => {
+		layoutCalls(input);
+		return Promise.resolve({ layout: layoutMap(input), ms: 1 });
+	},
 	terminate: vi.fn(),
 };
 
@@ -50,15 +55,33 @@ const closed = vi.fn();
 interface MapProps {
 	openItemKey?: string;
 	covered?: number;
+	search?: string;
+	type?: MapItemType | null;
+	searchSource?: MapSearchSource;
 }
 
 type RenderedMap = Omit<ReturnType<typeof render>, 'rerender'> & { model: MapDataModel; rerender(next: MapProps): void };
 
+const cleared = vi.fn();
+
 function renderMap(source: () => Promise<MapRead>, props: MapProps = {}): RenderedMap {
 	const model = new MapDataModel(source, () => worker, memoryCollapseStore());
 	const activity = new ActivityCache(() => Promise.resolve([]));
+	const searchSource = props.searchSource ?? (() => Promise.resolve([]));
 	const view = (next: MapProps): JSX.Element => (
-		<MapView projectRef="acme/specboard" model={model} activity={activity} covered={next.covered ?? 0} openItemKey={next.openItemKey} onOpenItem={(key) => opened.push(key)} onCloseItem={closed} />
+		<MapView
+			projectRef="acme/specboard"
+			model={model}
+			activity={activity}
+			searchSource={searchSource}
+			covered={next.covered ?? 0}
+			openItemKey={next.openItemKey}
+			search={next.search ?? ''}
+			type={next.type ?? null}
+			onClear={cleared}
+			onOpenItem={(key) => opened.push(key)}
+			onCloseItem={closed}
+		/>
 	);
 	const rendered = render(view(props));
 	return { ...rendered, model, rerender: (next) => rendered.rerender(view(next)) };
@@ -84,10 +107,15 @@ beforeEach(() => {
 	frames.length = 0;
 	opened.length = 0;
 	closed.mockReset();
+	layoutCalls.mockReset();
+	cleared.mockReset();
 	window.history.replaceState(null, '', '/projects/acme/specboard/planning?view=map');
 	// The whole Map is 1000 by 532; the toolbar over its corner is a small box, so labels and cards still have the rest.
 	vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
 		const toolbar = this.getAttribute('role') === 'group';
+		// The stepping bar sits at the top, in the middle.
+		const bar = this.className.includes('barSlot');
+		if (bar) return { x: 380, y: 12, left: 380, top: 12, right: 620, bottom: 48, width: 240, height: 36, toJSON: () => ({}) };
 		return toolbar
 			? { x: 12, y: 12, left: 12, top: 12, right: 200, bottom: 52, width: 188, height: 40, toJSON: () => ({}) }
 			: { x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 532, width: 1000, height: 532, toJSON: () => ({}) };
@@ -432,5 +460,195 @@ describe('MapView interaction', () => {
 		fireEvent.pointerMove(canvas, { clientX: at.clientX + 40, clientY: at.clientY, pointerType: 'touch' });
 		fireEvent.pointerUp(canvas, { clientX: at.clientX + 40, clientY: at.clientY, pointerType: 'touch' });
 		expect(opened).toEqual([]);
+	});
+});
+
+/** A board with every kind of mark the strip counts and the Map draws: a question, a review, a hold, a deadlock, up next, and a live session. */
+function marked(): { read: MapRead; epic: string; asked: string; review: string; hold: string; cycle: [string, string]; upNext: string; live: string; done: string } {
+	// The model reads the clock for what is live, so the board is built around the real now.
+	const b = new BoardBuilder(Date.now());
+	const epic = b.add({ type: 'epic', status: 'in_progress', title: 'Open family' });
+	const asked = b.add({ parentKey: epic.key, status: 'in_progress', subStatus: 'needs_input', title: 'Pick a checklist wording' });
+	const upNext = b.add({ parentKey: epic.key, status: 'ready', title: 'Import a checklist' });
+	const review = b.add({ status: 'in_review', title: 'Review the drawer' });
+	const hold = b.add({ status: 'ready', blocked: true, textBlockerCount: 1, title: 'Wait on legal' });
+	const first = b.add({ status: 'ready', title: 'Move sessions' });
+	const second = b.add({ status: 'ready', title: 'Drop the table' });
+	b.block(first, second);
+	b.block(second, first);
+	const live = b.add({ status: 'in_progress', title: 'Write webhooks' });
+	b.work(live, 'session-a', 'laptop', 3);
+	const done = b.add({ status: 'done', title: 'Old chore' });
+	return { read: { items: b.rows, summarized: false }, epic: epic.key, asked: asked.key, review: review.key, hold: hold.key, cycle: [first.key, second.key], upNext: upNext.key, live: live.key, done: done.key };
+}
+
+describe('MapView summary strip', () => {
+	it('draws with dashes while the read loads, then counts every phase, blocked, what needs a person, and live sessions', async () => {
+		const { read } = marked();
+		let resolve: (read: MapRead) => void = () => {};
+		const { container } = renderMap(() => new Promise<MapRead>((r) => (resolve = r)));
+		const strip = container.querySelector('section[aria-label="Project summary"]') as HTMLElement;
+		expect(strip.textContent).toContain('Done-');
+		resolve(read);
+		await waitFor(() => expect(strip.textContent).toContain('Done1'));
+		const text = strip.textContent!;
+		expect(text).toContain('In flight4');
+		expect(text).toContain('Needs a person5');
+		expect(text).toContain('Live sessions1');
+		expect(text).toMatch(/Updated just now/);
+	});
+
+	it('is outside the canvas: it stays while the Map has nothing to draw', async () => {
+		const { container, findByText } = renderMap(() => Promise.resolve({ items: [], summarized: false }));
+		await findByText(/Nothing on the map yet/);
+		expect(container.querySelector('section[aria-label="Project summary"]')).not.toBeNull();
+	});
+});
+
+describe('MapView search and filters', () => {
+	const litKeys = (): ReadonlySet<string> | undefined => frames.at(-1)?.focus.to?.dots;
+
+	it('dims what the search did not match, lights and labels what it did, and names the search in the bar', async () => {
+		const m = marked();
+		const source = vi.fn().mockResolvedValue([m.asked, m.upNext, 'MAP-404']);
+		const { findByText, getByRole, container } = renderMap(() => Promise.resolve(m.read), { search: 'checklist', searchSource: source });
+		await findByText('Matches for "checklist"');
+		expect(source).toHaveBeenCalledWith('checklist');
+		await waitFor(() => expect(getByRole('status').textContent).toBe('2 matches'));
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.asked, m.upNext])));
+		// The matches' own labels, at a level where only in-flight work is named.
+		const labelled = frames.at(-1)!.dotLabels.map((label) => label.key);
+		expect(labelled).toContain(m.upNext);
+		expect(frames.at(-1)!.outlined.size).toBe(0);
+		// The strip does not change with a search: it counts the project.
+		expect(container.querySelector('section[aria-label="Project summary"]')!.textContent).toContain('Done1');
+	});
+
+	it('steps through the matches left to right, focusing each, and wraps', async () => {
+		const m = marked();
+		const { findByLabelText, getByRole } = renderMap(() => Promise.resolve(m.read), { search: 'x', searchSource: () => Promise.resolve([m.review, m.hold, m.live]) });
+		const next = await findByLabelText('Next');
+		await waitFor(() => expect((next as HTMLButtonElement).disabled).toBe(false));
+		const focused = (): string | undefined => frames.at(-1)!.focus.to?.key;
+		const order: string[] = [];
+		for (let i = 0; i < 4; i++) {
+			fireEvent.click(next);
+			await waitFor(() => expect(getByRole('status').textContent).toBe(`${(i % 3) + 1} of 3`));
+			// The camera and the focus follow the step on the next frame.
+			await waitFor(() => expect(focused()).toBeDefined());
+			if (i > 0) await waitFor(() => expect(focused()).not.toBe(order[i - 1]));
+			order.push(focused()!);
+			await waitFor(() => expect(new URLSearchParams(window.location.search).get('focus')).toBe(focused()));
+		}
+		expect(order[3]).toBe(order[0]);
+		expect(new Set(order.slice(0, 3)).size).toBe(3);
+	});
+
+	it('says so in the bar and dims nothing when nothing matched', async () => {
+		const m = marked();
+		const { findByText, getByRole } = renderMap(() => Promise.resolve(m.read), { search: 'zzz', searchSource: () => Promise.resolve([]) });
+		await findByText('Matches for "zzz"');
+		await waitFor(() => expect(getByRole('status').textContent).toBe('No matches'));
+		expect(litKeys()).toBeUndefined();
+	});
+
+	it('says a search failed and offers to try again', async () => {
+		const m = marked();
+		const source = vi.fn().mockRejectedValueOnce(new Error('HTTP 500')).mockResolvedValue([m.asked]);
+		const { findByText, getByRole } = renderMap(() => Promise.resolve(m.read), { search: 'boom', searchSource: source });
+		await waitFor(() => expect(getByRole('status').textContent).toBe('Search failed'));
+		fireEvent.click(await findByText('Retry'));
+		await waitFor(() => expect(getByRole('status').textContent).toBe('1 match'));
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.asked])));
+	});
+
+	it('isolates what needs a person with the strip\'s count, and never re-lays out the Map', async () => {
+		const m = marked();
+		const { getByRole, findByText } = renderMap(() => Promise.resolve(m.read));
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBeGreaterThan(5));
+		const before = frames.at(-1)!.dots.map((dot) => [dot.key, dot.x, dot.y]);
+		const layouts = layoutCalls.mock.calls.length;
+
+		fireEvent.click(getByRole('button', { name: /^Needs a person/ }));
+		await findByText('Filtered: needs a person');
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.asked, m.review, m.hold, m.cycle[0], m.cycle[1]])));
+		// The ring on each lit dot is the reason it needs a person.
+		const reasons = new Map(frames.at(-1)!.dots.map((dot) => [dot.key, dot.reason]));
+		expect(reasons.get(m.asked)).toBe('question');
+		expect(reasons.get(m.review)).toBe('review');
+		expect(reasons.get(m.hold)).toBe('hold');
+		expect(reasons.get(m.cycle[0])).toBe('cycle');
+
+		fireEvent.click(getByRole('button', { name: /^In flight/ }));
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.asked, m.review])));
+		fireEvent.click(getByRole('button', { name: /^Live sessions/ }));
+		await waitFor(() => expect(litKeys()).toBeUndefined());
+		expect(layoutCalls.mock.calls.length).toBe(layouts);
+		expect(frames.at(-1)!.dots.map((dot) => [dot.key, dot.x, dot.y])).toEqual(before);
+	});
+
+	it('filters by the toolbar\'s type too, and by live sessions', async () => {
+		const m = marked();
+		const { rerender, getByRole } = renderMap(() => Promise.resolve(m.read));
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBeGreaterThan(5));
+		fireEvent.click(getByRole('button', { name: /^Live sessions/ }));
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.live])));
+		rerender({ type: 'epic' });
+		await waitFor(() => expect(litKeys()).toBeUndefined());
+	});
+
+	it('lights a region\'s outline when its parent matches, and keeps the family\'s own members dim', async () => {
+		const m = marked();
+		renderMap(() => Promise.resolve(m.read), { search: 'family', searchSource: () => Promise.resolve([m.epic]) });
+		await waitFor(() => expect(frames.at(-1)?.outlined).toEqual(new Set([m.epic])));
+		expect(litKeys()).toEqual(new Set());
+		expect(frames.at(-1)!.focus.to!.regions).toEqual(new Set([m.epic]));
+	});
+
+	it('Escape clears the search and the filters once the drawer and the selection are done with it', async () => {
+		const m = marked();
+		const { getByRole, findByText } = renderMap(() => Promise.resolve(m.read), { search: 'x', searchSource: () => Promise.resolve([m.asked]) });
+		await findByText('Matches for "x"');
+		fireEvent.keyDown(document.body, { key: 'Escape' });
+		expect(cleared).toHaveBeenCalledTimes(1);
+		cleared.mockClear();
+		fireEvent.click(getByRole('button', { name: /^Done/ }));
+		fireEvent.click(getByRole('button', { name: 'Clear' }));
+		expect(cleared).toHaveBeenCalledTimes(1);
+		await waitFor(() => expect(getByRole('button', { name: /^Done/ }).getAttribute('aria-pressed')).toBe('false'));
+	});
+
+	it('does not clear anything for Escape typed in a field', async () => {
+		const m = marked();
+		const { findByText } = renderMap(() => Promise.resolve(m.read), { search: 'x', searchSource: () => Promise.resolve([m.asked]) });
+		await findByText('Matches for "x"');
+		const input = document.createElement('input');
+		document.body.appendChild(input);
+		fireEvent.keyDown(input, { key: 'Escape' });
+		input.remove();
+		expect(cleared).not.toHaveBeenCalled();
+	});
+
+	it('lets go of the focus a step took when the bar closes', async () => {
+		const m = marked();
+		const { findByLabelText, rerender, container } = renderMap(() => Promise.resolve(m.read), { search: 'x', searchSource: () => Promise.resolve([m.review]) });
+		const next = await findByLabelText('Next');
+		await waitFor(() => expect((next as HTMLButtonElement).disabled).toBe(false));
+		fireEvent.click(next);
+		await waitFor(() => expect(frames.at(-1)!.focus.to?.key).toBe(m.review));
+		rerender({ search: '' });
+		await waitFor(() => expect(container.querySelector('[aria-label^="Matches for"]')).toBeNull());
+		await waitFor(() => expect(frames.at(-1)!.focus.to).toBeNull());
+	});
+});
+
+describe('MapView up next', () => {
+	it('numbers the up-next items on their dots', async () => {
+		const m = marked();
+		renderMap(() => Promise.resolve(m.read));
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBeGreaterThan(5));
+		const numbered = frames.at(-1)!.dots.filter((dot) => dot.upNext !== null);
+		expect(numbered.map((dot) => dot.upNext).sort()).toEqual(numbered.map((_, i) => i + 1));
+		expect(numbered.find((dot) => dot.upNext === 1)!.key).toBe(m.upNext);
 	});
 });

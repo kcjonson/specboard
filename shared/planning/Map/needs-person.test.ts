@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { BoardBuilder } from './layout/board-fixture';
-import { needsPerson } from './needs-person';
+import { layoutMap } from './layout/layout';
+import { REASON_ORDER, REASON_TAGS, REASON_TEXT, needsPerson, reasonsText, tagOf } from './needs-person';
+
+const reasonsOf = (b: BoardBuilder, deadlocked: string[] = []): Map<string, readonly string[]> =>
+	new Map(needsPerson(b.rows, { deadlocked }));
 
 describe('needs a person, from the read', () => {
 	it('rings a question, work waiting on review, and a text blocker, and nothing finished', () => {
@@ -12,6 +16,57 @@ describe('needs a person, from the read', () => {
 		b.add({ status: 'in_progress', subStatus: 'in_development' });
 		b.add({ status: 'ready' });
 		b.add({ status: 'done', subStatus: 'pr_open', textBlockerCount: 1 });
-		expect([...needsPerson(b.rows)].sort()).toEqual([asked.key, prOpen.key, review.key, held.key].sort());
+		const reasons = needsPerson(b.rows, { deadlocked: [] });
+		expect([...reasons.keys()].sort()).toEqual([asked.key, prOpen.key, review.key, held.key].sort());
+		expect(reasons.get(asked.key)).toEqual(['question']);
+		expect(reasons.get(prOpen.key)).toEqual(['review']);
+		expect(reasons.get(review.key)).toEqual(['review']);
+		expect(reasons.get(held.key)).toEqual(['hold']);
+	});
+
+	it('gives an item every reason it has, the most pressing first', () => {
+		const b = new BoardBuilder();
+		const many = b.add({ status: 'in_review', subStatus: 'needs_input', textBlockerCount: 1 });
+		expect(reasonsOf(b, [many.key]).get(many.key)).toEqual(['question', 'cycle', 'hold', 'review']);
+	});
+
+	it('rings every item in a blocker cycle, from the cycle the layout found', () => {
+		const b = new BoardBuilder();
+		const first = b.add({ status: 'ready' });
+		const second = b.add({ status: 'ready' });
+		const third = b.add({ status: 'ready' });
+		const bystander = b.add({ status: 'ready' });
+		b.block(first, second);
+		b.block(second, third);
+		b.block(third, first);
+		b.block(bystander, first);
+		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 });
+		const reasons = needsPerson(b.rows, layout);
+		expect([...reasons.keys()].sort()).toEqual([first.key, second.key, third.key].sort());
+		for (const key of reasons.keys()) expect(reasons.get(key)).toEqual(['cycle']);
+	});
+
+	it('does not ring a finished item that is still named in a cycle', () => {
+		const b = new BoardBuilder();
+		const done = b.add({ status: 'done' });
+		expect(reasonsOf(b, [done.key]).size).toBe(0);
+	});
+});
+
+describe('reason tags', () => {
+	it('is ? for a question, PR for review, zz for a quiet agent, and ! for a hold or a deadlock', () => {
+		expect(REASON_TAGS).toEqual({ question: '?', review: 'PR', quiet: 'zz', hold: '!', cycle: '!' });
+	});
+
+	it('takes the lead reason\'s tag, which is the most pressing one', () => {
+		expect(tagOf(['question', 'review'])).toBe('?');
+		expect(tagOf(['cycle', 'review'])).toBe('!');
+		expect(tagOf(['review', 'quiet'])).toBe('PR');
+		expect(tagOf(['quiet'])).toBe('zz');
+	});
+
+	it('says every reason in words, lead first, and has words for each', () => {
+		for (const reason of REASON_ORDER) expect(REASON_TEXT[reason].length).toBeGreaterThan(0);
+		expect(reasonsText(['question', 'review'])).toBe(`${REASON_TEXT.question}; ${REASON_TEXT.review}`);
 	});
 });

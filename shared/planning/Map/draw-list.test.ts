@@ -73,7 +73,7 @@ describe('draw list', () => {
 	});
 
 	it('rings what needs a person: a question, a PR waiting on review, and a hold', () => {
-		const ringed = dots.filter((dot) => dot.needsPerson).map((dot) => dot.key).sort();
+		const ringed = dots.filter((dot) => dot.reason !== null).map((dot) => dot.key).sort();
 		expect(ringed).toEqual([blocker.key, asked.key, held.key].sort());
 	});
 
@@ -88,7 +88,8 @@ describe('draw list', () => {
 		expect(regions[0]).toMatchObject({
 			title: epic.title,
 			status: 'in_progress',
-			needsPerson: false,
+			reason: null,
+			upNext: null,
 			rollup: { done: 1, in_flight: 1, next: 1, later: 1 },
 			size: 4,
 		});
@@ -105,7 +106,7 @@ describe('draw list', () => {
 	});
 
 	it('skips a node whose row is missing rather than guessing a status', () => {
-		expect(buildDrawList(layout, new Map())).toEqual({ dots: [], regions: [], links: [] });
+		expect(buildDrawList(layout, new Map())).toEqual({ dots: [], regions: [], links: [], needs: new Map() });
 	});
 });
 

@@ -19,12 +19,14 @@ import { intersects, type Box } from './box-index';
 import { cardBox } from './cards/card-culling';
 import { SPRING_MS, springRemaining } from './drag';
 import { dotBox, screenRadius } from './dot-boxes';
+import { EDGE_MARKER_SIZE, placeEdgeMarkers, type EdgeMarkerInput } from './edge-markers';
 import { buildDrawList, type DrawDot, type DrawLink, type DrawList, type Rollup } from './draw-list';
 import { FocusFade } from './focus-fade';
 import { HitIndex, type Hit, type HitInput } from './hit-index';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
 import type { MapBounds, MapLayout, MapPoint } from './layout/types';
 import type { MapCamera, ScreenPoint } from './map-camera';
+import { litRelation, type Highlight } from './map-lens';
 import { minimapPanel, minimapShows, minimapSize, minimapViewport, type MinimapSize } from './minimap/minimap';
 import { EMPTY_OVERLAY, type CardSet, type DragOffset, type MapOverlay, type MinimapFrame, type QuickFrame } from './overlay';
 import { quickContent, quickHeight, QUICK_WIDTH } from './quick/quick-content';
@@ -106,13 +108,19 @@ export class MapSurface {
 	/** The layout's bounds widened to every region outline: what the camera fits and holds the Map to. */
 	private extent: MapBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 	private rows: ReadonlyMap<string, MapItemRow> = EMPTY_OVERLAY.rows;
-	private drawing: DrawList = { dots: [], regions: [], links: [] };
+	private drawing: DrawList = { dots: [], regions: [], links: [], needs: new Map() };
 	private dotsByKey = new Map<string, DrawDot>();
 	private relations: RelationIndex | null = null;
 	private outlines: RegionOutlines | null = null;
 	/** Bumped by every frame and every new layout, so only the last frame's deferred outline task runs. */
 	private deferred = 0;
 	private allLinks = false;
+	/** What a search or filter lights; null when none is on or nothing matched, so nothing dims. */
+	private highlight: Highlight | null = null;
+	/** The relation the fade is heading to, kept while neither it nor the highlight changes, so the fade doesn't restart. */
+	private lit: { relation: Relation | null; highlight: Highlight | null; result: Relation | null } | null = null;
+	/** Markers asked for at the plot's edge, which show for the ones that are out of view. */
+	private edgeMarkers: readonly EdgeMarkerInput[] = [];
 	private controls: CollapseControl[] = [];
 	private viewport: Viewport = { width: 0, height: 0 };
 	private painting = false;
@@ -225,7 +233,7 @@ export class MapSurface {
 	clear(): void {
 		this.layout = null;
 		this.rows = EMPTY_OVERLAY.rows;
-		this.drawing = { dots: [], regions: [], links: [] };
+		this.drawing = { dots: [], regions: [], links: [], needs: new Map() };
 		this.dotsByKey = new Map();
 		this.relations = null;
 		this.outlines = null;
@@ -247,6 +255,19 @@ export class MapSurface {
 	/** Every blocker and discovered-from link draws, or only the ones focus lights. */
 	setAllLinks(all: boolean): void {
 		this.allLinks = all;
+		this.requestPaint();
+	}
+
+	/** The items a search or filter lights; everything else dims as it does under focus, and nothing moves. Null puts everything back. */
+	setHighlight(highlight: Highlight | null): void {
+		if (highlight === this.highlight) return;
+		this.highlight = highlight;
+		this.refocus();
+	}
+
+	/** The items whose edge markers show while they are out of view, in priority order. */
+	setEdgeMarkers(markers: readonly EdgeMarkerInput[]): void {
+		this.edgeMarkers = markers;
 		this.requestPaint();
 	}
 
@@ -505,6 +526,7 @@ export class MapSurface {
 				viewport: this.viewport,
 				measure: (text, font) => this.renderer.measureLabel(text, font),
 				named: this.named,
+				lit: this.highlight ?? undefined,
 				occupied: { circles: expand.map((control) => control.at), boxes: reserved },
 			})
 			: { labels: { regions: [], dots: [], cards: [] }, cards: [] };
@@ -521,6 +543,7 @@ export class MapSurface {
 			controls: this.controls,
 			cards: cards.set ? { keys: cards.set.keys, alpha: cards.alpha } : null,
 			focus,
+			outlined: this.highlight?.outlined ?? NONE,
 			drag: pull,
 			transform,
 			level: level.level,
@@ -537,6 +560,7 @@ export class MapSurface {
 			quick: this.quickFor(transform, level.level, labels.regions, cards.set, minimap?.panel ?? null),
 			focus: this.fade.target,
 			drag: pull,
+			edges: layout ? this.edgesFor(transform, [...(minimap ? [minimap.panel] : []), ...labels.regions.map((label) => label.box), ...labels.dots.map((label) => label.box)]) : [],
 		});
 		// Empty means no glyph at the size it is drawn, and no card body, reaches the plot.
 		const plot = { x: 0, y: 0, w: this.viewport.width, h: this.viewport.height };
@@ -728,7 +752,11 @@ export class MapSurface {
 
 	private refocus(): void {
 		const key = this.focused();
-		this.fade.set(key && this.relations ? this.relations.relation(key) : null);
+		const relation = key && this.relations ? this.relations.relation(key) : null;
+		if (!this.lit || this.lit.relation !== relation || this.lit.highlight !== this.highlight) {
+			this.lit = { relation, highlight: this.highlight, result: litRelation(relation, this.highlight) };
+		}
+		this.fade.set(this.lit.result);
 		this.requestPaint();
 	}
 
@@ -761,10 +789,24 @@ export class MapSurface {
 			const otherDot = other === key ? undefined : this.dotsByKey.get(other);
 			if (otherDot) related.push(dotBox(otherDot, transform, level));
 		}
-		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress)) };
+		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key) };
+		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress, marks)) };
 		const reserved = [...this.chrome, ...(minimap ? [minimap] : [])];
 		const plot = { x: 0, y: 0, w: Math.max(0, this.viewport.width - this.covered), h: this.viewport.height };
-		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress };
+		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress, marks };
+	}
+
+	/** Markers for the asked-for items that are out of view, kept off the page's own controls, the minimap, the labels, and the drawer. */
+	private edgesFor(transform: Transform, taken: readonly Box[]): ReturnType<typeof placeEdgeMarkers> {
+		if (this.edgeMarkers.length === 0) return [];
+		return placeEdgeMarkers(this.edgeMarkers, {
+			plot: { x: 0, y: 0, w: Math.max(EDGE_MARKER_SIZE, this.viewport.width - this.covered), h: this.viewport.height },
+			avoid: [...this.chrome, ...taken],
+			locate: (key) => {
+				const node = this.placeOf(key);
+				return node ? { x: transform.x + transform.k * node.x, y: transform.y + transform.k * node.y } : undefined;
+			},
+		});
 	}
 
 	/** The pull on the dragged dot right now, springing back if it has been released; null once it is home. */
@@ -789,6 +831,14 @@ export class MapSurface {
 		);
 	}
 }
+
+const NONE: ReadonlySet<string> = new Set();
+
+/** 1 to 3 for an item that is up next. */
+const upNextOf = (layout: MapLayout | null, key: string): number | null => {
+	const at = layout?.upNext.indexOf(key) ?? -1;
+	return at < 0 ? null : at + 1;
+};
 
 /** A parent's items by phase, for the quick card: a region's rollup, or a folded dot's; null for an item with no family. */
 function progressOf(drawing: DrawList, key: string, dot: DrawDot | undefined): Rollup | null {

@@ -501,6 +501,9 @@ board with a sidebar.
 On the Map (`?view=map`) the same drawer overlays the right side of the plot instead of
 narrowing it, and the selected item stays in view
 ([ai-development-overview.md](ai-development-overview.md#navigation-and-interaction)).
+The toolbar's search box and type filter stay on the Map and drive its dimming instead of
+the board's windows: the board's collection is left alone while the Map is showing, and
+applies the same search and type when the board comes back.
 
 ---
 

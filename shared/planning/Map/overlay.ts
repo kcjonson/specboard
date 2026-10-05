@@ -1,10 +1,12 @@
 import type { MapItemRow } from '@specboard/core/map-read';
 import type { Box } from './box-index';
 import type { Transform } from './camera';
+import type { PlacedEdgeMarker } from './edge-markers';
 import type { DrawDot, Rollup } from './draw-list';
 import type { MapBounds, MapPoint } from './layout/types';
 import type { MinimapSize } from './minimap/minimap';
 import type { QuickSide } from './quick/quick-card-placement';
+import type { QuickMarks } from './quick/quick-content';
 import type { Relation } from './relations';
 
 /**
@@ -43,6 +45,8 @@ export interface QuickFrame {
 	side: QuickSide;
 	/** The family's items by phase when the item has children. */
 	progress: Rollup | null;
+	/** Why the item needs a person and whether it is up next: what the card leads with. */
+	marks: QuickMarks;
 }
 
 /** A dot being dragged and how far it is from home, in layout units. */
@@ -67,13 +71,15 @@ export interface OverlayFrame {
 	focus: Relation | null;
 	/** The card of a dragged dot moves with it. */
 	drag: DragOffset | null;
+	/** Markers at the plot's edge for items that are out of view. */
+	edges: readonly PlacedEdgeMarker[];
 }
 
 export interface MapOverlay {
 	publish(frame: OverlayFrame): void;
 }
 
-export const EMPTY_OVERLAY: OverlayFrame = { transform: { k: 1, x: 0, y: 0 }, rows: new Map(), cards: null, cardAlpha: 0, minimap: null, quick: null, focus: null, drag: null };
+export const EMPTY_OVERLAY: OverlayFrame = { transform: { k: 1, x: 0, y: 0 }, rows: new Map(), cards: null, cardAlpha: 0, minimap: null, quick: null, focus: null, drag: null, edges: [] };
 
 export class OverlayStore implements MapOverlay {
 	frame: OverlayFrame = EMPTY_OVERLAY;
