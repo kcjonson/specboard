@@ -61,11 +61,13 @@ describe('MapSurface under a search or filter', () => {
 
 	it('hands the renderer the regions to outline, and labels for the matches', () => {
 		const { surface, renderer, flush, s } = shown();
-		surface.setHighlight(highlightOf([s.epic, s.keys[8]!], s.layout));
+		// The loose dot with the most room around it: how a layout spaces the others isn't what this is about.
+		const alone = s.layout.nodes.filter((node) => s.keys.slice(1).includes(node.key)).sort((a, b) => a.x - b.x)[0]!.key;
+		surface.setHighlight(highlightOf([s.epic, alone], s.layout));
 		flush();
 		const frame = renderer.frames.at(-1)!;
 		expect(frame.outlined).toEqual(new Set([s.epic]));
-		expect(frame.dotLabels.map((label) => label.key)).toContain(s.keys[8]);
+		expect(frame.dotLabels.map((label) => label.key)).toContain(alone);
 	});
 
 	it('keeps what the lens lit lit while something else is hovered or focused, and adds the hovered family', () => {

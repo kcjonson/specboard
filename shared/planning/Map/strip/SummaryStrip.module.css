@@ -2,8 +2,8 @@
 .strip {
 	display: flex;
 	align-items: center;
-	flex-wrap: wrap;
-	gap: var(--space-2) var(--space-3);
+	flex-wrap: nowrap;
+	gap: var(--space-2) var(--space-1);
 	padding: var(--space-2) var(--space-4);
 	border-bottom: 1px solid var(--color-border);
 	background: var(--color-surface);
@@ -11,8 +11,22 @@
 	font-size: var(--text-sm);
 }
 
+/*
+ * One line from 1280 px up. Below 1500 px the "changes" of the announce switch is kept for
+ * assistive tech only, and with the since-your-last-visit summary showing, so are the phase
+ * names (each phase carries its glyph); that summary shrinks and truncates, its full text being
+ * the button's title, and the freshness note is the last to give. Narrower than 1280 px the strip wraps.
+ */
+@media (max-width: 1279px) {
+	.strip {
+		flex-wrap: wrap;
+	}
+}
+
 /* A count that is also a filter: pressed, it dims everything else on the Map. */
 .chip {
+	flex-shrink: 0;
+	white-space: nowrap;
 	appearance: none;
 	display: inline-flex;
 	align-items: center;
@@ -42,6 +56,7 @@
 }
 
 .plain {
+	flex-shrink: 0;
 	display: inline-flex;
 	align-items: center;
 	gap: var(--space-2);
@@ -94,11 +109,39 @@
 	font-weight: var(--font-semibold, 600);
 }
 
+.since {
+	flex-shrink: 1;
+	min-width: 0;
+}
+
+.sinceText {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+@media (max-width: 1499px) {
+	.withSince .compactHide,
+	.announceMore {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+}
+
 .spacer {
 	flex: 1;
+	min-width: 0;
 }
 
 .fresh {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	color: var(--color-text-muted);
 	white-space: nowrap;
 }

@@ -56,6 +56,18 @@ describe('listItemNotes', () => {
 		expect(notes).toEqual([{ id: 'note-1', note: 'did a thing', actor: null, createdAt: new Date('2026-01-01') }]);
 	});
 
+	it('asks the database for only the newest entries when given a limit', async () => {
+		mockQuery
+			.mockResolvedValueOnce({ rows: [{ id: 'item-1' }], rowCount: 1 } as never)
+			.mockResolvedValueOnce({ rows: [makeRow()], rowCount: 1 } as never);
+
+		await listItemNotes('proj-1', 7, 1);
+
+		const [sql, params] = mockQuery.mock.calls[1]!;
+		expect(sql).toContain('ORDER BY n.created_at DESC LIMIT $3');
+		expect(params).toEqual([7, 'proj-1', 1]);
+	});
+
 	it('returns null when the item is not in the project', async () => {
 		mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never);
 

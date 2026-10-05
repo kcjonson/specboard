@@ -272,16 +272,17 @@ to fit; r is a dot's radius.
 | Date order | After every tick, done items go back into completion order by pooling adjacent violators, and in-flight items stay r + 10 right of the last completion. A pool fans its items evenly, in order, across twice its bloom half-width (below) around its mean, and takes in a neighbor that sits closer than that fan's step, so a burst never shares one x |
 | Dependencies | An unfinished item at least r1 + r2 + 10 right of each blocker, open or satisfied, enforced after every tick |
 | Chain link | Rest length r1 + r2 + 16, strength 0.7, in place of the later item's parent link |
-| Chain row | Strength 0.6 pulling each later item level with what blocks it |
+| Chain row | Strength 3 pulling every dot of a chain to the chain's common height, so it reads level (it was 0.6 pulling each later item level with what blocked it, which left a chain sloping about 15 units a step) |
 | Related chains | Strength 0.25 toward one row apart (their largest radii plus 10) |
-| Session to item | Rest length r1 + r2 + 30, strength 0.9 |
-| Computer to session | Rest length r1 + r2 + 26, strength 1 |
+| Session to item | Rest length r1 + r2 + 30, strength 0.9, the pull capped at 160 so an item far from its session stays with its family; the item takes 0.7 of it, and all of a session's items together can move it by at most 50, so it stays beside its computer |
+| Computer to session | Rest length r1 + r2 + 26, strength 1; the session's time target is its computer's, less that length |
 | Repulsion | 40, ignored past 260 |
 | Collision | Radii plus 4 |
 | Family separation | An extra 2.5 times the repulsion between dots of different families, or a loose dot and a family, within 60; a dot's family is the region it's drawn in, so a sub-epic's children also keep apart from their grandparent's own |
 | Region bands | Sibling regions whose stretches of time overlap are pushed apart in y, each as a whole, until their half-heights plus 50 separate their centers; strength 3. A parent with nested regions counts its own direct children as one more sibling |
+| Loose dots | A dot drawn in no region keeps 20 past the extent of a top-level region's dots, in y, wherever their stretches of time meet, at the band strength; it moves alone |
 | Midline | Strength 0.03 |
-| Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart; the strip past now is reserved at 0.6 of the time scale's unit width, computers at half of it and sessions at a quarter |
+| Computers | Held past now and past anything waiting on in-flight work, one row each, 150 apart. The strip past now is reserved at 0.6 of the time scale's unit width, computers at half of it, only while a computer is working; a board with none ends 0.08 of a unit past now, or at its last dot |
 | Velocity | 0.6 kept per tick (`d3-force` velocity decay 0.4) |
 | Ticks | 280 from cold, alpha 1 decaying to 0.001; 140 for a local pass, or the width fit's second pass, from alpha 0.25 |
 | Radius | 5.5 for a leaf; 6 + 2.3 times the square root of the descendant count for a parent; 8.5 for an in-flight leaf; in-flight parents 15% larger; 8 for a session, 14 for a computer |
@@ -348,10 +349,14 @@ there too. Held against the floor, a burst still reads as a cloud.
 - Regions don't overlap. Where two unrelated regions would, each keeps the ground
   nearer its own children and they meet at a shared edge with a hairline gap. The
   layout keeps loose dots and other families out of a region with a short-range
-  push between families, and stacks sibling families that share a stretch of time
-  in bands, so the drawing never has to dent its edge around a stranger.
+  push between families, stacks sibling families that share a stretch of time
+  in bands, and keeps a loose dot out of the band of any top-level region whose stretch of
+  time it is in (a weak discovered-from link can pull one toward a family member), so the
+  drawing never has to dent its edge around a stranger.
 - Regions nest. A child with children of its own is a region inside its parent's,
-  and each level out gets a little more padding and a slightly deeper tint.
+  and each level out gets a little more padding and a slightly deeper tint. The tint is a
+  share of the text color: 4% for the outermost level on a light surface and 9% on a dark
+  one, where the same contrast reads fainter, and a nested level adds 2.5 points (3.5 dark).
 - The label sits on the outline, at the top where there's room: the parent's status
   glyph, its title, and a short rollup bar split by phase (done, in flight, next,
   later). It takes the ink ring when the parent itself needs a person, its up-next
@@ -600,12 +605,15 @@ it, and both the computer and its sessions are on the Map.
 
 - A computer (the agent actor's device name) is a node while any of its sessions
   has written in the last hour. Computers sit at the right edge, past now and past
-  any work waiting on what's in flight, one row each. Their strip is reserved from the start, so the Map doesn't rescale when
-  work begins.
+  any work waiting on what's in flight, one row each. The strip they sit in is held only while one is working: a board
+  with no agent at work ends just past now rather than keeping empty ground, and when work begins the Map's extent grows
+  to take the strip while nothing already placed rescales or moves.
 - Each session is a numbered dot tied to its computer, with an amber line to every
   item it's working on. Items are pulled toward their session, so a session's
   items cluster and a computer's sessions cluster around it, while each item stays
-  tied to its family. When the session goes quiet for an hour, or the item leaves
+  tied to its family. The pull is capped, so an item far from its session stays in
+  its family and the line to it is long, and the session stays beside its own
+  computer however its items are scattered. When the session goes quiet for an hour, or the item leaves
   in progress, the item is released back to its family and its moment in time.
 - One text block per computer names the work: "personal-laptop", then "Session 1:
   SPE-206, SPE-209" and "Session 2: SPE-207". Items in a cluster don't get their
@@ -685,7 +693,11 @@ minutes, and the count is of distinct sessions. The phase, needs-a-person, and l
 counts are also the filters of the same names: pressing one dims everything that
 isn't in it, and pressing it again puts everything back. The "Agents at work" button
 sits after the live count. Freshness reads "Updated just now" or "Updated 4 min ago"
-from when the read last loaded, and keeps counting between refreshes.
+from when the read last loaded, and keeps counting between refreshes. The strip is one line
+from 1280 px up. Below 1500 px the "changes" of the announce switch is kept for assistive tech
+only, and while the since summary shows so are the phase names (each phase carries its glyph);
+that summary shrinks and truncates (its full text is the button's title), and the freshness
+note gives last. Narrower than 1280 px it wraps.
 
 ---
 
@@ -892,10 +904,12 @@ it lands.
   dots opens none), at once for keyboard focus, and for the selection when the drawer
   isn't already showing it (a coarse pointer's first tap). It sits beside the item on the
   side that covers the fewest related items, never under the toolbar, the minimap, or the
-  drawer, and takes no pointer. Its sessions line is the open agent sessions the read
+  drawer, keeping off the label of the item's own region when another side is as good, and
+  takes no pointer. Its sessions line is the open agent sessions the read
   carries; text blockers show there as a count and on the dot as the ink ring, since the
   read has no text. The latest activity entry comes from the item's notes, fetched when
-  the card opens and kept for the life of the view.
+  the card opens (the newest entry only: the notes read takes `?limit=1`) and kept for the
+  life of the view.
 - The selection is the item URL: `/planning/items/:key?view=map` opens that item in the
   drawer with it selected, and a related item chosen in the drawer moves it. The drawer
   overlays the plot, and selecting pans only as far as keeps the item 56 px inside the
@@ -964,7 +978,9 @@ so no card stays open for a keyboard that has left.
   was until the pointer leaves it, then glides. If the focused or selected dot moves
   (and the pointer isn't on one), the viewport follows it so it stays put on screen.
 - Regions follow their children by crossfading from the old outline to the new one
-  over the glide; tracing them every frame is too slow (see the feasibility notes).
+  over the glide, and each region's label glides from where it stood to where the new
+  outline puts it on the same curve; tracing outlines every frame is too slow (see the
+  feasibility notes).
 - A refresh never resets the viewport, the selection, or collapse state.
 
 Motion only ever means something changed. Nothing loops, nothing pulses on its own,
@@ -1096,31 +1112,67 @@ and nothing moves for more than a second.
 
 ## Performance
 
-- Data to first paint under 1 s for 1,000 items on a mid-range laptop, layout
-  included.
-- 60 fps pan and zoom at 2,000 items on a mid-range laptop; 30 fps or better on a
-  recent phone.
-- The simulation runs off the main thread. A refresh never drops frames during a
-  pan or zoom.
+Budgets, each with what the last pass (SPE-238) measured. Chrome at 1x, 1280 by 800, on a
+2019 Intel MacBook with a load average of 5 to 8 from other work and the stack's own
+containers, the production build served gzipped from a local server, a board of the
+generated kind (the layout tests' `syntheticBoard`: half its epics finished and folded,
+the rest open) unless it says otherwise. Frame times come from a script that sends one
+wheel event per frame for eight seconds.
+
+- **Data to first paint under 1 s for 1,000 items**, layout included. From the read landing
+  to the first dot drawn: a median of 432 ms over five loads of a generated 1,000-item board
+  (the worker 370 ms of it), 836 ms on the harder 1,000-item shape of 40 open epics of 20 tasks
+  each (the worker 660 to 860 ms, three loads). The dev server, unminified and with the worker
+  loaded as separate modules, adds about 120 ms. Larger boards, for scale: 793 ms at 2,000
+  items, 1,276 ms at 3,000, and 1,273 ms for a 5,460-item project past the read cap (dev server).
+- **60 fps pan and zoom at 2,000 items.** On the generated 2,000-item board the median frame
+  is 16.6 to 17.6 ms in every view (58 to 60 fps), and the 95th percentile 18.5 to 26.5 ms,
+  at the opening view, fit all, the middle level, and near. A frame over 50 ms comes a few times
+  per eight seconds of continuous input, worst 230 ms (a zoom through the middle and near
+  boundaries at the opening view; a pan at the middle level); the script is
+  mostly idle in them. The stress shape of 80 open families whose 2,000 dots are all on screen at fit all
+  (the layout tests' worst case) pans at 58 fps at its opening view and at the middle level but
+  36 fps at fit all, and a zoom through fit all runs 18 to 20 fps, which stays a miss.
+  30 fps on a recent phone has not been measured.
+- **The simulation runs off the main thread, and a refresh never drops frames during a pan or
+  zoom.** Three pickups landing while a 1,000-item board was being panned: the delta read came
+  back at 811 bytes, the worker answered 170 to 190 ms later, one frame of 50 ms drew where the
+  new layout landed, and every other frame in the 40 s were the pan's own (median 16.7 ms, none
+  over 60). The same refresh on the 40-epic shape took the worker 630 ms, with a 43 ms landing
+  frame; on the 80-epic stress shape 1.9 s in the worker and a 46 ms frame. Outline tracing for
+  a zoom into a finer grid step also runs in the worker now, and its answer travels as
+  transferred buffers.
 - The prototype ran on a second, 272-item board with a 96-child finished epic:
   272 items folded to 151 nodes, layout and first render in about 270 ms, no
-  overlapping regions, and done items in strict order.
+  overlapping regions, and done items in strict order. The same board's structure (anonymized)
+  is now a fixture the layout tests run at four canvas aspects, and the layout takes 37 ms on it
+  in Node.
 - At fit-all every dot is on screen, so culling to the viewport saves nothing there.
   The far and middle zoom levels draw one or two shapes per item; only near zoom
   draws cards.
-- The Map's code loads only when the view opens, so Board and Table don't get
+- **The Map's code loads only when the view opens**, so Board and Table don't get
   heavier. Target 60 KB gzipped for the Map's chunk, layout code included; the same
-  JavaScript ships to phones ([tech-stack.md](../tech-stack.md)).
+  JavaScript ships to phones ([tech-stack.md](../tech-stack.md)). **Not met**: from a real
+  `vite build`, the Map's chunk is 189.8 KB, 68.1 KB gzipped, with 3.2 KB of CSS, and the layout
+  worker is another 44.4 KB, 17.4 KB gzipped (d3-force, the layout, and the outline tracing), so
+  the whole is about 89 KB. d3-zoom and the d3 packages it needs (selection, transition,
+  interpolate, color, timer, dispatch, drag) are 47 KB of the chunk before gzip, about 15 KB
+  after; a camera of the Map's own in their place would bring the chunk to about 54 KB, which
+  the spec leaves for a decision.
 - A project past the read cap (5,000 rows, the list cap) still opens. Finished
   families (a parent and every descendant done) fold into their parent's row,
   oldest first, until the read fits: the row carries `summarizedDescendants`, the
   family's newest anchor, and the family's blocker links, and links elsewhere that
   named a folded item name the row. The response's `summarized` flag says so, and
   the Map says that it's summarizing. Unfinished work never folds, so a project
-  whose open work alone passes the cap comes back whole.
-- The read itself, on Postgres 16 with four other 5,000-item projects in the same
-  tables: about 28 ms in the database and 56 ms end to end for 2,000 items, and
-  64 ms and 115 ms for 5,000.
+  whose open work alone passes the cap comes back whole. A generated project of 5,460
+  items (120 finished epics of 30, 40 open ones of 20, 900 loose) opens with 4,980 rows,
+  the notice "This project is past the read cap, so finished families are summarized", the
+  summary strip counting all 5,460, and a 64 KB read.
+- **The read** at about 100 KB gzipped for 2,000 items: 38 KB for a generated 2,000-item board
+  (259 KB before gzip), 18 KB at 1,000, and 64 KB for the capped 4,980 rows of the project above.
+  On Postgres 16 with four other 5,000-item projects in the same tables: about 28 ms in
+  the database and 56 ms end to end for 2,000 items, and 64 ms and 115 ms for 5,000.
 
 ---
 
@@ -1234,7 +1286,9 @@ Input for the technical design, not decisions.
   Map's extent is measured at and at whatever step the Map is drawing (SPE-235), so
   a new layout costs the main thread nothing; a zoom into a step the layout didn't
   bring draws the nearest cached outlines (they're in layout units, so they still
-  fit) and computes the new step on the main thread once the gesture stops. On a
+  fit) while the worker traces the new step and hands it back as transferred buffers, and
+  the Map draws it when it arrives (SPE-238: tracing a big board's finer step on the main
+  thread took 0.2 to 0.7 s and froze the zoom). On a
   generated 1,000-item board (682 nodes,
   17 regions with finished epics folded) a step costs about 21 ms at 5 units and
   56 ms at 2.5; with every family open (34 regions, 610 members), 35 ms and
@@ -1332,6 +1386,59 @@ Input for the technical design, not decisions.
   frame of 50 ms where the new layout landed; a refresh landing mid-pan left the pan's
   frames as they were (median 16.9 ms, worst 35 ms, the same as the 3 s before it) with no
   long task.
+- As built (SPE-238), the last pass, on this board's own structure and a second, 272-item board's
+  (both in the layout tests, anonymized), a generated 1,000-item board, a 5,460-item one, and
+  boards of ten unrelated items and of one 400-child epic:
+  - A loose dot tied by discovered-from to a family member could land inside that family's region
+    (one case on the 272-item board at some canvas aspects; 21 on the generated 1,000-item board
+    and 142 on a 3,000-item one, before). The band force that stacks sibling regions now also
+    pushes a loose dot out of any top-level region's band whose stretch of time it is in (20 units
+    past the region's dots; 30 pressed members out of their outlines on a 3,000-item board where
+    two regions leave little room between them); none sit in a region now on either real
+    board at any canvas aspect or on a generated 1,000-item board (21 before), and 7 on a
+    2,000-item board (69) and 8 on a 3,000-item one (142), with every member inside its outline. The anonymized fixtures don't reproduce the 272-item
+    case (the layout hashes keys into its starting heights, and the staged keys are gone), so
+    the regression test is the generated board.
+  - The strip past now is held only while a computer is working; a board with none ends 0.08 of a
+    unit past now. Ten unrelated items: 230 of 647 units of empty ground past the last dot, now 80
+    of 595.
+  - A chain is pulled to its common height with strength 3, where each item was pulled level with
+    its blocker with strength 0.6 and a chain sloped 12 to 29 units a step in a crowd. Now
+    0.7 to 3 on average (a finished chain, whose dots close days apart and sit a few units
+    apart in x, can't be level and apart: it keeps the little slope that separates them).
+  - A session's pull on an item is capped (160) and all of an item's pulls on its session
+    together (50), and its time target is its computer's. Before, a session working five items in
+    five families dragged each toward it and the whole 1,000-item board to 23,300 by 32,800
+    units; now 18,600 by 6,800 at the right aspect, the session 144 from its computer, no member
+    outside its outline (165 before).
+  - Outlines: the closing no longer allocates a negated copy, and the read-back skips empty cells
+    (a 40-open-epic 1,000-item board: 505 ms to 316 ms at the 5-unit step, 1,143 to 820 at 2.5).
+    Drawn small, an outline merges curves closer than a pixel or two (the path is rebuilt only when
+    that gap doubles), within a time budget per frame when an older path exists. A 2,000-item stress
+    board at fit all went from 7 fps to 36.
+  - Label placement: a region's label spots are tried as boxes (the label is built where it lands),
+    an outline wholly off the plot costs one point, and a level that caps region labels gives up
+    after four misses per label allowed. At fit all on a 2,000-item board with 80 open regions the
+    pass fell from 160 ms to 14 ms in Node. At fit all on a 1,280 by 570 plot the labels placed
+    were 3 of 14 regions on this board (6 before the layout changes of this pass), 6 of 8 on the
+    272-item board (5), 3 of 17 on a generated 1,000-item board (7) and 8 at 1,600 by 800 on
+    all of them: the cap of 8 is reached when the plot has room, which a loosely outlined, more
+    spread layout leaves less of.
+  - Long-epic boards. Both real boards read well: this board's long-running epics are bulbs on
+    a thin neck, the 272-item board's two are the same, and at fit all the Map is a swim of
+    them. Only the generated 40-open-epic shape stacks every family as a thin horizontal row, since
+    all forty are alive at once; that reads as rows of work by family and was left as it is.
+  - Region labels glide from where they stood to where the new outline puts them over the
+    crossfade; the worker starts with the read, not after it; a refresh's read to its glide takes
+    the worker's time (170 to 190 ms at 1,000 items in the ordinary shape, 630 ms in the
+    40-epic one) plus a frame, where it took about 1.1 s.
+  - The two wall-time layout assertions (1,000 items in under half a second, and with every family
+    open under a second) failed whenever the suite ran beside others, in the layout tests and
+    the outline ones (the default 5 s limit on tests that trace big boards). They now assert the
+    simulation's bounded tick count, that 1,000 items cost under 3.5 times 500 (linear is 2, a pass
+    over every pair 4, measured back to back so the load is the same on both), and a ceiling ten
+    times the budget; the outline tests carry a limit that only a hang reaches. The budgets
+    themselves are in Performance, measured on a quiet machine.
 - Ruled out: tldraw (production use needs a license key; React-only; about
   530 KB), Excalidraw (React-only; about 350 KB), and React Flow (React-only, and a
   node editor rather than a layout engine).

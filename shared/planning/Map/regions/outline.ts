@@ -277,13 +277,51 @@ function dilate(field: Field, radius: number): Field {
 	return { ...field, values: out };
 }
 
-function negate(field: Field): Field {
-	return { ...field, values: field.values.map((v) => -v) };
+/**
+ * The min over a disk of `radius` cells, everything off the grid read as 0, so a cell whose
+ * disk leaves the grid is 0. Built like `dilate`.
+ */
+function erode(field: Field, radius: number): Field {
+	const { nx, ny, values } = field;
+	const half = Array.from({ length: radius + 1 }, (_, d) => Math.floor(Math.sqrt(radius * radius - d * d)));
+	const rows: Float32Array[] = [values];
+	for (let w = 1; w <= radius; w++) {
+		const prev = rows[w - 1]!;
+		const next = new Float32Array(nx * ny);
+		for (let j = 0; j < ny; j++) {
+			const row = j * nx;
+			for (let i = 0; i < nx; i++) {
+				if (i - w < 0 || i + w >= nx) continue;
+				let v = prev[row + i]!;
+				const left = values[row + i - w]!;
+				const right = values[row + i + w]!;
+				if (left < v) v = left;
+				if (right < v) v = right;
+				next[row + i] = v;
+			}
+		}
+		rows.push(next);
+	}
+	const out = new Float32Array(nx * ny);
+	for (let j = radius; j < ny - radius; j++) {
+		for (let i = 0; i < nx; i++) {
+			let v = rows[half[0]!]![j * nx + i]!;
+			for (let d = 1; d <= radius && v > 0; d++) {
+				const w = rows[half[d]!]!;
+				const above = w[(j - d) * nx + i]!;
+				const below = w[(j + d) * nx + i]!;
+				if (above < v) v = above;
+				if (below < v) v = below;
+			}
+			out[j * nx + i] = v;
+		}
+	}
+	return { ...field, values: out };
 }
 
-/** Grow, then shrink back: the min filter is the max filter of the negated field, and 0 off the grid stays 0. */
+/** Grow, then shrink back, with 0 off the grid. */
 function closing(field: Field, radius: number): Field {
-	return radius < 1 ? field : negate(dilate(negate(dilate(field, radius)), radius));
+	return radius < 1 ? field : erode(dilate(field, radius), radius);
 }
 
 /**
@@ -301,17 +339,36 @@ function closedField(members: readonly RegionMember[], corridors: readonly Segme
 	if (coarseStep === step) return coarse;
 	const fine = rawField(members, corridors, pad, extent, step);
 	const { i0, j0, nx, ny, values } = fine;
+	// The closing's cell and weight under each column, which no row changes.
+	const columns = new Int32Array(nx);
+	const weights = new Float64Array(nx);
+	for (let i = 0; i < nx; i++) {
+		const gx = ((i0 + i) * step) / coarseStep;
+		const ci = Math.floor(gx);
+		columns[i] = ci - coarse.i0;
+		weights[i] = gx - ci;
+	}
+	const cells = coarse.values;
 	for (let j = 0; j < ny; j++) {
 		const gy = ((j0 + j) * step) / coarseStep;
 		const cj = Math.floor(gy);
 		const fy = gy - cj;
+		const top = (cj - coarse.j0) * coarse.nx;
+		const bottom = top + coarse.nx;
+		const hasTop = cj - coarse.j0 >= 0 && cj - coarse.j0 < coarse.ny;
+		const hasBottom = cj + 1 - coarse.j0 >= 0 && cj + 1 - coarse.j0 < coarse.ny;
+		if (!hasTop && !hasBottom) continue;
 		for (let i = 0; i < nx; i++) {
-			const gx = ((i0 + i) * step) / coarseStep;
-			const ci = Math.floor(gx);
-			const fx = gx - ci;
-			const top = sample(coarse, ci, cj) * (1 - fx) + sample(coarse, ci + 1, cj) * fx;
-			const bottom = sample(coarse, ci, cj + 1) * (1 - fx) + sample(coarse, ci + 1, cj + 1) * fx;
-			const closed = top * (1 - fy) + bottom * fy;
+			const c = columns[i]!;
+			const left = c >= 0 && c < coarse.nx;
+			const right = c + 1 >= 0 && c + 1 < coarse.nx;
+			const tl = hasTop && left ? cells[top + c]! : 0;
+			const tr = hasTop && right ? cells[top + c + 1]! : 0;
+			const bl = hasBottom && left ? cells[bottom + c]! : 0;
+			const br = hasBottom && right ? cells[bottom + c + 1]! : 0;
+			if (tl === 0 && tr === 0 && bl === 0 && br === 0) continue;
+			const fx = weights[i]!;
+			const closed = (tl * (1 - fx) + tr * fx) * (1 - fy) + (bl * (1 - fx) + br * fx) * fy;
 			const k = j * nx + i;
 			if (closed > values[k]!) values[k] = closed;
 		}

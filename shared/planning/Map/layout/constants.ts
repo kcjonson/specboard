@@ -18,11 +18,20 @@ export const CROSS_LINK_GAP = 70;
 export const CROSS_LINK_STRENGTH = 0.05;
 export const CHAIN_GAP = 16;
 export const CHAIN_STRENGTH = 0.7;
-export const CHAIN_ROW_STRENGTH = 0.6;
+export const CHAIN_ROW_STRENGTH = 3;
 export const RELATED_CHAINS_STRENGTH = 0.25;
 export const RELATED_CHAINS_GAP = 10;
 export const WORK_GAP = 30;
 export const WORK_STRENGTH = 0.9;
+/**
+ * A session's pull on an item stops growing here, so a session whose items sit in different
+ * families gathers the ones that are close and leaves the rest to their families: an
+ * uncapped spring tore families apart across the Map.
+ */
+export const WORK_PULL_CAP = 160;
+/** How much of a work pull moves the item; the rest goes to its session, which all its items together can move by at most SESSION_PULL_CAP. */
+export const WORK_ITEM_SHARE = 0.7;
+export const SESSION_PULL_CAP = 50;
 export const MACHINE_GAP = 26;
 export const MACHINE_STRENGTH = 1;
 
@@ -39,20 +48,25 @@ export const SEPARATION_RANGE = 60;
 /** Sibling regions sharing a stretch of time sit at least this far apart, edge to edge, pushed at this strength. */
 export const REGION_BAND_GAP = 50;
 export const REGION_BAND_STRENGTH = 3;
+/** A loose dot keeps this far from a region's dots, past their extent, in y, wherever their time overlaps. */
+export const LOOSE_BAND_GAP = 20;
 /** About how tall a family's row stands, for estimating a stack of them before laying anything out. */
 export const ROW_HEIGHT = 40;
 export const MIDLINE_STRENGTH = 0.03;
 
-/** Fractions of the time scale's unit width past now. */
+/**
+ * Fractions of the time scale's unit width past now. Computers and their sessions need a strip
+ * there; a board with none ends just past the Now line instead of keeping the strip empty.
+ */
 export const RESERVED_STRIP = 0.6;
+export const NOW_MARGIN = 0.08;
 export const COMPUTER_X = 0.5;
-export const SESSION_X = 0.25;
 export const COMPUTER_PULL = 0.6;
 export const COMPUTER_ROW_PULL = 0.3;
 export const COMPUTER_ROW_GAP = 150;
 /** Computers also sit at least this far past the rightmost item target. */
 export const COMPUTER_CLEARANCE = 60;
-export const SESSION_PULL = 0.25;
+export const SESSION_PULL = 0.05;
 export const SESSION_MIDLINE = 0.01;
 /** A session stays in its computer's cluster this long after its last write. */
 export const SESSION_LIVE = HOUR;

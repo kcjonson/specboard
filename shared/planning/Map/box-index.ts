@@ -33,11 +33,26 @@ export class BoxIndex {
 	}
 
 	hits(box: Box, ignoring?: string): boolean {
-		let hit = false;
-		this.forCells(box, (bucket) => {
-			if (!hit && bucket.some((other) => (ignoring === undefined || other.owner !== ignoring) && intersects(box, other.box))) hit = true;
-		}, false);
-		return hit;
+		const x0 = Math.floor(box.x / this.cell);
+		const x1 = Math.floor((box.x + box.w) / this.cell);
+		const y0 = Math.floor(box.y / this.cell);
+		const y1 = Math.floor((box.y + box.h) / this.cell);
+		const right = box.x + box.w;
+		const bottom = box.y + box.h;
+		// Plain loops, no closures: placing labels asks this thousands of times a frame.
+		for (let cx = x0; cx <= x1; cx++) {
+			for (let cy = y0; cy <= y1; cy++) {
+				const bucket = this.cells.get(cx * 100_003 + cy);
+				if (!bucket) continue;
+				for (let i = 0; i < bucket.length; i++) {
+					const other = bucket[i]!;
+					if (ignoring !== undefined && other.owner === ignoring) continue;
+					const b = other.box;
+					if (box.x < b.x + b.w && right > b.x && box.y < b.y + b.h && bottom > b.y) return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private forCells(box: Box, visit: (bucket: Entry[]) => void, create: boolean): void {

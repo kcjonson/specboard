@@ -15,6 +15,13 @@ describe('where the quick card opens', () => {
 		expect(placed.y).toBe(300 - size.h / 2);
 	});
 
+	it('keeps off the label of the item\'s own region when another side is as good', () => {
+		const anchor = dot(300, 300);
+		const label: Box = { x: 330, y: 270, w: 140, h: 22 };
+		const placed = placeQuickCard({ anchor, related: [], plot, reserved: [], ownLabel: label, size });
+		expect(placed.side).not.toBe('right');
+	});
+
 	it('takes the side that covers the fewest related items', () => {
 		const anchor = dot(500, 300);
 		// Three related items sit on the right and one on the left.

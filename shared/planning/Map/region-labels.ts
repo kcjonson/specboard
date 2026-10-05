@@ -104,31 +104,44 @@ function polylineOf(outline: RegionOutline): Float64Array {
 function edgeSpots(outline: RegionOutline, transform: Transform, viewport: Viewport): EdgeSpot[] {
 	const line = polylineOf(outline);
 	const n = line.length / 2;
-	const { k } = transform;
-	const px = (i: number): number => transform.x + k * line[2 * i]!;
-	const py = (i: number): number => transform.y + k * line[2 * i + 1]!;
-	const inside = (x: number, y: number): boolean => x >= 0 && x <= viewport.width && y >= 0 && y <= viewport.height;
+	const { k, x: tx, y: ty } = transform;
+	const { width, height } = viewport;
+	const top = screenPoint(transform, outline.top);
+	// Spots outside the plot are dropped, so an outline wholly off it has only its own top to offer.
+	const { bounds } = outline;
+	if (tx + k * bounds.maxX < 0 || tx + k * bounds.minX > width || ty + k * bounds.maxY < 0 || ty + k * bounds.minY > height) return [{ x: top.x, y: top.y, flat: 1 }];
 
+	// Plain arithmetic over the raw points: a long outline has thousands of them, and there is a pass over each region every frame.
 	let length = 0;
-	for (let i = 1; i < n; i++) if (inside(px(i), py(i))) length += Math.hypot(px(i) - px(i - 1), py(i) - py(i - 1));
+	let x0 = tx + k * line[0]!;
+	let y0 = ty + k * line[1]!;
+	for (let i = 1; i < n; i++) {
+		const x1 = tx + k * line[2 * i]!;
+		const y1 = ty + k * line[2 * i + 1]!;
+		if (x1 >= 0 && x1 <= width && y1 >= 0 && y1 <= height) length += Math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
+		x0 = x1;
+		y0 = y1;
+	}
 	const step = Math.max(SPOT_STEP, length / MAX_SPOTS);
 
 	const spots: EdgeSpot[] = [];
 	let since = step;
+	x0 = tx + k * line[0]!;
+	y0 = ty + k * line[1]!;
 	for (let i = 1; i < n; i++) {
-		const x0 = px(i - 1);
-		const y0 = py(i - 1);
-		const x1 = px(i);
-		const y1 = py(i);
-		const segment = Math.hypot(x1 - x0, y1 - y0);
+		const x1 = tx + k * line[2 * i]!;
+		const y1 = ty + k * line[2 * i + 1]!;
+		const segment = Math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
 		since += segment;
-		if (since < step || !inside(x1, y1)) continue;
-		since = 0;
-		spots.push({ x: x1, y: y1, flat: segment > 0 ? Math.abs(x1 - x0) / segment : 1 });
+		if (since >= step && x1 >= 0 && x1 <= width && y1 >= 0 && y1 <= height) {
+			since = 0;
+			spots.push({ x: x1, y: y1, flat: segment > 0 ? Math.abs(x1 - x0) / segment : 1 });
+		}
+		x0 = x1;
+		y0 = y1;
 	}
 	const score = (spot: EdgeSpot): number => spot.y + (1 - spot.flat) * STEEP_PENALTY;
 	spots.sort((a, b) => score(a) - score(b));
-	const top = screenPoint(transform, outline.top);
 	return [{ x: top.x, y: top.y, flat: 1 }, ...spots];
 }
 
@@ -192,6 +205,42 @@ function layoutLabel(region: DrawRegion, title: string, titleWidth: number, x: n
 	};
 }
 
+/** A label moved by (dx, dy) screen px, every part of it together. */
+export function shiftLabel(label: RegionLabel, dx: number, dy: number): RegionLabel {
+	const moveCircle = (c: Circle): Circle => ({ ...c, x: c.x + dx, y: c.y + dy });
+	return {
+		...label,
+		box: { ...label.box, x: label.box.x + dx, y: label.box.y + dy },
+		glyph: moveCircle(label.glyph),
+		badge: label.badge && moveCircle(label.badge),
+		titleAt: { x: label.titleAt.x + dx, y: label.titleAt.y + dy },
+		bar: { ...label.bar, x: label.bar.x + dx, y: label.bar.y + dy },
+		segments: label.segments.map((segment) => ({ ...segment, x: segment.x + dx })),
+		toggle: moveCircle(label.toggle),
+	};
+}
+
+/**
+ * While outlines crossfade, a region's label glides from where it stood to where the new
+ * outline puts it, on the crossfade's own progress, rather than jumping to the new outline
+ * while the old one is still half drawn. `from` holds each label's center in layout units,
+ * so a camera that moved meanwhile (a followed dot) carries it along.
+ */
+export function glideLabels(labels: readonly RegionLabel[], from: ReadonlyMap<string, MapPoint>, transform: Transform, progress: number): RegionLabel[] {
+	return labels.map((label) => {
+		const was = from.get(label.key);
+		if (!was) return label;
+		const dx = (transform.x + transform.k * was.x - (label.box.x + label.box.w / 2)) * (1 - progress);
+		const dy = (transform.y + transform.k * was.y - (label.box.y + label.box.h / 2)) * (1 - progress);
+		return dx === 0 && dy === 0 ? label : shiftLabel(label, dx, dy);
+	});
+}
+
+/** Each label's center in layout units, for a later glide to start from. */
+export function labelCenters(labels: readonly RegionLabel[], transform: Transform): Map<string, MapPoint> {
+	return new Map(labels.map((label) => [label.key, { x: (label.box.x + label.box.w / 2 - transform.x) / transform.k, y: (label.box.y + label.box.h / 2 - transform.y) / transform.k }]));
+}
+
 export interface RegionPlacement {
 	outlines: ReadonlyMap<string, RegionOutline>;
 	transform: Transform;
@@ -215,11 +264,11 @@ export function placeRegionLabel(region: DrawRegion, { outlines, transform, view
 	const width = layoutLabel(region, title, titleWidth, 0, 0).box.w;
 	for (const spot of edgeSpots(outline, transform, viewport)) {
 		for (const left of [spot.x - width / 2, spot.x, spot.x - width]) {
-			const label = layoutLabel(region, title, titleWidth, left, spot.y);
-			const clear = { x: label.box.x - CLEARANCE, y: label.box.y - CLEARANCE, w: label.box.w + 2 * CLEARANCE, h: label.box.h + 2 * CLEARANCE };
+			// The box alone is enough to try a spot; the label is built once, where it lands.
+			const clear = { x: left - CLEARANCE, y: spot.y - LABEL_HEIGHT / 2 - CLEARANCE, w: width + 2 * CLEARANCE, h: LABEL_HEIGHT + 2 * CLEARANCE };
 			if (!fits(clear)) continue;
 			taken.add(clear);
-			return label;
+			return layoutLabel(region, title, titleWidth, left, spot.y);
 		}
 	}
 	return null;

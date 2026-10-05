@@ -1,5 +1,5 @@
 import type { Force } from 'd3-force';
-import { REGION_BAND_GAP, REGION_BAND_STRENGTH } from './constants';
+import { LOOSE_BAND_GAP, REGION_BAND_GAP, REGION_BAND_STRENGTH } from './constants';
 import type { SimLink, SimNode } from './forces';
 
 export interface Band {
@@ -23,11 +23,16 @@ export interface Band {
  * Extents gather bottom-up from each band's direct dots and its nested bands, and
  * shifts hand down top-down, so a tick is linear in dots however deep the nesting.
  *
+ * Loose dots (drawn in no region) keep out of a top-level region's band the same way, as a
+ * single dot against the whole band: a weak link can pull one toward a family member, and
+ * only the short-range push between families stood between it and the region's ground.
+ * They move alone, since a lone dot is the light side of the pair.
+ *
  * A region with any dot pinned (a local pass holds everything it didn't reach) isn't
  * pushed: it can only move as a whole, and a push that moved only its free part would
  * bend it. Its neighbors still feel it.
  */
-export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
+export function regionBands(bands: readonly Band[], loose: readonly SimNode[] = []): Force<SimNode, SimLink> {
 	const count = bands.length;
 	const depth = new Int32Array(count);
 	for (let i = 0; i < count; i++) for (let p = bands[i]!.parent; p >= 0; p = bands[p]!.parent) depth[i]!++;
@@ -42,6 +47,7 @@ export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 	});
 	const siblings = [...groups.values()].filter((group) => group.length > 1);
 
+	const regions = bands.flatMap((band, i) => (band.parent < 0 && band.hub ? [i] : []));
 	const held = new Uint8Array(count);
 	for (const i of innerFirst) {
 		const band = bands[i]!;
@@ -56,9 +62,10 @@ export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 	const sumY = new Float64Array(count);
 	const dots = new Int32Array(count);
 	const push = new Float64Array(count);
+	const reach = new Float64Array(4 * regions.length);
 
 	return (alpha: number): void => {
-		if (!siblings.length) return;
+		if (!siblings.length && !(regions.length && loose.length)) return;
 		minX.fill(Infinity);
 		maxX.fill(-Infinity);
 		minY.fill(Infinity);
@@ -104,6 +111,28 @@ export function regionBands(bands: readonly Band[]): Force<SimNode, SimLink> {
 					push[a]! -= f / 2;
 					push[b]! += f / 2;
 				}
+			}
+		}
+
+		let live = 0;
+		for (const i of regions) {
+			if (!dots[i]) continue;
+			const centre = centerY(i);
+			reach[4 * live] = minX[i]! - LOOSE_BAND_GAP;
+			reach[4 * live + 1] = maxX[i]! + LOOSE_BAND_GAP;
+			reach[4 * live + 2] = centre;
+			reach[4 * live + 3] = half(i) + LOOSE_BAND_GAP;
+			live++;
+		}
+		for (let k = 0; live > 0 && k < loose.length; k++) {
+			const n = loose[k]!;
+			if (n.fx != null) continue;
+			for (let r = 0; r < live; r++) {
+				if (n.x < reach[4 * r]! || n.x > reach[4 * r + 1]!) continue;
+				const dy = n.y - reach[4 * r + 2]!;
+				const want = reach[4 * r + 3]! + n.r;
+				if (dy >= want || dy <= -want) continue;
+				n.vy += (dy > 0 || (dy === 0 && k % 2 === 0) ? 1 : -1) * (want - Math.abs(dy)) * alpha * REGION_BAND_STRENGTH;
 			}
 		}
 

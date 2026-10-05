@@ -10,6 +10,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/preac
 import type { JSX } from 'preact';
 import { BoardBuilder, deltaRead, wholeRead } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
+import { traceRegions } from './regions/outline';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { MapView } from './MapView';
 import type { MapItemType, MapRead } from '@specboard/core/map-read';
@@ -46,6 +47,7 @@ const worker: MapLayoutWorker = {
 		layoutCalls(input);
 		return Promise.resolve({ layout: layoutMap(input), ms: 1 });
 	},
+	outlines: (inputs, step) => Promise.resolve(traceRegions(inputs, step)),
 	terminate: vi.fn(),
 };
 

@@ -121,4 +121,20 @@ describe('handleListItemNotes', () => {
 		const res = await createApp().request('http://localhost/api/projects/acme/specboard/items/SB-1/notes');
 		expect(res.status).toBe(404);
 	});
+
+	it('passes a limit through, and lists the whole log without one', async () => {
+		vi.mocked(listItemNotes).mockResolvedValue([]);
+
+		await createApp().request('http://localhost/api/projects/acme/specboard/items/SB-1/notes?limit=1');
+		expect(vi.mocked(listItemNotes).mock.calls.at(-1)![2]).toBe(1);
+		await createApp().request('http://localhost/api/projects/acme/specboard/items/SB-1/notes');
+		expect(vi.mocked(listItemNotes).mock.calls.at(-1)![2]).toBeUndefined();
+	});
+
+	it('400s on a limit that is not a positive integer', async () => {
+		for (const limit of ['0', '-1', '1.5', 'abc', '']) {
+			const res = await createApp().request(`http://localhost/api/projects/acme/specboard/items/SB-1/notes?limit=${limit}`);
+			expect(res.status, limit).toBe(400);
+		}
+	});
 });

@@ -67,6 +67,16 @@ export class RegionOutlines {
 		return this.inputs.length === 0;
 	}
 
+	/** What the outline math reads, for tracing a step elsewhere. */
+	get regionInputs(): readonly RegionInput[] {
+		return this.inputs;
+	}
+
+	/** Takes outlines traced elsewhere (the worker) for a step. */
+	put(step: number, regions: RegionOutline[]): void {
+		this.cache.set(step, regions);
+	}
+
 	has(step: number): boolean {
 		return this.cache.has(step);
 	}

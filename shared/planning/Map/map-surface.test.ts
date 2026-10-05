@@ -312,8 +312,8 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		expect(surface.hitAt(labels[0]!.toggle, false)?.type).not.toBe('control');
 	});
 
-	it('computes outlines once per layout and zoom bucket, never during a pan, and defers a new bucket past the gesture', () => {
-		const { surface, renderer, camera, flush, deferred } = setup();
+	it('computes outlines once per layout and zoom bucket, never during a pan, and has the worker trace a new bucket while the cached ones draw', async () => {
+		const { surface, renderer, camera, flush, trace } = setup();
 		const { layout, rows } = familyBoard();
 		surface.resize(WIDTH, HEIGHT);
 		surface.show(layout, rows, null);
@@ -326,9 +326,9 @@ describe('MapSurface regions, links, and collapse controls', () => {
 			flush();
 			expect(renderer.frames.at(-1)!.regions).toBe(opened);
 		}
-		expect(deferred).toHaveLength(0);
+		expect(trace).not.toHaveBeenCalled();
 
-		// Into another bucket: the cached outlines draw until the gesture is over.
+		// Into another bucket: the cached outlines draw until the worker's arrive, and it is asked once.
 		const k = gridStep(at.k) === gridStep(0.5) ? 3 : 0.5;
 		expect(gridStep(k)).not.toBe(gridStep(at.k));
 		camera.set({ ...at, k });
@@ -336,21 +336,23 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		camera.set({ ...at, k: k * 1.05 });
 		flush();
 		expect(renderer.frames.at(-1)!.regions).toBe(opened);
-		expect(deferred).toHaveLength(2);
-		deferred.splice(0).forEach((task) => task());
+		expect(trace).toHaveBeenCalledTimes(1);
+		expect(trace.mock.calls[0]![1]).toBe(gridStep(k));
+		await Promise.resolve();
 		flush();
 		const finer = renderer.frames.at(-1)!.regions;
 		expect(finer).not.toBe(opened);
 		expect(finer.map((r) => r.key)).toEqual(opened.map((r) => r.key));
 
-		// Back out: both buckets are cached now.
+		// Back out: both buckets are cached now, and nothing is asked again.
 		camera.set(at);
 		flush();
 		expect(renderer.frames.at(-1)!.regions).toBe(opened);
+		expect(trace).toHaveBeenCalledTimes(1);
 	});
 
-	it('drops a deferred outline task once destroyed', () => {
-		const { surface, renderer, camera, flush, frames, deferred, clock } = setup();
+	it('drops the worker\'s outlines once the Map is destroyed', async () => {
+		const { surface, renderer, camera, flush, frames, clock, trace } = setup();
 		clock.reduced = true;
 		const { layout, rows } = familyBoard();
 		surface.resize(WIDTH, HEIGHT);
@@ -359,10 +361,10 @@ describe('MapSurface regions, links, and collapse controls', () => {
 		const at = camera.transform;
 		camera.set({ ...at, k: gridStep(at.k) === gridStep(0.5) ? 3 : 0.5 });
 		flush();
-		expect(deferred).toHaveLength(1);
+		expect(trace).toHaveBeenCalledTimes(1);
 		const painted = renderer.frames.length;
 		surface.destroy();
-		deferred[0]!();
+		await Promise.resolve();
 		expect(frames).toHaveLength(0);
 		expect(renderer.frames.length).toBe(painted);
 	});

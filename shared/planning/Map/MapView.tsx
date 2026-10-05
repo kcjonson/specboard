@@ -252,6 +252,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				onOutlineStep: (step) => {
 					live.current.model.outlineStep = step;
 				},
+				traceOutlines: (inputs, step) => live.current.model.traceOutlines(inputs, step),
 				onPointerTarget: (target) => {
 					if (target) canvas.dataset.target = target;
 					else delete canvas.dataset.target;
