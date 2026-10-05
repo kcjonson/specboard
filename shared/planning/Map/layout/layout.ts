@@ -58,7 +58,7 @@ import { regionBands, type Band } from './bands';
 import { buildModel, type MapModel, type ModelItem } from './model';
 import { spacing } from './spacing';
 import { createTimeScale, edgeOf, quietOf, ticksOf, timeToX } from './time-scale';
-import type { MapBounds, MapLayout, MapLayoutInput, MapLayoutPrevious, MapPoint, MapTimeScale } from './types';
+import { computerNodeKey, sessionNodeKey, type MapBounds, type MapLayout, type MapLayoutInput, type MapLayoutPrevious, type MapPoint, type MapTimeScale } from './types';
 
 /** FNV-1a, folded to [0, 1): a starting height every device agrees on. */
 function hashUnit(key: string): number {
@@ -75,9 +75,6 @@ function seededRandom(): () => number {
 	let s = 1;
 	return () => (s = (1_664_525 * s + 1_013_904_223) % 4_294_967_296) / 4_294_967_296;
 }
-
-const sessionNodeKey = (key: string): string => `session:${key}`;
-const computerNodeKey = (device: string): string => `computer:${device}`;
 
 interface Graph {
 	nodes: SimNode[];

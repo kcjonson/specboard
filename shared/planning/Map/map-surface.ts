@@ -14,21 +14,24 @@ import {
 	type Transform,
 	type Viewport,
 } from './camera';
+import { computerBlock } from './computer-blocks';
 import { expandControls, labelControls, type CollapseControl } from './collapse-controls';
 import { intersects, type Box } from './box-index';
 import { cardBox } from './cards/card-culling';
 import { SPRING_MS, springRemaining } from './drag';
-import { dotBox, screenRadius } from './dot-boxes';
+import { agentBox, dotBox, screenRadius } from './dot-boxes';
 import { EDGE_MARKER_SIZE, placeEdgeMarkers, type EdgeMarkerInput } from './edge-markers';
-import { buildDrawList, type DrawDot, type DrawLink, type DrawList, type Rollup } from './draw-list';
+import { buildDrawList, presenceKey, type DrawAgent, type DrawDot, type DrawLink, type DrawList, type Rollup } from './draw-list';
 import { FocusFade } from './focus-fade';
 import { HitIndex, type Hit, type HitInput } from './hit-index';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
-import type { MapBounds, MapLayout, MapPoint } from './layout/types';
+import { NO_AGENTS } from './agents';
+import type { MapBounds, MapLayout, MapNode, MapPoint } from './layout/types';
 import type { MapCamera, ScreenPoint } from './map-camera';
 import { litRelation, type Highlight } from './map-lens';
 import { minimapPanel, minimapShows, minimapSize, minimapViewport, type MinimapSize } from './minimap/minimap';
 import { EMPTY_OVERLAY, type CardSet, type DragOffset, type MapOverlay, type MinimapFrame, type QuickFrame } from './overlay';
+import { agentCard, agentCardHeight, itemSessions } from './quick/agent-content';
 import { quickContent, quickHeight, QUICK_WIDTH } from './quick/quick-content';
 import { placeQuickCard } from './quick/quick-card-placement';
 import type { RegionOutline } from './regions/outline';
@@ -37,6 +40,10 @@ import { RelationIndex, type Relation } from './relations';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
 import { edgeLabelAt, rulerMarks } from './ruler';
 import { LABEL_RULES, ZoomLevels, type LevelFrame, type ZoomLevel } from './zoom-levels';
+
+const AGENT_KEY = /^(session|computer):/;
+
+const EMPTY_DRAWING: DrawList = { dots: [], regions: [], links: [], agents: [], working: NO_AGENTS, needs: new Map() };
 
 /** What the pointer is over, for the cursor: a collapse or expand control, an item or region, or nothing that takes a click. */
 export type PointerTarget = 'control' | 'item' | null;
@@ -108,8 +115,13 @@ export class MapSurface {
 	/** The layout's bounds widened to every region outline: what the camera fits and holds the Map to. */
 	private extent: MapBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 	private rows: ReadonlyMap<string, MapItemRow> = EMPTY_OVERLAY.rows;
-	private drawing: DrawList = { dots: [], regions: [], links: [], needs: new Map() };
+	private drawing: DrawList = EMPTY_DRAWING;
 	private dotsByKey = new Map<string, DrawDot>();
+	private agentsByKey = new Map<string, DrawAgent>();
+	/** Every layout node by key, items and agents alike. */
+	private nodesByKey = new Map<string, MapNode>();
+	/** What time it is, in epoch ms, which decides what is live, quiet, or gone; until the page says, nothing has aged. */
+	private wallNow = 0;
 	private relations: RelationIndex | null = null;
 	private outlines: RegionOutlines | null = null;
 	/** Bumped by every frame and every new layout, so only the last frame's deferred outline task runs. */
@@ -131,8 +143,6 @@ export class MapSurface {
 	private pristine = true;
 	private pointer: ScreenPoint | null = null;
 	private pointerCoarse = false;
-	/** Items another layer has already named, which get no label of their own. */
-	private named: ReadonlySet<string> = new Set();
 	private minimapOn = false;
 	private cards: CardSet | null = null;
 	/** How opaque the cards were on the last frame, and what they were when the fade now running began, so a fade turned around halfway goes back from where it was. */
@@ -235,8 +245,10 @@ export class MapSurface {
 	clear(): void {
 		this.layout = null;
 		this.rows = EMPTY_OVERLAY.rows;
-		this.drawing = { dots: [], regions: [], links: [], needs: new Map() };
+		this.drawing = EMPTY_DRAWING;
 		this.dotsByKey = new Map();
+		this.agentsByKey = new Map();
+		this.nodesByKey = new Map();
 		this.relations = null;
 		this.outlines = null;
 		this.deferred++;
@@ -281,11 +293,19 @@ export class MapSurface {
 	}
 
 	/**
-	 * Item keys another layer has already named, such as a computer's text block, so an
-	 * item among them carries no label of its own. Empty until sessions land.
+	 * What time it is, so sessions age: live until 15 minutes without a write, quiet until an
+	 * hour, then gone, and an in-progress item whose sessions are all quiet needs a person.
+	 * The layout stays as it was (a clock tick never re-lays-out the Map; the next read does),
+	 * so a session that has left the cluster leaves the drawing and its items stay where they sit.
 	 */
-	setNamed(keys: ReadonlySet<string>): void {
-		this.named = keys;
+	setNow(now: number): void {
+		if (now === this.wallNow) return;
+		this.wallNow = now;
+		if (!this.layout) return;
+		const next = buildDrawList(this.layout, this.rows, now);
+		if (presenceKey(next) === presenceKey(this.drawing)) return;
+		this.adopt(next);
+		this.refocus();
 		this.requestPaint();
 	}
 
@@ -371,6 +391,11 @@ export class MapSurface {
 		}
 		if (hit.type === 'control') {
 			this.handlers.onCollapse(hit.key, hit.collapse);
+			return;
+		}
+		// A computer or session has no drawer: a click holds it lit, with its card, and a second one lets go.
+		if (hit.type === 'agent') {
+			this.select(this.selected === hit.key ? null : hit.key);
 			return;
 		}
 		if (touch && this.selected !== hit.key) {
@@ -525,20 +550,22 @@ export class MapSurface {
 			const edge = edgeLabelAt(ruler.edge.x, this.renderer.measureLabel(ruler.edge.label, 'dot-strong'), this.viewport.width);
 			if (edge) reserved.push(edge.box);
 		}
+		const { agents, working } = this.drawing;
 		const placed = layout
 			? this.placeFor(level, {
 				level: level.level,
 				regions,
 				outlines: new Map(outlines.map((outline) => [outline.key, outline])),
 				dots,
+				agents,
+				blocks: working.computers.map((computer) => computerBlock(computer, level.level)),
 				transform,
 				viewport: this.viewport,
 				measure: (text, font) => this.renderer.measureLabel(text, font),
-				named: this.named,
 				lit: this.highlight ?? undefined,
 				occupied: { circles: expand.map((control) => control.at), boxes: reserved },
 			})
-			: { labels: { regions: [], dots: [], cards: [] }, cards: [] };
+			: { labels: { regions: [], dots: [], blocks: [], cards: [] }, cards: [] };
 		const { labels } = placed;
 		const cards = this.cardsFor(level, placed.cards, transform);
 		this.controls = [...labelControls(labels.regions), ...expand];
@@ -549,6 +576,8 @@ export class MapSurface {
 			allLinks: this.allLinks,
 			labels: labels.regions,
 			dotLabels: labels.dots,
+			agents,
+			blocks: labels.blocks,
 			controls: this.controls,
 			cards: cards.set ? { keys: cards.set.keys, alpha: cards.alpha } : null,
 			focus,
@@ -558,7 +587,7 @@ export class MapSurface {
 			level: level.level,
 			ruler,
 		});
-		this.snapshot = { transform, level: level.level, dots, cards: cards.set?.dots ?? [], labels: labels.regions, controls: this.controls, outlines };
+		this.snapshot = { transform, level: level.level, dots, cards: cards.set?.dots ?? [], agents, labels: labels.regions, controls: this.controls, outlines };
 		this.hitIndex = null;
 		this.overlay.publish({
 			transform,
@@ -630,8 +659,8 @@ export class MapSurface {
 	private take(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): void {
 		this.layout = layout;
 		this.rows = rows;
-		this.drawing = buildDrawList(layout, rows);
-		this.dotsByKey = new Map(this.drawing.dots.map((dot) => [dot.key, dot]));
+		this.nodesByKey = new Map(layout.nodes.map((node) => [node.key, node]));
+		this.adopt(buildDrawList(layout, rows, this.wallNow));
 		this.relations = new RelationIndex(layout, rows);
 		this.outlines = new RegionOutlines(layout);
 		// What fit all, Now, the opening view, and the zoom-out limit frame is the dots and the regions drawn around them, whose padding runs past the dots.
@@ -640,6 +669,15 @@ export class MapSurface {
 		this.deferred++;
 		this.configureCamera();
 		this.refocus();
+	}
+
+	private adopt(drawing: DrawList): void {
+		this.drawing = drawing;
+		this.dotsByKey = new Map(drawing.dots.map((dot) => [dot.key, dot]));
+		this.agentsByKey = new Map(drawing.agents.map((agent) => [agent.key, agent]));
+		// A session or computer that has left the cluster can't stay lit or held.
+		if (this.selected?.match(AGENT_KEY) && !this.agentsByKey.has(this.selected)) this.selected = null;
+		if (this.hover?.type === 'agent' && !this.agentsByKey.has(this.hover.key)) this.hover = null;
 	}
 
 	/**
@@ -672,9 +710,7 @@ export class MapSurface {
 	private placeOf(key: string): MapPoint | undefined {
 		const layout = this.layout;
 		if (!layout) return undefined;
-		const drawnBy = layout.representative[key];
-		if (!drawnBy) return undefined;
-		return layout.nodes.find((node) => node.kind === 'item' && node.key === drawnBy);
+		return this.nodesByKey.get(this.agentsByKey.has(key) ? key : (layout.representative[key] ?? ''));
 	}
 
 	/** What a keyboard zoom holds still: the pointer if it is over the plot, otherwise the middle (undefined). A focused dot is SPE-236's to add. */
@@ -779,9 +815,24 @@ export class MapSurface {
 
 	private quickFor(transform: Transform, level: ZoomLevel, regionLabels: PlacedLabels['regions'], cards: CardSet | null, minimap: Box | null): QuickFrame | null {
 		const key = this.cardKey();
-		const row = key ? this.rows.get(key) : undefined;
 		const relation: Relation | null = key && this.relations ? this.relations.relation(key) : null;
-		if (!key || !row || !relation) return null;
+		if (!key || !relation) return null;
+		const reserved = [...this.chrome, ...(minimap ? [minimap] : [])];
+		const plot = { x: 0, y: 0, w: Math.max(0, this.viewport.width - this.covered), h: this.viewport.height };
+		const related: Box[] = [];
+		for (const other of relation.dots) {
+			const otherDot = other === key ? undefined : this.dotsByKey.get(other);
+			if (otherDot) related.push(dotBox(otherDot, transform, level));
+		}
+		const agent = this.agentsByKey.get(key);
+		if (agent) {
+			const card = agentCard(key, this.drawing.working, this.rows, this.wallNow);
+			if (!card) return null;
+			const size = { w: QUICK_WIDTH, h: agentCardHeight(card) };
+			return { key, ...placeQuickCard({ anchor: agentBox(agent, transform, level), related, plot, reserved, size }), progress: null, marks: { reasons: [], upNext: null, sessions: [], changes: [] }, agent: card };
+		}
+		const row = this.rows.get(key);
+		if (!row) return null;
 		const dot = this.dotsByKey.get(key);
 		const label = regionLabels.find((l) => l.key === key);
 		const progress = progressOf(this.drawing, key, dot);
@@ -793,16 +844,9 @@ export class MapSurface {
 			if (!node) return null;
 			anchor = { x: transform.x + transform.k * node.x - 1, y: transform.y + transform.k * node.y - 1, w: 2, h: 2 };
 		}
-		const related: Box[] = [];
-		for (const other of relation.dots) {
-			const otherDot = other === key ? undefined : this.dotsByKey.get(other);
-			if (otherDot) related.push(dotBox(otherDot, transform, level));
-		}
-		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key), changes: this.changeNotes?.get(key) ?? [] };
+		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key), sessions: itemSessions(row, this.drawing.working, this.wallNow), changes: this.changeNotes?.get(key) ?? [] };
 		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress, marks)) };
-		const reserved = [...this.chrome, ...(minimap ? [minimap] : [])];
-		const plot = { x: 0, y: 0, w: Math.max(0, this.viewport.width - this.covered), h: this.viewport.height };
-		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress, marks };
+		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress, marks, agent: null };
 	}
 
 	/** Markers for the asked-for items that are out of view, kept off the page's own controls, the minimap, the labels, and the drawer. */

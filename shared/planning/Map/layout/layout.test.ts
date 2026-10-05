@@ -250,7 +250,7 @@ describe('layoutMap on a realistic board', () => {
 				row.subStatus = 'in_development';
 				row.startedAt = iso(NOW);
 				row.timeAnchor = iso(NOW);
-				row.workers = [{ sessionKey: 'session-new', deviceName: 'personal-laptop', client: 'claude-code', branch: null, lastWriteAt: iso(NOW) }];
+				row.workers = [{ sessionKey: 'session-new', deviceName: 'personal-laptop', client: 'claude-code', branch: null, startedAt: iso(NOW), lastWriteAt: iso(NOW) }];
 			}
 			after = layoutMap({
 				rows,
@@ -426,7 +426,7 @@ describe('layoutMap edge cases', () => {
 		picked.status = 'in_progress';
 		picked.startedAt = iso(NOW);
 		picked.timeAnchor = iso(NOW);
-		picked.workers = [{ sessionKey: 's-2', deviceName: 'desk', client: 'claude-code', branch: null, lastWriteAt: iso(NOW) }];
+		picked.workers = [{ sessionKey: 's-2', deviceName: 'desk', client: 'claude-code', branch: null, startedAt: iso(NOW), lastWriteAt: iso(NOW) }];
 		const after = layoutMap({
 			rows,
 			now: NOW,

@@ -3,13 +3,14 @@ import { DONE_DISC, GLYPH_BOX, NEEDS_PERSON_TOKEN, PAUSE_BARS, RING_WIDTH, STATU
 import type { Transform } from './camera';
 import type { CollapseControl } from './collapse-controls';
 import { TEXT_CONTRAST, contrast, contrastFloor, formatColor, isDark, mix, parseColor, readableInk, type Rgb } from './color';
-import { markExtra, screenRadius } from './dot-boxes';
+import { agentRadius, markExtra, screenRadius } from './dot-boxes';
 import { DOT_LABEL_PAD, type DotLabel, type LabelFont } from './dot-labels';
-import type { DrawDot, DrawLink } from './draw-list';
+import type { DrawAgent, DrawDot, DrawLink } from './draw-list';
 import { FADE_DARK, FADE_LIGHT, FOCUS_GROW, darkness, dotStrength, growth, linkStrength, regionStrength, type FocusFrame } from './focus-fade';
 import type { DragOffset } from './overlay';
 import type { MapPhase } from './layout/types';
 import type { ZoomLevel } from './zoom-levels';
+import { BLOCK_LINE_HEIGHT, type PlacedBlock } from './label-placement';
 import { linkCurve } from './links';
 import { REASON_TAGS } from './needs-person';
 import { ringScale, tintAmount } from './plan-weight';
@@ -30,6 +31,9 @@ export interface MapFrame {
 	allLinks: boolean;
 	labels: readonly RegionLabel[];
 	dotLabels: readonly DotLabel[];
+	/** Computers and sessions, and the text blocks that name the work in each computer's cluster. */
+	agents: readonly DrawAgent[];
+	blocks: readonly PlacedBlock[];
 	controls: readonly CollapseControl[];
 	/** The dots that near-level cards stand in for, and how opaque those cards are: the canvas draws them as the cards fade out, and not at all once the cards are there. */
 	cards: { keys: ReadonlySet<string>; alpha: number } | null;
@@ -71,6 +75,11 @@ interface MapTheme {
 	muted: string;
 	text: string;
 	needsPerson: string;
+	/** Live agent work: the amber of In progress, for sessions' lines and the glow behind them and their items. */
+	agent: string;
+	agentRgb: Rgb;
+	/** Computers and sessions: ink a little softer than text. */
+	machine: string;
 	font: string;
 	status: Record<MapItemStatus, string>;
 	/** The least of each status color a weighted mark keeps and still clears 3:1 on the surface. */
@@ -125,6 +134,9 @@ function readTheme(element: Element, normalize: (color: string) => string): MapT
 		muted: formatColor(mutedRgb),
 		text: formatColor(textRgb),
 		needsPerson: formatColor(rgbOf(NEEDS_PERSON_TOKEN)),
+		agent: status['in_progress'],
+		agentRgb: statusRgb['in_progress'],
+		machine: formatColor(mix(textRgb, surfaceRgb, 0.82)),
 		font: style.fontFamily || 'sans-serif',
 		status,
 		floor,
@@ -168,6 +180,13 @@ const SCOPING_DASH = [2.2, 1.4];
 /** The dashed scoping ring around a solid glyph, in glyph units: just outside the octagon. */
 const SCOPING_RING = 8.75;
 const DISCOVERED_DASH = [2, 3];
+/** The still glow behind live work reaches this far past the mark, and is this strong at its heart. */
+const GLOW_REACH = 11;
+const GLOW_STRENGTH = 0.42;
+const QUIET_DASH = [4, 3];
+/** A laptop, in a 20-unit box: the screen, and the base under it. */
+const LAPTOP = 'M4 5.5 H16 V13 H4 Z M2 15.5 H18';
+const LAPTOP_BOX = 20;
 
 const PHASE_STATUS: Record<MapPhase, MapItemStatus> = { done: 'done', in_flight: 'in_progress', next: 'ready', later: 'blocked' };
 
@@ -202,6 +221,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 	const paths = glyphPaths();
 	const doneDisc = new Path2D(DONE_DISC);
 	const pauseBars = new Path2D(PAUSE_BARS);
+	const laptop = new Path2D(LAPTOP);
 	const outlines = new WeakMap<RegionOutline, Path2D>();
 	const normalize = (color: string): string => {
 		ctx.fillStyle = '#000000';
@@ -377,6 +397,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		const ringed = dot.reason !== null;
 		const focusAt = r + (ringed ? INK_GAP + INK_WIDTH + FOCUS_GAP : FOCUS_GAP) + FOCUS_WIDTH / 2;
 		if (offscreen(x, y, focusAt + FOCUS_WIDTH + markExtra(dot, level))) return;
+		if (dot.live) drawGlow(x, y, r, alpha);
 		ctx.globalAlpha = alpha;
 		disc(x, y, lift > 0 ? focusAt + FOCUS_WIDTH : r + (ringed ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
 		if (ringed) ring(x, y, r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
@@ -396,6 +417,76 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		if (dot.folded && !finished && r >= COUNT_MIN_RADIUS) {
 			const w = Math.max(16, 1.6 * r);
 			drawRollupBar(x - w / 2, y + r + 4, w, 3, rollupSegments(dot.folded.rollup, x - w / 2, w));
+		}
+		ctx.globalAlpha = 1;
+	};
+
+	/** A live session's still glow: amber fading out from the mark's edge. No animation, at rest or otherwise. */
+	const drawGlow = (x: number, y: number, r: number, alpha: number): void => {
+		const { r: red, g, b } = theme.agentRgb;
+		const gradient = ctx.createRadialGradient(x, y, r * 0.5, x, y, r + GLOW_REACH);
+		gradient.addColorStop(0, `rgba(${red}, ${g}, ${b}, ${GLOW_STRENGTH})`);
+		gradient.addColorStop(1, `rgba(${red}, ${g}, ${b}, 0)`);
+		ctx.globalAlpha = alpha;
+		ctx.fillStyle = gradient;
+		ctx.beginPath();
+		ctx.arc(x, y, r + GLOW_REACH, 0, 2 * Math.PI);
+		ctx.fill();
+		ctx.globalAlpha = 1;
+	};
+
+	/** A computer: a laptop in a rounded square. A session: its number in a disc, hollow while quiet. `lift` is how far it has grown into the focused mark. */
+	const drawAgent = (agent: DrawAgent, transform: Transform, level: ZoomLevel, alpha: number, lift: number): void => {
+		const r = agentRadius(agent, transform.k, level) * (1 + FOCUS_GROW * lift);
+		const x = transform.x + transform.k * agent.x;
+		const y = transform.y + transform.k * agent.y;
+		const focusAt = r + FOCUS_GAP + FOCUS_WIDTH / 2;
+		if (offscreen(x, y, focusAt + FOCUS_WIDTH + GLOW_REACH)) return;
+		const live = agent.state === 'live';
+		if (live && agent.kind === 'session') drawGlow(x, y, r, alpha);
+		ctx.globalAlpha = alpha;
+		const ink = live ? theme.machine : theme.muted;
+		if (agent.kind === 'computer') {
+			const side = 2 * r;
+			ctx.fillStyle = theme.surface;
+			ctx.beginPath();
+			ctx.roundRect(x - r - BACKING, y - r - BACKING, side + 2 * BACKING, side + 2 * BACKING, side * 0.32 + BACKING);
+			ctx.fill();
+			ctx.strokeStyle = ink;
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			ctx.roundRect(x - r + 1, y - r + 1, side - 2, side - 2, side * 0.32);
+			ctx.stroke();
+			ctx.save();
+			ctx.translate(x, y);
+			ctx.scale((side * 0.62) / LAPTOP_BOX, (side * 0.62) / LAPTOP_BOX);
+			ctx.translate(-LAPTOP_BOX / 2, -LAPTOP_BOX / 2);
+			ctx.lineWidth = 1.7;
+			ctx.lineCap = 'round';
+			ctx.lineJoin = 'round';
+			ctx.stroke(laptop);
+			ctx.restore();
+		} else {
+			disc(x, y, r + BACKING, theme.surface);
+			if (live) disc(x, y, r, ink);
+			else ring(x, y, r - 0.75, ink, 1.5);
+			ctx.fillStyle = live ? theme.surface : ink;
+			ctx.font = `700 ${Math.max(9, Math.min(13, Math.round(r * 1.1)))}px ${theme.font}`;
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillText(String(agent.number), x, y + 0.5);
+		}
+		if (lift > 0) {
+			ctx.globalAlpha = alpha * lift;
+			if (agent.kind === 'computer') {
+				ctx.strokeStyle = theme.text;
+				ctx.lineWidth = FOCUS_WIDTH;
+				ctx.beginPath();
+				ctx.roundRect(x - r - FOCUS_GAP, y - r - FOCUS_GAP, 2 * (r + FOCUS_GAP), 2 * (r + FOCUS_GAP), r * 0.64 + FOCUS_GAP);
+				ctx.stroke();
+			} else {
+				ring(x, y, focusAt, theme.text, FOCUS_WIDTH);
+			}
 		}
 		ctx.globalAlpha = 1;
 	};
@@ -445,9 +536,16 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 				if (hull.every((p) => p.x < 0) || hull.every((p) => p.x > width) || hull.every((p) => p.y < 0) || hull.every((p) => p.y > plotHeight())) continue;
 				const lit = focus.to?.links.has(link.id) ?? false;
 				ctx.globalAlpha = strength;
-				ctx.strokeStyle = lit && !link.satisfied ? theme.text : link.satisfied ? theme.linkSatisfied : theme.link;
-				ctx.lineWidth = lit ? 1.5 : 1;
-				ctx.setLineDash(link.kind === 'discovered' ? DISCOVERED_DASH : []);
+				if (link.kind === 'agent') {
+					// An amber line from a live session; a quiet one is dashed and muted, so it never leans on hue alone.
+					ctx.strokeStyle = link.live ? theme.agent : theme.link;
+					ctx.lineWidth = link.live ? 2 : 1.5;
+					ctx.setLineDash(link.live ? [] : QUIET_DASH);
+				} else {
+					ctx.strokeStyle = lit && !link.satisfied ? theme.text : link.satisfied ? theme.linkSatisfied : theme.link;
+					ctx.lineWidth = lit ? 1.5 : 1;
+					ctx.setLineDash(link.kind === 'discovered' ? DISCOVERED_DASH : []);
+				}
 				ctx.beginPath();
 				ctx.moveTo(curve.from.x, curve.from.y);
 				if (curve.type === 'cubic') ctx.bezierCurveTo(curve.c1.x, curve.c1.y, curve.c2.x, curve.c2.y, curve.to.x, curve.to.y);
@@ -520,6 +618,26 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.strokeText(label.text, x, y);
 			ctx.fillStyle = label.strong ? theme.text : theme.labelInk;
 			ctx.fillText(label.text, x, y);
+		}
+		ctx.globalAlpha = 1;
+	};
+
+	const drawBlocks = (blocks: readonly PlacedBlock[], focus: FocusFrame): void => {
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'middle';
+		ctx.lineJoin = 'round';
+		ctx.lineWidth = HALO_WIDTH;
+		ctx.strokeStyle = theme.surface;
+		for (const block of blocks) {
+			ctx.globalAlpha = dotStrength(focus, block.key, theme.fade);
+			block.lines.forEach((line, i) => {
+				const x = block.box.x + DOT_LABEL_PAD;
+				const y = block.box.y + (i + 0.5) * BLOCK_LINE_HEIGHT + 0.5;
+				ctx.font = fontOf(line.strong ? 'dot-strong' : 'dot');
+				ctx.strokeText(line.text, x, y);
+				ctx.fillStyle = line.strong ? theme.text : theme.labelInk;
+				ctx.fillText(line.text, x, y);
+			});
 		}
 		ctx.globalAlpha = 1;
 	};
@@ -604,7 +722,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			}
 			return measured;
 		},
-		draw({ dots, regions, links, allLinks, labels, dotLabels, controls, cards, focus, outlined, drag, transform, level, ruler }) {
+		draw({ dots, regions, links, allLinks, labels, dotLabels, agents, blocks, controls, cards, focus, outlined, drag, transform, level, ruler }) {
 			if (width === 0 || height === 0) return;
 			if ((window.devicePixelRatio || 1) !== ratio) fit();
 			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -628,8 +746,10 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			}
 			// On top and at full strength: it is what the person has hold of.
 			if (pulled) drawDot(pulled, transform, level, cards?.keys.has(pulled.key) ? 1 - cards.alpha : 1, 1, drag);
+			for (const agent of agents) drawAgent(agent, transform, level, dotStrength(focus, agent.key, theme.fade), growth(focus, agent.key));
 			drawLabels(labels, focus);
 			drawDotLabels(dotLabels, focus, drag?.key ?? null);
+			drawBlocks(blocks, focus);
 			for (const control of controls) {
 				const strength = control.collapse ? regionStrength(focus, control.key, theme.fade) : dotStrength(focus, control.key, theme.fade);
 				drawControl(control.at, control.collapse, control.alpha * strength);

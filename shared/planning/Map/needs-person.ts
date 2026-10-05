@@ -1,4 +1,5 @@
 import type { MapItemRow } from '@specboard/core/map-read';
+import { isLive } from './live-sessions';
 import type { MapLayout } from './layout/types';
 
 /**
@@ -29,9 +30,10 @@ export type NeedsPersonReasons = ReadonlyMap<string, readonly NeedsReason[]>;
 /**
  * The items that wear the ink ring, and why, as far as the read tells. Finished work
  * needs nobody. The blocker cycles come from the layout, which finds them as strongly
- * connected components of the open blockers.
+ * connected components of the open blockers. An agent that went quiet is in-progress
+ * work whose every open session has had no write for 15 minutes, as of `now`.
  */
-export function needsPerson(rows: Iterable<MapItemRow>, layout: Pick<MapLayout, 'deadlocked'>): NeedsPersonReasons {
+export function needsPerson(rows: Iterable<MapItemRow>, layout: Pick<MapLayout, 'deadlocked'>, now: number): NeedsPersonReasons {
 	const found = new Map<string, Set<NeedsReason>>();
 	const add = (key: string, reason: NeedsReason): void => {
 		const reasons = found.get(key);
@@ -45,6 +47,7 @@ export function needsPerson(rows: Iterable<MapItemRow>, layout: Pick<MapLayout, 
 		if (deadlocked.has(row.key)) add(row.key, 'cycle');
 		if (row.textBlockerCount > 0) add(row.key, 'hold');
 		if (row.subStatus === 'pr_open' || row.status === 'in_review') add(row.key, 'review');
+		if (row.status === 'in_progress' && row.workers.length > 0 && row.workers.every((worker) => !isLive(Date.parse(worker.lastWriteAt), now))) add(row.key, 'quiet');
 	}
 	const ordered = new Map<string, readonly NeedsReason[]>();
 	for (const [key, reasons] of found) ordered.set(key, REASON_ORDER.filter((reason) => reasons.has(reason)));

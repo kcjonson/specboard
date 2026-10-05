@@ -4,11 +4,15 @@ import type { MapItemType } from '@specboard/core/map-read';
 import { navigate } from '@specboard/router';
 import { useModel } from '@specboard/models';
 import { LoadError } from '../LoadError/LoadError';
+import { AgentRoster } from './AgentRoster';
+import { AgentsButton } from './AgentsButton';
+import { NO_AGENTS, agentsOf, deviceLabel } from './agents';
 import { MapCards } from './cards/MapCards';
 import { MapChangesModel, createChangesSource } from './changes/changes-model';
 import { RECENT_LABELS, barTitle, baselineDate, changeLines, changedItems, summaryText } from './changes/changes';
 import { createCollapseStore } from './collapse-store';
 import { EdgeMarkers } from './EdgeMarkers';
+import type { EdgeMarkerInput } from './edge-markers';
 import { DRAG_THRESHOLD } from './drag';
 import type { Hit } from './hit-index';
 import { createLayoutWorker } from './layout/layout-worker-client';
@@ -25,6 +29,7 @@ import { OverlayStore } from './overlay';
 import { ActivityCache, createActivitySource } from './quick/activity-cache';
 import { MapQuickCard } from './quick/MapQuickCard';
 import { zoomKeyOf } from './map-keys';
+import { rosterOf } from './roster';
 import { readFocus, urlWithFocus } from './map-url';
 import { RULER_HEIGHT, createCanvasRenderer } from './renderer';
 import { SteppingBar } from './stepping/SteppingBar';
@@ -65,6 +70,9 @@ const DEFER_MS = 150;
 
 /** Cards and labels keep this far from the toolbar and the notice that sit over the plot. */
 const CHROME_PAD = 8;
+
+/** Sessions age without a data change, so the Map asks the clock again this often: a repaint only if something crossed 15 minutes or an hour, and never a new layout. */
+const CLOCK_MS = 60_000;
 
 /** A finger moves a little more than a mouse does while it is only pressing. */
 const TOUCH_THRESHOLD = 10;
@@ -141,6 +149,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const surfaceRef = useRef<MapSurface | null>(null);
 	const [viewportEmpty, setViewportEmpty] = useState(false);
 	const [allLinks, setAllLinks] = useState(false);
+	const [rosterOpen, setRosterOpen] = useState(false);
+	// A read stamps its own time; between reads the clock ticks, and whichever is later is now.
+	const [ticked, setTicked] = useState(() => model.clock());
 	const overlay = useMemo(() => new OverlayStore(), []);
 
 	// The surface lives as long as the view, so what it calls back into is read from here.
@@ -343,7 +354,16 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		};
 	}, [model, anchor, overlay, reserveChrome]);
 
+	useEffect(() => {
+		const timer = window.setInterval(() => setTicked(model.clock()), CLOCK_MS);
+		return () => window.clearInterval(timer);
+	}, [model]);
+
 	const { state, layout, rows } = model;
+	const now = Math.max(model.now, ticked);
+	const working = useMemo(() => (layout ? agentsOf(layout, rows, now) : NO_AGENTS), [layout, rows, now]);
+	// Before the layout effect, so a new layout is drawn against the right time the first time.
+	useEffect(() => surfaceRef.current!.setNow(now), [now]);
 	// The notice and the stepping bar come and go, so what labels keep off is measured again after every render.
 	useEffect(reserveChrome);
 	useEffect(() => {
@@ -354,16 +374,21 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	}, [state, layout, rows]);
 
 	// What the strip counts, and what search and the filters light. Neither moves anything: the layout never hears of them.
-	const facts = useMemo(() => (state === 'ready' && layout ? mapFacts(layout, rows, model.now) : null), [state, layout, rows, model.now]);
+	const facts = useMemo(() => (state === 'ready' && layout ? mapFacts(layout, rows, now) : null), [state, layout, rows, now]);
 	const lens = useMemo(
 		() => (state === 'ready' && layout && facts ? lensOf({ layout, rows, facts, filters, search: searcher.keys }) : NO_LENS),
 		[state, layout, rows, facts, filters, searcher.keys],
 	);
-
-	// Up next is marked on its dot, and at the plot's edge while the item is out of view.
+	// What is out of view and worth knowing about gets a marker at the plot's edge: live sessions first, then what needs a person, then up next.
 	useEffect(() => {
-		surfaceRef.current!.setEdgeMarkers(state === 'ready' && layout ? layout.upNext.map((key, i) => ({ key, kind: 'up-next' as const, text: String(i + 1) })) : []);
-	}, [state, layout]);
+		const markers: EdgeMarkerInput[] = [];
+		if (state === 'ready' && layout && facts) {
+			for (const session of working.sessions) if (session.state === 'live') markers.push({ key: session.node, kind: 'live', label: `Session ${session.number} on ${deviceLabel(session.device)}` });
+			for (const key of facts.needs.keys()) markers.push({ key, kind: 'needs-person' });
+			layout.upNext.forEach((key, i) => markers.push({ key, kind: 'up-next', text: String(i + 1) }));
+		}
+		surfaceRef.current!.setEdgeMarkers(markers);
+	}, [state, layout, facts, working]);
 
 	// The item URL is the selection: a link to an item opens it on the Map, and the drawer's
 	// related items move it. The drawer overlays the plot, so the camera pans just far enough
@@ -428,6 +453,15 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const handleToggleLive = useCallback((): void => setLiveOnly((on) => !on), []);
 	const handleToggleChanges = useCallback((): void => setChangesClosed((closed) => !closed), []);
 	const handleMarkSeen = useCallback((): void => changesModel.markSeen(), [changesModel]);
+	const handleRoster = useCallback((): void => setRosterOpen((open) => !open), []);
+	const handleCloseRoster = useCallback((): void => setRosterOpen(false), []);
+	const roster = useMemo(() => (rosterOpen ? rosterOf(working, rows, now) : []), [rosterOpen, working, rows, now]);
+	// A row selects its item, which opens it as a click does, and flies the Map there.
+	const handlePick = useCallback((key: string): void => {
+		setRosterOpen(false);
+		surface().focusOn(key);
+		live.current.onOpenItem(key);
+	}, []);
 
 	// A step in the bar lands on an item: it takes the focus (so its relations light and its card opens) and the camera goes to it.
 	const stepped = useRef(false);
@@ -465,6 +499,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				onToggleNeedsPerson={handleToggleNeeds}
 				onToggleLive={handleToggleLive}
 				updatedAt={state === 'ready' ? model.now : null}
+				agents={<AgentsButton open={rosterOpen} disabled={!interactive} onClick={handleRoster} />}
 				since={interactive && waiting.length > 0 && changesModel.baseline !== null
 					? { date: baselineDate(changesModel.baseline), text: summaryText(waiting), open: !changesClosed, onToggle: handleToggleChanges }
 					: undefined}
@@ -486,6 +521,11 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 					<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom in" onClick={() => surface().zoomIn()}>+</button>
 					<button type="button" class={styles.control} disabled={!interactive} aria-pressed={allLinks} onClick={handleAllLinks}>All links</button>
 				</div>
+				{rosterOpen && (
+					<div class={styles.roster}>
+						<AgentRoster groups={roster} onPick={handlePick} onClose={handleCloseRoster} />
+					</div>
+				)}
 				{barShown && (
 					<div class={styles.barSlot} ref={barRef}>
 						{lensActive ? (

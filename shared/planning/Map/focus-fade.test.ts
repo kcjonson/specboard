@@ -85,6 +85,7 @@ describe('what each kind of mark does under focus', () => {
 		from: { x: 0, y: 0 },
 		to: { x: 1, y: 1 },
 		satisfied: false,
+		live: false,
 		...over,
 	});
 	const lit = (to: Relation | null): FocusFrame => ({ from: null, to, t: 1 });

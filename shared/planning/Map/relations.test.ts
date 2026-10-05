@@ -153,3 +153,67 @@ describe('the related set of a folded family', () => {
 		expect(index.isRegion(parent.key)).toBe(false);
 	});
 });
+
+describe('what a computer, a session, and the item it works on light', () => {
+	function agents(): { index: RelationIndex; epic: string; one: string; two: string; elsewhere: string; stranger: string } {
+		const b = new BoardBuilder();
+		const epic = b.add({ type: 'epic', status: 'in_progress' });
+		const one = b.add({ parentKey: epic.key, status: 'in_progress' });
+		const two = b.add({ parentKey: epic.key, status: 'in_progress' });
+		const elsewhere = b.add({ status: 'in_progress' });
+		const stranger = b.add({ status: 'in_progress' });
+		b.work(one, 'a', 'laptop');
+		b.work(two, 'b', 'laptop');
+		b.work(elsewhere, 'c', 'desktop');
+		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 });
+		return { index: new RelationIndex(layout, new Map(b.rows.map((row) => [row.key, row]))), epic: epic.key, one: one.key, two: two.key, elsewhere: elsewhere.key, stranger: stranger.key };
+	}
+
+	it('an item lights the sessions on it and their computers, and not the other sessions on that computer', () => {
+		const { index, one } = agents();
+		const relation = index.relation(one)!;
+		expect(relation.dots.has('session:a')).toBe(true);
+		expect(relation.dots.has('computer:laptop')).toBe(true);
+		expect(relation.dots.has('session:b')).toBe(false);
+		expect(relation.dots.has('computer:desktop')).toBe(false);
+	});
+
+	it('a session lights its computer and the items it is on, with the families they are drawn in', () => {
+		const { index, epic, one, two } = agents();
+		const relation = index.relation('session:a')!;
+		expect(relation).toMatchObject({ key: 'session:a', region: false, outline: null });
+		expect([...relation.dots].sort()).toEqual(['computer:laptop', 'session:a', one].sort());
+		expect(relation.dots.has(two)).toBe(false);
+		expect(relation.regions.has(epic)).toBe(true);
+	});
+
+	it('a computer lights every session on it and every item they are on', () => {
+		const { index, one, two, elsewhere, stranger } = agents();
+		const relation = index.relation('computer:laptop')!;
+		expect([...relation.dots].sort()).toEqual(['computer:laptop', 'session:a', 'session:b', one, two].sort());
+		expect(relation.dots.has(elsewhere)).toBe(false);
+		expect(relation.dots.has(stranger)).toBe(false);
+	});
+
+	it('names no link: the agent lines draw at rest, and fade with whatever they leave', () => {
+		const { index } = agents();
+		expect(index.relation('computer:laptop')!.links.size).toBe(0);
+		expect(index.relation('session:c')!.links.size).toBe(0);
+	});
+
+	it('lights an item\'s sessions through the collapsed family that draws it', () => {
+		const b = new BoardBuilder();
+		const epic = b.add({ type: 'epic', status: 'in_progress' });
+		const child = b.add({ parentKey: epic.key, status: 'in_progress' });
+		b.add({ parentKey: epic.key, status: 'ready' });
+		b.work(child, 'a', 'laptop');
+		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: { [epic.key]: true }, aspect: 2 });
+		const index = new RelationIndex(layout, new Map(b.rows.map((row) => [row.key, row])));
+		expect(index.relation(epic.key)!.dots.has('session:a')).toBe(true);
+		expect(index.relation('session:a')!.dots.has(epic.key)).toBe(true);
+	});
+
+	it('has no relation for a session the layout does not know', () => {
+		expect(agents().index.relation('session:nope')).toBeNull();
+	});
+});

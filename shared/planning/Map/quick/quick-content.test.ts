@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BoardBuilder } from '../layout/board-fixture';
-import { NAMED_BLOCKERS, progressText, quickContent, quickHeight, type QuickMarks } from './quick-content';
+import { NAMED_BLOCKERS, NAMED_SESSIONS, progressText, quickContent, quickHeight, type QuickMarks } from './quick-content';
 
-const NO_MARKS: QuickMarks = { reasons: [], upNext: null, changes: [] };
+const NO_MARKS: QuickMarks = { reasons: [], upNext: null, sessions: [], changes: [] };
 
 describe('quick card content', () => {
 	it('says title, status, sub-status, sessions, open blockers by key and title, holds, and progress', () => {
@@ -12,17 +12,15 @@ describe('quick card content', () => {
 		const item = b.add({ status: 'in_progress', subStatus: 'needs_input', title: 'Hover card', textBlockerCount: 2 });
 		b.block(item, first);
 		b.block(item, second);
-		b.work(item, 's1', 'laptop');
-		b.work(item, 's2', 'desktop');
-		b.work(item, 's1', 'laptop');
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
-		const content = quickContent(item, rows, { done: 1, in_flight: 1, next: 2, later: 0 }, NO_MARKS);
+		const sessions = [{ title: 'Session 1, claude-code on laptop', meta: { lead: null, tail: 'a' }, quiet: false }, { title: 'Session 2, claude-code on desktop', meta: { lead: null, tail: 'b' }, quiet: true }];
+		const content = quickContent(item, rows, { done: 1, in_flight: 1, next: 2, later: 0 }, { ...NO_MARKS, sessions });
 		expect(content).toMatchObject({
 			key: item.key,
 			title: 'Hover card',
 			statusLabel: 'Blocked',
 			subStatus: 'Needs input',
-			sessions: 2,
+			moreSessions: 0,
 			holds: 2,
 			moreBlockers: 0,
 		});
@@ -44,7 +42,23 @@ describe('quick card content', () => {
 		expect(content.blockers).toHaveLength(NAMED_BLOCKERS);
 		expect(content.moreBlockers).toBe(2);
 		expect(content.blockers.map((blocker) => blocker.key)).not.toContain(done.key);
-		expect(content.sessions).toBeNull();
+		expect(content.sessions).toEqual([]);
+	});
+
+	it('names a couple of sessions, two lines each, and counts the rest', () => {
+		const b = new BoardBuilder();
+		const item = b.add({ status: 'in_progress' });
+		const rows = new Map(b.rows.map((row) => [row.key, row]));
+		const session = (n: number): { title: string; meta: { lead: string | null; tail: string }; quiet: boolean } => ({ title: `Session ${n}`, meta: { lead: null, tail: 'meta' }, quiet: false });
+		const base = quickHeight(quickContent(item, rows, null, NO_MARKS));
+		const two = quickContent(item, rows, null, { ...NO_MARKS, sessions: [session(1), session(2)] });
+		expect(two).toMatchObject({ moreSessions: 0 });
+		expect(two.sessions).toHaveLength(NAMED_SESSIONS);
+		expect(quickHeight(two)).toBe(base + 2 * (6 + 32));
+		const four = quickContent(item, rows, null, { ...NO_MARKS, sessions: [session(1), session(2), session(3), session(4)] });
+		expect(four).toMatchObject({ moreSessions: 2 });
+		expect(four.sessions.map((s) => s.title)).toEqual(['Session 1', 'Session 2']);
+		expect(quickHeight(four)).toBe(quickHeight(two) + 6 + 16);
 	});
 
 	it('is as tall as the lines it carries, so placement needs no measuring', () => {
@@ -61,7 +75,7 @@ describe('quick card content', () => {
 		const b = new BoardBuilder();
 		const item = b.add({ status: 'in_progress', subStatus: 'needs_input', textBlockerCount: 1 });
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
-		const content = quickContent(item, rows, null, { reasons: ['question', 'hold'], upNext: 2, changes: [] });
+		const content = quickContent(item, rows, null, { ...NO_MARKS, reasons: ['question', 'hold'], upNext: 2 });
 		expect(content.needs).toEqual({ tag: '?', text: 'An agent asked a question; Held by a text blocker' });
 		expect(content.upNext).toBe(2);
 		expect(quickContent(item, rows, null, NO_MARKS)).toMatchObject({ needs: null, upNext: null });
@@ -72,9 +86,9 @@ describe('quick card content', () => {
 		const item = b.add({ status: 'ready' });
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
 		const base = quickHeight(quickContent(item, rows, null, NO_MARKS));
-		expect(quickHeight(quickContent(item, rows, null, { reasons: ['review'], upNext: null, changes: [] }))).toBe(base + 6 + 16);
-		expect(quickHeight(quickContent(item, rows, null, { reasons: [], upNext: 1, changes: [] }))).toBe(base + 6 + 16);
-		expect(quickHeight(quickContent(item, rows, null, { reasons: ['review'], upNext: 1, changes: [] }))).toBe(base + 2 * (6 + 16));
+		expect(quickHeight(quickContent(item, rows, null, { ...NO_MARKS, reasons: ['review'] }))).toBe(base + 6 + 16);
+		expect(quickHeight(quickContent(item, rows, null, { ...NO_MARKS, upNext: 1 }))).toBe(base + 6 + 16);
+		expect(quickHeight(quickContent(item, rows, null, { ...NO_MARKS, reasons: ['review'], upNext: 1 }))).toBe(base + 2 * (6 + 16));
 	});
 
 	it('says what changed since the last visit, a line each, and the card grows by those lines', () => {
@@ -84,7 +98,7 @@ describe('quick card content', () => {
 		const changes = ['Finished Oct 3, 3:12 PM', 'PR opened Oct 2, 1:00 PM'];
 		const base = quickHeight(quickContent(item, rows, null, NO_MARKS));
 
-		const content = quickContent(item, rows, null, { reasons: [], upNext: null, changes });
+		const content = quickContent(item, rows, null, { ...NO_MARKS, changes });
 
 		expect(content.changes).toEqual(changes);
 		expect(quickHeight(content)).toBe(base + 2 * (6 + 16));

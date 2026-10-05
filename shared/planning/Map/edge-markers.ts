@@ -15,6 +15,8 @@ export interface EdgeMarkerInput {
 	kind: EdgeMarkerKind;
 	/** What the marker says: an up-next marker's number. */
 	text?: string;
+	/** What assistive tech calls the target when the key means nothing to a person (a session's node); the key otherwise. */
+	label?: string;
 }
 
 export interface PlacedEdgeMarker extends EdgeMarkerInput {

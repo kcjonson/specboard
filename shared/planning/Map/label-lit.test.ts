@@ -38,7 +38,8 @@ function input(over: Partial<LabelInput> & Pick<LabelInput, 'dots'>): LabelInput
 		transform: identity,
 		viewport,
 		measure,
-		named: new Set(),
+		agents: [],
+		blocks: [],
 		occupied: { circles: [], boxes: [] },
 		...over,
 	};

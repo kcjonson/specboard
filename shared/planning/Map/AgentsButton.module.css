@@ -1,0 +1,40 @@
+/* Looks like the summary strip's chips, which is where it sits. */
+.button {
+	appearance: none;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-1) var(--space-2);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: transparent;
+	color: var(--color-text);
+	font-family: inherit;
+	font-size: inherit;
+	cursor: pointer;
+	transition: background var(--transition-fast);
+}
+
+.button:hover:not(:disabled) {
+	background: var(--color-surface-hover);
+}
+
+.button[aria-expanded='true'] {
+	border-color: var(--color-primary);
+	background: var(--color-primary-subtle);
+}
+
+.button:disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
+/* The amber glow behind a live session, as a swatch: still, like the glow. */
+.dot {
+	width: 10px;
+	height: 10px;
+	flex-shrink: 0;
+	border-radius: 50%;
+	background: var(--color-in-progress);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-in-progress) 30%, transparent);
+}

@@ -14,6 +14,7 @@ export const drawDot = (key: string, x: number, y: number, extra: Partial<DrawDo
 	upNext: null,
 	cue: null,
 	pr: false,
+	live: false,
 	folded: null,
 	...extra,
 });

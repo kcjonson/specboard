@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/preact';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/preact';
 import type { JSX } from 'preact';
 import { BoardBuilder } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
@@ -70,8 +70,8 @@ type RenderedMap = Omit<ReturnType<typeof render>, 'rerender'> & { model: MapDat
 
 const cleared = vi.fn();
 
-function renderMap(source: () => Promise<MapRead>, props: MapProps = {}): RenderedMap {
-	const model = new MapDataModel(source, () => worker, memoryCollapseStore());
+function renderMap(source: () => Promise<MapRead>, props: MapProps = {}, clock?: () => number): RenderedMap {
+	const model = new MapDataModel(source, () => worker, memoryCollapseStore(), clock);
 	const activity = new ActivityCache(() => Promise.resolve([]));
 	const advance = vi.fn().mockResolvedValue(undefined);
 	const read = props.changes ?? { baseline: Date.now() - 86_400_000, readAt: Date.now(), changes: [] };
@@ -882,5 +882,122 @@ describe('MapView since your last visit', () => {
 		await waitFor(() => expect(frames.at(-1)!.dots.length).toBeGreaterThan(5));
 		expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull();
 		expect(litKeys()).toBeUndefined();
+	});
+});
+
+describe('MapView agents', () => {
+	/** The laptop has a live session (2 minutes ago) and a quiet one (20 minutes ago); the build box has a live one. */
+	function working(): { read: MapRead; b: BoardBuilder; items: string[] } {
+		const b = new BoardBuilder();
+		const one = b.add({ status: 'in_progress', title: 'Wire the index' });
+		const two = b.add({ status: 'in_progress', title: 'Draw the cards' });
+		const three = b.add({ status: 'in_progress', title: 'Write the roster' });
+		for (let i = 0; i < 5; i++) b.add({ status: 'ready' });
+		b.work(one, 'aa', 'personal-laptop', 2);
+		b.work(two, 'bb', 'personal-laptop', 20);
+		b.work(three, 'cc', 'build-box', 4);
+		return { read: { items: b.rows, summarized: false }, b, items: [one.key, two.key, three.key] };
+	}
+
+	const agentsButton = (container: HTMLElement): HTMLButtonElement =>
+		Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Agents at work') as HTMLButtonElement;
+
+	const liveChip = (container: HTMLElement): string =>
+		Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.startsWith('Live sessions'))!.textContent!;
+
+	it('puts the Agents at work button in the summary strip, next to the live count', async () => {
+		const { read, b } = working();
+		const { container } = renderMap(() => Promise.resolve(read), {}, () => b.now);
+		await waitFor(() => expect(frames.at(-1)?.agents.length).toBeGreaterThan(0));
+		const button = agentsButton(container);
+		expect(button.closest('section')!.getAttribute('aria-label')).toBe('Project summary');
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+		expect(liveChip(container)).toBe('Live sessions2');
+	});
+
+	it('opens a roster grouped by computer, each session with its items, live ones first', async () => {
+		const { read, b, items } = working();
+		const { container, getByRole } = renderMap(() => Promise.resolve(read), {}, () => b.now);
+		await waitFor(() => expect(frames.at(-1)?.agents.length).toBeGreaterThan(0));
+		fireEvent.click(agentsButton(container));
+		const roster = getByRole('dialog', { name: 'Agents at work' }) as HTMLElement;
+		const groups = Array.from(roster.querySelectorAll<HTMLElement>('section'));
+		expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['build-box', 'personal-laptop']);
+		const laptop = groups[1]!;
+		expect(laptop.querySelector('h3')!.textContent).toBe('personal-laptop1 live of 2');
+		const sessions = Array.from(laptop.querySelectorAll<HTMLElement>('[data-state]'));
+		expect(sessions.map((s) => s.getAttribute('data-state'))).toEqual(['live', 'quiet']);
+		expect(sessions[0]!.textContent).toContain('Session 1, claude-code');
+		expect(sessions[0]!.textContent).toContain(items[0]);
+		expect(sessions[0]!.textContent).toContain('Wire the index');
+		expect(sessions[1]!.textContent).toContain('quiet, last write 20 min ago');
+		expect(agentsButton(container).getAttribute('aria-expanded')).toBe('true');
+	});
+
+	it('selects the item and flies there when a row is picked, and closes', async () => {
+		const { read, b, items } = working();
+		const { container, getByRole, queryByRole } = renderMap(() => Promise.resolve(read), {}, () => b.now);
+		await waitFor(() => expect(frames.at(-1)?.agents.length).toBeGreaterThan(0));
+		fireEvent.click(agentsButton(container));
+		const row = Array.from((getByRole('dialog') as HTMLElement).querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('Draw the cards'))!;
+		fireEvent.click(row);
+		expect(opened).toEqual([items[1]]);
+		expect(queryByRole('dialog')).toBeNull();
+		await waitFor(() => {
+			const { dots, transform } = frames.at(-1)!;
+			const dot = dots.find((d) => d.key === items[1])!;
+			expect(transform.x + transform.k * dot.x).toBeCloseTo(500, -1);
+		}, { timeout: 2000 });
+	});
+
+	it('closes on Escape before the Map\'s own Escape sees it, and on a press outside', async () => {
+		const { read, b } = working();
+		const { container, queryByRole } = renderMap(() => Promise.resolve(read), { openItemKey: 'MAP-1', covered: 400 }, () => b.now);
+		await waitFor(() => expect(frames.at(-1)?.agents.length).toBeGreaterThan(0));
+		fireEvent.click(agentsButton(container));
+		expect(queryByRole('dialog')).not.toBeNull();
+		fireEvent.keyDown(document.body, { key: 'Escape' });
+		expect(queryByRole('dialog')).toBeNull();
+		expect(closed).not.toHaveBeenCalled();
+
+		fireEvent.click(agentsButton(container));
+		fireEvent.pointerDown(document.querySelector('canvas')!);
+		expect(queryByRole('dialog')).toBeNull();
+	});
+
+	it('says so when nothing is at work', async () => {
+		const { container, getByRole } = renderMap(() => Promise.resolve(board(5)));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(5));
+		fireEvent.click(agentsButton(container));
+		expect(getByRole('dialog').textContent).toContain('No agents at work');
+	});
+
+	it('asks the clock again every minute, and ages the sessions without laying anything out', async () => {
+		const timers: Array<() => void> = [];
+		// Only the Map's own minute timer is held back; the test library polls on setInterval too.
+		const original = window.setInterval.bind(window);
+		vi.spyOn(window, 'setInterval').mockImplementation(((handler: () => void, delay?: number) => (delay === 60_000 ? timers.push(handler) : original(handler, delay))) as unknown as typeof window.setInterval);
+		const layouts = vi.spyOn(worker, 'layout');
+		const { read, b, items } = working();
+		let clock = b.now;
+		const { container } = renderMap(() => Promise.resolve(read), {}, () => clock);
+		await waitFor(() => expect(frames.at(-1)?.agents.length).toBeGreaterThan(0));
+		expect(layouts).toHaveBeenCalledTimes(1);
+		expect(liveChip(container)).toBe('Live sessions2');
+		expect(frames.at(-1)!.dots.find((d) => d.key === items[0])!.reason).toBeNull();
+
+		// Fifteen minutes and a second later the live sessions have gone quiet.
+		clock = b.now + 15 * 60_000 + 1000;
+		act(() => timers.forEach((tick) => tick()));
+		await waitFor(() => expect(liveChip(container)).toBe('Live sessions0'));
+		await waitFor(() => expect(frames.at(-1)!.dots.find((d) => d.key === items[0])!.reason).toBe('quiet'));
+		expect(frames.at(-1)!.agents.every((agent) => agent.state === 'quiet')).toBe(true);
+		expect(layouts).toHaveBeenCalledTimes(1);
+
+		// An hour past the last write the sessions leave the cluster, and still no layout.
+		clock = b.now + 80 * 60_000;
+		act(() => timers.forEach((tick) => tick()));
+		await waitFor(() => expect(frames.at(-1)!.agents).toEqual([]));
+		expect(layouts).toHaveBeenCalledTimes(1);
 	});
 });

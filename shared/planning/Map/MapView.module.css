@@ -89,6 +89,20 @@
 	opacity: 0.5;
 }
 
+/* Opens under the toolbar, from its left edge. */
+.roster {
+	position: absolute;
+	top: calc(var(--space-3) + 44px);
+	left: var(--space-3);
+	right: var(--space-3);
+	display: flex;
+	pointer-events: none;
+}
+
+.roster > * {
+	pointer-events: auto;
+}
+
 /* Sits over the plot, above the ruler; only what it holds takes pointer events, so the canvas stays draggable. */
 .overlay {
 	position: absolute;

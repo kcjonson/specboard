@@ -23,7 +23,7 @@ export interface MapFacts {
 }
 
 export function mapFacts(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>, now: number): MapFacts {
-	const needs = needsPerson(rows.values(), layout);
+	const needs = needsPerson(rows.values(), layout, now);
 	const live = liveSessions(rows.values(), now);
 	const phases: Record<MapPhase, number> = { done: 0, in_flight: 0, next: 0, later: 0 };
 	let blocked = 0;
