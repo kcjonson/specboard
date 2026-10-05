@@ -8,8 +8,12 @@ const row = (fields: Partial<MapItemRow> & Pick<MapItemRow, 'key'>): MapItemRow 
 	specCount: 0, ...fields,
 });
 
+const MARK = { cursor: 1_789_000_000_000, total: 2, specs: '1:1788000000000' };
+
 const READ: MapRead = {
+	...MARK,
 	summarized: true,
+	delta: false,
 	items: [
 		row({ key: 'SPE-1', type: 'epic', status: 'done', subStatus: 'complete', completedAt: '2026-09-03T00:00:00.000Z',
 			timeAnchor: '2026-09-04T08:30:00.456Z', summarizedDescendants: 12, originActorType: null }),
@@ -41,10 +45,18 @@ describe('the map read on the wire', () => {
 	});
 
 	it.each(['XX-1', 'SPE-', 'SPE-0', 'SPE--3', 'SPE-01', 'spe-1'])('refuses %s rather than sending a number that decodes to another key', (key) => {
-		expect(() => encodeMapRead({ summarized: false, items: [row({ key })] }, 'SPE')).toThrow(key);
+		expect(() => encodeMapRead({ ...MARK, summarized: false, delta: false, items: [row({ key })] }, 'SPE')).toThrow(key);
 	});
 
 	it('encodes an empty project', () => {
-		expect(decodeMapRead(encodeMapRead({ items: [], summarized: false }, 'SPE'))).toEqual({ items: [], summarized: false });
+		const empty: MapRead = { ...MARK, items: [], summarized: false, delta: false, total: 0 };
+		expect(decodeMapRead(encodeMapRead(empty, 'SPE'))).toEqual(empty);
+	});
+
+	it('carries a delta and where it leaves off', () => {
+		const delta: MapRead = { items: [row({ key: 'SPE-4' })], summarized: false, delta: true, cursor: 1_790_000_123_456, total: 40, specs: '3:1789999000000' };
+		const wire = JSON.parse(JSON.stringify(encodeMapRead(delta, 'SPE')));
+		expect(wire).toMatchObject({ delta: true, cursor: 1_790_000_123_456, total: 40, specs: '3:1789999000000' });
+		expect(decodeMapRead(wire)).toEqual(delta);
 	});
 });

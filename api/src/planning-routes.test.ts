@@ -57,7 +57,9 @@ beforeEach(() => {
 	vi.mocked(getItems).mockReset();
 	vi.mocked(getItems).mockResolvedValue({ items: [], total: 0 });
 	vi.mocked(getProjectMap).mockReset();
-	vi.mocked(getProjectMap).mockResolvedValue({ items: Array.from({ length: 40 }, (_, i) => row(i + 1)), summarized: false });
+	vi.mocked(getProjectMap).mockResolvedValue({
+		items: Array.from({ length: 40 }, (_, i) => row(i + 1)), summarized: false, delta: false, cursor: 1_790_000_000_000, total: 40, specs: '0:',
+	});
 });
 
 describe('GET /map access', () => {
@@ -79,10 +81,27 @@ describe('GET /map access', () => {
 		const response = await get('map', OWNER);
 
 		expect(response.status).toBe(200);
-		expect(getProjectMap).toHaveBeenCalledWith('proj-1');
+		expect(getProjectMap).toHaveBeenCalledWith('proj-1', null);
 		const wire = await response.json() as MapReadWire;
-		expect(wire).toMatchObject({ projectKey: 'SB', summarized: false });
+		expect(wire).toMatchObject({ projectKey: 'SB', summarized: false, delta: false, cursor: 1_790_000_000_000, total: 40 });
 		expect(wire.number).toHaveLength(40);
+	});
+
+	it('reads only what changed after the cursor an earlier read gave', async () => {
+		vi.mocked(getProjectMap).mockResolvedValue({ items: [row(7)], summarized: false, delta: true, cursor: 1_790_000_010_000, total: 40, specs: '0:' });
+
+		const response = await get('map?since=1790000000000', OWNER);
+
+		expect(response.status).toBe(200);
+		expect(getProjectMap).toHaveBeenCalledWith('proj-1', 1_790_000_000_000);
+		expect(await response.json()).toMatchObject({ delta: true, number: [7], cursor: 1_790_000_010_000 });
+	});
+
+	it.each(['', 'soon', '-5', '1.5', '1e12', '99999999999999999999'])('refuses since=%s, which no read gave', async (since) => {
+		const response = await get(`map?since=${since}`, OWNER);
+
+		expect(response.status).toBe(400);
+		expect(getProjectMap).not.toHaveBeenCalled();
 	});
 });
 

@@ -79,11 +79,37 @@ export interface MapItemRow {
 	summarizedDescendants?: number;
 }
 
-/** The whole-project read, as rows. GET /api/projects/:owner/:project/map sends it as a MapReadWire. */
-export interface MapRead {
+/**
+ * Where a read leaves off, so the next poll asks only for what changed (Data,
+ * requirement 8). Every read carries one, whole or delta.
+ */
+export interface MapReadMark {
+	/**
+	 * Server time, epoch ms, that the next delta asks from: the database's clock taken
+	 * before the read's snapshot, a second back, and no later than the start of the oldest
+	 * transaction open then. A write the read didn't see commits after its snapshot, so it
+	 * began after that moment and its stamp is at or past the cursor. Never the client's
+	 * clock. A delta overlaps the read before it a little; rows merge by key.
+	 */
+	cursor: number;
+	/** Items in the project as the read saw them. Rows merged from a delta that don't come to this mean something was deleted. */
+	total: number;
+	/** The project's spec links as their count and newest link's time. Links don't move updated_at, so when this changes the client reads the whole project again. */
+	specs: string;
+}
+
+/** The project read, as rows. GET /api/projects/:owner/:project/map sends it as a MapReadWire. */
+export interface MapRead extends MapReadMark {
 	items: MapItemRow[];
 	/** True when the project passed the read cap and finished families came back folded. */
 	summarized: boolean;
+	/**
+	 * Only the items whose updated_at moved since the cursor the client sent, or whose agent
+	 * episodes wrote or ended since (worker writes don't move updated_at): rows to merge into
+	 * the last read by key, never the whole project. A delta is never summarized: past the
+	 * read cap, any change answers with the whole read.
+	 */
+	delta: boolean;
 }
 
 /** An episode on the wire: its times in epoch ms, like every other time. */
@@ -99,9 +125,10 @@ export type MapBlockerLinkWire = number | [number, number];
  * columns 2,000 items come to about 73 KB gzipped where objects took 106 KB.
  * decodeMapRead turns it back into rows.
  */
-export interface MapReadWire {
+export interface MapReadWire extends MapReadMark {
 	projectKey: string;
 	summarized: boolean;
+	delta: boolean;
 	number: number[];
 	type: MapItemType[];
 	title: string[];
@@ -140,6 +167,10 @@ export function encodeMapRead(read: MapRead, projectKey: string): MapReadWire {
 	return {
 		projectKey,
 		summarized: read.summarized,
+		delta: read.delta,
+		cursor: read.cursor,
+		total: read.total,
+		specs: read.specs,
 		number: rows.map((r) => numberOf(r.key)),
 		type: rows.map((r) => r.type),
 		title: rows.map((r) => r.title),
@@ -196,5 +227,5 @@ export function decodeMapRead(wire: MapReadWire): MapRead {
 			...(summarizedDescendants === null ? {} : { summarizedDescendants }),
 		};
 	});
-	return { items, summarized: wire.summarized };
+	return { items, summarized: wire.summarized, delta: wire.delta, cursor: wire.cursor, total: wire.total, specs: wire.specs };
 }
