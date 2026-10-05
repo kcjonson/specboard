@@ -65,14 +65,19 @@ export interface MapRenderer {
 	refreshTheme(): void;
 	/** A label's text width in CSS pixels, at the font the label draws in. */
 	measureLabel(text: string, font: LabelFont): number;
-	draw(frame: MapFrame): void;
+	/** True when it left work for a later frame (outline paths past this frame's time budget), so the caller paints again. */
+	draw(frame: MapFrame): boolean | void;
 }
 
 const STATUSES = Object.keys(STATUS_TOKENS) as MapItemStatus[];
 
-/** Each nesting level out tints its region a little deeper. */
-const REGION_TINT = 0.04;
-const REGION_TINT_STEP = 0.025;
+/**
+ * Each nesting level out tints its region a little deeper. A tint of the text color shows less
+ * on a dark surface than on a light one (the eye reads light on dark as fainter for the same
+ * contrast), so dark mode takes a stronger one.
+ */
+const REGION_TINT = { light: 0.04, dark: 0.09 };
+const REGION_TINT_STEP = { light: 0.025, dark: 0.035 };
 const REGION_TINT_LEVELS = 4;
 const REGION_STROKE = 0.2;
 const REGION_STROKE_FOCUS = 0.75;
@@ -172,9 +177,10 @@ function readTheme(element: Element, normalize: (color: string) => string, force
 		statusRgb,
 		surfaceRgb,
 		// Forced colors leave regions untinted and outlined in ink: a tint is a blend of two colors the person didn't choose.
-		regionFill: Array.from({ length: REGION_TINT_LEVELS }, (_, level) =>
-			forced ? surface : formatColor(mix(textRgb, surfaceRgb, REGION_TINT + REGION_TINT_STEP * level)),
-		),
+		regionFill: Array.from({ length: REGION_TINT_LEVELS }, (_, level) => {
+			const scheme = isDark(surfaceRgb) ? 'dark' : 'light';
+			return forced ? surface : formatColor(mix(textRgb, surfaceRgb, REGION_TINT[scheme] + REGION_TINT_STEP[scheme] * level));
+		}),
 		regionStroke: forced ? text : formatColor(mix(textRgb, surfaceRgb, REGION_STROKE)),
 		regionStrokeFocus: forced ? text : formatColor(mix(textRgb, surfaceRgb, REGION_STROKE_FOCUS)),
 		fade: isDark(surfaceRgb) ? FADE_DARK : FADE_LIGHT,
@@ -239,14 +245,46 @@ function glyphPaths(): Record<MapItemStatus, GlyphPaths> {
 	return paths;
 }
 
-/** Path2D for an outline's smoothed curve, in layout units. */
-function outlinePath(outline: RegionOutline): Path2D {
+/**
+ * Path2D for an outline's smoothed curve, in layout units. Drawn small, a long outline's
+ * thousands of curves are sub-pixel and cost the rasterizer a frame each, so a path keeps
+ * only the curves at least `gap` layout units apart (a gap of 0 keeps them all): the curve
+ * is a point every grid step or so, and a gap of a pixel or two on screen moves nothing visibly.
+ */
+function outlinePath(outline: RegionOutline, gap: number): Path2D {
 	const { curve } = outline;
 	const path = new Path2D();
 	path.moveTo(curve[0]!, curve[1]!);
-	for (let i = 2; i < curve.length; i += 4) path.quadraticCurveTo(curve[i]!, curve[i + 1]!, curve[i + 2]!, curve[i + 3]!);
+	let lastX = curve[0]!;
+	let lastY = curve[1]!;
+	const last = curve.length - 4;
+	for (let i = 2; i < curve.length; i += 4) {
+		const ex = curve[i + 2]!;
+		const ey = curve[i + 3]!;
+		if (gap > 0 && i !== last && (ex - lastX) * (ex - lastX) + (ey - lastY) * (ey - lastY) < gap * gap) continue;
+		path.quadraticCurveTo(curve[i]!, curve[i + 1]!, ex, ey);
+		lastX = ex;
+		lastY = ey;
+	}
 	path.closePath();
 	return path;
+}
+
+/** Outline curves closer than this many screen pixels collapse into one, in powers of two of layout units (so a zoom redraws a path only when the gap doubles). */
+const OUTLINE_GAP_PX = 1.5;
+/** Below this many layout units the curves are a grid step apart and are all kept. */
+const OUTLINE_GAP_MIN = 4;
+/**
+ * A frame spends at most this long building outline paths when it has an older detail of them to draw: a zoom into
+ * a finer detail on a board of long outlines is hundreds of thousands of curves, which in one frame froze the zoom.
+ * The rest are built over the frames after, drawn at the older detail meanwhile.
+ */
+const PATH_BUDGET_MS = 6;
+
+/** The simplification gap, in layout units, for outlines drawn at scale `k`: 0 close in, a power of two further out. */
+export function outlineGap(k: number): number {
+	const gap = OUTLINE_GAP_PX / Math.max(k, 1e-6);
+	return gap < OUTLINE_GAP_MIN ? 0 : 2 ** Math.round(Math.log2(gap));
 }
 
 /** One Canvas 2D layer, sized for the device's pixel ratio and repainted only when asked. */
@@ -257,7 +295,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 	const doneDisc = new Path2D(DONE_DISC);
 	const pauseBars = new Path2D(PAUSE_BARS);
 	const laptop = new Path2D(LAPTOP);
-	const outlines = new WeakMap<RegionOutline, Path2D>();
+	const outlines = new WeakMap<RegionOutline, { gap: number; path: Path2D }>();
+	const lastOfRegion = new Map<string, { gap: number; path: Path2D }>();
 	const normalize = (color: string): string => {
 		ctx.fillStyle = '#000000';
 		ctx.fillStyle = color;
@@ -562,8 +601,10 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 	 * outlines it replaced go out as the new ones come in, level by level, so a nested
 	 * region's old outline never ends up under its parent's new one.
 	 */
-	const drawRegions = (regions: readonly RegionOutline[], transform: Transform, focus: FocusFrame, outlined: ReadonlySet<string>, fading: RegionFade | null): void => {
+	const drawRegions = (regions: readonly RegionOutline[], transform: Transform, focus: FocusFrame, outlined: ReadonlySet<string>, fading: RegionFade | null): boolean => {
 		const { k } = transform;
+		const started = window.performance.now();
+		let deferred = false;
 		const layers: Array<{ outline: RegionOutline; share: number; going: boolean }> = regions.map((outline) => ({
 			outline,
 			share: fading?.incoming.has(outline.key) ? fading.progress : 1,
@@ -579,11 +620,22 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			const { bounds } = outline;
 			if (transform.x + k * bounds.maxX < 0 || transform.x + k * bounds.minX > width) continue;
 			if (transform.y + k * bounds.maxY < 0 || transform.y + k * bounds.minY > plotHeight()) continue;
-			let path = outlines.get(outline);
-			if (!path) {
-				path = outlinePath(outline);
-				outlines.set(outline, path);
+			const gap = outlineGap(k);
+			let cached = outlines.get(outline);
+			if (!cached || cached.gap !== gap) {
+				// What is drawn instead while it waits: this outline's own path at another detail, or the last path its region had
+				// (a refresh brings new outline objects, and its first frame would build them all at once).
+				const stale = cached ?? lastOfRegion.get(outline.key);
+				if (stale && window.performance.now() - started > PATH_BUDGET_MS) {
+					deferred = true;
+					cached = stale;
+				} else {
+					cached = { gap, path: outlinePath(outline, gap) };
+					outlines.set(outline, cached);
+					lastOfRegion.set(outline.key, cached);
+				}
 			}
+			const { path } = cached;
 			const strength = regionStrength(focus, outline.key, theme.fade) * share;
 			const dark = outlined.has(outline.key) ? 1 : darkness(focus, outline.key);
 			ctx.save();
@@ -602,6 +654,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			}
 			ctx.restore();
 		}
+		return deferred;
 	};
 
 	const drawLinks = (links: readonly DrawLink[], all: boolean, transform: Transform, focus: FocusFrame): void => {
@@ -817,7 +870,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			return measured;
 		},
 		draw({ dots, regions, links, allLinks, labels, dotLabels, agents, blocks, controls, cards, focus, outlined, ringed, drag, effects, fading, transform, level, ruler }) {
-			if (width === 0 || height === 0) return;
+			if (width === 0 || height === 0) return false;
 			if ((window.devicePixelRatio || 1) !== ratio) fit();
 			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 			ctx.fillStyle = theme.surface;
@@ -826,7 +879,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.beginPath();
 			ctx.rect(0, 0, width, plotHeight());
 			ctx.clip();
-			drawRegions(regions, transform, focus, outlined, fading);
+			const pending = drawRegions(regions, transform, focus, outlined, fading);
 			if (ruler) drawEdgeLine(ruler);
 			drawLinks(links, allLinks, transform, focus);
 			let pulled: DrawDot | null = null;
@@ -851,6 +904,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			if (ruler) drawEdgeLabel(ruler);
 			ctx.restore();
 			drawRuler(ruler);
+			return pending;
 		},
 	};
 }

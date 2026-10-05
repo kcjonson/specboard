@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { realisticBoard, syntheticBoard } from '../layout/board-fixture';
 import { layoutMap } from '../layout/layout';
 import type { MapLayout } from '../layout/types';
 import { insideLoop, spanningTree, traceRegions, type RegionInput, type RegionOutline } from './outline';
 import { gridStep, regionInputs } from './region-outlines';
+
+// Several of these trace boards of hundreds or thousands of regions and members. Their work is bounded by
+// construction and nothing here asserts a duration, so the limit only has to catch a hang; the default 5 s
+// failed them whenever the suite ran beside others on a loaded runner.
+vi.setConfig({ testTimeout: 60_000 });
 
 const region = (key: string, members: Array<[number, number]>, extra: Partial<RegionInput> = {}): RegionInput => ({
 	key,

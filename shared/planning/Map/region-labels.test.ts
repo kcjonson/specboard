@@ -5,7 +5,7 @@ import { controlAt, expandControls, labelControls } from './collapse-controls';
 import { drawDot } from './draw-dot.fixture';
 import type { DrawDot, DrawRegion } from './draw-list';
 import { placeLabels } from './label-placement';
-import { BAR_WIDTH, LABEL_HEIGHT, fitText, rollupSegments, type Circle, type RegionLabel } from './region-labels';
+import { BAR_WIDTH, LABEL_HEIGHT, fitText, glideLabels, labelCenters, rollupSegments, shiftLabel, type Circle, type RegionLabel } from './region-labels';
 import { traceRegions, type RegionOutline } from './regions/outline';
 
 const measure = (text: string): number => text.length * 7;
@@ -164,6 +164,24 @@ describe('region labels', () => {
 		const [label] = regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform, viewport, measure, cap: null, occupied: [] });
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeLessThanOrEqual(-50 + 2 * a.top.y);
 		expect(label!.box.y + LABEL_HEIGHT / 2).toBeGreaterThan(-50 + 2 * a.top.y - 4);
+	});
+
+	it('glides from where the label stood to the new outline over the crossfade, never jumping', () => {
+		const [now] = regionLabels({ regions: [region('A', 3)], outlines: new Map([['A', a]]), dots: [], transform: identity, viewport, measure, cap: null, occupied: [] });
+		const before = labelCenters([shiftLabel(now!, -80, 30)], identity);
+		const at = (progress: number, transform: Transform = identity): RegionLabel => glideLabels([now!], before, transform, progress)[0]!;
+
+		// At the start it stands where it was, with every part of it together; at the end it is on the new outline.
+		expect(at(0).box.x).toBeCloseTo(now!.box.x - 80);
+		expect(at(0).box.y).toBeCloseTo(now!.box.y + 30);
+		expect(at(0).toggle.x - at(0).box.x).toBeCloseTo(now!.toggle.x - now!.box.x);
+		expect(at(0.5).box.x).toBeCloseTo(now!.box.x - 40);
+		expect(at(1)).toBe(now);
+
+		// A camera that moved meanwhile carries the starting point with it.
+		expect(at(0, { k: 1, x: 20, y: 0 }).box.x).toBeCloseTo(now!.box.x - 60);
+		// A label with no past stands where it is.
+		expect(glideLabels([now!], new Map(), identity, 0)[0]).toBe(now);
 	});
 
 	it('cuts a long title with an ellipsis', () => {

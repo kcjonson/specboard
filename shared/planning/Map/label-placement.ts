@@ -18,6 +18,9 @@ import type { LabelRules, ZoomLevel } from './zoom-levels';
  * every other dot with room. The first to ask gets the spot.
  */
 
+/** At a level that caps region labels, this many regions are tried per label allowed before the rest are given up on for the frame. */
+const REGION_TRIES = 4;
+
 /** Dots farther past the plot's edge than a label is wide can't reach into it. */
 const EDGE_MARGIN = MAX_DOT_LABEL + 16;
 
@@ -136,8 +139,14 @@ export function placeLabels({ rules, level, regions, outlines, dots, agents, blo
 
 	const regionPlacement = { outlines, transform, viewport, measure: (text: string) => measure(text, 'region') };
 	const ordered = [...regions].sort((a, b) => Number(lit.outlined.has(b.key)) - Number(lit.outlined.has(a.key)) || b.size - a.size || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+	let tries = 0;
 	for (const region of ordered) {
-		if (rules.regions !== null && !lit.outlined.has(region.key) && (lit.recent || placed.regions.length >= rules.regions)) continue;
+		if (rules.regions !== null && !lit.outlined.has(region.key)) {
+			if (lit.recent || placed.regions.length >= rules.regions) continue;
+			// A crowded plot turns most regions away, and each turn costs a walk along its whole outline every frame:
+			// after a few misses per label allowed, the rest are smaller than what already failed.
+			if (tries++ >= rules.regions * REGION_TRIES) continue;
+		}
 		const label = placeRegionLabel(region, regionPlacement, taken);
 		if (label) placed.regions.push(label);
 	}

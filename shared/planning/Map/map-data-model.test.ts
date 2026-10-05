@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { BoardBuilder, deltaRead, iso, wholeRead } from './layout/board-fixture';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { layoutMap } from './layout/layout';
+import { traceRegions, type RegionInput } from './regions/outline';
 import type { MapLayoutInput } from './layout/types';
 import type { MapItemRow, MapRead } from '@specboard/core/map-read';
 import { memoryCollapseStore } from './collapse-store.fixture';
@@ -28,6 +29,7 @@ function fakeWorker(): MapLayoutWorker & { pending: Array<() => void>; terminate
 				worker.pending.push(() => resolve({ layout: layoutMap(input), ms: 1 }));
 			});
 		},
+		outlines: (inputs: readonly RegionInput[], step: number) => Promise.resolve(traceRegions(inputs, step)),
 		terminate: () => {
 			worker.terminated = true;
 		},
@@ -72,15 +74,25 @@ describe('MapDataModel', () => {
 		await loading;
 	});
 
-	it('is ready and empty for a project with no items, without waking the worker', async () => {
+	it('is ready and empty for a project with no items, asking the worker for nothing', async () => {
 		const worker = fakeWorker();
-		const create = vi.fn(() => worker);
-		const model = new MapDataModel(() => Promise.resolve(wholeRead([])), create, memoryCollapseStore());
+		const model = new MapDataModel(() => Promise.resolve(wholeRead([])), () => worker, memoryCollapseStore());
 		await model.load(2);
 		expect(model.state).toBe('ready');
 		expect(model.isEmpty).toBe(true);
 		expect(model.layout).toBeNull();
-		expect(create).not.toHaveBeenCalled();
+		expect(worker.calls).toBe(0);
+	});
+
+	it('starts the worker while the read is still on the wire', async () => {
+		const worker = fakeWorker();
+		const create = vi.fn(() => worker);
+		let land!: (read: MapRead) => void;
+		const model = new MapDataModel(() => new Promise<MapRead>((resolve) => (land = resolve)), create, memoryCollapseStore());
+		void model.load(2);
+		expect(create).toHaveBeenCalledTimes(1);
+		expect(worker.calls).toBe(0);
+		land(board(2));
 	});
 
 	it('reports a failed read, and retries with the same shape', async () => {

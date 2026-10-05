@@ -1,9 +1,10 @@
 import { vi } from 'vitest';
 import type { Transform, Viewport } from './camera';
 import type { MapCamera, ScreenPoint } from './map-camera';
-import { MapSurface } from './map-surface';
+import { MapSurface, type MapSurfaceHandlers } from './map-surface';
 import { OverlayStore } from './overlay';
 import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
+import { traceRegions } from './regions/outline';
 
 /** A camera and renderer that record what they are told, and a surface wired to them, for tests that drive the Map without a canvas. */
 
@@ -87,6 +88,8 @@ export function setup(): {
 	focus: ReturnType<typeof vi.fn>;
 	flush: () => void;
 	deferred: Array<() => void>;
+	/** The worker's outline tracing, answering at once with the real tracer. */
+	trace: ReturnType<typeof vi.fn<MapSurfaceHandlers['traceOutlines']>>;
 } {
 	const camera = new FakeCamera();
 	const renderer = new FakeRenderer();
@@ -98,6 +101,7 @@ export function setup(): {
 	const collapse = vi.fn();
 	const target = vi.fn();
 	const focus = vi.fn();
+	const trace = vi.fn<MapSurfaceHandlers['traceOutlines']>((inputs, step) => Promise.resolve(traceRegions(inputs, step)));
 	const overlay = new OverlayStore();
 	const clock = { now: 0, reduced: false };
 	const surface = new MapSurface(
@@ -111,9 +115,9 @@ export function setup(): {
 			defer: (task) => deferred.push(task),
 			timeZone: 'UTC',
 		},
-		{ onViewportEmpty: empty, onSettle: settle, onOpen: open, onCollapse: collapse, onPointerTarget: target, onOutlineStep: () => {}, onFocus: focus },
+		{ onViewportEmpty: empty, onSettle: settle, onOpen: open, onCollapse: collapse, onPointerTarget: target, onOutlineStep: () => {}, traceOutlines: trace, onFocus: focus },
 	);
-	return { surface, camera, renderer, overlay, clock, frames, empty, settle, open, collapse, target, focus, deferred, flush: () => frames.splice(0).forEach((paint) => paint()) };
+	return { surface, camera, renderer, overlay, clock, frames, empty, settle, open, collapse, target, focus, deferred, trace, flush: () => frames.splice(0).forEach((paint) => paint()) };
 }
 
 export const WIDTH = 1000;

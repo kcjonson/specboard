@@ -17,6 +17,7 @@ import {
 } from './camera';
 import { computerBlock } from './computer-blocks';
 import { expandControls, labelControls, type CollapseControl } from './collapse-controls';
+import { glideLabels, labelCenters } from './region-labels';
 import { intersects, type Box } from './box-index';
 import { cardBox } from './cards/card-culling';
 import { SPRING_MS, springRemaining } from './drag';
@@ -38,7 +39,7 @@ import { EMPTY_OVERLAY, type CardSet, type DragOffset, type MapOverlay, type Min
 import { agentCard, agentCardHeight, itemSessions } from './quick/agent-content';
 import { quickContent, quickHeight, QUICK_WIDTH } from './quick/quick-content';
 import { placeQuickCard } from './quick/quick-card-placement';
-import type { RegionOutline } from './regions/outline';
+import type { RegionInput, RegionOutline } from './regions/outline';
 import { RegionOutlines, gridStep } from './regions/region-outlines';
 import { RelationIndex, type Relation } from './relations';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
@@ -63,6 +64,8 @@ export interface MapSurfaceHandlers {
 	onCollapse(key: string, collapse: boolean): void;
 	/** The zoom moved the region outlines to another grid step, which the next layout should be traced at. */
 	onOutlineStep(step: number): void;
+	/** Traces the outlines at a grid step the layout didn't bring, off the main thread. */
+	traceOutlines(inputs: readonly RegionInput[], step: number): Promise<RegionOutline[]>;
 	/** The cursor's target changed. */
 	onPointerTarget(target: PointerTarget): void;
 	/** Keyboard focus moved to another item, region, or session, or off all of them (null): what the accessible tree's active descendant follows. */
@@ -132,8 +135,8 @@ export class MapSurface {
 	private wallNow = 0;
 	private relations: RelationIndex | null = null;
 	private outlines: RegionOutlines | null = null;
-	/** Bumped by every frame and every new layout, so only the last frame's deferred outline task runs. */
-	private deferred = 0;
+	/** Grid steps the worker is tracing for the current layout's outlines. */
+	private readonly tracing = new Set<number>();
 	private allLinks = false;
 	/** What a search or filter lights; null when none is on or nothing matched, so nothing dims. */
 	private highlight: Highlight | null = null;
@@ -181,6 +184,8 @@ export class MapSurface {
 	private drag: Drag | null = null;
 	/** A refresh's motion under way, from what the Map showed to the layout it now has. */
 	private transition: Transition | null = null;
+	/** Where each region label stood when the transition began, which the labels glide from while their outlines crossfade. */
+	private labelFlight: ReadonlyMap<string, MapPoint> | null = null;
 	/** The camera is moving itself to keep a moved dot put on screen. */
 	private following = false;
 	/** The outline step the last frame drew at, which the worker traces with the next layout. */
@@ -214,8 +219,6 @@ export class MapSurface {
 	destroy(): void {
 		this.disposed = true;
 		this.unsubscribe();
-		// A deferred outline task still pending finds the token moved and does nothing.
-		this.deferred++;
 		this.hoverToken++;
 		this.outlines = null;
 	}
@@ -267,6 +270,7 @@ export class MapSurface {
 	update(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>, changes: MapUpdate | null): void {
 		const now = this.clock();
 		const shown = changes && this.layout ? this.shownAt(now) : null;
+		this.labelFlight = shown && this.snapshot ? labelCenters(this.snapshot.labels, this.snapshot.transform) : null;
 		this.take(layout, rows);
 		this.transition = null;
 		if (shown && changes) {
@@ -309,7 +313,7 @@ export class MapSurface {
 		this.nodesByKey = new Map();
 		this.relations = null;
 		this.outlines = null;
-		this.deferred++;
+		this.tracing.clear();
 		this.controls = [];
 		this.cards = null;
 		this.cardAlpha = 0;
@@ -755,10 +759,13 @@ export class MapSurface {
 				occupied: { circles: expand.map((control) => control.at), boxes: reserved },
 			})
 			: { labels: { regions: [], dots: [], blocks: [], cards: [] }, cards: [] };
-		const { labels } = placed;
+		const flight = this.labelFlight;
+		const crossfade = motion?.regions ?? null;
+		const regionLabels = flight && crossfade ? glideLabels(placed.labels.regions, flight, transform, crossfade.progress) : placed.labels.regions;
+		const labels = { ...placed.labels, regions: regionLabels };
 		const cards = this.cardsFor(level, placed.cards, transform);
 		this.controls = [...labelControls(labels.regions), ...expand];
-		this.renderer.draw({
+		const pending = this.renderer.draw({
 			dots,
 			regions: outlines,
 			links,
@@ -798,8 +805,11 @@ export class MapSurface {
 		const cardInView = cards.set?.dots.some((dot) => intersects(cardBox(dot, transform), plot)) ?? false;
 		this.setViewportEmpty(dots.length > 0 && !glyphInView && !cardInView);
 		// A fade or a transition has to be walked frame by frame; at rest nothing asks for another.
-		if (this.transition?.finished(now)) this.transition = null;
-		if (level.from !== null || this.fade.animating || this.drag?.release || this.transition?.animating(now)) this.requestPaint();
+		if (this.transition?.finished(now)) {
+			this.transition = null;
+			this.labelFlight = null;
+		}
+		if (pending || level.from !== null || this.fade.animating || this.drag?.release || this.transition?.animating(now)) this.requestPaint();
 	}
 
 	/** Moves the camera along with the focused dot's glide, before the frame reads where the camera is. */
@@ -876,7 +886,7 @@ export class MapSurface {
 		// What fit all, Now, the opening view, and the zoom-out limit frame is the dots and the regions drawn around them, whose padding runs past the dots.
 		this.extent = layout.frame.bounds;
 		for (const { bounds } of this.outlines.at(gridStep(0))) this.extent = unionBounds(this.extent, bounds);
-		this.deferred++;
+		this.tracing.clear();
 		this.configureCamera();
 		// An item a refresh took away can't keep the keyboard's focus.
 		if (this.focusKey !== null && !this.placeOf(this.focusKey)) this.setFocus(null);
@@ -896,8 +906,9 @@ export class MapSurface {
 	/**
 	 * Outlines change only with the layout and the zoom bucket, never during a pan. The
 	 * first draw of a layout computes them; after that a zoom into a new bucket draws the
-	 * nearest cached outlines (they're in layout units, so they still fit) and computes
-	 * the new bucket's once frames stop asking for it, which is when the gesture ends.
+	 * nearest cached outlines (they're in layout units, so they still fit) while the worker
+	 * traces the new bucket's, and the Map redraws when they arrive. Tracing a big board's
+	 * finer step took hundreds of milliseconds, which on the main thread froze the zoom.
 	 */
 	private outlinesFor(k: number): RegionOutline[] {
 		const outlines = this.outlines;
@@ -907,15 +918,23 @@ export class MapSurface {
 			this.step = step;
 			this.handlers.onOutlineStep(step);
 		}
-		const token = ++this.deferred;
 		if (outlines.has(step)) return outlines.at(step);
 		const cached = outlines.nearest(step);
 		if (!cached) return outlines.at(step);
-		this.defer(() => {
-			if (token !== this.deferred) return;
-			outlines.at(step);
-			this.requestPaint();
-		});
+		if (this.tracing.has(step)) return cached;
+		this.tracing.add(step);
+		this.handlers.traceOutlines(outlines.regionInputs, step).then(
+			(traced) => {
+				if (this.outlines !== outlines || this.disposed) return;
+				outlines.put(step, traced);
+				this.tracing.delete(step);
+				this.requestPaint();
+			},
+			() => {
+				// The worker failed: the nearest outlines stay, and a later zoom asks again.
+				this.tracing.delete(step);
+			},
+		);
 		return cached;
 	}
 
@@ -1124,7 +1143,8 @@ export class MapSurface {
 		}
 		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key), sessions: itemSessions(row, this.drawing.working, this.wallNow), changes: this.changeNotes?.get(key) ?? [] };
 		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress, marks)) };
-		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress, marks, agent: null };
+		const ownLabel = row.parentKey ? (regionLabels.find((l) => l.key === row.parentKey)?.box ?? null) : null;
+		return { key, ...placeQuickCard({ anchor, related, plot, reserved, ownLabel, size }), progress, marks, agent: null };
 	}
 
 	/** Markers for the asked-for items that are out of view, kept off the page's own controls, the minimap, the labels, and the drawer. */

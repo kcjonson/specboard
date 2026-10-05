@@ -6,6 +6,7 @@ import { createTimeScale, edgeOf, timeToX } from './layout/time-scale';
 import { TIME_CONSTANT } from './layout/constants';
 import type { MapLayout, MapLayoutPrevious } from './layout/types';
 import { NO_UPDATE, diffRows, changesAnything, type MapUpdate } from './map-update';
+import type { RegionInput, RegionOutline } from './regions/outline';
 import { gridStep } from './regions/region-outlines';
 
 export type MapLoadState = 'loading' | 'ready' | 'error';
@@ -130,12 +131,14 @@ export class MapDataModel implements Observable {
 		this.error = null;
 		this.emit();
 		try {
+			// The worker starts while the read is on the wire: loading its code and starting it took about 200 ms,
+			// which sat between the read landing and the layout beginning when it started after.
+			this.worker ??= this.createWorker();
 			const read = await this.source(null);
 			if (epoch !== this.epoch) return;
 			const now = this.clock();
 			let layout: MapLayout | null = null;
 			if (read.items.length > 0) {
-				this.worker ??= this.createWorker();
 				({ layout } = await this.worker.layout({ rows: read.items, now, collapse: this.collapse, aspect, outlineSteps: this.outlineSteps() }));
 				if (generation !== this.generation) return;
 			}
@@ -302,6 +305,12 @@ export class MapDataModel implements Observable {
 		const moved = createTimeScale(edgeOf(newest, now), scale.times, scale.unit);
 		const probe = scale.edge - TIME_CONSTANT;
 		return Math.abs(timeToX(moved, probe) - timeToX(scale, probe)) >= DRIFT_STEP;
+	}
+
+	/** Region outlines at one grid step, traced by the worker so a zoom never stalls the main thread. */
+	traceOutlines(inputs: readonly RegionInput[], step: number): Promise<RegionOutline[]> {
+		this.worker ??= this.createWorker();
+		return this.worker.outlines(inputs, step);
 	}
 
 	private outlineSteps(): number[] {
