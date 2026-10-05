@@ -5,7 +5,7 @@ import { buildDrawList } from './draw-list';
 
 const drawn = (b: BoardBuilder, collapse: Record<string, boolean> = {}): ReturnType<typeof buildDrawList> => {
 	const rows = new Map(b.rows.map((row) => [row.key, row]));
-	return buildDrawList(layoutMap({ rows: b.rows, now: b.now, collapse, aspect: 2 }), rows);
+	return buildDrawList(layoutMap({ rows: b.rows, now: b.now, collapse, aspect: 2 }), rows, b.now);
 };
 
 describe('the ink ring and its reason on the draw list', () => {

@@ -51,6 +51,7 @@ interface WorkerJson {
 	deviceName: string | null;
 	client: string | null;
 	branch: string | null;
+	startedMs: number;
 	lastSeenMs: number;
 }
 
@@ -140,7 +141,7 @@ const MAP_SQL = `
 		GROUP BY l.item_id
 	),
 	worker_rows AS MATERIALIZED (
-		SELECT id, item_id, actor, branch, last_seen_at, ended_at
+		SELECT id, item_id, actor, branch, started_at, last_seen_at, ended_at
 		FROM item_workers
 		WHERE project_id = $1
 	),
@@ -159,6 +160,7 @@ const MAP_SQL = `
 					'deviceName', actor->>'deviceName',
 					'client', actor->'client'->>'name',
 					'branch', branch,
+					'startedMs', FLOOR(EXTRACT(EPOCH FROM started_at) * 1000)::bigint,
 					'lastSeenMs', FLOOR(EXTRACT(EPOCH FROM last_seen_at) * 1000)::bigint
 				)
 				ORDER BY last_seen_at DESC, id
@@ -236,6 +238,7 @@ function toRow(row: MapQueryRow): MapItemRow {
 			deviceName: worker.deviceName,
 			client: worker.client,
 			branch: worker.branch,
+			startedAt: iso(new Date(Number(worker.startedMs))),
 			lastWriteAt: iso(new Date(Number(worker.lastSeenMs))),
 		})),
 		blockers: row.links.map(([number, clearedMs]) => clearedMs === null

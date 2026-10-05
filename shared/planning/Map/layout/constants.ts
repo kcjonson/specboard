@@ -1,6 +1,7 @@
 // The spec's starting values (docs/specs/ai-development-overview.md, Starting values).
 // Distances are layout units before the Map scales to fit.
 
+export const MINUTE = 60_000;
 export const HOUR = 3_600_000;
 
 export const TIME_PULL = 0.14;

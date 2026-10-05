@@ -920,7 +920,8 @@ and nothing moves for more than a second.
    beside the items list and behind the same access check. Every item at any depth,
    carrying only what the Map draws: key, type, title, status, sub-status, blocked,
    parent key, rank, created, started, and completed times, time anchor, open
-   worker episodes (device name, client, branch, last write, and session key),
+   worker episodes (device name, client, branch, the episode's start, last write, and
+   session key),
    item-blocker links, text-blocker count, discovered-from key, origin actor type,
    PR URL, and spec count. No descriptions, activity log, or checklist. The row
    shape is `MapItemRow` in `@specboard/core/map-read`, shared by the API and the
@@ -1106,6 +1107,21 @@ Input for the technical design, not decisions.
   panned at 60 fps with the same 18 ms 95th percentile. At 2x pixel ratio the same
   pan runs at 30 fps with or without cards, since the 2,560 px canvas fill is what a
   software rasterizer can't keep up with.
+- As built (SPE-232), time passes between reads, so what is live, quiet, or gone is
+  decided against the clock and not by the layout: the layout puts every session that
+  wrote in the last hour into a cluster, and the page asks the clock again every minute
+  (and on every read), redrawing only if a session crossed 15 minutes or an hour, or an
+  in-progress item's sessions all went quiet. It never lays out again for that. A session
+  that has left the cluster leaves the drawing at once, with its lines and its computer's
+  block, and its items stay where they sit until the next read places them back with their
+  families and their moments. "How long it has been on the item" is the episode's own start,
+  which `item_workers` already stores and the read now carries. The still glow is a radial
+  gradient on the canvas behind a live session's dot and behind the item it is on (and on a
+  near-level card's glyph), with no animation; a quiet session is a hollow dot with a dashed,
+  muted line, so quiet never rests on hue alone. A computer's text block is placed by the
+  label pass before the in-progress labels, and the items it names lose their own label only
+  when it found room. Clicking a computer or session holds it lit with its card open and
+  opens no drawer. Zoomed in, each session's line in the block also names its agent.
 - Ruled out: tldraw (production use needs a license key; React-only; about
   530 KB), Excalidraw (React-only; about 350 KB), and React Flow (React-only, and a
   node editor rather than a layout engine).

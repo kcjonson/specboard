@@ -7,6 +7,7 @@ import type { OverlayFrame, OverlayStore } from '../overlay';
 import { actorLabel } from '../../utils/actor';
 import { formatTimeAgo } from '../../utils/time';
 import { ActivityCache, type Activity } from './activity-cache';
+import { agentCardHeight, type AgentCard, type QuickMeta } from './agent-content';
 import { QUICK_WIDTH, progressText, quickContent, quickHeight } from './quick-content';
 import styles from './MapQuickCard.module.css';
 
@@ -38,6 +39,49 @@ function Progress({ rollup }: { rollup: Rollup }): JSX.Element {
 	);
 }
 
+/** The line under a session or an item on a card: the lead is cut with an ellipsis before the times are. */
+function MetaLine({ meta }: { meta: QuickMeta }): JSX.Element {
+	return (
+		<p class={styles.sessionMeta}>
+			{meta.lead && <span class={styles.lead}>{meta.lead}</span>}
+			{meta.lead && <span class={styles.sep} aria-hidden="true">{' · '}</span>}
+			<span class={styles.tail}>{meta.tail}</span>
+		</p>
+	);
+}
+
+/** The card for a session or a computer: what it is, and a block for each session or item it holds. */
+function AgentCardView({ card, x, y, side, name }: { card: AgentCard; x: number; y: number; side: string; name: string }): JSX.Element {
+	return (
+		<article
+			class={styles.card}
+			data-side={side}
+			aria-label={`${name} quick view`}
+			style={{ width: `${QUICK_WIDTH}px`, height: `${agentCardHeight(card)}px`, transform: `translate(${Math.round(x)}px, ${Math.round(y)}px)` }}
+		>
+			<div class={styles.head}>
+				<span class={styles.key}>{card.kicker}</span>
+			</div>
+			<p class={styles.title}>{card.title}</p>
+			<div class={styles.chips}>
+				{card.chips.map((chip) => (
+					<Badge key={chip} class={`size-sm ${styles.chip}`}>{chip}</Badge>
+				))}
+			</div>
+			{card.rows.map((row) => (
+				<div key={row.key} class={styles.session}>
+					<p class={styles.sessionTitle}>
+						<span class={styles.ref}>{row.key}</span>
+						{row.title && ` ${row.title}`}
+					</p>
+					<MetaLine meta={row.meta} />
+				</div>
+			))}
+			{card.more > 0 && <p class={styles.line}>{`and ${card.more} more`}</p>}
+		</article>
+	);
+}
+
 function latest(activity: Activity): JSX.Element {
 	if (activity.state === 'loading') return <p class={`${styles.entry} ${styles.quiet}`}>Loading...</p>;
 	if (activity.state === 'error') return <p class={`${styles.entry} ${styles.quiet}`}>Could not load the latest entry.</p>;
@@ -63,10 +107,18 @@ export function MapQuickCard({ store, activity, bottom }: MapQuickCardProps): JS
 
 	const { quick, rows } = frame;
 	const key = quick?.key;
+	const itemKey = quick?.agent ? undefined : key;
 	useEffect(() => {
-		if (key) activity.request(key);
-	}, [key, activity]);
+		if (itemKey) activity.request(itemKey);
+	}, [itemKey, activity]);
 
+	if (quick?.agent) {
+		return (
+			<div class={styles.layer} style={{ bottom: `${bottom}px` }}>
+				<AgentCardView key={quick.key} card={quick.agent} x={quick.x} y={quick.y} side={quick.side} name={quick.agent.title} />
+			</div>
+		);
+	}
 	const row = key ? rows.get(key) : undefined;
 	if (!quick || !row) return <div class={styles.layer} style={{ bottom: `${bottom}px` }} />;
 	const content = quickContent(row, rows, quick.progress, quick.marks);
@@ -97,7 +149,13 @@ export function MapQuickCard({ store, activity, bottom }: MapQuickCardProps): JS
 					{content.subStatus && <Badge class={`size-sm ${styles.chip}`}>{content.subStatus}</Badge>}
 				</div>
 				{content.upNext !== null && <p class={styles.line}>{`Up next: number ${content.upNext}`}</p>}
-				{content.sessions !== null && <p class={styles.line}>{content.sessions === 1 ? '1 agent session' : `${content.sessions} agent sessions`}</p>}
+				{content.sessions.map((session) => (
+					<div key={session.title} class={styles.session}>
+						<p class={styles.sessionTitle}>{session.title}</p>
+						<MetaLine meta={session.meta} />
+					</div>
+				))}
+				{content.moreSessions > 0 && <p class={styles.line}>{`and ${content.moreSessions} more`}</p>}
 				{content.blockers.map((blocker) => (
 					<p key={blocker.key} class={styles.line}>
 						Waiting on <span class={styles.ref}>{blocker.key}</span>

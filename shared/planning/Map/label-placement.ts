@@ -1,9 +1,10 @@
 import { BoxIndex, intersects, type Box } from './box-index';
 import type { Transform, Viewport } from './camera';
 import { CARD_GAP, cardBox, visibleCards } from './cards/card-culling';
-import { CLEARANCE, dotBox } from './dot-boxes';
-import { MAX_DOT_LABEL, placeDotLabel, type DotLabel, type LabelFont } from './dot-labels';
-import type { DrawDot, DrawRegion } from './draw-list';
+import type { ComputerBlock } from './computer-blocks';
+import { CLEARANCE, agentBox, agentRadius, dotBox, screenPoint } from './dot-boxes';
+import { DOT_LABEL_PAD, MAX_DOT_LABEL, placeDotLabel, type DotLabel, type LabelFont } from './dot-labels';
+import type { DrawAgent, DrawDot, DrawRegion } from './draw-list';
 import { fitText, placeRegionLabel, type Circle, type RegionLabel } from './region-labels';
 import type { Highlight } from './map-lens';
 import type { RegionOutline } from './regions/outline';
@@ -12,8 +13,9 @@ import type { LabelRules, ZoomLevel } from './zoom-levels';
 /**
  * Every label at one level, in one pass against one set of taken boxes, so nothing
  * lands over a dot, another label, or something a later layer reserved (spec, What
- * shows when). The order is the priority: in-progress dots, regions, in-review dots,
- * then every other dot with room. The first to ask gets the spot.
+ * shows when). The order is the priority: computers' text blocks (which name the
+ * in-progress work in their clusters), in-progress dots, regions, in-review dots, then
+ * every other dot with room. The first to ask gets the spot.
  */
 
 /** Dots farther past the plot's edge than a label is wide can't reach into it. */
@@ -29,17 +31,35 @@ export interface LabelInput {
 	viewport: Viewport;
 	/** A string's width in px at a label font, from the canvas's own metrics. */
 	measure(text: string, font: LabelFont): number;
-	/** Items another layer already names (a computer's block, say), so they get no label of their own. */
-	named: ReadonlySet<string>;
+	/** Computers and sessions, which labels keep off like dots. */
+	agents: readonly DrawAgent[];
+	/** One text block per computer, which names its sessions' items: a block that finds room gives them no label of their own. */
+	blocks: readonly ComputerBlock[];
 	/** What a search or filter lights: those dots, and the regions whose own parent matches, get labels at any level. */
 	lit?: Pick<Highlight, 'dots' | 'outlined'>;
 	/** Screen marks a label or card keeps off: expand controls, and boxes reserved outright such as the toolbar's and the minimap's. */
 	occupied: { circles: readonly Circle[]; boxes: readonly Box[] };
 }
 
+/** A computer's block, with its text cut to fit and where it sits. */
+export interface PlacedBlock {
+	/** The computer's node. */
+	key: string;
+	lines: Array<{ text: string; strong: boolean }>;
+	box: Box;
+}
+
+export const BLOCK_LINE_HEIGHT = 15;
+/** A block's text is cut to this many pixels. */
+export const MAX_BLOCK_TEXT = 260;
+/** A block sits this far from its computer's edge, and this far in from the plot's. */
+const BLOCK_GAP = 6;
+const BLOCK_MARGIN = 4;
+
 export interface PlacedLabels {
 	regions: RegionLabel[];
 	dots: DotLabel[];
+	blocks: PlacedBlock[];
 	/** The dots that carry a full card, in the order they were placed. */
 	cards: DrawDot[];
 }
@@ -53,7 +73,7 @@ const inflate = (box: Box, by: number): Box => ({ x: box.x - by, y: box.y - by, 
 
 const NO_LIT: NonNullable<LabelInput['lit']> = { dots: new Set(), outlined: new Set() };
 
-export function placeLabels({ rules, level, regions, outlines, dots, transform, viewport, measure, named, occupied, lit = NO_LIT }: LabelInput): PlacedLabels {
+export function placeLabels({ rules, level, regions, outlines, dots, agents, blocks, transform, viewport, measure, occupied, lit = NO_LIT }: LabelInput): PlacedLabels {
 	const taken = new BoxIndex();
 	const near: DrawDot[] = [];
 	for (const dot of dots) {
@@ -62,10 +82,11 @@ export function placeLabels({ rules, level, regions, outlines, dots, transform, 
 		taken.add(box, dot.key);
 		near.push(dot);
 	}
+	for (const agent of agents) taken.add(agentBox(agent, transform, level));
 	for (const { x, y, r } of occupied.circles) taken.add({ x: x - r - CLEARANCE, y: y - r - CLEARANCE, w: 2 * (r + CLEARANCE), h: 2 * (r + CLEARANCE) });
 	for (const box of occupied.boxes) taken.add(box);
 
-	const placed: PlacedLabels = { regions: [], dots: [], cards: [] };
+	const placed: PlacedLabels = { regions: [], dots: [], blocks: [], cards: [] };
 
 	// Cards first: a card is the biggest thing on the plot, and it says everything a label would. One that has no room
 	// is not squeezed in; its dot stays a glyph and gets a one-line label below, if there is room for that.
@@ -92,6 +113,15 @@ export function placeLabels({ rules, level, regions, outlines, dots, transform, 
 		}
 	};
 
+	const named = new Set<string>();
+	for (const block of blocks) {
+		const computer = agents.find((agent) => agent.key === block.node);
+		const at = computer && placeBlock(block, computer, transform, level, viewport, measure, taken);
+		if (!at) continue;
+		placed.blocks.push(at);
+		for (const item of block.items) named.add(item);
+	}
+
 	const unnamed = near.filter((dot) => !named.has(dot.key) && !carded.has(dot.key));
 	if (rules.dots !== 'none') labelDots(unnamed.filter((dot) => dot.flight === 'in_progress').sort(byKey));
 	// Matches are what the person asked to see: they are named before the regions take the room around them, at any level.
@@ -113,6 +143,57 @@ export function placeLabels({ rules, level, regions, outlines, dots, transform, 
 		labelDots(unnamed.filter((dot) => dot.flight === null && !lit.dots.has(dot.key)).sort((a, b) => b.r - a.r || byKey(a, b)));
 	}
 	return placed;
+}
+
+/**
+ * A computer's block goes beside it, on the first spot with room: right, below, above,
+ * left, then below and above again, flush with either side and further out.
+ * Below and above slide inward from the plot's edge, where computers sit. Adds the
+ * block's box to `taken`; null when no side is clear.
+ */
+function placeBlock(
+	block: ComputerBlock,
+	computer: DrawAgent,
+	transform: Transform,
+	level: ZoomLevel,
+	viewport: Viewport,
+	measure: (text: string, font: LabelFont) => number,
+	taken: BoxIndex,
+): PlacedBlock | null {
+	const lines = block.lines.map((line) => {
+		const font: LabelFont = line.strong ? 'dot-strong' : 'dot';
+		return { strong: line.strong, text: fitText(line.text, MAX_BLOCK_TEXT, (t) => measure(t, font)) };
+	});
+	const text = Math.max(...lines.map((line) => measure(line.text, line.strong ? 'dot-strong' : 'dot')));
+	const w = Math.min(MAX_BLOCK_TEXT, text) + 2 * DOT_LABEL_PAD;
+	const h = lines.length * BLOCK_LINE_HEIGHT;
+	const { x, y } = screenPoint(transform, computer);
+	const reach = agentRadius(computer, transform.k, level) + CLEARANCE + BLOCK_GAP;
+	// A block names the work around its computer: with the computer out of view it would float over nothing.
+	if (x + reach < 0 || x - reach > viewport.width || y + reach < 0 || y - reach > viewport.height) return null;
+	const inward = (left: number): number => Math.max(BLOCK_MARGIN, Math.min(viewport.width - w - BLOCK_MARGIN, left));
+	// Computers stand at the plot's edge with their sessions on one side, so after the four sides the spots go on: below and
+	// above, centered and then flush with either side, each one a block's height further out every time.
+	const spots = [
+		{ x: x + reach, y: y - h / 2 },
+		{ x: inward(x - w / 2), y: y + reach },
+		{ x: inward(x - w / 2), y: y - reach - h },
+		{ x: x - reach - w, y: y - h / 2 },
+	];
+	for (const out of [0, h]) {
+		for (const left of [x - w / 2, x + reach - w, x - reach]) {
+			spots.push({ x: inward(left), y: y + reach + out }, { x: inward(left), y: y - reach - h - out });
+		}
+	}
+	for (const spot of spots) {
+		const box = { x: spot.x, y: spot.y, w, h };
+		if (box.x < 0 || box.y < 0 || box.x + w > viewport.width || box.y + h > viewport.height) continue;
+		const clear = { x: box.x - CLEARANCE, y: box.y - CLEARANCE, w: box.w + 2 * CLEARANCE, h: box.h + 2 * CLEARANCE };
+		if (taken.hits(clear)) continue;
+		taken.add(clear);
+		return { key: block.node, lines, box };
+	}
+	return null;
 }
 
 /** Where the cards are on each side of a level switch, in screen pixels: those the new level draws and those the old one did. */
@@ -140,7 +221,7 @@ export function crossFadeAll(next: PlacedLabels, previous: PlacedLabels, progres
 			// Arriving (or kept) where a card is leaving: held back until the card has mostly faded.
 			return cards.leaving.some((box) => intersects(box, label.box)) ? [{ ...label, alpha: Math.min(label.alpha, settle) }] : [label];
 		});
-	return { regions: adjust(regions, stillRegions), dots: adjust(dots, stillDots), cards: next.cards };
+	return { regions: adjust(regions, stillRegions), dots: adjust(dots, stillDots), blocks: next.blocks, cards: next.cards };
 }
 
 /**

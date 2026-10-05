@@ -5,6 +5,7 @@ import type { PlacedEdgeMarker } from './edge-markers';
 import type { DrawDot, Rollup } from './draw-list';
 import type { MapBounds, MapPoint } from './layout/types';
 import type { MinimapSize } from './minimap/minimap';
+import type { AgentCard } from './quick/agent-content';
 import type { QuickSide } from './quick/quick-card-placement';
 import type { QuickMarks } from './quick/quick-content';
 import type { Relation } from './relations';
@@ -37,7 +38,11 @@ export interface MinimapFrame {
 	dots: readonly DrawDot[];
 }
 
-/** The quick card's item and where it opens, in plot pixels. */
+/**
+ * The quick card's subject and where it opens, in plot pixels: an item (with the sessions
+ * on it, and its family's progress when it has children), or a session or computer, whose
+ * card is `agent`.
+ */
 export interface QuickFrame {
 	key: string;
 	x: number;
@@ -45,8 +50,10 @@ export interface QuickFrame {
 	side: QuickSide;
 	/** The family's items by phase when the item has children. */
 	progress: Rollup | null;
-	/** Why the item needs a person and whether it is up next: what the card leads with. */
+	/** Why the item needs a person, whether it is up next, and the sessions on it: what the card leads with and says. */
 	marks: QuickMarks;
+	/** Set for a session or computer, whose card this is instead of an item's. */
+	agent: AgentCard | null;
 }
 
 /** A dot being dragged and how far it is from home, in layout units. */

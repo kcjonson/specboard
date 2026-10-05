@@ -69,6 +69,9 @@ export interface MapLayoutPrevious {
 
 export type MapNodeKind = 'item' | 'session' | 'computer';
 
+export const sessionNodeKey = (sessionKey: string): string => `session:${sessionKey}`;
+export const computerNodeKey = (device: string): string => `computer:${device}`;
+
 /**
  * One placed node. Items are keyed by item key, sessions as `session:<session key>`,
  * and computers as `computer:<device name>`.

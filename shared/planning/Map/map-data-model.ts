@@ -30,7 +30,8 @@ export class MapDataModel implements Observable {
 	private readonly source: MapReadSource;
 	private readonly createWorker: () => MapLayoutWorker;
 	private readonly store: CollapseStore;
-	private readonly clock: () => number;
+	/** The wall clock the layout's `now` comes from; the view ticks off the same one. */
+	readonly clock: () => number;
 	private worker: MapLayoutWorker | null = null;
 	/** Collapse toggles no settled layout reflects yet. */
 	private readonly unsettled = new Set<string>();

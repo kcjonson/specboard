@@ -1,6 +1,7 @@
 import type { MapItemRow, MapItemSubStatus } from '@specboard/core/map-read';
 import { STATUS_LABELS, glyphStatus } from '@specboard/ui';
 import type { Rollup } from '../draw-list';
+import type { QuickSession } from './agent-content';
 import { reasonsText, tagOf, type NeedsReason } from '../needs-person';
 
 /**
@@ -21,6 +22,9 @@ const SUB_STATUS_LABELS: Partial<Record<MapItemSubStatus, string>> = {
 /** The card names this many blockers and counts the rest. */
 export const NAMED_BLOCKERS = 3;
 
+/** And this many sessions, two lines each. */
+export const NAMED_SESSIONS = 2;
+
 export interface QuickBlocker {
 	key: string;
 	/** Empty when the blocker isn't on the Map (a folded-away row). */
@@ -33,8 +37,10 @@ export interface QuickContent {
 	status: ReturnType<typeof glyphStatus>;
 	statusLabel: string;
 	subStatus: string | null;
-	/** Live agent sessions on the item, by the open episodes the read carries; null when there are none. */
-	sessions: number | null;
+	/** The open agent sessions on the item, newest write first: client, device, branch, time on the item, and time since the last write. */
+	sessions: QuickSession[];
+	/** Sessions past the ones named. */
+	moreSessions: number;
 	/** Open item blockers, the first few of them. */
 	blockers: QuickBlocker[];
 	/** Open blockers past the ones named. */
@@ -53,19 +59,21 @@ export interface QuickContent {
 export interface QuickMarks {
 	reasons: readonly NeedsReason[];
 	upNext: number | null;
+	/** Every open episode on the item, as the card says them. */
+	sessions: readonly QuickSession[];
 }
 
 export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemRow>, progress: Rollup | null, marks: QuickMarks): QuickContent {
 	const status = glyphStatus(row.status, row.blocked);
 	const open = row.blockers.filter((link) => link.state === 'open');
-	const sessions = new Set(row.workers.map((worker) => worker.sessionKey)).size;
 	return {
 		key: row.key,
 		title: row.title,
 		status,
 		statusLabel: STATUS_LABELS[status],
 		subStatus: row.subStatus ? (SUB_STATUS_LABELS[row.subStatus] ?? null) : null,
-		sessions: sessions > 0 ? sessions : null,
+		sessions: marks.sessions.slice(0, NAMED_SESSIONS),
+		moreSessions: Math.max(0, marks.sessions.length - NAMED_SESSIONS),
 		blockers: open.slice(0, NAMED_BLOCKERS).map((link) => ({ key: link.blockerKey, title: rows.get(link.blockerKey)?.title ?? '' })),
 		moreBlockers: Math.max(0, open.length - NAMED_BLOCKERS),
 		holds: row.textBlockerCount,
@@ -84,19 +92,20 @@ const HEAD = 18;
 const TITLE = 36;
 const CHIPS = 20;
 const LINE = 16;
+const SESSION = 32;
 const PROGRESS = 18;
 const ACTIVITY = 64;
 
-/** The card's height for this content: fixed parts, plus a line each for the reason it needs a person, its up-next number, sessions, blockers, and holds, plus the progress bar. */
+/** The card's height for this content: fixed parts, plus a line each for the reason it needs a person, its up-next number, the rest of its sessions, blockers, and holds, two lines for each session named, plus the progress bar. */
 export function quickHeight(content: QuickContent): number {
 	const lines =
 		(content.needs ? 1 : 0) +
 		(content.upNext !== null ? 1 : 0) +
-		(content.sessions !== null ? 1 : 0) +
+		(content.moreSessions > 0 ? 1 : 0) +
 		content.blockers.length +
 		(content.moreBlockers > 0 ? 1 : 0) +
 		(content.holds > 0 ? 1 : 0);
-	const parts = [HEAD, TITLE, CHIPS, ...Array<number>(lines).fill(LINE), ...(content.progress ? [PROGRESS] : []), ACTIVITY];
+	const parts = [HEAD, TITLE, CHIPS, ...Array<number>(content.sessions.length).fill(SESSION), ...Array<number>(lines).fill(LINE), ...(content.progress ? [PROGRESS] : []), ACTIVITY];
 	return 2 * PAD + parts.reduce((sum, part) => sum + part, 0) + GAP * (parts.length - 1);
 }
 

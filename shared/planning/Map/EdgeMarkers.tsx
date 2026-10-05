@@ -41,7 +41,7 @@ export function EdgeMarkers({ store, bottom, onJump }: EdgeMarkersProps): JSX.El
 					type="button"
 					class={`${styles.marker} ${KIND_CLASSES[marker.kind]}`}
 					style={{ left: `${marker.x - EDGE_MARKER_SIZE / 2}px`, top: `${marker.y - EDGE_MARKER_SIZE / 2}px`, width: `${EDGE_MARKER_SIZE}px`, height: `${EDGE_MARKER_SIZE}px` }}
-					aria-label={`${KIND_LABELS[marker.kind]}${marker.text ? ` ${marker.text}` : ''}: ${marker.key}, off screen ${direction(marker.angle)}`}
+					aria-label={`${KIND_LABELS[marker.kind]}${marker.text ? ` ${marker.text}` : ''}: ${marker.label ?? marker.key}, off screen ${direction(marker.angle)}`}
 					onClick={() => onJump(marker.key)}
 				>
 					<span class={styles.text} aria-hidden="true">{marker.text ?? ''}</span>
