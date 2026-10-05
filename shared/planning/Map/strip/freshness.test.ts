@@ -25,4 +25,12 @@ describe('freshness', () => {
 	it('adds ", retrying" when a refresh failed and the Map is showing what it had', () => {
 		expect(freshnessText(NOW - 4 * MINUTE, NOW, true)).toBe('Updated 4 min ago, retrying');
 	});
+
+	it('has a short form for a strip with no room, and keeps retrying in it', () => {
+		expect(freshnessText(NOW, NOW, false, true)).toBe('Updated now');
+		expect(freshnessText(NOW - 4 * MINUTE, NOW, false, true)).toBe('Updated 4m');
+		expect(freshnessText(NOW - 3 * 60 * MINUTE, NOW, false, true)).toBe('Updated 3h');
+		expect(freshnessText(NOW - 50 * 60 * MINUTE, NOW, false, true)).toBe('Updated 2d');
+		expect(freshnessText(NOW - 4 * MINUTE, NOW, true, true)).toBe('Updated 4m, retrying');
+	});
 });

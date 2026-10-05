@@ -34,7 +34,8 @@ export type IconName =
 	| 'wrench'
 	| 'alert-circle'
 	| 'menu'
-	| 'search';
+	| 'search'
+	| 'volume';
 
 export interface IconProps {
 	/** The icon to display */
@@ -245,6 +246,13 @@ const icons: Record<IconName, JSX.Element> = {
 		<>
 			<circle cx="11" cy="11" r="7" />
 			<line x1="16.5" y1="16.5" x2="21" y2="21" />
+		</>
+	),
+	volume: (
+		<>
+			<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+			<path d="M15.5 8.5a5 5 0 0 1 0 7" />
+			<path d="M19 5a10 10 0 0 1 0 14" />
 		</>
 	),
 };

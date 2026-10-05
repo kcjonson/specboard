@@ -693,11 +693,24 @@ minutes, and the count is of distinct sessions. The phase, needs-a-person, and l
 counts are also the filters of the same names: pressing one dims everything that
 isn't in it, and pressing it again puts everything back. The "Agents at work" button
 sits after the live count. Freshness reads "Updated just now" or "Updated 4 min ago"
-from when the read last loaded, and keeps counting between refreshes. The strip is one line
-from 1280 px up. Below 1500 px the "changes" of the announce switch is kept for assistive tech
-only, and while the since summary shows so are the phase names (each phase carries its glyph);
-that summary shrinks and truncates (its full text is the button's title), and the freshness
-note gives last. Narrower than 1280 px it wraps.
+from when the read last loaded, and keeps counting between refreshes.
+
+The strip is one line when it fits and never drops a label to get there: the phase words
+(Done, In flight, Next, Later), Blocked, Needs a person, and Live sessions are always
+spelled out. When the line runs out of room, these yield in order, each keeping what the
+ones before gave up:
+
+1. The since summary shortens to its first kind and a count of the rest ("Since Sep 23:
+   86 finished, +3 more kinds"), then to a count of items ("Since Sep 23: 94 items
+   changed"). Its full text is the button's title.
+2. The freshness note shortens ("Updated now", "Updated 4m"); ", retrying" stays.
+3. The announce switch collapses to its icon, which keeps its accessible name and its
+   pressed state.
+4. Only then does the strip wrap to a second line.
+
+The strip measures its own line rather than switching at fixed widths, since what fits
+depends on the counts, the since text, and the font. It starts again from the full labels
+whenever its content or its width changes, so the words come back when room returns.
 
 ---
 

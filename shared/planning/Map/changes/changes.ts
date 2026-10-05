@@ -64,9 +64,27 @@ export function summaryCounts(items: readonly ChangedItem[]): Array<{ kind: MapC
 	return MAP_CHANGE_KINDS.filter((kind) => counts.has(kind)).map((kind) => ({ kind, count: counts.get(kind)! }));
 }
 
-/** `11 finished, 1 worked on, 9 filed`. */
-export function summaryText(items: readonly ChangedItem[]): string {
-	return summaryCounts(items).map(({ kind, count }) => SUMMARY_WORDS[kind](count)).join(', ');
+/** The strip's since summary at three lengths, longest first. */
+export interface SummaryText {
+	/** `11 finished, 1 worked on, 9 filed`. */
+	full: string;
+	/** The first kind and how many more there are: `11 finished, +2 more kinds`. */
+	lead: string;
+	/** Items, whatever their kinds: `19 items changed`. */
+	total: string;
+}
+
+export function summaryText(items: readonly ChangedItem[]): SummaryText {
+	const counts = summaryCounts(items);
+	const words = counts.map(({ kind, count }) => SUMMARY_WORDS[kind](count));
+	const full = words.join(', ');
+	if (counts.length < 2) return { full, lead: full, total: full };
+	const more = counts.length - 1;
+	return {
+		full,
+		lead: `${words[0]}, +${more} more ${more === 1 ? 'kind' : 'kinds'}`,
+		total: `${items.length} ${items.length === 1 ? 'item' : 'items'} changed`,
+	};
 }
 
 const isoOf = (ms: number): string => new Date(ms).toISOString();

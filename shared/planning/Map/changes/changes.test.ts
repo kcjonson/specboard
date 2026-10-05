@@ -58,7 +58,11 @@ describe('the summary', () => {
 	], all);
 
 	it('names each kind with how many items, in the strip\'s order', () => {
-		expect(summaryText(items)).toBe('11 finished, 1 worked on, 9 filed');
+		expect(summaryText(items)).toEqual({
+			full: '11 finished, 1 worked on, 9 filed',
+			lead: '11 finished, +2 more kinds',
+			total: '21 items changed',
+		});
 	});
 
 	it('counts an item under every kind it has, once under each', () => {
@@ -74,11 +78,20 @@ describe('the summary', () => {
 			change('A-4', 'pr_opened', 1), change('A-5', 'pr_opened', 1),
 		], all);
 
-		expect(summaryText(some)).toBe('2 blocked, 1 question, 2 PRs opened');
+		expect(summaryText(some).full).toBe('2 blocked, 1 question, 2 PRs opened');
 	});
 
 	it('is empty when nothing changed', () => {
-		expect(summaryText([])).toBe('');
+		expect(summaryText([])).toEqual({ full: '', lead: '', total: '' });
+	});
+
+	it('has no shorter forms when there is one kind, and says "kind" for one more', () => {
+		const one = changedItems([change('A-1', 'finished', 1), change('A-2', 'finished', 2)], all);
+		expect(summaryText(one)).toEqual({ full: '2 finished', lead: '2 finished', total: '2 finished' });
+
+		const two = changedItems([change('A-1', 'finished', 1), change('A-2', 'filed', 2)], all);
+		expect(summaryText(two).lead).toBe('1 finished, +1 more kind');
+		expect(summaryText(two).total).toBe('2 items changed');
 	});
 });
 
