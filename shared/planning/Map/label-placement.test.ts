@@ -23,7 +23,8 @@ const region = (key: string, size: number): DrawRegion => ({
 	weight: 1,
 	cue: null,
 	pr: false,
-	needsPerson: false,
+	reason: null,
+	upNext: null,
 	rollup: { done: 2, in_flight: 1, next: 1, later: 0 },
 	size,
 });
@@ -68,7 +69,7 @@ function scatter(count: number, seed: number): DrawDot[] {
 			title: `A title of some length ${i}`,
 			r: 4 + random() * 8,
 			flight: roll < 0.12 ? 'in_progress' : roll < 0.25 ? 'in_review' : null,
-			needsPerson: roll > 0.9,
+			reason: roll > 0.9 ? 'review' : null,
 		});
 	});
 }

@@ -1,106 +1,98 @@
 import { describe, expect, it } from 'vitest';
-import { intersects } from './box-index';
-import { MARKER_SIZE, placeEdgeMarkers, type EdgeMarkerInput, type EdgeTarget } from './edge-markers';
+import type { Box } from './box-index';
+import { EDGE_MARKER_SIZE, placeEdgeMarkers, type EdgeMarkerInput } from './edge-markers';
+import type { MapPoint } from './layout/types';
 
-const plot = { x: 0, y: 0, w: 1000, h: 500 };
-const identity = { k: 1, x: 0, y: 0 };
-const HALF = MARKER_SIZE / 2 + 6;
+const plot: Box = { x: 0, y: 0, w: 1000, h: 500 };
+const up = (key: string, text = '1'): EdgeMarkerInput => ({ key, kind: 'up-next', text });
 
-const target = (key: string, x: number, y: number, kind: EdgeTarget['kind'] = 'live'): EdgeTarget => ({ key, kind, label: key, at: { x, y } });
+const at = (points: Record<string, MapPoint>) => (key: string): MapPoint | undefined => points[key];
 
-function place(targets: EdgeTarget[], over: Partial<EdgeMarkerInput> = {}): ReturnType<typeof placeEdgeMarkers> {
-	return placeEdgeMarkers({ targets, transform: identity, plot, reserved: [], ...over });
-}
+const overlaps = (a: Box, b: Box): boolean => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+const boxOf = (marker: { x: number; y: number }): Box => ({ x: marker.x - EDGE_MARKER_SIZE / 2, y: marker.y - EDGE_MARKER_SIZE / 2, w: EDGE_MARKER_SIZE, h: EDGE_MARKER_SIZE });
 
 describe('edge markers', () => {
-	it('marks nothing that is in view', () => {
-		expect(place([target('a', 500, 250), target('b', 0, 0), target('c', 1000, 500)])).toEqual([]);
+	it('marks nothing that is in view, and nothing the Map does not draw', () => {
+		const placed = placeEdgeMarkers([up('A'), up('B')], { plot, avoid: [], locate: at({ A: { x: 500, y: 250 } }) });
+		expect(placed).toEqual([]);
 	});
 
-	it('sits where the line from the middle of the plot to the target crosses the edge, pointing along it', () => {
-		const [right] = place([target('r', 1500, 250)]);
-		expect(right).toMatchObject({ key: 'r', count: 1 });
-		expect(right!.x).toBeCloseTo(1000 - HALF);
-		expect(right!.y).toBeCloseTo(250);
-		expect(right!.angle).toBeCloseTo(0);
-
-		const [left] = place([target('l', -400, 250)]);
-		expect(left!.x).toBeCloseTo(HALF);
+	it('puts a marker where the line from the middle to the item crosses the edge, pointing at it', () => {
+		const [left, right, top, bottom] = placeEdgeMarkers([up('L'), up('R'), up('T'), up('B')], {
+			plot,
+			avoid: [],
+			locate: at({ L: { x: -400, y: 250 }, R: { x: 1600, y: 250 }, T: { x: 500, y: -300 }, B: { x: 500, y: 900 } }),
+		});
+		expect(left!.x).toBeLessThan(EDGE_MARKER_SIZE);
+		expect(left!.y).toBeCloseTo(250);
 		expect(left!.angle).toBeCloseTo(Math.PI);
-
-		const [above] = place([target('t', 500, -300)]);
-		expect(above!.x).toBeCloseTo(500);
-		expect(above!.y).toBeCloseTo(HALF);
-		expect(above!.angle).toBeCloseTo(-Math.PI / 2);
-
-		const [below] = place([target('b', 500, 900)]);
-		expect(below!.x).toBeCloseTo(500);
-		expect(below!.y).toBeCloseTo(500 - HALF);
-		expect(below!.angle).toBeCloseTo(Math.PI / 2);
+		expect(right!.x).toBeGreaterThan(1000 - EDGE_MARKER_SIZE * 1.5);
+		expect(right!.angle).toBeCloseTo(0);
+		expect(top!.y).toBeLessThan(EDGE_MARKER_SIZE);
+		expect(top!.angle).toBeCloseTo(-Math.PI / 2);
+		expect(bottom!.y).toBeGreaterThan(500 - EDGE_MARKER_SIZE * 1.5);
+		expect(bottom!.angle).toBeCloseTo(Math.PI / 2);
 	});
 
-	it('follows the ray, so a target off the corner lands on the edge it leaves through', () => {
-		// Right and a little down: leaves through the right edge, proportionally below the middle.
-		const [marker] = place([target('d', 2000, 450)]);
-		expect(marker!.x).toBeCloseTo(1000 - HALF);
-		expect(marker!.y).toBeCloseTo(250 + (200 * (1000 - HALF - 500)) / 1500, 5);
-		expect(marker!.angle).toBeCloseTo(Math.atan2(200, 1500));
+	it('slides along the edge toward a diagonal item, and stays whole inside the plot', () => {
+		const [marker] = placeEdgeMarkers([up('A')], { plot, avoid: [], locate: at({ A: { x: 3000, y: 100 } }) });
+		expect(marker!.x).toBeGreaterThan(1000 - EDGE_MARKER_SIZE * 1.5);
+		expect(marker!.y).toBeGreaterThan(EDGE_MARKER_SIZE / 2);
+		expect(marker!.y).toBeLessThan(250);
+		const [corner] = placeEdgeMarkers([up('A')], { plot, avoid: [], locate: at({ A: { x: 4000, y: -4000 } }) });
+		expect(boxOf(corner!).x + EDGE_MARKER_SIZE).toBeLessThanOrEqual(1000);
+		expect(boxOf(corner!).y).toBeGreaterThanOrEqual(0);
 	});
 
-	it('reads targets through the camera', () => {
-		// At 2x, panned 400 left: layout x 700 is screen 1000, just on the edge and in view; 800 is out.
-		expect(place([target('in', 700, 125)], { transform: { k: 2, x: -400, y: 0 } })).toEqual([]);
-		expect(place([target('out', 800, 125)], { transform: { k: 2, x: -400, y: 0 } })).toHaveLength(1);
+	it('keeps clear of the toolbar, the minimap, and the stepping bar by sliding along the edge', () => {
+		const toolbar: Box = { x: 0, y: 0, w: 220, h: 60 };
+		const minimap: Box = { x: 0, y: 380, w: 216, h: 120 };
+		const bar: Box = { x: 380, y: 0, w: 240, h: 50 };
+		const placed = placeEdgeMarkers([up('L1'), up('L2'), up('T')], {
+			plot,
+			avoid: [toolbar, minimap, bar],
+			// Both left items sit where the toolbar and the minimap are; the third points at the bar.
+			locate: at({ L1: { x: -300, y: -100 }, L2: { x: -300, y: 480 }, T: { x: 500, y: -200 } }),
+		});
+		expect(placed).toHaveLength(3);
+		for (const marker of placed) for (const box of [toolbar, minimap, bar]) expect(overlaps(boxOf(marker), box)).toBe(false);
+		// Still on the left edge, and still toward the item's side of what it dodged.
+		expect(placed[0]!.x).toBeLessThan(EDGE_MARKER_SIZE);
+		expect(placed[1]!.x).toBeLessThan(EDGE_MARKER_SIZE);
 	});
 
-	it('treats the part of the plot the drawer covers as off screen', () => {
-		const narrow = { x: 0, y: 0, w: 700, h: 500 };
-		expect(place([target('under-drawer', 800, 250)], { plot: narrow })).toHaveLength(1);
-		expect(place([target('under-drawer', 800, 250)], { plot: narrow })[0]!.x).toBeCloseTo(700 - HALF);
+	it('keeps off the drawer, which covers the right of the plot', () => {
+		const [marker] = placeEdgeMarkers([up('A')], { plot: { x: 0, y: 0, w: 600, h: 500 }, avoid: [], locate: at({ A: { x: 900, y: 250 } }) });
+		expect(boxOf(marker!).x + EDGE_MARKER_SIZE).toBeLessThanOrEqual(600);
+		// An item under the drawer is out of view, so it is marked.
+		expect(marker!.key).toBe('A');
 	});
 
-	it('slides along the edge to clear the toolbar and the minimap', () => {
-		const toolbar = { x: 8, y: 8, w: 360, h: 44 };
-		const minimap = { x: 8, y: 380, w: 200, h: 112 };
-		const [up] = place([target('up', -100, -300)], { reserved: [toolbar, minimap] });
-		expect(up!.y).toBeCloseTo(HALF);
-		const box = { x: up!.x - MARKER_SIZE / 2, y: up!.y - MARKER_SIZE / 2, w: MARKER_SIZE, h: MARKER_SIZE };
-		expect(intersects(box, toolbar)).toBe(false);
-		// It slid right past the toolbar, and is still on the top edge.
-		expect(up!.x).toBeGreaterThan(toolbar.x + toolbar.w);
-
-		const [down] = place([target('down', -1000, 1250)], { reserved: [toolbar, minimap] });
-		expect(down!.y).toBeCloseTo(500 - HALF);
-		expect(down!.x).toBeGreaterThan(minimap.x + minimap.w);
-
-		const [west] = place([target('west', -500, -208)], { reserved: [toolbar, minimap] });
-		expect(west!.x).toBeCloseTo(HALF);
-		expect(west!.y).toBeGreaterThan(toolbar.y + toolbar.h);
+	it('does not stack two markers: the earlier one keeps its spot', () => {
+		const placed = placeEdgeMarkers([up('A', '1'), up('B', '2'), up('C', '3')], {
+			plot,
+			avoid: [],
+			locate: at({ A: { x: -300, y: 250 }, B: { x: -300, y: 252 }, C: { x: -300, y: 248 } }),
+		});
+		expect(placed.map((marker) => marker.key)).toEqual(['A', 'B', 'C']);
+		expect(placed[0]!.y).toBeCloseTo(250);
+		for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) expect(overlaps(boxOf(placed[i]!), boxOf(placed[j]!))).toBe(false);
 	});
 
-	it('stands for crowded targets of one kind with one marker, named for the nearest, and counts them', () => {
-		const markers = place([target('far', 3000, 250), target('near', 1100, 250), target('mid', 1500, 252)]);
-		expect(markers).toHaveLength(1);
-		expect(markers[0]).toMatchObject({ key: 'near', label: 'near', count: 3 });
+	it('serves every kind from one list, keeping the kind and the text', () => {
+		const placed = placeEdgeMarkers(
+			[up('A'), { key: 'B', kind: 'live' }, { key: 'C', kind: 'needs-person' }],
+			{ plot, avoid: [], locate: at({ A: { x: -300, y: 100 }, B: { x: 1300, y: 100 }, C: { x: 500, y: 900 } }) },
+		);
+		expect(placed.map((marker) => [marker.key, marker.kind, marker.text])).toEqual([['A', 'up-next', '1'], ['B', 'live', undefined], ['C', 'needs-person', undefined]]);
 	});
 
-	it('keeps targets apart that are far enough along the edge, and kinds apart from each other', () => {
-		const spread = place([target('top', 500, -300), target('bottom', 500, 900), target('right', 1400, 250)]);
-		expect(spread.map((m) => m.key).sort()).toEqual(['bottom', 'right', 'top']);
-
-		const mixed = place([target('live', 1500, 250, 'live'), target('needs', 1500, 250, 'needs-person')]);
-		expect(mixed.map((m) => m.kind).sort()).toEqual(['live', 'needs-person']);
-		const [a, b] = mixed;
-		expect(intersects({ x: a!.x - 14, y: a!.y - 14, w: 28, h: 28 }, { x: b!.x - 14, y: b!.y - 14, w: 28, h: 28 })).toBe(false);
+	it('leaves a marker out rather than put it on something when its whole edge is taken', () => {
+		const wall: Box = { x: 0, y: 0, w: 60, h: 500 };
+		expect(placeEdgeMarkers([up('A')], { plot, avoid: [wall], locate: at({ A: { x: -300, y: 250 } }) })).toEqual([]);
 	});
 
-	it('drops a marker that has no room on its edge', () => {
-		const wall = { x: 900, y: 0, w: 100, h: 500 };
-		expect(place([target('walled', 1500, 250)], { reserved: [wall] })).toEqual([]);
-	});
-
-	it('is the same on every frame for the same input', () => {
-		const targets = [target('a', 1300, 100), target('b', 1300, 110), target('c', -200, 400, 'needs-person')];
-		expect(place(targets)).toEqual(place(targets));
+	it('has no room to place anything in a plot smaller than a marker', () => {
+		expect(placeEdgeMarkers([up('A')], { plot: { x: 0, y: 0, w: 20, h: 20 }, avoid: [], locate: at({ A: { x: 500, y: 500 } }) })).toEqual([]);
 	});
 });

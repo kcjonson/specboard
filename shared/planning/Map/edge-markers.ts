@@ -1,149 +1,98 @@
 import { intersects, type Box } from './box-index';
-import type { Transform } from './camera';
 import type { MapPoint } from './layout/types';
 
 /**
- * Off-screen indicators (spec, Agents and What shows when): a mark at the plot's edge,
- * pointing toward something the viewport doesn't show. One layer for every kind: live
- * sessions and items that need a person, and the up-next markers. A marker sits where the
- * line from the middle of the plot to its target crosses the plot's edge, slides along the
- * edge to stay clear of the toolbar, the minimap, and each other, and stands for several
- * targets of its kind when they would crowd.
+ * Off-screen indicators (spec, What shows when and Agents): an item the person should know
+ * about that is out of view gets a marker at the plot's edge, pointing toward it. One layer
+ * serves every kind (an up-next item, a live session, something that needs a person), so each
+ * asks for its own markers with a key and a kind and the layer places them all.
  */
+export type EdgeMarkerKind = 'up-next' | 'needs-person' | 'live';
 
-export type EdgeMarkerKind = 'live' | 'needs-person' | 'up-next';
-
-export interface EdgeTarget {
-	/** What the marker flies to: an item's key, or a session's layout node. */
+export interface EdgeMarkerInput {
+	/** The item the marker points to. */
 	key: string;
 	kind: EdgeMarkerKind;
-	/** What a screen reader says for the marker when this is the nearest target it stands for. */
-	label: string;
-	/** Layout units. */
-	at: MapPoint;
+	/** What the marker says: an up-next marker's number. */
+	text?: string;
+	/** What assistive tech calls the target when the key means nothing to a person (a session's node); the key otherwise. */
+	label?: string;
 }
 
-export interface EdgeMarker {
-	kind: EdgeMarkerKind;
-	/** The nearest target it stands for, which a click flies to. */
-	key: string;
-	label: string;
-	/** How many targets it stands for, that one included. */
-	count: number;
-	/** Center, in plot pixels. */
+export interface PlacedEdgeMarker extends EdgeMarkerInput {
+	/** The marker's center, in plot pixels. */
 	x: number;
 	y: number;
-	/** Toward the target, in radians from the positive x axis (screen y runs down). */
+	/** Radians from the marker toward its item, so the arrow can turn that way. */
 	angle: number;
 }
 
-/** A marker is this many px across, and keeps this far inside the plot's edge. */
-export const MARKER_SIZE = 28;
-const EDGE_INSET = 6;
-/** Boxes the marker keeps off are inflated by this much. */
-const CLEAR = 4;
-const STEP = 4;
-
-export interface EdgeMarkerInput {
-	targets: readonly EdgeTarget[];
-	transform: Transform;
-	/** The part of the canvas a person can see the Map in: the plot less what the drawer covers. */
-	plot: Box;
-	/** The toolbar and the minimap, which markers keep clear of. */
-	reserved: readonly Box[];
-}
+/** A marker is this many px across; it keeps `EDGE_INSET` from the plot's edge. */
+export const EDGE_MARKER_SIZE = 26;
+const EDGE_INSET = 10;
+/** Markers keep this much clear of each other and of what is reserved. */
+const GAP = 4;
 
 type Side = 'left' | 'right' | 'top' | 'bottom';
 
-interface Candidate {
-	kind: EdgeMarkerKind;
-	key: string;
-	label: string;
-	count: number;
-	x: number;
-	y: number;
-	angle: number;
-	side: Side;
-	/** How far past the plot the target is; the nearest of several stands for them. */
-	distance: number;
+export interface EdgeMarkerPlacement {
+	/** The part of the plot the person can see: the drawer covers the rest. */
+	plot: Box;
+	/** The toolbar, the stepping bar, the minimap, and anything else markers keep clear of. */
+	avoid: readonly Box[];
+	/** Where an item is on screen, in plot pixels; undefined when the Map doesn't draw it. */
+	locate(key: string): MapPoint | undefined;
 }
 
-const inflate = (box: Box, by: number): Box => ({ x: box.x - by, y: box.y - by, w: box.w + 2 * by, h: box.h + 2 * by });
-
-const boxOf = (x: number, y: number): Box => ({ x: x - MARKER_SIZE / 2, y: y - MARKER_SIZE / 2, w: MARKER_SIZE, h: MARKER_SIZE });
-
-const inside = (plot: Box, p: MapPoint): boolean => p.x >= plot.x && p.x <= plot.x + plot.w && p.y >= plot.y && p.y <= plot.y + plot.h;
-
-function distanceOutside(plot: Box, p: MapPoint): number {
-	const dx = Math.max(plot.x - p.x, 0, p.x - (plot.x + plot.w));
-	const dy = Math.max(plot.y - p.y, 0, p.y - (plot.y + plot.h));
-	return Math.hypot(dx, dy);
-}
+const within = (p: MapPoint, box: Box): boolean => p.x >= box.x && p.x <= box.x + box.w && p.y >= box.y && p.y <= box.y + box.h;
 
 /**
- * Where the ray from the plot's middle toward `p` meets the rectangle a marker's center is
- * held to, and which side of it that is.
+ * Markers for the items that are out of view, in the order asked (which is the priority:
+ * an earlier marker keeps its spot). Each goes where the line from the middle of the plot to
+ * its item crosses the plot's edge, then slides along that edge to the nearest spot clear of
+ * the reserved boxes and of the markers already placed.
  */
-function onEdge(inner: Box, plot: Box, p: MapPoint): { x: number; y: number; side: Side } {
-	const cx = plot.x + plot.w / 2;
-	const cy = plot.y + plot.h / 2;
-	const dx = p.x - cx;
-	const dy = p.y - cy;
-	const tx = dx === 0 ? Infinity : ((dx > 0 ? inner.x + inner.w : inner.x) - cx) / dx;
-	const ty = dy === 0 ? Infinity : ((dy > 0 ? inner.y + inner.h : inner.y) - cy) / dy;
-	const t = Math.min(tx, ty);
-	const side: Side = tx <= ty ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'bottom' : 'top';
-	return { x: cx + dx * t, y: cy + dy * t, side };
-}
+export function placeEdgeMarkers(inputs: readonly EdgeMarkerInput[], { plot, avoid, locate }: EdgeMarkerPlacement): PlacedEdgeMarker[] {
+	const half = EDGE_MARKER_SIZE / 2;
+	const room = { left: plot.x + EDGE_INSET + half, right: plot.x + plot.w - EDGE_INSET - half, top: plot.y + EDGE_INSET + half, bottom: plot.y + plot.h - EDGE_INSET - half };
+	if (room.right < room.left || room.bottom < room.top) return [];
+	const center = { x: plot.x + plot.w / 2, y: plot.y + plot.h / 2 };
+	const placed: PlacedEdgeMarker[] = [];
+	const boxOf = (x: number, y: number): Box => ({ x: x - half - GAP, y: y - half - GAP, w: EDGE_MARKER_SIZE + 2 * GAP, h: EDGE_MARKER_SIZE + 2 * GAP });
 
-/** The nearest position along the edge (offsets 0, then either way by growing steps) where the marker's box is clear of `blocked`, or null. */
-function slide(at: { x: number; y: number }, side: Side, inner: Box, blocked: readonly Box[]): { x: number; y: number } | null {
-	const vertical = side === 'left' || side === 'right';
-	const lo = vertical ? inner.y : inner.x;
-	const hi = vertical ? inner.y + inner.h : inner.x + inner.w;
-	const start = vertical ? at.y : at.x;
-	for (let offset = 0; offset <= hi - lo; offset += STEP) {
-		for (const sign of offset === 0 ? [1] : [1, -1]) {
-			const along = start + sign * offset;
-			if (along < lo || along > hi) continue;
-			const x = vertical ? at.x : along;
-			const y = vertical ? along : at.y;
-			const box = inflate(boxOf(x, y), CLEAR);
-			if (!blocked.some((other) => intersects(box, other))) return { x, y };
+	for (const input of inputs) {
+		const target = locate(input.key);
+		if (!target || within(target, plot)) continue;
+		const dx = target.x - center.x;
+		const dy = target.y - center.y;
+		// How far along the line to the item each edge of the room is; the nearer one is where it leaves the plot.
+		const toX = dx === 0 ? Infinity : ((dx > 0 ? room.right : room.left) - center.x) / dx;
+		const toY = dy === 0 ? Infinity : ((dy > 0 ? room.bottom : room.top) - center.y) / dy;
+		const side: Side = toX <= toY ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'bottom' : 'top';
+		const t = Math.min(toX, toY);
+		const horizontal = side === 'top' || side === 'bottom';
+		const [low, high] = horizontal ? [room.left, room.right] : [room.top, room.bottom];
+		const ideal = Math.min(high, Math.max(low, horizontal ? center.x + dx * t : center.y + dy * t));
+		const fixed = side === 'left' ? room.left : side === 'right' ? room.right : side === 'top' ? room.top : room.bottom;
+		const at = (along: number): MapPoint => (horizontal ? { x: along, y: fixed } : { x: fixed, y: along });
+
+		const obstacles = [...avoid, ...placed.map((marker) => boxOf(marker.x, marker.y))];
+		const clear = (along: number): boolean => {
+			const { x, y } = at(along);
+			const box = boxOf(x, y);
+			return obstacles.every((obstacle) => !intersects(box, obstacle));
+		};
+		// Just past either side of every obstacle is where a blocked marker can rest.
+		const candidates = [ideal];
+		for (const obstacle of obstacles) {
+			const [start, end] = horizontal ? [obstacle.x, obstacle.x + obstacle.w] : [obstacle.y, obstacle.y + obstacle.h];
+			candidates.push(start - half - GAP - 1, end + half + GAP + 1);
 		}
+		const spot = candidates.filter((along) => along >= low && along <= high && clear(along)).sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal))[0];
+		// Nowhere on this edge is clear: the marker would only sit on something, so it is left out.
+		if (spot === undefined) continue;
+		const { x, y } = at(spot);
+		placed.push({ ...input, x, y, angle: Math.atan2(dy, dx) });
 	}
-	return null;
-}
-
-export function placeEdgeMarkers({ targets, transform, plot, reserved }: EdgeMarkerInput): EdgeMarker[] {
-	const half = MARKER_SIZE / 2 + EDGE_INSET;
-	const inner: Box = { x: plot.x + half, y: plot.y + half, w: Math.max(0, plot.w - 2 * half), h: Math.max(0, plot.h - 2 * half) };
-
-	const candidates: Candidate[] = [];
-	for (const target of targets) {
-		const p = { x: transform.x + transform.k * target.at.x, y: transform.y + transform.k * target.at.y };
-		if (inside(plot, p)) continue;
-		const edge = onEdge(inner, plot, p);
-		const angle = Math.atan2(p.y - (plot.y + plot.h / 2), p.x - (plot.x + plot.w / 2));
-		candidates.push({ kind: target.kind, key: target.key, label: target.label, count: 1, ...edge, angle, distance: distanceOutside(plot, p) });
-	}
-	// Nearest first, so a marker that stands for several is named for the closest, and ties fall the same way every frame.
-	candidates.sort((a, b) => a.distance - b.distance || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-
-	const blocked = reserved.map((box) => inflate(box, CLEAR));
-	const placed: Candidate[] = [];
-	for (const candidate of candidates) {
-		const at = slide(candidate, candidate.side, inner, blocked);
-		if (!at) continue;
-		const box = boxOf(at.x, at.y);
-		// Crowding its own kind: stand for it instead, and count it.
-		const same = placed.find((other) => other.kind === candidate.kind && intersects(inflate(boxOf(other.x, other.y), CLEAR), box));
-		if (same) {
-			same.count += candidate.count;
-			continue;
-		}
-		const clear = slide(at, candidate.side, inner, [...blocked, ...placed.map((other) => inflate(boxOf(other.x, other.y), CLEAR))]);
-		if (clear) placed.push({ ...candidate, ...clear });
-	}
-	return placed.map(({ kind, key, label, count, x, y, angle }) => ({ kind, key, label, count, x, y, angle }));
+	return placed;
 }

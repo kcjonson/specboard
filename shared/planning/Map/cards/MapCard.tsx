@@ -36,10 +36,22 @@ function MapCardView({ row, dot, k, faded, lit }: MapCardProps): JSX.Element {
 			style={{ width: `${CARD_WIDTH}px`, height: `${CARD_HEIGHT}px`, transform: `translate(${x}px, ${y}px)` }}
 		>
 			<div class={styles.head}>
-				<span class={`${styles.glyph}${card.live ? ` ${styles.live}` : ''}${card.needsPerson ? ` ${styles.needsPerson}` : ''}`}>
+				<span class={`${styles.glyph}${card.live ? ` ${styles.live}` : ''}${card.reason ? ` ${styles.needsPerson}` : ''}`}>
 					<StatusGlyph class={styles.status} status={dot.status} />
 				</span>
 				<span class={styles.key}>{card.key}</span>
+				{card.reason && (
+					<span class={styles.tag} title={card.reason.text}>
+						<span aria-hidden="true">{card.reason.tag}</span>
+						<span class={styles.more}>{card.reason.text}</span>
+					</span>
+				)}
+				{card.upNext !== null && (
+					<span class={styles.upNext} title={`Up next: number ${card.upNext}`}>
+						<span aria-hidden="true">{card.upNext}</span>
+						<span class={styles.more}>{`Up next: number ${card.upNext}`}</span>
+					</span>
+				)}
 				{card.origin && (
 					<span class={styles.origin} title={card.origin === 'agent' ? 'Made by an agent' : 'Made by a person'}>
 						<Icon name={card.origin === 'agent' ? 'robot' : 'user'} class="size-sm" aria-label={card.origin === 'agent' ? 'Made by an agent' : 'Made by a person'} />

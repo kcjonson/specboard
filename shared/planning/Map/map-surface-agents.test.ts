@@ -168,7 +168,7 @@ describe('hover and click on the agents', () => {
 		s.surface.hoverAt(s.dotAt(s.q));
 		s.deferred.splice(0).forEach((task) => task());
 		s.flush();
-		expect(s.overlay.frame.quick!.sessions).toEqual([
+		expect(s.overlay.frame.quick!.marks.sessions).toEqual([
 			{ title: 'Session 2, codex on laptop, quiet', meta: `feat/${s.q} · 30 min on item, last write 20 min ago`, quiet: true },
 		]);
 	});
@@ -226,14 +226,14 @@ describe('agents ageing with the clock', () => {
 
 	it('rings an in-progress item once every session on it has gone quiet, and the item stays in its place', () => {
 		const s = shown();
-		expect(s.renderer.frames.at(-1)!.dots.find((dot) => dot.key === s.m)!.needsPerson).toBe(false);
+		expect(s.renderer.frames.at(-1)!.dots.find((dot) => dot.key === s.m)!.reason).toBeNull();
 		const before = s.dotAt(s.m);
 		s.surface.setNow(s.b.now + 14 * MINUTE);
 		s.flush();
-		expect(s.renderer.frames.at(-1)!.dots.find((dot) => dot.key === s.m)!.needsPerson).toBe(true);
+		expect(s.renderer.frames.at(-1)!.dots.find((dot) => dot.key === s.m)!.reason).toBe('quiet');
 		expect(s.dotAt(s.m)).toEqual(before);
 		// The one that was already quiet at the layout rang from the start.
-		expect(s.renderer.frames.at(-1)!.dots.find((dot) => dot.key === s.q)!.needsPerson).toBe(true);
+		expect(s.renderer.frames.at(-1)!.dots.find((dot) => dot.key === s.q)!.reason).toBe('quiet');
 	});
 
 	it('repaints nothing for a tick that crosses no threshold', () => {
@@ -261,36 +261,45 @@ describe('agents ageing with the clock', () => {
 });
 
 describe('edge markers', () => {
-	/** Zoomed in on the far left of the Map, where the right edge's computers and sessions are off screen. */
+	/** Zoomed in on the far left of the Map, where the right edge's computers and sessions are off screen, with markers asked for as the page does. */
 	function away(): ReturnType<typeof shown> {
 		const s = shown();
+		s.surface.setEdgeMarkers([
+			{ key: 'session:live', kind: 'live', label: 'Session 1 on laptop' },
+			{ key: s.q, kind: 'needs-person' },
+			{ key: 'session:nope', kind: 'live' },
+		]);
 		const bounds = s.layout.frame.bounds;
 		s.camera.set({ k: 3, x: -3 * bounds.minX, y: -3 * bounds.minY });
 		s.flush();
 		return s;
 	}
 
-	it('points toward live sessions that are off screen, along the right edge', () => {
+	it('points toward a live session that is off screen, along the right edge', () => {
 		const s = away();
-		const { markers } = s.overlay.frame;
-		const live = markers.filter((marker) => marker.kind === 'live');
-		expect(live).toHaveLength(1);
-		expect(live[0]).toMatchObject({ key: 'session:live', label: 'Live session 1 on laptop', count: 1 });
+		const live = s.overlay.frame.edges.filter((marker) => marker.kind === 'live');
+		expect(live.map((marker) => marker.key)).toEqual(['session:live']);
 		expect(live[0]!.x).toBeGreaterThan(WIDTH / 2);
 		expect(live[0]!.angle).toBeLessThan(Math.PI / 2);
 		expect(live[0]!.angle).toBeGreaterThan(-Math.PI / 2);
 	});
 
-	it('marks an item that needs a person when it is off screen, and not a quiet session', () => {
+	it('marks an item that needs a person when it is off screen', () => {
 		const s = away();
-		const needing = s.overlay.frame.markers.filter((marker) => marker.kind === 'needs-person');
-		expect(needing.length).toBeGreaterThan(0);
-		expect(s.overlay.frame.markers.some((marker) => marker.key === 'session:quiet')).toBe(false);
+		expect(s.overlay.frame.edges.some((marker) => marker.kind === 'needs-person' && marker.key === s.q)).toBe(true);
 	});
 
-	it('marks nothing at fit all, where everything is in view', () => {
+	it('skips a session that has left the cluster, and marks nothing at fit all, where everything is in view', () => {
 		const s = shown();
-		expect(s.overlay.frame.markers).toEqual([]);
+		s.surface.setEdgeMarkers([{ key: 'session:live', kind: 'live' }, { key: s.m, kind: 'needs-person' }]);
+		s.flush();
+		expect(s.overlay.frame.edges).toEqual([]);
+		s.surface.setNow(s.b.now + 2 * 60 * MINUTE);
+		s.surface.setEdgeMarkers([{ key: 'session:live', kind: 'live' }]);
+		const bounds = s.layout.frame.bounds;
+		s.camera.set({ k: 3, x: -3 * bounds.minX, y: -3 * bounds.minY });
+		s.flush();
+		expect(s.overlay.frame.edges).toEqual([]);
 	});
 
 	it('keeps clear of the toolbar', () => {
@@ -298,13 +307,13 @@ describe('edge markers', () => {
 		const toolbar = { x: 0, y: 0, w: WIDTH, h: 200 };
 		s.surface.setChrome([toolbar]);
 		s.flush();
-		for (const marker of s.overlay.frame.markers) expect(marker.y - 14).toBeGreaterThanOrEqual(toolbar.h);
+		for (const marker of s.overlay.frame.edges) expect(marker.y - 13).toBeGreaterThanOrEqual(toolbar.h);
 	});
 
 	it('stays out from under the drawer', () => {
 		const s = away();
 		s.surface.setCovered(300);
 		s.flush();
-		for (const marker of s.overlay.frame.markers) expect(marker.x).toBeLessThanOrEqual(WIDTH - 300);
+		for (const marker of s.overlay.frame.edges) expect(marker.x).toBeLessThanOrEqual(WIDTH - 300);
 	});
 });

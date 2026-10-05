@@ -2,6 +2,7 @@ import type { MapItemRow, MapItemSubStatus } from '@specboard/core/map-read';
 import { STATUS_LABELS, glyphStatus } from '@specboard/ui';
 import type { Rollup } from '../draw-list';
 import type { QuickSession } from './agent-content';
+import { reasonsText, tagOf, type NeedsReason } from '../needs-person';
 
 /**
  * What the quick card says (spec, Navigation and interaction): title, status,
@@ -48,9 +49,21 @@ export interface QuickContent {
 	holds: number;
 	/** The family's items by phase when the item has children, otherwise null. */
 	progress: Rollup | null;
+	/** Why the item needs a person, in words with the lead reason first, and the short tag the ring wears; null when it needs nobody. The card leads with it. */
+	needs: { tag: string; text: string } | null;
+	/** 1 to 3 for an item that is up next. */
+	upNext: number | null;
 }
 
-export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemRow>, progress: Rollup | null, sessions: readonly QuickSession[]): QuickContent {
+/** What the surface knows about an item that its row doesn't say. */
+export interface QuickMarks {
+	reasons: readonly NeedsReason[];
+	upNext: number | null;
+	/** Every open episode on the item, as the card says them. */
+	sessions: readonly QuickSession[];
+}
+
+export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemRow>, progress: Rollup | null, marks: QuickMarks): QuickContent {
 	const status = glyphStatus(row.status, row.blocked);
 	const open = row.blockers.filter((link) => link.state === 'open');
 	return {
@@ -59,12 +72,14 @@ export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemR
 		status,
 		statusLabel: STATUS_LABELS[status],
 		subStatus: row.subStatus ? (SUB_STATUS_LABELS[row.subStatus] ?? null) : null,
-		sessions: sessions.slice(0, NAMED_SESSIONS),
-		moreSessions: Math.max(0, sessions.length - NAMED_SESSIONS),
+		sessions: marks.sessions.slice(0, NAMED_SESSIONS),
+		moreSessions: Math.max(0, marks.sessions.length - NAMED_SESSIONS),
 		blockers: open.slice(0, NAMED_BLOCKERS).map((link) => ({ key: link.blockerKey, title: rows.get(link.blockerKey)?.title ?? '' })),
 		moreBlockers: Math.max(0, open.length - NAMED_BLOCKERS),
 		holds: row.textBlockerCount,
 		progress,
+		needs: marks.reasons.length > 0 ? { tag: tagOf(marks.reasons), text: reasonsText(marks.reasons) } : null,
+		upNext: marks.upNext,
 	};
 }
 
@@ -81,9 +96,15 @@ const SESSION = 32;
 const PROGRESS = 18;
 const ACTIVITY = 64;
 
-/** The card's height for this content: fixed parts, plus two lines for each session, a line each for the rest of the sessions, blockers, and holds, plus the progress bar. */
+/** The card's height for this content: fixed parts, plus a line each for the reason it needs a person, its up-next number, the rest of its sessions, blockers, and holds, two lines for each session named, plus the progress bar. */
 export function quickHeight(content: QuickContent): number {
-	const lines = (content.moreSessions > 0 ? 1 : 0) + content.blockers.length + (content.moreBlockers > 0 ? 1 : 0) + (content.holds > 0 ? 1 : 0);
+	const lines =
+		(content.needs ? 1 : 0) +
+		(content.upNext !== null ? 1 : 0) +
+		(content.moreSessions > 0 ? 1 : 0) +
+		content.blockers.length +
+		(content.moreBlockers > 0 ? 1 : 0) +
+		(content.holds > 0 ? 1 : 0);
 	const parts = [HEAD, TITLE, CHIPS, ...Array<number>(content.sessions.length).fill(SESSION), ...Array<number>(lines).fill(LINE), ...(content.progress ? [PROGRESS] : []), ACTIVITY];
 	return 2 * PAD + parts.reduce((sum, part) => sum + part, 0) + GAP * (parts.length - 1);
 }

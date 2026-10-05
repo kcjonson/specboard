@@ -1,5 +1,6 @@
 import type { MapItemRow } from '@specboard/core/map-read';
-import { MINUTE, SESSION_LIVE, SESSION_QUIET } from './layout/constants';
+import { MINUTE, SESSION_LIVE } from './layout/constants';
+import { isLive } from './live-sessions';
 import { computerNodeKey, sessionNodeKey, type MapLayout } from './layout/types';
 
 /**
@@ -13,8 +14,7 @@ import { computerNodeKey, sessionNodeKey, type MapLayout } from './layout/types'
 export type AgentState = 'live' | 'quiet' | 'gone';
 
 export function agentState(lastWriteAt: number, now: number): AgentState {
-	const age = now - lastWriteAt;
-	return age <= SESSION_QUIET ? 'live' : age <= SESSION_LIVE ? 'quiet' : 'gone';
+	return isLive(lastWriteAt, now) ? 'live' : now - lastWriteAt <= SESSION_LIVE ? 'quiet' : 'gone';
 }
 
 /** One item a session is on. */

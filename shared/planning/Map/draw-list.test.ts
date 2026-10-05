@@ -73,7 +73,7 @@ describe('draw list', () => {
 	});
 
 	it('rings what needs a person: a question, a PR waiting on review, and a hold', () => {
-		const ringed = dots.filter((dot) => dot.needsPerson).map((dot) => dot.key).sort();
+		const ringed = dots.filter((dot) => dot.reason !== null).map((dot) => dot.key).sort();
 		expect(ringed).toEqual([blocker.key, asked.key, held.key].sort());
 	});
 
@@ -88,7 +88,8 @@ describe('draw list', () => {
 		expect(regions[0]).toMatchObject({
 			title: epic.title,
 			status: 'in_progress',
-			needsPerson: false,
+			reason: null,
+			upNext: null,
 			rollup: { done: 1, in_flight: 1, next: 1, later: 1 },
 			size: 4,
 		});
@@ -119,7 +120,7 @@ describe('draw list', () => {
 	});
 
 	it('skips a node whose row is missing rather than guessing a status', () => {
-		expect(buildDrawList(layout, new Map(), b.now)).toMatchObject({ dots: [], regions: [], links: [], agents: [] });
+		expect(buildDrawList(layout, new Map(), b.now)).toMatchObject({ dots: [], regions: [], links: [], agents: [], needs: new Map() });
 	});
 });
 
@@ -149,7 +150,7 @@ describe('draw list, region glyphs and bad data', () => {
 		const epic = b.add({ type: 'epic', status: 'in_progress', subStatus: 'scoping', prUrl: 'https://example.com/pr/9' });
 		b.add({ parentKey: epic.key, status: 'ready' });
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
-		const [region] = buildDrawList(layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 }), rows).regions;
+		const [region] = buildDrawList(layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 }), rows, b.now).regions;
 		expect(region).toMatchObject({ key: epic.key, cue: 'scoping', pr: true, weight: 1 });
 	});
 
@@ -160,7 +161,7 @@ describe('draw list, region glyphs and bad data', () => {
 		one.parentKey = two.key;
 		b.add({ status: 'ready', parentKey: two.key });
 		const rows = new Map(b.rows.map((row) => [row.key, row]));
-		const { regions } = buildDrawList(layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 }), rows);
+		const { regions } = buildDrawList(layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 }), rows, b.now);
 		expect(regions.length).toBeGreaterThan(0);
 		for (const region of regions) expect(region.rollup.in_flight + region.rollup.next).toBeLessThanOrEqual(3);
 	});

@@ -20,14 +20,15 @@ import { intersects, type Box } from './box-index';
 import { cardBox } from './cards/card-culling';
 import { SPRING_MS, springRemaining } from './drag';
 import { agentBox, dotBox, screenRadius } from './dot-boxes';
+import { EDGE_MARKER_SIZE, placeEdgeMarkers, type EdgeMarkerInput } from './edge-markers';
 import { buildDrawList, presenceKey, type DrawAgent, type DrawDot, type DrawLink, type DrawList, type Rollup } from './draw-list';
-import { placeEdgeMarkers, type EdgeMarker, type EdgeTarget } from './edge-markers';
 import { FocusFade } from './focus-fade';
 import { HitIndex, type Hit, type HitInput } from './hit-index';
 import { crossFadeAll, placeLabels, type LabelInput, type PlacedLabels } from './label-placement';
-import { deviceLabel, NO_AGENTS, type AgentSession } from './agents';
+import { NO_AGENTS } from './agents';
 import type { MapBounds, MapLayout, MapNode, MapPoint } from './layout/types';
 import type { MapCamera, ScreenPoint } from './map-camera';
+import { litRelation, type Highlight } from './map-lens';
 import { minimapPanel, minimapShows, minimapSize, minimapViewport, type MinimapSize } from './minimap/minimap';
 import { EMPTY_OVERLAY, type CardSet, type DragOffset, type MapOverlay, type MinimapFrame, type QuickFrame } from './overlay';
 import { agentCard, agentCardHeight, itemSessions } from './quick/agent-content';
@@ -42,7 +43,7 @@ import { LABEL_RULES, ZoomLevels, type LevelFrame, type ZoomLevel } from './zoom
 
 const AGENT_KEY = /^(session|computer):/;
 
-const EMPTY_DRAWING: DrawList = { dots: [], regions: [], links: [], agents: [], working: NO_AGENTS };
+const EMPTY_DRAWING: DrawList = { dots: [], regions: [], links: [], agents: [], working: NO_AGENTS, needs: new Map() };
 
 /** What the pointer is over, for the cursor: a collapse or expand control, an item or region, or nothing that takes a click. */
 export type PointerTarget = 'control' | 'item' | null;
@@ -126,6 +127,12 @@ export class MapSurface {
 	/** Bumped by every frame and every new layout, so only the last frame's deferred outline task runs. */
 	private deferred = 0;
 	private allLinks = false;
+	/** What a search or filter lights; null when none is on or nothing matched, so nothing dims. */
+	private highlight: Highlight | null = null;
+	/** The relation the fade is heading to, kept while neither it nor the highlight changes, so the fade doesn't restart. */
+	private lit: { relation: Relation | null; highlight: Highlight | null; result: Relation | null } | null = null;
+	/** Markers asked for at the plot's edge, which show for the ones that are out of view. */
+	private edgeMarkers: readonly EdgeMarkerInput[] = [];
 	private controls: CollapseControl[] = [];
 	private viewport: Viewport = { width: 0, height: 0 };
 	private painting = false;
@@ -260,6 +267,19 @@ export class MapSurface {
 	/** Every blocker and discovered-from link draws, or only the ones focus lights. */
 	setAllLinks(all: boolean): void {
 		this.allLinks = all;
+		this.requestPaint();
+	}
+
+	/** The items a search or filter lights; everything else dims as it does under focus, and nothing moves. Null puts everything back. */
+	setHighlight(highlight: Highlight | null): void {
+		if (highlight === this.highlight) return;
+		this.highlight = highlight;
+		this.refocus();
+	}
+
+	/** The items whose edge markers show while they are out of view, in priority order. */
+	setEdgeMarkers(markers: readonly EdgeMarkerInput[]): void {
+		this.edgeMarkers = markers;
 		this.requestPaint();
 	}
 
@@ -533,6 +553,7 @@ export class MapSurface {
 				transform,
 				viewport: this.viewport,
 				measure: (text, font) => this.renderer.measureLabel(text, font),
+				lit: this.highlight ?? undefined,
 				occupied: { circles: expand.map((control) => control.at), boxes: reserved },
 			})
 			: { labels: { regions: [], dots: [], blocks: [], cards: [] }, cards: [] };
@@ -551,6 +572,7 @@ export class MapSurface {
 			controls: this.controls,
 			cards: cards.set ? { keys: cards.set.keys, alpha: cards.alpha } : null,
 			focus,
+			outlined: this.highlight?.outlined ?? NONE,
 			drag: pull,
 			transform,
 			level: level.level,
@@ -565,9 +587,9 @@ export class MapSurface {
 			cardAlpha: cards.alpha,
 			minimap: minimap?.frame ?? null,
 			quick: this.quickFor(transform, level.level, labels.regions, cards.set, minimap?.panel ?? null),
-			markers: this.markersFor(transform, minimap?.panel ?? null),
 			focus: this.fade.target,
 			drag: pull,
+			edges: layout ? this.edgesFor(transform, [...(minimap ? [minimap.panel] : []), ...labels.regions.map((label) => label.box), ...labels.dots.map((label) => label.box)]) : [],
 		});
 		// Empty means no glyph at the size it is drawn, and no card body, reaches the plot.
 		const plot = { x: 0, y: 0, w: this.viewport.width, h: this.viewport.height };
@@ -766,7 +788,11 @@ export class MapSurface {
 
 	private refocus(): void {
 		const key = this.focused();
-		this.fade.set(key && this.relations ? this.relations.relation(key) : null);
+		const relation = key && this.relations ? this.relations.relation(key) : null;
+		if (!this.lit || this.lit.relation !== relation || this.lit.highlight !== this.highlight) {
+			this.lit = { relation, highlight: this.highlight, result: litRelation(relation, this.highlight) };
+		}
+		this.fade.set(this.lit.result);
 		this.requestPaint();
 	}
 
@@ -794,7 +820,7 @@ export class MapSurface {
 			const card = agentCard(key, this.drawing.working, this.rows, this.wallNow);
 			if (!card) return null;
 			const size = { w: QUICK_WIDTH, h: agentCardHeight(card) };
-			return { key, ...placeQuickCard({ anchor: agentBox(agent, transform, level), related, plot, reserved, size }), progress: null, sessions: [], agent: card };
+			return { key, ...placeQuickCard({ anchor: agentBox(agent, transform, level), related, plot, reserved, size }), progress: null, marks: { reasons: [], upNext: null, sessions: [] }, agent: card };
 		}
 		const row = this.rows.get(key);
 		if (!row) return null;
@@ -809,27 +835,22 @@ export class MapSurface {
 			if (!node) return null;
 			anchor = { x: transform.x + transform.k * node.x - 1, y: transform.y + transform.k * node.y - 1, w: 2, h: 2 };
 		}
-		const sessions = itemSessions(row, this.drawing.working, this.wallNow);
-		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress, sessions)) };
-		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress, sessions, agent: null };
+		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key), sessions: itemSessions(row, this.drawing.working, this.wallNow) };
+		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress, marks)) };
+		return { key, ...placeQuickCard({ anchor, related, plot, reserved, size }), progress, marks, agent: null };
 	}
 
-	/** Marks at the plot's edge toward live sessions and items that need a person, for whichever of them the view doesn't show. */
-	private markersFor(transform: Transform, minimap: Box | null): EdgeMarker[] {
-		const { agents, dots, regions, working } = this.drawing;
-		const targets: EdgeTarget[] = [];
-		for (const agent of agents) {
-			if (agent.kind !== 'session' || agent.state !== 'live') continue;
-			const session = working.byNode.get(agent.key) as AgentSession;
-			targets.push({ key: agent.key, kind: 'live', label: `Live session ${session.number} on ${deviceLabel(session.device)}`, at: agent });
-		}
-		for (const dot of dots) if (dot.needsPerson) targets.push({ key: dot.key, kind: 'needs-person', label: `${dot.key} needs a person`, at: dot });
-		for (const region of regions) {
-			const node = region.needsPerson ? this.nodesByKey.get(region.key) : undefined;
-			if (node) targets.push({ key: region.key, kind: 'needs-person', label: `${region.key} needs a person`, at: node });
-		}
-		const plot = { x: 0, y: 0, w: Math.max(0, this.viewport.width - this.covered), h: this.viewport.height };
-		return placeEdgeMarkers({ targets, transform, plot, reserved: [...this.chrome, ...(minimap ? [minimap] : [])] });
+	/** Markers for the asked-for items that are out of view, kept off the page's own controls, the minimap, the labels, and the drawer. */
+	private edgesFor(transform: Transform, taken: readonly Box[]): ReturnType<typeof placeEdgeMarkers> {
+		if (this.edgeMarkers.length === 0) return [];
+		return placeEdgeMarkers(this.edgeMarkers, {
+			plot: { x: 0, y: 0, w: Math.max(EDGE_MARKER_SIZE, this.viewport.width - this.covered), h: this.viewport.height },
+			avoid: [...this.chrome, ...taken],
+			locate: (key) => {
+				const node = this.placeOf(key);
+				return node ? { x: transform.x + transform.k * node.x, y: transform.y + transform.k * node.y } : undefined;
+			},
+		});
 	}
 
 	/** The pull on the dragged dot right now, springing back if it has been released; null once it is home. */
@@ -854,6 +875,14 @@ export class MapSurface {
 		);
 	}
 }
+
+const NONE: ReadonlySet<string> = new Set();
+
+/** 1 to 3 for an item that is up next. */
+const upNextOf = (layout: MapLayout | null, key: string): number | null => {
+	const at = layout?.upNext.indexOf(key) ?? -1;
+	return at < 0 ? null : at + 1;
+};
 
 /** A parent's items by phase, for the quick card: a region's rollup, or a folded dot's; null for an item with no family. */
 function progressOf(drawing: DrawList, key: string, dot: DrawDot | undefined): Rollup | null {

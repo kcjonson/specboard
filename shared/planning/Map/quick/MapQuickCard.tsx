@@ -110,7 +110,7 @@ export function MapQuickCard({ store, activity, bottom }: MapQuickCardProps): JS
 	}
 	const row = key ? rows.get(key) : undefined;
 	if (!quick || !row) return <div class={styles.layer} style={{ bottom: `${bottom}px` }} />;
-	const content = quickContent(row, rows, quick.progress, quick.sessions);
+	const content = quickContent(row, rows, quick.progress, quick.marks);
 	const entry = activity.get(quick.key);
 	const meta = entry.state === 'ready' && entry.entry ? ` · ${entry.entry.actor ? `${actorLabel(entry.entry.actor)} · ` : ''}${formatTimeAgo(entry.entry.createdAt)}` : '';
 	return (
@@ -122,6 +122,12 @@ export function MapQuickCard({ store, activity, bottom }: MapQuickCardProps): JS
 				aria-label={`${content.key} quick view`}
 				style={{ width: `${QUICK_WIDTH}px`, height: `${quickHeight(content)}px`, transform: `translate(${Math.round(quick.x)}px, ${Math.round(quick.y)}px)` }}
 			>
+				{content.needs && (
+					<p class={styles.reason} title={content.needs.text}>
+						<span class={styles.tag} aria-hidden="true">{content.needs.tag}</span>
+						{content.needs.text}
+					</p>
+				)}
 				<div class={styles.head}>
 					<StatusGlyph class={styles.glyph} status={row.status} blocked={row.blocked} decorative />
 					<span class={styles.key}>{content.key}</span>
@@ -131,6 +137,7 @@ export function MapQuickCard({ store, activity, bottom }: MapQuickCardProps): JS
 					<Badge class={`size-sm ${styles.chip}`}>{content.statusLabel}</Badge>
 					{content.subStatus && <Badge class={`size-sm ${styles.chip}`}>{content.subStatus}</Badge>}
 				</div>
+				{content.upNext !== null && <p class={styles.line}>{`Up next: number ${content.upNext}`}</p>}
 				{content.sessions.map((session) => (
 					<div key={session.title} class={styles.session}>
 						<p class={styles.sessionTitle}>{session.title}</p>

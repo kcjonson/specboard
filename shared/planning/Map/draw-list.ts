@@ -4,7 +4,7 @@ import { agentsOf, type Agents } from './agents';
 import type { Dot } from './camera';
 import type { MapLayout, MapNode, MapPhase, MapPoint } from './layout/types';
 import type { LinkKind } from './links';
-import { needsPerson } from './needs-person';
+import { REASON_ORDER, needsPerson, type NeedsPersonReasons, type NeedsReason } from './needs-person';
 import { planWeights, weightedRadius } from './plan-weight';
 
 /** A subtree's items by phase, the parent itself not counted. */
@@ -30,7 +30,10 @@ export interface DrawDot extends Dot {
 	flight: 'in_progress' | 'in_review' | null;
 	/** Plan weight, 1 at full strength (see plan-weight.ts). `r` already carries it. */
 	weight: number;
-	needsPerson: boolean;
+	/** Why the item needs a person, most pressing first: it wears the ink ring, and zoomed in the lead reason's tag. A folded family carries what is inside it. */
+	reason: NeedsReason | null;
+	/** 1 to 3 on an item up next, in the order the agents pick them up. */
+	upNext: number | null;
 	cue: GlyphCue | null;
 	/** The item has a PR (pr_url set, or sub-status PR open). */
 	pr: boolean;
@@ -62,7 +65,8 @@ export interface DrawRegion {
 	weight: number;
 	cue: GlyphCue | null;
 	pr: boolean;
-	needsPerson: boolean;
+	reason: NeedsReason | null;
+	upNext: number | null;
 	rollup: Rollup;
 	/** Dots inside, nested regions' included; bigger regions get their labels first. */
 	size: number;
@@ -90,6 +94,8 @@ export interface DrawList {
 	agents: DrawAgent[];
 	/** What the agents are, for their text blocks, cards, and roster. */
 	working: Agents;
+	/** Every item that needs a person and why, by item key: what the quick card leads with. */
+	needs: NeedsPersonReasons;
 }
 
 /** In flight work draws on top of what it overlaps. */
@@ -111,9 +117,16 @@ const prOf = (row: MapItemRow): boolean => row.prUrl !== null || row.subStatus =
  */
 export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>, now: number): DrawList {
 	const weights = planWeights(layout.planOrder);
-	const needs = needsPerson(rows.values(), now);
 	const working = agentsOf(layout, rows, now);
 	const live = new Set(working.sessions.filter((session) => session.state === 'live').flatMap((session) => session.items.map((item) => item.drawnBy)));
+	const needs = needsPerson(rows.values(), layout, now);
+	const reasons = reasonsByNode(layout, needs);
+	// An up-next item folded into a collapsed family is marked on the family's dot, with the lowest number inside it.
+	const upNext = new Map<string, number>();
+	layout.upNext.forEach((key, i) => {
+		const node = layout.representative[key];
+		if (node && !upNext.has(node)) upNext.set(node, i + 1);
+	});
 	const rollups = subtreeRollups(rows, layout.phases);
 	const rollupOf = (key: string): Rollup => rollups.get(key) ?? emptyRollup();
 	const collapsed = new Set(layout.collapsed);
@@ -139,7 +152,8 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 			status: glyphStatus(row.status, row.blocked),
 			flight: row.status === 'in_progress' || row.status === 'in_review' ? row.status : null,
 			weight,
-			needsPerson: needs.has(node.key),
+			reason: reasons.get(node.key) ?? null,
+			upNext: upNext.get(node.key) ?? null,
 			cue: cueOf(row),
 			pr: prOf(row),
 			live: live.has(node.key),
@@ -159,7 +173,8 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 			weight: weights.get(region.key) ?? 1,
 			cue: cueOf(row),
 			pr: prOf(row),
-			needsPerson: needs.has(region.key),
+			reason: reasons.get(region.key) ?? null,
+			upNext: upNext.get(region.key) ?? null,
 			rollup: rollupOf(region.key),
 			size: region.members.length,
 		});
@@ -176,7 +191,7 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 		if (node) agents.push({ key: node.key, kind: 'session', x: node.x, y: node.y, r: node.r, number: session.number, state: session.state });
 	}
 
-	return { dots, regions, links: [...linksOf(layout, rows), ...agentLinks(working, placed)], agents, working };
+	return { dots, regions, links: [...linksOf(layout, rows), ...agentLinks(working, placed)], agents, working, needs };
 }
 
 /** Each computer's tie to its sessions, and each session's amber line to every item it is on. */
@@ -193,6 +208,23 @@ function agentLinks(working: Agents, placed: ReadonlyMap<string, MapNode>): Draw
 		for (const item of session.items) add('agent', session.node, item.drawnBy, session.state === 'live');
 	}
 	return links;
+}
+
+/**
+ * The lead reason each drawn node wears. An item inside a folded family is drawn by the
+ * family's dot, so the dot carries what is hidden in it: a collapsed epic with a question
+ * somewhere under it still shows the ring.
+ */
+function reasonsByNode(layout: MapLayout, needs: NeedsPersonReasons): Map<string, NeedsReason> {
+	const lead = new Map<string, NeedsReason>();
+	for (const [key, reasons] of needs) {
+		const node = layout.representative[key];
+		if (!node) continue;
+		const best = lead.get(node);
+		const mine = reasons[0]!;
+		if (!best || REASON_ORDER.indexOf(mine) < REASON_ORDER.indexOf(best)) lead.set(node, mine);
+	}
+	return lead;
 }
 
 /**
@@ -295,7 +327,6 @@ function linksOf(layout: MapLayout, rows: ReadonlyMap<string, MapItemRow>): Draw
  */
 export function presenceKey(list: DrawList): string {
 	const agents = list.agents.map((agent) => `${agent.key}=${agent.state}`).join(',');
-	const needing = list.dots.filter((dot) => dot.needsPerson).map((dot) => dot.key).join(',');
-	const regions = list.regions.filter((region) => region.needsPerson).map((region) => region.key).join(',');
-	return `${agents}|${needing}|${regions}`;
+	const needing = [...list.needs].map(([key, reasons]) => `${key}=${reasons.join('+')}`).join(',');
+	return `${agents}|${needing}`;
 }

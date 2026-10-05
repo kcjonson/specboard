@@ -12,7 +12,6 @@ import { EMPTY_OVERLAY, OverlayStore, type OverlayFrame } from '../overlay';
 import { ActivityCache } from './activity-cache';
 import type { Rollup } from '../draw-list';
 import type { QuickSession } from './agent-content';
-
 import { quickContent, quickHeight } from './quick-content';
 import { MapQuickCard } from './MapQuickCard';
 
@@ -37,7 +36,7 @@ const quickOf = (key: string, x: number, y: number, side: 'right' | 'left', prog
 	y,
 	side,
 	progress,
-	sessions,
+	marks: { reasons: [], upNext: null, sessions },
 	agent: null,
 });
 
@@ -69,7 +68,7 @@ describe('MapQuickCard', () => {
 		expect(text).toContain('Held by 1 text blocker');
 		expect(text).toContain('3 of 6 done');
 		expect(card.style.transform).toBe('translate(40px, 80px)');
-		expect(card.style.height).toBe(`${quickHeight(quickContent(item, rows, progress, sessions))}px`);
+		expect(card.style.height).toBe(`${quickHeight(quickContent(item, rows, progress, { reasons: [], upNext: null, sessions }))}px`);
 	});
 
 	it('fetches the latest activity entry when it opens, shows a quiet loading state, and fills it in without blocking the card', async () => {

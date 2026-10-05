@@ -27,9 +27,22 @@ export function screenRadius(dot: DrawDot, k: number, level: ZoomLevel): number 
 	return level === 'near' ? NEAR_GLYPH_RADIUS : Math.max(dot.r * k, MIN_DRAW_RADIUS);
 }
 
-/** The whole drawn dot as a box, clear of what it sits next to: its disc or ink ring, and a folded family's rollup bar under it. */
+/** A reason tag or an up-next number sits past a dot's ring at its upper right, so its box reaches this much further. */
+const MARK_EXTRA = 12;
+
+/** The extra reach of the marks a dot carries at this level: the number at every level, the reason tag once zoomed in. */
+export function markExtra(dot: Pick<DrawDot, 'reason' | 'upNext'>, level: ZoomLevel): number {
+	return dot.upNext !== null || (dot.reason !== null && level !== 'far') ? MARK_EXTRA : 0;
+}
+
+/** How far a dot's marks reach from its center, clear of what it sits next to. */
+export function dotReach(dot: DrawDot, k: number, level: ZoomLevel): number {
+	return screenRadius(dot, k, level) + MARK_REACH + CLEARANCE + markExtra(dot, level);
+}
+
+/** The whole drawn dot as a box, clear of what it sits next to: its disc or ink ring, its marks, and a folded family's rollup bar under it. */
 export function dotBox(dot: DrawDot, transform: Transform, level: ZoomLevel): Box {
-	const r = screenRadius(dot, transform.k, level) + MARK_REACH + CLEARANCE;
+	const r = dotReach(dot, transform.k, level);
 	const { x, y } = screenPoint(transform, dot);
 	return { x: x - r, y: y - r, w: 2 * r, h: 2 * r + (dot.folded ? FOLDED_BAR_REACH : 0) };
 }

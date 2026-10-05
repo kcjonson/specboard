@@ -1,5 +1,5 @@
 import { BoxIndex, type Box } from './box-index';
-import { CLEARANCE, FOLDED_BAR_REACH, MARK_REACH, screenPoint, screenRadius } from './dot-boxes';
+import { CLEARANCE, FOLDED_BAR_REACH, dotReach, screenPoint } from './dot-boxes';
 import type { Transform, Viewport } from './camera';
 import type { DrawDot } from './draw-list';
 import type { ZoomLevel } from './zoom-levels';
@@ -57,7 +57,7 @@ export function placeDotLabel(dot: DrawDot, textWidth: number, transform: Transf
 	const w = textWidth + 2 * DOT_LABEL_PAD;
 	const h = DOT_LABEL_HEIGHT;
 	const { x, y } = screenPoint(transform, dot);
-	const reach = screenRadius(dot, transform.k, level) + MARK_REACH + CLEARANCE;
+	const reach = dotReach(dot, transform.k, level);
 	for (const spot of spots(x, y, reach, dot.folded ? FOLDED_BAR_REACH : 0, w, h)) {
 		const box = { x: spot.x, y: spot.y, w, h };
 		if (box.x < 0 || box.y < 0 || box.x + w > viewport.width || box.y + h > viewport.height) continue;

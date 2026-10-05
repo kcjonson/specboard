@@ -1,6 +1,7 @@
 import type { MapItemRow, MapItemSubStatus } from '@specboard/core/map-read';
 import { STATUS_LABELS } from '@specboard/ui';
 import type { DrawDot } from '../draw-list';
+import { REASON_TAGS, REASON_TEXT } from '../needs-person';
 
 /**
  * What a near-zoom card says, from an item's row (spec, Status encoding): every
@@ -71,9 +72,12 @@ export interface CardContent {
 	origin: 'agent' | 'person' | null;
 	/** An item with its family folded in: how many items that is, itself included. */
 	family: number | null;
-	needsPerson: boolean;
-	/** A live agent session is on it. */
+	/** A live agent session is on it: the still amber glow behind its glyph. */
 	live: boolean;
+	/** Why the item needs a person (the ink ring on its glyph) and the short tag beside it; null when it needs nobody. */
+	reason: { tag: string; text: string } | null;
+	/** 1 to 3 for an item that is up next. */
+	upNext: number | null;
 	/** Every mark the card can carry, most important first, for `fitChips` to cut to its one row. */
 	chips: CardChip[];
 }
@@ -114,8 +118,9 @@ export function cardContent(row: MapItemRow, dot: DrawDot): CardContent {
 		specs: row.specCount,
 		origin: row.originActorType === 'agent' ? 'agent' : row.originActorType === 'user' ? 'person' : null,
 		family,
-		needsPerson: dot.needsPerson,
 		live: dot.live,
+		reason: dot.reason ? { tag: REASON_TAGS[dot.reason], text: REASON_TEXT[dot.reason] } : null,
+		upNext: dot.upNext,
 		chips,
 	};
 }

@@ -3,7 +3,7 @@ import { DONE_DISC, GLYPH_BOX, NEEDS_PERSON_TOKEN, PAUSE_BARS, RING_WIDTH, STATU
 import type { Transform } from './camera';
 import type { CollapseControl } from './collapse-controls';
 import { TEXT_CONTRAST, contrast, contrastFloor, formatColor, isDark, mix, parseColor, readableInk, type Rgb } from './color';
-import { agentRadius, screenRadius } from './dot-boxes';
+import { agentRadius, markExtra, screenRadius } from './dot-boxes';
 import { DOT_LABEL_PAD, type DotLabel, type LabelFont } from './dot-labels';
 import type { DrawAgent, DrawDot, DrawLink } from './draw-list';
 import { FADE_DARK, FADE_LIGHT, FOCUS_GROW, darkness, dotStrength, growth, linkStrength, regionStrength, type FocusFrame } from './focus-fade';
@@ -12,6 +12,7 @@ import type { MapPhase } from './layout/types';
 import type { ZoomLevel } from './zoom-levels';
 import { BLOCK_LINE_HEIGHT, type PlacedBlock } from './label-placement';
 import { linkCurve } from './links';
+import { REASON_TAGS } from './needs-person';
 import { ringScale, tintAmount } from './plan-weight';
 import { rollupSegments, type Circle, type RegionLabel } from './region-labels';
 import type { RegionOutline } from './regions/outline';
@@ -36,8 +37,10 @@ export interface MapFrame {
 	controls: readonly CollapseControl[];
 	/** The dots that near-level cards stand in for, and how opaque those cards are: the canvas draws them as the cards fade out, and not at all once the cards are there. */
 	cards: { keys: ReadonlySet<string>; alpha: number } | null;
-	/** What hover, focus, or selection has lit and how far its fade has run; everything outside the related set draws at a share of its strength. */
+	/** What hover, focus, selection, or a search or filter has lit and how far its fade has run; everything outside the related set draws at a share of its strength. */
 	focus: FocusFrame;
+	/** Regions whose own parent matches the search or filter: their outline draws lit. */
+	outlined: ReadonlySet<string>;
 	/** A dot being dragged, drawn that far from its place, on top. */
 	drag: DragOffset | null;
 	transform: Transform;
@@ -170,6 +173,9 @@ const COUNT_MIN_RADIUS = 8;
 /** The focus ring: a gap of surface, then ink, outside the needs-a-person ring when the dot has one. */
 const FOCUS_GAP = 2;
 const FOCUS_WIDTH = 2;
+/** The reason tag and the up-next number: small marks at a dot's upper right, past its ring. */
+const MARK_SIZE = 14;
+const MARK_FONT = 9;
 const SCOPING_DASH = [2.2, 1.4];
 /** The dashed scoping ring around a solid glyph, in glyph units: just outside the octagon. */
 const SCOPING_RING = 8.75;
@@ -336,6 +342,44 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.restore();
 	};
 
+	/** Where a mark's center goes: the dot's upper right, clear of its ring. */
+	const markAt = (x: number, y: number, r: number): { x: number; y: number } => {
+		const reach = (r + INK_GAP + INK_WIDTH + MARK_SIZE / 2) * Math.SQRT1_2;
+		return { x: x + reach, y: y - reach };
+	};
+
+	/** The reason a dot needs a person, in a word or two of ink: ? for a question, PR for review, zz for a quiet agent, ! for a hold. */
+	const drawReasonTag = (x: number, y: number, r: number, text: string): void => {
+		ctx.font = `700 ${MARK_FONT}px ${theme.font}`;
+		const w = Math.max(MARK_SIZE, ctx.measureText(text).width + 6);
+		const at = markAt(x, y, r);
+		const left = at.x - MARK_SIZE / 2;
+		ctx.fillStyle = theme.needsPerson;
+		ctx.beginPath();
+		ctx.roundRect(left, at.y - MARK_SIZE / 2, w, MARK_SIZE, MARK_SIZE / 2);
+		ctx.fill();
+		ctx.fillStyle = theme.surface;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(text, left + w / 2, at.y + 0.5);
+	};
+
+	/** An up-next number, 1 to 3, in the order the agents pick the items up: a circle of surface edged in Ready's blue. */
+	const drawNumber = (x: number, y: number, number: number): void => {
+		disc(x, y, MARK_SIZE / 2, theme.surface);
+		ring(x, y, MARK_SIZE / 2 - 0.75, theme.status.ready, 1.5);
+		ctx.fillStyle = theme.text;
+		ctx.font = `700 ${MARK_FONT}px ${theme.font}`;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(String(number), x, y + 0.5);
+	};
+
+	const drawUpNext = (x: number, y: number, r: number, number: number): void => {
+		const at = markAt(x, y, r);
+		drawNumber(at.x, at.y, number);
+	};
+
 	const drawRollupBar = (x: number, y: number, w: number, h: number, segments: ReadonlyArray<{ phase: MapPhase; x: number; w: number }>): void => {
 		ctx.fillStyle = theme.border;
 		ctx.fillRect(x, y, w, h);
@@ -350,12 +394,13 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		const r = screenRadius(dot, transform.k, level) * (1 + FOCUS_GROW * lift);
 		const x = transform.x + transform.k * (dot.x + (offset?.dx ?? 0));
 		const y = transform.y + transform.k * (dot.y + (offset?.dy ?? 0));
-		const focusAt = r + (dot.needsPerson ? INK_GAP + INK_WIDTH + FOCUS_GAP : FOCUS_GAP) + FOCUS_WIDTH / 2;
-		if (offscreen(x, y, focusAt + FOCUS_WIDTH)) return;
+		const ringed = dot.reason !== null;
+		const focusAt = r + (ringed ? INK_GAP + INK_WIDTH + FOCUS_GAP : FOCUS_GAP) + FOCUS_WIDTH / 2;
+		if (offscreen(x, y, focusAt + FOCUS_WIDTH + markExtra(dot, level))) return;
 		if (dot.live) drawGlow(x, y, r, alpha);
 		ctx.globalAlpha = alpha;
-		disc(x, y, lift > 0 ? focusAt + FOCUS_WIDTH : r + (dot.needsPerson ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
-		if (dot.needsPerson) ring(x, y, r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
+		disc(x, y, lift > 0 ? focusAt + FOCUS_WIDTH : r + (ringed ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
+		if (ringed) ring(x, y, r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
 		if (lift > 0) {
 			ctx.globalAlpha = alpha * lift;
 			ring(x, y, focusAt, theme.text, FOCUS_WIDTH);
@@ -367,6 +412,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		const count = finished && r >= COUNT_MIN_RADIUS ? dot.folded!.count : null;
 		drawGlyph(x, y, r, dot.status, { weight: dot.weight, cue: dot.cue, count });
 		if (dot.pr) drawPrMark(x, y, r);
+		if (dot.upNext !== null) drawUpNext(x, y, r, dot.upNext);
+		else if (dot.reason !== null && level !== 'far') drawReasonTag(x, y, r, REASON_TAGS[dot.reason]);
 		if (dot.folded && !finished && r >= COUNT_MIN_RADIUS) {
 			const w = Math.max(16, 1.6 * r);
 			drawRollupBar(x - w / 2, y + r + 4, w, 3, rollupSegments(dot.folded.rollup, x - w / 2, w));
@@ -444,7 +491,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.globalAlpha = 1;
 	};
 
-	const drawRegions = (regions: readonly RegionOutline[], transform: Transform, focus: FocusFrame): void => {
+	const drawRegions = (regions: readonly RegionOutline[], transform: Transform, focus: FocusFrame, outlined: ReadonlySet<string>): void => {
 		const { k } = transform;
 		for (const outline of regions) {
 			const { bounds } = outline;
@@ -456,7 +503,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 				outlines.set(outline, path);
 			}
 			const strength = regionStrength(focus, outline.key, theme.fade);
-			const dark = darkness(focus, outline.key);
+			const dark = outlined.has(outline.key) ? 1 : darkness(focus, outline.key);
 			ctx.save();
 			ctx.setTransform(ratio * k, 0, 0, ratio * k, ratio * transform.x, ratio * transform.y);
 			ctx.globalAlpha = strength;
@@ -536,13 +583,14 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.beginPath();
 			ctx.roundRect(box.x, box.y, box.w, box.h, box.h / 2);
 			ctx.fill();
-			if (region.needsPerson) {
+			if (region.reason !== null) {
 				disc(glyph.x, glyph.y, glyph.r + INK_GAP + INK_WIDTH + 0.5, theme.surface);
 				ring(glyph.x, glyph.y, glyph.r + INK_GAP + INK_WIDTH / 2, theme.needsPerson, INK_WIDTH);
 			}
 			// The label's glyph keeps its size, so the title stays legible, but takes the parent's ring weight, tint, and cues.
 			drawGlyph(glyph.x, glyph.y, glyph.r, region.status, { weight: region.weight, cue: region.cue });
 			if (region.pr) drawPrMark(glyph.x, glyph.y, glyph.r);
+			if (label.badge && region.upNext !== null) drawNumber(label.badge.x, label.badge.y, region.upNext);
 			ctx.fillStyle = theme.text;
 			ctx.font = fontOf('region');
 			ctx.textAlign = 'left';
@@ -674,7 +722,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			}
 			return measured;
 		},
-		draw({ dots, regions, links, allLinks, labels, dotLabels, agents, blocks, controls, cards, focus, drag, transform, level, ruler }) {
+		draw({ dots, regions, links, allLinks, labels, dotLabels, agents, blocks, controls, cards, focus, outlined, drag, transform, level, ruler }) {
 			if (width === 0 || height === 0) return;
 			if ((window.devicePixelRatio || 1) !== ratio) fit();
 			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -684,7 +732,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.beginPath();
 			ctx.rect(0, 0, width, plotHeight());
 			ctx.clip();
-			drawRegions(regions, transform, focus);
+			drawRegions(regions, transform, focus, outlined);
 			if (ruler) drawEdgeLine(ruler);
 			drawLinks(links, allLinks, transform, focus);
 			let pulled: DrawDot | null = null;

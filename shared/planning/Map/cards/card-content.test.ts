@@ -66,8 +66,14 @@ describe('cardContent', () => {
 
 	it('carries a folded family\'s size and the needs-a-person ring', () => {
 		const row = b.add({ status: 'done' });
-		const folded = drawDot(row.key, 0, 0, { needsPerson: true, folded: { count: 12, rollup: { done: 11, in_flight: 0, next: 0, later: 0 }, expandable: true } });
-		expect(cardContent(row, folded)).toMatchObject({ family: 12, needsPerson: true });
+		const folded = drawDot(row.key, 0, 0, { reason: 'review', folded: { count: 12, rollup: { done: 11, in_flight: 0, next: 0, later: 0 }, expandable: true } });
+		expect(cardContent(row, folded)).toMatchObject({ family: 12, reason: { tag: 'PR', text: 'Waiting on review' } });
+	});
+
+	it('carries the reason tag the ring wears and the up-next number, and neither for an item that needs nobody', () => {
+		const row = b.add({ status: 'in_progress', subStatus: 'needs_input' });
+		expect(cardContent(row, drawDot(row.key, 0, 0, { reason: 'question' }))).toMatchObject({ reason: { tag: '?', text: 'An agent asked a question' }, upNext: null });
+		expect(cardContent(row, drawDot(row.key, 0, 0, { upNext: 3 }))).toMatchObject({ reason: null, upNext: 3 });
 	});
 });
 

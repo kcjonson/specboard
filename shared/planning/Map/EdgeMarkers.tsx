@@ -1,53 +1,57 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { MARKER_SIZE, type EdgeMarker } from './edge-markers';
+import { EDGE_MARKER_SIZE, type EdgeMarkerKind, type PlacedEdgeMarker } from './edge-markers';
 import type { OverlayStore } from './overlay';
 import styles from './EdgeMarkers.module.css';
 
 export interface EdgeMarkersProps {
 	store: OverlayStore;
-	/** The ruler's band along the bottom of the Map. */
+	/** The ruler's band along the bottom of the Map, which markers stay off. */
 	bottom: number;
-	/** A marker was clicked: fly to what it points at. */
+	/** A marker was clicked: fly to its item. */
 	onJump(key: string): void;
 }
 
-const sameMarkers = (a: readonly EdgeMarker[], b: readonly EdgeMarker[]): boolean =>
-	a.length === b.length && a.every((m, i) => m.key === b[i]!.key && m.kind === b[i]!.kind && m.count === b[i]!.count && m.x === b[i]!.x && m.y === b[i]!.y && m.angle === b[i]!.angle);
+const KIND_LABELS: Record<EdgeMarkerKind, string> = { 'up-next': 'Up next', 'needs-person': 'Needs a person', live: 'Live session' };
+const KIND_CLASSES: Record<EdgeMarkerKind, string> = { 'up-next': styles.upNext!, 'needs-person': styles.needsPerson!, live: styles.live! };
 
-const labelOf = (marker: EdgeMarker): string =>
-	marker.count > 1 ? `${marker.label}, and ${marker.count - 1} more off screen` : `${marker.label}, off screen`;
+/** Which way an angle points, in words, for the marker's name. */
+function direction(angle: number): string {
+	if (Math.abs(Math.cos(angle)) >= Math.abs(Math.sin(angle))) return Math.cos(angle) > 0 ? 'right' : 'left';
+	return Math.sin(angle) > 0 ? 'below' : 'above';
+}
 
 /**
- * The marks at the plot's edge that point toward what the view doesn't show: live sessions,
- * and items that need a person. The surface places them every frame; they are real buttons,
- * so each is a tab stop that flies to its target. A pan moves them, a still view holds
- * them, and nothing about them animates.
+ * The markers at the plot's edge for items out of view (see edge-markers.ts). They are
+ * buttons, since the point of one is to go there; the surface decides which exist and where,
+ * once per repaint, and this only draws them.
  */
 export function EdgeMarkers({ store, bottom, onJump }: EdgeMarkersProps): JSX.Element {
-	const [markers, setMarkers] = useState<readonly EdgeMarker[]>(store.frame.markers);
+	const [markers, setMarkers] = useState<readonly PlacedEdgeMarker[]>(store.frame.edges);
 	useEffect(() => {
-		setMarkers(store.frame.markers);
-		return store.subscribe(({ markers: next }) => setMarkers((previous) => (sameMarkers(previous, next) ? previous : next)));
+		setMarkers(store.frame.edges);
+		return store.subscribe(({ edges }) => setMarkers((previous) => (sameMarkers(previous, edges) ? previous : edges)));
 	}, [store]);
+
 	return (
 		<div class={styles.layer} style={{ bottom: `${bottom}px` }}>
 			{markers.map((marker) => (
 				<button
 					key={`${marker.kind}:${marker.key}`}
 					type="button"
-					class={styles.marker}
-					data-kind={marker.kind}
-					aria-label={labelOf(marker)}
-					style={{ width: `${MARKER_SIZE}px`, height: `${MARKER_SIZE}px`, transform: `translate(${Math.round(marker.x - MARKER_SIZE / 2)}px, ${Math.round(marker.y - MARKER_SIZE / 2)}px)` }}
+					class={`${styles.marker} ${KIND_CLASSES[marker.kind]}`}
+					style={{ left: `${marker.x - EDGE_MARKER_SIZE / 2}px`, top: `${marker.y - EDGE_MARKER_SIZE / 2}px`, width: `${EDGE_MARKER_SIZE}px`, height: `${EDGE_MARKER_SIZE}px` }}
+					aria-label={`${KIND_LABELS[marker.kind]}${marker.text ? ` ${marker.text}` : ''}: ${marker.label ?? marker.key}, off screen ${direction(marker.angle)}`}
 					onClick={() => onJump(marker.key)}
 				>
-					<svg class={styles.arrow} width="14" height="14" viewBox="-7 -7 14 14" aria-hidden="true" style={{ transform: `rotate(${marker.angle}rad)` }}>
-						<path d="M-4 -5 L5 0 L-4 5 Z" fill="currentColor" />
-					</svg>
-					{marker.count > 1 && <span class={styles.count} aria-hidden="true">{marker.count}</span>}
+					<span class={styles.text} aria-hidden="true">{marker.text ?? ''}</span>
+					<span class={styles.arrow} style={{ transform: `rotate(${marker.angle}rad)` }} aria-hidden="true" />
 				</button>
 			))}
 		</div>
 	);
+}
+
+function sameMarkers(a: readonly PlacedEdgeMarker[], b: readonly PlacedEdgeMarker[]): boolean {
+	return a.length === b.length && a.every((m, i) => m.key === b[i]!.key && m.kind === b[i]!.kind && m.text === b[i]!.text && m.x === b[i]!.x && m.y === b[i]!.y && m.angle === b[i]!.angle);
 }

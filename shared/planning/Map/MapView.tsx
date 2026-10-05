@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
+import type { MapItemType } from '@specboard/core/map-read';
 import { navigate } from '@specboard/router';
 import { useModel } from '@specboard/models';
 import { LoadError } from '../LoadError/LoadError';
 import { AgentRoster } from './AgentRoster';
 import { AgentsButton } from './AgentsButton';
-import { NO_AGENTS, agentsOf } from './agents';
+import { NO_AGENTS, agentsOf, deviceLabel } from './agents';
 import { MapCards } from './cards/MapCards';
 import { createCollapseStore } from './collapse-store';
-import { DRAG_THRESHOLD } from './drag';
 import { EdgeMarkers } from './EdgeMarkers';
+import type { EdgeMarkerInput } from './edge-markers';
+import { DRAG_THRESHOLD } from './drag';
 import type { Hit } from './hit-index';
 import { createLayoutWorker } from './layout/layout-worker-client';
-import type { MapPoint } from './layout/types';
+import type { MapPhase, MapPoint } from './layout/types';
 import { createCamera, type ScreenPoint } from './map-camera';
 import { MapDataModel } from './map-data-model';
+import { mapFacts } from './map-facts';
+import { NO_LENS, describeFilters, filtersActive, lensOf, type MapFilters } from './map-lens';
+import { MapSearchModel, createSearchSource, type MapSearchSource } from './map-search';
 import { createMapSource } from './map-source';
 import { MapSurface } from './map-surface';
 import { Minimap } from './minimap/Minimap';
@@ -22,9 +27,11 @@ import { OverlayStore } from './overlay';
 import { ActivityCache, createActivitySource } from './quick/activity-cache';
 import { MapQuickCard } from './quick/MapQuickCard';
 import { zoomKeyOf } from './map-keys';
-import { liveCount, rosterOf } from './roster';
+import { rosterOf } from './roster';
 import { readFocus, urlWithFocus } from './map-url';
 import { RULER_HEIGHT, createCanvasRenderer } from './renderer';
+import { SteppingBar } from './stepping/SteppingBar';
+import { SummaryStrip } from './strip/SummaryStrip';
 import styles from './MapView.module.css';
 
 export interface MapViewProps {
@@ -37,10 +44,18 @@ export interface MapViewProps {
 	onOpenItem(key: string): void;
 	/** Escape asks the drawer to close. */
 	onCloseItem(): void;
+	/** The toolbar's search text once it has settled; the Map dims what doesn't match it. Empty for no search. */
+	search: string;
+	/** The toolbar's type filter, which the Map dims by too. */
+	type: MapItemType | null;
+	/** The stepping bar's Clear, and Escape with nothing else to close: the page empties the search box and the type filter. */
+	onClear(): void;
 	/** Tests hand in a model with a fake source and worker; the page builds its own. */
 	model?: MapDataModel;
 	/** Tests hand in the quick card's activity source; the page asks the notes endpoint. */
 	activity?: ActivityCache;
+	/** Tests hand in the search's source; the page asks the items list. */
+	searchSource?: MapSearchSource;
 }
 
 /** The layout fits itself to this plot shape until the container has been measured. */
@@ -86,7 +101,7 @@ const typing = (target: EventTarget | null): boolean => {
  * click opens the drawer the board uses. The page loads this module lazily, so Board
  * and Table don't carry it.
  */
-export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseItem, model: provided, activity: providedActivity }: MapViewProps): JSX.Element {
+export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseItem, search, type, onClear, model: provided, activity: providedActivity, searchSource }: MapViewProps): JSX.Element {
 	const model = useMemo(
 		() => provided ?? new MapDataModel(createMapSource(projectRef), createLayoutWorker, createCollapseStore(projectRef)),
 		[provided, projectRef],
@@ -94,10 +109,23 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	useModel(model);
 	const activity = useMemo(() => providedActivity ?? new ActivityCache(createActivitySource(projectRef)), [providedActivity, projectRef]);
 
+	// The Map's read carries no descriptions, so the board's own search says which items match.
+	const searcher = useMemo(() => new MapSearchModel(searchSource ?? createSearchSource(projectRef)), [searchSource, projectRef]);
+	useModel(searcher);
+	useEffect(() => searcher.setQuery(search), [searcher, search]);
+	useEffect(() => () => searcher.dispose(), [searcher]);
+
+	// The strip's counts that name a filter are its buttons; type is the toolbar's.
+	const [phases, setPhases] = useState<ReadonlySet<MapPhase>>(() => new Set());
+	const [needsOnly, setNeedsOnly] = useState(false);
+	const [liveOnly, setLiveOnly] = useState(false);
+	const filters = useMemo<MapFilters>(() => ({ type, phases, needsPerson: needsOnly, live: liveOnly }), [type, phases, needsOnly, liveOnly]);
+
 	const containerRef = useRef<HTMLDivElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const controlsRef = useRef<HTMLDivElement>(null);
 	const noticeRef = useRef<HTMLParagraphElement>(null);
+	const barRef = useRef<HTMLDivElement>(null);
 	const surfaceRef = useRef<MapSurface | null>(null);
 	const [viewportEmpty, setViewportEmpty] = useState(false);
 	const [allLinks, setAllLinks] = useState(false);
@@ -107,8 +135,15 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const overlay = useMemo(() => new OverlayStore(), []);
 
 	// The surface lives as long as the view, so what it calls back into is read from here.
-	const live = useRef({ openItemKey, onOpenItem, onCloseItem, model });
-	live.current = { openItemKey, onOpenItem, onCloseItem, model };
+	const live = useRef({ openItemKey, onOpenItem, onCloseItem, model, clear: () => {}, lensActive: false });
+	const clearLens = useCallback((): void => {
+		onClear();
+		setPhases(new Set());
+		setNeedsOnly(false);
+		setLiveOnly(false);
+	}, [onClear]);
+	const lensActive = searcher.query !== '' || filtersActive(filters);
+	live.current = { openItemKey, onOpenItem, onCloseItem, model, clear: clearLens, lensActive };
 
 	// Panning and zooming replace the history entry, so a copied URL anchors on the item in
 	// the middle of the plot (spec, Navigation and interaction); a jump pushes one.
@@ -126,7 +161,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		const container = containerRef.current;
 		if (!surface || !container) return;
 		const origin = container.getBoundingClientRect();
-		const boxes = [controlsRef.current, noticeRef.current].flatMap((element) => {
+		const boxes = [controlsRef.current, noticeRef.current, barRef.current].flatMap((element) => {
 			if (!element) return [];
 			const rect = element.getBoundingClientRect();
 			return [{ x: rect.left - origin.left - CHROME_PAD, y: rect.top - origin.top - CHROME_PAD, w: rect.width + 2 * CHROME_PAD, h: rect.height + 2 * CHROME_PAD }];
@@ -269,6 +304,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				} else if (surface.selection !== null) {
 					event.preventDefault();
 					surface.select(null);
+				} else if (live.current.lensActive) {
+					event.preventDefault();
+					live.current.clear();
 				}
 			} else if (event.key === 'Enter' && (event.target === document.body || event.target === canvas)) {
 				if (surface.activateFocus() !== null) event.preventDefault();
@@ -301,17 +339,34 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const { state, layout, rows } = model;
 	const now = Math.max(model.now, ticked);
 	const working = useMemo(() => (layout ? agentsOf(layout, rows, now) : NO_AGENTS), [layout, rows, now]);
-	const liveSessions = liveCount(working);
 	// Before the layout effect, so a new layout is drawn against the right time the first time.
 	useEffect(() => surfaceRef.current!.setNow(now), [now]);
-	const summarizedNotice = state === 'ready' && !model.isEmpty && model.read?.summarized === true;
-	useEffect(reserveChrome, [summarizedNotice, liveSessions, reserveChrome]);
+	// The notice and the stepping bar come and go, so what labels keep off is measured again after every render.
+	useEffect(reserveChrome);
 	useEffect(() => {
 		const surface = surfaceRef.current!;
 		if (state !== 'ready' || !layout) surface.clear();
 		else if (surface.showing) surface.update(layout, rows);
 		else surface.show(layout, rows, readFocus(window.location.search));
 	}, [state, layout, rows]);
+
+	// What the strip counts, and what search and the filters light. Neither moves anything: the layout never hears of them.
+	const facts = useMemo(() => (state === 'ready' && layout ? mapFacts(layout, rows, now) : null), [state, layout, rows, now]);
+	const lens = useMemo(
+		() => (state === 'ready' && layout && facts ? lensOf({ layout, rows, facts, filters, search: searcher.keys }) : NO_LENS),
+		[state, layout, rows, facts, filters, searcher.keys],
+	);
+	useEffect(() => surfaceRef.current!.setHighlight(lens.highlight), [lens]);
+	// What is out of view and worth knowing about gets a marker at the plot's edge: live sessions first, then what needs a person, then up next.
+	useEffect(() => {
+		const markers: EdgeMarkerInput[] = [];
+		if (state === 'ready' && layout && facts) {
+			for (const session of working.sessions) if (session.state === 'live') markers.push({ key: session.node, kind: 'live', label: `Session ${session.number} on ${deviceLabel(session.device)}` });
+			for (const key of facts.needs.keys()) markers.push({ key, kind: 'needs-person' });
+			layout.upNext.forEach((key, i) => markers.push({ key, kind: 'up-next', text: String(i + 1) }));
+		}
+		surfaceRef.current!.setEdgeMarkers(markers);
+	}, [state, layout, facts, working]);
 
 	// The item URL is the selection: a link to an item opens it on the Map, and the drawer's
 	// related items move it. The drawer overlays the plot, so the camera pans just far enough
@@ -345,6 +400,15 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const handleCenter = useCallback((point: MapPoint, fly: boolean): void => surface().centerOn(point, fly), []);
 	const handleRetry = useCallback((): void => void model.retry(), [model]);
 	const handleAllLinks = useCallback((): void => setAllLinks((on) => !on), []);
+	const handleTogglePhase = useCallback((phase: MapPhase): void => {
+		setPhases((previous) => {
+			const next = new Set(previous);
+			if (!next.delete(phase)) next.add(phase);
+			return next;
+		});
+	}, []);
+	const handleToggleNeeds = useCallback((): void => setNeedsOnly((on) => !on), []);
+	const handleToggleLive = useCallback((): void => setLiveOnly((on) => !on), []);
 	const handleRoster = useCallback((): void => setRosterOpen((open) => !open), []);
 	const handleCloseRoster = useCallback((): void => setRosterOpen(false), []);
 	const roster = useMemo(() => (rosterOpen ? rosterOf(working, rows, now) : []), [rosterOpen, working, rows, now]);
@@ -354,45 +418,93 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		surface().focusOn(key);
 		live.current.onOpenItem(key);
 	}, []);
-	const handleJump = useCallback((key: string): void => void surface().focusOn(key), []);
+
+	// A step in the bar lands on an item: it takes the focus (so its relations light and its card opens) and the camera goes to it.
+	const stepped = useRef(false);
+	const handleStep = useCallback((key: string): void => {
+		stepped.current = true;
+		surface().setFocus(key);
+		surface().focusOn(key);
+		anchor(key, false);
+	}, [anchor]);
+	const handleJump = useCallback((key: string): void => {
+		surface().focusOn(key);
+		anchor(key, true);
+	}, [anchor]);
+	const handleRetrySearch = useCallback((): void => searcher.retry(), [searcher]);
+	const barShown = interactive && lensActive;
+	useEffect(() => {
+		if (barShown || !stepped.current) return;
+		stepped.current = false;
+		surfaceRef.current?.setFocus(null);
+	}, [barShown]);
 
 	// Past the read cap, finished families come back folded into one row, so the count is of rows, not of items.
 	const summarized = interactive && model.read?.summarized === true;
 
+	const searching = searcher.query !== '';
+	const searchFailed = searching && searcher.state === 'error';
+	const barTitle = searching ? `Matches for "${searcher.query}"` : `Filtered: ${describeFilters(filters).join(', ')}`;
+
 	return (
-		<div class={styles.map} ref={containerRef}>
-			<canvas
-				ref={canvasRef}
-				class={styles.canvas}
-				role="img"
-				aria-label={interactive ? `Map of ${rows.size} items${summarized ? ', with finished families summarized' : ''}` : 'Map'}
+		<div class={styles.map}>
+			<SummaryStrip
+				summary={facts?.summary ?? null}
+				filters={filters}
+				onTogglePhase={handleTogglePhase}
+				onToggleNeedsPerson={handleToggleNeeds}
+				onToggleLive={handleToggleLive}
+				updatedAt={state === 'ready' ? model.now : null}
+				agents={<AgentsButton open={rosterOpen} disabled={!interactive} onClick={handleRoster} />}
 			/>
-			<MapCards store={overlay} bottom={RULER_HEIGHT} />
-			<EdgeMarkers store={overlay} bottom={RULER_HEIGHT} onJump={handleJump} />
-			<MapQuickCard store={overlay} activity={activity} bottom={RULER_HEIGHT} />
-			<div class={styles.controls} ref={controlsRef} role="group" aria-label="Map view">
-				<button type="button" class={styles.control} disabled={!interactive} onClick={handleFitAll}>Fit all</button>
-				<button type="button" class={styles.control} disabled={!interactive} onClick={handleNow}>Now</button>
-				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom out" onClick={() => surface().zoomOut()}>&minus;</button>
-				<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom in" onClick={() => surface().zoomIn()}>+</button>
-				<button type="button" class={styles.control} disabled={!interactive} aria-pressed={allLinks} onClick={handleAllLinks}>All links</button>
-				<AgentsButton class={styles.control} count={liveSessions} open={rosterOpen} disabled={!interactive} onClick={handleRoster} />
-			</div>
-			{rosterOpen && (
-				<div class={styles.roster}>
-					<AgentRoster groups={roster} onPick={handlePick} onClose={handleCloseRoster} />
+			<div class={styles.plot} ref={containerRef}>
+				<canvas
+					ref={canvasRef}
+					class={styles.canvas}
+					role="img"
+					aria-label={interactive ? `Map of ${rows.size} items${summarized ? ', with finished families summarized' : ''}` : 'Map'}
+				/>
+				<MapCards store={overlay} bottom={RULER_HEIGHT} />
+				<MapQuickCard store={overlay} activity={activity} bottom={RULER_HEIGHT} />
+				<EdgeMarkers store={overlay} bottom={RULER_HEIGHT} onJump={handleJump} />
+				<div class={styles.controls} ref={controlsRef} role="group" aria-label="Map view">
+					<button type="button" class={styles.control} disabled={!interactive} onClick={handleFitAll}>Fit all</button>
+					<button type="button" class={styles.control} disabled={!interactive} onClick={handleNow}>Now</button>
+					<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom out" onClick={() => surface().zoomOut()}>&minus;</button>
+					<button type="button" class={styles.control} disabled={!interactive} aria-label="Zoom in" onClick={() => surface().zoomIn()}>+</button>
+					<button type="button" class={styles.control} disabled={!interactive} aria-pressed={allLinks} onClick={handleAllLinks}>All links</button>
 				</div>
-			)}
-			{summarized && <p class={styles.notice} ref={noticeRef} role="status">This project is past the read cap, so finished families are summarized.</p>}
-			<div class={styles.overlay} style={{ bottom: `${RULER_HEIGHT}px` }}>
-				{state === 'loading' && <p class={styles.message} role="status">Loading the map...</p>}
-				{state === 'error' && model.error && <LoadError error={model.error} onRetry={handleRetry} />}
-				{model.isEmpty && <p class={styles.message}>Nothing on the map yet. New items land at the right edge.</p>}
-				{interactive && viewportEmpty && (
-					<button type="button" class={styles.jump} onClick={handleJumpToNearest}>Jump to the nearest dots</button>
+				{rosterOpen && (
+					<div class={styles.roster}>
+						<AgentRoster groups={roster} onPick={handlePick} onClose={handleCloseRoster} />
+					</div>
 				)}
+				{barShown && (
+					<div class={styles.barSlot} ref={barRef}>
+						<SteppingBar
+							title={barTitle}
+							keys={searchFailed ? [] : lens.matches}
+							unit={['match', 'matches']}
+							empty={searchFailed ? 'Search failed' : 'No matches'}
+							busy={searcher.state === 'loading'}
+							onStep={handleStep}
+							onClose={clearLens}
+							closeLabel="Clear"
+							action={searchFailed ? { label: 'Retry', onClick: handleRetrySearch } : undefined}
+						/>
+					</div>
+				)}
+				{summarized && <p class={styles.notice} ref={noticeRef} role="status">This project is past the read cap, so finished families are summarized.</p>}
+				<div class={styles.overlay} style={{ bottom: `${RULER_HEIGHT}px` }}>
+					{state === 'loading' && <p class={styles.message} role="status">Loading the map...</p>}
+					{state === 'error' && model.error && <LoadError error={model.error} onRetry={handleRetry} />}
+					{model.isEmpty && <p class={styles.message}>Nothing on the map yet. New items land at the right edge.</p>}
+					{interactive && viewportEmpty && (
+						<button type="button" class={styles.jump} onClick={handleJumpToNearest}>Jump to the nearest dots</button>
+					)}
+				</div>
+				<Minimap store={overlay} onCenter={handleCenter} />
 			</div>
-			<Minimap store={overlay} onCenter={handleCenter} />
 		</div>
 	);
 }

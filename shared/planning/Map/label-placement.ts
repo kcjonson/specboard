@@ -6,6 +6,7 @@ import { CLEARANCE, agentBox, agentRadius, dotBox, screenPoint } from './dot-box
 import { DOT_LABEL_PAD, MAX_DOT_LABEL, placeDotLabel, type DotLabel, type LabelFont } from './dot-labels';
 import type { DrawAgent, DrawDot, DrawRegion } from './draw-list';
 import { fitText, placeRegionLabel, type Circle, type RegionLabel } from './region-labels';
+import type { Highlight } from './map-lens';
 import type { RegionOutline } from './regions/outline';
 import type { LabelRules, ZoomLevel } from './zoom-levels';
 
@@ -34,6 +35,8 @@ export interface LabelInput {
 	agents: readonly DrawAgent[];
 	/** One text block per computer, which names its sessions' items: a block that finds room gives them no label of their own. */
 	blocks: readonly ComputerBlock[];
+	/** What a search or filter lights: those dots, and the regions whose own parent matches, get labels at any level. */
+	lit?: Pick<Highlight, 'dots' | 'outlined'>;
 	/** Screen marks a label or card keeps off: expand controls, and boxes reserved outright such as the toolbar's and the minimap's. */
 	occupied: { circles: readonly Circle[]; boxes: readonly Box[] };
 }
@@ -64,11 +67,13 @@ export interface PlacedLabels {
 const byKey = (a: DrawDot, b: DrawDot): number => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
 /** In-progress work gets its card first, then review, then what needs a person, then the rest. */
-const cardRank = (dot: DrawDot): number => (dot.flight === 'in_progress' ? 0 : dot.flight === 'in_review' ? 1 : dot.needsPerson ? 2 : 3);
+const cardRank = (dot: DrawDot): number => (dot.flight === 'in_progress' ? 0 : dot.flight === 'in_review' ? 1 : dot.reason !== null ? 2 : 3);
 
 const inflate = (box: Box, by: number): Box => ({ x: box.x - by, y: box.y - by, w: box.w + 2 * by, h: box.h + 2 * by });
 
-export function placeLabels({ rules, level, regions, outlines, dots, agents, blocks, transform, viewport, measure, occupied }: LabelInput): PlacedLabels {
+const NO_LIT: NonNullable<LabelInput['lit']> = { dots: new Set(), outlined: new Set() };
+
+export function placeLabels({ rules, level, regions, outlines, dots, agents, blocks, transform, viewport, measure, occupied, lit = NO_LIT }: LabelInput): PlacedLabels {
 	const taken = new BoxIndex();
 	const near: DrawDot[] = [];
 	for (const dot of dots) {
@@ -100,7 +105,7 @@ export function placeLabels({ rules, level, regions, outlines, dots, agents, blo
 
 	const labelDots = (candidates: readonly DrawDot[]): void => {
 		for (const dot of candidates) {
-			const strong = dot.flight !== null;
+			const strong = dot.flight !== null || lit.dots.has(dot.key);
 			const font: LabelFont = strong ? 'dot-strong' : 'dot';
 			const text = fitText(`${dot.key} ${dot.title}`, MAX_DOT_LABEL, (t) => measure(t, font));
 			const box = placeDotLabel(dot, Math.min(MAX_DOT_LABEL, measure(text, font)), transform, level, viewport, taken);
@@ -119,20 +124,23 @@ export function placeLabels({ rules, level, regions, outlines, dots, agents, blo
 
 	const unnamed = near.filter((dot) => !named.has(dot.key) && !carded.has(dot.key));
 	if (rules.dots !== 'none') labelDots(unnamed.filter((dot) => dot.flight === 'in_progress').sort(byKey));
+	// Matches are what the person asked to see: they are named before the regions take the room around them, at any level.
+	const matches = unnamed.filter((dot) => lit.dots.has(dot.key) && !(rules.dots !== 'none' && dot.flight === 'in_progress'));
+	labelDots(matches.sort((a, b) => b.r - a.r || byKey(a, b)));
 
 	const regionPlacement = { outlines, transform, viewport, measure: (text: string) => measure(text, 'region') };
-	const ordered = [...regions].sort((a, b) => b.size - a.size || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+	const ordered = [...regions].sort((a, b) => Number(lit.outlined.has(b.key)) - Number(lit.outlined.has(a.key)) || b.size - a.size || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 	for (const region of ordered) {
-		if (rules.regions !== null && placed.regions.length >= rules.regions) break;
+		if (rules.regions !== null && placed.regions.length >= rules.regions && !lit.outlined.has(region.key)) continue;
 		const label = placeRegionLabel(region, regionPlacement, taken);
 		if (label) placed.regions.push(label);
 	}
 
 	// After the regions: a region's label is what names a whole cluster, and a crowd of in-review labels would take every spot on its outline.
-	if (rules.dots !== 'none') labelDots(unnamed.filter((dot) => dot.flight === 'in_review').sort(byKey));
+	if (rules.dots !== 'none') labelDots(unnamed.filter((dot) => dot.flight === 'in_review' && !lit.dots.has(dot.key)).sort(byKey));
 	if (rules.dots === 'all') {
 		// Bigger dots first: they are the ones that matter, and the same dots win every frame.
-		labelDots(unnamed.filter((dot) => dot.flight === null).sort((a, b) => b.r - a.r || byKey(a, b)));
+		labelDots(unnamed.filter((dot) => dot.flight === null && !lit.dots.has(dot.key)).sort((a, b) => b.r - a.r || byKey(a, b)));
 	}
 	return placed;
 }
