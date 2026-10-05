@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/preact';
 import type { JSX } from 'preact';
-import { BoardBuilder } from './layout/board-fixture';
+import { BoardBuilder, deltaRead, wholeRead } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { MapView } from './MapView';
@@ -50,7 +50,7 @@ const worker: MapLayoutWorker = {
 function board(count: number): MapRead {
 	const b = new BoardBuilder();
 	for (let i = 0; i < count; i++) b.add({ status: i % 3 === 0 ? 'done' : i % 3 === 1 ? 'in_progress' : 'ready', created: b.now - i * 86_400_000 });
-	return { items: b.rows, summarized: false };
+	return wholeRead(b.rows);
 }
 
 const opened: string[] = [];
@@ -59,6 +59,8 @@ const closed = vi.fn();
 interface MapProps {
 	/** What the last-visit read answers; by default a baseline with nothing changed since. */
 	changes?: Awaited<ReturnType<ChangesSource['read']>>;
+	/** What it answers on every read after the first: a refresh. */
+	changesLater?: Awaited<ReturnType<ChangesSource['read']>>;
 	openItemKey?: string;
 	covered?: number;
 	search?: string;
@@ -75,7 +77,8 @@ function renderMap(source: () => Promise<MapRead>, props: MapProps = {}, clock?:
 	const activity = new ActivityCache(() => Promise.resolve([]));
 	const advance = vi.fn().mockResolvedValue(undefined);
 	const read = props.changes ?? { baseline: Date.now() - 86_400_000, readAt: Date.now(), changes: [] };
-	const changes = new MapChangesModel({ read: () => Promise.resolve(read), advance });
+	let reads = 0;
+	const changes = new MapChangesModel({ read: () => Promise.resolve(reads++ > 0 && props.changesLater ? props.changesLater : read), advance });
 	const searchSource = props.searchSource ?? (() => Promise.resolve([]));
 	const view = (next: MapProps): JSX.Element => (
 		<MapView
@@ -174,7 +177,7 @@ describe('MapView states', () => {
 	});
 
 	it('says so on the canvas when the project has no items', async () => {
-		const { container, findByText } = renderMap(() => Promise.resolve({ items: [], summarized: false }));
+		const { container, findByText } = renderMap(() => Promise.resolve(wholeRead([])));
 		await findByText(/Nothing on the map yet/);
 		expect(control(container, 'Fit all').disabled).toBe(true);
 		await waitFor(() => expect(frames.at(-1)).toMatchObject({ dots: [], ruler: null }));
@@ -275,7 +278,7 @@ describe('MapView collapse', () => {
 		const epic = b.add({ type: 'epic', status: 'in_progress', title: 'Open family' });
 		for (let i = 0; i < 4; i++) b.add({ parentKey: epic.key, status: i ? 'ready' : 'in_progress' });
 		for (let i = 0; i < 4; i++) b.add({ status: 'ready' });
-		renderMap(() => Promise.resolve({ items: b.rows, summarized: false }));
+		renderMap(() => Promise.resolve(wholeRead(b.rows)));
 		await waitFor(() => expect(frames.at(-1)?.labels.length).toBe(1));
 		const { labels, transform } = frames.at(-1)!;
 		const { toggle } = labels[0]!;
@@ -489,7 +492,7 @@ function marked(): { read: MapRead; epic: string; asked: string; review: string;
 	const live = b.add({ status: 'in_progress', title: 'Write webhooks' });
 	b.work(live, 'session-a', 'laptop', 3);
 	const done = b.add({ status: 'done', title: 'Old chore' });
-	return { read: { items: b.rows, summarized: false }, epic: epic.key, asked: asked.key, review: review.key, hold: hold.key, cycle: [first.key, second.key], upNext: upNext.key, live: live.key, done: done.key };
+	return { read: wholeRead(b.rows), epic: epic.key, asked: asked.key, review: review.key, hold: hold.key, cycle: [first.key, second.key], upNext: upNext.key, live: live.key, done: done.key };
 }
 
 describe('MapView summary strip', () => {
@@ -508,8 +511,26 @@ describe('MapView summary strip', () => {
 		expect(text).toMatch(/Updated just now/);
 	});
 
+	it('keeps the Map as it was when a refresh fails, and says it is retrying', async () => {
+		const { read } = marked();
+		let reads = 0;
+		const { container, model } = renderMap(() => (reads++ === 0 ? Promise.resolve(read) : Promise.reject(new Error('HTTP 503'))));
+		const strip = container.querySelector('section[aria-label="Project summary"]') as HTMLElement;
+		await waitFor(() => expect(strip.textContent).toContain('Done1'));
+		await waitFor(() => expect(frames.at(-1)?.dots.length).toBeGreaterThan(5));
+		const drawn = frames.at(-1)!.dots.length;
+
+		await act(async () => {
+			expect(await model.refresh()).toBe(false);
+		});
+
+		await waitFor(() => expect(strip.textContent).toMatch(/Updated just now, retrying/));
+		expect(frames.at(-1)!.dots).toHaveLength(drawn);
+		expect(container.textContent).not.toContain('HTTP 503');
+	});
+
 	it('is outside the canvas: it stays while the Map has nothing to draw', async () => {
-		const { container, findByText } = renderMap(() => Promise.resolve({ items: [], summarized: false }));
+		const { container, findByText } = renderMap(() => Promise.resolve(wholeRead([])));
 		await findByText(/Nothing on the map yet/);
 		expect(container.querySelector('section[aria-label="Project summary"]')).not.toBeNull();
 	});
@@ -738,6 +759,29 @@ describe('MapView since your last visit', () => {
 		expect(order).toEqual([m.upNext, m.review, m.asked, m.done, m.upNext]);
 	});
 
+	it('keeps the view open across a refresh, on the step it was on, dimming as before, and lights what the refresh added', async () => {
+		const m = marked();
+		const w = waiting(m);
+		const later = { ...w, readAt: Date.now() + 10_000, changes: [...w.changes, { key: m.hold, kind: 'blocked' as const, at: w.at(6) }] };
+		let reads = 0;
+		const { findByLabelText, getByRole, model, changes } = renderMap(
+			() => Promise.resolve(reads++ === 0 ? m.read : deltaRead([], m.read.items.length)),
+			{ changes: w, changesLater: later },
+		);
+		const next = await findByLabelText('Next');
+		fireEvent.click(next);
+		await waitFor(() => expect(getByRole('status').textContent).toBe('1 of 4'));
+		await waitFor(() => expect(frames.at(-1)!.focus.to?.key).toBe(m.upNext));
+
+		await act(async () => {
+			await Promise.all([model.refresh(), changes.refresh()]);
+		});
+
+		await waitFor(() => expect(getByRole('status').textContent).toBe('1 of 5'));
+		expect(frames.at(-1)!.focus.to?.key).toBe(m.upNext);
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.done, m.asked, m.review, m.upNext, m.hold])));
+	});
+
 	it('steps on ] and [ too', async () => {
 		const m = marked();
 		renderMap(() => Promise.resolve(m.read), { changes: waiting(m) });
@@ -896,7 +940,7 @@ describe('MapView agents', () => {
 		b.work(one, 'aa', 'personal-laptop', 2);
 		b.work(two, 'bb', 'personal-laptop', 20);
 		b.work(three, 'cc', 'build-box', 4);
-		return { read: { items: b.rows, summarized: false }, b, items: [one.key, two.key, three.key] };
+		return { read: wholeRead(b.rows), b, items: [one.key, two.key, three.key] };
 	}
 
 	const agentsButton = (container: HTMLElement): HTMLButtonElement =>

@@ -4,7 +4,7 @@ import { BoardBuilder, NOW, iso, realisticBoard, syntheticBoard, type RealisticB
 import { COLLISION_PAD, ORDER_GAP } from './constants';
 import { bloomWidth } from './forces';
 import { layoutMap } from './layout';
-import { timeToX } from './time-scale';
+import { shiftX, timeToX } from './time-scale';
 import type { MapLayout, MapNode } from './types';
 
 const HOUR = 3_600_000;
@@ -279,13 +279,58 @@ describe('layoutMap on a realistic board', () => {
 			}
 		});
 
-		it('keeps the frame, so nothing rescales', () => {
-			expect(after.frame).toEqual(result.frame);
+		it('keeps the scale at the same moment, so nothing rescales, and the extent only grows', () => {
+			expect(after.frame.scale).toEqual(result.frame.scale);
+			expect(after.frame.quiet).toBe(result.frame.quiet);
 			expect(after.ticks).toEqual(result.ticks);
+			const was = result.frame.bounds;
+			const is = after.frame.bounds;
+			expect(is.minX).toBeLessThanOrEqual(was.minX + 1e-9);
+			expect(is.maxX).toBeGreaterThanOrEqual(was.maxX);
+			expect(is.minY).toBeLessThanOrEqual(was.minY);
+			expect(is.maxY).toBeGreaterThanOrEqual(was.maxY);
 		});
 
 		it('still keeps every order', () => {
 			expectOrdersHold(after, rows);
+		});
+	});
+
+	describe('three hours on, a local pass with nothing changed', () => {
+		let later: MapLayout;
+
+		beforeAll(() => {
+			later = layoutMap({ rows: board.rows, now: NOW + 3 * HOUR, collapse: {}, aspect: ASPECT, previous: { frame: result.frame, positions: positions(result), changed: [] } });
+		});
+
+		it('moves the edge to the new now and slides the past left as one, each dot by its moment', () => {
+			expect(later.frame.scale.edge).toBe(NOW + 3 * HOUR);
+			expect(later.frame.scale.unit).toBe(result.frame.scale.unit);
+			const before = nodesOf(result);
+			const shifted = dots(later).filter((node) => {
+				const was = before.get(node.key)!;
+				return was.x < 0 && Math.abs(node.x - shiftX(result.frame.scale, later.frame.scale, was.x)) < 0.5 && Math.abs(node.y - was.y) < 0.5;
+			});
+			const past = dots(later).filter((node) => before.get(node.key)!.x < 0);
+			// The rest are held by an order: in-flight work stays past the last completion, which slid with the done work, and a burst keeps its fan.
+			expect(shifted.length / past.length).toBeGreaterThanOrEqual(0.8);
+			for (const node of past) expect(node.x).toBeLessThan(before.get(node.key)!.x);
+		});
+
+		it('slides recent work further than old work, as the log scale does', () => {
+			const before = nodesOf(result);
+			const slide = (key: string): number => nodesOf(later).get(key)!.x - before.get(key)!.x;
+			const recent = board.burst[0]!.key;
+			const old = board.finished.key;
+			expect(slide(recent)).toBeLessThan(slide(old));
+		});
+
+		it('moves the ruler with it', () => {
+			expect(later.ticks[0]!.time).toBe(NOW + 3 * HOUR - DAY);
+		});
+
+		it('keeps every order', () => {
+			expectOrdersHold(later, board.rows);
 		});
 	});
 });

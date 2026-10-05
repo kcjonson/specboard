@@ -47,7 +47,8 @@ export function regionInputs(layout: MapLayout): RegionInput[] {
  * One layout's outlines, computed once per grid step and kept. Outlines are in layout
  * units, so any step's outlines draw correctly at any zoom; a finer step only resolves
  * them better. That lets a zoom draw what's cached while the step it wants is computed
- * off the gesture's critical path.
+ * off the gesture's critical path. The steps the worker traced with the layout start out
+ * cached, so a new layout costs the main thread nothing until the zoom wants another step.
  */
 export class RegionOutlines {
 	private readonly inputs: RegionInput[];
@@ -59,6 +60,7 @@ export class RegionOutlines {
 	constructor(layout: MapLayout, clock: () => number = () => globalThis.performance.now()) {
 		this.inputs = regionInputs(layout);
 		this.clock = clock;
+		for (const { step, regions } of layout.outlines) this.cache.set(step, regions);
 	}
 
 	get empty(): boolean {

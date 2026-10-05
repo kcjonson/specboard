@@ -23,6 +23,7 @@ import { mapFacts } from './map-facts';
 import { NO_LENS, describeFilters, filtersActive, highlightOf, lensOf, type MapFilters } from './map-lens';
 import { MapSearchModel, createSearchSource, type MapSearchSource } from './map-search';
 import { createMapSource } from './map-source';
+import { useMapUpdates } from './useMapUpdates';
 import { MapSurface } from './map-surface';
 import { Minimap } from './minimap/Minimap';
 import { OverlayStore } from './overlay';
@@ -122,6 +123,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	// Since your last visit: read beside the Map's own read, and the baseline moves forward when the person leaves.
 	const changesModel = useMemo(() => providedChanges ?? new MapChangesModel(createChangesSource(projectRef)), [providedChanges, projectRef]);
 	useModel(changesModel);
+	useMapUpdates(model, changesModel);
 	useEffect(() => {
 		void changesModel.load();
 		// `pagehide` is the one event a closing tab, a reload, and a navigation away all fire; the model sends with keepalive so the request survives it.
@@ -219,6 +221,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				},
 				onOpen: (key) => live.current.onOpenItem(key),
 				onCollapse: (key, collapse) => void live.current.model.setCollapsed(key, collapse),
+				onOutlineStep: (step) => {
+					live.current.model.outlineStep = step;
+				},
 				onPointerTarget: (target) => {
 					if (target) canvas.dataset.target = target;
 					else delete canvas.dataset.target;
@@ -369,9 +374,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	useEffect(() => {
 		const surface = surfaceRef.current!;
 		if (state !== 'ready' || !layout) surface.clear();
-		else if (surface.showing) surface.update(layout, rows);
+		else if (surface.showing) surface.update(layout, rows, model.changes);
 		else surface.show(layout, rows, readFocus(window.location.search));
-	}, [state, layout, rows]);
+	}, [state, layout, rows, model]);
 
 	// What the strip counts, and what search and the filters light. Neither moves anything: the layout never hears of them.
 	const facts = useMemo(() => (state === 'ready' && layout ? mapFacts(layout, rows, now) : null), [state, layout, rows, now]);
@@ -498,7 +503,8 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				onTogglePhase={handleTogglePhase}
 				onToggleNeedsPerson={handleToggleNeeds}
 				onToggleLive={handleToggleLive}
-				updatedAt={state === 'ready' ? model.now : null}
+				updatedAt={state === 'ready' ? model.loadedAt : null}
+				retrying={model.retrying}
 				agents={<AgentsButton open={rosterOpen} disabled={!interactive} onClick={handleRoster} />}
 				since={interactive && waiting.length > 0 && changesModel.baseline !== null
 					? { date: baselineDate(changesModel.baseline), text: summaryText(waiting), open: !changesClosed, onToggle: handleToggleChanges }

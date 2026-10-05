@@ -12,16 +12,12 @@ import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import type { NewItemData } from '../NewItemForm/NewItemForm';
 import { LoadError } from '../LoadError/LoadError';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
+import { usePolling } from '../hooks/usePolling';
+import { HIGHLIGHT_DURATION } from '../utils/highlight';
 import { VIEW_PREF, writePref } from './prefs';
 import { useMapView } from './useMapView';
 import { readView, resolveView, useSmallScreen } from './view';
 import styles from './Planning.module.css';
-
-/** Duration to flash an item that was just created or changed by a refresh (ms) */
-const HIGHLIGHT_DURATION = 2000;
-
-/** How often to poll the server for item changes while the page is visible (ms) */
-const POLL_INTERVAL = 10000;
 
 /**
  * How long the search box sits still before its text becomes a new query. Each
@@ -187,52 +183,17 @@ export function Planning(props: RouteProps): JSX.Element {
 		}
 	}, [flashItems]);
 
-	// Poll the server for changes, but only while the window has focus — a
-	// backgrounded board shouldn't keep hitting the server forever. Losing focus
-	// stops the interval; regaining it fetches immediately (so a refocus after the
-	// interval elapsed catches up at once) and restarts the timer. Changed items flash.
+	// Changed items flash.
 	useEffect(() => {
 		const handleItemsChanged = (ids: string[]): void => flashItems(ids);
 		items.onItemsChanged(handleItemsChanged);
-
-		// Once the collection is in an error state (429, expired session, network
-		// drop) automatic fetches stop: retrying on a timer is how a rate limit
-		// stays tripped. The interval keeps running and stays guarded, so a
-		// user-driven fetch that succeeds clears $meta.error and polling resumes
-		// with no extra bookkeeping.
-		const poll = (): void => {
-			if (items.$meta.error) return;
-			void items.fetch();
-		};
-
-		let interval: ReturnType<typeof setInterval> | undefined;
-		const start = (): void => {
-			if (interval === undefined) {
-				interval = setInterval(poll, POLL_INTERVAL);
-			}
-		};
-		const stop = (): void => {
-			if (interval !== undefined) {
-				clearInterval(interval);
-				interval = undefined;
-			}
-		};
-		const onFocus = (): void => {
-			poll();
-			start();
-		};
-
-		if (document.hasFocus()) start();
-		window.addEventListener('focus', onFocus);
-		window.addEventListener('blur', stop);
-
-		return () => {
-			items.offItemsChanged(handleItemsChanged);
-			stop();
-			window.removeEventListener('focus', onFocus);
-			window.removeEventListener('blur', stop);
-		};
+		return () => items.offItemsChanged(handleItemsChanged);
 	}, [items, flashItems]);
+
+	// The collection polls whatever the view (the drawer's top-level item lives in it, on
+	// the Map too). Once it is in an error state (429, expired session, network drop) its
+	// polls are skipped, and a user-driven fetch that succeeds clears $meta.error so they resume.
+	usePolling(() => void items.fetch(), () => items.$meta.error !== null);
 
 	// Keep the active view in sync with the URL on browser back/forward — the
 	// router re-renders this same component on popstate without remounting it,

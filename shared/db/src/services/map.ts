@@ -7,8 +7,8 @@
 
 import { createHash } from 'node:crypto';
 import { formatItemKey } from '@specboard/core/identifiers';
-import { query } from '../index.ts';
-import type { MapBlockerLink, MapItemRow, MapItemStatus, MapItemSubStatus, MapItemType, MapRead } from '@specboard/core/map-read';
+import { query, transaction } from '../index.ts';
+import type { MapBlockerLink, MapItemRow, MapItemStatus, MapItemSubStatus, MapItemType, MapRead, MapReadMark } from '@specboard/core/map-read';
 
 /**
  * Rows one Map read returns before finished families fold, the same ceiling as a list
@@ -98,21 +98,33 @@ interface MapQueryRow {
  * hashes the whole table, every project's log, so the newest entry is instead one probe
  * of idx_item_notes_item_created per item, and only for items the anchor still needs
  * (not one done since completions were stamped).
+ *
+ * A delta ($2, the cursor) scopes every aggregate to the items whose updated_at moved
+ * since, plus the items whose worker episodes wrote or ended since, since a worker write
+ * doesn't touch the item row. Their anchors, links, and episodes come back whole, the same
+ * as in a full read, so the client recomputes what they move (a parent's subtree anchor
+ * included) from the rows alone.
  */
-const MAP_SQL = `
-	WITH project_items AS (
-		SELECT id FROM items WHERE project_id = $1
+function mapSql(delta: boolean): string {
+	const scoped = delta ? 'AND item_id IN (SELECT id FROM scope)' : '';
+	return `
+	WITH scope AS (
+		${delta
+			? `SELECT id FROM items WHERE project_id = $1 AND updated_at >= $2
+		UNION
+		SELECT item_id FROM item_workers WHERE project_id = $1 AND (last_seen_at >= $2 OR ended_at >= $2)`
+			: 'SELECT id FROM items WHERE project_id = $1'}
 	),
 	transition_at AS (
 		SELECT item_id, MAX(created_at) AS at
 		FROM item_transitions
-		WHERE project_id = $1
+		WHERE project_id = $1 ${scoped}
 		GROUP BY item_id
 	),
 	blocker_rows AS MATERIALIZED (
 		SELECT b.item_id, b.blocker_item_id, b.blocker_text, b.created_at, b.cleared_at, b.cleared_by
 		FROM item_blockers b
-		JOIN project_items p ON p.id = b.item_id
+		JOIN scope p ON p.id = b.item_id
 	),
 	blocker_at AS (
 		SELECT item_id,
@@ -143,7 +155,7 @@ const MAP_SQL = `
 	worker_rows AS MATERIALIZED (
 		SELECT id, item_id, actor, branch, started_at, last_seen_at, ended_at
 		FROM item_workers
-		WHERE project_id = $1
+		WHERE project_id = $1 ${scoped}
 	),
 	worker_at AS (
 		SELECT item_id, MAX(last_seen_at) AS at
@@ -172,7 +184,7 @@ const MAP_SQL = `
 	spec_counts AS (
 		SELECT item_id, COUNT(*) AS spec_count
 		FROM epic_specs
-		WHERE project_id = $1
+		WHERE project_id = $1 ${scoped}
 		GROUP BY item_id
 	)
 	SELECT
@@ -212,8 +224,38 @@ const MAP_SQL = `
 	LEFT JOIN link_lists ll ON ll.item_id = i.id
 	LEFT JOIN open_workers ow ON ow.item_id = i.id
 	LEFT JOIN spec_counts s ON s.item_id = i.id
-	WHERE i.project_id = $1
+	WHERE i.project_id = $1 ${delta ? 'AND i.id IN (SELECT id FROM scope)' : ''}
 	ORDER BY i.number
+`;
+}
+
+const FULL_SQL = mapSql(false);
+const DELTA_SQL = mapSql(true);
+
+/**
+ * Where the next delta starts, taken before the read's snapshot: the database's clock a
+ * second back, or the start of the oldest client transaction still open, whichever is
+ * earlier. updated_at, last_seen_at, and ended_at are NOW(), the start of the transaction
+ * that wrote them, and a transaction the read can't see either is open now or begins after
+ * this, so its stamps are at or past the cursor even when it commits after the read. The
+ * second covers a transaction that has begun but not yet published its start. The app's
+ * services share one database role, so their transactions are all visible here; one held
+ * open long only holds the cursor back, which costs a bigger delta, never a missed write.
+ */
+const CURSOR_SQL = `
+	SELECT FLOOR(EXTRACT(EPOCH FROM LEAST(
+		clock_timestamp() - interval '1 second',
+		(SELECT MIN(xact_start) FROM pg_stat_activity
+			WHERE datname = current_database() AND backend_type = 'client backend' AND pid <> pg_backend_pid())
+	)) * 1000)::bigint AS cursor
+`;
+
+/** What an updated_at delta can't see, in the read's own snapshot: deletions (by the count) and spec links. */
+const SIGNALS_SQL = `
+	SELECT
+		(SELECT COUNT(*) FROM items WHERE project_id = $1)::int AS total,
+		(SELECT COUNT(*) || ':' || COALESCE(FLOOR(EXTRACT(EPOCH FROM MAX(created_at)) * 1000)::bigint::text, '')
+			FROM epic_specs WHERE project_id = $1) AS specs
 `;
 
 const iso = (date: Date): string => date.toISOString();
@@ -252,10 +294,33 @@ function toRow(row: MapQueryRow): MapItemRow {
 	};
 }
 
-/** The whole project for the Map. No user, client, or session id leaves this function. */
-export async function getProjectMap(projectId: string, cap = MAP_READ_CAP): Promise<MapRead> {
-	const result = await query<MapQueryRow>(MAP_SQL, [projectId]);
-	return summarizeFinishedFamilies(result.rows.map(toRow), cap);
+interface SignalsRow {
+	total: number;
+	specs: string;
+}
+
+/**
+ * The project for the Map: the whole of it, or with `since` (a cursor from an earlier
+ * read) only what changed after it. Past the read cap a delta that found anything answers
+ * with the whole read instead, since its rows can't merge into folded families; an idle
+ * poll stays empty. No user, client, or session id leaves this function.
+ */
+export async function getProjectMap(projectId: string, since: number | null = null, cap = MAP_READ_CAP): Promise<MapRead> {
+	const [taken] = (await query<{ cursor: string }>(CURSOR_SQL)).rows;
+	const cursor = Number(taken!.cursor);
+	// One snapshot for the signals and the rows, so the count describes exactly the rows read.
+	const { signals, rows, delta } = await transaction(async (client) => {
+		await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+		const [found] = (await client.query<SignalsRow>(SIGNALS_SQL, [projectId])).rows;
+		if (since !== null) {
+			const changed = (await client.query<MapQueryRow>(DELTA_SQL, [projectId, new Date(since)])).rows;
+			if (found!.total <= cap || changed.length === 0) return { signals: found!, rows: changed, delta: true };
+		}
+		return { signals: found!, rows: (await client.query<MapQueryRow>(FULL_SQL, [projectId])).rows, delta: false };
+	});
+	const mark: MapReadMark = { cursor, total: signals.total, specs: signals.specs };
+	if (delta) return { items: rows.map(toRow), summarized: false, delta: true, ...mark };
+	return { ...summarizeFinishedFamilies(rows.map(toRow), cap), delta: false, ...mark };
 }
 
 interface FamilyNode {
@@ -280,7 +345,7 @@ interface FamilyNode {
  * from the children), it carries the family's blocker links, and links or
  * discovered-from keys elsewhere that named a folded item name the row instead.
  */
-export function summarizeFinishedFamilies(rows: MapItemRow[], cap: number): MapRead {
+export function summarizeFinishedFamilies(rows: MapItemRow[], cap: number): Pick<MapRead, 'items' | 'summarized'> {
 	if (rows.length <= cap) return { items: rows, summarized: false };
 
 	const nodes = new Map<string, FamilyNode>();

@@ -7,6 +7,7 @@ import { agentRadius, markExtra, screenRadius } from './dot-boxes';
 import { DOT_LABEL_PAD, type DotLabel, type LabelFont } from './dot-labels';
 import type { DrawAgent, DrawDot, DrawLink } from './draw-list';
 import { FADE_DARK, FADE_LIGHT, FOCUS_GROW, darkness, dotStrength, growth, linkStrength, regionStrength, type FocusFrame } from './focus-fade';
+import type { DotEffect, RegionFade } from './motion';
 import type { DragOffset } from './overlay';
 import type { MapPhase } from './layout/types';
 import type { ZoomLevel } from './zoom-levels';
@@ -43,6 +44,10 @@ export interface MapFrame {
 	outlined: ReadonlySet<string>;
 	/** A dot being dragged, drawn that far from its place, on top. */
 	drag: DragOffset | null;
+	/** What a refresh's transition does to its dots and agents this frame, by key; null at rest. */
+	effects: ReadonlyMap<string, DotEffect> | null;
+	/** Outlines a refresh replaced, crossfading into the new ones; null at rest. */
+	fading: RegionFade | null;
 	transform: Transform;
 	/** The zoom level, which sizes the glyphs: at the near level they hold one size whatever the scale. */
 	level: ZoomLevel;
@@ -75,6 +80,8 @@ interface MapTheme {
 	muted: string;
 	text: string;
 	needsPerson: string;
+	/** The board's highlight on a changed item, which reduced motion shows in place of the motion. */
+	highlight: string;
 	/** Live agent work: the amber of In progress, for sessions' lines and the glow behind them and their items. */
 	agent: string;
 	agentRgb: Rgb;
@@ -134,6 +141,7 @@ function readTheme(element: Element, normalize: (color: string) => string): MapT
 		muted: formatColor(mutedRgb),
 		text: formatColor(textRgb),
 		needsPerson: formatColor(rgbOf(NEEDS_PERSON_TOKEN)),
+		highlight: formatColor(rgbOf('--color-primary')),
 		agent: status['in_progress'],
 		agentRgb: statusRgb['in_progress'],
 		machine: formatColor(mix(textRgb, surfaceRgb, 0.82)),
@@ -184,6 +192,13 @@ const DISCOVERED_DASH = [2, 3];
 const GLOW_REACH = 11;
 const GLOW_STRENGTH = 0.42;
 const QUIET_DASH = [4, 3];
+/** An agent's write: one ring that spreads this far past the dot, in px, this wide and this strong at the start. */
+const PING_REACH = 22;
+const PING_WIDTH = 2;
+const PING_ALPHA = 0.85;
+/** Reduced motion's highlight: a halo of the primary color this far past the dot's rings, at the board's 30%. */
+const HIGHLIGHT_REACH = 4;
+const HIGHLIGHT_ALPHA = 0.3;
 /** A laptop, in a 20-unit box: the screen, and the base under it. */
 const LAPTOP = 'M4 5.5 H16 V13 H4 Z M2 15.5 H18';
 const LAPTOP_BOX = 20;
@@ -389,14 +404,41 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		}
 	};
 
-	/** `lift` is how far the dot has grown into the focused one, 0 to 1; `offset` is how far a drag has pulled it, in layout units. */
-	const drawDot = (dot: DrawDot, transform: Transform, level: ZoomLevel, alpha: number, lift = 0, offset: { dx: number; dy: number } | null = null): void => {
-		const r = screenRadius(dot, transform.k, level) * (1 + FOCUS_GROW * lift);
+	/** The status a glyph had sweeping out as the one it has now sweeps in clockwise from twelve, the way a ring fills. */
+	const drawSweep = (x: number, y: number, r: number, dot: DrawDot, from: MapItemStatus, progress: number): void => {
+		drawGlyph(x, y, r, from, { weight: dot.weight, cue: dot.cue });
+		ctx.save();
+		ctx.beginPath();
+		ctx.moveTo(x, y);
+		ctx.arc(x, y, r * 1.5, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * progress);
+		ctx.closePath();
+		ctx.clip();
+		disc(x, y, r + BACKING, theme.surface);
+		drawGlyph(x, y, r, dot.status, { weight: dot.weight, cue: dot.cue });
+		ctx.restore();
+	};
+
+	/** One amber ring spreading out of a dot an agent just wrote to, fading as it goes. */
+	const drawPing = (x: number, y: number, r: number, progress: number, alpha: number): void => {
+		ctx.globalAlpha = alpha * PING_ALPHA * (1 - progress);
+		ring(x, y, r + INK_GAP + PING_REACH * progress, theme.agent, PING_WIDTH);
+		ctx.globalAlpha = 1;
+	};
+
+	/** `lift` is how far the dot has grown into the focused one, 0 to 1; `offset` is how far a drag has pulled it, in layout units; `effect` is what a refresh's transition does to it this frame. */
+	const drawDot = (dot: DrawDot, transform: Transform, level: ZoomLevel, alpha: number, lift = 0, offset: { dx: number; dy: number } | null = null, effect?: DotEffect): void => {
+		const r = screenRadius(dot, transform.k, level) * (1 + FOCUS_GROW * lift) * (effect?.scale ?? 1);
 		const x = transform.x + transform.k * (dot.x + (offset?.dx ?? 0));
 		const y = transform.y + transform.k * (dot.y + (offset?.dy ?? 0));
 		const ringed = dot.reason !== null;
 		const focusAt = r + (ringed ? INK_GAP + INK_WIDTH + FOCUS_GAP : FOCUS_GAP) + FOCUS_WIDTH / 2;
-		if (offscreen(x, y, focusAt + FOCUS_WIDTH + markExtra(dot, level))) return;
+		if (offscreen(x, y, focusAt + FOCUS_WIDTH + markExtra(dot, level) + (effect && effect.ping !== null ? PING_REACH : 0))) return;
+		if (effect) alpha *= effect.alpha;
+		if (effect?.highlight) {
+			ctx.globalAlpha = alpha * HIGHLIGHT_ALPHA;
+			disc(x, y, focusAt + HIGHLIGHT_REACH, theme.highlight);
+			ctx.globalAlpha = 1;
+		}
 		if (dot.live) drawGlow(x, y, r, alpha);
 		ctx.globalAlpha = alpha;
 		disc(x, y, lift > 0 ? focusAt + FOCUS_WIDTH : r + (ringed ? INK_GAP + INK_WIDTH + 0.5 : BACKING), theme.surface);
@@ -410,7 +452,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		// any other folded family keeps its own glyph and carries its rollup under it.
 		const finished = dot.folded !== null && dot.status === 'done' && dot.folded.rollup.done === dot.folded.count - 1;
 		const count = finished && r >= COUNT_MIN_RADIUS ? dot.folded!.count : null;
-		drawGlyph(x, y, r, dot.status, { weight: dot.weight, cue: dot.cue, count });
+		if (effect?.sweep) drawSweep(x, y, r, dot, effect.sweep.from, effect.sweep.progress);
+		else drawGlyph(x, y, r, dot.status, { weight: dot.weight, cue: dot.cue, count });
 		if (dot.pr) drawPrMark(x, y, r);
 		if (dot.upNext !== null) drawUpNext(x, y, r, dot.upNext);
 		else if (dot.reason !== null && level !== 'far') drawReasonTag(x, y, r, REASON_TAGS[dot.reason]);
@@ -418,6 +461,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			const w = Math.max(16, 1.6 * r);
 			drawRollupBar(x - w / 2, y + r + 4, w, 3, rollupSegments(dot.folded.rollup, x - w / 2, w));
 		}
+		if (effect && effect.ping !== null) drawPing(x, y, r, effect.ping, alpha);
 		ctx.globalAlpha = 1;
 	};
 
@@ -436,8 +480,9 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 	};
 
 	/** A computer: a laptop in a rounded square. A session: its number in a disc, hollow while quiet. `lift` is how far it has grown into the focused mark. */
-	const drawAgent = (agent: DrawAgent, transform: Transform, level: ZoomLevel, alpha: number, lift: number): void => {
-		const r = agentRadius(agent, transform.k, level) * (1 + FOCUS_GROW * lift);
+	const drawAgent = (agent: DrawAgent, transform: Transform, level: ZoomLevel, alpha: number, lift: number, effect?: DotEffect): void => {
+		const r = agentRadius(agent, transform.k, level) * (1 + FOCUS_GROW * lift) * (effect?.scale ?? 1);
+		if (effect) alpha *= effect.alpha;
 		const x = transform.x + transform.k * agent.x;
 		const y = transform.y + transform.k * agent.y;
 		const focusAt = r + FOCUS_GAP + FOCUS_WIDTH / 2;
@@ -491,9 +536,25 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.globalAlpha = 1;
 	};
 
-	const drawRegions = (regions: readonly RegionOutline[], transform: Transform, focus: FocusFrame, outlined: ReadonlySet<string>): void => {
+	/**
+	 * Outer regions first, so nested ones draw over them. While a refresh crossfades, the
+	 * outlines it replaced go out as the new ones come in, level by level, so a nested
+	 * region's old outline never ends up under its parent's new one.
+	 */
+	const drawRegions = (regions: readonly RegionOutline[], transform: Transform, focus: FocusFrame, outlined: ReadonlySet<string>, fading: RegionFade | null): void => {
 		const { k } = transform;
-		for (const outline of regions) {
+		const layers: Array<{ outline: RegionOutline; share: number; going: boolean }> = regions.map((outline) => ({
+			outline,
+			share: fading?.incoming.has(outline.key) ? fading.progress : 1,
+			going: false,
+		}));
+		if (fading) {
+			for (const outline of fading.outgoing) layers.push({ outline, share: 1 - fading.progress, going: true });
+			// Stable, so at one depth what is going draws under what is coming.
+			layers.sort((a, b) => a.outline.depth - b.outline.depth || Number(b.going) - Number(a.going));
+		}
+		for (const { outline, share } of layers) {
+			if (share <= 0) continue;
 			const { bounds } = outline;
 			if (transform.x + k * bounds.maxX < 0 || transform.x + k * bounds.minX > width) continue;
 			if (transform.y + k * bounds.maxY < 0 || transform.y + k * bounds.minY > plotHeight()) continue;
@@ -502,7 +563,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 				path = outlinePath(outline);
 				outlines.set(outline, path);
 			}
-			const strength = regionStrength(focus, outline.key, theme.fade);
+			const strength = regionStrength(focus, outline.key, theme.fade) * share;
 			const dark = outlined.has(outline.key) ? 1 : darkness(focus, outline.key);
 			ctx.save();
 			ctx.setTransform(ratio * k, 0, 0, ratio * k, ratio * transform.x, ratio * transform.y);
@@ -722,7 +783,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			}
 			return measured;
 		},
-		draw({ dots, regions, links, allLinks, labels, dotLabels, agents, blocks, controls, cards, focus, outlined, drag, transform, level, ruler }) {
+		draw({ dots, regions, links, allLinks, labels, dotLabels, agents, blocks, controls, cards, focus, outlined, drag, effects, fading, transform, level, ruler }) {
 			if (width === 0 || height === 0) return;
 			if ((window.devicePixelRatio || 1) !== ratio) fit();
 			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -732,7 +793,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			ctx.beginPath();
 			ctx.rect(0, 0, width, plotHeight());
 			ctx.clip();
-			drawRegions(regions, transform, focus, outlined);
+			drawRegions(regions, transform, focus, outlined, fading);
 			if (ruler) drawEdgeLine(ruler);
 			drawLinks(links, allLinks, transform, focus);
 			let pulled: DrawDot | null = null;
@@ -742,11 +803,11 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 					continue;
 				}
 				const alpha = cards?.keys.has(dot.key) ? 1 - cards.alpha : 1;
-				if (alpha > 0) drawDot(dot, transform, level, alpha * dotStrength(focus, dot.key, theme.fade), growth(focus, dot.key));
+				if (alpha > 0) drawDot(dot, transform, level, alpha * dotStrength(focus, dot.key, theme.fade), growth(focus, dot.key), null, effects?.get(dot.key));
 			}
 			// On top and at full strength: it is what the person has hold of.
-			if (pulled) drawDot(pulled, transform, level, cards?.keys.has(pulled.key) ? 1 - cards.alpha : 1, 1, drag);
-			for (const agent of agents) drawAgent(agent, transform, level, dotStrength(focus, agent.key, theme.fade), growth(focus, agent.key));
+			if (pulled) drawDot(pulled, transform, level, cards?.keys.has(pulled.key) ? 1 - cards.alpha : 1, 1, drag, effects?.get(pulled.key));
+			for (const agent of agents) drawAgent(agent, transform, level, dotStrength(focus, agent.key, theme.fade), growth(focus, agent.key), effects?.get(agent.key));
 			drawLabels(labels, focus);
 			drawDotLabels(dotLabels, focus, drag?.key ?? null);
 			drawBlocks(blocks, focus);
