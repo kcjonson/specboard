@@ -148,6 +148,7 @@ export function MapQuickCard({ store, activity, bottom }: MapQuickCardProps): JS
 					<Badge class={`size-sm ${styles.chip}`}>{content.statusLabel}</Badge>
 					{content.subStatus && <Badge class={`size-sm ${styles.chip}`}>{content.subStatus}</Badge>}
 				</div>
+				{content.changes.map((line) => <p key={line} class={`${styles.line} ${styles.change}`} title={line}>{line}</p>)}
 				{content.upNext !== null && <p class={styles.line}>{`Up next: number ${content.upNext}`}</p>}
 				{content.sessions.map((session) => (
 					<div key={session.title} class={styles.session}>

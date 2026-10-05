@@ -2,7 +2,7 @@ import type { MapItemStatus } from '@specboard/core/map-read';
 import { cubicBezier } from './camera';
 import type { DrawAgent, DrawDot, DrawLink, DrawList } from './draw-list';
 import type { MapLayout, MapPoint } from './layout/types';
-import { changedKeys, type MapChanges } from './map-changes';
+import { changedKeys, type MapUpdate } from './map-update';
 import type { RegionOutline } from './regions/outline';
 import { HIGHLIGHT_DURATION } from '../utils/highlight';
 
@@ -120,7 +120,7 @@ export interface TransitionInput {
 	layout: MapLayout;
 	/** The new outlines at the step being drawn. */
 	outlines: readonly RegionOutline[];
-	changes: MapChanges;
+	changes: MapUpdate;
 	/** The node under the pointer, which doesn't move out from under it. */
 	held: string | null;
 	/** The focused or selected node, which the camera follows so it stays put on screen; ignored while something is held. */

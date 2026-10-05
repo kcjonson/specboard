@@ -105,6 +105,12 @@
 	color: var(--color-text);
 }
 
+/* What changed since the person's last visit, in ink: the changes view's card leads with it after the chips. */
+.line.change {
+	color: var(--color-text);
+	font-weight: var(--font-medium);
+}
+
 .progress {
 	display: flex;
 	align-items: center;

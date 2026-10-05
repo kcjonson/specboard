@@ -218,6 +218,7 @@ export class FetchClient {
 			referrerPolicy: processedConfig.referrerPolicy,
 			integrity: processedConfig.integrity,
 			signal: processedConfig.signal,
+			keepalive: processedConfig.keepalive,
 		};
 
 		// Serialize body

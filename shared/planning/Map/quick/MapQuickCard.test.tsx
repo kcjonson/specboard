@@ -36,7 +36,7 @@ const quickOf = (key: string, x: number, y: number, side: 'right' | 'left', prog
 	y,
 	side,
 	progress,
-	marks: { reasons: [], upNext: null, sessions },
+	marks: { reasons: [], upNext: null, sessions, changes: [] },
 	agent: null,
 });
 
@@ -68,7 +68,7 @@ describe('MapQuickCard', () => {
 		expect(text).toContain('Held by 1 text blocker');
 		expect(text).toContain('3 of 6 done');
 		expect(card.style.transform).toBe('translate(40px, 80px)');
-		expect(card.style.height).toBe(`${quickHeight(quickContent(item, rows, progress, { reasons: [], upNext: null, sessions }))}px`);
+		expect(card.style.height).toBe(`${quickHeight(quickContent(item, rows, progress, { reasons: [], upNext: null, sessions, changes: [] }))}px`);
 	});
 
 	it('fetches the latest activity entry when it opens, shows a quiet loading state, and fills it in without blocking the card', async () => {
@@ -103,5 +103,19 @@ describe('MapQuickCard', () => {
 		expect(container.querySelector('article')).not.toBeNull();
 		act(() => store.publish(frame({ rows, quick: null })));
 		expect(container.querySelector('article')).toBeNull();
+	});
+
+	it('says what changed and when, ahead of the latest activity entry', () => {
+		const { rows, item } = scene();
+		const store = new OverlayStore();
+		const open = quickOf(item.key, 0, 0, 'right', null);
+		const quick = { ...open, marks: { ...open.marks, changes: ['Finished Oct 3, 3:12 PM', 'PR opened Oct 2, 1:00 PM'] } };
+		const { container } = render(<MapQuickCard store={store} activity={new ActivityCache(() => new Promise(() => {}))} bottom={32} />);
+		act(() => store.publish(frame({ rows, quick })));
+
+		const text = container.textContent ?? '';
+		expect(text).toContain('Finished Oct 3, 3:12 PM');
+		expect(text).toContain('PR opened Oct 2, 1:00 PM');
+		expect(text.indexOf('Finished Oct 3')).toBeLessThan(text.indexOf('Latest activity'));
 	});
 });

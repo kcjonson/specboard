@@ -5,7 +5,7 @@ import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { createTimeScale, edgeOf, timeToX } from './layout/time-scale';
 import { TIME_CONSTANT } from './layout/constants';
 import type { MapLayout, MapLayoutPrevious } from './layout/types';
-import { NO_CHANGES, diffRows, hasChanges, type MapChanges } from './map-changes';
+import { NO_UPDATE, diffRows, changesAnything, type MapUpdate } from './map-update';
 import { gridStep } from './regions/region-outlines';
 
 export type MapLoadState = 'loading' | 'ready' | 'error';
@@ -65,7 +65,7 @@ export class MapDataModel implements Observable {
 	/** Epoch ms the layout was computed for. */
 	now = 0;
 	/** What the latest pass changed in the data, which the Map moves to; null after a load or a collapse alone, which cut. A pass for time drift alone has an empty set, and glides. */
-	changes: MapChanges | null = null;
+	changes: MapUpdate | null = null;
 	/** When a read last landed, on the client's clock: the summary strip's freshness. */
 	loadedAt: number | null = null;
 	/** The last refresh failed; the Map holds what it has and the poll tries again. */
@@ -243,7 +243,7 @@ export class MapDataModel implements Observable {
 		const incoming = this.incoming;
 		const read = incoming ?? this.read!;
 		const rows = incoming ? new Map(read.items.map((row) => [row.key, row])) : this.rows;
-		const changes = incoming ? diffRows(this.rows, rows) : NO_CHANGES;
+		const changes = incoming ? diffRows(this.rows, rows) : NO_UPDATE;
 		const toggled = [...this.unsettled];
 		const generation = ++this.generation;
 		this.passStarted = this.clock();
@@ -251,7 +251,7 @@ export class MapDataModel implements Observable {
 		const now = incoming ? this.clock() : this.now;
 		const moving = [...changes.added, ...changes.moved];
 		const relayout = toggled.length > 0 || moving.length > 0 || changes.removed.size > 0 || this.drifted(rows, now);
-		if (!relayout && !hasChanges(changes)) {
+		if (!relayout && !changesAnything(changes)) {
 			// An idle poll: only the cursor moved. The Map is already showing all of it.
 			this.read = read;
 			if (this.incoming === incoming) this.incoming = null;

@@ -1,5 +1,5 @@
 /**
- * Project-scoped planning routes (items, the Map, specs, blockers, checklist, activity
+ * Project-scoped planning routes (items, the Map and its last-visit baseline, specs, blockers, checklist, activity
  * log), every one behind requireProjectAccess. They live together, apart from the rest
  * of the route table, so a test can mount exactly what production mounts and check
  * that every planning read answers a stranger the same way.
@@ -26,7 +26,7 @@ import {
 	handleBlockItem,
 	handleUnblockItem,
 } from './handlers/items.ts';
-import { handleGetMap } from './handlers/map.ts';
+import { handleGetMap, handleGetMapChanges, handleMarkMapSeen } from './handlers/map.ts';
 import {
 	handleListSpecs,
 	handleAddSpec,
@@ -122,6 +122,11 @@ export function registerPlanningRoutes(app: Hono<{ Variables: AppVariables }>, {
 	// The Map's whole-project read. The ALB doesn't compress, and the payload budget
 	// (docs/specs/ai-development-overview.md, Data) is a gzipped one.
 	app.get('/api/projects/:owner/:project/map', compress(), requireProjectAccess(handleGetMap));
+
+	// Since your last visit: the person's baseline with what changed since it, and the move
+	// forward of the baseline. A request of its own, so the Map read is the same for everyone.
+	app.get('/api/projects/:owner/:project/map/changes', compress(), requireProjectAccess(handleGetMapChanges));
+	app.post('/api/projects/:owner/:project/map/seen', requireProjectAccess(handleMarkMapSeen));
 
 	// Project-scoped spec link routes
 	app.get('/api/projects/:owner/:project/items/:itemKey/specs', requireProjectAccess(handleListSpecs));

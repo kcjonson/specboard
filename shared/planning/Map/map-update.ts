@@ -6,7 +6,7 @@ import { glyphStatus } from '@specboard/ui';
  * model. The transport behind it (a poll today, a push once SPE-203 lands) is the model's
  * business; the Map only ever sees these.
  */
-export interface MapChanges {
+export interface MapUpdate {
 	/** Items the Map didn't have. */
 	added: ReadonlySet<string>;
 	/** Items gone from the project. */
@@ -19,14 +19,14 @@ export interface MapChanges {
 	wrote: ReadonlySet<string>;
 }
 
-export const NO_CHANGES: MapChanges = { added: new Set(), removed: new Set(), restyled: new Set(), moved: new Set(), wrote: new Set() };
+export const NO_UPDATE: MapUpdate = { added: new Set(), removed: new Set(), restyled: new Set(), moved: new Set(), wrote: new Set() };
 
 /** Any change at all; an idle poll has none. */
-export const hasChanges = (changes: MapChanges): boolean =>
+export const changesAnything = (changes: MapUpdate): boolean =>
 	changes.added.size + changes.removed.size + changes.restyled.size + changes.moved.size + changes.wrote.size > 0;
 
 /** The items to flash under reduced motion: everything that changed but a bare write, whose glow already shows it. */
-export const changedKeys = (changes: MapChanges): Set<string> => new Set([...changes.added, ...changes.restyled, ...changes.moved]);
+export const changedKeys = (changes: MapUpdate): Set<string> => new Set([...changes.added, ...changes.restyled, ...changes.moved]);
 
 const sameList = <T>(a: readonly T[], b: readonly T[], same: (x: T, y: T) => boolean): boolean =>
 	a.length === b.length && a.every((x, i) => same(x, b[i]!));
@@ -61,7 +61,7 @@ function wroteTo(before: MapItemRow, after: MapItemRow): boolean {
  * came and went in between, and rows a delta repeated unchanged (its cursor overlaps the
  * read before), are no change at all.
  */
-export function diffRows(before: ReadonlyMap<string, MapItemRow>, after: ReadonlyMap<string, MapItemRow>): MapChanges {
+export function diffRows(before: ReadonlyMap<string, MapItemRow>, after: ReadonlyMap<string, MapItemRow>): MapUpdate {
 	const added = new Set<string>();
 	const removed = new Set<string>();
 	const restyled = new Set<string>();

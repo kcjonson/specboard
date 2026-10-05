@@ -21,6 +21,8 @@ export interface SteppingBarProps {
 	closeLabel: string;
 	/** A button for the bar's empty state, such as retrying a failed search. */
 	action?: { label: string; onClick(): void };
+	/** A button that is always there, ahead of the close one: the changes view's Mark all seen. */
+	accept?: { label: string; onClick(): void };
 }
 
 const typing = (target: EventTarget | null): boolean => {
@@ -34,7 +36,7 @@ const typing = (target: EventTarget | null): boolean => {
  * the arrows do, wrapping at the ends. It knows nothing of what it steps through, so search
  * matches and the changes view share it.
  */
-export function SteppingBar({ title, keys, unit = ['result', 'results'], empty, busy = false, onStep, onClose, closeLabel, action }: SteppingBarProps): JSX.Element {
+export function SteppingBar({ title, keys, unit = ['result', 'results'], empty, busy = false, onStep, onClose, closeLabel, action, accept }: SteppingBarProps): JSX.Element {
 	// The item stepped to, by key, so a list that changes under the bar (a poll, a filter) keeps its place if the item is still in it.
 	const [current, setCurrent] = useState<string | null>(null);
 	const at = current === null ? -1 : keys.indexOf(current);
@@ -76,6 +78,7 @@ export function SteppingBar({ title, keys, unit = ['result', 'results'], empty, 
 				</button>
 			)}
 			{action && keys.length === 0 && !busy && <button type="button" class={styles.button} onClick={action.onClick}>{action.label}</button>}
+			{accept && <button type="button" class={`${styles.button} ${styles.primary}`} onClick={accept.onClick}>{accept.label}</button>}
 			<button type="button" class={styles.button} onClick={onClose}>{closeLabel}</button>
 		</div>
 	);
