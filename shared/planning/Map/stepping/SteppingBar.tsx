@@ -16,6 +16,8 @@ export interface SteppingBarProps {
 	busy?: boolean;
 	/** A step lands on this item: the caller focuses it and pans to it. */
 	onStep(key: string): void;
+	/** Holds a function that steps, while the bar is open: the Map's `]` and `[` call it, since the Map owns the keys. */
+	stepRef?: { current: ((delta: 1 | -1) => void) | null };
 	/** Ends the search or the view. */
 	onClose(): void;
 	closeLabel: string;
@@ -25,18 +27,14 @@ export interface SteppingBarProps {
 	accept?: { label: string; onClick(): void };
 }
 
-const typing = (target: EventTarget | null): boolean => {
-	const el = target as HTMLElement | null;
-	return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
-};
-
 /**
  * The bar on the canvas that steps through a list of items (spec, Navigation and
  * interaction): a title, previous and next, and where it is in the list. `]` and `[` do what
- * the arrows do, wrapping at the ends. It knows nothing of what it steps through, so search
- * matches and the changes view share it.
+ * the arrows do, wrapping at the ends; the Map, which owns the keys, presses them through
+ * `stepRef`. It knows nothing of what it steps through, so search matches and the changes
+ * view share it.
  */
-export function SteppingBar({ title, keys, unit = ['result', 'results'], empty, busy = false, onStep, onClose, closeLabel, action, accept }: SteppingBarProps): JSX.Element {
+export function SteppingBar({ title, keys, unit = ['result', 'results'], empty, busy = false, onStep, stepRef, onClose, closeLabel, action, accept }: SteppingBarProps): JSX.Element {
 	// The item stepped to, by key, so a list that changes under the bar (a poll, a filter) keeps its place if the item is still in it.
 	const [current, setCurrent] = useState<string | null>(null);
 	const at = current === null ? -1 : keys.indexOf(current);
@@ -53,15 +51,12 @@ export function SteppingBar({ title, keys, unit = ['result', 'results'], empty, 
 	};
 
 	useEffect(() => {
-		const onKeyDown = (event: KeyboardEvent): void => {
-			if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
-			if (event.key !== ']' && event.key !== '[') return;
-			event.preventDefault();
-			step(event.key === ']' ? 1 : -1);
+		if (!stepRef) return;
+		stepRef.current = step;
+		return () => {
+			if (stepRef.current === step) stepRef.current = null;
 		};
-		document.addEventListener('keydown', onKeyDown);
-		return () => document.removeEventListener('keydown', onKeyDown);
-	}, []);
+	}, [stepRef]);
 
 	return (
 		<div class={styles.bar} role="region" aria-label={title}>

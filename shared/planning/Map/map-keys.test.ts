@@ -1,41 +1,108 @@
 /**
- * The Map's zoom keys.
+ * The Map's keys.
  *
  * @vitest-environment jsdom
  */
 
 import { describe, expect, it } from 'vitest';
-import { zoomKeyOf } from './map-keys';
+import { mapKeyOf, type KeyEventLike, type MapKey } from './map-keys';
 
-const press = (init: Partial<Parameters<typeof zoomKeyOf>[0]> = {}): ReturnType<typeof zoomKeyOf> =>
-	zoomKeyOf({ code: 'KeyZ', altKey: false, metaKey: false, ctrlKey: false, target: document.body, ...init });
+const press = (key: string, init: Partial<KeyEventLike> = {}): MapKey | null =>
+	mapKeyOf({ key, code: '', altKey: false, metaKey: false, ctrlKey: false, shiftKey: false, target: document.body, ...init });
 
-describe('zoom keys', () => {
-	it('zoom in on Z', () => {
-		expect(press()).toBe('in');
+/** Z is read from `code`: Option+Z types an omega on a Mac. */
+const pressZ = (init: Partial<KeyEventLike> = {}): MapKey | null => press('z', { code: 'KeyZ', ...init });
+
+describe('the Map\'s keys', () => {
+	it('moves focus with the arrows', () => {
+		expect(press('ArrowLeft')).toEqual({ kind: 'move', direction: 'left' });
+		expect(press('ArrowRight')).toEqual({ kind: 'move', direction: 'right' });
+		expect(press('ArrowUp')).toEqual({ kind: 'move', direction: 'up' });
+		expect(press('ArrowDown')).toEqual({ kind: 'move', direction: 'down' });
 	});
 
-	it('zoom out on Option+Z, which types an omega on a Mac', () => {
-		expect(press({ altKey: true })).toBe('out');
+	it('uses Shift+Left and Shift+Right for the tree\'s collapse and expand, which plain arrows cannot be', () => {
+		expect(press('ArrowLeft', { shiftKey: true })).toEqual({ kind: 'collapse' });
+		expect(press('ArrowRight', { shiftKey: true })).toEqual({ kind: 'expand' });
+		expect(press('ArrowUp', { shiftKey: true })).toBeNull();
+		expect(press('ArrowDown', { shiftKey: true })).toBeNull();
 	});
 
-	it('leave Cmd+Z and Ctrl+Z alone, with or without Option', () => {
-		expect(press({ metaKey: true })).toBeNull();
-		expect(press({ ctrlKey: true })).toBeNull();
-		expect(press({ metaKey: true, altKey: true })).toBeNull();
+	it('opens on Enter', () => {
+		expect(press('Enter')).toEqual({ kind: 'open' });
+		expect(press('Enter', { shiftKey: true })).toBeNull();
 	});
 
-	it('ignore every other key', () => {
-		expect(press({ code: 'KeyX' })).toBeNull();
-		expect(press({ code: 'Equal' })).toBeNull();
+	it('zooms around the focused dot on + and -, with or without Shift, and on = for the unshifted +', () => {
+		expect(press('+', { shiftKey: true })).toEqual({ kind: 'zoom-focus', direction: 'in' });
+		expect(press('+')).toEqual({ kind: 'zoom-focus', direction: 'in' });
+		expect(press('=')).toEqual({ kind: 'zoom-focus', direction: 'in' });
+		expect(press('-')).toEqual({ kind: 'zoom-focus', direction: 'out' });
 	});
 
-	it('stay out of the way while the person is typing', () => {
-		for (const tag of ['input', 'textarea', 'select']) {
-			expect(press({ target: document.createElement(tag) })).toBeNull();
+	it('zooms around the pointer on Z, and out on Option+Z', () => {
+		expect(pressZ()).toEqual({ kind: 'zoom-pointer', direction: 'in' });
+		expect(pressZ({ altKey: true, key: 'Ω' })).toEqual({ kind: 'zoom-pointer', direction: 'out' });
+	});
+
+	it('fits all on 0, jumps to now on T, and fits the focused family on F, in either case', () => {
+		expect(press('0')).toEqual({ kind: 'fit-all' });
+		expect(press('t')).toEqual({ kind: 'now' });
+		expect(press('T')).toEqual({ kind: 'now' });
+		expect(press('f')).toEqual({ kind: 'fit-focus' });
+		expect(press('F')).toEqual({ kind: 'fit-focus' });
+	});
+
+	it('steps through what needs a person on P and live sessions on L, backwards with Shift', () => {
+		expect(press('p')).toEqual({ kind: 'needs', delta: 1 });
+		expect(press('P', { shiftKey: true })).toEqual({ kind: 'needs', delta: -1 });
+		expect(press('l')).toEqual({ kind: 'live', delta: 1 });
+		expect(press('L', { shiftKey: true })).toEqual({ kind: 'live', delta: -1 });
+	});
+
+	it('steps through the bar on ] and [', () => {
+		expect(press(']')).toEqual({ kind: 'step', delta: 1 });
+		expect(press('[')).toEqual({ kind: 'step', delta: -1 });
+	});
+
+	it('leaves Cmd and Ctrl chords alone, Cmd+Z (undo) included, with or without Option', () => {
+		for (const key of ['p', 'l', 't', 'f', '0', '+', '-', ']', '[', 'ArrowLeft', 'Enter']) {
+			expect(press(key, { metaKey: true })).toBeNull();
+			expect(press(key, { ctrlKey: true })).toBeNull();
 		}
+		expect(pressZ({ metaKey: true })).toBeNull();
+		expect(pressZ({ ctrlKey: true })).toBeNull();
+		expect(pressZ({ metaKey: true, altKey: true })).toBeNull();
+	});
+
+	it('takes Option for nothing but Z', () => {
+		for (const key of ['p', 'l', 't', 'f', '0', ']', 'ArrowLeft', 'Enter']) expect(press(key, { altKey: true })).toBeNull();
+	});
+
+	it('stays out of the way while the person is typing', () => {
 		const editable = document.createElement('div');
 		Object.defineProperty(editable, 'isContentEditable', { value: true });
-		expect(press({ target: editable })).toBeNull();
+		const fields = [...['input', 'textarea', 'select'].map((tag) => document.createElement(tag)), editable];
+		for (const target of fields) {
+			expect(press('p', { target })).toBeNull();
+			expect(press('ArrowLeft', { target })).toBeNull();
+			expect(press('Enter', { target })).toBeNull();
+			expect(pressZ({ target })).toBeNull();
+			expect(pressZ({ target, altKey: true })).toBeNull();
+		}
+	});
+
+	// The planning page's own keys (spec, Keys): none of them may mean something else on the Map.
+	it('claims none of the planning page\'s keys: N, C, /, ?, M, E, and 1 to 3', () => {
+		for (const key of ['n', 'N', 'c', 'C', '/', '?', 'm', 'M', 'e', 'E', '1', '2', '3']) {
+			expect(press(key)).toBeNull();
+			expect(press(key, { shiftKey: true })).toBeNull();
+		}
+		expect(press('k', { metaKey: true })).toBeNull();
+		expect(press('K', { ctrlKey: true })).toBeNull();
+	});
+
+	it('ignores every other key, Escape included, which the page\'s own ladder owns', () => {
+		for (const key of ['Escape', 'Tab', ' ', 'a', 'z', 'x', '4', 'Home', 'End']) expect(press(key)).toBeNull();
 	});
 });

@@ -1,5 +1,5 @@
 import type { MapItemStatus } from '@specboard/core/map-read';
-import { DONE_DISC, GLYPH_BOX, NEEDS_PERSON_TOKEN, PAUSE_BARS, RING_WIDTH, STATUS_GLYPHS, STATUS_TOKENS } from '@specboard/ui';
+import { DONE_DISC, GLYPH_BOX, PAUSE_BARS, RING_WIDTH, STATUS_GLYPHS, STATUS_TOKENS } from '@specboard/ui';
 import type { Transform } from './camera';
 import type { CollapseControl } from './collapse-controls';
 import { TEXT_CONTRAST, contrast, contrastFloor, formatColor, isDark, mix, parseColor, readableInk, type Rgb } from './color';
@@ -14,6 +14,7 @@ import { BLOCK_LINE_HEIGHT, type PlacedBlock } from './label-placement';
 import { linkCurve } from './links';
 import { REASON_TAGS } from './needs-person';
 import { ringScale, tintAmount } from './plan-weight';
+import { themeColors, type SystemColor, type ThemeColors } from './theme-colors';
 import { rollupSegments, type Circle, type RegionLabel } from './region-labels';
 import type { RegionOutline } from './regions/outline';
 import { EDGE_LABEL_TOP, edgeLabelAt, type RulerMarks } from './ruler';
@@ -41,6 +42,8 @@ export interface MapFrame {
 	focus: FocusFrame;
 	/** Regions whose own parent matches the search or filter: their outline draws lit. */
 	outlined: ReadonlySet<string>;
+	/** The key the keyboard has focus on. A dot grows and rings as it does under the pointer; a region's label gets a ring of its own. */
+	ringed: string | null;
 	/** A dot being dragged, drawn that far from its place, on top. */
 	drag: DragOffset | null;
 	transform: Transform;
@@ -82,6 +85,8 @@ interface MapTheme {
 	machine: string;
 	font: string;
 	status: Record<MapItemStatus, string>;
+	/** What each phase of a rollup bar is drawn in. */
+	phase: Record<MapPhase, string>;
 	/** The least of each status color a weighted mark keeps and still clears 3:1 on the surface. */
 	floor: Record<MapItemStatus, number>;
 	statusRgb: Record<MapItemStatus, Rgb>;
@@ -109,49 +114,65 @@ interface MapTheme {
  * names. A canvas normalizes any CSS color it's given, which is what lets the
  * contrast floor and the region tints be computed from whatever the tokens hold.
  */
-function readTheme(element: Element, normalize: (color: string) => string): MapTheme {
+function readTheme(element: Element, normalize: (color: string) => string, forced: boolean): MapTheme {
 	const style = window.getComputedStyle(element);
-	const token = (name: string): string => style.getPropertyValue(name).trim();
 	const rgbOf = (name: string): Rgb => {
-		const rgb = parseColor(normalize(token(name)));
+		const rgb = parseColor(normalize(style.getPropertyValue(name).trim()));
 		if (!rgb) throw new Error(`Map theme token ${name} is not a color`);
 		return rgb;
 	};
-	const surfaceRgb = rgbOf('--color-surface');
-	const textRgb = rgbOf('--color-text');
-	const mutedRgb = rgbOf('--color-text-muted');
+	// A system color keyword is resolved the way the page sees it, by asking the browser what it computes a probe's color to be.
+	const probe = document.createElement('span');
+	const system = (keyword: SystemColor): Rgb => {
+		probe.style.color = keyword;
+		const rgb = parseColor(normalize(window.getComputedStyle(probe).color));
+		if (!rgb) throw new Error(`System color ${keyword} is not a color`);
+		return rgb;
+	};
+	(element.parentElement ?? document.body).appendChild(probe);
+	let colors: ThemeColors;
+	try {
+		colors = themeColors(forced, { token: rgbOf, system });
+	} finally {
+		probe.remove();
+	}
+	const { surface: surfaceRgb, text: textRgb, muted: mutedRgb, status: statusRgb } = colors;
 	const status = {} as Record<MapItemStatus, string>;
-	const statusRgb = {} as Record<MapItemStatus, Rgb>;
 	const floor = {} as Record<MapItemStatus, number>;
 	for (const key of STATUSES) {
-		statusRgb[key] = rgbOf(STATUS_TOKENS[key]);
 		status[key] = formatColor(statusRgb[key]);
 		floor[key] = contrastFloor(statusRgb[key], surfaceRgb);
 	}
+	const phase = {} as Record<MapPhase, string>;
+	for (const key of Object.keys(colors.phase) as MapPhase[]) phase[key] = formatColor(colors.phase[key]);
+	const surface = formatColor(surfaceRgb);
+	const text = formatColor(textRgb);
 	return {
-		surface: formatColor(surfaceRgb),
-		border: formatColor(rgbOf('--color-border')),
+		surface,
+		border: formatColor(colors.border),
 		muted: formatColor(mutedRgb),
-		text: formatColor(textRgb),
-		needsPerson: formatColor(rgbOf(NEEDS_PERSON_TOKEN)),
-		agent: status['in_progress'],
-		agentRgb: statusRgb['in_progress'],
-		machine: formatColor(mix(textRgb, surfaceRgb, 0.82)),
+		text,
+		needsPerson: formatColor(colors.needsPerson),
+		agent: formatColor(colors.agent),
+		agentRgb: colors.agent,
+		machine: forced ? text : formatColor(mix(textRgb, surfaceRgb, 0.82)),
 		font: style.fontFamily || 'sans-serif',
 		status,
+		phase,
 		floor,
 		statusRgb,
 		surfaceRgb,
+		// Forced colors leave regions untinted and outlined in ink: a tint is a blend of two colors the person didn't choose.
 		regionFill: Array.from({ length: REGION_TINT_LEVELS }, (_, level) =>
-			formatColor(mix(textRgb, surfaceRgb, REGION_TINT + REGION_TINT_STEP * level)),
+			forced ? surface : formatColor(mix(textRgb, surfaceRgb, REGION_TINT + REGION_TINT_STEP * level)),
 		),
-		regionStroke: formatColor(mix(textRgb, surfaceRgb, REGION_STROKE)),
-		regionStrokeFocus: formatColor(mix(textRgb, surfaceRgb, REGION_STROKE_FOCUS)),
+		regionStroke: forced ? text : formatColor(mix(textRgb, surfaceRgb, REGION_STROKE)),
+		regionStrokeFocus: forced ? text : formatColor(mix(textRgb, surfaceRgb, REGION_STROKE_FOCUS)),
 		fade: isDark(surfaceRgb) ? FADE_DARK : FADE_LIGHT,
 		countInk: formatColor(readableInk(statusRgb.done, [surfaceRgb, textRgb])),
 		labelInk: formatColor(contrast(mutedRgb, surfaceRgb) >= TEXT_CONTRAST ? mutedRgb : textRgb),
-		link: formatColor(mix(mutedRgb, surfaceRgb, 0.85)),
-		linkSatisfied: formatColor(mix(mutedRgb, surfaceRgb, 0.4)),
+		link: forced ? text : formatColor(mix(mutedRgb, surfaceRgb, 0.85)),
+		linkSatisfied: forced ? formatColor(mutedRgb) : formatColor(mix(mutedRgb, surfaceRgb, 0.4)),
 	};
 }
 
@@ -187,8 +208,6 @@ const QUIET_DASH = [4, 3];
 /** A laptop, in a 20-unit box: the screen, and the base under it. */
 const LAPTOP = 'M4 5.5 H16 V13 H4 Z M2 15.5 H18';
 const LAPTOP_BOX = 20;
-
-const PHASE_STATUS: Record<MapPhase, MapItemStatus> = { done: 'done', in_flight: 'in_progress', next: 'ready', later: 'blocked' };
 
 interface GlyphPaths {
 	stroke?: Path2D;
@@ -228,7 +247,8 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.fillStyle = color;
 		return String(ctx.fillStyle);
 	};
-	let theme = readTheme(canvas, normalize);
+	const forcedColors = typeof window.matchMedia === 'function' ? window.matchMedia('(forced-colors: active)') : null;
+	let theme = readTheme(canvas, normalize, forcedColors?.matches ?? false);
 	const tints = new Map<string, string>();
 	const widths = new Map<string, number>();
 	let width = 0;
@@ -384,7 +404,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.fillStyle = theme.border;
 		ctx.fillRect(x, y, w, h);
 		for (const segment of segments) {
-			ctx.fillStyle = theme.status[PHASE_STATUS[segment.phase]];
+			ctx.fillStyle = theme.phase[segment.phase];
 			ctx.fillRect(segment.x, y, segment.w, h);
 		}
 	};
@@ -575,10 +595,22 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 		ctx.globalAlpha = 1;
 	};
 
-	const drawLabels = (labels: readonly RegionLabel[], focus: FocusFrame): void => {
+	const drawLabels = (labels: readonly RegionLabel[], focus: FocusFrame, ringed: string | null): void => {
 		for (const label of labels) {
 			const { box, glyph, region } = label;
 			ctx.globalAlpha = label.alpha * regionStrength(focus, label.key, theme.fade);
+			if (label.key === ringed) {
+				// A gap of surface, then ink, outside the pill: the dot's focus ring in a pill's shape.
+				const gap = FOCUS_GAP + FOCUS_WIDTH / 2;
+				ctx.beginPath();
+				ctx.roundRect(box.x - gap, box.y - gap, box.w + 2 * gap, box.h + 2 * gap, box.h / 2 + gap);
+				ctx.strokeStyle = theme.surface;
+				ctx.lineWidth = FOCUS_WIDTH + 2 * FOCUS_GAP;
+				ctx.stroke();
+				ctx.strokeStyle = theme.text;
+				ctx.lineWidth = FOCUS_WIDTH;
+				ctx.stroke();
+			}
 			ctx.fillStyle = theme.surface;
 			ctx.beginPath();
 			ctx.roundRect(box.x, box.y, box.w, box.h, box.h / 2);
@@ -708,7 +740,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			fit();
 		},
 		refreshTheme() {
-			theme = readTheme(canvas, normalize);
+			theme = readTheme(canvas, normalize, forcedColors?.matches ?? false);
 			tints.clear();
 			widths.clear();
 		},
@@ -722,7 +754,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			}
 			return measured;
 		},
-		draw({ dots, regions, links, allLinks, labels, dotLabels, agents, blocks, controls, cards, focus, outlined, drag, transform, level, ruler }) {
+		draw({ dots, regions, links, allLinks, labels, dotLabels, agents, blocks, controls, cards, focus, outlined, ringed, drag, transform, level, ruler }) {
 			if (width === 0 || height === 0) return;
 			if ((window.devicePixelRatio || 1) !== ratio) fit();
 			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -747,7 +779,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): MapRenderer {
 			// On top and at full strength: it is what the person has hold of.
 			if (pulled) drawDot(pulled, transform, level, cards?.keys.has(pulled.key) ? 1 - cards.alpha : 1, 1, drag);
 			for (const agent of agents) drawAgent(agent, transform, level, dotStrength(focus, agent.key, theme.fade), growth(focus, agent.key));
-			drawLabels(labels, focus);
+			drawLabels(labels, focus, ringed);
 			drawDotLabels(dotLabels, focus, drag?.key ?? null);
 			drawBlocks(blocks, focus);
 			for (const control of controls) {

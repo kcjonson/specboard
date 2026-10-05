@@ -1,0 +1,12 @@
+/* Clipped to nothing, not removed: it has to stay focusable and stay in the accessibility tree. The Map draws its own focus. */
+.tree {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	outline: none;
+}

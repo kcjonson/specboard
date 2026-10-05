@@ -26,6 +26,8 @@ export interface SummaryStripProps {
 	 * is open, is pressed. Absent when nothing is waiting.
 	 */
 	since?: { date: string; text: string; open: boolean; onToggle(): void };
+	/** Whether changes made elsewhere are said to a screen reader, and the switch for it. Absent, the strip has no such control. */
+	announce?: { on: boolean; onToggle(): void };
 	/** The clock the freshness note reads, so a test can drive it. */
 	clock?: () => number;
 }
@@ -47,7 +49,7 @@ const TICK_MS = 30_000;
  * filter are its buttons: pressing one dims everything else on the Map, pressing it again
  * puts everything back. Blocked is a count only, since it isn't a phase.
  */
-export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPerson, onToggleLive, updatedAt, retrying = false, agents, since, clock = Date.now }: SummaryStripProps): JSX.Element {
+export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPerson, onToggleLive, updatedAt, retrying = false, agents, since, announce, clock = Date.now }: SummaryStripProps): JSX.Element {
 	const [now, setNow] = useState(clock);
 	useEffect(() => {
 		setNow(clock());
@@ -91,6 +93,12 @@ export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPer
 				</button>
 			)}
 			<span class={styles.spacer} />
+			{announce && (
+				<button type="button" class={styles.chip} aria-pressed={announce.on} title="Say changes made elsewhere to a screen reader, a few at a time" onClick={announce.onToggle}>
+					<span class={styles.label}>Announce changes</span>
+					<span class={styles.count}>{announce.on ? 'On' : 'Off'}</span>
+				</button>
+			)}
 			{updatedAt !== null && <span class={styles.fresh}>{freshnessText(updatedAt, now, retrying)}</span>}
 		</section>
 	);

@@ -76,3 +76,10 @@
 .button.primary:hover {
 	background: var(--color-surface-hover);
 }
+
+@media (prefers-reduced-motion: reduce) {
+	.button,
+	.arrow {
+		transition: none;
+	}
+}

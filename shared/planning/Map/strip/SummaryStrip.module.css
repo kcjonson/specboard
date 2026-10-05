@@ -102,3 +102,9 @@
 	color: var(--color-text-muted);
 	white-space: nowrap;
 }
+
+@media (prefers-reduced-motion: reduce) {
+	.chip {
+		transition: none;
+	}
+}

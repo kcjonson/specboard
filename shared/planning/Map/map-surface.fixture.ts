@@ -76,6 +76,7 @@ export function setup(): {
 	open: ReturnType<typeof vi.fn>;
 	collapse: ReturnType<typeof vi.fn>;
 	target: ReturnType<typeof vi.fn>;
+	focus: ReturnType<typeof vi.fn>;
 	flush: () => void;
 	deferred: Array<() => void>;
 } {
@@ -88,6 +89,7 @@ export function setup(): {
 	const open = vi.fn();
 	const collapse = vi.fn();
 	const target = vi.fn();
+	const focus = vi.fn();
 	const overlay = new OverlayStore();
 	const clock = { now: 0, reduced: false };
 	const surface = new MapSurface(
@@ -101,9 +103,9 @@ export function setup(): {
 			defer: (task) => deferred.push(task),
 			timeZone: 'UTC',
 		},
-		{ onViewportEmpty: empty, onSettle: settle, onOpen: open, onCollapse: collapse, onPointerTarget: target },
+		{ onViewportEmpty: empty, onSettle: settle, onOpen: open, onCollapse: collapse, onPointerTarget: target, onFocus: focus },
 	);
-	return { surface, camera, renderer, overlay, clock, frames, empty, settle, open, collapse, target, deferred, flush: () => frames.splice(0).forEach((paint) => paint()) };
+	return { surface, camera, renderer, overlay, clock, frames, empty, settle, open, collapse, target, focus, deferred, flush: () => frames.splice(0).forEach((paint) => paint()) };
 }
 
 export const WIDTH = 1000;

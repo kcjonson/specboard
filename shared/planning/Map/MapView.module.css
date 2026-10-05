@@ -156,3 +156,29 @@
 	color: var(--color-text-muted);
 	font-size: var(--text-sm);
 }
+
+/* Where remote changes are said to a screen reader. Clipped, not removed, so it stays in the accessibility tree. */
+.live {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* The Map has keyboard focus: the tree holding it is invisible, so the plot says so. What the keys are on is lit on the canvas. */
+.plot:has([role='tree']:focus-visible)::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border: 2px solid var(--color-primary);
+	pointer-events: none;
+}
+
+/* A hover color is not motion, but a transition is: reduced motion cuts every one the Map has (spec, Live updates and motion). */
+@media (prefers-reduced-motion: reduce) {
+	.control {
+		transition: none;
+	}
+}

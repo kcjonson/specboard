@@ -24,7 +24,9 @@ function direction(angle: number): string {
 /**
  * The markers at the plot's edge for items out of view (see edge-markers.ts). They are
  * buttons, since the point of one is to go there; the surface decides which exist and where,
- * once per repaint, and this only draws them.
+ * once per repaint, and this only draws them. They are not tab stops, since the Map has one
+ * and there can be dozens of them: P and L reach the ones that need a person and the live
+ * sessions, and the accessible tree lists the rest, so they stay pointer and screen reader targets.
  */
 export function EdgeMarkers({ store, bottom, onJump }: EdgeMarkersProps): JSX.Element {
 	const [markers, setMarkers] = useState<readonly PlacedEdgeMarker[]>(store.frame.edges);
@@ -39,6 +41,7 @@ export function EdgeMarkers({ store, bottom, onJump }: EdgeMarkersProps): JSX.El
 				<button
 					key={`${marker.kind}:${marker.key}`}
 					type="button"
+					tabIndex={-1}
 					class={`${styles.marker} ${KIND_CLASSES[marker.kind]}`}
 					style={{ left: `${marker.x - EDGE_MARKER_SIZE / 2}px`, top: `${marker.y - EDGE_MARKER_SIZE / 2}px`, width: `${EDGE_MARKER_SIZE}px`, height: `${EDGE_MARKER_SIZE}px` }}
 					aria-label={`${KIND_LABELS[marker.kind]}${marker.text ? ` ${marker.text}` : ''}: ${marker.label ?? marker.key}, off screen ${direction(marker.angle)}`}
