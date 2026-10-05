@@ -101,7 +101,8 @@ function innermostHub(layout: MapLayout, nodes: ReadonlyMap<string, MapLayout['n
 }
 
 const progress = (span: Span, now: number): number => (span.end <= span.start ? (now >= span.end ? 1 : 0) : Math.max(0, Math.min(1, (now - span.start) / (span.end - span.start))));
-const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+/** Lands exactly on `b` at the end, so a finished move draws where the layout put it. */
+const lerp = (a: number, b: number, t: number): number => (t >= 1 ? b : a + (b - a) * t);
 const placeOf = (dot: Place): Place => ({ x: dot.x, y: dot.y, r: dot.r });
 const moved = (a: Place, b: Place): boolean => Math.abs(a.x - b.x) > STILL || Math.abs(a.y - b.y) > STILL || Math.abs(a.r - b.r) > STILL;
 
