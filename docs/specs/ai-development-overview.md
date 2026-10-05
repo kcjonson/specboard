@@ -933,8 +933,11 @@ them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
 
 ## Live updates and motion
 
-- The same poll as the board. The Map consumes change notifications rather than
-  the poll itself, so SPE-203 can swap the transport without touching the Map.
+- The same poll as the board, from one shared hook: every 10 s while the window has
+  focus, skipped while the Map is in its error state. A failed refresh keeps the Map
+  as it was, says "retrying", and waits twice as long before each next try, up to
+  160 s. The Map consumes change notifications rather than the poll itself, so
+  SPE-203 can swap the transport without touching the Map.
 - Changes buffer and apply at most about once a second, as a short, low-energy
   pass of the simulation started from the current positions. The pass is local:
   only the changed items, their sessions and computers, and anything within two
@@ -946,8 +949,11 @@ them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
   now.
 - Under reduced motion, changes cut in with the brief highlight the board already
   gives changed items.
-- The dot under the pointer doesn't move out from under the person. If the focused
-  dot moves, the viewport follows it so it stays put on screen.
+- The dot under the pointer doesn't move out from under the person: it stays where it
+  was until the pointer leaves it, then glides. If the focused or selected dot moves
+  (and the pointer isn't on one), the viewport follows it so it stays put on screen.
+- Regions follow their children by crossfading from the old outline to the new one
+  over the glide; tracing them every frame is too slow (see the feasibility notes).
 - A refresh never resets the viewport, the selection, or collapse state.
 
 Motion only ever means something changed. Nothing loops, nothing pulses on its own,
@@ -1061,7 +1067,9 @@ and nothing moves for more than a second.
    don't, so the delta also carries every episode whose last write or end falls
    after the cursor. Deletions and spec links don't show up in an `updated_at`
    delta either (the board has the same blind spot), so they need their own
-   signal, and the Map reflects them within a few minutes at worst.
+   signal, and the Map reflects them within a few minutes at worst. The cursor is
+   the server's, never the client's clock, and is held back rather than risk a
+   missed write; see the feasibility notes (SPE-235).
 9. **A per-account last-visit baseline** (decision 7): one timestamp per person per
    project (`map_baselines`, migration 034), read when the Map opens and moved forward
    when they leave it or mark everything seen. It moves forward only, enforced in SQL,
@@ -1176,10 +1184,13 @@ Input for the technical design, not decisions.
   fine field's own detail kept where it's larger. A nested region keeps only
   ground where its parent's field clears the level by 0.06, which is what
   guarantees it sits inside. Of the loops one region traces, the one holding the
-  most members stands. Outlines are computed on the main thread, once per layout
-  and grid step, never during a pan; a zoom into a new step draws the nearest
-  cached outlines (they're in layout units, so they still fit) and computes the
-  new step once the gesture stops. On a generated 1,000-item board (682 nodes,
+  most members stands. Outlines are computed once per layout and grid step, never
+  during a pan: the worker traces them with each layout, at the 5-unit step the
+  Map's extent is measured at and at whatever step the Map is drawing (SPE-235), so
+  a new layout costs the main thread nothing; a zoom into a step the layout didn't
+  bring draws the nearest cached outlines (they're in layout units, so they still
+  fit) and computes the new step on the main thread once the gesture stops. On a
+  generated 1,000-item board (682 nodes,
   17 regions with finished epics folded) a step costs about 21 ms at 5 units and
   56 ms at 2.5; with every family open (34 regions, 610 members), 35 ms and
   104 ms. The spanning tree is Kruskal over a grid's neighboring pairs rather than
@@ -1228,6 +1239,54 @@ Input for the technical design, not decisions.
   label pass before the in-progress labels, and the items it names lose their own label only
   when it found room. Clicking a computer or session holds it lit with its card open and
   opens no drawer. Zoomed in, each session's line in the block also names its agent.
+- As built (SPE-235), a refresh is a delta read (`GET .../map?since=<cursor>`) and a
+  staged transition. The cursor is the database's clock taken in a statement before the
+  read's snapshot, a second back, and no later than the oldest open client transaction in
+  `pg_stat_activity`; `updated_at`, `last_seen_at`, and `ended_at` are `NOW()`, the start
+  of the transaction that wrote them, so a write the snapshot missed carries a stamp at or
+  past the cursor however late it commits. Checked on Postgres 16: a write held open 3 s
+  across a read came back in the next delta, where a cursor of "read time less a second"
+  would have missed it. Rows the overlap repeats merge by key and diff as no change. The
+  delta carries each changed item's row whole (anchor, links, open episodes), and an item
+  whose agent wrote or stopped since rides along though its `updated_at` didn't move; the
+  client has the whole tree, so a parent's subtree anchor follows its child. Deletions and
+  spec links come from two signals in the read's own snapshot, the project's item count
+  and its spec links' count and newest time: rows merged from a delta that don't come to
+  the count, or a changed spec signal, read the whole project at once, so both show within
+  one poll. Past the read cap an idle delta stays empty and any change answers whole. On a
+  generated 2,000-item project an idle poll is 416 bytes and one with five changed items
+  1.5 KB (736 bytes gzipped). The changes since the last visit refresh on the same poll,
+  keeping the changes view open on its step; a baseline marked seen locally isn't undone by
+  a read that beats its write to the server.
+- A refresh buffers in the model and applies at most once a second as a local pass; a
+  collapse toggle doesn't wait, and cuts. Time drift moves the scale's edge to the new now
+  and carries every previous position onto the moved scale by the moment it stands for
+  (`shiftX`), so the pinned Map slides as one and no two dots swap sides; the equalized
+  scale keeps the anchors it was fitted to, since counting a changed item's new anchor
+  would move every dot after its old one. An idle poll lays out again for drift alone only
+  once recent work would slide a layout unit. The pass's extent only grows. On the
+  generated 1,000-item board three pickups moved 179 of 682 nodes more than half a unit
+  and left 628 within 4 (944 of 1,007 with every family open); the local pass took 95 to
+  140 ms in Node, and from the read landing to the glide starting took about 1.1 s in
+  Chrome's worker with outlines at both steps.
+- The surface glides from where it draws everything now (a transition interrupted halfway
+  included) to the new layout: exits fade and shrink (into the ancestor's dot when a
+  finished family folds) over 250 ms, then moves glide over 700 ms with status sweeps
+  (250 ms, the new glyph revealed clockwise from twelve) and one amber ring per observed
+  write (900 ms) starting with them, then entries grow out of their region's center, or
+  fade in where they land, over 400 ms. A stage with nothing in it is skipped. The dot
+  under the pointer is held where it was and glides once the pointer leaves it; with
+  nothing under the pointer, a focused or selected dot that moves takes the camera along
+  by the same eased step, so it stays put on screen, until a flight or a gesture of the
+  person's own takes over. Regions crossfade, old outlines out and new in, level by level:
+  re-tracing the moving families every frame cost 40 to 119 ms at the 5-unit step on the
+  1,000-item board (12 to 29 families moved), against a frame's 16. Under reduced motion
+  every stage cuts and the changed items carry the board's highlight, a halo of
+  `--color-primary` at 30%, for 2 s. Measured in Chrome at 1x on the 1,000-item board:
+  frames during a glide had a median of 16.7 ms and a 95th percentile of 18.4 ms, with one
+  frame of 50 ms where the new layout landed; a refresh landing mid-pan left the pan's
+  frames as they were (median 16.9 ms, worst 35 ms, the same as the 3 s before it) with no
+  long task.
 - Ruled out: tldraw (production use needs a license key; React-only; about
   530 KB), Excalidraw (React-only; about 350 KB), and React Flow (React-only, and a
   node editor rather than a layout engine).
