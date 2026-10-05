@@ -587,9 +587,8 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				break;
 			}
 			case 'live': {
-				const to = map.stepLiveSession(key.delta);
-				if (to) anchorSoon(to);
-				else announcer.say('No live agent sessions right now');
+				// A session isn't an item, so there is nothing for the URL to anchor on.
+				if (!map.stepLiveSession(key.delta)) announcer.say('No live agent sessions right now');
 				break;
 			}
 			case 'step':

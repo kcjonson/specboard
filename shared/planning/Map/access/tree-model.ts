@@ -56,7 +56,8 @@ export function itemName(row: MapItemRow, input: Pick<TreeInput, 'layout' | 'nee
 	const sub = row.subStatus ? SUB_STATUS_LABELS[row.subStatus] : undefined;
 	if (sub) parts.push(sub);
 	const waiting = waitingOn(row);
-	if (waiting) parts.push(waiting);
+	// A bare "Blocked" only repeats the status.
+	if (waiting && waiting !== parts[1]) parts.push(waiting);
 	if (row.textBlockerCount > 0) parts.push(row.textBlockerCount === 1 ? '1 hold' : `${row.textBlockerCount} holds`);
 	const reasons = input.needs.get(row.key);
 	if (reasons) parts.push(`Needs a person: ${reasonsText(reasons)}`);
