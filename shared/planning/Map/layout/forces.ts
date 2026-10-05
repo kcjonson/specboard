@@ -12,6 +12,10 @@ import {
 	RELATED_CHAINS_STRENGTH,
 	REPULSION,
 	TIME_PULL,
+	SESSION_PULL_CAP,
+	WORK_ITEM_SHARE,
+	WORK_STRENGTH,
+	WORK_PULL_CAP,
 } from './constants';
 
 export interface SimNode extends SimulationNodeDatum {
@@ -161,13 +165,58 @@ export function familyRows(links: ReadonlyArray<readonly [hub: SimNode, child: S
 	};
 }
 
-/** Each later item in a chain is pulled level with what blocks it, so the chain reads as a row. */
-export function chainRow(links: ReadonlyArray<readonly [blocker: SimNode, blocked: SimNode]>): Force<SimNode, SimLink> {
+/**
+ * A session pulls each item it is working on with a spring of rest length `gap`, but the pull
+ * stops growing at WORK_PULL_CAP, so an item far from its session is held by its family and
+ * only a close one is gathered. The items' pulls on the session are summed and then capped as
+ * a whole: its computer holds it, and a session that works across the Map stays beside its
+ * computer instead of being dragged out of its cluster.
+ */
+export function workPull(pairs: ReadonlyArray<readonly [session: SimNode, item: SimNode, rest: number]>): Force<SimNode, SimLink> {
+	const sessions = [...new Set(pairs.map(([session]) => session))];
+	const slot = new Map(sessions.map((s, i) => [s, i]));
+	const px = new Float64Array(sessions.length);
+	const py = new Float64Array(sessions.length);
 	return (alpha: number): void => {
-		for (const [blocker, blocked] of links) {
-			const f = (blocker.y - blocked.y) * alpha * CHAIN_ROW_STRENGTH;
-			blocked.vy += f * 0.8;
-			blocker.vy -= f * 0.2;
+		px.fill(0);
+		py.fill(0);
+		for (const [session, item, rest] of pairs) {
+			const dx = item.x + item.vx - session.x - session.vx;
+			const dy = item.y + item.vy - session.y - session.vy;
+			const d = Math.hypot(dx, dy) || 1e-6;
+			if (d <= rest) continue;
+			const pull = (Math.min(WORK_STRENGTH * (d - rest), WORK_PULL_CAP) * alpha) / d;
+			item.vx -= dx * pull * WORK_ITEM_SHARE;
+			item.vy -= dy * pull * WORK_ITEM_SHARE;
+			const i = slot.get(session)!;
+			px[i]! += dx * pull * (1 - WORK_ITEM_SHARE);
+			py[i]! += dy * pull * (1 - WORK_ITEM_SHARE);
+		}
+		sessions.forEach((session, i) => {
+			const length = Math.hypot(px[i]!, py[i]!);
+			const scale = length > SESSION_PULL_CAP * alpha ? (SESSION_PULL_CAP * alpha) / length : 1;
+			session.vx += px[i]! * scale;
+			session.vy += py[i]! * scale;
+		});
+	};
+}
+
+/**
+ * A chain's dots are pulled to the chain's common height, so it reads as a level row. The
+ * pull toward the blocker alone left a chain sloping about 15 units a step: the other forces
+ * on each dot (neighbors' repulsion, the midline, the row apart from a related chain) bias
+ * them differently, and nothing tied a chain's far end to its near one. The pulls sum to
+ * zero, so a chain doesn't drift.
+ */
+export function chainRow(chains: ReadonlyArray<readonly SimNode[]>): Force<SimNode, SimLink> {
+	return (alpha: number): void => {
+		for (const dots of chains) {
+			if (dots.length < 2) continue;
+			let sum = 0;
+			for (const n of dots) sum += n.y;
+			const mean = sum / dots.length;
+			const k = alpha * CHAIN_ROW_STRENGTH;
+			for (const n of dots) n.vy += (mean - n.y) * k;
 		}
 	};
 }

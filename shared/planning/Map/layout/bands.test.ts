@@ -60,6 +60,25 @@ describe('regionBands', () => {
 		expect(b[0]!.vy).toBeGreaterThan(0);
 	});
 
+	it('pushes a loose dot out of a region it sits in the band of, away from the region\'s center', () => {
+		const region = [dot('a1', 0, 0), dot('a2', 200, 10)];
+		const above = dot('above', 100, -4);
+		const below = dot('below', 100, 14);
+		regionBands([{ hub: dot('hub', 100, 5), direct: region, parent: -1 }], [above, below])(1);
+		expect(above.vy).toBeLessThan(-1);
+		expect(below.vy).toBeGreaterThan(1);
+		for (const n of region) expect(n.vy).toBe(0);
+	});
+
+	it('leaves a loose dot alone when the region is clear of it in time or in height, or when it is pinned', () => {
+		const region = [dot('a1', 0, 0), dot('a2', 200, 10)];
+		const later = dot('later', 600, 5);
+		const high = dot('high', 100, -200);
+		const pinned = dot('pinned', 100, 5, true);
+		regionBands([{ hub: dot('hub', 100, 5), direct: region, parent: -1 }], [later, high, pinned])(1);
+		for (const n of [later, high, pinned]) expect(n.vy).toBe(0);
+	});
+
 	it('stays linear down a chain thousands deep with a dot of its own at every level', () => {
 		// Each level is a region holding the next and one direct dot, beside a band of its
 		// own, so every level has a sibling; gathering extents per level would be quadratic.

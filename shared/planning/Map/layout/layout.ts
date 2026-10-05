@@ -29,21 +29,21 @@ import {
 	REFIT_ALPHA,
 	REFIT_TICKS,
 	REGION_BAND_GAP,
+	NOW_MARGIN,
 	RESERVED_STRIP,
 	ROW_HEIGHT,
 	SESSION_MIDLINE,
 	SESSION_PULL,
 	SESSION_RADIUS,
 	SESSION_SPREAD,
-	SESSION_X,
 	TIME_PULL,
 	VELOCITY_DECAY,
 	WORK_GAP,
-	WORK_STRENGTH,
 } from './constants';
 import {
 	bloomWidth,
 	chainRow,
+	workPull,
 	collision,
 	createOrderPass,
 	familyRows,
@@ -84,8 +84,12 @@ interface Graph {
 	links: SimLink[];
 	/** Parent hub to child. */
 	familyLinks: Array<[SimNode, SimNode]>;
-	chainLinks: Array<[SimNode, SimNode]>;
 	chainGroups: Array<[SimNode[], SimNode[]]>;
+	/** Each chain's dots, in order. */
+	chainDots: SimNode[][];
+	/** Each live session with its computer, and with an item it is working on and how far from it it rests. */
+	homes: Array<[session: SimNode, computer: SimNode]>;
+	work: Array<[session: SimNode, item: SimNode, rest: number]>;
 	bands: Band[];
 	orders: Orders;
 }
@@ -135,7 +139,7 @@ function buildGraph(model: MapModel, scale: MapTimeScale): Graph {
 			phase: null,
 			r: SESSION_RADIUS,
 			hub: false,
-			tx: scale.unit * SESSION_X,
+			tx: 0,
 			kx: SESSION_PULL,
 			ty: 0,
 			ky: SESSION_MIDLINE,
@@ -169,23 +173,25 @@ function buildGraph(model: MapModel, scale: MapTimeScale): Graph {
 			familyLinks.push(pair);
 		}
 	}
-	const chainLinks: Array<[SimNode, SimNode]> = [];
 	for (const chain of model.chains) {
-		for (const edge of chain.edges) {
-			const pair: [SimNode, SimNode] = [repNode(edge.blocker), repNode(edge.blocked)];
-			link(pair[0], pair[1], CHAIN_GAP, CHAIN_STRENGTH);
-			chainLinks.push(pair);
-		}
+		for (const edge of chain.edges) link(repNode(edge.blocker), repNode(edge.blocked), CHAIN_GAP, CHAIN_STRENGTH);
 	}
 	for (const edge of model.edges) link(repNode(edge.blocker), repNode(edge.blocked), CROSS_LINK_GAP, CROSS_LINK_STRENGTH);
 	for (const item of model.items) {
 		const from = item.row.discoveredFromKey ? model.byKey.get(item.row.discoveredFromKey) : undefined;
 		if (from) link(repNode(from), repNode(item), CROSS_LINK_GAP, CROSS_LINK_STRENGTH);
 	}
+	const homes: Graph['homes'] = [];
+	const work: Graph['work'] = [];
 	for (const session of model.sessions) {
 		const sessionNode = nodeOf.get(sessionNodeKey(session.key))!;
-		link(nodeOf.get(computerNodeKey(session.device))!, sessionNode, MACHINE_GAP, MACHINE_STRENGTH);
-		for (const item of session.items) link(sessionNode, repNode(item), WORK_GAP, WORK_STRENGTH);
+		const computerNode = nodeOf.get(computerNodeKey(session.device))!;
+		link(computerNode, sessionNode, MACHINE_GAP, MACHINE_STRENGTH);
+		homes.push([sessionNode, computerNode]);
+		for (const item of session.items) {
+			const itemNode = repNode(item);
+			work.push([sessionNode, itemNode, sessionNode.r + itemNode.r + WORK_GAP]);
+		}
 	}
 
 	const chainDots = model.chains.map((chain) => chain.items.map(repNode).filter((n) => !n.hub));
@@ -205,7 +211,7 @@ function buildGraph(model: MapModel, scale: MapTimeScale): Graph {
 			.map(repNode),
 	);
 
-	return { nodes, nodeOf, links, familyLinks, chainLinks, chainGroups, bands: bandsOf(model, repNode), orders: { done, inFlight, dependencies: dependenciesOf(model, nodes, repNode), gap: ORDER_GAP } };
+	return { nodes, nodeOf, links, familyLinks, chainGroups, chainDots, homes, work, bands: bandsOf(model, repNode), orders: { done, inFlight, dependencies: dependenciesOf(model, nodes, repNode), gap: ORDER_GAP } };
 }
 
 /**
@@ -302,6 +308,10 @@ function raiseTargets(graph: Graph, scale: MapTimeScale): void {
 	let rightmost = 0;
 	for (const n of graph.nodes) if (n.kind === 'item') rightmost = Math.max(rightmost, n.tx);
 	for (const n of graph.nodes) if (n.kind === 'computer') n.tx = Math.max(scale.unit * COMPUTER_X, rightmost + COMPUTER_CLEARANCE);
+	for (const [session, computer] of graph.homes) {
+		session.tx = computer.tx - (computer.r + session.r + MACHINE_GAP);
+		session.ty = computer.ty;
+	}
 }
 
 /** Runs the forces with the orders restored after every tick; returns the last tick's largest move. */
@@ -318,9 +328,10 @@ function simulate(graph: Graph, ticks: number, alpha: number): number {
 		.force('midline', forceY<SimNode>((n) => n.ty).strength((n) => n.ky))
 		.force('links', forceLink<SimNode, SimLink>(graph.links).distance((l) => l.distance).strength((l) => l.strength))
 		.force('family', familyRows(graph.familyLinks))
-		.force('chainRow', chainRow(graph.chainLinks))
+		.force('chainRow', chainRow(graph.chainDots))
 		.force('relatedChains', relatedChains(graph.chainGroups))
-		.force('bands', regionBands(graph.bands))
+		.force('work', workPull(graph.work))
+		.force('bands', regionBands(graph.bands, graph.nodes.filter((n) => n.kind === 'item' && !n.hub && n.family === null)))
 		.force('spacing', spacing())
 		.force('collision', collision());
 	const enforce = createOrderPass(graph.orders);
@@ -340,8 +351,8 @@ function simulate(graph: Graph, ticks: number, alpha: number): number {
 	return settle;
 }
 
-function boundsOf(nodes: readonly SimNode[], unit: number): MapBounds {
-	const bounds = { minX: Infinity, maxX: unit * RESERVED_STRIP, minY: -MIN_HALF_HEIGHT, maxY: MIN_HALF_HEIGHT };
+function boundsOf(nodes: readonly SimNode[], unit: number, strip: boolean): MapBounds {
+	const bounds = { minX: Infinity, maxX: strip ? unit * RESERVED_STRIP : unit * NOW_MARGIN, minY: -MIN_HALF_HEIGHT, maxY: MIN_HALF_HEIGHT };
 	for (const n of nodes) {
 		bounds.minX = Math.min(bounds.minX, n.x - n.r);
 		bounds.maxX = Math.max(bounds.maxX, n.x + n.r);
@@ -415,15 +426,16 @@ function stackedHeight(model: MapModel, unitScale: MapTimeScale): number {
 function coldLayout(model: MapModel, edge: number, aspect: number): Settled {
 	const dotCount = model.items.filter((item) => item.rep === item && !item.hub).length;
 	const unitScale = createTimeScale(edge, model.times, 1);
-	// The Map's width per unit, as boundsOf measures it: the span of time plus the reserved strip past now.
-	const unitWidth = -timeToX(unitScale, model.times[0] ?? edge) + RESERVED_STRIP;
+	// The Map's width per unit, as boundsOf measures it: the span of time plus the strip past now, which is only reserved for computers when there are any.
+	const strip = model.computers.length > 0;
+	const unitWidth = Math.max(-timeToX(unitScale, model.times[0] ?? edge) + (strip ? RESERVED_STRIP : NOW_MARGIN), RESERVED_STRIP);
 	const trialUnit = Math.max(FIT_UNIT * aspect * Math.sqrt(Math.max(1, dotCount / FIT_DOTS)), (aspect * stackedHeight(model, unitScale)) / unitWidth);
 	const trial = createTimeScale(edge, model.times, trialUnit);
 	const first = buildGraph(model, trial);
 	raiseTargets(first, trial);
 	seedCold(first);
 	const firstSettle = simulate(first, COLD_TICKS, 1);
-	const firstBounds = boundsOf(first.nodes, trialUnit);
+	const firstBounds = boundsOf(first.nodes, trialUnit, strip);
 	const want = (firstBounds.maxY - firstBounds.minY) * aspect;
 	const unit = trialUnit * Math.max(FIT_MIN, Math.min(FIT_MAX, want / Math.max(1, firstBounds.maxX - firstBounds.minX)));
 	if (Math.abs(unit - trialUnit) <= FIT_TOLERANCE * trialUnit) {
@@ -440,7 +452,7 @@ function coldLayout(model: MapModel, edge: number, aspect: number): Settled {
 		n.y = from.y;
 	}
 	const settle = simulate(graph, REFIT_TICKS, REFIT_ALPHA);
-	return { graph, scale, bounds: boundsOf(graph.nodes, unit), ticks: COLD_TICKS + REFIT_TICKS, settle };
+	return { graph, scale, bounds: boundsOf(graph.nodes, unit, strip), ticks: COLD_TICKS + REFIT_TICKS, settle };
 }
 
 /**
@@ -480,7 +492,7 @@ function localLayout(model: MapModel, previous: MapLayoutPrevious, edge: number)
 	for (const n of graph.nodes) if (!before[n.key]) mobile.add(n);
 	for (let hop = 0; hop < 2; hop++) {
 		const reached: SimNode[] = [];
-		for (const [source, target] of [...graph.links.map((l): [SimNode, SimNode] => [l.source, l.target]), ...graph.familyLinks]) {
+		for (const [source, target] of [...graph.links.map((l): [SimNode, SimNode] => [l.source, l.target]), ...graph.familyLinks, ...graph.work.map(([s, n]): [SimNode, SimNode] => [s, n])]) {
 			if (mobile.has(source) && !mobile.has(target)) reached.push(target);
 			if (mobile.has(target) && !mobile.has(source)) reached.push(source);
 		}
@@ -508,7 +520,7 @@ function localLayout(model: MapModel, previous: MapLayoutPrevious, edge: number)
 	}
 	const settle = simulate(graph, LOCAL_TICKS, LOCAL_ALPHA);
 	// The extent only grows, drifting with the rest, so fit all doesn't shift under a refresh.
-	const fresh = boundsOf(graph.nodes, scale.unit);
+	const fresh = boundsOf(graph.nodes, scale.unit, model.computers.length > 0);
 	const bounds = {
 		minX: Math.min(shiftX(was.scale, scale, was.bounds.minX), fresh.minX),
 		maxX: Math.max(was.bounds.maxX, fresh.maxX),
