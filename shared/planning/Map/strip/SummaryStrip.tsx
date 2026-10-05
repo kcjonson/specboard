@@ -60,11 +60,11 @@ export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPer
 	const count = (value: number | undefined): string => (value === undefined ? '-' : String(value));
 	const ready = summary !== null;
 	return (
-		<section class={styles.strip} aria-label="Project summary">
+		<section class={since ? `${styles.strip} ${styles.withSince}` : styles.strip} aria-label="Project summary">
 			{PHASES.map(({ phase, label, status, hint }) => (
 				<button key={phase} type="button" class={styles.chip} aria-pressed={filters.phases.has(phase)} disabled={!ready} title={hint} onClick={() => onTogglePhase(phase)}>
 					<StatusGlyph class={styles.glyph} status={status} decorative />
-					<span class={styles.label}>{label}</span>
+					<span class={`${styles.label} ${styles.compactHide}`}>{label}</span>
 					<span class={styles.count}>{count(summary?.phases[phase])}</span>
 				</button>
 			))}
@@ -85,8 +85,8 @@ export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPer
 			</button>
 			{agents}
 			{since && (
-				<button type="button" class={styles.chip} aria-pressed={since.open} title="What changed since you last looked: opens the changes view" onClick={since.onToggle}>
-					<span class={styles.label}>
+				<button type="button" class={`${styles.chip} ${styles.since}`} aria-pressed={since.open} title={`Since ${since.date}: ${since.text}. Opens the changes view.`} onClick={since.onToggle}>
+					<span class={`${styles.label} ${styles.sinceText}`}>
 						{`Since ${since.date}: `}
 						<span class={styles.changes}>{since.text}</span>
 					</span>
@@ -95,7 +95,9 @@ export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPer
 			<span class={styles.spacer} />
 			{announce && (
 				<button type="button" class={styles.chip} aria-pressed={announce.on} title="Say changes made elsewhere to a screen reader, a few at a time" onClick={announce.onToggle}>
-					<span class={styles.label}>Announce changes</span>
+					<span class={styles.label}>
+						Announce<span class={styles.announceMore}> changes</span>
+					</span>
 					<span class={styles.count}>{announce.on ? 'On' : 'Off'}</span>
 				</button>
 			)}

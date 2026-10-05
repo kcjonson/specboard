@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ActivityCache, type ActivityEntry } from './activity-cache';
+import { fetchClient } from '@specboard/fetch';
+import { ActivityCache, createActivitySource, type ActivityEntry } from './activity-cache';
 
 const entry = (id: string, note: string): ActivityEntry => ({ id, note, actor: null, createdAt: '2026-10-01T10:00:00.000Z' });
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('the quick card activity source', () => {
+	it('asks for the newest entry only, not the whole log', async () => {
+		const get = vi.spyOn(fetchClient, 'get').mockResolvedValue([]);
+		await createActivitySource('acme/specboard')('SB-1');
+		expect(get).toHaveBeenCalledWith('/api/projects/acme/specboard/items/SB-1/notes?limit=1');
+		get.mockRestore();
+	});
+});
 
 describe('the quick card activity cache', () => {
 	it('says loading until the log arrives, then holds its newest entry', async () => {

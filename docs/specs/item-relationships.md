@@ -361,7 +361,8 @@ first everywhere it is read.
   via MCP `include_notes`, so one call answers "what is the state of this work".
   The browser reads the sub-resource `GET/POST /items/:itemKey/notes` instead, so
   the item response stays small and the item model has no `notes` prop to PUT
-  back. `handleGetItem` must not re-enable `includeNotes`.
+  back. The read takes `?limit=n` for the newest n entries (the Map's quick card
+  asks for one); without it, the whole log. `handleGetItem` must not re-enable `includeNotes`.
 - MCP `update_item` takes one `note` param with append semantics, applied on
   every write path (the status shortcuts and the reparent move included). Empty
   or whitespace-only text is nothing to say, not an error. There is no

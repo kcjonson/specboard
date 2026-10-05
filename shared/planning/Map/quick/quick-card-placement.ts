@@ -22,6 +22,8 @@ export interface QuickPlacementInput {
 	plot: Box;
 	/** The toolbar and the minimap, which it keeps off. */
 	reserved: readonly Box[];
+	/** The item's own region's label, which it avoids covering: it names where the item lives. */
+	ownLabel?: Box | null;
 	size: { w: number; h: number };
 }
 
@@ -47,11 +49,12 @@ function boxOn(side: QuickSide, { anchor, size }: QuickPlacementInput): Box {
 	}
 }
 
-/** What a side costs: the item itself under the card is worst, then reserved chrome, then each related item hidden, then how far the plot's edge pushed it. */
+/** What a side costs: the item itself under the card is worst, then reserved chrome, then the item's own region label, then each related item hidden, then how far the plot's edge pushed it. */
 function cost(box: Box, shift: number, input: QuickPlacementInput): number {
 	let total = shift / 1000;
 	if (intersects(box, input.anchor)) total += 10_000;
 	for (const reserved of input.reserved) if (intersects(box, reserved)) total += 1000;
+	if (input.ownLabel && intersects(box, input.ownLabel)) total += 100;
 	for (const related of input.related) if (intersects(box, related)) total += 1;
 	return total;
 }

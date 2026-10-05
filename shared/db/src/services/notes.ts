@@ -55,10 +55,10 @@ function validateNote(note: string): string {
 }
 
 /**
- * List an item's log entries, newest first.
+ * List an item's log entries, newest first, or only the newest `limit`.
  * Returns null if the item isn't in the project (a miss is a 404, not an empty log).
  */
-export async function listItemNotes(projectId: string, itemNumber: number): Promise<ItemNoteSummary[] | null> {
+export async function listItemNotes(projectId: string, itemNumber: number, limit?: number): Promise<ItemNoteSummary[] | null> {
 	const item = await query<{ id: string }>(
 		'SELECT id FROM items WHERE number = $1 AND project_id = $2',
 		[itemNumber, projectId]
@@ -69,8 +69,8 @@ export async function listItemNotes(projectId: string, itemNumber: number): Prom
 		`SELECT n.* FROM item_notes n
 		 JOIN items i ON i.id = n.item_id
 		 WHERE i.number = $1 AND i.project_id = $2
-		 ORDER BY n.created_at DESC`,
-		[itemNumber, projectId]
+		 ORDER BY n.created_at DESC${limit === undefined ? '' : ' LIMIT $3'}`,
+		limit === undefined ? [itemNumber, projectId] : [itemNumber, projectId, limit]
 	);
 	return result.rows.map(toSummary);
 }

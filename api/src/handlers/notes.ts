@@ -30,8 +30,13 @@ export async function handleListItemNotes(context: Context): Promise<Response> {
 	const number = itemNumber(context, project);
 	if (typeof number !== 'number') return number;
 
+	// ?limit=n asks for the newest n entries; the Map's quick card wants one, not a whole log.
+	const raw = context.req.query('limit');
+	const limit = raw === undefined ? undefined : Number(raw);
+	if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1)) return context.json({ error: 'limit must be a positive integer' }, 400);
+
 	try {
-		const notes = await listItemNotes(project.id, number);
+		const notes = await listItemNotes(project.id, number, limit);
 		if (!notes) return context.json({ error: 'Item not found' }, 404);
 		return context.json(notes.map(apiNote));
 	} catch (error) {

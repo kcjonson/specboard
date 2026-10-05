@@ -1,5 +1,7 @@
 /* Looks like the summary strip's chips, which is where it sits. */
 .button {
+	flex-shrink: 0;
+	white-space: nowrap;
 	appearance: none;
 	display: inline-flex;
 	align-items: center;
