@@ -327,6 +327,15 @@ describe('a computer\'s text block', () => {
 		for (const p of placed) expect(intersects(p.box, { x: 480, y: 200, w: 200, h: 40 })).toBe(false);
 	});
 
+	it('is left out while its computer is out of view, and the items it names keep their labels', () => {
+		const dots = [drawDot('P1', 400, 300, { flight: 'in_progress' })];
+		const blocks = [block('computer:laptop', ['laptop', 'Session 1: P1'], ['P1'])];
+		const off = placeLabels(input({ dots, agents: [agent('computer:laptop', 1200, 300)], blocks }));
+		expect(off.blocks).toEqual([]);
+		expect(off.dots.map((label) => label.key)).toEqual(['P1']);
+		expect(placeLabels(input({ dots, agents: [agent('computer:laptop', 990, 300)], blocks })).blocks).toHaveLength(1);
+	});
+
 	it('is cut with an ellipsis rather than run past its width', () => {
 		const long = block('computer:laptop', ['a-computer-with-an-extremely-long-name-that-goes-on-and-on-and-on-past-any-sensible-width'], []);
 		const [at] = placeLabels(input({ dots: [], agents: [agent('computer:laptop', 400, 300)], blocks: [long] })).blocks;

@@ -169,6 +169,8 @@ function placeBlock(
 	const h = lines.length * BLOCK_LINE_HEIGHT;
 	const { x, y } = screenPoint(transform, computer);
 	const reach = agentRadius(computer, transform.k, level) + CLEARANCE + BLOCK_GAP;
+	// A block names the work around its computer: with the computer out of view it would float over nothing.
+	if (x + reach < 0 || x - reach > viewport.width || y + reach < 0 || y - reach > viewport.height) return null;
 	const inward = (left: number): number => Math.max(BLOCK_MARGIN, Math.min(viewport.width - w - BLOCK_MARGIN, left));
 	// Computers stand at the plot's edge with their sessions on one side, so after the four sides the spots go on: below and
 	// above, centered and then flush with either side, each one a block's height further out every time.
