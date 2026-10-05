@@ -100,4 +100,22 @@ describe('SummaryStrip', () => {
 		const { container } = render(<SummaryStrip {...props({ updatedAt: NOW - 4 * 60_000, retrying: true })} />);
 		expect(container.textContent).toContain('Updated 4 min ago, retrying');
 	});
+
+	it('says what changed since the last visit, and toggles the changes view', () => {
+		const onToggle = vi.fn();
+		const since = { date: 'Sep 19', text: '11 finished, 1 worked on, 9 filed', open: false, onToggle };
+		const { getByRole, rerender } = render(<SummaryStrip {...props({ since })} />);
+		const chip = getByRole('button', { name: 'Since Sep 19: 11 finished, 1 worked on, 9 filed' });
+		expect(chip.getAttribute('aria-pressed')).toBe('false');
+		fireEvent.click(chip);
+		expect(onToggle).toHaveBeenCalledTimes(1);
+
+		rerender(<SummaryStrip {...props({ since: { ...since, open: true } })} />);
+		expect(getByRole('button', { name: /^Since Sep 19/ }).getAttribute('aria-pressed')).toBe('true');
+	});
+
+	it('has no since summary when nothing is waiting', () => {
+		const { container } = render(<SummaryStrip {...props()} />);
+		expect(container.textContent).not.toContain('Since');
+	});
 });

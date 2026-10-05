@@ -13,4 +13,5 @@ export * from './blockers.ts';
 export * from './workers.ts';
 export * from './checklist.ts';
 export * from './map.ts';
+export * from './map-changes.ts';
 export * from './users.ts';

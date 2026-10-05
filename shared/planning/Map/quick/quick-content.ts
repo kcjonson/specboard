@@ -47,12 +47,16 @@ export interface QuickContent {
 	needs: { tag: string; text: string } | null;
 	/** 1 to 3 for an item that is up next. */
 	upNext: number | null;
+	/** What changed on the item since the person's last visit, a line each with its time; empty outside the changes view. */
+	changes: readonly string[];
 }
 
 /** What the surface knows about an item that its row doesn't say. */
 export interface QuickMarks {
 	reasons: readonly NeedsReason[];
 	upNext: number | null;
+	/** The changes view's lines for the item (see ChangedItem), empty when the view is closed or the item didn't change. */
+	changes: readonly string[];
 }
 
 export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemRow>, progress: Rollup | null, marks: QuickMarks): QuickContent {
@@ -72,6 +76,7 @@ export function quickContent(row: MapItemRow, rows: ReadonlyMap<string, MapItemR
 		progress,
 		needs: marks.reasons.length > 0 ? { tag: tagOf(marks.reasons), text: reasonsText(marks.reasons) } : null,
 		upNext: marks.upNext,
+		changes: marks.changes,
 	};
 }
 
@@ -87,10 +92,11 @@ const LINE = 16;
 const PROGRESS = 18;
 const ACTIVITY = 64;
 
-/** The card's height for this content: fixed parts, plus a line each for the reason it needs a person, its up-next number, sessions, blockers, and holds, plus the progress bar. */
+/** The card's height for this content: fixed parts, plus a line each for the reason it needs a person, what changed since the last visit, its up-next number, sessions, blockers, and holds, plus the progress bar. */
 export function quickHeight(content: QuickContent): number {
 	const lines =
 		(content.needs ? 1 : 0) +
+		content.changes.length +
 		(content.upNext !== null ? 1 : 0) +
 		(content.sessions !== null ? 1 : 0) +
 		content.blockers.length +

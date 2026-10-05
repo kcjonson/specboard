@@ -15,7 +15,7 @@ import { MapQuickCard } from './MapQuickCard';
 
 afterEach(cleanup);
 
-const NO_MARKS: QuickMarks = { reasons: [], upNext: null };
+const NO_MARKS: QuickMarks = { reasons: [], upNext: null, changes: [] };
 
 function scene(): { rows: ReadonlyMap<string, MapItemRow>; item: MapItemRow; blocker: MapItemRow } {
 	const b = new BoardBuilder();
@@ -90,5 +90,18 @@ describe('MapQuickCard', () => {
 		expect(container.querySelector('article')).not.toBeNull();
 		act(() => store.publish(frame({ rows, quick: null })));
 		expect(container.querySelector('article')).toBeNull();
+	});
+
+	it('says what changed and when, ahead of the latest activity entry', () => {
+		const { rows, item } = scene();
+		const store = new OverlayStore();
+		const marks: QuickMarks = { reasons: [], upNext: null, changes: ['Finished Oct 3, 3:12 PM', 'PR opened Oct 2, 1:00 PM'] };
+		const { container } = render(<MapQuickCard store={store} activity={new ActivityCache(() => new Promise(() => {}))} bottom={32} />);
+		act(() => store.publish(frame({ rows, quick: { key: item.key, x: 0, y: 0, side: 'right', progress: null, marks } })));
+
+		const text = container.textContent ?? '';
+		expect(text).toContain('Finished Oct 3, 3:12 PM');
+		expect(text).toContain('PR opened Oct 2, 1:00 PM');
+		expect(text.indexOf('Finished Oct 3')).toBeLessThan(text.indexOf('Latest activity'));
 	});
 });

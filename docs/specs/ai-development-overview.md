@@ -502,7 +502,7 @@ marker at once and was unreadable; these rules are the fix.
 | Layer | At rest, fit all | At rest, zoomed in | Hover or keyboard focus | Selected |
 |---|---|---|---|---|
 | Status glyph | Always. In-progress items draw larger; ready and blocked items get smaller and lighter the further down the plan they sit | Always, larger | The dot grows and gets an ink ring | Same, held until cleared |
-| Labels | In-progress items first (unless their computer's block names them), then up to 8 of the largest regions, on their outlines, then in-review items if there's room. Never over a dot or another label; no room, no label | Key and short title on every dot with room, in muted ink; every region with room gets its label | No extra label; the card names the item | Same |
+| Labels | In-progress items first (unless their computer's block names them), then up to 8 of the largest regions, on their outlines, then in-review items if there's room. Never over a dot or another label; no room, no label. In the changes view, the 8 most recent changes take the regions' place | Key and short title on every dot with room, in muted ink; every region with room gets its label | No extra label; the card names the item | Same |
 | Regions and chains | A region around each family, its label carrying status and a rollup bar; chain links as curved hairlines inside | Same | A region or any of its children lights the family and darkens the outline | Same, and the drawer opens on the parent if the region was picked |
 | Other blocker and discovered-from links | Hidden; they still pull, and a blocker still sits left of what it blocks | Hidden | The whole blocker chain both ways, discovered-from both ways (dotted) | Same |
 | Everything else | Full strength | Full strength | Fades to 30% (40% on dark) | Same, and the drawer opens |
@@ -674,7 +674,8 @@ Fixed, outside the Map:
 
 - counts per phase, plus blocked and needs-a-person
 - live agent sessions
-- since your last visit: what changed, by kind; it opens the changes view
+- since your last visit: what changed, by kind ("Since Sep 19: 11 finished, 1 worked
+  on, 9 filed"); it opens the changes view, and is absent when nothing is waiting
 - freshness: when the data last refreshed
 
 The counts follow [Phases](#phases) exactly, including a started hold in In flight and
@@ -705,22 +706,122 @@ from when the read last loaded, and keeps counting between refreshes.
 
 ## Since your last visit
 
-- A visit is the time this person spends on the Map for a project. The baseline is
-  stored per account (decision 7), so it's the same on every device.
-- A change is an item finished, worked on, or filed since the baseline (agent-filed
-  ones called out, with what they were discovered from), newly blocked or held, a
-  question raised (`needs_input`), or a PR opened. The transition log is what dates
-  the last three.
-- On arrival with changes waiting, the Map opens in the changes view: changed items
-  at full strength, everything else dimmed, and the at-rest labels given to the
-  most recent changes instead of the families. A bar on the canvas names the
-  baseline ("Since your last visit, Sep 19") and steps through the changes in the
-  order they happened; each step focuses the item, and its card says what changed
-  and when.
-- "Mark all seen" closes the view and moves the baseline forward, as leaving the
-  Map does. Until then, the summary strip's "Since Sep 19: 11 finished, 1 worked
-  on, 9 filed" reopens it.
-- Each changed item's card shows its latest activity-log entry, usually the agent's
+A visit is the time this person spends on the Map for a project. Everything below is
+what changed since the last one, and where the Map puts it.
+
+### The baseline
+
+- One timestamp per account per project (decision 7), so it's the same on every device.
+  It is the person's own bookmark: a single row, overwritten in place, with no history
+  of visits. Nothing logs it, counts it, or reads it in aggregate, and it isn't a
+  measurement of the Map's use (see [Out of scope](#out-of-scope)).
+- Read when the Map opens, with the changes (below). A first visit has no baseline and
+  nothing to show: the Map opens normally, and sets the baseline from that read's time
+  straight away, so the next visit has one to count from.
+- **The value is the read's time, never the client's clock.** The changes read stamps
+  `readAt` from the database's clock before it reads anything, and the client sends it
+  back unchanged. It sits a few seconds behind the statement's start on purpose: a row
+  whose transaction stamped it just before the read but committed after the read's
+  snapshot is then reported again next visit, where a baseline at the statement's start
+  would have skipped it for good.
+- **Moved forward, never back, in SQL.** The write is an upsert whose update is
+  `GREATEST(stored, sent)`, which Postgres evaluates against the row's latest committed
+  version once it holds the row lock, so two tabs racing each other can't leave the
+  earlier one last. The sent value is also held to the database's clock
+  (`LEAST(sent, clock_timestamp())`), since a client could send anything. The client
+  never decides what "forward" means.
+- **It moves when the person marks everything seen, and when they leave the Map**:
+  switching to Board or Table, navigating away, and closing or reloading the tab.
+  Closing the changes view without marking anything seen doesn't move it, and a search
+  or filter doesn't either. The leave is a `fetch` with `keepalive`, sent when the Map
+  unmounts and on `pagehide`. `keepalive` is what lets the browser finish the request
+  after the page is gone, and it carries the CSRF token like every other write.
+  `navigator.sendBeacon` can't send a header, so using it would mean taking CSRF
+  protection off the route; `unload` and `beforeunload` don't fire reliably (and
+  `unload` blocks the back-forward cache); `visibilitychange` fires when a tab is only
+  hidden, which isn't leaving. `pagehide` is the one event a close, a reload, and a
+  navigation away all fire. A leave after Mark all seen, or a second one, sends
+  nothing: the client remembers the read time it has already asked for.
+
+### What counts as a change
+
+Each change is one item, one kind, and the time of the event that makes it. An item can
+carry several kinds (finished, and a PR opened on the way); the strip counts items per
+kind, and an item that carries two is in both counts.
+
+| Kind | It's a change when | Dated by |
+|---|---|---|
+| Filed | The item was created after the baseline. An agent-filed one is called out, with what it was discovered from. | `created_at` |
+| Finished | It is done now, and `completed_at` is after the baseline. Finished, reopened, and not finished again isn't this. | `completed_at` |
+| Worked on | After the baseline it had a status or sub-status transition, an activity-log entry, or a worker write, and it wasn't filed or finished in that time (those say more). | The latest of those |
+| Blocked or held | It is blocked now (status `blocked`, or an open blocker row, item or text), and after the baseline it moved to `blocked` or had a blocker opened that is still open. A blocker that opened and cleared again isn't a change. | The latest of the move and the blocker row |
+| Question raised | It is in `needs_input` now, and it moved into it after the baseline. A question that was answered and moved past isn't one. | The transition log |
+| PR opened | It moved into `pr_open` after the baseline. This one stands even if the item is done since: the PR is still there. | The transition log |
+
+- A "moved into" is tested against what it moved from, so a sub-status change under a
+  status that was already `blocked`, or a status move under a sub-status that was
+  already `needs_input`, isn't a new hold or a new question.
+- Editing a title or description isn't an event here, as it isn't for the time anchor.
+- Nothing leaves out the viewer's own changes: the baseline is when they last looked at
+  the Map, not when they last acted.
+- No backfill: an item finished before the stamps shipped has no `completed_at`, and
+  the log starts empty, so neither can be a change. Worker writes are dated by
+  `last_seen_at`, and activity-log entries by their own time.
+- The changes are read by the project and item indexes in one statement, never an item
+  at a time.
+
+### Where the changes ride
+
+A request of its own, beside the Map read: `GET /api/projects/:owner/:project/map/changes`
+returns the baseline, the read's time, and the changes in columns (item keys as numbers,
+times as epoch milliseconds), oldest first. `POST .../map/seen` with `{ readAt }` moves
+the baseline forward. Both sit behind the same access check as the Map read, so
+anyone it answers 404 or 401 gets the same answer here, and the baseline is theirs alone.
+
+They don't ride the Map read for three reasons. The read is the same for everyone and
+the changes aren't. The read's own request is the critical path to first paint, and the
+changes' query is extra work on it; sent beside it, both go out together, and the
+changes land while the layout is still running, so they add nothing to the time before
+dots draw. And the read stays a pure function of the project, which the cheap refresh
+(Data, requirement 8) needs. Measured on a generated 1,000-item project, 427 changes
+since a baseline a week back, on Postgres 16: the Map read takes a median 46 ms end to
+end (139 KB, 19 KB gzipped), the changes read 20 ms (12.5 KB, 2.7 KB gzipped, of which
+the statement is 5 to 7 ms), and both sent together finish in 50 ms, the slower of the
+two rather than their sum. In the browser the changes landed about 480 ms before the
+dots drew, since layout and the first paint take about 420 ms after the Map read
+arrives, so first paint waits on nothing extra. Riding the Map read would have put that
+statement and payload on the path every first paint waits on, to save a request nothing
+was waiting for. The view's first frame already dims, because the changes are in hand
+before the layout settles; a changes read slower than the layout would open the view when
+it lands.
+
+### The changes view
+
+- **Arrival.** The Map opens in the changes view when changes are waiting, once the Map
+  and the changes have both loaded; a project with no changes waiting, a first visit,
+  and a failed changes read all open the Map as usual. A change that names an item the
+  Map doesn't carry (filed between the two requests, or folded away past the read cap)
+  is left out.
+- **Changed items at full strength, everything else dimmed**, the same dimming as a
+  search, and the at-rest labels go to the eight most recent changes instead of the
+  families. A family's label stays only when its own parent changed. Zoomed in, where
+  every dot with room is labeled anyway, nothing changes.
+- **The bar** names the baseline ("Since your last visit, Sep 19") and steps through the
+  changed items in the order they happened (oldest first, by each item's latest change),
+  with `]` and `[`. Each step focuses the item and flies to it, and its card says what
+  changed and when, a line per change ("Finished Oct 3, 3:12 PM"; an agent-filed item
+  says who filed it and what it was discovered from), above its latest activity-log
+  entry. The card shows the same lines when the pointer is on a changed item.
+- **Mark all seen** closes the view and moves the baseline to the read's time. **Close**
+  closes the view and leaves the baseline where it was; Escape does what Close does,
+  once the drawer, the selection, and any search or filter have had their turn.
+- **Reopening.** While changes are waiting, the strip says "Since Sep 19: 11 finished, 1
+  worked on, 9 filed" (every kind that has any, in this order: finished, worked on,
+  filed, blocked, questions, PRs opened), pressed while the view is open. Pressing it
+  reopens or closes the view. After Mark all seen nothing is waiting, and it's gone.
+- **A search or filter takes the canvas while it's on**, with its own bar and its own
+  dimming; the changes view stays open behind it and comes back when the search ends.
+- **Each changed item's card shows its latest activity-log entry**, usually the agent's
   own account of what it did and why.
 
 ---
@@ -961,10 +1062,15 @@ and nothing moves for more than a second.
    delta either (the board has the same blind spot), so they need their own
    signal, and the Map reflects them within a few minutes at worst.
 9. **A per-account last-visit baseline** (decision 7): one timestamp per person per
-   project, read when the Map opens and moved forward when they leave it or mark
-   everything seen.
+   project (`map_baselines`, migration 034), read when the Map opens and moved forward
+   when they leave it or mark everything seen. It moves forward only, enforced in SQL,
+   to the read's time and not the client's clock, and it is the person's own bookmark
+   rather than usage data. The changes since it come from a request of their own,
+   `GET /map/changes`, and the baseline moves with `POST /map/seen`. See
+   [Since your last visit](#since-your-last-visit).
 10. **Same read access as the board.** That's the project's owner today; once
-    multi-user lands, every member role, viewers included.
+    multi-user lands, every member role, viewers included. The baseline routes sit
+    behind the same check, and a baseline is only ever its owner's.
 
 ---
 

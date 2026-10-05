@@ -89,6 +89,11 @@
 	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-in-progress) 25%, transparent);
 }
 
+.changes {
+	color: var(--color-text);
+	font-weight: var(--font-semibold, 600);
+}
+
 .spacer {
 	flex: 1;
 }

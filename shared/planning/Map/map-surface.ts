@@ -117,6 +117,8 @@ export class MapSurface {
 	private allLinks = false;
 	/** What a search or filter lights; null when none is on or nothing matched, so nothing dims. */
 	private highlight: Highlight | null = null;
+	/** What the changes view says about each changed item on its card, by item key; null when the view is closed. */
+	private changeNotes: ReadonlyMap<string, readonly string[]> | null = null;
 	/** The relation the fade is heading to, kept while neither it nor the highlight changes, so the fade doesn't restart. */
 	private lit: { relation: Relation | null; highlight: Highlight | null; result: Relation | null } | null = null;
 	/** Markers asked for at the plot's edge, which show for the ones that are out of view. */
@@ -263,6 +265,13 @@ export class MapSurface {
 		if (highlight === this.highlight) return;
 		this.highlight = highlight;
 		this.refocus();
+	}
+
+	/** What the changes view says on each changed item's card: a line per change, with its time. Null when the view is closed. */
+	setChangeNotes(notes: ReadonlyMap<string, readonly string[]> | null): void {
+		if (notes === this.changeNotes) return;
+		this.changeNotes = notes;
+		this.requestPaint();
 	}
 
 	/** The items whose edge markers show while they are out of view, in priority order. */
@@ -789,7 +798,7 @@ export class MapSurface {
 			const otherDot = other === key ? undefined : this.dotsByKey.get(other);
 			if (otherDot) related.push(dotBox(otherDot, transform, level));
 		}
-		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key) };
+		const marks = { reasons: this.drawing.needs.get(key) ?? [], upNext: upNextOf(this.layout, key), changes: this.changeNotes?.get(key) ?? [] };
 		const size = { w: QUICK_WIDTH, h: quickHeight(quickContent(row, this.rows, progress, marks)) };
 		const reserved = [...this.chrome, ...(minimap ? [minimap] : [])];
 		const plot = { x: 0, y: 0, w: Math.max(0, this.viewport.width - this.covered), h: this.viewport.height };

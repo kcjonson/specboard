@@ -21,6 +21,11 @@ export interface SummaryStripProps {
 	retrying?: boolean;
 	/** The "Agents at work" button, which opens the roster of computers and sessions. */
 	agents?: ComponentChildren;
+	/**
+	 * Since your last visit: what changed, by kind, which opens the changes view and, while it
+	 * is open, is pressed. Absent when nothing is waiting.
+	 */
+	since?: { date: string; text: string; open: boolean; onToggle(): void };
 	/** The clock the freshness note reads, so a test can drive it. */
 	clock?: () => number;
 }
@@ -38,11 +43,11 @@ const TICK_MS = 30_000;
 
 /**
  * The summary strip (spec, Summary strip), fixed above the canvas: counts per phase, blocked,
- * needs a person, live agent sessions, and when the data last loaded. The counts that name a
+ * needs a person, live agent sessions, what changed since the person last looked, and when the data last loaded. The counts that name a
  * filter are its buttons: pressing one dims everything else on the Map, pressing it again
  * puts everything back. Blocked is a count only, since it isn't a phase.
  */
-export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPerson, onToggleLive, updatedAt, retrying = false, agents, clock = Date.now }: SummaryStripProps): JSX.Element {
+export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPerson, onToggleLive, updatedAt, retrying = false, agents, since, clock = Date.now }: SummaryStripProps): JSX.Element {
 	const [now, setNow] = useState(clock);
 	useEffect(() => {
 		setNow(clock());
@@ -77,6 +82,14 @@ export function SummaryStrip({ summary, filters, onTogglePhase, onToggleNeedsPer
 				<span class={styles.count}>{count(summary?.liveSessions)}</span>
 			</button>
 			{agents}
+			{since && (
+				<button type="button" class={styles.chip} aria-pressed={since.open} title="What changed since you last looked: opens the changes view" onClick={since.onToggle}>
+					<span class={styles.label}>
+						{`Since ${since.date}: `}
+						<span class={styles.changes}>{since.text}</span>
+					</span>
+				</button>
+			)}
 			<span class={styles.spacer} />
 			{updatedAt !== null && <span class={styles.fresh}>{freshnessText(updatedAt, now, retrying)}</span>}
 		</section>

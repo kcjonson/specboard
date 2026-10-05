@@ -121,4 +121,15 @@ describe('SteppingBar', () => {
 		fireEvent.keyDown(document.body, { key: ']' });
 		expect(onStep).not.toHaveBeenCalled();
 	});
+
+	it('offers an accept button beside close, which does its own thing', () => {
+		const onClose = vi.fn();
+		const accept = vi.fn();
+		const { getByText } = render(<SteppingBar {...props({ onClose, closeLabel: 'Close', accept: { label: 'Mark all seen', onClick: accept } })} />);
+		fireEvent.click(getByText('Mark all seen'));
+		expect(accept).toHaveBeenCalledTimes(1);
+		expect(onClose).not.toHaveBeenCalled();
+		fireEvent.click(getByText('Close'));
+		expect(onClose).toHaveBeenCalledTimes(1);
+	});
 });

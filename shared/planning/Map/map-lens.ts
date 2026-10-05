@@ -43,6 +43,12 @@ export interface Highlight {
 	regions: ReadonlySet<string>;
 	/** Regions whose own parent matches, which get a lit outline. */
 	outlined: ReadonlySet<string>;
+	/**
+	 * Set by the changes view, which gives its labels to the most recent changes: the nodes
+	 * (dots, or regions whose parent changed) that are named first at rest, and the
+	 * families that are then left without labels. Search and filters leave it unset.
+	 */
+	recent?: ReadonlySet<string>;
 }
 
 export interface Lens {
@@ -93,7 +99,7 @@ function inReadingOrder(keys: readonly string[], layout: MapLayout): string[] {
 	});
 }
 
-export function highlightOf(matches: readonly string[], layout: MapLayout): Highlight {
+export function highlightOf(matches: readonly string[], layout: MapLayout, recent?: readonly string[]): Highlight {
 	const regionByKey = new Map(layout.regions.map((region) => [region.key, region]));
 	const dots = new Set<string>();
 	const outlined = new Set<string>();
@@ -112,7 +118,8 @@ export function highlightOf(matches: readonly string[], layout: MapLayout): High
 	for (const region of layout.regions) {
 		if (outlined.has(region.key) || region.members.some((member) => dots.has(member))) light(region.key);
 	}
-	return { dots, regions, outlined };
+	const recentNodes = recent && new Set(recent.flatMap((key) => layout.representative[key] ?? []));
+	return recentNodes ? { dots, regions, outlined, recent: recentNodes } : { dots, regions, outlined };
 }
 
 const NO_LINKS: ReadonlySet<string> = new Set();

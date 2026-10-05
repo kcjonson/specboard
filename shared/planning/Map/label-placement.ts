@@ -31,8 +31,12 @@ export interface LabelInput {
 	measure(text: string, font: LabelFont): number;
 	/** Items another layer already names (a computer's block, say), so they get no label of their own. */
 	named: ReadonlySet<string>;
-	/** What a search or filter lights: those dots, and the regions whose own parent matches, get labels at any level. */
-	lit?: Pick<Highlight, 'dots' | 'outlined'>;
+	/**
+	 * What a search or filter lights: those dots, and the regions whose own parent matches, get labels at any
+	 * level. The changes view also names its most recent changes (`recent`) first, and then gives families
+	 * no labels at rest, as it is the changes the Map is about.
+	 */
+	lit?: Pick<Highlight, 'dots' | 'outlined' | 'recent'>;
 	/** Screen marks a label or card keeps off: expand controls, and boxes reserved outright such as the toolbar's and the minimap's. */
 	occupied: { circles: readonly Circle[]; boxes: readonly Box[] };
 }
@@ -51,7 +55,7 @@ const cardRank = (dot: DrawDot): number => (dot.flight === 'in_progress' ? 0 : d
 
 const inflate = (box: Box, by: number): Box => ({ x: box.x - by, y: box.y - by, w: box.w + 2 * by, h: box.h + 2 * by });
 
-const NO_LIT: NonNullable<LabelInput['lit']> = { dots: new Set(), outlined: new Set() };
+const NO_LIT: NonNullable<LabelInput['lit']> = { dots: new Set(), outlined: new Set(), recent: undefined };
 
 export function placeLabels({ rules, level, regions, outlines, dots, transform, viewport, measure, named, occupied, lit = NO_LIT }: LabelInput): PlacedLabels {
 	const taken = new BoxIndex();
@@ -92,25 +96,29 @@ export function placeLabels({ rules, level, regions, outlines, dots, transform, 
 		}
 	};
 
+	// What is named ahead of the regions: every dot the lens lit, or only the most recent changes when the changes view is open.
+	const first = lit.recent ?? lit.dots;
 	const unnamed = near.filter((dot) => !named.has(dot.key) && !carded.has(dot.key));
 	if (rules.dots !== 'none') labelDots(unnamed.filter((dot) => dot.flight === 'in_progress').sort(byKey));
 	// Matches are what the person asked to see: they are named before the regions take the room around them, at any level.
-	const matches = unnamed.filter((dot) => lit.dots.has(dot.key) && !(rules.dots !== 'none' && dot.flight === 'in_progress'));
+	const matches = unnamed.filter((dot) => first.has(dot.key) && !(rules.dots !== 'none' && dot.flight === 'in_progress'));
 	labelDots(matches.sort((a, b) => b.r - a.r || byKey(a, b)));
 
 	const regionPlacement = { outlines, transform, viewport, measure: (text: string) => measure(text, 'region') };
 	const ordered = [...regions].sort((a, b) => Number(lit.outlined.has(b.key)) - Number(lit.outlined.has(a.key)) || b.size - a.size || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 	for (const region of ordered) {
-		if (rules.regions !== null && placed.regions.length >= rules.regions && !lit.outlined.has(region.key)) continue;
+		if (rules.regions !== null && !lit.outlined.has(region.key) && (lit.recent || placed.regions.length >= rules.regions)) continue;
 		const label = placeRegionLabel(region, regionPlacement, taken);
 		if (label) placed.regions.push(label);
 	}
 
 	// After the regions: a region's label is what names a whole cluster, and a crowd of in-review labels would take every spot on its outline.
-	if (rules.dots !== 'none') labelDots(unnamed.filter((dot) => dot.flight === 'in_review' && !lit.dots.has(dot.key)).sort(byKey));
+	// With the changes view open, only changed dots are named at rest: the rest are dimmed, and a label would pull the eye back to them.
+	const namedAtRest = (dot: DrawDot): boolean => !lit.recent || lit.dots.has(dot.key);
+	if (rules.dots !== 'none') labelDots(unnamed.filter((dot) => dot.flight === 'in_review' && !first.has(dot.key) && namedAtRest(dot)).sort(byKey));
 	if (rules.dots === 'all') {
 		// Bigger dots first: they are the ones that matter, and the same dots win every frame.
-		labelDots(unnamed.filter((dot) => dot.flight === null && !lit.dots.has(dot.key)).sort((a, b) => b.r - a.r || byKey(a, b)));
+		labelDots(unnamed.filter((dot) => dot.flight === null && !first.has(dot.key)).sort((a, b) => b.r - a.r || byKey(a, b)));
 	}
 	return placed;
 }

@@ -98,6 +98,12 @@ describe('FetchClient', () => {
 			);
 		});
 
+		it('should pass keepalive through, so a request can outlive the page that sent it', async () => {
+			await client.post('/test', { name: 'John' }, { keepalive: true });
+
+			expect(mockFetch).toHaveBeenCalledWith('/test', expect.objectContaining({ method: 'POST', keepalive: true }));
+		});
+
 		it('should make DELETE requests', async () => {
 			await client.delete('/test');
 

@@ -14,10 +14,14 @@ import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { MapView } from './MapView';
 import type { MapItemType, MapRead } from '@specboard/core/map-read';
 import { memoryCollapseStore } from './collapse-store.fixture';
+import { MapChangesModel, type ChangesSource } from './changes/changes-model';
 import { MapDataModel } from './map-data-model';
 import type { MapSearchSource } from './map-search';
 import { ActivityCache } from './quick/activity-cache';
 import type { MapFrame, MapRenderer } from './renderer';
+import type { MapChange } from '@specboard/core/map-changes';
+import { formatDateTime } from '../utils/time';
+import { baselineDate } from './changes/changes';
 
 const frames: MapFrame[] = [];
 const renderer: MapRenderer = {
@@ -53,6 +57,8 @@ const opened: string[] = [];
 const closed = vi.fn();
 
 interface MapProps {
+	/** What the last-visit read answers; by default a baseline with nothing changed since. */
+	changes?: Awaited<ReturnType<ChangesSource['read']>>;
 	openItemKey?: string;
 	covered?: number;
 	search?: string;
@@ -60,13 +66,16 @@ interface MapProps {
 	searchSource?: MapSearchSource;
 }
 
-type RenderedMap = Omit<ReturnType<typeof render>, 'rerender'> & { model: MapDataModel; rerender(next: MapProps): void };
+type RenderedMap = Omit<ReturnType<typeof render>, 'rerender'> & { model: MapDataModel; changes: MapChangesModel; advance: ReturnType<typeof vi.fn>; rerender(next: MapProps): void };
 
 const cleared = vi.fn();
 
 function renderMap(source: () => Promise<MapRead>, props: MapProps = {}): RenderedMap {
 	const model = new MapDataModel(source, () => worker, memoryCollapseStore());
 	const activity = new ActivityCache(() => Promise.resolve([]));
+	const advance = vi.fn().mockResolvedValue(undefined);
+	const read = props.changes ?? { baseline: Date.now() - 86_400_000, readAt: Date.now(), changes: [] };
+	const changes = new MapChangesModel({ read: () => Promise.resolve(read), advance });
 	const searchSource = props.searchSource ?? (() => Promise.resolve([]));
 	const view = (next: MapProps): JSX.Element => (
 		<MapView
@@ -74,6 +83,7 @@ function renderMap(source: () => Promise<MapRead>, props: MapProps = {}): Render
 			model={model}
 			activity={activity}
 			searchSource={searchSource}
+			changes={changes}
 			covered={next.covered ?? 0}
 			openItemKey={next.openItemKey}
 			search={next.search ?? ''}
@@ -84,7 +94,7 @@ function renderMap(source: () => Promise<MapRead>, props: MapProps = {}): Render
 		/>
 	);
 	const rendered = render(view(props));
-	return { ...rendered, model, rerender: (next) => rendered.rerender(view(next)) };
+	return { ...rendered, model, changes, advance, rerender: (next) => rendered.rerender(view(next)) };
 }
 
 // jsdom has no pointer events; a mouse event with the pointer fields on it is enough for the handlers.
@@ -650,5 +660,227 @@ describe('MapView up next', () => {
 		const numbered = frames.at(-1)!.dots.filter((dot) => dot.upNext !== null);
 		expect(numbered.map((dot) => dot.upNext).sort()).toEqual(numbered.map((_, i) => i + 1));
 		expect(numbered.find((dot) => dot.upNext === 1)!.key).toBe(m.upNext);
+	});
+});
+
+describe('MapView since your last visit', () => {
+	const HOUR = 3_600_000;
+	const litKeys = (): ReadonlySet<string> | undefined => frames.at(-1)?.focus.to?.dots;
+
+	/** Four items changed in this order: filed, a PR opened, a question raised, finished; plus one the Map doesn't carry. */
+	function waiting(m: ReturnType<typeof marked>): { baseline: number; readAt: number; changes: MapChange[]; at: (n: number) => number } {
+		const baseline = Date.now() - 3 * 24 * HOUR;
+		const at = (n: number): number => baseline + n * HOUR;
+		const changes: MapChange[] = [
+			{ key: m.done, kind: 'finished', at: at(4) },
+			{ key: m.asked, kind: 'question', at: at(3) },
+			{ key: m.review, kind: 'worked_on', at: at(1) },
+			{ key: m.review, kind: 'pr_opened', at: at(2) },
+			{ key: m.upNext, kind: 'filed', at: at(1) },
+			{ key: 'MAP-404', kind: 'filed', at: at(5) },
+		];
+		return { baseline, readAt: Date.now(), changes, at };
+	}
+
+	it('opens in the changes view with the changes waiting: they are lit, everything else dims, and the bar names the baseline', async () => {
+		const m = marked();
+		const w = waiting(m);
+		const { findByText, getByRole } = renderMap(() => Promise.resolve(m.read), { changes: w });
+
+		await findByText(`Since your last visit, ${baselineDate(w.baseline)}`);
+		expect(getByRole('status').textContent).toBe('4 changes');
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.done, m.asked, m.review, m.upNext])));
+	});
+
+	it('does not open when nothing changed, and leaves everything at full strength', async () => {
+		const m = marked();
+		const { container } = renderMap(() => Promise.resolve(m.read));
+
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBeGreaterThan(5));
+		expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull();
+		expect(litKeys()).toBeUndefined();
+		expect(container.querySelector('section[aria-label="Project summary"]')!.textContent).not.toContain('Since');
+	});
+
+	it('does not open on a first visit, and sets the baseline from the read time at once', async () => {
+		const m = marked();
+		const readAt = Date.now() - 5000;
+		const { container, advance } = renderMap(() => Promise.resolve(m.read), { changes: { baseline: null, readAt, changes: [] } });
+
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBeGreaterThan(5));
+		await waitFor(() => expect(advance).toHaveBeenCalledWith(readAt, { keepalive: false }));
+		expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull();
+		expect(litKeys()).toBeUndefined();
+	});
+
+	it('ignores changes to items the Map does not carry', async () => {
+		const m = marked();
+		const { baseline, readAt } = waiting(m);
+		const { container } = renderMap(() => Promise.resolve(m.read), { changes: { baseline, readAt, changes: [{ key: 'MAP-404', kind: 'filed', at: baseline + HOUR }] } });
+
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBeGreaterThan(5));
+		expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull();
+	});
+
+	it('steps through the changes in the order they happened, each step focusing the item, and wraps', async () => {
+		const m = marked();
+		const { findByLabelText, getByRole } = renderMap(() => Promise.resolve(m.read), { changes: waiting(m) });
+		const next = await findByLabelText('Next');
+		const focused = (): string | undefined => frames.at(-1)!.focus.to?.key;
+
+		const order: string[] = [];
+		for (let i = 0; i < 5; i++) {
+			fireEvent.click(next);
+			await waitFor(() => expect(getByRole('status').textContent).toBe(`${(i % 4) + 1} of 4`));
+			await waitFor(() => expect(focused()).toBe([m.upNext, m.review, m.asked, m.done][i % 4]));
+			order.push(focused()!);
+		}
+		expect(order).toEqual([m.upNext, m.review, m.asked, m.done, m.upNext]);
+	});
+
+	it('steps on ] and [ too', async () => {
+		const m = marked();
+		renderMap(() => Promise.resolve(m.read), { changes: waiting(m) });
+		await waitFor(() => expect(litKeys()?.size).toBe(4));
+		const focused = (): string | undefined => frames.at(-1)!.focus.to?.key;
+
+		fireEvent.keyDown(document.body, { key: ']' });
+		await waitFor(() => expect(focused()).toBe(m.upNext));
+		fireEvent.keyDown(document.body, { key: '[' });
+		await waitFor(() => expect(focused()).toBe(m.done));
+	});
+
+	it('says on the stepped-to item\'s card what changed and when, one line per change, with its latest activity entry', async () => {
+		const m = marked();
+		const w = waiting(m);
+		const { findByLabelText, container } = renderMap(() => Promise.resolve(m.read), { changes: w });
+		const next = await findByLabelText('Next');
+
+		fireEvent.click(next);
+		fireEvent.click(next);
+		await waitFor(() => expect(frames.at(-1)!.focus.to?.key).toBe(m.review));
+
+		await waitFor(() => expect(container.querySelector('article')?.textContent).toContain('PR opened'));
+		const card = container.querySelector('article')!.textContent!;
+		expect(card).toContain(`Worked on ${formatDateTime(new Date(w.at(1)).toISOString())}`);
+		expect(card).toContain(`PR opened ${formatDateTime(new Date(w.at(2)).toISOString())}`);
+		expect(card).toContain('Latest activity');
+	});
+
+	it('gives the at-rest labels to the most recent changes instead of the families', async () => {
+		const m = marked();
+		renderMap(() => Promise.resolve(m.read), { changes: waiting(m) });
+		await waitFor(() => expect(litKeys()?.size).toBe(4));
+
+		const frame = frames.at(-1)!;
+		expect(frame.labels).toEqual([]);
+		expect(frame.dotLabels.map((label) => label.key)).toEqual(expect.arrayContaining([m.done, m.asked, m.review, m.upNext]));
+	});
+
+	it('Mark all seen closes the view, moves the baseline to the read time, and takes the strip summary with it', async () => {
+		const m = marked();
+		const w = waiting(m);
+		const { findByText, container, advance } = renderMap(() => Promise.resolve(m.read), { changes: w });
+
+		fireEvent.click(await findByText('Mark all seen'));
+
+		await waitFor(() => expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull());
+		expect(advance).toHaveBeenCalledTimes(1);
+		expect(advance).toHaveBeenCalledWith(w.readAt, { keepalive: false });
+		await waitFor(() => expect(litKeys()).toBeUndefined());
+		expect(container.querySelector('section[aria-label="Project summary"]')!.textContent).not.toContain('Since');
+	});
+
+	it('closes without moving the baseline, and the strip\'s summary reopens it', async () => {
+		const m = marked();
+		const w = waiting(m);
+		const { findByText, getByRole, container, advance } = renderMap(() => Promise.resolve(m.read), { changes: w });
+
+		fireEvent.click(await findByText('Close'));
+		await waitFor(() => expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull());
+		await waitFor(() => expect(litKeys()).toBeUndefined());
+		expect(advance).not.toHaveBeenCalled();
+
+		const summary = getByRole('button', { name: `Since ${baselineDate(w.baseline)}: 1 finished, 1 worked on, 1 filed, 1 question, 1 PR opened` });
+		expect(summary.getAttribute('aria-pressed')).toBe('false');
+		fireEvent.click(summary);
+		await findByText(`Since your last visit, ${baselineDate(w.baseline)}`);
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.done, m.asked, m.review, m.upNext])));
+		expect(getByRole('button', { name: /^Since / }).getAttribute('aria-pressed')).toBe('true');
+	});
+
+	it('Escape closes the view once the drawer, the selection, and any search are done with it', async () => {
+		const m = marked();
+		const { findByText, container, advance } = renderMap(() => Promise.resolve(m.read), { changes: waiting(m) });
+		await findByText(/^Since your last visit/);
+
+		fireEvent.keyDown(document.body, { key: 'Escape' });
+
+		await waitFor(() => expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull());
+		expect(advance).not.toHaveBeenCalled();
+		expect(cleared).not.toHaveBeenCalled();
+	});
+
+	it('hands the canvas to a search while it is on, and gets it back when the search ends', async () => {
+		const m = marked();
+		const w = waiting(m);
+		const { findByText, rerender, container } = renderMap(() => Promise.resolve(m.read), { changes: w, search: 'x', searchSource: () => Promise.resolve([m.live]) });
+		await findByText('Matches for "x"');
+		expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull();
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.live])));
+
+		fireEvent.keyDown(document.body, { key: 'Escape' });
+		expect(cleared).toHaveBeenCalledTimes(1);
+		rerender({ changes: w, search: '' });
+		await findByText(`Since your last visit, ${baselineDate(w.baseline)}`);
+		await waitFor(() => expect(litKeys()).toEqual(new Set([m.done, m.asked, m.review, m.upNext])));
+	});
+
+	it('sends the baseline when the person leaves the Map, once, with keepalive, whether the view was open or not', async () => {
+		const m = marked();
+		const w = waiting(m);
+		const { unmount, advance, findByText } = renderMap(() => Promise.resolve(m.read), { changes: w });
+		await findByText(/^Since your last visit/);
+
+		unmount();
+
+		expect(advance).toHaveBeenCalledTimes(1);
+		expect(advance).toHaveBeenCalledWith(w.readAt, { keepalive: true });
+	});
+
+	it('sends it as the page is hidden too, and not again when the Map is then torn down', async () => {
+		const m = marked();
+		const w = waiting(m);
+		const { unmount, advance, findByText } = renderMap(() => Promise.resolve(m.read), { changes: w });
+		await findByText(/^Since your last visit/);
+
+		window.dispatchEvent(new Event('pagehide'));
+		unmount();
+
+		expect(advance).toHaveBeenCalledTimes(1);
+		expect(advance).toHaveBeenCalledWith(w.readAt, { keepalive: true });
+	});
+
+	it('does not send anything when it left before the read landed', () => {
+		const m = marked();
+		const { unmount, advance } = renderMap(() => Promise.resolve(m.read), { changes: waiting(m) });
+
+		unmount();
+
+		expect(advance).not.toHaveBeenCalled();
+	});
+
+	it('draws the Map without a changes view when the changes read fails', async () => {
+		const m = marked();
+		const model = new MapDataModel(() => Promise.resolve(m.read), () => worker, memoryCollapseStore());
+		const failing = new MapChangesModel({ read: () => Promise.reject(new Error('HTTP 500')), advance: vi.fn() });
+		const { container } = render(
+			<MapView projectRef="acme/specboard" model={model} changes={failing} activity={new ActivityCache(() => Promise.resolve([]))} searchSource={() => Promise.resolve([])}
+				covered={0} search="" type={null} onClear={cleared} onOpenItem={() => {}} onCloseItem={closed} />,
+		);
+
+		await waitFor(() => expect(frames.at(-1)!.dots.length).toBeGreaterThan(5));
+		expect(container.querySelector('[aria-label^="Since your last visit"]')).toBeNull();
+		expect(litKeys()).toBeUndefined();
 	});
 });

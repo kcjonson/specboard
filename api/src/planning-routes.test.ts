@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { Redis } from 'ioredis';
 import type { MapRead, MapReadWire } from '@specboard/core/map-read';
+import type { MapChangesWire } from '@specboard/core/map-changes';
 
 vi.mock('@specboard/auth', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@specboard/auth')>()),
@@ -20,10 +21,12 @@ vi.mock('@specboard/db', async (importOriginal) => ({
 	resolveProject: vi.fn(),
 	getItems: vi.fn(),
 	getProjectMap: vi.fn(),
+	getMapChanges: vi.fn(),
+	advanceMapBaseline: vi.fn(),
 }));
 
 import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
-import { getItems, getProjectMap, resolveProject } from '@specboard/db';
+import { advanceMapBaseline, getItems, getMapChanges, getProjectMap, resolveProject } from '@specboard/db';
 import { registerPlanningRoutes, type AppVariables } from './planning-routes.ts';
 
 const OWNER = 'owner-1';
@@ -39,6 +42,14 @@ function app(): Hono<{ Variables: AppVariables }> {
 async function get(path: string, session: string | null, headers: Record<string, string> = {}): Promise<Response> {
 	return app().request(`http://localhost/api/projects/acme/roadmap/${path}`, {
 		headers: { ...(session ? { cookie: `${SESSION_COOKIE_NAME}=${session}` } : {}), ...headers },
+	});
+}
+
+async function post(path: string, session: string | null, body: unknown): Promise<Response> {
+	return app().request(`http://localhost/api/projects/acme/roadmap/${path}`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', ...(session ? { cookie: `${SESSION_COOKIE_NAME}=${session}` } : {}) },
+		body: typeof body === 'string' ? body : JSON.stringify(body),
 	});
 }
 
@@ -58,6 +69,14 @@ beforeEach(() => {
 	vi.mocked(getItems).mockResolvedValue({ items: [], total: 0 });
 	vi.mocked(getProjectMap).mockReset();
 	vi.mocked(getProjectMap).mockResolvedValue({ items: Array.from({ length: 40 }, (_, i) => row(i + 1)), summarized: false });
+	vi.mocked(getMapChanges).mockReset();
+	vi.mocked(getMapChanges).mockResolvedValue({
+		baseline: 1_790_000_000_000,
+		readAt: 1_790_100_000_000,
+		changes: [{ key: 'SB-3', kind: 'finished', at: 1_790_050_000_000 }, { key: 'SB-9', kind: 'filed', at: 1_790_060_000_000 }],
+	});
+	vi.mocked(advanceMapBaseline).mockReset();
+	vi.mocked(advanceMapBaseline).mockResolvedValue(1_790_100_000_000);
 });
 
 describe('GET /map access', () => {
@@ -103,5 +122,69 @@ describe('GET /map encoding', () => {
 
 		expect(response.status).toBe(500);
 		expect(await response.json()).toEqual({ error: 'Database error' });
+	});
+});
+
+describe('the last-visit baseline routes', () => {
+	it.each([
+		['someone who is not the owner', STRANGER],
+		['an expired session', 'none'],
+		['no session at all', null],
+	])('answer %s as the Map read does', async (_who, session) => {
+		const map = await get('map', session);
+		const changes = await get('map/changes', session);
+		const seen = await post('map/seen', session, { readAt: 1_790_100_000_000 });
+
+		expect(changes.status).toBe(map.status);
+		expect(seen.status).toBe(map.status);
+		expect(await changes.json()).toEqual(await map.json());
+		expect([401, 404]).toContain(changes.status);
+		expect(getMapChanges).not.toHaveBeenCalled();
+		expect(advanceMapBaseline).not.toHaveBeenCalled();
+	});
+
+	it('reads the changes for the signed-in owner, in columns', async () => {
+		const response = await get('map/changes', OWNER);
+
+		expect(response.status).toBe(200);
+		expect(getMapChanges).toHaveBeenCalledWith(OWNER, 'proj-1', 'SB');
+		expect(await response.json() as MapChangesWire).toEqual({
+			projectKey: 'SB', baseline: 1_790_000_000_000, readAt: 1_790_100_000_000,
+			number: [3, 9], kind: ['finished', 'filed'], at: [1_790_050_000_000, 1_790_060_000_000],
+		});
+	});
+
+	it('moves the baseline for the signed-in person, to the read time they send', async () => {
+		const response = await post('map/seen', OWNER, { readAt: 1_790_100_000_000 });
+
+		expect(response.status).toBe(200);
+		expect(advanceMapBaseline).toHaveBeenCalledWith(OWNER, 'proj-1', 1_790_100_000_000);
+		expect(await response.json()).toEqual({ baseline: 1_790_100_000_000 });
+	});
+
+	it.each([
+		['not JSON', 'readAt=1'],
+		['no read time', {}],
+		['a null body', 'null'],
+		['a string for the read time', { readAt: '2026-10-03' }],
+		['a non-positive read time', { readAt: 0 }],
+	])('refuses %s', async (_what, body) => {
+		const response = await post('map/seen', OWNER, body);
+
+		expect(response.status).toBe(400);
+		expect(advanceMapBaseline).not.toHaveBeenCalled();
+	});
+
+	it('answers a failure with a 500 and no detail', async () => {
+		vi.mocked(advanceMapBaseline).mockRejectedValue(new Error('deadlock detected at 10.0.0.4'));
+		vi.mocked(getMapChanges).mockRejectedValue(new Error('connection reset'));
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		const seen = await post('map/seen', OWNER, { readAt: 1_790_100_000_000 });
+		const changes = await get('map/changes', OWNER);
+
+		expect(seen.status).toBe(500);
+		expect(await seen.json()).toEqual({ error: 'Database error' });
+		expect(changes.status).toBe(500);
 	});
 });

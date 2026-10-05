@@ -516,4 +516,7 @@ time anchor and since-your-last-visit read them
 - Every item response carries `startedAt` and `completedAt` (REST and MCP alike);
   the item view shows Created, and Started and Completed once they're set. The
   log's first reader is the Map's whole-project read (`getProjectMap`), which takes
-  each item's latest transition for its time anchor.
+  each item's latest transition for its time anchor. The second is the Map's
+  since-your-last-visit read (`getMapChanges`, migration 034), which dates a move to
+  blocked, a question raised (a move into `needs_input`), and a PR opened (a move into
+  `pr_open`) from the log, each tested against what it moved from.
