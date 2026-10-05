@@ -485,7 +485,17 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	}, []);
 	const handleToggleNeeds = useCallback((): void => setNeedsOnly((on) => !on), []);
 	const handleToggleLive = useCallback((): void => setLiveOnly((on) => !on), []);
-	const handleToggleChanges = useCallback((): void => setChangesClosed((closed) => !closed), []);
+	// The strip's summary is gone once the view it opens is, so focus goes to the view's bar instead of to the body.
+	const focusBar = useRef(false);
+	const handleOpenChanges = useCallback((): void => {
+		focusBar.current = !lensActive;
+		setChangesClosed(false);
+	}, [lensActive]);
+	useEffect(() => {
+		if (!focusBar.current || !changesShown) return;
+		focusBar.current = false;
+		barRef.current?.querySelector('button')?.focus();
+	}, [changesShown]);
 	const handleMarkSeen = useCallback((): void => changesModel.markSeen(), [changesModel]);
 	const handleRoster = useCallback((): void => setRosterOpen((open) => !open), []);
 	const handleCloseRoster = useCallback((): void => setRosterOpen(false), []);
@@ -636,9 +646,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				onToggleLive={handleToggleLive}
 				updatedAt={state === 'ready' ? model.loadedAt : null}
 				retrying={model.retrying}
-				agents={<AgentsButton open={rosterOpen} disabled={!interactive} onClick={handleRoster} />}
+				agents={(compact) => <AgentsButton compact={compact} open={rosterOpen} disabled={!interactive} onClick={handleRoster} />}
 				since={interactive && waiting.length > 0 && changesModel.baseline !== null
-					? { date: baselineDate(changesModel.baseline), text: summaryText(waiting), open: !changesClosed, onToggle: handleToggleChanges }
+					? { date: baselineDate(changesModel.baseline), text: summaryText(waiting), open: changesShown, onOpen: handleOpenChanges }
 					: undefined}
 				announce={{ on: announce, onToggle: handleToggleAnnounce }}
 			/>

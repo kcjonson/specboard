@@ -12,15 +12,15 @@
 }
 
 /*
- * One line from 1280 px up. Below 1500 px the "changes" of the announce switch is kept for
- * assistive tech only, and with the since-your-last-visit summary showing, so are the phase
- * names (each phase carries its glyph); that summary shrinks and truncates, its full text being
- * the button's title, and the freshness note is the last to give. Narrower than 1280 px the strip wraps.
+ * One line while it fits, and `useStripFit` decides that by measuring: words that can be said
+ * shorter are, in a set order, before the strip wraps. It never drops a label.
  */
-@media (max-width: 1279px) {
-	.strip {
-		flex-wrap: wrap;
-	}
+.wrap {
+	flex-wrap: wrap;
+}
+
+.wrap .fresh {
+	margin-left: auto;
 }
 
 /* A count that is also a filter: pressed, it dims everything else on the Map. */
@@ -109,28 +109,8 @@
 	font-weight: var(--font-semibold, 600);
 }
 
-.since {
-	flex-shrink: 1;
-	min-width: 0;
-}
-
-.sinceText {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-@media (max-width: 1499px) {
-	.withSince .compactHide,
-	.announceMore {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
-	}
+.announceIcon {
+	display: block;
 }
 
 .spacer {
@@ -139,9 +119,7 @@
 }
 
 .fresh {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	flex-shrink: 0;
 	color: var(--color-text-muted);
 	white-space: nowrap;
 }

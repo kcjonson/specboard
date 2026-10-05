@@ -683,7 +683,8 @@ Fixed, outside the Map:
 - counts per phase, plus blocked and needs-a-person
 - live agent sessions
 - since your last visit: what changed, by kind ("Since Sep 19: 11 finished, 1 worked
-  on, 9 filed"); it opens the changes view, and is absent when nothing is waiting
+  on, 9 filed"); it opens the changes view, and is absent when nothing is waiting, and
+  while that view is open, since the bar says the same
 - freshness: when the data last refreshed
 
 The counts follow [Phases](#phases) exactly, including a started hold in In flight and
@@ -693,11 +694,27 @@ minutes, and the count is of distinct sessions. The phase, needs-a-person, and l
 counts are also the filters of the same names: pressing one dims everything that
 isn't in it, and pressing it again puts everything back. The "Agents at work" button
 sits after the live count. Freshness reads "Updated just now" or "Updated 4 min ago"
-from when the read last loaded, and keeps counting between refreshes. The strip is one line
-from 1280 px up. Below 1500 px the "changes" of the announce switch is kept for assistive tech
-only, and while the since summary shows so are the phase names (each phase carries its glyph);
-that summary shrinks and truncates (its full text is the button's title), and the freshness
-note gives last. Narrower than 1280 px it wraps.
+from when the read last loaded, and keeps counting between refreshes.
+
+The strip is one line when it fits and never drops a label to get there: the phase words
+(Done, In flight, Next, Later), Blocked, Needs a person, and Live sessions are always
+spelled out. When the line runs out of room, these yield in order, each keeping what the
+ones before gave up:
+
+1. The "Agents at work" button becomes its icon, the laptop the Map draws for a
+   computer, with "Agents at work" as its accessible name and tooltip and its roster
+   state still announced.
+2. The since summary shortens to its first kind and a count of the rest ("Since Sep 23:
+   86 finished, +3 more kinds"), then to a count of items ("Since Sep 23: 94 items
+   changed"). Its full text is the button's title.
+3. The freshness note shortens ("Updated now", "Updated 4m"); ", retrying" stays.
+4. The announce switch collapses to its icon, which keeps its accessible name and its
+   pressed state.
+5. Only then does the strip wrap to a second line.
+
+The strip measures its own line rather than switching at fixed widths, since what fits
+depends on the counts, the since text, and the font. It starts again from the full labels
+whenever its content or its width changes, so the words come back when room returns.
 
 ---
 
@@ -827,10 +844,12 @@ it lands.
 - **Mark all seen** closes the view and moves the baseline to the read's time. **Close**
   closes the view and leaves the baseline where it was; Escape does what Close does,
   once the drawer, the selection, and any search or filter have had their turn.
-- **Reopening.** While changes are waiting, the strip says "Since Sep 19: 11 finished, 1
-  worked on, 9 filed" (every kind that has any, in this order: finished, worked on,
-  filed, blocked, questions, PRs opened), pressed while the view is open. Pressing it
-  reopens or closes the view. After Mark all seen nothing is waiting, and it's gone.
+- **Reopening.** While changes are waiting and the view is closed (or a search has the
+  canvas), the strip says "Since Sep 19: 11 finished, 1 worked on, 9 filed" (every kind
+  that has any, in this order: finished, worked on, filed, blocked, questions, PRs
+  opened). Pressing it reopens the view and moves focus to the view's bar. While the
+  view is open the strip leaves it out, since the bar names the baseline and the count.
+  After Mark all seen nothing is waiting, and it's gone.
 - **A search or filter takes the canvas while it's on**, with its own bar and its own
   dimming; the changes view stays open behind it and comes back when the search ends.
 - **Each changed item's card shows its latest activity-log entry**, usually the agent's
