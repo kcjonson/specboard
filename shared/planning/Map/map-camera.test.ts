@@ -214,6 +214,18 @@ describe('the extent', () => {
 		expect(under(c.transform, 400, 300).x).toBeGreaterThanOrEqual(0);
 	});
 
+	it('holds the Map\'s own follow of a moved dot to it, and never counts it as the person settling', () => {
+		const settled = vi.fn();
+		const c = camera({ onSettle: settled }, true);
+		c.set({ k: 1, x: -100, y: 50 });
+		c.panBy(-30, 20);
+		expect(c.transform).toEqual({ k: 1, x: -130, y: 70 });
+		c.panBy(5000, 0);
+		expect(under(c.transform, 400, 300).x).toBeCloseTo(0);
+		vi.advanceTimersByTime(1000);
+		expect(settled).not.toHaveBeenCalled();
+	});
+
 	it('takes the zoom-out limit it is given', () => {
 		const c = camera();
 		c.configure({ width: 800, height: 600 }, null, 0.5);
