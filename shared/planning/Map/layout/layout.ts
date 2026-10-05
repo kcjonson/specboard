@@ -448,18 +448,22 @@ function coldLayout(model: MapModel, edge: number, aspect: number): Settled {
  * sessions and computers, new nodes, and anything within two links of them move, and
  * keep the previous unit width so nothing rescales. The orders still hold everywhere.
  *
- * Time drift enters here, once per pass: the scale moves to the new edge and the anchors
- * as they are now, and every previous position is carried onto it (shiftX) before the
- * pass starts, pinned ones included. The shift keeps each point's moment and never swaps
- * two points, so the pinned Map slides as one and the orders it held still hold; the main
- * thread then glides every dot from where it was to where this puts it, drift and all.
+ * Time drift enters here, once per pass: the scale's edge moves to the new now, and every
+ * previous position is carried onto the moved scale (shiftX) before the pass starts,
+ * pinned ones included. The shift keeps each point's moment and never swaps two points,
+ * so the pinned Map slides as one and the orders it held still hold; the main thread then
+ * glides every dot from where it was to where this puts it, drift and all. The equalized
+ * scale keeps the anchors it was fitted to: counting a changed item's new anchor would
+ * move every moment after its old one, and with them dots nothing happened to. Anything
+ * newer than the sample is at the log scale's mercy until the next cold pass.
  */
 function localLayout(model: MapModel, previous: MapLayoutPrevious, edge: number): Settled {
-	const scale = createTimeScale(edge, model.times, previous.frame.scale.unit);
+	const was = previous.frame;
+	const scale = createTimeScale(edge, was.scale.times, was.scale.unit);
 	const graph = buildGraph(model, scale);
 	raiseTargets(graph, scale);
 	const before: Record<string, MapPoint> = {};
-	for (const [key, point] of Object.entries(previous.positions)) before[key] = { x: shiftX(previous.frame.scale, scale, point.x), y: point.y };
+	for (const [key, point] of Object.entries(previous.positions)) before[key] = { x: shiftX(was.scale, scale, point.x), y: point.y };
 	const near = (point: MapPoint | undefined, dx: number, dy: number): MapPoint | undefined =>
 		point && { x: point.x + dx, y: point.y + dy };
 
@@ -503,7 +507,15 @@ function localLayout(model: MapModel, previous: MapLayoutPrevious, edge: number)
 		}
 	}
 	const settle = simulate(graph, LOCAL_TICKS, LOCAL_ALPHA);
-	return { graph, scale, bounds: boundsOf(graph.nodes, scale.unit), ticks: LOCAL_TICKS, settle };
+	// The extent only grows, drifting with the rest, so fit all doesn't shift under a refresh.
+	const fresh = boundsOf(graph.nodes, scale.unit);
+	const bounds = {
+		minX: Math.min(shiftX(was.scale, scale, was.bounds.minX), fresh.minX),
+		maxX: Math.max(was.bounds.maxX, fresh.maxX),
+		minY: Math.min(was.bounds.minY, fresh.minY),
+		maxY: Math.max(was.bounds.maxY, fresh.maxY),
+	};
+	return { graph, scale, bounds, ticks: LOCAL_TICKS, settle };
 }
 
 /** Lays out the Map: positions for every visible node, the time scale, and the sets the renderer draws from. */

@@ -64,7 +64,7 @@ export class MapDataModel implements Observable {
 	rows: ReadonlyMap<string, MapItemRow> = new Map();
 	/** Epoch ms the layout was computed for. */
 	now = 0;
-	/** What the latest data apply changed; null after a load, and NO_CHANGES after a collapse, which cut rather than glide. */
+	/** What the latest pass changed in the data, which the Map moves to; null after a load or a collapse alone, which cut. A pass for time drift alone has an empty set, and glides. */
 	changes: MapChanges | null = null;
 	/** When a read last landed, on the client's clock: the summary strip's freshness. */
 	loadedAt: number | null = null;
@@ -285,7 +285,7 @@ export class MapDataModel implements Observable {
 		this.rows = rows;
 		this.layout = layout;
 		if (layout !== settled) this.now = now;
-		this.changes = changes;
+		this.changes = incoming ? changes : null;
 		this.emit();
 		this.schedule();
 	}

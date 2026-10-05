@@ -21,6 +21,7 @@ import { mapFacts } from './map-facts';
 import { NO_LENS, describeFilters, filtersActive, lensOf, type MapFilters } from './map-lens';
 import { MapSearchModel, createSearchSource, type MapSearchSource } from './map-search';
 import { createMapSource } from './map-source';
+import { useMapUpdates } from './useMapUpdates';
 import { MapSurface } from './map-surface';
 import { Minimap } from './minimap/Minimap';
 import { OverlayStore } from './overlay';
@@ -107,6 +108,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		[provided, projectRef],
 	);
 	useModel(model);
+	useMapUpdates(model);
 	const activity = useMemo(() => providedActivity ?? new ActivityCache(createActivitySource(projectRef)), [providedActivity, projectRef]);
 
 	// The Map's read carries no descriptions, so the board's own search says which items match.
@@ -199,6 +201,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				},
 				onOpen: (key) => live.current.onOpenItem(key),
 				onCollapse: (key, collapse) => void live.current.model.setCollapsed(key, collapse),
+				onOutlineStep: (step) => {
+					live.current.model.outlineStep = step;
+				},
 				onPointerTarget: (target) => {
 					if (target) canvas.dataset.target = target;
 					else delete canvas.dataset.target;
@@ -346,9 +351,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	useEffect(() => {
 		const surface = surfaceRef.current!;
 		if (state !== 'ready' || !layout) surface.clear();
-		else if (surface.showing) surface.update(layout, rows);
+		else if (surface.showing) surface.update(layout, rows, model.changes);
 		else surface.show(layout, rows, readFocus(window.location.search));
-	}, [state, layout, rows]);
+	}, [state, layout, rows, model]);
 
 	// What the strip counts, and what search and the filters light. Neither moves anything: the layout never hears of them.
 	const facts = useMemo(() => (state === 'ready' && layout ? mapFacts(layout, rows, now) : null), [state, layout, rows, now]);
@@ -454,7 +459,8 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				onTogglePhase={handleTogglePhase}
 				onToggleNeedsPerson={handleToggleNeeds}
 				onToggleLive={handleToggleLive}
-				updatedAt={state === 'ready' ? model.now : null}
+				updatedAt={state === 'ready' ? model.loadedAt : null}
+				retrying={model.retrying}
 				agents={<AgentsButton open={rosterOpen} disabled={!interactive} onClick={handleRoster} />}
 			/>
 			<div class={styles.plot} ref={containerRef}>

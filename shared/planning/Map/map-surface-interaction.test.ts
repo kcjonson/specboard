@@ -256,7 +256,7 @@ describe('selection', () => {
 		const s = shown();
 		s.surface.select(s.m);
 		const next = board();
-		s.surface.update(next.layout, next.rows);
+		s.surface.update(next.layout, next.rows, null);
 		s.flush();
 		expect(s.renderer.frames.at(-1)!.focus.to?.key).toBe(s.m);
 	});

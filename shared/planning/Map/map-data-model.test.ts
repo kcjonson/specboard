@@ -6,7 +6,6 @@ import type { MapLayoutInput } from './layout/types';
 import type { MapItemRow, MapRead } from '@specboard/core/map-read';
 import { memoryCollapseStore } from './collapse-store.fixture';
 import { MapDataModel } from './map-data-model';
-import { NO_CHANGES } from './map-changes';
 import { buildModel } from './layout/model';
 
 function board(count: number): MapRead {
@@ -448,6 +447,6 @@ describe('MapDataModel refresh', () => {
 		expect(worker.inputs[2]!.now).toBe(model.now);
 		await settle(worker);
 		await toggling;
-		expect(model.changes).toBe(NO_CHANGES);
+		expect(model.changes).toBeNull();
 	});
 });

@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/preact';
 import type { JSX } from 'preact';
-import { BoardBuilder } from './layout/board-fixture';
+import { BoardBuilder, wholeRead } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { MapView } from './MapView';
@@ -46,7 +46,7 @@ const worker: MapLayoutWorker = {
 function board(count: number): MapRead {
 	const b = new BoardBuilder();
 	for (let i = 0; i < count; i++) b.add({ status: i % 3 === 0 ? 'done' : i % 3 === 1 ? 'in_progress' : 'ready', created: b.now - i * 86_400_000 });
-	return { items: b.rows, summarized: false };
+	return wholeRead(b.rows);
 }
 
 const opened: string[] = [];
@@ -164,7 +164,7 @@ describe('MapView states', () => {
 	});
 
 	it('says so on the canvas when the project has no items', async () => {
-		const { container, findByText } = renderMap(() => Promise.resolve({ items: [], summarized: false }));
+		const { container, findByText } = renderMap(() => Promise.resolve(wholeRead([])));
 		await findByText(/Nothing on the map yet/);
 		expect(control(container, 'Fit all').disabled).toBe(true);
 		await waitFor(() => expect(frames.at(-1)).toMatchObject({ dots: [], ruler: null }));
@@ -265,7 +265,7 @@ describe('MapView collapse', () => {
 		const epic = b.add({ type: 'epic', status: 'in_progress', title: 'Open family' });
 		for (let i = 0; i < 4; i++) b.add({ parentKey: epic.key, status: i ? 'ready' : 'in_progress' });
 		for (let i = 0; i < 4; i++) b.add({ status: 'ready' });
-		renderMap(() => Promise.resolve({ items: b.rows, summarized: false }));
+		renderMap(() => Promise.resolve(wholeRead(b.rows)));
 		await waitFor(() => expect(frames.at(-1)?.labels.length).toBe(1));
 		const { labels, transform } = frames.at(-1)!;
 		const { toggle } = labels[0]!;
@@ -479,7 +479,7 @@ function marked(): { read: MapRead; epic: string; asked: string; review: string;
 	const live = b.add({ status: 'in_progress', title: 'Write webhooks' });
 	b.work(live, 'session-a', 'laptop', 3);
 	const done = b.add({ status: 'done', title: 'Old chore' });
-	return { read: { items: b.rows, summarized: false }, epic: epic.key, asked: asked.key, review: review.key, hold: hold.key, cycle: [first.key, second.key], upNext: upNext.key, live: live.key, done: done.key };
+	return { read: wholeRead(b.rows), epic: epic.key, asked: asked.key, review: review.key, hold: hold.key, cycle: [first.key, second.key], upNext: upNext.key, live: live.key, done: done.key };
 }
 
 describe('MapView summary strip', () => {
@@ -499,7 +499,7 @@ describe('MapView summary strip', () => {
 	});
 
 	it('is outside the canvas: it stays while the Map has nothing to draw', async () => {
-		const { container, findByText } = renderMap(() => Promise.resolve({ items: [], summarized: false }));
+		const { container, findByText } = renderMap(() => Promise.resolve(wholeRead([])));
 		await findByText(/Nothing on the map yet/);
 		expect(container.querySelector('section[aria-label="Project summary"]')).not.toBeNull();
 	});
@@ -664,7 +664,7 @@ describe('MapView agents', () => {
 		b.work(one, 'aa', 'personal-laptop', 2);
 		b.work(two, 'bb', 'personal-laptop', 20);
 		b.work(three, 'cc', 'build-box', 4);
-		return { read: { items: b.rows, summarized: false }, b, items: [one.key, two.key, three.key] };
+		return { read: wholeRead(b.rows), b, items: [one.key, two.key, three.key] };
 	}
 
 	const agentsButton = (container: HTMLElement): HTMLButtonElement =>

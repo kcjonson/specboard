@@ -30,6 +30,10 @@ export interface MapCamera {
 	configure(viewport: Viewport, bounds: MapBounds | null, minScale: number): void;
 	/** Moves the camera with no flight. */
 	set(transform: Transform): void;
+	/** Moves the camera by this many screen pixels with no flight: the Map following a dot a refresh moved, so it stays put on screen. */
+	panBy(dx: number, dy: number): void;
+	/** A flight (Fit all, Now, a jump, a keyed zoom) is under way. */
+	readonly flying: boolean;
 	/** Moves the camera with a short flight, or without one under reduced motion. */
 	flyTo(transform: Transform): void;
 	/** Zooms about a point in the plot, or about its middle. */
@@ -93,11 +97,24 @@ export function createCamera(element: HTMLElement, options: CameraOptions): MapC
 		byPerson = false;
 	};
 	element.addEventListener('wheel', pan, { passive: false });
-	const glide = (): Transition<HTMLElement, unknown, null, undefined> => selection.transition().duration(FLIGHT_MS).ease(FLIGHT_EASE);
+	let flights = 0;
+	const glide = (): Transition<HTMLElement, unknown, null, undefined> => {
+		flights++;
+		// A flight cut off before its first frame is cancelled rather than interrupted.
+		return selection.transition().duration(FLIGHT_MS).ease(FLIGHT_EASE).on('end.flight interrupt.flight cancel.flight', () => {
+			flights = Math.max(0, flights - 1);
+		});
+	};
 
 	return {
 		get transform() {
 			return { ...current };
+		},
+		get flying() {
+			return flights > 0;
+		},
+		panBy(dx, dy) {
+			behavior.translateBy(selection, dx / current.k, dy / current.k);
 		},
 		onChange(listener) {
 			listeners.add(listener);
