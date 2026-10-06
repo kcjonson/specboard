@@ -120,11 +120,12 @@ export async function handleListItems(context: Context): Promise<Response> {
 }
 
 /**
- * GET /items/:itemKey — a single item with its children, specs, blockers, and workers.
+ * GET /items/:itemKey — a single item with its children and workers.
  *
- * Activity-log entries and checklist entries are deliberately absent: they are their
- * own sub-resources, so the item model carries no prop for them and SyncModel.save()
- * can't PUT a stale copy back over a concurrent write.
+ * Specs, blockers, activity-log entries, and checklist entries are deliberately absent:
+ * they are their own sub-resources, which the drawer reads on its own, so the item model
+ * carries no prop for them and SyncModel.save() can't PUT a stale copy back over a
+ * concurrent write.
  */
 export async function handleGetItem(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
@@ -132,7 +133,7 @@ export async function handleGetItem(context: Context): Promise<Response> {
 	if (typeof itemNumber !== 'number') return itemNumber;
 
 	try {
-		const { items } = await getItems({ projectId, itemNumber, includeChildren: true, includeSpecs: true, includeBlockers: true, includeWorkers: true });
+		const { items } = await getItems({ projectId, itemNumber, includeChildren: true, includeWorkers: true });
 		const item = items[0];
 		if (!item) return context.json({ error: 'Item not found' }, 404);
 		return context.json(apiItem(item));

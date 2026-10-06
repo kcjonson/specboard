@@ -78,7 +78,6 @@ export interface ItemResponse {
 	origin: ItemOrigin | null;
 	assignee: string | null;
 	rank: number;
-	dueDate: Date | null;
 	prUrl: string | null;
 	branchName: string | null;
 	createdAt: Date;
@@ -261,7 +260,6 @@ function transformItem(item: ItemRow): Omit<ItemResponse, 'childStats' | 'blocke
 		origin: item.origin,
 		assignee: item.assignee,
 		rank: item.rank,
-		dueDate: item.due_date,
 		prUrl: item.pr_url,
 		branchName: item.branch_name,
 		createdAt: item.created_at,

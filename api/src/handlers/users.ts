@@ -35,6 +35,11 @@ interface UserApiResponse {
 	signup_metadata?: SignupMetadata;
 }
 
+/**
+ * One user for the browser. Signup metadata is admin data, and only the admin user list
+ * and admin create (plain fetches) carry it: a single user's read loads into UserModel,
+ * which has no field for it.
+ */
 function userToApiResponse(user: User, includeAdminFields = false): UserApiResponse {
 	const response: UserApiResponse = {
 		id: user.id,
@@ -200,7 +205,7 @@ export async function handleGetUser(
 
 	// Handle "me" as a special case - return current user
 	if (idParam === 'me') {
-		return context.json(userToApiResponse(currentUser, isAdmin(currentUser)));
+		return context.json(userToApiResponse(currentUser));
 	}
 
 	if (!isValidUUID(idParam)) {
@@ -223,7 +228,7 @@ export async function handleGetUser(
 			return context.json({ error: 'User not found' }, 404);
 		}
 
-		return context.json(userToApiResponse(user, isAdmin(currentUser)));
+		return context.json(userToApiResponse(user));
 	} catch (error) {
 		console.error('Failed to get user:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -491,7 +496,7 @@ export async function handleUpdateUser(
 			console.log(`Password set for user ${id} by superadmin ${currentUser.id}`);
 		}
 
-		return context.json(userToApiResponse(user, userIsAdmin));
+		return context.json(userToApiResponse(user));
 	} catch (error) {
 		const { code, constraint } = error as { code?: string; constraint?: string };
 		if (code === UNIQUE_VIOLATION && constraint === 'idx_users_slug') {
