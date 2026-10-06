@@ -98,6 +98,25 @@ triggers on a published GitHub release (or a manual dispatch with a tag).
    previous task definition, so a green run means the new code is actually serving.
 6. [Verify](#verifying-a-deploy).
 
+### Image retention
+
+Staging and production share the four ECR repos, and every merge to `main` pushes new
+images into them. Each repo's lifecycle policy (in the staging stack, which owns the repos)
+expires images past the newest 20, so a plain count would also expire whatever production
+is running: in October 2026 the v0.12.0 images were gone within weeks of the release, which
+left production unable to start a replacement task (a crash or a Fargate host retirement
+would have been an outage) and `prod-rollback.yml` unable to roll back to it.
+
+So `verify-images` also tags the four images it is about to deploy `release-<tag>`
+(`release-v0.13.0`), and the policy's first rule keeps the newest 50 `release-*` images out
+of reach of the count. An image keeps every tag it has until it is deleted, so its SHA tag,
+which `prod-rollback.yml` verifies, stays with it.
+
+Images are built without provenance attestations (`provenance: false` in
+`_build-images.yml`). With one, the tag points at an index over two untagged child
+manifests, and the count rule could expire those children out from under a tagged index it
+keeps.
+
 ### Bootstrap mode
 `prod-deploy.yml` accepts a `bootstrap: true` input that provisions infrastructure only
 (skips migrate/seed/service deploy). Used for first-time environment setup, not routine

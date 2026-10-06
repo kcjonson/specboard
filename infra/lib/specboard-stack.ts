@@ -209,11 +209,22 @@ export class SpecboardStack extends cdk.Stack {
 		if (config.createSharedResources) {
 			// Staging stack creates ECR repos (shared across environments).
 			// Images are promoted by SHA tag, not rebuilt per environment.
+			// Staging builds and production releases share these repos, so a plain count expired the images
+			// production was still running (the v0.12.0 images went within weeks). prod-deploy tags what it
+			// ships release-<version>; an image a higher-priority rule matches can't be expired by a lower one,
+			// so the count below never reaches a release, and rollback targets stay pullable.
 			const ecrLifecycleRules: ecr.LifecycleRule[] = [
+				{
+					description: 'Keep the last 50 production releases (tagged release-* by prod-deploy)',
+					maxImageCount: 50,
+					rulePriority: 1,
+					tagStatus: ecr.TagStatus.TAGGED,
+					tagPrefixList: ['release-'],
+				},
 				{
 					description: 'Keep last 20 images for SHA-based promotion',
 					maxImageCount: 20,
-					rulePriority: 1,
+					rulePriority: 2,
 					tagStatus: ecr.TagStatus.ANY,
 				},
 			];

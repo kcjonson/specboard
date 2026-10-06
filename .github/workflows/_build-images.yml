@@ -74,6 +74,9 @@ jobs:
           context: .
           file: ./api/Dockerfile
           push: ${{ inputs.push }}
+          # One manifest per image: an attestation makes the tag an index over untagged children,
+          # which ECR's count rule can expire out from under a release it keeps.
+          provenance: false
           tags: |
             ${{ steps.prefix.outputs.value }}/api:latest
             ${{ steps.prefix.outputs.value }}/api:init
@@ -87,6 +90,7 @@ jobs:
           context: .
           file: ./frontend/Dockerfile
           push: ${{ inputs.push }}
+          provenance: false
           tags: |
             ${{ steps.prefix.outputs.value }}/frontend:latest
             ${{ steps.prefix.outputs.value }}/frontend:init
@@ -102,6 +106,7 @@ jobs:
           context: .
           file: ./mcp/Dockerfile
           push: ${{ inputs.push }}
+          provenance: false
           tags: |
             ${{ steps.prefix.outputs.value }}/mcp:latest
             ${{ steps.prefix.outputs.value }}/mcp:init
@@ -126,6 +131,7 @@ jobs:
           context: .
           file: ./storage/Dockerfile
           push: ${{ inputs.push }}
+          provenance: false
           tags: |
             ${{ steps.prefix.outputs.value }}/storage:latest
             ${{ steps.prefix.outputs.value }}/storage:init
