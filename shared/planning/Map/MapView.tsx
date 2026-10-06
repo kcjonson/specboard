@@ -290,6 +290,37 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 			const { left, top } = canvas.getBoundingClientRect();
 			return { x: event.clientX - left, y: event.clientY - top };
 		};
+		// Z held is Figma's zoom tool: a click zooms in a step (out, with Option) and centers where it landed, and the
+		// cursor says which. It takes Z wherever focus is while the pointer is over the canvas, since the hand on the
+		// mouse is asking, but never in a field or with Cmd or Ctrl (Cmd+Z stays undo).
+		let zoomTool = false;
+		let overCanvas = false;
+		const showZoomTool = (mode: 'in' | 'out' | null): void => {
+			zoomTool = mode !== null;
+			if (mode) canvas.dataset.zoomTool = mode;
+			else delete canvas.dataset.zoomTool;
+		};
+		// Option+Z types an omega on a Mac, so Z is read from `code`.
+		const onZoomKeyDown = (event: KeyboardEvent): void => {
+			if (event.metaKey || event.ctrlKey || isTypingTarget(event.target)) return;
+			if (event.code === 'KeyZ' && (overCanvas || zoomTool)) {
+				event.preventDefault();
+				showZoomTool(event.altKey ? 'out' : 'in');
+			} else if (event.key === 'Alt' && zoomTool) {
+				showZoomTool('out');
+			}
+		};
+		const onZoomKeyUp = (event: KeyboardEvent): void => {
+			if (!zoomTool) return;
+			if (event.code === 'KeyZ') showZoomTool(null);
+			else if (event.key === 'Alt') showZoomTool('in');
+		};
+		// A Z let go of in another window never comes back as a keyup here.
+		const onWindowBlur = (): void => showZoomTool(null);
+		document.addEventListener('keydown', onZoomKeyDown);
+		document.addEventListener('keyup', onZoomKeyUp);
+		window.addEventListener('blur', onWindowBlur);
+
 		let press: Press | null = null;
 		const onPointerDown = (event: PointerEvent): void => {
 			if (event.button !== 0) return;
@@ -306,11 +337,13 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 			const touch = event.pointerType === 'touch';
 			const hit = surface.hitAt(point, touch);
 			press = { id: event.pointerId, start: point, hit, touch, moved: false, dragging: false };
-			claimed = !touch && hit?.type === 'dot' && hit.part === 'glyph';
+			// With the zoom tool up, a press on a dot is a click to zoom or the start of a pan, never a drag.
+			claimed = !touch && !zoomTool && hit?.type === 'dot' && hit.part === 'glyph';
 			// Captured, so a release outside the canvas still ends the press instead of leaving it open.
 			canvas.setPointerCapture?.(event.pointerId);
 		};
 		const onPointerMove = (event: PointerEvent): void => {
+			overCanvas = true;
 			const point = pointOf(event);
 			if (press) {
 				if (press.id !== event.pointerId) return;
@@ -337,9 +370,13 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 			claimed = false;
 			delete canvas.dataset.dragging;
 			if (ended.dragging) surface.endDrag();
-			else if (event.type === 'pointerup' && !ended.moved) surface.tap(ended.hit, ended.touch);
+			else if (event.type === 'pointerup' && !ended.moved) {
+				if (zoomTool && !ended.touch) surface.zoomToolAt(ended.start, event.altKey ? 'out' : 'in');
+				else surface.tap(ended.hit, ended.touch);
+			}
 		};
 		const onPointerLeave = (event: PointerEvent): void => {
+			overCanvas = false;
 			if (event.pointerType !== 'touch' && !press?.dragging) surface.hoverAt(null);
 		};
 		canvas.addEventListener('pointerdown', onPointerDown);
@@ -348,7 +385,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		canvas.addEventListener('pointercancel', onPointerEnd);
 		canvas.addEventListener('pointerleave', onPointerLeave);
 
-		// Escape works from anywhere on the page, the way the board's does; every other key is the focused tree's (see `handleKeyDown`).
+		// Escape works from anywhere on the page, the way the board's does, and Z over the canvas (above); every other key is the focused tree's (see `handleKeyDown`).
 		const onKeyDown = (event: KeyboardEvent): void => {
 			if (event.key !== 'Escape' || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
 			// A dialog over the page has its own Escape.
@@ -372,6 +409,9 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 
 		return () => {
 			document.removeEventListener('keydown', onKeyDown);
+			document.removeEventListener('keydown', onZoomKeyDown);
+			document.removeEventListener('keyup', onZoomKeyUp);
+			window.removeEventListener('blur', onWindowBlur);
 			canvas.removeEventListener('pointerdown', onPointerDown);
 			canvas.removeEventListener('pointermove', onPointerMove);
 			canvas.removeEventListener('pointerup', onPointerEnd);
@@ -575,10 +615,6 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 			case 'zoom-focus':
 				if (key.direction === 'in') map.zoomInAtFocus();
 				else map.zoomOutAtFocus();
-				break;
-			case 'zoom-pointer':
-				if (key.direction === 'in') map.zoomInByKey();
-				else map.zoomOutByKey();
 				break;
 			case 'fit-all':
 				handleFitAll();

@@ -11,7 +11,6 @@ const press = (key: string, init: Partial<KeyEventLike> = {}): MapKey | null =>
 	mapKeyOf({ key, code: '', altKey: false, metaKey: false, ctrlKey: false, shiftKey: false, target: document.body, ...init });
 
 /** Z is read from `code`: Option+Z types an omega on a Mac. */
-const pressZ = (init: Partial<KeyEventLike> = {}): MapKey | null => press('z', { code: 'KeyZ', ...init });
 
 describe('the Map\'s keys', () => {
 	it('moves focus with the arrows', () => {
@@ -40,11 +39,6 @@ describe('the Map\'s keys', () => {
 		expect(press('-')).toEqual({ kind: 'zoom-focus', direction: 'out' });
 	});
 
-	it('zooms around the pointer on Z, and out on Option+Z', () => {
-		expect(pressZ()).toEqual({ kind: 'zoom-pointer', direction: 'in' });
-		expect(pressZ({ altKey: true, key: 'Ω' })).toEqual({ kind: 'zoom-pointer', direction: 'out' });
-	});
-
 	it('fits all on 0, jumps to now on T, and fits the focused family on F, in either case', () => {
 		expect(press('0')).toEqual({ kind: 'fit-all' });
 		expect(press('t')).toEqual({ kind: 'now' });
@@ -65,17 +59,14 @@ describe('the Map\'s keys', () => {
 		expect(press('[')).toEqual({ kind: 'step', delta: -1 });
 	});
 
-	it('leaves Cmd and Ctrl chords alone, Cmd+Z (undo) included, with or without Option', () => {
+	it('leaves Cmd and Ctrl chords alone', () => {
 		for (const key of ['p', 'l', 't', 'f', '0', '+', '-', ']', '[', 'ArrowLeft', 'Enter']) {
 			expect(press(key, { metaKey: true })).toBeNull();
 			expect(press(key, { ctrlKey: true })).toBeNull();
 		}
-		expect(pressZ({ metaKey: true })).toBeNull();
-		expect(pressZ({ ctrlKey: true })).toBeNull();
-		expect(pressZ({ metaKey: true, altKey: true })).toBeNull();
 	});
 
-	it('takes Option for nothing but Z', () => {
+	it('takes nothing with Option', () => {
 		for (const key of ['p', 'l', 't', 'f', '0', ']', 'ArrowLeft', 'Enter']) expect(press(key, { altKey: true })).toBeNull();
 	});
 
@@ -87,8 +78,6 @@ describe('the Map\'s keys', () => {
 			expect(press('p', { target })).toBeNull();
 			expect(press('ArrowLeft', { target })).toBeNull();
 			expect(press('Enter', { target })).toBeNull();
-			expect(pressZ({ target })).toBeNull();
-			expect(pressZ({ target, altKey: true })).toBeNull();
 		}
 	});
 

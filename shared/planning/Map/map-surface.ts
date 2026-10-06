@@ -43,7 +43,7 @@ import type { RegionInput, RegionOutline } from './regions/outline';
 import { RegionOutlines, gridStep } from './regions/region-outlines';
 import { RelationIndex, type Relation } from './relations';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
-import { edgeLabelAt, rulerMarks } from './ruler';
+import { edgeLabelAt, edgeLineAt, rulerMarks } from './ruler';
 import { LABEL_RULES, ZoomLevels, type LevelFrame, type ZoomLevel } from './zoom-levels';
 
 const AGENT_KEY = /^(session|computer):/;
@@ -409,13 +409,9 @@ export class MapSurface {
 		this.camera.zoomBy(1 / ZOOM_STEP);
 	}
 
-	/** The zoom keys: about whatever `zoomAnchor` picks. */
-	zoomInByKey(): void {
-		this.camera.zoomBy(ZOOM_STEP, this.zoomAnchor());
-	}
-
-	zoomOutByKey(): void {
-		this.camera.zoomBy(1 / ZOOM_STEP, this.zoomAnchor());
+	/** A click with Z held: one step in (out with Option) about `point`, which comes to the middle of the plot. */
+	zoomToolAt(point: ScreenPoint, direction: 'in' | 'out'): void {
+		this.camera.zoomInto(direction === 'in' ? ZOOM_STEP : 1 / ZOOM_STEP, point);
 	}
 
 	/** `+` and `-`: about the focused dot, which stays where it is on screen, or the middle of the plot when nothing in view has focus. */
@@ -454,10 +450,13 @@ export class MapSurface {
 		this.setHover(this.hitAt(point, coarse));
 	}
 
-	/** A press and release in place on `hit`: a click, or a tap on a coarse pointer, where the first tap selects and shows the card and the second opens the item. */
+	/**
+	 * A press and release in place on `hit`: a click, or a tap on a coarse pointer, where the first tap selects and shows
+	 * the card and the second opens the item. One on the empty plot lets go of a selection the drawer isn't showing.
+	 */
 	tap(hit: Hit | null, touch: boolean): void {
 		if (!hit) {
-			if (touch && this.selected !== null && this.selected !== this.drawerKey) this.select(null);
+			if (this.selected !== null && this.selected !== this.drawerKey) this.select(null);
 			return;
 		}
 		if (hit.type === 'control') {
@@ -730,6 +729,7 @@ export class MapSurface {
 			? rulerMarks({
 				ticks: layout.ticks,
 				edge: layout.frame.scale.edge,
+				edgeAt: edgeLineAt(dots),
 				quiet: layout.quiet,
 				transform,
 				width: this.viewport.width,
@@ -947,11 +947,6 @@ export class MapSurface {
 		const layout = this.layout;
 		if (!layout) return undefined;
 		return this.nodesByKey.get(this.agentsByKey.has(key) ? key : (layout.representative[key] ?? ''));
-	}
-
-	/** What Z holds still: the pointer if it is over the plot, otherwise the middle (undefined). */
-	private zoomAnchor(): ScreenPoint | undefined {
-		return this.pointer && this.inPlot(this.pointer) ? this.pointer : undefined;
 	}
 
 	/** What `+` and `-` hold still: the focused item, if it is in view. */

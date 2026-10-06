@@ -13,6 +13,21 @@ const LABEL_MARGIN = 28;
 
 const DAY = 24 * HOUR;
 
+/** Room the edge line keeps past the in-flight dot it moves past, in layout units. */
+const EDGE_CLEARANCE = 8;
+
+/**
+ * Where the edge line draws, in layout units: at x = 0, unless work in flight reaches past it.
+ * In-flight items sit right of the last completion, so one a moment ago holds them past now;
+ * they are happening now, so the line moves just past the rightmost of them. Work waiting on
+ * them stays past the line, where the spec puts it, and so do computers and sessions.
+ */
+export function edgeLineAt(dots: readonly { x: number; r: number; flight: string | null }[]): number {
+	let right = 0;
+	for (const dot of dots) if (dot.flight !== null) right = Math.max(right, dot.x + dot.r);
+	return right > 0 ? right + EDGE_CLEARANCE : 0;
+}
+
 /** The edge's label sits this far in from the edge line, a hair under the plot's top, and flips to the line's left when the right has less than EDGE_LABEL_ROOM. */
 const EDGE_LABEL_GAP = 8;
 export const EDGE_LABEL_TOP = 10;
@@ -47,7 +62,7 @@ export interface RulerMark {
 export interface RulerMarks {
 	/** One mark per kept day tick, right to left. Nothing sits right of the edge: past it there are no dates. */
 	ticks: RulerMark[];
-	/** The line at the edge of the Map, which is now unless the board went quiet. */
+	/** The line at the edge of the Map, which is now unless the board went quiet, and sits past work in flight. */
 	edge: RulerMark;
 	/** The labeled break between the last activity and now, when the board has been quiet for half a day or more. */
 	quiet: RulerMark | null;
@@ -58,6 +73,8 @@ export interface RulerInput {
 	ticks: readonly MapTick[];
 	/** Epoch ms at layout x = 0. */
 	edge: number;
+	/** Layout x the edge line draws at (see edgeLineAt). */
+	edgeAt: number;
 	quiet: MapQuiet | null;
 	/** The horizontal part of the camera: screen x = x + k * layout x. */
 	transform: { k: number; x: number };
@@ -101,7 +118,7 @@ export function rulerMarks(input: RulerInput): RulerMarks {
 		ticks.push({ x, label: dayLabel(tick.time, input.edge, input.timeZone) });
 	}
 
-	const edgeX = screen(0);
+	const edgeX = screen(input.edgeAt);
 	const quiet = input.quiet;
 	return {
 		ticks,

@@ -314,7 +314,9 @@ there too. Held against the floor, a burst still reads as a cloud.
    apart, so "roughly when" is always readable. When nothing has happened for more
    than half a day, the Map ends at the last activity and the gap to now is a
    labeled break ("then quiet 6 days") instead of empty canvas. Past now there are
-   no dates: what sits there is in flight or waiting on it.
+   no dates: what sits there is waiting on work in flight. Work in flight is happening
+   now, so when a completion a moment ago holds it right of x = 0, the Now line moves
+   just past the rightmost in-flight dot rather than drawing that work in the future.
 3. Deterministic: same data, same moment, same map, on every device.
 4. Stable: an update starts from the current positions, and only the changed items
    and their neighbors move. Time drift, everything sliding left as time passes, is
@@ -917,8 +919,8 @@ it lands.
   pointer) reaches it, and a collapse control, from 22 px, which is a 44 px target.
 - Hover leads over keyboard focus, which leads over the selection: the pointer on
   something lights it, and with the pointer off everything the focus or selection holds.
-  Escape closes the drawer first, and a second Escape clears the selection; a dialog or
-  a field that has the key keeps it.
+  Escape closes the drawer first, and a second Escape clears the selection, as a click
+  on the empty plot does; a dialog or a field that has the key keeps it.
 - The quick card opens 150 ms after the pointer settles on an item (so sweeping across
   dots opens none), at once for keyboard focus, and for the selection when the drawer
   isn't already showing it (a coarse pointer's first tap). It sits beside the item on the
@@ -951,8 +953,9 @@ them: `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`, and `1` to `3`
 The Map has one tab stop, and its keys are heard only while that stop has focus: the
 accessible tree holds it (see [Accessibility](#accessibility)). A click on the canvas
 puts focus there, so the keys work from the first click. Nothing is heard from the
-page around it, from a field, or with Cmd or Ctrl held, and Escape alone works from
-anywhere, as the board's does. Tabbing in lands on the item focus was last on, or on
+page around it, from a field, or with Cmd or Ctrl held. Two keys are the exceptions:
+Escape works from anywhere, as the board's does, and `Z` works wherever focus is while
+the pointer is over the canvas, since the hand on the mouse is the one asking. Tabbing in lands on the item focus was last on, or on
 the dot nearest the middle of the plot; focus going elsewhere puts the Map's own away,
 so no card stays open for a keyboard that has left.
 
@@ -962,7 +965,7 @@ so no card stays open for a keyboard that has left.
 | Enter | Open the focused item in the drawer; on a region's label, its parent |
 | Escape | Close the drawer, then clear the selection, the search, or the changes view |
 | `+` and `-` | Zoom in and out around the focused dot |
-| `Z`, Option+`Z` | Zoom in and out, Figma's keys, by the same step as `+` and `-`, around the pointer when it is over the canvas and the middle of the plot otherwise. Never with Cmd or Ctrl held (Cmd+`Z` stays undo) |
+| `Z` held | Figma's zoom tool: the cursor turns to a magnifier, and a click zooms in by the same step as `+` and `-` and brings the point clicked to the middle of the plot; with Option held too, the cursor and the click zoom out. A drag still pans, and no dot drags. It answers while the pointer is over the canvas wherever focus is, never in a field or with Cmd or Ctrl held (Cmd+`Z` stays undo), and letting go of Z, or the window losing focus, puts it away |
 | `0` | Fit all |
 | `T` | Jump to now (Google Calendar's key for today) |
 | `F` | Fit the focused item (the selection, with nothing focused) and its family into the part of the plot the drawer leaves clear |

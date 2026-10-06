@@ -50,6 +50,15 @@
 	cursor: grabbing;
 }
 
+/* Z held: the zoom tool, whatever the pointer is over. Option turns it to zoom out. */
+.canvas[data-zoom-tool='in'] {
+	cursor: zoom-in;
+}
+
+.canvas[data-zoom-tool='out'] {
+	cursor: zoom-out;
+}
+
 .controls {
 	position: absolute;
 	top: var(--space-3);

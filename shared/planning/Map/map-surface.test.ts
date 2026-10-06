@@ -122,23 +122,16 @@ describe('MapSurface', () => {
 		expect(camera.zooms).toEqual([{ factor: ZOOM_STEP }, { factor: 1 / ZOOM_STEP }]);
 	});
 
-	it('zooms by key about the pointer when it is over the plot, and about the middle otherwise', () => {
+	it('zooms the tool\'s click in a step, or out with Option, centering on the point clicked', () => {
 		const { surface, camera } = setup();
 		surface.resize(WIDTH, HEIGHT);
-		surface.hoverAt({ x: 300, y: 120 });
-		surface.zoomInByKey();
-		surface.zoomOutByKey();
-		expect(camera.zooms).toEqual([
-			{ factor: ZOOM_STEP, around: { x: 300, y: 120 } },
-			{ factor: 1 / ZOOM_STEP, around: { x: 300, y: 120 } },
+		surface.zoomToolAt({ x: 300, y: 120 }, 'in');
+		surface.zoomToolAt({ x: 40, y: 200 }, 'out');
+		expect(camera.intos).toEqual([
+			{ factor: ZOOM_STEP, at: { x: 300, y: 120 } },
+			{ factor: 1 / ZOOM_STEP, at: { x: 40, y: 200 } },
 		]);
-
-		camera.zooms.length = 0;
-		surface.hoverAt({ x: 300, y: 520 + RULER_HEIGHT });
-		surface.zoomInByKey();
-		surface.hoverAt(null);
-		surface.zoomOutByKey();
-		expect(camera.zooms).toEqual([{ factor: ZOOM_STEP, around: undefined }, { factor: 1 / ZOOM_STEP, around: undefined }]);
+		expect(camera.zooms).toEqual([]);
 	});
 
 	it('focuses an item that is not a dot of its own: a region\'s parent, and a child folded into its family', () => {

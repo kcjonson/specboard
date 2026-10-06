@@ -67,6 +67,25 @@ describe('flights', () => {
 		expect(c.transform).toEqual({ k: 2, x: -100, y: -100 });
 	});
 
+	it('zooms into a point and brings it to the middle of the plot, at once under reduced motion', () => {
+		const c = camera({ reducedMotion: () => true });
+		c.zoomInto(2, { x: 100, y: 100 });
+		expect(c.transform).toEqual({ k: 2, x: 200, y: 100 });
+		expect(under(c.transform, 400, 300)).toEqual({ x: 100, y: 100 });
+		c.zoomInto(0.5, { x: 400, y: 300 });
+		expect(c.transform.k).toBe(1);
+		expect(under(c.transform, 400, 300)).toEqual({ x: 100, y: 100 });
+	});
+
+	it('flies into the point it zooms into, and lands on it in the middle', () => {
+		const c = camera();
+		c.zoomInto(2, { x: 100, y: 100 });
+		expect(c.flying).toBe(true);
+		vi.advanceTimersByTime(500);
+		expect(c.flying).toBe(false);
+		expect(c.transform).toEqual({ k: 2, x: 200, y: 100 });
+	});
+
 	it('flies over 450 ms, eased, and lands exactly where it was sent', () => {
 		const c = camera();
 		const target = { k: 1, x: -400, y: 0 };

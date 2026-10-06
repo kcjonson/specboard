@@ -271,14 +271,6 @@ describe('+ and -', () => {
 		s.surface.zoomInAtFocus();
 		expect(s.camera.zooms.at(-1)?.around).toBeUndefined();
 	});
-
-	it('leave Z on the pointer, as before', () => {
-		const s = shown();
-		s.surface.setFocus(s.keys.free!);
-		s.surface.hoverAt({ x: 100, y: 120 });
-		s.surface.zoomInByKey();
-		expect(s.camera.zooms.at(-1)?.around).toEqual({ x: 100, y: 120 });
-	});
 });
 
 describe('tree keys', () => {

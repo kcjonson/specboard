@@ -14,6 +14,7 @@ export class FakeCamera implements MapCamera {
 	configured: { viewport: Viewport; minScale: number } | null = null;
 	flights: Transform[] = [];
 	zooms: Array<{ factor: number; around?: ScreenPoint }> = [];
+	intos: Array<{ factor: number; at: ScreenPoint }> = [];
 
 	onChange(listener: () => void): () => void {
 		this.listeners.add(listener);
@@ -44,6 +45,10 @@ export class FakeCamera implements MapCamera {
 
 	zoomBy(factor: number, around?: ScreenPoint): void {
 		this.zooms.push({ factor, around });
+	}
+
+	zoomInto(factor: number, at: ScreenPoint): void {
+		this.intos.push({ factor, at });
 	}
 
 	destroy(): void {
