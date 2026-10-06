@@ -286,6 +286,20 @@ describe('getItems', () => {
 		expect(item!).not.toHaveProperty('notes');
 	});
 
+	// The browser's item model has no field for specs (the drawer reads them from their own route), and an empty list would claim the item has none.
+	it('omits specs entirely when they were not requested, and lists them when they were', async () => {
+		const row = { ...makeItem(), child_count: '0', done_count: '0', in_progress_count: '0', blocked_count: '0' };
+		mockQuery.mockResolvedValueOnce({ rows: [row], rowCount: 1 } as never);
+		const { items: [plain] } = await getItems({ projectId: 'proj-1' });
+		expect(plain!).not.toHaveProperty('specs');
+
+		mockQuery
+			.mockResolvedValueOnce({ rows: [row], rowCount: 1 } as never)
+			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never);
+		const { items: [detailed] } = await getItems({ projectId: 'proj-1', includeSpecs: true });
+		expect(detailed!.specs).toEqual([]);
+	});
+
 	it('includeChecklist hydrates each item with its scratch todos', async () => {
 		const parent = {
 			...makeItem({ checklist: [{ id: 'c-1', text: 'wire the drawer', status: 'todo' }] }),

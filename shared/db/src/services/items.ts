@@ -94,16 +94,16 @@ export interface ItemWithChildren extends ItemResponse {
 }
 
 export interface ItemWithDetails extends ItemWithChildren {
-	specs: SpecSummary[];
 	/**
-	 * Activity-log entries (newest first) / open blockers / active agent-session
-	 * episodes / scratch todos. Present only when requested (includeNotes /
-	 * includeBlockers / includeWorkers / includeChecklist) — deliberately absent
+	 * Linked specs / activity-log entries (newest first) / open blockers / active
+	 * agent-session episodes / scratch todos. Present only when requested (includeSpecs /
+	 * includeNotes / includeBlockers / includeWorkers / includeChecklist) — deliberately absent
 	 * otherwise, so a client model applying an update response doesn't wipe state
 	 * the response simply didn't load, and so an agent that didn't ask for the log
 	 * doesn't read `[]` as "no history". Absent means "not loaded"; `[]` means
 	 * genuinely empty.
 	 */
+	specs?: SpecSummary[];
 	notes?: ItemNoteSummary[];
 	blockers?: BlockerSummary[];
 	workers?: WorkerSummary[];
@@ -448,8 +448,8 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 		? await listNotesByItems(itemIds)
 		: undefined;
 
-	const specsByItem = new Map<string, SpecSummary[]>();
-	if (includeSpecs && itemIds.length > 0) {
+	const specsByItem = includeSpecs ? new Map<string, SpecSummary[]>() : undefined;
+	if (specsByItem && itemIds.length > 0) {
 		const specsResult = await query<{ id: string; item_id: string; path: string; spec_type: SpecType; created_at: Date }>(
 			'SELECT * FROM epic_specs WHERE project_id = $1 AND item_id = ANY($2) ORDER BY created_at ASC',
 			[projectId, itemIds]
@@ -481,7 +481,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 			blocked: parseInt(row.blocked_count, 10),
 		},
 		children: (childrenByParent.get(row.id) || []).map((child) => summarizeItem(child, row.project_key)),
-		specs: specsByItem.get(row.id) || [],
+		...(specsByItem ? { specs: specsByItem.get(row.id) || [] } : {}),
 		...(notesByItem ? { notes: notesByItem.get(row.id) || [] } : {}),
 		...(blockersByItem ? { blockers: blockersByItem.get(row.id) || [] } : {}),
 		...(workersByItem ? { workers: workersByItem.get(row.id) || [] } : {}),
