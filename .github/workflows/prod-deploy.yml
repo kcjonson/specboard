@@ -91,6 +91,38 @@ jobs:
 
           echo "All required images verified for SHA $SHA"
 
+      # The repos' lifecycle keeps release-* images out of the count that expires staging builds,
+      # so what production runs, and what it can roll back to, stays pullable.
+      - name: Tag images as a release
+        run: |
+          SHA="${{ needs.resolve.outputs.sha }}"
+          RELEASE="release-${{ needs.resolve.outputs.tag }}"
+
+          for REPO in specboard/api specboard/frontend specboard/mcp specboard/storage; do
+            IMAGE=$(aws ecr batch-get-image \
+              --repository-name "$REPO" \
+              --image-ids imageTag="$SHA" \
+              --accepted-media-types application/vnd.oci.image.index.v1+json application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.list.v2+json application/vnd.docker.distribution.manifest.v2+json \
+              --region "$AWS_REGION" \
+              --output json)
+            # The manifest goes back byte for byte: put-image only adds a tag when it matches the stored digest.
+            MEDIA=$(printf '%s' "$IMAGE" | jq -r '.images[0].imageManifestMediaType')
+            MANIFEST=$(printf '%s' "$IMAGE" | jq -r '.images[0].imageManifest')
+            if OUTPUT=$(aws ecr put-image \
+              --repository-name "$REPO" \
+              --image-tag "$RELEASE" \
+              --image-manifest "$MANIFEST" \
+              --image-manifest-media-type "$MEDIA" \
+              --region "$AWS_REGION" 2>&1 >/dev/null); then
+              echo "Tagged $REPO:$SHA as $RELEASE"
+            elif echo "$OUTPUT" | grep -q ImageAlreadyExistsException; then
+              echo "$REPO:$SHA is already tagged $RELEASE"
+            else
+              echo "$OUTPUT"
+              exit 1
+            fi
+          done
+
   setup-aws:
     name: CDK Deploy Production
     needs: [resolve, verify-images]
