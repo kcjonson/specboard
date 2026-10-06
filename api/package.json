@@ -20,7 +20,7 @@
 		"@specboard/db": "*",
 		"@specboard/email": "*",
 		"@specboard/sync-lambda": "*",
-		"hono": "4.13.5",
+		"hono": "4.13.13",
 		"ioredis": "5.11.1"
 	},
 	"devDependencies": {
