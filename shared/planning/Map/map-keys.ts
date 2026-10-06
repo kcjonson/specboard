@@ -1,13 +1,11 @@
 import type { Direction } from './map-nav';
 
-/** What a key does on the Map (spec, Keys). Escape is not here: the page's Escape ladder owns it, and it works from anywhere. */
+/** What a key does on the Map (spec, Keys). Escape and Z are not here: they work from anywhere (Z while the pointer is over the canvas), so MapView listens for them on the document. */
 export type MapKey =
 	| { kind: 'move'; direction: Direction }
 	| { kind: 'open' }
 	/** `+`, `-`: around the focused dot. */
 	| { kind: 'zoom-focus'; direction: 'in' | 'out' }
-	/** `Z`, Option+`Z`: around the pointer, or the middle of the plot. */
-	| { kind: 'zoom-pointer'; direction: 'in' | 'out' }
 	| { kind: 'fit-all' }
 	| { kind: 'now' }
 	| { kind: 'fit-focus' }
@@ -37,14 +35,11 @@ export const isTypingTarget = (target: EventTarget | null): boolean => {
 
 /**
  * The Map's keys, kept clear of the planning page's `N`, `C`, `/`, `?`, Cmd+K, `M`, `E`,
- * and `1` to `3`. Nothing fires while the person is typing, and nothing with Cmd or Ctrl held
- * (Cmd+Z stays undo). Option is only Figma's zoom-out: Option+Z types an omega on a Mac, so Z
- * is read from `code`, where every other key reads the character it types.
+ * and `1` to `3`. Nothing fires while the person is typing, with Cmd or Ctrl held, or with Option
+ * held.
  */
 export function mapKeyOf(event: KeyEventLike): MapKey | null {
-	if (event.metaKey || event.ctrlKey || isTypingTarget(event.target)) return null;
-	if (event.code === 'KeyZ') return { kind: 'zoom-pointer', direction: event.altKey ? 'out' : 'in' };
-	if (event.altKey) return null;
+	if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return null;
 	const direction = ARROWS[event.key];
 	if (direction) {
 		if (!event.shiftKey) return { kind: 'move', direction };

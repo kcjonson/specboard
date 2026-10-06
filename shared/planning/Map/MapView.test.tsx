@@ -19,7 +19,7 @@ import { MapChangesModel, type ChangesSource } from './changes/changes-model';
 import { MapDataModel } from './map-data-model';
 import type { MapSearchSource } from './map-search';
 import { ActivityCache } from './quick/activity-cache';
-import type { MapFrame, MapRenderer } from './renderer';
+import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
 import type { MapChange } from '@specboard/core/map-changes';
 import { formatDateTime } from '../utils/time';
 import { baselineDate } from './changes/changes';
@@ -215,62 +215,97 @@ describe('MapView zoom keys', () => {
 		await waitFor(() => expect(frames.at(-1)?.dots.length).toBe(9));
 		return scale();
 	};
-	const press = (init: Partial<KeyboardEvent>, target: Element = document.querySelector('[role="tree"]')!): void => {
+	const canvas = (): HTMLCanvasElement => document.querySelector('canvas')!;
+	const holdZ = (init: Partial<KeyboardEvent> = {}, target: Node = document): void => {
 		fireEvent.keyDown(target, { code: 'KeyZ', key: 'z', ...init });
 	};
+	const click = (x: number, y: number, init: Partial<PointerEvent> = {}): void => {
+		fireEvent.pointerDown(canvas(), { clientX: x, clientY: y, button: 0, ...init });
+		fireEvent.pointerUp(canvas(), { clientX: x, clientY: y, button: 0, ...init });
+	};
+	const under = (x: number, y: number): { x: number; y: number } => {
+		const t = frames.at(-1)!.transform;
+		return { x: (x - t.x) / t.k, y: (y - t.y) / t.k };
+	};
+	// The plot is the Map less the ruler along its bottom.
+	const MIDDLE = { x: 500, y: (532 - RULER_HEIGHT) / 2 };
 
-	it('zooms in on Z and out on Alt+Z, by the buttons\' step', async () => {
+	it('takes up the zoom tool while Z is held over the canvas, and Option turns it to zoom out', async () => {
+		await ready();
+		fireEvent.pointerMove(canvas(), { clientX: 200, clientY: 100 });
+		holdZ();
+		expect(canvas().dataset.zoomTool).toBe('in');
+		fireEvent.keyDown(document, { key: 'Alt', code: 'AltLeft', altKey: true });
+		expect(canvas().dataset.zoomTool).toBe('out');
+		fireEvent.keyUp(document, { key: 'Alt', code: 'AltLeft' });
+		expect(canvas().dataset.zoomTool).toBe('in');
+		fireEvent.keyUp(document, { code: 'KeyZ', key: 'z' });
+		expect(canvas().dataset.zoomTool).toBeUndefined();
+	});
+
+	it('zooms in a step on a click with Z held, bringing the point clicked to the middle of the plot', async () => {
 		const start = await ready();
-		press({});
+		fireEvent.pointerMove(canvas(), { clientX: 200, clientY: 100 });
+		const target = under(200, 100);
+		holdZ();
+		click(200, 100);
 		await waitFor(() => expect(scale()).toBeCloseTo(start * 1.4));
-		press({ altKey: true, key: 'Ω' });
+		expect(under(MIDDLE.x, MIDDLE.y).x).toBeCloseTo(target.x);
+		expect(under(MIDDLE.x, MIDDLE.y).y).toBeCloseTo(target.y);
+		expect(opened).toEqual([]);
+	});
+
+	it('zooms out a step on an Option-click with Z held', async () => {
+		const start = await ready();
+		fireEvent.pointerMove(canvas(), { clientX: 200, clientY: 100 });
+		holdZ();
+		click(200, 100);
+		await waitFor(() => expect(scale()).toBeCloseTo(start * 1.4));
+		holdZ({ altKey: true, key: 'Ω' });
+		click(300, 200, { altKey: true });
 		await waitFor(() => expect(scale()).toBeCloseTo(start));
 	});
 
-	it('does nothing on Cmd+Z or Ctrl+Z', async () => {
+	it('does nothing on a bare Z: the click is what zooms', async () => {
 		const start = await ready();
 		const painted = frames.length;
-		press({ metaKey: true });
-		press({ ctrlKey: true });
+		fireEvent.pointerMove(canvas(), { clientX: 200, clientY: 100 });
+		holdZ({}, document.querySelector('[role="tree"]')!);
 		await new Promise((resolve) => setTimeout(resolve, 100));
 		expect(frames.length).toBe(painted);
 		expect(scale()).toBe(start);
 	});
 
-	it('does nothing unless the Map has the focus: not from the page, not from a button in the toolbar', async () => {
+	it('puts the tool away when Z is let go, so the next click is a click', async () => {
 		const start = await ready();
-		const painted = frames.length;
-		press({}, document.body);
-		press({}, control(document.body, 'Fit all'));
+		fireEvent.pointerMove(canvas(), { clientX: 200, clientY: 100 });
+		holdZ();
+		fireEvent.keyUp(document, { code: 'KeyZ', key: 'z' });
+		click(1, 1);
 		await new Promise((resolve) => setTimeout(resolve, 100));
-		expect(frames.length).toBe(painted);
 		expect(scale()).toBe(start);
 	});
 
-	it('does nothing from inside an input', async () => {
-		const start = await ready();
+	it('puts the tool away when the window loses focus, where the keyup would go', async () => {
+		await ready();
+		fireEvent.pointerMove(canvas(), { clientX: 200, clientY: 100 });
+		holdZ();
+		fireEvent.blur(window);
+		expect(canvas().dataset.zoomTool).toBeUndefined();
+	});
+
+	it('ignores Z with the pointer off the canvas, with Cmd or Ctrl (undo), and in a field', async () => {
+		await ready();
+		holdZ();
+		expect(canvas().dataset.zoomTool).toBeUndefined();
+		fireEvent.pointerMove(canvas(), { clientX: 200, clientY: 100 });
+		holdZ({ metaKey: true });
+		holdZ({ ctrlKey: true });
 		const input = document.createElement('input');
 		document.body.appendChild(input);
-		const painted = frames.length;
-		press({}, input);
-		press({ altKey: true }, input);
-		await new Promise((resolve) => setTimeout(resolve, 100));
+		holdZ({}, input);
 		input.remove();
-		expect(frames.length).toBe(painted);
-		expect(scale()).toBe(start);
-	});
-
-	it('zooms about the pointer when it is over the canvas', async () => {
-		const start = await ready();
-		const before = frames.at(-1)!.transform;
-		const canvas = document.querySelector('canvas')!;
-		fireEvent.pointerMove(canvas, { clientX: 200, clientY: 100 });
-		press({});
-		await waitFor(() => expect(scale()).toBeCloseTo(start * 1.4));
-		const after = frames.at(-1)!.transform;
-		// The layout point under the pointer stays under it.
-		expect((200 - after.x) / after.k).toBeCloseTo((200 - before.x) / before.k);
-		expect((100 - after.y) / after.k).toBeCloseTo((100 - before.y) / before.k);
+		expect(canvas().dataset.zoomTool).toBeUndefined();
 	});
 });
 

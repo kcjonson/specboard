@@ -358,6 +358,18 @@ describe('tapping on a coarse pointer', () => {
 		expect(s.surface.selection).toBeNull();
 	});
 
+	it('a click on the empty plot lets go of a selection the drawer has closed on, as a second Escape does', () => {
+		const s = shown();
+		s.surface.select(s.m);
+		s.surface.setDrawer(s.m);
+		s.surface.tap(null, false);
+		// The drawer is showing it: the selection is the item URL, and only closing the drawer lets go of that.
+		expect(s.surface.selection).toBe(s.m);
+		s.surface.setDrawer(null);
+		s.surface.tap(null, false);
+		expect(s.surface.selection).toBeNull();
+	});
+
 	it('hit-tests with 44 px targets for a coarse pointer', () => {
 		const s = shown();
 		const at = s.at(s.other);

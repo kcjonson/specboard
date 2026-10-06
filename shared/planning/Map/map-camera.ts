@@ -49,6 +49,8 @@ export interface MapCamera {
 	flyTo(transform: Transform): void;
 	/** Zooms about a point in the plot, or about its middle. */
 	zoomBy(factor: number, around?: ScreenPoint): void;
+	/** Zooms by `factor` and brings what is under `at` to the middle of the plot: the zoom tool's click. */
+	zoomInto(factor: number, at: ScreenPoint): void;
 	destroy(): void;
 }
 
@@ -271,6 +273,13 @@ export function createCamera(element: HTMLElement, options: CameraOptions): MapC
 			const target = constrain(hold(clampScale(current.k * factor), invert(current, point), point));
 			if (options.reducedMotion()) apply(target, true);
 			else fly(target, point, true);
+		},
+		zoomInto(factor, at) {
+			land();
+			const middle = plotMiddle();
+			const target = constrain(hold(clampScale(current.k * factor), invert(current, at), middle));
+			if (options.reducedMotion()) apply(target, true);
+			else fly(target, middle, true);
 		},
 		destroy() {
 			land();

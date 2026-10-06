@@ -39,11 +39,14 @@ export function ChecklistSection({ projectRef, itemKey }: ChecklistSectionProps)
 		if (!value || busy) return;
 		setError(null);
 		setBusy(true);
+		// Cleared now, not when the request settles, so the next entry can be typed while this one saves.
+		setDraft('');
 		try {
 			await checklist.add({ text: value });
-			setDraft('');
 		} catch {
 			setError('Could not add that item.');
+			// Hand the text back, unless the next entry is already being typed over it.
+			setDraft((current) => (current === '' ? value : current));
 		} finally {
 			setBusy(false);
 		}

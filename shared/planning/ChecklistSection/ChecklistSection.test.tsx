@@ -167,6 +167,55 @@ describe('ChecklistSection', () => {
 		expect(post).toHaveBeenCalledTimes(1);
 	});
 
+	it('keeps the next entry typed while the previous one is saving', async () => {
+		const { container } = renderSection([]);
+		await waitFor(() => expect(get).toHaveBeenCalledWith(URL));
+
+		let release: (value: EntryPayload) => void = () => {};
+		post.mockReturnValueOnce(new Promise<EntryPayload>((resolve) => {
+			release = resolve;
+		}));
+
+		fireEvent.input(draftField(container), { target: { value: 'First' } });
+		fireEvent.keyDown(draftField(container), { key: 'Enter' });
+		await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(draftField(container).value).toBe(''));
+
+		fireEvent.input(draftField(container), { target: { value: 'Second' } });
+		release(entry({ id: 'one', text: 'First' }));
+		await waitFor(() => expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1));
+		expect(draftField(container).value).toBe('Second');
+
+		post.mockResolvedValueOnce(entry({ id: 'two', text: 'Second' }));
+		fireEvent.keyDown(draftField(container), { key: 'Enter' });
+		await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+		expect(post.mock.calls[1]![1]).toMatchObject({ text: 'Second' });
+		await waitFor(() => expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2));
+	});
+
+	it('hands a failed entry back to the field, unless the next one is already being typed', async () => {
+		const { container } = renderSection([]);
+		await waitFor(() => expect(get).toHaveBeenCalledWith(URL));
+
+		post.mockRejectedValueOnce(new Error('offline'));
+		fireEvent.input(draftField(container), { target: { value: 'Lost?' } });
+		fireEvent.keyDown(draftField(container), { key: 'Enter' });
+		await waitFor(() => expect(container.textContent).toContain('Could not add that item.'));
+		expect(draftField(container).value).toBe('Lost?');
+
+		let fail: (reason: Error) => void = () => {};
+		post.mockReturnValueOnce(new Promise<EntryPayload>((_, reject) => {
+			fail = reject;
+		}));
+		fireEvent.keyDown(draftField(container), { key: 'Enter' });
+		await waitFor(() => expect(draftField(container).value).toBe(''));
+		expect(container.textContent).not.toContain('Could not add that item.');
+		fireEvent.input(draftField(container), { target: { value: 'Typing on' } });
+		fail(new Error('offline'));
+		await waitFor(() => expect(container.textContent).toContain('Could not add that item.'));
+		expect(draftField(container).value).toBe('Typing on');
+	});
+
 	// The drawer that holds this section closes on Escape, so a half-typed entry
 	// would go down with the panel if the key kept bubbling.
 	it('clears the draft on Escape without reaching the drawer', async () => {

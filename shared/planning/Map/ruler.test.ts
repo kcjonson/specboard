@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HOUR, QUIET_PAD } from './layout/constants';
 import { createTimeScale, edgeOf, quietOf, ticksOf } from './layout/time-scale';
-import { MIN_TICK_SPACING, QUIET_LABEL_ROOM, dayLabel, edgeLabelAt, quietLabel, rulerMarks } from './ruler';
+import { MIN_TICK_SPACING, QUIET_LABEL_ROOM, dayLabel, edgeLabelAt, edgeLineAt, quietLabel, rulerMarks } from './ruler';
 
 const DAY = 24 * HOUR;
 const NOW = Date.parse('2026-09-30T18:00:00Z');
@@ -12,7 +12,7 @@ const scale = createTimeScale(NOW, anchors, 150);
 const ticks = ticksOf(scale);
 
 const marks = (k: number, x: number, width = 1200): ReturnType<typeof rulerMarks> =>
-	rulerMarks({ ticks, edge: scale.edge, quiet: null, transform: { k, x }, width, timeZone });
+	rulerMarks({ ticks, edge: scale.edge, edgeAt: 0, quiet: null, transform: { k, x }, width, timeZone });
 
 describe('ruler ticks', () => {
 	// A plot wide enough that nothing is cropped, so thinning is the only thing in play.
@@ -74,7 +74,7 @@ describe('the edge and the quiet break', () => {
 	const quiet = quietOf(last, NOW)!;
 	const quietScale = createTimeScale(edgeOf(last, NOW), anchors.map((t) => Math.min(t, last)), 150);
 	const quietMarks = (x: number, width = 1200): ReturnType<typeof rulerMarks> =>
-		rulerMarks({ ticks: ticksOf(quietScale), edge: quietScale.edge, quiet, transform: { k: 1, x }, width, timeZone });
+		rulerMarks({ ticks: ticksOf(quietScale), edge: quietScale.edge, edgeAt: 0, quiet, transform: { k: 1, x }, width, timeZone });
 
 	it('call the edge Now on a live board', () => {
 		expect(marks(1, 1100).edge).toEqual({ x: 1100, label: 'Now' });
@@ -115,5 +115,30 @@ describe('edgeLabelAt', () => {
 	it('has no label, and so no box to keep off, when the edge is outside the plot', () => {
 		expect(edgeLabelAt(-1, 30, 1200)).toBeNull();
 		expect(edgeLabelAt(1201, 30, 1200)).toBeNull();
+	});
+});
+
+describe('the edge line', () => {
+	const dot = (x: number, r: number, flight: 'in_progress' | 'in_review' | null = null): { x: number; r: number; flight: string | null } => ({ x, r, flight });
+
+	it('stays at now while work in flight sits left of it', () => {
+		expect(edgeLineAt([dot(-40, 6, 'in_progress'), dot(-12, 6, 'in_review')])).toBe(0);
+		expect(edgeLineAt([])).toBe(0);
+	});
+
+	it('moves just past in-flight work a moment-old completion holds right of now', () => {
+		expect(edgeLineAt([dot(-40, 6), dot(30, 9, 'in_progress'), dot(12, 9, 'in_review')])).toBe(47);
+	});
+
+	it('leaves work waiting on what is in flight past the line, where the spec puts it', () => {
+		const line = edgeLineAt([dot(30, 9, 'in_progress'), dot(90, 6)]);
+		expect(line).toBe(47);
+		expect(90 - 6).toBeGreaterThan(line);
+	});
+
+	it('draws the edge mark where the line is, with every tick still left of it', () => {
+		const at = rulerMarks({ ticks, edge: scale.edge, edgeAt: 50, quiet: null, transform: { k: 2, x: 100 }, width: 1200, timeZone });
+		expect(at.edge.x).toBe(200);
+		for (const tick of at.ticks) expect(tick.x).toBeLessThan(at.edge.x);
 	});
 });
