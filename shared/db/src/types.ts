@@ -38,6 +38,8 @@ export interface User {
  */
 export interface SignupMetadata {
 	invite_key?: string;
+	/** Set instead of invite_key when a project invitation opened the account. */
+	project_invitation_id?: string;
 	referral_source?: string;
 	utm_source?: string;
 	utm_medium?: string;

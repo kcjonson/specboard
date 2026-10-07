@@ -2,7 +2,6 @@ import { useState, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Text, Logo } from '@specboard/ui';
 import { fetchClient, FetchError } from '@specboard/fetch';
-import { navigate } from '@specboard/router';
 import { useModel, UserModel } from '@specboard/models';
 import {
 	browserSupportsWebAuthn,
@@ -11,6 +10,7 @@ import {
 	type PublicKeyCredentialCreationOptionsJSON,
 } from '../../lib/webauthn';
 import { defaultUserSlug, isValidUserSlug } from '@specboard/core/identifiers';
+import { safeNextPath } from '@specboard/core/next-path';
 import { fetchErrorText } from '../../lib/errors';
 import { UserSlugField } from '../../components/UserSlugField/UserSlugField';
 import styles from './Onboarding.module.css';
@@ -25,11 +25,17 @@ interface RegisterOptionsResponse {
 /**
  * Post-first-login onboarding for email-only signups: claim a username, user
  * slug and names (required), then optionally create a password. Reached via the
- * profile_complete guard in main.tsx.
+ * frontend service's onboarding redirect, or from the /invite page with ?next=
+ * naming where to go once the account is set up.
+ *
+ * Leaving is a full page load, not a router navigation: the session only stops
+ * redirecting document loads here once the profile is claimed, and `next` can be
+ * a server-rendered page like /invite that the SPA router doesn't serve.
  */
 export function Onboarding(): JSX.Element | null {
 	const user = useMemo(() => new UserModel({ id: 'me' }), []);
 	useModel(user);
+	const nextPath = useMemo(() => safeNextPath(new URLSearchParams(window.location.search).get('next')) ?? '/', []);
 
 	const [step, setStep] = useState<'identity' | 'password' | 'passkey'>('identity');
 	const passkeySupported = browserSupportsWebAuthn();
@@ -47,7 +53,7 @@ export function Onboarding(): JSX.Element | null {
 	// Landed here with a finished profile (deep link, back button): move on,
 	// unless this visit is mid-flow on the optional password or passkey step.
 	if (user.$meta.lastFetched && user.profile_complete && step === 'identity') {
-		navigate('/');
+		window.location.replace(nextPath);
 		return null;
 	}
 
@@ -65,7 +71,7 @@ export function Onboarding(): JSX.Element | null {
 	const passwordValid = meetsComplexity && newPassword === confirmPassword;
 
 	const finish = (): void => {
-		navigate('/');
+		window.location.assign(nextPath);
 	};
 
 	const handleIdentitySubmit = async (e: Event): Promise<void> => {

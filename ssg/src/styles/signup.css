@@ -39,6 +39,13 @@ body {
 	display: none;
 }
 
+.signup-container .invite-intro {
+	font-size: 0.875rem;
+	color: var(--color-text-muted);
+	margin-bottom: 1.25rem;
+	overflow-wrap: break-word;
+}
+
 .signup-container .code-intro {
 	font-size: 0.875rem;
 	color: var(--color-text-muted);
