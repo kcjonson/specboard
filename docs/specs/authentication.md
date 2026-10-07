@@ -1119,7 +1119,7 @@ services:
 | POST | /api/auth/forgot | None | Request password reset |
 | POST | /api/auth/reset | None | Reset password with token |
 | GET | /api/auth/verify | None | Verify email |
-| GET | /api/auth/github | Session | Start GitHub OAuth |
+| GET | /api/auth/github | Session | Start GitHub OAuth; `?next=/path` (same-origin) is where the callback lands instead of Settings |
 | GET | /api/auth/github/cb | Session | GitHub OAuth callback |
 | DELETE | /api/auth/github | Session | Disconnect GitHub |
 | GET | /oauth/authorize | Session | MCP OAuth authorize (shows consent) |

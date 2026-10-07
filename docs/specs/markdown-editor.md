@@ -232,6 +232,16 @@ The panel renders alongside the editor and:
 
 ---
 
+## Read-only mode
+
+The editor mounts with `readOnly` for someone who can't edit the project (`useProjectRole`,
+[multi-user-collaboration.md](./multi-user-collaboration.md)): no toolbar, no new comments,
+replies or resolving (existing comments still render), no rename, epic create or link, no AI
+edit to apply, and no recovery of a local draft, which stays in local storage until they can
+save it. The file browser drops commit, pull, the pending-changes count, and file and folder
+create, rename and delete. A member of a local project sees a note that its documents are on
+the owner's computer in place of the tree.
+
 ## Keyboard Shortcuts
 
 ### Formatting Shortcuts
