@@ -12,7 +12,7 @@ import styles from './ChatSidebar.module.css';
 interface ChatSidebarProps {
 	documentContent?: string;
 	documentPath?: string;
-	projectRef?: string;
+	projectRef: string;
 	onApplyEdit?: (newMarkdown: string) => void;
 	/** When provided, renders a close button in the header (small screens only) */
 	onClose?: () => void;

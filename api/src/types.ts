@@ -5,7 +5,7 @@
  * so there's no Api* shape for them here.
  */
 
-import type { SpecType, StorageMode, RepositoryConfig, BlockerSummary, WorkerSummary, ItemNoteSummary, Actor, ItemOrigin, ItemWithDetails } from '@specboard/db';
+import type { SpecType, StorageMode, RepositoryConfig, BlockerSummary, WorkerSummary, ItemNoteSummary, Actor, ItemOrigin, ItemWithDetails, ProjectRole } from '@specboard/db';
 
 export interface ApiSpec {
 	id: string;
@@ -98,7 +98,6 @@ export interface ApiProject {
 	key: string;
 	name: string;
 	description?: string;
-	ownerId: string;
 	storageMode: StorageMode;
 	repository: RepositoryConfig | Record<string, never>;
 	rootPaths: string[];
@@ -107,8 +106,8 @@ export interface ApiProject {
 	syncError: string | null;
 	createdAt: string;
 	updatedAt: string;
-}
-
-export interface ApiProjectWithStats extends ApiProject {
-	itemCount: number;
+	/** The caller's role as granted: owner for their own projects, else their membership's. */
+	grantedRole: ProjectRole;
+	/** The role access checks use: a granted editor without GitHub works as a viewer. */
+	effectiveRole: ProjectRole;
 }

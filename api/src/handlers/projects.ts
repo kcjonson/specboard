@@ -8,7 +8,6 @@ import type { Redis } from 'ioredis';
 import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
 import {
 	getProjects,
-	resolveProject,
 	createProject,
 	updateProject,
 	deleteProject,
@@ -19,7 +18,7 @@ import {
 } from '@specboard/db';
 import { isValidProjectSlug, isValidProjectKey } from '@specboard/core/identifiers';
 import { projectResponseToApi } from '../transform.ts';
-import { readProjectAddress, loadProject } from '../project-address.ts';
+import { apiUserId, loadAuthorizedProject, requireAccess, requireResolvedProject } from '../project-access.ts';
 import { isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
 import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
 
@@ -116,7 +115,8 @@ export async function handleListProjects(context: Context, redis: Redis): Promis
 		const projects = await getProjects(userId);
 
 		const apiProjects = projects.map((project) => ({
-			...projectResponseToApi(project),
+			...projectResponseToApi(project, project),
+			ownerName: project.ownerName,
 			itemCount: project.itemCount,
 			itemCounts: project.itemCounts,
 		}));
@@ -128,18 +128,7 @@ export async function handleListProjects(context: Context, redis: Redis): Promis
 	}
 }
 
-export async function handleGetProject(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
-
+export async function handleGetProject(context: Context): Promise<Response> {
 	// Support fields filter for lightweight queries (e.g., ?fields=name)
 	// Note: the identifiers are always included in filtered responses
 	const fieldsParam = context.req.query('fields');
@@ -148,13 +137,13 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 		: null;
 
 	try {
-		const project = await loadProject(address, userId);
+		const project = await loadAuthorizedProject(context);
 
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
-		const fullResponse = projectResponseToApi(project);
+		const fullResponse = projectResponseToApi(project, requireAccess(context));
 
 		// If specific fields requested, return only those
 		if (requestedFields) {
@@ -240,7 +229,7 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 			queueInitialSync(project.id, userId);
 		}
 
-		return context.json(projectResponseToApi(project), 201);
+		return context.json(projectResponseToApi(project, { grantedRole: 'owner', effectiveRole: 'owner' }), 201);
 	} catch (error) {
 		if (error instanceof ProjectOwnerWithoutSlugError) {
 			return context.json({ error: error.message }, 403);
@@ -250,17 +239,8 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 	}
 }
 
-export async function handleUpdateProject(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+export async function handleUpdateProject(context: Context): Promise<Response> {
+	const userId = apiUserId(context);
 
 	try {
 		const body = await context.req.json();
@@ -329,12 +309,7 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 			validatedRepository = validation.repository;
 		}
 
-		const resolved = await resolveProject(address.owner, address.project, userId);
-		if (!resolved) {
-			return context.json({ error: 'Project not found' }, 404);
-		}
-
-		const project = await updateProject(resolved.id, userId, {
+		const project = await updateProject(requireResolvedProject(context).id, {
 			name,
 			description,
 			systemPrompt: sanitizedSystemPrompt,
@@ -351,7 +326,7 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 			queueInitialSync(project.id, userId);
 		}
 
-		return context.json(projectResponseToApi(project));
+		return context.json(projectResponseToApi(project, requireAccess(context)));
 	} catch (error) {
 		if (error instanceof ProjectIdentifierTakenError) {
 			return context.json({ error: error.message, code: 'IDENTIFIER_TAKEN', field: error.field }, 409);
@@ -364,25 +339,9 @@ export async function handleUpdateProject(context: Context, redis: Redis): Promi
 	}
 }
 
-export async function handleDeleteProject(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
-
+export async function handleDeleteProject(context: Context): Promise<Response> {
 	try {
-		const resolved = await resolveProject(address.owner, address.project, userId);
-		if (!resolved) {
-			return context.json({ error: 'Project not found' }, 404);
-		}
-
-		const deleted = await deleteProject(resolved.id, userId);
+		const deleted = await deleteProject(requireResolvedProject(context).id);
 
 		if (!deleted) {
 			return context.json({ error: 'Project not found' }, 404);

@@ -5,11 +5,17 @@
  * and are returned directly by their handlers; only projects need a transform here.
  */
 
-import type { ProjectResponse } from '@specboard/db';
+import type { ProjectAccess, ProjectResponse } from '@specboard/db';
 import type { ApiProject } from './types.ts';
 
-/** Transform ProjectResponse (camelCase from the service) to ApiProject (ISO strings). */
-export function projectResponseToApi(project: ProjectResponse): ApiProject {
+/**
+ * Transform ProjectResponse (camelCase from the service) to ApiProject (ISO strings),
+ * with the caller's role on it.
+ */
+export function projectResponseToApi(
+	project: ProjectResponse,
+	{ grantedRole, effectiveRole }: Pick<ProjectAccess, 'grantedRole' | 'effectiveRole'>
+): ApiProject {
 	return {
 		id: project.id,
 		slug: project.slug,
@@ -17,7 +23,6 @@ export function projectResponseToApi(project: ProjectResponse): ApiProject {
 		key: project.key,
 		name: project.name,
 		description: project.description ?? undefined,
-		ownerId: project.ownerId,
 		storageMode: project.storageMode,
 		repository: project.repository,
 		rootPaths: project.rootPaths,
@@ -26,5 +31,7 @@ export function projectResponseToApi(project: ProjectResponse): ApiProject {
 		syncError: project.syncError,
 		createdAt: project.createdAt.toISOString(),
 		updatedAt: project.updatedAt.toISOString(),
+		grantedRole,
+		effectiveRole,
 	};
 }

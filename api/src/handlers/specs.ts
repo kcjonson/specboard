@@ -13,7 +13,7 @@ import {
 	SpecValidationError,
 } from '@specboard/db';
 import type { SpecSummary, ResolvedProject } from '@specboard/db';
-import { requireResolvedProject } from './items.ts';
+import { requireResolvedProject } from '../project-access.ts';
 import { formatProjectRef, itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import type { ApiSpec } from '../types.ts';
 import { isValidUUID } from '../validation.ts';

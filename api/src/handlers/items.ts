@@ -25,7 +25,6 @@ import {
 	ParentItemNotFoundError,
 	DiscoveredFromNotFoundError,
 	ItemCycleError,
-	type ResolvedProject,
 	type ItemStatus,
 	type ItemType,
 	type SubStatus,
@@ -34,26 +33,7 @@ import {
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import { isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../validation.ts';
 import { apiItem } from '../types.ts';
-
-/**
- * The project resolved from :owner/:project by requireProjectAccess.
- *
- * Throws rather than returning undefined: reaching here without it means the route
- * was registered without the wrapper, which would otherwise read as "authorized" and
- * query with an undefined project id. A 500 is the correct answer to that mistake.
- */
-export function requireResolvedProject(context: Context): ResolvedProject {
-	const resolved = context.get('project') as ResolvedProject | undefined;
-	if (!resolved) throw new Error('Route is missing requireProjectAccess — no resolved project on context');
-	return resolved;
-}
-
-/** The authenticated user's id (requireProjectAccess sets it). */
-export function apiUserId(context: Context): string {
-	const userId = context.get('userId') as string | undefined;
-	if (!userId) throw new Error('Route is missing requireProjectAccess — no userId on context');
-	return userId;
-}
+import { apiUserId, requireResolvedProject } from '../project-access.ts';
 
 /** The authenticated user as a provenance actor. */
 export function apiActor(context: Context): UserActor {

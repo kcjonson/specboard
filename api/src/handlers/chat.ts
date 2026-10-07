@@ -1,23 +1,22 @@
 /**
  * AI Chat handler with SSE streaming
  *
- * Endpoint: POST /api/chat
+ * Endpoint: POST /api/projects/:owner/:project/chat
  *
- * Supports multiple AI providers (Anthropic, Google Gemini).
- * Uses the user's own API key to stream responses.
+ * Chat is over a project's documents, so it sits behind requireProjectAccess like every
+ * other project route; a viewer can chat. Supports multiple AI providers (Anthropic,
+ * Google Gemini). Uses the user's own API key to stream responses.
  */
 
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { getCookie } from 'hono/cookie';
 import type { Redis } from 'ioredis';
-import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
 import { getDecryptedApiKey } from './api-keys.ts';
+import { getStorageProvider } from './storage/utils.ts';
 import { isValidProvider, getProvider, isValidModel, type ChatMessage } from '../providers/index.ts';
 import { composeSystemPrompt } from '../prompts/index.ts';
 import { readRepoConventions } from '../prompts/repo-conventions.ts';
-import { parseProjectRef } from '@specboard/core/identifiers';
-import { loadProject, type ProjectAddress } from '../project-address.ts';
+import { apiUserId, loadAuthorizedProject, requireAccess } from '../project-access.ts';
 
 // Constants
 const MAX_MESSAGE_LENGTH = 10000;
@@ -41,22 +40,13 @@ function isValidChatMessage(msg: unknown): msg is ChatMessage {
 
 /**
  * Handle chat request with SSE streaming
- * POST /api/chat
+ * POST /api/projects/:owner/:project/chat
  */
 export async function handleChat(
 	context: Context,
 	redis: Redis
 ): Promise<Response> {
-	// Validate session
-	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
-	if (!sessionId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const session = await getSession(redis, sessionId);
-	if (!session) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
+	const userId = apiUserId(context);
 
 	// Parse request body with runtime validation
 	let body: unknown;
@@ -76,16 +66,6 @@ export async function handleChat(
 	const document_content = typeof req.document_content === 'string' ? req.document_content : undefined;
 	const document_path = typeof req.document_path === 'string' ? req.document_path : undefined;
 	const rawHistory = Array.isArray(req.conversation_history) ? req.conversation_history : [];
-
-	// The open project, as owner/project, when the chat has one
-	let projectAddress: ProjectAddress | undefined;
-	if (req.project !== undefined) {
-		const parsed = parseProjectRef(req.project);
-		if (!parsed?.owner) {
-			return context.json({ error: 'Invalid project address' }, 400);
-		}
-		projectAddress = { owner: parsed.owner, project: parsed.project };
-	}
 
 	// Get provider and model from request (with defaults for backwards compatibility)
 	const providerName = typeof req.provider === 'string' ? req.provider : 'anthropic';
@@ -107,7 +87,7 @@ export async function handleChat(
 	}
 
 	// Get user's API key for the provider
-	const apiKey = await getDecryptedApiKey(session.userId, providerName);
+	const apiKey = await getDecryptedApiKey(userId, providerName);
 	if (!apiKey) {
 		return context.json(
 			{ error: `No ${provider.config.displayName} API key configured. Please add one in Settings → API Keys.` },
@@ -142,18 +122,17 @@ export async function handleChat(
 		conversation_history.push(msg);
 	}
 
-	// Fetch project data if a project is provided
-	let projectPrompt: string | undefined;
-	let repoConventions: string | null = null;
-	if (projectAddress) {
-		const project = await loadProject(projectAddress, session.userId);
-		if (project) {
-			if (project.systemPrompt) {
-				projectPrompt = project.systemPrompt;
-			}
-			repoConventions = await readRepoConventions(project.id, session.userId, redis);
-		}
+	const project = await loadAuthorizedProject(context);
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
 	}
+	const projectPrompt = project.systemPrompt ?? undefined;
+	const repoConventions = await readRepoConventions(
+		project.id,
+		userId,
+		redis,
+		getStorageProvider(project, userId, requireAccess(context))
+	);
 
 	// Build messages array
 	let systemPrompt: string;

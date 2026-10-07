@@ -1,13 +1,13 @@
 /**
- * Git operation handlers
+ * Git operation handlers. requireProjectAccess has authorized the caller before any of these run.
  */
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { getUserId, getStorageProvider, normalizePath } from './utils.ts';
+import { getStorageProvider, normalizePath } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
 import { isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
-import { readProjectAddress, loadProject } from '../../project-address.ts';
+import { apiUserId, loadAuthorizedProject, requireAccess } from '../../project-access.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 
 /**
@@ -18,21 +18,14 @@ import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-
  * - Local: Returns actual git status (branch, staged/unstaged files)
  * - Cloud: Returns pending changes tracked in storage service
  */
-export async function handleGetGitStatus(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+export async function handleGetGitStatus(context: Context): Promise<Response> {
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	// Get project first to verify it exists and check mode
 	let project;
 	try {
-		project = await loadProject(address, userId);
+		project = await loadAuthorizedProject(context);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -41,12 +34,11 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
 	if (!project) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
-	const projectId = project.id;
 
 	// Get storage provider based on project mode
-	const provider = await getStorageProvider(projectId, userId);
+	const provider = getStorageProvider(project, userId, access);
 	if (!provider) {
-		// Project exists but has no storage configured (storage_mode: 'none')
+		// No storage configured (storage_mode: 'none'), or a member of a local project
 		return context.json({ error: 'Project has no storage configured' }, 400);
 	}
 
@@ -95,21 +87,14 @@ export async function handleGetGitStatus(context: Context, redis: Redis): Promis
  *
  * For cloud-mode projects, this delegates to the GitHub commit handler.
  */
-export async function handleCommit(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+export async function handleCommit(context: Context): Promise<Response> {
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	// Check project mode - must be either cloud or local, never ambiguous
 	let project;
 	try {
-		project = await loadProject(address, userId);
+		project = await loadAuthorizedProject(context);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -118,16 +103,15 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
 	if (!project) {
 		return context.json({ error: 'Project not found' }, 404);
 	}
-	const projectId = project.id;
 
 	// Route based on project storage mode
 	const repo = project.repository as RepositoryConfig | Record<string, never>;
 	if (isCloudRepository(repo)) {
-		return handleGitHubCommit(context, redis);
+		return handleGitHubCommit(context);
 	}
 
 	// Local storage mode - get storage provider
-	const provider = await getStorageProvider(projectId, userId);
+	const provider = getStorageProvider(project, userId, access);
 	if (!provider) {
 		return context.json({ error: 'No repository configured' }, 404);
 	}
@@ -223,20 +207,13 @@ export async function handleCommit(context: Context, redis: Redis): Promise<Resp
  * change, leaving the committed content in place.
  */
 export async function handleRestore(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	// Get project and check mode - restore only works for local mode
 	let project;
 	try {
-		project = await loadProject(address, userId);
+		project = await loadAuthorizedProject(context);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -247,17 +224,11 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 	}
 	const projectId = project.id;
 
-	const repo = project.repository as RepositoryConfig | Record<string, never>;
-
 	// Local mode restores from git; cloud mode discards the pending change,
 	// restoring the committed version. Both go through provider.restore().
-	if (!isLocalRepository(repo) && !isCloudRepository(repo)) {
-		return context.json({ error: 'Project has no storage configured' }, 400);
-	}
-
-	const provider = await getStorageProvider(projectId, userId);
+	const provider = getStorageProvider(project, userId, access);
 	if (!provider) {
-		return context.json({ error: 'Failed to initialize storage provider' }, 500);
+		return context.json({ error: 'Project has no storage configured' }, 400);
 	}
 
 	try {
@@ -299,20 +270,13 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
  * For cloud mode: Delegates to GitHub incremental sync
  */
 export async function handlePull(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	// Get project and check mode
 	let project;
 	try {
-		project = await loadProject(address, userId);
+		project = await loadAuthorizedProject(context);
 	} catch (error) {
 		console.error('Failed to get project:', error);
 		return context.json({ error: 'Failed to load project' }, 500);
@@ -327,7 +291,7 @@ export async function handlePull(context: Context, redis: Redis): Promise<Respon
 
 	// Cloud mode: delegate to GitHub sync (incremental)
 	if (isCloudRepository(repo)) {
-		return handleGitHubSync(context, redis);
+		return handleGitHubSync(context);
 	}
 
 	// Must be local mode
@@ -335,9 +299,9 @@ export async function handlePull(context: Context, redis: Redis): Promise<Respon
 		return context.json({ error: 'Project has no storage configured' }, 400);
 	}
 
-	const provider = await getStorageProvider(projectId, userId);
+	const provider = getStorageProvider(project, userId, access);
 	if (!provider) {
-		return context.json({ error: 'Failed to initialize storage provider' }, 500);
+		return context.json({ error: 'Project has no storage configured' }, 400);
 	}
 
 	try {

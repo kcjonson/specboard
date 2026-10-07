@@ -8,7 +8,8 @@
 import type { Context } from 'hono';
 import { listItemNotes, addItemNote, NoteValidationError } from '@specboard/db';
 import type { ResolvedProject } from '@specboard/db';
-import { requireResolvedProject, apiActor } from './items.ts';
+import { requireResolvedProject } from '../project-access.ts';
+import { apiActor } from './items.ts';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import { apiNote } from '../types.ts';
 
