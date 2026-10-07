@@ -135,7 +135,10 @@ export function requireResolvedProject(context: Context): ResolvedProject {
 	return project;
 }
 
-/** The authenticated user's id (requireProjectAccess sets it). */
+/**
+ * The signed-in user's id. The logging middleware sets it on every request, so finding
+ * it proves a session, not that the gate ran; requireAccess is the check for that.
+ */
 export function apiUserId(context: Context): string {
 	const userId = context.get('userId') as string | undefined;
 	if (!userId) throw new Error(`${MISSING_GATE}: no userId on context`);

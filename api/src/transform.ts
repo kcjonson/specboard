@@ -5,12 +5,13 @@
  * and are returned directly by their handlers; only projects need a transform here.
  */
 
-import type { ProjectAccess, ProjectResponse } from '@specboard/db';
+import { isLocalRepository, type ProjectAccess, type ProjectResponse } from '@specboard/db';
 import type { ApiProject } from './types.ts';
 
 /**
  * Transform ProjectResponse (camelCase from the service) to ApiProject (ISO strings),
- * with the caller's role on it.
+ * with the caller's role on it. A local project's repository is a path on its owner's
+ * disk; members see the project as board-only, so they get no repository at all.
  */
 export function projectResponseToApi(
 	project: ProjectResponse,
@@ -24,7 +25,7 @@ export function projectResponseToApi(
 		name: project.name,
 		description: project.description ?? undefined,
 		storageMode: project.storageMode,
-		repository: project.repository,
+		repository: isLocalRepository(project.repository) && grantedRole !== 'owner' ? {} : project.repository,
 		rootPaths: project.rootPaths,
 		systemPrompt: project.systemPrompt ?? undefined,
 		syncStatus: project.syncStatus,

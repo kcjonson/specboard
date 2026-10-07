@@ -12,24 +12,28 @@ import { Hono } from 'hono';
 import type { Redis } from 'ioredis';
 import type { ProjectAccess, ProjectResponse } from '@specboard/db';
 
-vi.mock('@specboard/db', () => ({
-	getProjects: vi.fn(),
-	getProject: vi.fn(),
-	createProject: vi.fn(),
-	updateProject: vi.fn(),
-	deleteProject: vi.fn(),
-	ProjectIdentifierTakenError: class extends Error {},
-	ProjectHasRepositoryError: class extends Error {
-		constructor() {
-			super('Project already has a repository');
-		}
-	},
-	ProjectOwnerWithoutSlugError: class extends Error {
-		constructor() {
-			super('Finish onboarding before creating a project');
-		}
-	},
-}));
+vi.mock('@specboard/db', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@specboard/db')>();
+	return {
+		isLocalRepository: actual.isLocalRepository,
+		getProjects: vi.fn(),
+		getProject: vi.fn(),
+		createProject: vi.fn(),
+		updateProject: vi.fn(),
+		deleteProject: vi.fn(),
+		ProjectIdentifierTakenError: class extends Error {},
+		ProjectHasRepositoryError: class extends Error {
+			constructor() {
+				super('Project already has a repository');
+			}
+		},
+		ProjectOwnerWithoutSlugError: class extends Error {
+			constructor() {
+				super('Finish onboarding before creating a project');
+			}
+		},
+	};
+});
 
 vi.mock('@specboard/auth', () => ({
 	getSession: vi.fn(),
