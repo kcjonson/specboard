@@ -76,7 +76,7 @@ export const ChatMessage = memo(function ChatMessage({
 					<EditCard
 						key={index}
 						stats={edits.stats}
-						onApply={handleApply}
+						onApply={onApplyEdit ? handleApply : undefined}
 						isStreaming={isStreaming}
 						isApplied={isApplied}
 					/>

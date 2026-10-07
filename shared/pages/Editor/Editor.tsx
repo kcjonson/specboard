@@ -9,6 +9,8 @@ import {
 	UserModel,
 	GitStatusModel,
 	useModel,
+	useProject,
+	useProjectRole,
 	saveToLocalStorage,
 	loadFromLocalStorage,
 	hasPersistedContent,
@@ -120,28 +122,24 @@ export function Editor(props: RouteProps): JSX.Element {
 	useModel(gitStatusModel);
 	useModel(currentUser);
 
+	// The page's shared project (the header reads the same one) and the caller's role.
+	// Without edit access the editor mounts read-only: no typing, comments, renames,
+	// commits or pulls, and no draft recovery, which would only queue a refused save.
+	const project = useProject(projectRef);
+	const { canEdit, isOwner } = useProjectRole(projectRef);
+
 	// Everything this editor persists locally — drafts, the last-opened file, the
 	// tree's expansion state — is keyed by the project's immutable id rather than its
 	// slug. Slugs are unique only per owner and are user-editable, so slug keys both
 	// collided across accounts on a shared browser and were orphaned (or adopted by
-	// another project) on rename. Resolve the id before touching any of it.
-	const [projectId, setProjectId] = useState<string | undefined>();
-	useEffect(() => {
-		let cancelled = false;
-		fetchClient
-			.get<{ id: string }>(`/api/projects/${projectRef}`, { params: { fields: 'name' } })
-			.then((project) => {
-				if (!cancelled) setProjectId(project.id);
-			})
-			.catch(() => {
-				// Leaving projectId unset keeps local storage untouched. There is nothing
-				// to lose by waiting: without the project the editor cannot load files
-				// either, so this is not a path where a draft silently goes missing.
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [projectRef]);
+	// another project) on rename. Nothing touches any of it until the id has loaded;
+	// without the project the editor cannot load files either, so no draft goes
+	// missing while it waits.
+	const projectId: string | undefined = project.id;
+
+	// A local project's files are on its owner's disk, so members get the board only
+	// (docs/specs/multi-user-collaboration.md, What storage mode shares).
+	const documentsElsewhere = project.storageMode === 'local' && !isOwner;
 
 	// Auto-save state
 	const serverSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -385,14 +383,15 @@ export function Editor(props: RouteProps): JSX.Element {
 			await performServerSave();
 		}
 
-		// Check for cached changes - show recovery dialog if found.
-		if (projectId && hasPersistedContent(projectId, path)) {
+		// Check for cached changes - show recovery dialog if found. Not for someone who
+		// can't save them; the draft stays put for when they can.
+		if (canEdit && projectId && hasPersistedContent(projectId, path)) {
 			setPendingRecovery(path);
 			return;
 		}
 
 		await loadFileFromServer(path);
-	}, [projectId, loadFileFromServer, documentModel, performServerSave]);
+	}, [canEdit, projectId, loadFileFromServer, documentModel, performServerSave]);
 
 	// Handle file renamed via sidebar double-click
 	const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
@@ -588,14 +587,14 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Restore the previously selected file, once the project id is known.
 	useEffect(() => {
-		if (!projectId || restoredRef.current) return;
+		if (!projectId || restoredRef.current || documentsElsewhere) return;
 		restoredRef.current = true;
 
 		const savedPath = loadSelectedFile(projectId);
 		if (savedPath) {
 			handleFileSelect(savedPath);
 		}
-	}, [projectId, handleFileSelect]);
+	}, [projectId, documentsElsewhere, handleFileSelect]);
 
 	// Manual retry from error banner
 	const handleRetryManual = useCallback(() => {
@@ -741,6 +740,23 @@ export function Editor(props: RouteProps): JSX.Element {
 			? Math.max(CHAT_MIN_WIDTH, containerWidth - fileBrowserWidth - CENTER_MIN_WIDTH)
 			: undefined;
 
+	if (documentsElsewhere) {
+		return (
+			<Page projectRef={projectRef} activeTab="Pages">
+				<div class={styles.emptyState}>
+					<div class={styles.emptyStateContent}>
+						<div class={styles.emptyStateIcon}><Icon name="folder" class="size-2xl" /></div>
+						<div class={styles.emptyStateTitle}>These documents live on {project.ownerName || 'the owner'}'s computer</div>
+						<div class={styles.emptyStateHint}>
+							This project keeps its pages in a folder on its owner's machine, so they can't be opened here.
+							The board is shared.
+						</div>
+					</div>
+				</div>
+			</Page>
+		);
+	}
+
 	return (
 		<Page projectRef={projectRef} activeTab="Pages">
 			{saveError && (
@@ -788,6 +804,7 @@ export function Editor(props: RouteProps): JSX.Element {
 						hasUnsavedChanges={documentModel.isDirty}
 						onBeforePull={handleBeforePull}
 						onPullComplete={handlePullComplete}
+						readOnly={!canEdit}
 						class={styles.sidebar}
 					/>
 				</ResizablePanel>
@@ -845,14 +862,16 @@ export function Editor(props: RouteProps): JSX.Element {
 								</div>
 								<div class={styles.deletedStateFile}>{documentModel.filePath}</div>
 								<div class={styles.deletedStateActions}>
-									<button
-										class={styles.restoreButton}
-										onClick={handleRestoreDeletedFile}
-										disabled={isRestoring}
-									>
-										<Icon name="rotate-ccw" class="size-sm" />
-										{isRestoring ? 'Restoring...' : 'Restore File'}
-									</button>
+									{canEdit && (
+										<button
+											class={styles.restoreButton}
+											onClick={handleRestoreDeletedFile}
+											disabled={isRestoring}
+										>
+											<Icon name="rotate-ccw" class="size-sm" />
+											{isRestoring ? 'Restoring...' : 'Restore File'}
+										</button>
+									)}
 									<button
 										type="button"
 										class={`${styles.errorDismissButton} mobile-only`}
@@ -870,12 +889,12 @@ export function Editor(props: RouteProps): JSX.Element {
 								filePath={documentModel.filePath}
 								isDirty={documentModel.isDirty}
 								isSaving={isSaving}
-								onRename={handleRename}
+								onRename={canEdit ? handleRename : undefined}
 								linkedEpicKey={linkedEpicKey}
 								creatingEpic={creatingEpic}
-								onCreateEpic={handleCreateEpic}
+								onCreateEpic={canEdit ? handleCreateEpic : undefined}
 								onViewEpic={handleViewEpic}
-								onLinkEpic={() => setItemPickerOpen(true)}
+								onLinkEpic={canEdit ? () => setItemPickerOpen(true) : undefined}
 								onToggleChat={() => setChatOpen(true)}
 							/>
 							<div class={styles.mainContent}>
@@ -883,10 +902,11 @@ export function Editor(props: RouteProps): JSX.Element {
 									<MarkdownEditor
 										model={documentModel}
 										comments={documentModel.comments}
-										placeholder="Start writing..."
-										onAddComment={handleAddComment}
-										onReply={handleReplyToComment}
-										onToggleResolved={handleToggleResolved}
+										placeholder={canEdit ? 'Start writing...' : undefined}
+										readOnly={!canEdit}
+										onAddComment={canEdit ? handleAddComment : undefined}
+										onReply={canEdit ? handleReplyToComment : undefined}
+										onToggleResolved={canEdit ? handleToggleResolved : undefined}
 										editorRef={editorRef}
 									/>
 								</div>
@@ -905,7 +925,7 @@ export function Editor(props: RouteProps): JSX.Element {
 											documentContent={documentContentForChat}
 											documentPath={documentModel.filePath}
 											projectRef={projectRef}
-											onApplyEdit={handleApplyEdit}
+											onApplyEdit={canEdit ? handleApplyEdit : undefined}
 											onClose={() => setChatOpen(false)}
 										/>
 									</ErrorBoundary>
@@ -935,7 +955,7 @@ export function Editor(props: RouteProps): JSX.Element {
 					onDiscard={handleDiscard}
 				/>
 			)}
-			{itemPickerOpen && (
+			{itemPickerOpen && canEdit && (
 				<ItemPicker
 					projectRef={projectRef}
 					title="Link to an existing item"

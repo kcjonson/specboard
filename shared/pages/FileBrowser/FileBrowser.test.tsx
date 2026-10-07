@@ -74,3 +74,54 @@ describe('FileBrowser with no repository', () => {
 		await findByText('No handler registered');
 	});
 });
+
+describe('FileBrowser read-only', () => {
+	const TREE = {
+		files: [
+			{ name: 'docs', path: '/docs', type: 'directory' },
+			{ name: 'spec.md', path: '/docs/spec.md', type: 'file' },
+		],
+		expanded: {},
+		rootPaths: ['/docs'],
+		syncStatus: 'completed',
+		syncError: null,
+	};
+
+	beforeEach(() => {
+		post.mockReset();
+		post.mockResolvedValue(TREE);
+	});
+
+	it('browses with no create, delete or remove controls', async () => {
+		const { findByText, queryByRole } = render(<FileBrowser projectRef="acme/specboard" readOnly />);
+
+		await findByText('spec.md');
+		expect(queryByRole('button', { name: 'New file in folder' })).toBeNull();
+		expect(queryByRole('button', { name: 'Remove folder from project' })).toBeNull();
+		expect(queryByRole('button', { name: 'Delete file' })).toBeNull();
+	});
+
+	it('doesn\'t start a rename on double-click', async () => {
+		const { findByText, queryByRole } = render(<FileBrowser projectRef="acme/specboard" readOnly />);
+
+		fireEvent.dblClick(await findByText('spec.md'));
+
+		expect(queryByRole('textbox', { name: 'Rename file' })).toBeNull();
+	});
+
+	it('offers all of them to an editor (the control for the tests above)', async () => {
+		const { findByText, getByRole } = render(<FileBrowser projectRef="acme/specboard" />);
+
+		await findByText('spec.md');
+		expect(getByRole('button', { name: 'New file in folder' })).toBeTruthy();
+		expect(getByRole('button', { name: 'Delete file' })).toBeTruthy();
+	});
+
+	it('hides the sync retry, which only an editor can run', async () => {
+		post.mockResolvedValue({ ...EMPTY_TREE, syncStatus: 'failed', syncError: 'Clone failed' });
+		const { findByText, queryByText } = render(<FileBrowser projectRef="acme/specboard" readOnly />);
+
+		await findByText('Sync failed');
+		expect(queryByText('Retry Sync')).toBeNull();
+	});
+});

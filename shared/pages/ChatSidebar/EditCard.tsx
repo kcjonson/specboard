@@ -5,7 +5,8 @@ import styles from './EditCard.module.css';
 
 interface EditCardProps {
 	stats: EditStats;
-	onApply: () => void;
+	/** Absent for someone who can't edit the document: the card describes the edit and offers nothing. */
+	onApply?: () => void;
 	isStreaming?: boolean;
 	isApplied?: boolean;
 }
@@ -20,7 +21,7 @@ export function EditCard({ stats, onApply, isStreaming, isApplied }: EditCardPro
 	const handleClick = (e: MouseEvent): void => {
 		e.preventDefault();
 		e.stopPropagation();
-		onApply();
+		onApply?.();
 	};
 
 	return (
@@ -51,14 +52,16 @@ export function EditCard({ stats, onApply, isStreaming, isApplied }: EditCardPro
 							<>, {stats.totalBlocks - stats.matchedBlocks} failed</>
 						)}
 					</span>
-					<Button
-						class={styles.applyButton}
-						onClick={handleClick}
-						disabled={!hasMatches}
-						aria-label={`Apply ${stats.matchedBlocks} edit${stats.matchedBlocks !== 1 ? 's' : ''}`}
-					>
-						Apply{stats.matchedBlocks < stats.totalBlocks ? ` ${stats.matchedBlocks}` : ''}
-					</Button>
+					{onApply && (
+						<Button
+							class={styles.applyButton}
+							onClick={handleClick}
+							disabled={!hasMatches}
+							aria-label={`Apply ${stats.matchedBlocks} edit${stats.matchedBlocks !== 1 ? 's' : ''}`}
+						>
+							Apply{stats.matchedBlocks < stats.totalBlocks ? ` ${stats.matchedBlocks}` : ''}
+						</Button>
+					)}
 				</div>
 			)}
 		</div>

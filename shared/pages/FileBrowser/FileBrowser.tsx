@@ -67,6 +67,11 @@ export interface FileBrowserProps {
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes (file tree is already reloaded) */
 	onPullComplete?: () => void | Promise<void>;
+	/**
+	 * Browse only: no create, rename, delete, folder changes, sync retry, commit or pull,
+	 * and no pending-changes count. For someone who can't edit the project.
+	 */
+	readOnly?: boolean;
 	/** Additional CSS class */
 	class?: string;
 }
@@ -86,6 +91,7 @@ export function FileBrowser({
 	hasUnsavedChanges,
 	onBeforePull,
 	onPullComplete,
+	readOnly = false,
 	class: className,
 }: FileBrowserProps): JSX.Element {
 	// Create model instance once per component
@@ -322,6 +328,7 @@ export function FileBrowser({
 
 	// Handle double-click on file to start rename
 	const handleFileDoubleClick = (path: string, event: Event): void => {
+		if (readOnly) return;
 		event.preventDefault();
 		event.stopPropagation();
 		model.startRename(path);
@@ -502,11 +509,13 @@ export function FileBrowser({
 							{model.syncError && (
 								<div class={styles.syncErrorMessage}>{model.syncError}</div>
 							)}
-							<Button onClick={handleRetrySync} class={styles.addButton} disabled={retryingSync}>
-								{retryingSync ? 'Retrying...' : 'Retry Sync'}
-							</Button>
+							{!readOnly && (
+								<Button onClick={handleRetrySync} class={styles.addButton} disabled={retryingSync}>
+									{retryingSync ? 'Retrying...' : 'Retry Sync'}
+								</Button>
+							)}
 						</>
-					) : showOpenDialog ? (
+					) : showOpenDialog && !readOnly ? (
 						<>
 							<div class={styles.emptyIcon}><Icon name="folder" class="size-2xl" /></div>
 							<div class={styles.emptyTitle}>No folders added</div>
@@ -524,9 +533,11 @@ export function FileBrowser({
 							<div class={styles.emptyHint}>
 								Pages come from a GitHub repository. This project doesn't have one yet.
 							</div>
-							<a href={`/projects?edit=${projectRef}`} class={styles.settingsLink}>
-								Open project settings
-							</a>
+							{!readOnly && (
+								<a href={`/projects?edit=${projectRef}`} class={styles.settingsLink}>
+									Open project settings
+								</a>
+							)}
 						</>
 					)}
 					{model.error && <div class={styles.error}>{model.error}</div>}
@@ -543,7 +554,7 @@ export function FileBrowser({
 
 	return (
 		<div class={`${styles.container} ${className || ''}`}>
-			{gitStatus && (
+			{gitStatus && !readOnly && (
 				<GitStatusBar
 					gitStatus={gitStatus}
 					hasUnsavedChanges={hasUnsavedChanges}
@@ -553,7 +564,7 @@ export function FileBrowser({
 			)}
 			<div class={styles.header}>
 				<span>Files</span>
-				{gitStatus && gitStatus.changedCount > 0 && (
+				{gitStatus && !readOnly && gitStatus.changedCount > 0 && (
 					<Badge class="variant-warning size-sm">{gitStatus.changedCount}</Badge>
 				)}
 			</div>
@@ -578,6 +589,7 @@ export function FileBrowser({
 										depth={depth}
 										isExpanded={isExpanded}
 										isRoot={isRoot}
+										readOnly={readOnly}
 										onClick={() => handleItemClick(file.path, 'directory')}
 										onAddFileClick={(e) => handleNewFileInFolder(file.path, e)}
 										onDeleteClick={(e) => handleDeleteClick(file.path, 'directory', e)}
@@ -595,6 +607,7 @@ export function FileBrowser({
 										renameInputRef={renameInputRef}
 										changeStatus={changeStatus}
 										isDeleted={isDeleted}
+										readOnly={readOnly}
 										onClick={() => handleItemClick(file.path, 'file')}
 										onDoubleClick={(e) => handleFileDoubleClick(file.path, e)}
 										onRenameInput={(e) => setRenameName((e.target as HTMLInputElement).value)}

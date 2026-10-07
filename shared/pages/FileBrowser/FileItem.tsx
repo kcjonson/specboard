@@ -22,6 +22,8 @@ export interface FileItemProps {
 	changeStatus?: FileChangeStatus;
 	/** Whether file is deleted in git */
 	isDeleted: boolean;
+	/** No delete button, for someone who can't edit */
+	readOnly?: boolean;
 	/** Called when file is clicked */
 	onClick: () => void;
 	/** Called when file is double-clicked (to start rename) */
@@ -45,6 +47,7 @@ export function FileItem({
 	renameInputRef,
 	changeStatus,
 	isDeleted,
+	readOnly = false,
 	onClick,
 	onDoubleClick,
 	onRenameInput,
@@ -80,14 +83,16 @@ export function FileItem({
 			{!isRenaming && (
 				<div class={styles.fileActions}>
 					{changeStatus && <FileStatus status={changeStatus} />}
-					<button
-						class={styles.deleteButton}
-						onClick={onDeleteClick}
-						title="Delete file"
-						aria-label="Delete file"
-					>
-						<Icon name="trash-2" class="size-xs" />
-					</button>
+					{!readOnly && (
+						<button
+							class={styles.deleteButton}
+							onClick={onDeleteClick}
+							title="Delete file"
+							aria-label="Delete file"
+						>
+							<Icon name="trash-2" class="size-xs" />
+						</button>
+					)}
 				</div>
 			)}
 		</div>
