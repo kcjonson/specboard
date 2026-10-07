@@ -269,8 +269,9 @@ link-prefetching mail scanners don't consume it. It has to be added to the publi
 path list in `frontend/src/index.ts` (`excludePaths`).
 
 The invitation binds to the email address. Accepting requires being signed in
-as an account that holds that address among its `user_emails`. A forwarded link
-can't be accepted by someone else.
+as an account whose email is that address, verified. (An account has one address,
+`users.email`; the `user_emails` table this once named was dropped in migration
+003.) A forwarded link can't be accepted by someone else.
 
 | Visitor | What they see |
 |---|---|
@@ -510,4 +511,34 @@ Phase 2 (membership and the authorization boundary, SPE-206) is built:
   tests reach PGlite through `@specboard/db/test-support` (`pgliteAsPg` stands in for
   `pg`).
 
-Phases 3 to 6 are not built.
+Phase 3 (invitations, SPE-207) is built:
+
+- `036_project_invitations.sql`: the Data Model's table and one-open-invitation index,
+  plus a partial index on `email` for "invitations addressed to me".
+- The service is `shared/db/src/services/invitations.ts`. Tokens come from
+  `generateToken`, only `hashToken`'s digest is stored, and an invitation expires 7 days
+  after sending or its last resend. Invites to one project take turns on the project row
+  (`FOR NO KEY UPDATE`), so concurrent invites of one address leave exactly one open
+  (checked against real Postgres; PGlite is one connection).
+- Routes are in [api-database.md](./api-database.md), Project Invitations. The owner's four
+  (invite, pending list, resend, revoke) are owner-only and in the role matrix; the
+  pending list is the one owner-only read, since it carries invitees' addresses. The
+  invitee's routes (`/api/invite` by token, `/api/invitations` by id) aren't project
+  routes and check the address binding instead.
+- Invites are limited per inviting owner, 30 emails an hour across invite and resend.
+- Accepting as an existing member stamps the invitation accepted and keeps the member's
+  role; it never changes a role. Accepting as the owner, or from an account that hasn't
+  onboarded (no slug), is refused and leaves the invitation open.
+- The /invite page (`ssg/src/pages/invite.tsx`) shows all five states. A signed-out
+  visitor gets Sign in and Create account side by side, since saying which one applies
+  would tell anyone holding the link whether the address has an account; signup sends
+  an existing address a sign-in link back to the invite anyway. A signed-in invitee who
+  hasn't onboarded is sent to `/onboarding?next=/invite?token=...`. The lookup tells a
+  signed-in visitor `addressedToYou`, so the page can show the Switch account state
+  without unmasking the address.
+- Signup takes `invite_token` in place of an invite key ([authentication.md](./authentication.md),
+  User Registration), and onboarding honors `?next=`. `next` is validated by one
+  function, `safeNextPath` in `@specboard/core/next-path`, in the API and the onboarding
+  page; the SSG pages share its inline twin.
+
+Phases 4 to 6 are not built.
