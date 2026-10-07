@@ -77,12 +77,12 @@ describe('updateProject with a repository', () => {
 	it('switches to cloud mode, resets sync state, and guards on storage_mode in the same statement', async () => {
 		mockQuery.mockResolvedValueOnce({ rows: [row({ storage_mode: 'cloud' })], rowCount: 1 } as never);
 
-		await updateProject('proj-1', 'user-1', { name: 'Docs', repository: REPOSITORY });
+		await updateProject('proj-1', { name: 'Docs', repository: REPOSITORY });
 
 		expect(mockQuery).toHaveBeenCalledTimes(1);
 		const sql = sqlOf(0);
 		expect(sql).toContain("SET name = $1, storage_mode = 'cloud', repository = $2, root_paths = $3, last_synced_commit_sha = NULL, sync_status = NULL, sync_started_at = NULL, sync_completed_at = NULL, sync_error = NULL, updated_at = NOW()");
-		expect(sql).toContain("WHERE id = $4 AND owner_id = $5 AND storage_mode = 'none'");
+		expect(sql).toContain("WHERE id = $4 AND storage_mode = 'none'");
 		expect(mockQuery.mock.calls[0]![1]).toEqual([
 			'Docs',
 			JSON.stringify({
@@ -92,38 +92,37 @@ describe('updateProject with a repository', () => {
 			}),
 			'["/"]',
 			'proj-1',
-			'user-1',
 		]);
 	});
 
 	it('numbers the placeholders from $1 when the repository is the only change', async () => {
 		mockQuery.mockResolvedValueOnce({ rows: [row({ storage_mode: 'cloud' })], rowCount: 1 } as never);
 
-		await updateProject('proj-1', 'user-1', { repository: REPOSITORY });
+		await updateProject('proj-1', { repository: REPOSITORY });
 
 		const sql = sqlOf(0);
 		expect(sql).toContain('repository = $1, root_paths = $2');
-		expect(sql).toContain("WHERE id = $3 AND owner_id = $4 AND storage_mode = 'none'");
-		expect(mockQuery.mock.calls[0]![1]).toHaveLength(4);
+		expect(sql).toContain("WHERE id = $3 AND storage_mode = 'none'");
+		expect(mockQuery.mock.calls[0]![1]).toHaveLength(3);
 	});
 
-	it('throws ProjectHasRepositoryError when the guard drops an owned project', async () => {
+	it('throws ProjectHasRepositoryError when the guard drops an existing project', async () => {
 		mockQuery
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never)
 			.mockResolvedValueOnce({ rows: [row({ storage_mode: 'cloud' })], rowCount: 1 } as never);
 
-		await expect(updateProject('proj-1', 'user-1', { repository: REPOSITORY })).rejects.toBeInstanceOf(ProjectHasRepositoryError);
+		await expect(updateProject('proj-1', { repository: REPOSITORY })).rejects.toBeInstanceOf(ProjectHasRepositoryError);
 
 		expect(mockQuery).toHaveBeenCalledTimes(2);
-		expect(sqlOf(1)).toBe('SELECT p.*, u.slug AS owner_slug FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = $1 AND p.owner_id = $2');
+		expect(sqlOf(1)).toBe('SELECT p.*, u.slug AS owner_slug FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = $1');
 	});
 
-	it('returns null when the project is not the caller\'s', async () => {
+	it('returns null when the project is gone', async () => {
 		mockQuery
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never)
 			.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never);
 
-		await expect(updateProject('proj-1', 'user-2', { repository: REPOSITORY })).resolves.toBeNull();
+		await expect(updateProject('proj-1', { repository: REPOSITORY })).resolves.toBeNull();
 	});
 });
 
@@ -131,11 +130,11 @@ describe('updateProject without a repository', () => {
 	it('builds the same statement as before and never looks up the project on a miss', async () => {
 		mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 } as never);
 
-		await expect(updateProject('proj-1', 'user-1', { slug: 'new-docs' })).resolves.toBeNull();
+		await expect(updateProject('proj-1', { slug: 'new-docs' })).resolves.toBeNull();
 
 		expect(mockQuery).toHaveBeenCalledTimes(1);
 		const sql = sqlOf(0);
-		expect(sql).toContain('SET slug = $1, updated_at = NOW() WHERE id = $2 AND owner_id = $3');
+		expect(sql).toContain('SET slug = $1, updated_at = NOW() WHERE id = $2');
 		expect(sql).not.toContain('storage_mode');
 	});
 });
@@ -146,7 +145,7 @@ describe('addFolder', () => {
 	it('refuses a cloud project and never writes', async () => {
 		clientQuery.mockResolvedValueOnce({ rows: [CLOUD_ROW], rowCount: 1 });
 
-		await expect(addFolder('proj-1', 'user-1', FOLDER)).rejects.toThrow('CLOUD_PROJECT');
+		await expect(addFolder('proj-1', FOLDER)).rejects.toThrow('CLOUD_PROJECT');
 
 		expect(clientQuery).toHaveBeenCalledTimes(1);
 		expect(String(clientQuery.mock.calls[0]![0])).toContain('FOR UPDATE');
@@ -157,7 +156,7 @@ describe('addFolder', () => {
 			.mockResolvedValueOnce({ rows: [row()], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [row({ storage_mode: 'local', root_paths: ['/docs'] })], rowCount: 1 });
 
-		const project = await addFolder('proj-1', 'user-1', FOLDER);
+		const project = await addFolder('proj-1', FOLDER);
 
 		expect(project?.storageMode).toBe('local');
 		expect(String(clientQuery.mock.calls[1]![0])).toContain("SET storage_mode = 'local'");
@@ -168,7 +167,7 @@ describe('removeFolder', () => {
 	it('refuses a cloud project and never writes', async () => {
 		clientQuery.mockResolvedValueOnce({ rows: [CLOUD_ROW], rowCount: 1 });
 
-		await expect(removeFolder('proj-1', 'user-1', '/')).rejects.toThrow('CLOUD_PROJECT');
+		await expect(removeFolder('proj-1', '/')).rejects.toThrow('CLOUD_PROJECT');
 
 		expect(clientQuery).toHaveBeenCalledTimes(1);
 	});
@@ -183,16 +182,16 @@ describe('removeFolder', () => {
 			.mockResolvedValueOnce({ rows: [local], rowCount: 1 })
 			.mockResolvedValueOnce({ rows: [row()], rowCount: 1 });
 
-		const project = await removeFolder('proj-1', 'user-1', '/docs');
+		const project = await removeFolder('proj-1', '/docs');
 
 		expect(project?.storageMode).toBe('none');
-		expect(clientQuery.mock.calls[1]![1]).toEqual(['[]', 'proj-1', 'user-1']);
+		expect(clientQuery.mock.calls[1]![1]).toEqual(['[]', 'proj-1']);
 	});
 
-	it('returns null when the project is not the caller\'s', async () => {
+	it('returns null when the project is gone', async () => {
 		clientQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-		await expect(removeFolder('proj-1', 'user-2', '/docs')).resolves.toBeNull();
+		await expect(removeFolder('proj-1', '/docs')).resolves.toBeNull();
 		expect(clientQuery).toHaveBeenCalledTimes(1);
 	});
 });
