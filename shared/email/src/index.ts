@@ -8,5 +8,7 @@ export {
 	getPasswordResetEmailContent,
 	getMagicLinkEmailContent,
 	getWaitlistConfirmationEmailContent,
+	getProjectInvitationEmailContent,
 	type EmailContent,
+	type ProjectInvitationEmail,
 } from './templates.ts';
