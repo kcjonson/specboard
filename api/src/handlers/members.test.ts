@@ -146,13 +146,16 @@ describe('leaving', () => {
 });
 
 describe('listing members', () => {
-	it('gives each member their push access, null where it is unknown', async () => {
-		const owner = { ...MEMBER, slug: 'acme', name: 'Alice', role: 'owner', effectiveRole: 'owner' } as const;
-		const viewer = { ...MEMBER, slug: 'sam', name: 'Sam', role: 'viewer', effectiveRole: 'viewer', githubConnected: false } as const;
+	const owner = { ...MEMBER, slug: 'acme', name: 'Alice', role: 'owner', effectiveRole: 'owner' } as const;
+	const viewer = { ...MEMBER, slug: 'sam', name: 'Sam', role: 'viewer', effectiveRole: 'viewer', githubConnected: false } as const;
+
+	beforeEach(() => {
 		vi.mocked(listProjectMembers).mockResolvedValue([owner, MEMBER, viewer]);
 		vi.mocked(memberPushAccess).mockResolvedValue(new Map([['acme', true], ['vera', false]]));
+	});
 
-		const response = await call('viewer', 'GET', 'members');
+	it('gives the owner each member\'s push access, null where it is unknown', async () => {
+		const response = await call('owner', 'GET', 'members');
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual([
@@ -161,5 +164,22 @@ describe('listing members', () => {
 			{ ...viewer, pushAccess: null },
 		]);
 		expect(memberPushAccess).toHaveBeenCalledWith(redis, await vi.mocked(getProject).mock.results[0]!.value);
+	});
+
+	it.each(['editor', 'viewer'] as const)('gives a %s the list with every push access null, and asks GitHub nothing', async (role) => {
+		const response = await call(role, 'GET', 'members');
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).map((member: { pushAccess: unknown }) => member.pushAccess)).toEqual([null, null, null]);
+		expect(memberPushAccess).not.toHaveBeenCalled();
+	});
+
+	it('still lists the members when the push-access check fails', async () => {
+		vi.mocked(memberPushAccess).mockRejectedValue(new Error('Redis is down'));
+
+		const response = await call('owner', 'GET', 'members');
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).map((member: { pushAccess: unknown }) => member.pushAccess)).toEqual([null, null, null]);
 	});
 });

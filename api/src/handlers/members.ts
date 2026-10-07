@@ -38,15 +38,34 @@ function memberSlug(context: Context): string | Response {
 }
 
 /**
- * GET /api/projects/:owner/:project/members. Each member carries `pushAccess`, whether
- * their own GitHub account can push to the project's repository (null when unknown, or
- * when there is no repository or no connection), so the owner can see who will be refused.
+ * Each member's push access, for the owner's view only (the spec's "on the member's row
+ * (owner view)"); anyone else sees their own on the project GET. Advisory, so it never
+ * fails the list: any error leaves every row null.
+ */
+async function pushAccessForOwner(context: Context, redis: Redis, projectId: string): Promise<Map<string, boolean | null>> {
+	if (requireAccess(context).grantedRole !== 'owner') return new Map();
+	try {
+		const project = await getProject(projectId);
+		return project ? await memberPushAccess(redis, project) : new Map();
+	} catch (error) {
+		console.error('Failed to check member push access:', error);
+		return new Map();
+	}
+}
+
+/**
+ * GET /api/projects/:owner/:project/members. For the owner, each member carries
+ * `pushAccess`, whether their own GitHub account can push to the project's repository
+ * (null when unknown, or when there is no repository or no connection), so the owner can
+ * see who will be refused. Every other caller gets null on every row.
  */
 export async function handleListMembers(context: Context, redis: Redis): Promise<Response> {
 	const projectId = requireResolvedProject(context).id;
 	try {
-		const [members, project] = await Promise.all([listProjectMembers(projectId), getProject(projectId)]);
-		const pushAccess = project ? await memberPushAccess(redis, project) : new Map<string, boolean | null>();
+		const [members, pushAccess] = await Promise.all([
+			listProjectMembers(projectId),
+			pushAccessForOwner(context, redis, projectId),
+		]);
 		return context.json(members.map((member) => ({
 			...member,
 			pushAccess: (member.slug && pushAccess.get(member.slug)) ?? null,

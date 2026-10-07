@@ -1,8 +1,8 @@
 /**
  * Push access: GitHub's `permissions.push` for a member's own token, cached briefly, and
- * never allowed to hold a response past its budget. GitHub, Redis and the token store are
- * stand-ins; the rules under test are what each GitHub answer becomes, what gets cached,
- * and what a slow or failing GitHub costs a request.
+ * never allowed to hold up a project page. GitHub, Redis and the token store are
+ * stand-ins; the rules under test are what each GitHub answer becomes, what gets cached
+ * and for how long, and what a slow or failing GitHub costs a request.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -23,11 +23,11 @@ vi.mock('@specboard/db', async (importOriginal) => {
 });
 
 vi.mock('./github-token.ts', () => ({
-	getEncryptedGitHubToken: vi.fn(),
+	getGitHubConnection: vi.fn(),
 }));
 
 import { getProjects, query } from '@specboard/db';
-import { getEncryptedGitHubToken } from './github-token.ts';
+import { getGitHubConnection } from './github-token.ts';
 import {
 	callerPushAccess,
 	forgetPushAccess,
@@ -35,9 +35,10 @@ import {
 	warmPushAccess,
 	PUSH_ACCESS_TTL_SECONDS,
 	PUSH_CHECK_BUDGET_MS,
+	PUSH_FAILURE_TTL_SECONDS,
 } from './push-access.ts';
 
-/** Enough of Redis for the cache: get, setex (TTL recorded), keys by prefix, del. */
+/** Enough of Redis for the cache: get, setex (TTL recorded), scan by prefix, del. */
 function fakeRedis(): Redis & { store: Map<string, string>; ttls: Map<string, number> } {
 	const store = new Map<string, string>();
 	const ttls = new Map<string, number>();
@@ -50,7 +51,8 @@ function fakeRedis(): Redis & { store: Map<string, string>; ttls: Map<string, nu
 			ttls.set(key, ttl);
 			return 'OK';
 		}),
-		keys: vi.fn(async (pattern: string) => [...store.keys()].filter((key) => key.startsWith(pattern.replace(/\*$/, '')))),
+		scan: vi.fn(async (_cursor: string, _match: string, pattern: string) =>
+			['0', [...store.keys()].filter((key) => key.startsWith(pattern.replace(/\*$/, '')))]),
 		del: vi.fn(async (...keys: string[]) => keys.filter((key) => store.delete(key)).length),
 	} as unknown as Redis & { store: Map<string, string>; ttls: Map<string, number> };
 }
@@ -58,6 +60,8 @@ function fakeRedis(): Redis & { store: Map<string, string>; ttls: Map<string, nu
 function token(value: string): string {
 	return JSON.stringify({ token: value });
 }
+
+const VERA = token('gho_vera');
 
 function cloudProject(overrides: Partial<ProjectResponse> = {}): ProjectResponse {
 	return {
@@ -88,13 +92,34 @@ function githubAnswers(status: number, body: unknown = {}): void {
 	vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(body), { status }));
 }
 
+function members(rows: Array<{ id: string; slug: string; access_token: string }>): void {
+	vi.mocked(query).mockResolvedValue({ rows } as never);
+}
+
+/** The one cached entry for a user, once the background check has written it. */
+async function cachedFor(userId: string): Promise<{ key: string; value: string; ttl: number | undefined }> {
+	let entry: [string, string] | undefined;
+	await vi.waitFor(() => {
+		entry = [...redis.store].find(([key]) => key.startsWith(`github_push:v1:${userId}:`));
+		expect(entry).toBeDefined();
+	});
+	return { key: entry![0], value: entry![1], ttl: redis.ttls.get(entry![0]) };
+}
+
+/** The caller's answer once a first page view has started the check and it has landed. */
+async function settledCallerAccess(project = cloudProject()): Promise<boolean | null> {
+	expect(await callerPushAccess(redis, 'user-vera', VERA, project)).toBeNull();
+	await cachedFor('user-vera');
+	return callerPushAccess(redis, 'user-vera', VERA, project);
+}
+
 let redis: ReturnType<typeof fakeRedis>;
 
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.stubGlobal('fetch', vi.fn());
 	redis = fakeRedis();
-	vi.mocked(getEncryptedGitHubToken).mockResolvedValue(token('gho_vera'));
+	vi.mocked(getGitHubConnection).mockResolvedValue({ encryptedToken: VERA, username: 'vera' });
 });
 
 afterEach(() => {
@@ -103,92 +128,101 @@ afterEach(() => {
 });
 
 describe('callerPushAccess', () => {
-	it('reads permissions.push with the caller\'s own token', async () => {
+	it('answers null at once on a miss and checks in the background, with the caller\'s own token', async () => {
 		githubAnswers(200, { permissions: { admin: false, push: true, pull: true } });
 
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject())).toBe(true);
+		expect(await settledCallerAccess()).toBe(true);
 
 		const [url, init] = vi.mocked(fetch).mock.calls[0]!;
 		expect(url).toBe('https://api.github.com/repos/Acme-Corp/Documentation');
 		expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer gho_vera');
 	});
 
+	it('doesn\'t wait on a slow GitHub', async () => {
+		vi.mocked(fetch).mockReturnValue(new Promise(() => {}));
+
+		// A token of its own: this check never settles, and nothing else should join it.
+		expect(await callerPushAccess(redis, 'user-vera', token('gho_slow'), cloudProject())).toBeNull();
+	});
+
 	it('reports a collaborator with read access as false', async () => {
 		githubAnswers(200, { permissions: { push: false, pull: true } });
 
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject())).toBe(false);
+		expect(await settledCallerAccess()).toBe(false);
 	});
 
 	it('reports a private repository the token can\'t see (404) as false', async () => {
 		githubAnswers(404, { message: 'Not Found' });
 
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject())).toBe(false);
+		expect(await settledCallerAccess()).toBe(false);
 	});
 
-	it('caches answers for the TTL, keyed case-insensitively per user and repository', async () => {
+	it('caches an answer for the TTL, keyed case-insensitively per user, connection and repository', async () => {
 		githubAnswers(200, { permissions: { push: true } });
 
-		await callerPushAccess(redis, 'user-vera', cloudProject());
+		await callerPushAccess(redis, 'user-vera', VERA, cloudProject());
+		const { key, value, ttl } = await cachedFor('user-vera');
 
-		expect([...redis.store]).toEqual([['github_push:v1:user-vera:acme-corp/documentation', '1']]);
-		expect(redis.ttls.get('github_push:v1:user-vera:acme-corp/documentation')).toBe(PUSH_ACCESS_TTL_SECONDS);
+		expect(key).toMatch(/^github_push:v1:user-vera:[0-9a-f]{16}:acme-corp\/documentation$/);
+		expect(key).not.toContain('gho_vera');
+		expect(value).toBe('1');
+		expect(ttl).toBe(PUSH_ACCESS_TTL_SECONDS);
 	});
 
-	it('answers from the cache without asking GitHub', async () => {
-		redis.store.set('github_push:v1:user-vera:acme-corp/documentation', '0');
+	it('answers from the cache without asking GitHub again', async () => {
+		githubAnswers(200, { permissions: { push: false } });
+		await settledCallerAccess();
 
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject())).toBe(false);
-		expect(fetch).not.toHaveBeenCalled();
+		expect(await callerPushAccess(redis, 'user-vera', VERA, cloudProject())).toBe(false);
+		expect(fetch).toHaveBeenCalledTimes(1);
+	});
+
+	it('doesn\'t read another connection\'s answer: a reconnect is asked afresh', async () => {
+		githubAnswers(200, { permissions: { push: false } });
+		await settledCallerAccess();
+
+		githubAnswers(200, { permissions: { push: true } });
+		const otherAccount = token('gho_vera_work');
+		expect(await callerPushAccess(redis, 'user-vera', otherAccount, cloudProject())).toBeNull();
+		await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
 	});
 
 	it.each([
 		['an expired token (401)', 401],
 		['a rate limit (403)', 403],
 		['a GitHub outage (502)', 502],
-	])('reports %s as null and caches nothing', async (_what, status) => {
+	])('reports %s as null, cached briefly so it isn\'t re-asked every load', async (_what, status) => {
 		githubAnswers(status, { message: 'nope' });
 
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject())).toBeNull();
-		expect(redis.store.size).toBe(0);
+		expect(await settledCallerAccess()).toBeNull();
+		const { value, ttl } = await cachedFor('user-vera');
+		expect(value).toBe('?');
+		expect(ttl).toBe(PUSH_FAILURE_TTL_SECONDS);
+		expect(fetch).toHaveBeenCalledTimes(1);
 	});
 
 	it('reports a body without permissions as null', async () => {
 		githubAnswers(200, { full_name: 'Acme-Corp/Documentation' });
 
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject())).toBeNull();
+		expect(await settledCallerAccess()).toBeNull();
 	});
 
-	it('reports a network failure as null', async () => {
+	it('reports a network failure as null, cached briefly', async () => {
 		vi.mocked(fetch).mockRejectedValue(new TypeError('fetch failed'));
 
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject())).toBeNull();
-		expect(redis.store.size).toBe(0);
-	});
-
-	it('gives up after the budget with null, and the late answer still fills the cache', async () => {
-		vi.useFakeTimers();
-		let answer!: (response: Response) => void;
-		vi.mocked(fetch).mockReturnValue(new Promise((resolve) => {
-			answer = resolve;
-		}));
-
-		const pending = callerPushAccess(redis, 'user-vera', cloudProject());
-		await vi.advanceTimersByTimeAsync(PUSH_CHECK_BUDGET_MS);
-		expect(await pending).toBeNull();
-
-		answer(new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 }));
-		await vi.waitFor(() => expect(redis.store.get('github_push:v1:user-vera:acme-corp/documentation')).toBe('1'));
+		expect(await settledCallerAccess()).toBeNull();
+		expect((await cachedFor('user-vera')).ttl).toBe(PUSH_FAILURE_TTL_SECONDS);
 	});
 
 	it('shares one GitHub call between concurrent reads', async () => {
 		githubAnswers(200, { permissions: { push: true } });
 
-		const answers = await Promise.all([
-			callerPushAccess(redis, 'user-vera', cloudProject()),
-			callerPushAccess(redis, 'user-vera', cloudProject()),
+		await Promise.all([
+			callerPushAccess(redis, 'user-vera', VERA, cloudProject()),
+			callerPushAccess(redis, 'user-vera', VERA, cloudProject()),
 		]);
+		await cachedFor('user-vera');
 
-		expect(answers).toEqual([true, true]);
 		expect(fetch).toHaveBeenCalledTimes(1);
 	});
 
@@ -196,27 +230,22 @@ describe('callerPushAccess', () => {
 		['a planning-only project', { storageMode: 'none', repository: {} }],
 		['a local project', { storageMode: 'local', repository: { type: 'local', localPath: '/Users/alice/docs', branch: 'main' } }],
 	] as const)('is null for %s without asking anyone', async (_what, overrides) => {
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject(overrides as Partial<ProjectResponse>))).toBeNull();
-		expect(getEncryptedGitHubToken).not.toHaveBeenCalled();
+		expect(await callerPushAccess(redis, 'user-vera', VERA, cloudProject(overrides as Partial<ProjectResponse>))).toBeNull();
 		expect(fetch).not.toHaveBeenCalled();
 	});
 
 	it('is null for a caller without a GitHub connection', async () => {
-		vi.mocked(getEncryptedGitHubToken).mockResolvedValue(null);
-
-		expect(await callerPushAccess(redis, 'user-vera', cloudProject())).toBeNull();
+		expect(await callerPushAccess(redis, 'user-vera', null, cloudProject())).toBeNull();
 		expect(fetch).not.toHaveBeenCalled();
 	});
 });
 
 describe('memberPushAccess', () => {
 	it('checks each connected member with their own token, keyed by slug', async () => {
-		vi.mocked(query).mockResolvedValue({
-			rows: [
-				{ id: 'user-alice', slug: 'alice', access_token: token('gho_alice') },
-				{ id: 'user-vera', slug: 'vera', access_token: token('gho_vera') },
-			],
-		} as never);
+		members([
+			{ id: 'user-alice', slug: 'alice', access_token: token('gho_alice') },
+			{ id: 'user-vera', slug: 'vera', access_token: VERA },
+		]);
 		vi.mocked(fetch).mockImplementation(async (_url, init) => {
 			const auth = (init?.headers as Record<string, string>).Authorization;
 			return new Response(JSON.stringify({ permissions: { push: auth === 'Bearer gho_alice' } }), { status: 200 });
@@ -226,6 +255,22 @@ describe('memberPushAccess', () => {
 
 		expect([...access]).toEqual([['alice', true], ['vera', false]]);
 		expect(vi.mocked(query).mock.calls[0]![1]).toEqual(['proj-1']);
+	});
+
+	it('gives up on a member after the budget with null, and the late answer still fills the cache', async () => {
+		vi.useFakeTimers();
+		members([{ id: 'user-vera', slug: 'vera', access_token: VERA }]);
+		let answer!: (response: Response) => void;
+		vi.mocked(fetch).mockReturnValue(new Promise((resolve) => {
+			answer = resolve;
+		}));
+
+		const pending = memberPushAccess(redis, cloudProject());
+		await vi.advanceTimersByTimeAsync(PUSH_CHECK_BUDGET_MS);
+		expect([...(await pending)]).toEqual([['vera', null]]);
+
+		answer(new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 }));
+		expect((await cachedFor('user-vera')).value).toBe('1');
 	});
 
 	it('is empty for a project without a cloud repository', async () => {
@@ -238,13 +283,14 @@ describe('memberPushAccess', () => {
 
 describe('connecting and disconnecting GitHub', () => {
 	it('forgets only that user\'s answers', async () => {
-		redis.store.set('github_push:v1:user-vera:acme-corp/documentation', '0');
-		redis.store.set('github_push:v1:user-vera:acme-corp/website', '1');
-		redis.store.set('github_push:v1:user-alice:acme-corp/documentation', '1');
+		redis.store.set('github_push:v1:user-vera:aaaa:acme-corp/documentation', '0');
+		redis.store.set('github_push:v1:user-vera:aaaa:acme-corp/website', '1');
+		redis.store.set('github_push:v1:user-alice:bbbb:acme-corp/documentation', '1');
 
 		await forgetPushAccess(redis, 'user-vera');
 
-		expect([...redis.store.keys()]).toEqual(['github_push:v1:user-alice:acme-corp/documentation']);
+		expect([...redis.store.keys()]).toEqual(['github_push:v1:user-alice:bbbb:acme-corp/documentation']);
+		expect(redis.scan).toHaveBeenCalled();
 	});
 
 	it('warms the cache for the user\'s cloud projects', async () => {
@@ -257,6 +303,6 @@ describe('connecting and disconnecting GitHub', () => {
 		await warmPushAccess(redis, 'user-vera');
 
 		expect(fetch).toHaveBeenCalledTimes(1);
-		expect(redis.store.get('github_push:v1:user-vera:acme-corp/documentation')).toBe('0');
+		expect(await callerPushAccess(redis, 'user-vera', VERA, cloudProject())).toBe(false);
 	});
 });

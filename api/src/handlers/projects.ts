@@ -22,6 +22,7 @@ import { apiUserId, loadAuthorizedProject, requireAccess, requireResolvedProject
 import { isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
 import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
 import { callerPushAccess } from '../services/push-access.ts';
+import { getGitHubConnection } from '../services/github-token.ts';
 import type { ApiProjectDetail } from '../types.ts';
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
@@ -127,8 +128,9 @@ export async function handleListProjects(context: Context, redis: Redis): Promis
 }
 
 /**
- * GET /api/projects/:owner/:project, with the caller's role and whether their GitHub
- * account can push to the project's repository (null when that's unknown or moot).
+ * GET /api/projects/:owner/:project, with the caller's role, their GitHub login, and
+ * whether it can push to the project's repository (null when that's unknown or moot;
+ * never waited on, see callerPushAccess).
  */
 export async function handleGetProject(context: Context, redis: Redis): Promise<Response> {
 	try {
@@ -138,9 +140,12 @@ export async function handleGetProject(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
+		const userId = apiUserId(context);
+		const github = await getGitHubConnection(userId);
 		const response: ApiProjectDetail = {
 			...projectResponseToApi(project, requireAccess(context)),
-			pushAccess: await callerPushAccess(redis, apiUserId(context), project),
+			githubUsername: github?.username ?? null,
+			pushAccess: await callerPushAccess(redis, userId, github?.encryptedToken ?? null, project),
 		};
 		return context.json(response);
 	} catch (error) {

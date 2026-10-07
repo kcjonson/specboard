@@ -11,6 +11,7 @@ import { query } from '@specboard/db';
 import { log } from '@specboard/core';
 import { safeNextPath } from '@specboard/core/next-path';
 import { forgetPushAccess, warmPushAccess } from '../services/push-access.ts';
+import { deleteKeysMatching } from '../services/redis-keys.ts';
 
 // GitHub OAuth configuration
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
@@ -391,11 +392,8 @@ export async function handleGitHubDisconnect(
 	await forgetPushAccess(redis, session.userId);
 	const reposCacheKey = `github_repos:${CACHE_VERSION}:${session.userId}`;
 	await redis.del(reposCacheKey);
-	// Note: Branch cache keys include owner/repo, so we use pattern matching
-	const branchKeys = await redis.keys(`github_branches:${CACHE_VERSION}:${session.userId}:*`);
-	if (branchKeys.length > 0) {
-		await redis.del(...branchKeys);
-	}
+	// Branch cache keys include owner/repo, so they go by pattern
+	await deleteKeysMatching(redis, `github_branches:${CACHE_VERSION}:${session.userId}:*`);
 
 	log({
 		type: 'auth',

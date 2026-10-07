@@ -49,10 +49,15 @@ vi.mock('../services/push-access.ts', () => ({
 	callerPushAccess: vi.fn(async () => null),
 }));
 
+vi.mock('../services/github-token.ts', () => ({
+	getGitHubConnection: vi.fn(async () => null),
+}));
+
 import { getSession } from '@specboard/auth';
 import { createProject, getProject, updateProject, ProjectHasRepositoryError, ProjectOwnerWithoutSlugError } from '@specboard/db';
 import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
 import { callerPushAccess } from '../services/push-access.ts';
+import { getGitHubConnection } from '../services/github-token.ts';
 import { handleCreateProject, handleGetProject, handleUpdateProject } from './projects.ts';
 import type { AppVariables } from '../project-access.ts';
 
@@ -249,29 +254,35 @@ describe('handleCreateProject', () => {
 describe('handleGetProject', () => {
 	const EDITOR_ACCESS: ProjectAccess = { ...OWNER_ACCESS, grantedRole: 'editor', effectiveRole: 'editor' };
 
-	it('answers with the caller\'s roles, the owner\'s name, and their push access', async () => {
+	it('answers with the caller\'s roles, the owner\'s name, their GitHub login and push access', async () => {
 		const project = projectResponse({ storageMode: 'cloud' });
 		vi.mocked(getProject).mockResolvedValue(project);
+		vi.mocked(getGitHubConnection).mockResolvedValue({ encryptedToken: 'sealed', username: 'vera' });
 		vi.mocked(callerPushAccess).mockResolvedValue(false);
 
 		const res = await request('GET', '/api/projects/acme/docs', undefined, EDITOR_ACCESS);
 
 		expect(res.status).toBe(200);
-		expect(await res.json()).toMatchObject({
+		const body = await res.json();
+		expect(body).toMatchObject({
 			ownerName: 'Alice Ames',
 			grantedRole: 'editor',
 			effectiveRole: 'editor',
+			githubUsername: 'vera',
 			pushAccess: false,
 		});
-		expect(callerPushAccess).toHaveBeenCalledWith(redis, 'user-1', project);
+		expect(JSON.stringify(body)).not.toContain('sealed');
+		expect(callerPushAccess).toHaveBeenCalledWith(redis, 'user-1', 'sealed', project);
 	});
 
-	it('sends null when push access is unknown', async () => {
+	it('sends nulls for a caller without GitHub', async () => {
 		vi.mocked(getProject).mockResolvedValue(projectResponse());
+		vi.mocked(getGitHubConnection).mockResolvedValue(null);
 		vi.mocked(callerPushAccess).mockResolvedValue(null);
 
 		const res = await request('GET', '/api/projects/acme/docs');
 
-		expect(await res.json()).toMatchObject({ pushAccess: null });
+		expect(await res.json()).toMatchObject({ githubUsername: null, pushAccess: null });
+		expect(callerPushAccess).toHaveBeenCalledWith(redis, 'user-1', null, expect.anything());
 	});
 });

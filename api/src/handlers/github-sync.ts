@@ -13,7 +13,7 @@ import { query } from '@specboard/db';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
 import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
-import { getEncryptedGitHubToken } from '../services/github-token.ts';
+import { getGitHubConnection } from '../services/github-token.ts';
 import {
 	createGitHubCommit,
 	generateCommitMessage,
@@ -209,7 +209,7 @@ export async function startGitHubInitialSync(
 		throw new Error('Project not found or not in cloud mode');
 	}
 
-	const encryptedToken = await getEncryptedGitHubToken(userId);
+	const encryptedToken = (await getGitHubConnection(userId))?.encryptedToken;
 	if (!encryptedToken) {
 		throw new Error('GitHub not connected');
 	}
@@ -262,7 +262,7 @@ export async function handleGitHubInitialSync(context: Context): Promise<Respons
 	}
 
 	// Get encrypted GitHub token
-	const encryptedToken = await getEncryptedGitHubToken(userId);
+	const encryptedToken = (await getGitHubConnection(userId))?.encryptedToken;
 	if (!encryptedToken) {
 		return context.json({ error: 'GitHub not connected' }, 400);
 	}
@@ -340,7 +340,7 @@ export async function handleGitHubSync(context: Context): Promise<Response> {
 	}
 
 	// Get encrypted GitHub token
-	const encryptedToken = await getEncryptedGitHubToken(userId);
+	const encryptedToken = (await getGitHubConnection(userId))?.encryptedToken;
 	if (!encryptedToken) {
 		return context.json({ success: false, error: 'GitHub not connected' }, 400);
 	}
@@ -445,7 +445,7 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 	}
 
 	// Get encrypted GitHub token
-	const encryptedTokenString = await getEncryptedGitHubToken(userId);
+	const encryptedTokenString = (await getGitHubConnection(userId))?.encryptedToken;
 	if (!encryptedTokenString) {
 		return context.json({ error: 'GitHub not connected' }, 400);
 	}

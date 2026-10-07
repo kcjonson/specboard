@@ -7,30 +7,34 @@
  * the member's own token, and it is three-valued: true, false, or null for "unknown or
  * not applicable" (no cloud repository, no GitHub connection, or GitHub didn't answer).
  *
- * GitHub is never allowed to hold up a response:
- * - Answers are cached in Redis per user and repository for PUSH_ACCESS_TTL_SECONDS. A
- *   collaborator change on GitHub is rare and the warning is advisory, so a few minutes
- *   of staleness is cheap; the same window the repo and branch lists already use.
- *   Connecting GitHub clears the user's answers, since the new token may be another
- *   GitHub account.
- * - A request waits at most PUSH_CHECK_BUDGET_MS for an uncached answer, then reports
- *   null. The check itself keeps going (up to PUSH_CHECK_TIMEOUT_MS) and fills the cache,
- *   so the next read has the answer. Concurrent reads of one user and repository share a
- *   single check.
- * - Failures (a revoked token, a rate limit, a timeout) are null and not cached.
+ * GitHub is never allowed to hold up a project page:
+ * - Answers are cached in Redis for PUSH_ACCESS_TTL_SECONDS. A collaborator change on
+ *   GitHub is rare and the warning is advisory, so a few minutes of staleness is cheap;
+ *   the same window the repo and branch lists already use. Failures (a revoked token, a
+ *   rate limit, an outage, a timeout) are cached as unknown for PUSH_FAILURE_TTL_SECONDS,
+ *   so a broken token isn't re-asked on every page load.
+ * - The caller's own answer (the project GET) comes from the cache or is null, and a
+ *   miss starts the check in the background for the next page view.
+ * - The owner's member list waits at most PUSH_CHECK_BUDGET_MS per member for a miss,
+ *   then reports null while the check finishes and fills the cache.
+ * - Keys carry a fingerprint of the stored (encrypted) token, so an answer earned by
+ *   one GitHub connection is never read, or joined in flight, by the next one.
  */
 
+import { createHash } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { decrypt, type EncryptedData } from '@specboard/auth';
 import { getProjects, isCloudRepository, query, type ProjectResponse } from '@specboard/db';
 import { log } from '@specboard/core';
-import { getEncryptedGitHubToken } from './github-token.ts';
+import { getGitHubConnection } from './github-token.ts';
+import { deleteKeysMatching } from './redis-keys.ts';
 
 export type PushAccess = boolean | null;
 
 const GITHUB_API_URL = 'https://api.github.com';
 
 export const PUSH_ACCESS_TTL_SECONDS = 300;
+export const PUSH_FAILURE_TTL_SECONDS = 60;
 export const PUSH_CHECK_BUDGET_MS = 1000;
 const PUSH_CHECK_TIMEOUT_MS = 5000;
 
@@ -38,6 +42,9 @@ const PUSH_CHECK_TIMEOUT_MS = 5000;
 const WARM_LIMIT = 20;
 
 const CACHE_PREFIX = 'github_push:v1';
+
+/** Cached values: '1' can push, '0' can't, '?' GitHub didn't say. */
+const CACHED: Record<string, PushAccess> = { '1': true, '0': false, '?': null };
 
 interface RepoAddress {
 	owner: string;
@@ -50,8 +57,10 @@ function repoOf(project: Pick<ProjectResponse, 'repository'>): RepoAddress | nul
 }
 
 // GitHub names are case-insensitive, so one repository is one key however it was typed.
-function cacheKey(userId: string, repo: RepoAddress): string {
-	return `${CACHE_PREFIX}:${userId}:${repo.owner.toLowerCase()}/${repo.repo.toLowerCase()}`;
+// The fingerprint is of the encrypted token (fresh IV per connection), never the token.
+function cacheKey(userId: string, encryptedToken: string, repo: RepoAddress): string {
+	const fingerprint = createHash('sha256').update(encryptedToken).digest('hex').slice(0, 16);
+	return `${CACHE_PREFIX}:${userId}:${fingerprint}:${repo.owner.toLowerCase()}/${repo.repo.toLowerCase()}`;
 }
 
 async function askGitHub(encryptedToken: string, repo: RepoAddress): Promise<PushAccess> {
@@ -77,18 +86,12 @@ async function askGitHub(encryptedToken: string, repo: RepoAddress): Promise<Pus
 
 const inFlight = new Map<string, Promise<PushAccess>>();
 
-/** One check per key at a time. Never rejects; a failure is null and isn't cached. */
+/** One check per key at a time. Never rejects. */
 function startCheck(redis: Redis, key: string, encryptedToken: string, repo: RepoAddress): Promise<PushAccess> {
 	const running = inFlight.get(key);
 	if (running) return running;
 
 	const check = askGitHub(encryptedToken, repo)
-		.then(async (answer) => {
-			if (answer !== null) {
-				await redis.setex(key, PUSH_ACCESS_TTL_SECONDS, answer ? '1' : '0').catch(() => undefined);
-			}
-			return answer;
-		})
 		.catch((error: unknown) => {
 			log({
 				type: 'github',
@@ -99,6 +102,11 @@ function startCheck(redis: Redis, key: string, encryptedToken: string, repo: Rep
 				error: error instanceof Error ? error.message : String(error),
 			});
 			return null;
+		})
+		.then(async (answer) => {
+			const [value, ttl] = answer === null ? ['?', PUSH_FAILURE_TTL_SECONDS] : [answer ? '1' : '0', PUSH_ACCESS_TTL_SECONDS];
+			await redis.setex(key, ttl, value).catch(() => undefined);
+			return answer;
 		})
 		.finally(() => inFlight.delete(key));
 	inFlight.set(key, check);
@@ -115,30 +123,33 @@ function withinBudget(check: Promise<PushAccess>): Promise<PushAccess> {
 	});
 }
 
+/** The cached answer, or undefined on a miss (or a Redis outage, which only costs the cache). */
 async function cached(redis: Redis, key: string): Promise<PushAccess | undefined> {
 	try {
 		const value = await redis.get(key);
-		if (value === '1') return true;
-		if (value === '0') return false;
+		return value !== null && value in CACHED ? CACHED[value] : undefined;
 	} catch {
-		// A Redis outage only costs the cache; ask GitHub.
+		return undefined;
 	}
-	return undefined;
 }
 
-async function pushAccess(redis: Redis, userId: string, encryptedToken: string | null, repo: RepoAddress | null): Promise<PushAccess> {
+/**
+ * The caller's push access to the project's repository, for the project GET: whatever
+ * the cache holds, else null at once with the check started for the next page view.
+ */
+export async function callerPushAccess(
+	redis: Redis,
+	userId: string,
+	encryptedToken: string | null,
+	project: ProjectResponse
+): Promise<PushAccess> {
+	const repo = repoOf(project);
 	if (!repo || !encryptedToken) return null;
-	const key = cacheKey(userId, repo);
+	const key = cacheKey(userId, encryptedToken, repo);
 	const known = await cached(redis, key);
 	if (known !== undefined) return known;
-	return withinBudget(startCheck(redis, key, encryptedToken, repo));
-}
-
-/** The caller's push access to the project's repository. */
-export async function callerPushAccess(redis: Redis, userId: string, project: ProjectResponse): Promise<PushAccess> {
-	const repo = repoOf(project);
-	if (!repo) return null;
-	return pushAccess(redis, userId, await getEncryptedGitHubToken(userId), repo);
+	void startCheck(redis, key, encryptedToken, repo);
+	return null;
 }
 
 /**
@@ -163,15 +174,19 @@ export async function memberPushAccess(redis: Redis, project: ProjectResponse): 
 		[project.id]
 	);
 	const answers = await Promise.all(
-		result.rows.map(async (row) => [row.slug, await pushAccess(redis, row.id, row.access_token, repo)] as const)
+		result.rows.map(async (row) => {
+			const key = cacheKey(row.id, row.access_token, repo);
+			const known = await cached(redis, key);
+			const answer = known !== undefined ? known : await withinBudget(startCheck(redis, key, row.access_token, repo));
+			return [row.slug, answer] as const;
+		})
 	);
 	return new Map(answers);
 }
 
 /** Drop a user's cached answers. A new or removed connection makes them meaningless. */
 export async function forgetPushAccess(redis: Redis, userId: string): Promise<void> {
-	const keys = await redis.keys(`${CACHE_PREFIX}:${userId}:*`);
-	if (keys.length > 0) await redis.del(...keys);
+	await deleteKeysMatching(redis, `${CACHE_PREFIX}:${userId}:*`);
 }
 
 /**
@@ -179,13 +194,13 @@ export async function forgetPushAccess(redis: Redis, userId: string): Promise<vo
  * return to already has an answer. Callers don't wait on it.
  */
 export async function warmPushAccess(redis: Redis, userId: string): Promise<void> {
-	const token = await getEncryptedGitHubToken(userId);
-	if (!token) return;
+	const connection = await getGitHubConnection(userId);
+	if (!connection) return;
 	const projects = (await getProjects(userId)).filter((project) => repoOf(project) !== null).slice(0, WARM_LIMIT);
 	await Promise.all(
 		projects.map((project) => {
 			const repo = repoOf(project)!;
-			return startCheck(redis, cacheKey(userId, repo), token, repo);
+			return startCheck(redis, cacheKey(userId, connection.encryptedToken, repo), connection.encryptedToken, repo);
 		})
 	);
 }

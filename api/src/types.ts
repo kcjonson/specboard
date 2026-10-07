@@ -48,6 +48,8 @@ export interface ApiProject {
 
 /** One project as its own GET answers it: the caller's push access rides along. */
 export interface ApiProjectDetail extends ApiProject {
+	/** The caller's GitHub login; null without a connection. */
+	githubUsername: string | null;
 	/** Whether the caller's GitHub account can push to the repository; null when unknown or not applicable. */
 	pushAccess: boolean | null;
 }
