@@ -5,7 +5,7 @@ describe('safeNextPath', () => {
 	it.each([
 		'/',
 		'/projects',
-		'/invite?token=abc123',
+		'/invite?id=6f1c0b5e-2a4d-4e8f-9b3a-1c2d3e4f5a6b',
 		'/projects/acme/roadmap/planning#board',
 	])('keeps the same-origin path %s', (path) => {
 		expect(safeNextPath(path)).toBe(path);

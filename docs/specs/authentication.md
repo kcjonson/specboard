@@ -251,8 +251,10 @@ records `project_invitation_id` instead of `invite_key`. The magic link's
 `next_path` is `/invite?id=<invitation id>`, for a new account and an existing one
 alike, so the invitee comes back to the invitation once signed in; the raw token
 is never stored. Whoever holds the token may not own the address, so the response
-shows it masked, and the code form sends `{ invite_token, code }` to
-`/api/auth/magic-link/verify`, which looks the address up from the invitation.
+shows it masked, and the code form sends `{ invitation_id, code }` to
+`/api/auth/magic-link/verify`, which looks the address up from the invitation. By
+id rather than token: an owner resending the invite mid-signup rotates the token,
+and the code still has to work.
 
 **Onboarding**: the first magic-link login creates a session with
 `profile_complete: false` (username still NULL). The frontend service
@@ -280,6 +282,9 @@ Server-side, and in the onboarding page, that is `safeNextPath` in
 characters, at most 2048 characters). The SSG pages' inline scripts (login,
 signup, magic link) share its browser-side twin, `safeNext`
 (`ssg/src/scripts/safe-next.ts`), which also falls back to `/`.
+
+**Error reports** from the API and the frontend server carry the request's origin
+and path, never its query string, which can hold a token.
 
 **Referrer-Policy**: pages whose URL carries an emailed token or an invitation
 (`/magic-link`, `/reset-password`, `/verify-email/confirm`, `/invite`, `/signup`,
@@ -346,7 +351,7 @@ Browser                        API                      PostgreSQL
    │ POST /api/auth/magic-link/ │                            │
    │ verify {token} OR          │                            │
    │ {email, code} OR           │                            │
-   │ {invite_token, code}       │                            │
+   │ {invitation_id, code}      │                            │
    │───────────────────────────►│                            │
    │                            │ Lookup by hash; for codes, │
    │                            │ count attempt BEFORE       │

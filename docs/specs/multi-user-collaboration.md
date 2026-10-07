@@ -280,7 +280,7 @@ as an account whose email is that address, verified. (An account has one address
 | Signed in, email matches | Invite card with **Accept** and **Decline**. Accept → `/projects/:owner/:project/planning`. |
 | Signed in as a different account | "This invite was sent to k•••@example.com. You're signed in as other@example.com." **Switch account** (logs out, returns here). |
 | Signed out | Invite card, then **Sign in to accept** and **Create account** side by side. The page can't say which applies without telling anyone holding the link whether the address has an account. Sign in goes to `/login?next=/invite?id=...`; Create account to signup with the invite token in place of the early-access key, the address shown masked and locked. Either way the magic link's stored `next` is `/invite?id=<invitation id>`, never the token. |
-| Expired / revoked / already used | Says which, and "Ask {inviter} to send a new invite." Its own recipient, signed in, instead gets a link to the project for an invite they accepted, and is sent on to the open invite that replaced a revoked or expired one. |
+| Expired / revoked / already used | Says which, and "Ask {inviter} to send a new invite." Its own recipient, signed in, instead gets a link to the project for an invite they accepted, and is sent on to the open invite that replaced a revoked, expired or declined one. An Accept or Decline that finds the invite closed reads it again, so a stale card follows it the same way. |
 
 Two existing flows need fixing for the no-account path:
 
@@ -534,7 +534,7 @@ Phase 3 (invitations, SPE-207) is built:
   signed-in recipient, and every sign-in, signup and onboarding hop comes back as
   `/invite?id=...`, so the raw token is stored nowhere (only its hash, in the table).
   Signup from an invitation shows the address masked, and a typed sign-in code is sent
-  with the invitation token, which names the address server-side. Token-bearing pages
+  with the invitation's id, which names the address server-side and survives a resend. Token-bearing pages
   are served with `Referrer-Policy: no-referrer`.
 - Accepting share-locks the project row before the invitation, so it serializes against
   inviting the same address; on real Postgres, 60 accept/re-invite races left no member
@@ -546,7 +546,8 @@ Phase 3 (invitations, SPE-207) is built:
   hasn't onboarded is sent to `/onboarding?next=/invite?id=...`. The lookup tells a
   signed-in visitor `addressedToYou`, so the page can show the Switch account state
   without unmasking the address. The recipient of a closed invite gets a link to the
-  project they joined, or is sent on to the open invite that replaced it.
+  project they joined, or, for a revoked, expired or declined one, is sent on to the
+  open invite that replaced it.
 - Signup takes `invite_token` in place of an invite key ([authentication.md](./authentication.md),
   User Registration), and onboarding honors `?next=`. `next` is validated by one
   function, `safeNextPath` in `@specboard/core/next-path`, in the API and the onboarding
