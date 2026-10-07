@@ -58,39 +58,61 @@ export class ProjectModel extends SyncModel {
 	@prop accessor name!: string;
 	@prop accessor storageMode!: StorageMode;
 	@prop accessor repository!: ProjectRepository;
-	@prop accessor grantedRole!: ProjectRole;
-	@prop accessor effectiveRole!: ProjectRole;
+	@prop accessor grantedRole!: ProjectRole | null;
+	@prop accessor effectiveRole!: ProjectRole | null;
+	/** The caller's GitHub login; null without a connection. */
+	@prop accessor githubUsername!: string | null;
 	/** Whether the caller's GitHub account can push to the repository; null when unknown or not applicable. */
 	@prop accessor pushAccess!: boolean | null;
+
+	/**
+	 * A read that fails takes the role with it. The last answer can't be trusted once the
+	 * server stops giving one (a member removed gets a 404), so the page reads as unknown,
+	 * which offers no writes, until a read succeeds again.
+	 */
+	override async fetch(): Promise<void> {
+		try {
+			await super.fetch();
+		} catch (error) {
+			this.grantedRole = null;
+			this.effectiveRole = null;
+			this.pushAccess = null;
+			throw error;
+		}
+	}
 }
 
 const projects = new Map<string, ProjectModel>();
 
+function load(project: ProjectModel): void {
+	if (!project.$meta.working) project.fetch().catch(() => undefined);
+}
+
 /**
  * The page's model for a project ref, fetched on first use. A failed fetch lands on
- * `$meta.error` and leaves the role unknown, which reads as "can't edit".
+ * `$meta.error` and leaves the role unknown, which reads as "can't edit"; asking for
+ * the model again retries it, so one bad read doesn't strand the session read-only.
  */
 export function projectModel(projectRef: string): ProjectModel {
 	let project = projects.get(projectRef);
 	if (!project) {
 		project = new ProjectModel({ projectRef });
 		projects.set(projectRef, project);
-		project.fetch().catch(() => undefined);
+		load(project);
+	} else if (project.$meta.error) {
+		load(project);
 	}
 	return project;
 }
 
 /**
  * Re-read the project, for when the caller's role may have moved under the page: a
- * new page view, or a write the server refused. Concurrent calls share one request.
+ * new page view, or a write the server refused. A read already in flight stands in.
  */
 export function refreshProject(projectRef: string): void {
 	const project = projects.get(projectRef);
-	if (!project) {
-		projectModel(projectRef);
-	} else if (!project.$meta.working) {
-		project.fetch().catch(() => undefined);
-	}
+	if (project) load(project);
+	else projectModel(projectRef);
 }
 
 /** The caller's standing, from the fields the server sent. The one place the client reads them. */

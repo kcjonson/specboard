@@ -30,13 +30,13 @@ const REPOSITORY = {
 	branch: 'main',
 };
 
-/** Serve the project with these fields; the user and GitHub connection reads alongside it. */
+/** Serve the project with these fields; the user read alongside it gets nothing. */
 function serve(projectRef: string, fields: Record<string, unknown>): void {
 	get.mockImplementation(async (url: string) => {
 		if (url === `/api/projects/${projectRef}`) {
-			return { id: 'p1', name: 'Roadmap', ownerName: 'Alice Ames', repository: REPOSITORY, pushAccess: null, ...fields };
+			return { id: 'p1', name: 'Roadmap', ownerName: 'Alice Ames', repository: REPOSITORY, githubUsername: 'vera', pushAccess: null, ...fields };
 		}
-		if (url === '/api/github/connection') return { connected: true, username: 'vera' };
+		if (url === '/api/github/connection') throw new Error('The banner reads the login off the project');
 		return {};
 	});
 }

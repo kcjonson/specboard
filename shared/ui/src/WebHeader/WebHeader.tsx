@@ -1,7 +1,7 @@
 import { useMemo, useEffect } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
 import { getCookie, setCookie } from '@specboard/core/cookies';
-import { projectModel, refreshProject, useModel, UserModel } from '@specboard/models';
+import { projectModel, projectRoleState, refreshProject, useModel, UserModel } from '@specboard/models';
 import { Badge } from '../Badge/Badge';
 import { UserMenu } from '../UserMenu/UserMenu';
 import { Logo } from '../Logo/Logo';
@@ -49,12 +49,14 @@ export function WebHeader({
 
 	// The page's shared project model (see projectModel). The header is mounted once per
 	// page, so it is where that model is re-read on each page view: a role changed since
-	// the last one reaches the header and everything else reading the model.
+	// the last one, or a read that failed, reaches the header and everything else reading
+	// the model. On the page that first creates the model its read is still in flight,
+	// and refreshProject leaves it be.
 	const project = useMemo(() => (projectRef ? projectModel(projectRef) : null), [projectRef]);
 	useModel(project);
 	useEffect(() => {
-		if (projectRef && project?.$meta.lastFetched != null) refreshProject(projectRef);
-	}, [projectRef, project]);
+		if (projectRef) refreshProject(projectRef);
+	}, [projectRef]);
 
 	// RootRedirect reopens the last project from these, and the name cookie keeps the
 	// header from flashing blank while a page's project loads.
@@ -65,7 +67,7 @@ export function WebHeader({
 		setCookie('lastProjectName', loadedName, 30);
 	}, [projectRef, loadedName]);
 	const projectName = loadedName ?? (projectRef && getCookie('lastProjectRef') === projectRef ? getCookie('lastProjectName') : null);
-	const viewOnly = project?.effectiveRole === 'viewer';
+	const viewOnly = project ? projectRoleState(project).effectiveRole === 'viewer' : false;
 
 	// Router navigation swaps the page under the popover but the popover element
 	// survives the re-render, so close it explicitly when a link is chosen.

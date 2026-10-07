@@ -70,13 +70,45 @@ describe('useProjectRole', () => {
 		expect(get).toHaveBeenCalledTimes(1);
 	});
 
-	it('stays read-only when the project can\'t be read', async () => {
-		get.mockRejectedValue(new Error('HTTP 500'));
+	it('is read-only while the project can\'t be read, and a later page view recovers', async () => {
+		get.mockRejectedValueOnce(new Error('HTTP 502'));
+		const first = renderHook(() => useProjectRole('acme/flaky'));
+		const model = projectModel('acme/flaky');
+		await waitFor(() => expect(model.$meta.error).not.toBeNull());
+		expect(first.result.current.canEdit).toBe(false);
+		first.unmount();
 
-		const { result } = renderHook(() => useProjectRole('acme/broken'));
+		// The next page view: the header refreshes, the view asks for the model again.
+		get.mockResolvedValue({ id: 'p1', grantedRole: 'editor', effectiveRole: 'editor', pushAccess: null });
+		refreshProject('acme/flaky');
+		const next = renderHook(() => useProjectRole('acme/flaky'));
 
-		await waitFor(() => expect(projectModel('acme/broken').$meta.error).not.toBeNull());
-		expect(result.current.canEdit).toBe(false);
+		await waitFor(() => expect(next.result.current.canEdit).toBe(true));
+	});
+
+	it('retries a failed read when the model is asked for again', async () => {
+		get.mockRejectedValueOnce(new Error('HTTP 502'));
+		const project = projectModel('acme/retried');
+		await waitFor(() => expect(project.$meta.error).not.toBeNull());
+
+		get.mockResolvedValue({ id: 'p1', grantedRole: 'owner', effectiveRole: 'owner', pushAccess: null });
+		projectModel('acme/retried');
+
+		await waitFor(() => expect(project.grantedRole).toBe('owner'));
+		expect(get).toHaveBeenCalledTimes(2);
+	});
+
+	it('drops the role when a refresh fails, rather than keep offering writes', async () => {
+		get.mockResolvedValue({ id: 'p1', grantedRole: 'editor', effectiveRole: 'editor', pushAccess: true });
+		const { result } = renderHook(() => useProjectRole('acme/removed'));
+		await waitFor(() => expect(result.current.canEdit).toBe(true));
+
+		// Removed from the project: the address now answers 404.
+		get.mockRejectedValue(new Error('HTTP 404: Not Found'));
+		act(() => refreshProject('acme/removed'));
+
+		await waitFor(() => expect(result.current.canEdit).toBe(false));
+		expect(result.current).toMatchObject({ role: null, effectiveRole: null, reason: null });
 	});
 
 	it('picks up a role that changed when the project is refreshed', async () => {
