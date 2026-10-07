@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Icon } from '@specboard/ui';
-import { GitHubConnectionModel, useModel } from '@specboard/models';
+import { connectGitHub, GitHubConnectionModel, useModel } from '@specboard/models';
 import styles from './GitHubConnection.module.css';
 
 function formatDate(dateString: string): string {
@@ -132,7 +132,7 @@ export function GitHubConnection(): JSX.Element {
 						</div>
 					</div>
 					<Button
-						onClick={() => connection.connect()}
+						onClick={() => connectGitHub()}
 						class={styles.primaryButton}
 					>
 						Connect GitHub

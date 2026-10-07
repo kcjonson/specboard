@@ -51,6 +51,10 @@ export { AuthorizationModel, AuthorizationsCollection } from './authorization';
 // User model
 export { UserModel } from './user';
 
+// Project model and the caller's role on it
+export { ProjectModel, projectModel, refreshProject, projectRoleState, useProject, useProjectRole } from './project';
+export type { ProjectRole, ProjectRoleReason, ProjectRoleState, ProjectRepository, StorageMode } from './project';
+
 // File browser model
 export { FileTreeModel } from './FileTreeModel';
 export type { FileEntry, PendingNewFile, SyncStatus } from './FileTreeModel';
@@ -61,6 +65,7 @@ export type { ChangedFile, CommitError } from './GitStatusModel';
 
 // GitHub integration models
 export {
+	connectGitHub,
 	GitHubConnectionModel,
 	GitHubRepoModel,
 	GitHubReposCollection,
