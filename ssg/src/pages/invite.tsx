@@ -88,6 +88,7 @@ export const inviteScript = `(function() {
 	var token = params.get('token');
 	var id = params.get('id');
 	var current = null;
+	var currentUser = null;
 
 	function el(id) { return document.getElementById(id); }
 	function show(id) { el(id).classList.remove('hidden'); }
@@ -165,6 +166,7 @@ export const inviteScript = `(function() {
 
 	function render(invite, user) {
 		current = invite;
+		currentUser = user;
 		hide('loading');
 
 		// The token has done its job once the invite is known to be this account's.
@@ -213,7 +215,24 @@ export const inviteScript = `(function() {
 			return;
 		}
 
+		setBusy(false);
 		show('answer');
+	}
+
+	// The invite changed under the card (revoked, replaced, answered elsewhere): read it
+	// again, which shows its new state or follows it to the invite that replaced it.
+	function reloadCurrent() {
+		hide('card');
+		hide('answer');
+		hide('error');
+		show('loading');
+		load('/api/invitations/' + encodeURIComponent(current.id), function(lookup) {
+			if (!lookup.ok) {
+				failedLookup(lookup);
+				return;
+			}
+			render(lookup.data, currentUser);
+		});
 	}
 
 	el('accept-btn').addEventListener('click', function() {
@@ -226,6 +245,10 @@ export const inviteScript = `(function() {
 			}
 			if (result.data.code === 'ONBOARDING_REQUIRED') {
 				toOnboarding(current.id);
+				return;
+			}
+			if (result.status === 410) {
+				reloadCurrent();
 				return;
 			}
 			setBusy(false);
@@ -245,6 +268,10 @@ export const inviteScript = `(function() {
 				hide('answer');
 				setTitle('Invite declined');
 				show('declined');
+				return;
+			}
+			if (result.status === 410) {
+				reloadCurrent();
 				return;
 			}
 			setBusy(false);
