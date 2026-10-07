@@ -134,6 +134,19 @@ CREATE INDEX idx_projects_owner_id ON projects(owner_id);
 CREATE UNIQUE INDEX idx_projects_owner_slug ON projects(owner_id, slug);
 CREATE UNIQUE INDEX idx_projects_owner_key ON projects(owner_id, key);
 
+-- Project members: everyone besides the owner who can reach a project. The owner is
+-- projects.owner_id and never a row here. role is the granted role; an editor without a
+-- github_connections row works as a viewer (see multi-user-collaboration.md).
+CREATE TABLE project_members (
+	project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+	user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
+	added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	PRIMARY KEY (project_id, user_id)
+);
+CREATE INDEX idx_project_members_user ON project_members(user_id);
+
 -- Repositories (GitHub repos the user has connected - legacy, see projects)
 CREATE TABLE repositories (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -385,39 +398,81 @@ URL the user owns and breaks `.mcp.json` bindings that name it; the old addresse
 ### Project addresses
 
 Every project-scoped path is `/api/projects/:owner/:project/...`, where `:owner` is the
-owner's user slug and `:project` the project slug. Handlers resolve the pair with
-`resolveProject(ownerSlug, projectSlug, userId)` (`shared/db/src/services/projects.ts`),
-the one resolver REST and MCP share. A malformed address is a 400; an address that
-doesn't exist or isn't the caller's is a 404, never a 403, so other users' projects
-can't be probed. Project responses carry `ownerSlug` next to `slug`.
+owner's user slug and `:project` the project slug. Every such route is registered behind
+`requireProjectAccess(minRole)` (`api/src/project-access.ts`), which resolves the pair with
+`resolveProjectAccess(ownerSlug, projectSlug, userId)` (`shared/db/src/services/projects.ts`),
+the one resolver REST and MCP share, before the handler runs:
+
+| Caller | Answer |
+|---|---|
+| Malformed address | 400 |
+| No session | 401 (a logged-out write is refused earlier by CSRF, 403) |
+| Neither owner nor member, or no such project | 404, never 403, so other users' projects can't be probed |
+| Member below the route's role | 403 `{ error, reason }`, reason `viewer`, `github_not_connected`, or `owner_only` |
+
+The role compared is the effective one: a granted editor without a GitHub connection is a
+viewer. Reads and AI chat need viewer; item, document and comment writes, commit and pull need
+editor; project settings, repository, folders, delete and member management need owner
+([multi-user-collaboration.md](./multi-user-collaboration.md), Roles and Permissions). The
+role-matrix suite (`api/src/role-matrix.test.ts`) reads the route table back and fails any
+project route registered without a role.
+
+Project responses carry `ownerSlug` next to `slug`, and the caller's `grantedRole` and
+`effectiveRole`. They carry no user ids; the list adds `ownerName` so shared projects can say
+whose they are.
 
 ### Projects
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/projects | List user's projects |
+| GET | /api/projects | List the projects the user owns or is a member of, each with their role |
 | POST | /api/projects | Create project |
-| GET | /api/projects/:owner/:project | Get project |
-| PUT | /api/projects/:owner/:project | Update project (name, description, slug, key, system prompt, repository: attach once) |
-| DELETE | /api/projects/:owner/:project | Delete project |
+| GET | /api/projects/:owner/:project | Get project (viewer) |
+| PUT | /api/projects/:owner/:project | Update project (name, description, slug, key, system prompt, repository: attach once) (owner) |
+| DELETE | /api/projects/:owner/:project | Delete project (owner) |
+| POST | /api/projects/:owner/:project/chat | AI chat over the project's documents, SSE (viewer) |
+
+### Project Members
+
+Members are addressed by user slug, and the member view carries no user id:
+`{ slug, name, email, avatarUrl, role, effectiveRole, githubConnected }`, where `role` is the
+granted role (`owner` for the owner). The owner isn't a membership, so naming the owner's slug
+in a member route is a 409 `PROJECT_OWNER`, and so is the owner leaving.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/projects/:owner/:project/members | The owner, then members in join order (viewer) |
+| PUT | /api/projects/:owner/:project/members/:member | Change a member's role, body `{ "role": "editor" \| "viewer" }`; answers the member view (owner) |
+| DELETE | /api/projects/:owner/:project/members/:member | Remove a member (owner) |
+| DELETE | /api/projects/:owner/:project/membership | Leave the project: the caller's own membership (viewer) |
+
+Adding members is phase 3 (invitations).
 
 ### Project Storage (see [project-storage.md](./project-storage.md))
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/projects/:owner/:project/folders | Add local folder (only with `LOCAL_STORAGE_ENABLED=true`) |
-| DELETE | /api/projects/:owner/:project/folders | Remove folder from view |
-| POST | /api/projects/:owner/:project/sync | Sync a cloud project from GitHub |
-| POST | /api/projects/:owner/:project/sync/initial | First sync after connecting a repo |
-| GET | /api/projects/:owner/:project/sync/status | Poll sync progress |
+| POST | /api/projects/:owner/:project/folders | Add local folder (only with `LOCAL_STORAGE_ENABLED=true`) (owner) |
+| DELETE | /api/projects/:owner/:project/folders | Remove folder from view (owner) |
+| POST | /api/projects/:owner/:project/sync | Sync a cloud project from GitHub (editor) |
+| POST | /api/projects/:owner/:project/sync/initial | First sync after connecting a repo (editor) |
+| GET | /api/projects/:owner/:project/sync/status | Poll sync progress (viewer) |
+| POST | /api/projects/:owner/:project/github/commit | Commit the caller's pending changes (editor) |
+| GET | /api/projects/:owner/:project/git/status | Changed files (viewer) |
+| POST | /api/projects/:owner/:project/git/commit, /git/restore, /git/pull | Commit, discard a change, pull (editor) |
 
 ### Project Files
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET/POST | /api/projects/:owner/:project/tree | List files/folders |
-| GET | /api/projects/:owner/:project/files?path=... | Get file content |
-| PUT | /api/projects/:owner/:project/files?path=... | Save file |
+| GET/POST | /api/projects/:owner/:project/tree | List files/folders (viewer) |
+| GET | /api/projects/:owner/:project/files?path=... | Get file content (viewer) |
+| PUT | /api/projects/:owner/:project/files?path=... | Save file (editor) |
+| POST/DELETE | /api/projects/:owner/:project/files?path=... | Create, delete a file (editor) |
+| PUT | /api/projects/:owner/:project/files/rename | Rename a file (editor) |
+
+A local project's files are its owner's alone; to a member it has no storage
+([project-storage.md](./project-storage.md)).
 
 ### Repositories (Legacy)
 

@@ -218,12 +218,13 @@ back if it's done piecemeal.
   to `github_connections` for the effective role. Every REST route and every MCP
   tool resolves through it. Nothing else reads `owner_id` to make an access
   decision.
-- **Routes declare a minimum role.** `requireProjectAccess` (`api/src/index.ts`)
+- **Routes declare a minimum role.** `requireProjectAccess` (`api/src/project-access.ts`)
   takes a `minRole` and wraps every project-scoped route, including the project
-  CRUD, storage, git and sync handlers that call services directly today.
+  CRUD, storage, git, sync and AI chat routes.
 - **Non-members get 404**, never 403, so project existence doesn't leak. That
   matches today's behavior. Members below the required role get 403 with a
-  message naming the reason (`viewer`, or `github_not_connected`).
+  message naming the reason (`viewer`, or `github_not_connected`; `owner_only`
+  for an owner-only route, which no GitHub connection unlocks).
 - **Reads switch from ownership to membership.** `getProjects` returns owned
   projects plus member projects, each tagged with the caller's role. Owner-only
   mutations (update settings, repository, folders, delete, members) keep an
@@ -466,8 +467,42 @@ each one.
 Phase 1 (user slugs and owner-namespaced addressing, SPE-205) is built:
 `030_user_slugs.sql`, `resolveProject(ownerSlug, projectSlug, userId)` as the single
 resolver for REST and MCP (`getProjectBySlug` is gone; callers resolve, then load by
-id), `/projects/:owner/:project/...` on web and REST, and the MCP `project` argument
+id; phase 2 replaced it with `resolveProjectAccess`), `/projects/:owner/:project/...` on web and REST, and the MCP `project` argument
 with bare-slug expansion in `mcp/src/tools/project-ref.ts`. The migration backfill and
 the resolver are tested against real Postgres through PGlite
 (`shared/db/src/test-support/migrated-db.ts`), so CI needs no database service.
-Phases 2 to 6 are not built.
+
+Phase 2 (membership and the authorization boundary, SPE-206) is built:
+
+- `035_project_members.sql`, exactly the Data Model above. The owner stays
+  `projects.owner_id`; `project_invitations` is phase 3.
+- `resolveProjectAccess` replaced `resolveProject`: one query joining the caller's
+  membership and `github_connections`. The rule that decides who can reach a project
+  lives in one SQL fragment shared with `getProjects`, and `accessDenial` is the one
+  comparison of a role against a requirement, for REST and MCP alike. The project
+  services (`getProject`, `updateProject`, `deleteProject`, `addFolder`,
+  `removeFolder`) no longer take a user id or read `owner_id`; they act on an id the
+  resolver already authorized.
+- Every route under `/api/projects/:owner/:project` declares its role at
+  registration (`api/src/app.ts`, `api/src/planning-routes.ts`), and handlers read
+  the authorized project and role off the context. AI chat moved from
+  `POST /api/chat` (project in the body) to `POST /api/projects/:owner/:project/chat`
+  so it sits behind the same gate. Map-baseline writes (`map/seen`) are viewer, since
+  the baseline is the caller's own.
+- Every MCP tool declares its role in the registry (`mcp/src/tools/index.ts`) and is
+  dispatched only through it. `list_projects` and `GET /api/projects` return owned and
+  member projects with `grantedRole` and `effectiveRole` (and `ownerName` on the REST
+  list); API project views no longer carry `ownerId`.
+- A local project is board-only for members: its files are on the owner's machine,
+  so storage routes give a member no storage.
+- The member-management API (list, change role, remove, leave) is in
+  [api-database.md](./api-database.md), Project Members. Members are addressed by user
+  slug.
+- The role-matrix suites (`api/src/role-matrix.test.ts`, `mcp/src/role-matrix.test.ts`)
+  build the real app and tool registry against PGlite with seeded members, call every
+  project route and tool as owner, editor, editor without GitHub, viewer, non-member,
+  and logged out, and fail any route or tool without a declared role. Other packages'
+  tests reach PGlite through `@specboard/db/test-support` (`pgliteAsPg` stands in for
+  `pg`).
+
+Phases 3 to 6 are not built.

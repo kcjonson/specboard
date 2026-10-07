@@ -165,16 +165,17 @@ class ApiClient {
 
 Follows `mcp/src/tools/items/index.ts` pattern exactly:
 - Resolves `project` (or the repo binding) to a project with `resolveToolProject` from
-  `mcp/src/tools/project-ref.ts`, which expands a bare slug and calls `resolveProject`
+  `mcp/src/tools/project-ref.ts`, which expands a bare slug and calls `resolveProjectAccess`
+  with the tool's declared minimum role (reads viewer, writes editor)
 - Routes to handler via switch statement
 
 ### Wiring into MCP server
 
-In `mcp/src/index.ts`:
-- Import `documentTools` and `handleDocumentTool`
-- Add `documentToolNames` set
-- Include in `ListToolsRequestSchema` response: `[...projectTools, ...epicTools, ...documentTools]`
-- Add routing case in `CallToolRequestSchema` handler
+In the tool registry, `mcp/src/tools/index.ts`:
+- Add `documentTools` to `tools`
+- Declare each tool's minimum role in a `documentToolMinRoles` map (reads viewer, writes editor);
+  the role-matrix suite fails a listed tool without one
+- Add a dispatch branch for it in `callTool`
 
 ---
 
@@ -229,7 +230,7 @@ mcp:
 - MCP Server (existing)
 - REST API & Database -- file handlers at `api/src/handlers/storage/file-handlers.ts`
 - `@specboard/auth` -- CSRF middleware modification
-- `@specboard/db` -- `resolveProject()` for authorization, via `resolveToolProject`
+- `@specboard/db` -- `resolveProjectAccess()` for authorization, via `resolveToolProject`
 
 ## Status
 

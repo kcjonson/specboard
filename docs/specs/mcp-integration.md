@@ -130,7 +130,9 @@ specboard connect
 
 A project is addressed as `owner/project`: the owner's user slug, then the project's slug
 (`acme/roadmap`). The item tools take it as the `project` argument, and `list_projects` returns
-each project's `owner`, `slug`, and the combined `ref` to pass back.
+each project's `owner`, `slug`, and the combined `ref` to pass back, for the caller's own projects
+and the ones they're a member of, with the caller's `role` (owner, editor, viewer) and
+`effectiveRole` on each.
 
 A repo pins itself to one Specboard project by committing that address in its `.mcp.json`:
 
@@ -154,7 +156,7 @@ tool call rather than ignored, since ignoring it would silently unscope the repo
 
 **Bare slugs mean "my own project".** Both the header and the `project` argument accept a bare
 `roadmap`. The server expands it to the caller's own user slug (`<caller>/roadmap`) before
-resolving, so there is still one resolver (`resolveProject`) and one access check, and bindings
+resolving, so there is still one resolver (`resolveProjectAccess`) and one access check, and bindings
 from before owner-namespaced addresses keep working for their owners. The catch is that a
 committed `.mcp.json` is shared by everyone who clones the repo, and a bare slug resolves against
 each caller's own projects: a collaborator gets "project not found". The not-found error for a
@@ -164,6 +166,18 @@ bind it. The bound-versus-requested check compares addresses after expansion, so
 
 Misses never say which half was wrong, and never echo the address back: "doesn't exist" and "no
 access" read the same, so the tools can't be used to probe other users' projects.
+
+**Roles.** Every tool declares the least role it needs on the project it addresses, in the tool
+registry (`mcp/src/tools/index.ts`): `list_projects` and `get_items` are viewer; `create_item`,
+`create_items`, `update_item` and `delete_item` are editor. That is the REST matrix
+([multi-user-collaboration.md](./multi-user-collaboration.md), Roles and Permissions), checked by
+the same `resolveProjectAccess` the REST gate uses, so a viewer's agent can read the board and
+can't write to it. The role compared is the effective one: an editor who hasn't connected GitHub
+works as a viewer. A member below a tool's role gets an error that names the project and the
+reason (view access, or GitHub not connected) with what to do about it; a non-member still gets
+the not-found above. A tool is dispatched only through its declared role, so one listed without
+a declaration can't be called, and the role-matrix suite (`mcp/src/role-matrix.test.ts`) fails
+it.
 
 **Why the address is committed directly.** The first version of this put the project's UUID in the
 header, which meant a personal identifier landed in version control. The planned fix was an

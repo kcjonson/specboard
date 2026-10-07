@@ -85,7 +85,6 @@ interface Project {
   id: string
   name: string
   description?: string
-  ownerId: string
 
   // Storage configuration
   storageMode: 'none' | 'local' | 'cloud'
@@ -157,6 +156,8 @@ Developer running the **Electron desktop app** for:
 - Testing before pushing to cloud
 
 **Note:** Local mode is not available in the browser. Browser users must use cloud mode.
+
+A local project's files are on its owner's machine, so only the owner reaches them. To a project member (see [multi-user-collaboration.md](./multi-user-collaboration.md)) a local project is board-only: `getStorageProvider` (`api/src/handlers/storage/utils.ts`) returns no storage for them, so the file and git routes answer as they do for a project with no repository. Cloud storage is shared: every member reads the synced checkout, and pending changes stay per user.
 
 The API only registers `POST /api/projects/:owner/:project/folders` when it starts with `LOCAL_STORAGE_ENABLED=true`. Today only the dev compose stack sets it (the host repo is mounted at `/host/specboard`); the cloud build never does, so a web user cannot point a project at a path on the API container. A desktop shell that runs its own API process will need to set it too.
 
