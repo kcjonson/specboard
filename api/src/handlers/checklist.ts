@@ -23,7 +23,8 @@ import {
 	ChecklistValidationError,
 	type ChecklistStatus,
 } from '@specboard/db';
-import { requireResolvedProject, pathItemNumber } from './items.ts';
+import { requireResolvedProject } from '../project-access.ts';
+import { pathItemNumber } from './items.ts';
 
 /** The parsed request body, or a 400 Response when it isn't JSON at all. */
 async function jsonBody<T>(context: Context): Promise<T | Response> {

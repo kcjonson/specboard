@@ -9,24 +9,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { ResolvedProject } from '@specboard/db';
 
-vi.mock('@specboard/db', () => ({
-	getItems: vi.fn(),
-	createItem: vi.fn(),
-	createItems: vi.fn(),
-	updateItem: vi.fn(),
-	moveItem: vi.fn(),
-	wouldCreateCycle: vi.fn(),
-	deleteItem: vi.fn(),
-	startItem: vi.fn(),
-	completeItem: vi.fn(),
-	blockItem: vi.fn(),
-	unblockItem: vi.fn(),
-	getItemKeysBySpecPath: vi.fn(),
-	verifyItemOwnership: vi.fn(async () => true),
-	ParentItemNotFoundError: class extends Error {},
-	DiscoveredFromNotFoundError: class extends Error {},
-	ItemCycleError: class extends Error {},
-}));
+vi.mock('@specboard/db', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@specboard/db')>();
+	return {
+		itemView: actual.itemView,
+		getItems: vi.fn(),
+		createItem: vi.fn(),
+		createItems: vi.fn(),
+		updateItem: vi.fn(),
+		moveItem: vi.fn(),
+		wouldCreateCycle: vi.fn(),
+		deleteItem: vi.fn(),
+		startItem: vi.fn(),
+		completeItem: vi.fn(),
+		blockItem: vi.fn(),
+		unblockItem: vi.fn(),
+		getItemKeysBySpecPath: vi.fn(),
+		verifyItemOwnership: vi.fn(async () => true),
+		ParentItemNotFoundError: class extends Error {},
+		DiscoveredFromNotFoundError: class extends Error {},
+		ItemCycleError: class extends Error {},
+	};
+});
 
 import { getItems, moveItem, updateItem, startItem, completeItem, blockItem, unblockItem, wouldCreateCycle, verifyItemOwnership, ItemCycleError } from '@specboard/db';
 import { handleListItems, handleMoveItem, handleUpdateItem, handleStartItem, handleCompleteItem, handleBlockItem, handleUnblockItem } from './items.ts';

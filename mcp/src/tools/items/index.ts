@@ -9,7 +9,7 @@
  * - delete_item: Delete any item
  */
 
-import type { AgentActor } from '@specboard/db';
+import type { AgentActor, ProjectRole } from '@specboard/db';
 
 import { resolveToolProject, type ProjectBinding, type ToolResult } from '../project-ref.ts';
 import { epicTools } from './definitions.ts';
@@ -18,14 +18,32 @@ import { createItem, createItems, updateItem, deleteItem } from './writes.ts';
 
 export { epicTools };
 
+/**
+ * The least role each item tool needs on the project it addresses, the same matrix the
+ * REST routes use: reads are viewer, writes are editor. A tool missing here can't be
+ * called, and fails the role-matrix suite.
+ */
+export const epicToolMinRoles: Readonly<Record<string, ProjectRole>> = {
+	get_items: 'viewer',
+	create_item: 'editor',
+	create_items: 'editor',
+	update_item: 'editor',
+	delete_item: 'editor',
+};
+
 export async function handleEpicTool(
 	name: string,
 	args: Record<string, unknown> | undefined,
 	actor: AgentActor,
 	binding: ProjectBinding
 ): Promise<ToolResult> {
-	const project = await resolveToolProject(args?.project, actor.userId, binding);
-	if ('content' in project) return project;
+	if (!Object.hasOwn(epicToolMinRoles, name)) {
+		return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
+	}
+
+	const access = await resolveToolProject(args?.project, actor.userId, binding, epicToolMinRoles[name]!);
+	if ('content' in access) return access;
+	const { project } = access;
 
 	try {
 		switch (name) {

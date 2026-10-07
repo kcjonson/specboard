@@ -15,7 +15,8 @@ const STREAMING_THROTTLE_MS = 50;
 export interface UseChatStreamOptions {
 	documentContent?: string;
 	documentPath?: string;
-	projectRef?: string;
+	/** The project the chat is over (owner/project); chat is a project-scoped route. */
+	projectRef: string;
 	selectedModel: string;
 	inputRef: RefObject<HTMLTextAreaElement>;
 }
@@ -148,7 +149,7 @@ export function useChatStream({
 				.find(row => row.startsWith('csrf_token='))
 				?.split('=')[1] || '';
 
-			const response = await fetch('/api/chat', {
+			const response = await fetch(`/api/projects/${projectRef}/chat`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -158,7 +159,6 @@ export function useChatStream({
 					message: trimmedInput,
 					document_content: documentContent,
 					document_path: documentPath,
-					project: projectRef,
 					conversation_history: conversationHistory,
 					provider: modelSelection.provider,
 					model: modelSelection.model,

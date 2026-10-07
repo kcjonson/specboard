@@ -7,17 +7,10 @@
  */
 
 import type { Context } from 'hono';
-import { getCookie } from 'hono/cookie';
-import type { Redis } from 'ioredis';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import {
-	getSession,
-	SESSION_COOKIE_NAME,
-	decrypt,
-	type EncryptedData,
-} from '@specboard/auth';
-import { query, resolveProject } from '@specboard/db';
-import { readProjectAddress } from '../project-address.ts';
+import { decrypt, type EncryptedData } from '@specboard/auth';
+import { query } from '@specboard/db';
+import { apiUserId, requireResolvedProject } from '../project-access.ts';
 import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
 import {
@@ -150,10 +143,7 @@ export async function getEncryptedGitHubToken(userId: string): Promise<string | 
 /**
  * Get project with repository info from JSONB column.
  */
-export async function getProjectWithRepo(
-	projectId: string,
-	userId: string
-): Promise<ProjectWithRepo | null> {
+export async function getProjectWithRepo(projectId: string): Promise<ProjectWithRepo | null> {
 	const result = await query<{
 		id: string;
 		repository: RepositoryConfig;
@@ -166,9 +156,8 @@ export async function getProjectWithRepo(
 		`SELECT id, repository, last_synced_commit_sha, sync_status,
 		        sync_started_at, sync_completed_at, sync_error
 		 FROM projects
-		 WHERE id = $1 AND owner_id = $2
-		   AND storage_mode = 'cloud'`,
-		[projectId, userId]
+		 WHERE id = $1 AND storage_mode = 'cloud'`,
+		[projectId]
 	);
 
 	const row = result.rows[0];
@@ -232,7 +221,7 @@ export async function startGitHubInitialSync(
 	projectId: string,
 	userId: string
 ): Promise<void> {
-	const project = await getProjectWithRepo(projectId, userId);
+	const project = await getProjectWithRepo(projectId);
 	if (!project) {
 		throw new Error('Project not found or not in cloud mode');
 	}
@@ -279,39 +268,18 @@ export async function startGitHubInitialSync(
  * Start initial sync - downloads entire repository.
  * POST /api/projects/:owner/:project/sync/initial
  */
-export async function handleGitHubInitialSync(
-	context: Context,
-	redis: Redis
-): Promise<Response> {
-	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
-	if (!sessionId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const session = await getSession(redis, sessionId);
-	if (!session) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
-
-	const resolved = await resolveProject(address.owner, address.project, session.userId);
-	if (!resolved) {
-		return context.json({ error: 'Project not found' }, 404);
-	}
-	const projectId = resolved.id;
+export async function handleGitHubInitialSync(context: Context): Promise<Response> {
+	const userId = apiUserId(context);
+	const projectId = requireResolvedProject(context).id;
 
 	// Get project with repository info
-	const project = await getProjectWithRepo(projectId, session.userId);
+	const project = await getProjectWithRepo(projectId);
 	if (!project) {
 		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
 	}
 
 	// Get encrypted GitHub token
-	const encryptedToken = await getEncryptedGitHubToken(session.userId);
+	const encryptedToken = await getEncryptedGitHubToken(userId);
 	if (!encryptedToken) {
 		return context.json({ error: 'GitHub not connected' }, 400);
 	}
@@ -326,7 +294,7 @@ export async function handleGitHubInitialSync(
 	try {
 		const payload: SyncEvent = {
 			projectId,
-			userId: session.userId,
+			userId,
 			owner: project.owner,
 			repo: project.repo,
 			branch: project.branch,
@@ -369,34 +337,13 @@ export async function handleGitHubInitialSync(
  * Start incremental sync - fetches only changed files.
  * POST /api/projects/:owner/:project/sync
  */
-export async function handleGitHubSync(
-	context: Context,
-	redis: Redis
-): Promise<Response> {
+export async function handleGitHubSync(context: Context): Promise<Response> {
 	// All error responses include `success: false` for PullResponse compatibility
-	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
-	if (!sessionId) {
-		return context.json({ success: false, error: 'Unauthorized' }, 401);
-	}
-
-	const session = await getSession(redis, sessionId);
-	if (!session) {
-		return context.json({ success: false, error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ success: false, error: 'Invalid project address' }, 400);
-	}
-
-	const resolved = await resolveProject(address.owner, address.project, session.userId);
-	if (!resolved) {
-		return context.json({ success: false, error: 'Project not found' }, 404);
-	}
-	const projectId = resolved.id;
+	const userId = apiUserId(context);
+	const projectId = requireResolvedProject(context).id;
 
 	// Get project with repository info
-	const project = await getProjectWithRepo(projectId, session.userId);
+	const project = await getProjectWithRepo(projectId);
 	if (!project) {
 		return context.json({ success: false, error: 'Project not found or not in cloud mode' }, 404);
 	}
@@ -410,7 +357,7 @@ export async function handleGitHubSync(
 	}
 
 	// Get encrypted GitHub token
-	const encryptedToken = await getEncryptedGitHubToken(session.userId);
+	const encryptedToken = await getEncryptedGitHubToken(userId);
 	if (!encryptedToken) {
 		return context.json({ success: false, error: 'GitHub not connected' }, 400);
 	}
@@ -425,7 +372,7 @@ export async function handleGitHubSync(
 	try {
 		const payload: SyncEvent = {
 			projectId,
-			userId: session.userId,
+			userId,
 			owner: project.owner,
 			repo: project.repo,
 			branch: project.branch,
@@ -476,33 +423,11 @@ export async function handleGitHubSync(
  * Get sync status for a project.
  * GET /api/projects/:owner/:project/sync/status
  */
-export async function handleGitHubSyncStatus(
-	context: Context,
-	redis: Redis
-): Promise<Response> {
-	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
-	if (!sessionId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const session = await getSession(redis, sessionId);
-	if (!session) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
-
-	const resolved = await resolveProject(address.owner, address.project, session.userId);
-	if (!resolved) {
-		return context.json({ error: 'Project not found' }, 404);
-	}
-	const projectId = resolved.id;
+export async function handleGitHubSyncStatus(context: Context): Promise<Response> {
+	const projectId = requireResolvedProject(context).id;
 
 	// Get project with sync info
-	const project = await getProjectWithRepo(projectId, session.userId);
+	const project = await getProjectWithRepo(projectId);
 	if (!project) {
 		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
 	}
@@ -526,39 +451,18 @@ export async function handleGitHubSyncStatus(
  * 3. Clear pending changes on success
  * 4. Update last_synced_commit_sha
  */
-export async function handleGitHubCommit(
-	context: Context,
-	redis: Redis
-): Promise<Response> {
-	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
-	if (!sessionId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const session = await getSession(redis, sessionId);
-	if (!session) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
-
-	const resolved = await resolveProject(address.owner, address.project, session.userId);
-	if (!resolved) {
-		return context.json({ error: 'Project not found' }, 404);
-	}
-	const projectId = resolved.id;
+export async function handleGitHubCommit(context: Context): Promise<Response> {
+	const userId = apiUserId(context);
+	const projectId = requireResolvedProject(context).id;
 
 	// Get project with repository info
-	const project = await getProjectWithRepo(projectId, session.userId);
+	const project = await getProjectWithRepo(projectId);
 	if (!project) {
 		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
 	}
 
 	// Get encrypted GitHub token
-	const encryptedTokenString = await getEncryptedGitHubToken(session.userId);
+	const encryptedTokenString = await getEncryptedGitHubToken(userId);
 	if (!encryptedTokenString) {
 		return context.json({ error: 'GitHub not connected' }, 400);
 	}
@@ -573,7 +477,7 @@ export async function handleGitHubCommit(
 			type: 'auth',
 			level: 'error',
 			event: 'github_token_decrypt_failed',
-			userId: session.userId,
+			userId,
 			error: err instanceof Error ? err.message : String(err),
 		});
 		return context.json({ error: 'GitHub connection corrupted. Please reconnect.' }, 500);
@@ -585,14 +489,14 @@ export async function handleGitHubCommit(
 	try {
 		pendingChanges = await storageClient.listPendingChangesWithContent(
 			projectId,
-			session.userId
+			userId
 		);
 	} catch (err) {
 		log({
 			type: 'storage',
 			level: 'error',
 			event: 'list_pending_changes_failed',
-			userId: session.userId,
+			userId,
 			projectId,
 			error: err instanceof Error ? err.message : String(err),
 		});
@@ -683,7 +587,7 @@ export async function handleGitHubCommit(
 
 	// Success - clear pending changes and update sync SHA
 	try {
-		await storageClient.deleteAllPendingChanges(projectId, session.userId);
+		await storageClient.deleteAllPendingChanges(projectId, userId);
 
 		await query(
 			`UPDATE projects SET last_synced_commit_sha = $1 WHERE id = $2`,

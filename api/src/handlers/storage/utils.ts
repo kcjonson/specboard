@@ -2,47 +2,43 @@
  * Shared utilities for storage handlers
  */
 
-import type { Context } from 'hono';
-import { getCookie } from 'hono/cookie';
-import type { Redis } from 'ioredis';
 import path from 'path';
-import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
-import { getProject, type RepositoryConfig, isLocalRepository, isCloudRepository } from '@specboard/db';
+import {
+	type ProjectAccess,
+	type ProjectResponse,
+	type RepositoryConfig,
+	isLocalRepository,
+	isCloudRepository,
+} from '@specboard/db';
 import { LocalStorageProvider } from '../../services/storage/local-provider.ts';
 import { CloudStorageProvider } from '../../services/storage/cloud-provider.ts';
 import type { StorageProvider } from '../../services/storage/types.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Auth helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function getUserId(context: Context, redis: Redis): Promise<string | null> {
-	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
-	if (!sessionId) return null;
-
-	const session = await getSession(redis, sessionId);
-	return session?.userId ?? null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Storage provider
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getStorageProvider(
-	projectId: string,
-	userId: string
-): Promise<StorageProvider | null> {
-	const project = await getProject(projectId, userId);
-	if (!project) return null;
-
+/**
+ * The storage a caller reaches for a project, or null when there is none for them.
+ *
+ * Cloud storage is the repository's synced checkout plus the caller's own pending
+ * changes. A local project's files live on its owner's machine, so only the owner
+ * reaches them; to a member a local project is board-only, the same as one with no
+ * storage (docs/specs/multi-user-collaboration.md, What storage mode shares).
+ */
+export function getStorageProvider(
+	project: ProjectResponse,
+	userId: string,
+	access: Pick<ProjectAccess, 'grantedRole'>
+): StorageProvider | null {
 	const repo = project.repository as RepositoryConfig | Record<string, never>;
 
 	if (isLocalRepository(repo)) {
-		return new LocalStorageProvider(repo.localPath);
+		return access.grantedRole === 'owner' ? new LocalStorageProvider(repo.localPath) : null;
 	}
 
 	if (isCloudRepository(repo)) {
-		return new CloudStorageProvider(projectId, userId, {
+		return new CloudStorageProvider(project.id, userId, {
 			repositoryOwner: repo.remote.owner,
 			repositoryName: repo.remote.repo,
 			defaultBranch: repo.branch,

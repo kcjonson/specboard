@@ -17,7 +17,7 @@ vi.mock('../index.ts', () => ({
 }));
 
 import { migratedDb } from '../test-support/migrated-db.ts';
-import { addBlocker, clearBlocker, listBlockers, setBlockers, BlockerTargetError } from './blockers.ts';
+import { addBlocker, clearBlocker, listBlockers, setBlockers, BlockerItemNotFoundError, BlockerTargetError } from './blockers.ts';
 
 const ACTOR: Actor = { type: 'user', userId: '00000000-0000-0000-0000-000000000000' };
 
@@ -75,6 +75,14 @@ beforeEach(async () => {
 
 afterAll(async () => {
 	await state.db?.close();
+});
+
+describe('a blocker naming no item in the project', () => {
+	it('is not found, not a bad target, through add and replace alike', async () => {
+		await expect(block(1, 99)).rejects.toBeInstanceOf(BlockerItemNotFoundError);
+		await expect(setBlockers(projectId, 1, [{ itemNumber: 99 }], ACTOR)).rejects.toBeInstanceOf(BlockerItemNotFoundError);
+		expect(await openEdges()).toEqual([]);
+	});
 });
 
 describe('cycles among open item blockers', () => {

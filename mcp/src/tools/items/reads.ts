@@ -6,6 +6,7 @@
 
 import {
 	getItems as getItemsService,
+	itemView,
 	type ResolvedProject,
 	type ItemStatus,
 	type ItemType,
@@ -52,7 +53,7 @@ export async function getItems(project: ResolvedProject, args: Record<string, un
 			{
 				type: 'text',
 				// count is this page; total is every match, so an agent can see a limit cut the list.
-				text: JSON.stringify({ items, count: items.length, total }, null, 2),
+				text: JSON.stringify({ items: items.map(itemView), count: items.length, total }, null, 2),
 			},
 		],
 	};

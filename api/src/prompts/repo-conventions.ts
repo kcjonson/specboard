@@ -8,7 +8,6 @@
 
 import type { Redis } from 'ioredis';
 import type { StorageProvider } from '../services/storage/types.ts';
-import { getStorageProvider } from '../handlers/storage/utils.ts';
 
 const CACHE_KEY_PREFIX = 'project:';
 const CACHE_KEY_SUFFIX = ':repo-prompt';
@@ -56,7 +55,7 @@ async function readConventionFile(provider: StorageProvider, filename: string): 
  * Read convention files from a project's repository root.
  *
  * 1. Check Redis cache — return immediately if cached
- * 2. Get storage provider for the project
+ * 2. Use the storage the caller reaches for the project (null: none)
  * 3. Read CLAUDE.md and AGENT.md from repo root (in parallel)
  * 4. Concatenate found files, strip control chars, truncate to 20k chars
  * 5. Cache result in Redis with TTL
@@ -67,7 +66,7 @@ export async function readRepoConventions(
 	projectId: string,
 	userId: string,
 	redis: Redis,
-	existingProvider?: StorageProvider | null
+	provider: StorageProvider | null
 ): Promise<string | null> {
 	const key = cacheKey(projectId, userId);
 
@@ -81,10 +80,6 @@ export async function readRepoConventions(
 		// Redis unavailable — fall through to read files directly
 	}
 
-	// Get storage provider (use existing one if provided to avoid duplicate DB query)
-	const provider = existingProvider !== undefined
-		? existingProvider
-		: await getStorageProvider(projectId, userId);
 	if (!provider) {
 		// No storage configured — cache empty sentinel briefly
 		try {

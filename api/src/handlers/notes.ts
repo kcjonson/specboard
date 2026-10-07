@@ -6,11 +6,11 @@
  */
 
 import type { Context } from 'hono';
-import { listItemNotes, addItemNote, NoteValidationError } from '@specboard/db';
+import { listItemNotes, addItemNote, noteView, NoteValidationError } from '@specboard/db';
 import type { ResolvedProject } from '@specboard/db';
-import { requireResolvedProject, apiActor } from './items.ts';
+import { requireResolvedProject } from '../project-access.ts';
+import { apiActor } from './items.ts';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
-import { apiNote } from '../types.ts';
 
 /**
  * The :itemKey path segment as a per-project number, or an error Response: a
@@ -38,7 +38,7 @@ export async function handleListItemNotes(context: Context): Promise<Response> {
 	try {
 		const notes = await listItemNotes(project.id, number, limit);
 		if (!notes) return context.json({ error: 'Item not found' }, 404);
-		return context.json(notes.map(apiNote));
+		return context.json(notes.map(noteView));
 	} catch (error) {
 		console.error('Failed to list item notes:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -56,7 +56,7 @@ export async function handleAddItemNote(context: Context): Promise<Response> {
 	try {
 		const note = await addItemNote(project.id, number, body.note, apiActor(context));
 		if (!note) return context.json({ error: 'Item not found' }, 404);
-		return context.json(apiNote(note), 201);
+		return context.json(noteView(note), 201);
 	} catch (error) {
 		if (error instanceof NoteValidationError) return context.json({ error: error.message }, 400);
 		console.error('Failed to add item note:', error);

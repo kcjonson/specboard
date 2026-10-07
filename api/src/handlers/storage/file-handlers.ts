@@ -1,15 +1,14 @@
 /**
- * File operation handlers
+ * File operation handlers. requireProjectAccess has authorized the caller before any of these run.
  */
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { renameSpecPath, deleteSpecsByPath } from '@specboard/db';
-import { readProjectAddress, loadProject } from '../../project-address.ts';
+import { apiUserId, loadAuthorizedProject, requireAccess } from '../../project-access.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 import type { FileEntry } from '../../services/storage/types.ts';
 import {
-	getUserId,
 	getStorageProvider,
 	normalizePath,
 	isPathWithinRoots,
@@ -26,27 +25,18 @@ const MAX_EXPANDED_PATHS = 200;
  * POST /api/projects/:owner/:project/tree
  * Load file tree with expanded paths
  */
-export async function handleListFiles(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+export async function handleListFiles(context: Context): Promise<Response> {
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	try {
-		const project = await loadProject(address, userId);
+		const project = await loadAuthorizedProject(context);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
-		const projectId = project.id;
-
-		const provider = await getStorageProvider(projectId, userId);
+		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
-			// No repository configured - return empty tree
+			// No repository configured (or a member of a local project) - return empty tree
 			return context.json({
 				files: [],
 				expanded: {},
@@ -168,16 +158,9 @@ export async function handleListFiles(context: Context, redis: Redis): Promise<R
  * GET /api/projects/:owner/:project/files?path=/docs/file.md
  * Read a file
  */
-export async function handleReadFile(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+export async function handleReadFile(context: Context): Promise<Response> {
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	// Get file path from query parameter
 	const rawPath = context.req.query('path');
@@ -192,18 +175,16 @@ export async function handleReadFile(context: Context, redis: Redis): Promise<Re
 	}
 
 	try {
-		const project = await loadProject(address, userId);
+		const project = await loadAuthorizedProject(context);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
-		const projectId = project.id;
-
 		// Validate path is within configured root paths
 		if (!isPathWithinRoots(filePath, project.rootPaths)) {
 			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
 
-		const provider = await getStorageProvider(projectId, userId);
+		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
 			return context.json({ error: 'No repository configured' }, 404);
 		}
@@ -238,15 +219,8 @@ export async function handleReadFile(context: Context, redis: Redis): Promise<Re
  * Create a new file
  */
 export async function handleCreateFile(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	// Get file path from query parameter
 	const rawPath = context.req.query('path');
@@ -266,7 +240,7 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 	}
 
 	try {
-		const project = await loadProject(address, userId);
+		const project = await loadAuthorizedProject(context);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -277,7 +251,7 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
 
-		const provider = await getStorageProvider(projectId, userId);
+		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
 			return context.json({ error: 'No repository configured' }, 404);
 		}
@@ -311,15 +285,8 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
  * Rename a file
  */
 export async function handleRenameFile(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	try {
 		const body = await context.req.json() as { oldPath?: string; newPath?: string };
@@ -337,7 +304,7 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
 		}
 
-		const project = await loadProject(address, userId);
+		const project = await loadAuthorizedProject(context);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -351,7 +318,7 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Destination path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
 
-		const provider = await getStorageProvider(projectId, userId);
+		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
 			return context.json({ error: 'No repository configured' }, 404);
 		}
@@ -407,15 +374,8 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
  * Delete a file or folder
  */
 export async function handleDeleteFile(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	// Get file path from query parameter
 	const rawPath = context.req.query('path');
@@ -430,7 +390,7 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 	}
 
 	try {
-		const project = await loadProject(address, userId);
+		const project = await loadAuthorizedProject(context);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -446,7 +406,7 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Cannot delete root folder', code: 'CANNOT_DELETE_ROOT' }, 403);
 		}
 
-		const provider = await getStorageProvider(projectId, userId);
+		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
 			return context.json({ error: 'No repository configured' }, 404);
 		}
@@ -483,15 +443,8 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
  * Write a file
  */
 export async function handleWriteFile(context: Context, redis: Redis): Promise<Response> {
-	const userId = await getUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-
-	const address = readProjectAddress(context);
-	if (!address) {
-		return context.json({ error: 'Invalid project address' }, 400);
-	}
+	const userId = apiUserId(context);
+	const access = requireAccess(context);
 
 	// Get file path from query parameter
 	const rawPath = context.req.query('path');
@@ -506,7 +459,7 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 	}
 
 	try {
-		const project = await loadProject(address, userId);
+		const project = await loadAuthorizedProject(context);
 		if (!project) {
 			return context.json({ error: 'Project not found' }, 404);
 		}
@@ -524,7 +477,7 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 			return context.json({ error: 'Content is required' }, 400);
 		}
 
-		const provider = await getStorageProvider(projectId, userId);
+		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
 			return context.json({ error: 'No repository configured' }, 404);
 		}

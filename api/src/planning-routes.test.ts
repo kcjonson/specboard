@@ -18,7 +18,7 @@ vi.mock('@specboard/auth', async (importOriginal) => ({
 
 vi.mock('@specboard/db', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@specboard/db')>()),
-	resolveProject: vi.fn(),
+	resolveProjectAccess: vi.fn(),
 	getItems: vi.fn(),
 	getProjectMap: vi.fn(),
 	getMapChanges: vi.fn(),
@@ -26,8 +26,9 @@ vi.mock('@specboard/db', async (importOriginal) => ({
 }));
 
 import { getSession, SESSION_COOKIE_NAME } from '@specboard/auth';
-import { advanceMapBaseline, getItems, getMapChanges, getProjectMap, resolveProject } from '@specboard/db';
-import { registerPlanningRoutes, type AppVariables } from './planning-routes.ts';
+import { advanceMapBaseline, getItems, getMapChanges, getProjectMap, resolveProjectAccess } from '@specboard/db';
+import { registerPlanningRoutes } from './planning-routes.ts';
+import type { AppVariables } from './project-access.ts';
 
 const OWNER = 'owner-1';
 const STRANGER = 'stranger-2';
@@ -63,8 +64,9 @@ const row = (n: number): MapRead['items'][number] => ({
 beforeEach(() => {
 	vi.mocked(getSession).mockReset();
 	vi.mocked(getSession).mockImplementation(async (_redis, id) => (id === 'none' ? null : { userId: id } as never));
-	vi.mocked(resolveProject).mockReset();
-	vi.mocked(resolveProject).mockImplementation(async (_owner, _project, userId) => (userId === OWNER ? PROJECT : null));
+	vi.mocked(resolveProjectAccess).mockReset();
+	vi.mocked(resolveProjectAccess).mockImplementation(async (_owner, _project, userId) =>
+		userId === OWNER ? { project: PROJECT, grantedRole: 'owner', effectiveRole: 'owner' } : null);
 	vi.mocked(getItems).mockReset();
 	vi.mocked(getItems).mockResolvedValue({ items: [], total: 0 });
 	vi.mocked(getProjectMap).mockReset();

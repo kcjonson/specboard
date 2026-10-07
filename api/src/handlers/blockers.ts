@@ -12,14 +12,16 @@ import {
 	addBlocker,
 	clearBlocker,
 	verifyItemOwnership,
+	blockerView,
 	BlockerValidationError,
 	BlockerConflictError,
 	BlockerTargetError,
+	BlockerItemNotFoundError,
 } from '@specboard/db';
 import type { ResolvedProject } from '@specboard/db';
-import { requireResolvedProject, apiActor } from './items.ts';
+import { requireResolvedProject } from '../project-access.ts';
+import { apiActor } from './items.ts';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
-import { apiBlocker } from '../types.ts';
 import { isValidUUID } from '../validation.ts';
 
 function resolve(context: Context): { project: ResolvedProject; itemNumber: number } | Response {
@@ -41,7 +43,7 @@ export async function handleListBlockers(context: Context): Promise<Response> {
 	try {
 		const blockers = await listBlockers(project.id, itemNumber, { includeCleared });
 		if (!blockers) return context.json({ error: 'Item not found' }, 404);
-		return context.json(blockers.map(apiBlocker));
+		return context.json(blockers.map(blockerView));
 	} catch (error) {
 		console.error('Failed to list blockers:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -75,9 +77,10 @@ export async function handleAddBlocker(context: Context): Promise<Response> {
 
 		const blocker = await addBlocker(project.id, itemNumber, input, apiActor(context));
 		if (!blocker) return context.json({ error: 'Item not found' }, 404);
-		return context.json(apiBlocker(blocker), 201);
+		return context.json(blockerView(blocker), 201);
 	} catch (error) {
 		if (error instanceof BlockerValidationError) return context.json({ error: error.message }, 400);
+		if (error instanceof BlockerItemNotFoundError) return context.json({ error: 'Blocker item not found' }, 404);
 		if (error instanceof BlockerTargetError) return context.json({ error: error.message }, 400);
 		if (error instanceof BlockerConflictError) {
 			return context.json({ error: error.message, code: 'BLOCKER_EXISTS' }, 409);

@@ -10,7 +10,7 @@ import type { Context } from 'hono';
 import { advanceMapBaseline, getMapChanges, getProjectMap } from '@specboard/db';
 import { encodeMapRead } from '@specboard/core/map-read';
 import { encodeMapChanges } from '@specboard/core/map-changes';
-import { apiUserId, requireResolvedProject } from './items.ts';
+import { apiUserId, requireResolvedProject } from '../project-access.ts';
 
 /** GET /map */
 export async function handleGetMap(context: Context): Promise<Response> {
