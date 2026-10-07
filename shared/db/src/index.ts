@@ -3,6 +3,7 @@ import pg from 'pg';
 
 export * from './types.ts';
 export * from './services/index.ts';
+export * from './views.ts';
 
 const { Pool } = pg;
 

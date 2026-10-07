@@ -1,11 +1,11 @@
 /**
  * API types (camelCase for JSON responses)
  *
- * Item responses are returned directly from the item service (already camelCase),
- * so there's no Api* shape for them here.
+ * Item responses come from the item service (already camelCase) through itemView
+ * (@specboard/db), the one place actor internals are stripped for REST and MCP alike.
  */
 
-import type { SpecType, StorageMode, RepositoryConfig, BlockerSummary, WorkerSummary, ItemNoteSummary, Actor, ItemOrigin, ItemWithDetails, ProjectRole } from '@specboard/db';
+import type { SpecType, StorageMode, RepositoryConfig, ProjectRole } from '@specboard/db';
 
 export interface ApiSpec {
 	id: string;
@@ -16,74 +16,6 @@ export interface ApiSpec {
 	path: string;
 	type: SpecType;
 	createdAt: string;
-}
-
-/**
- * Browser-facing shapes for item sub-objects. Actor internals (userId, OAuth
- * clientId, MCP sessionId) stay server-side; the UI only needs what it renders.
- */
-function apiActorView(actor: Actor): Record<string, unknown> {
-	return {
-		type: actor.type,
-		...('deviceName' in actor && actor.deviceName ? { deviceName: actor.deviceName } : {}),
-		...('client' in actor && actor.client ? { client: actor.client } : {}),
-	};
-}
-
-function apiOrigin(origin: ItemOrigin | null): Record<string, unknown> | null {
-	if (!origin) return null;
-	return {
-		actor: apiActorView(origin.actor),
-		...(origin.discoveredFrom ? { discoveredFrom: origin.discoveredFrom } : {}),
-	};
-}
-
-/** One item response with actor internals stripped, for every browser-facing handler. */
-export function apiItem<T extends Partial<ItemWithDetails> & { origin: ItemOrigin | null }>(item: T): Record<string, unknown> {
-	return {
-		...item,
-		origin: apiOrigin(item.origin),
-		...(item.notes ? { notes: item.notes.map(apiNote) } : {}),
-		...(item.blockers ? { blockers: item.blockers.map(apiBlocker) } : {}),
-		...(item.workers ? { workers: item.workers.map(apiWorker) } : {}),
-	};
-}
-
-/** One activity-log entry. A backfilled entry has no actor. */
-export function apiNote(note: ItemNoteSummary): Record<string, unknown> {
-	return {
-		id: note.id,
-		note: note.note,
-		actor: note.actor ? apiActorView(note.actor) : null,
-		createdAt: note.createdAt.toISOString(),
-	};
-}
-
-export function apiBlocker(blocker: BlockerSummary): Record<string, unknown> {
-	return {
-		id: blocker.id,
-		type: blocker.type,
-		text: blocker.text,
-		blockerKey: blocker.blockerKey,
-		blockerTitle: blocker.blockerTitle,
-		blockerStatus: blocker.blockerStatus,
-		createdAt: blocker.createdAt.toISOString(),
-		clearedAt: blocker.clearedAt ? blocker.clearedAt.toISOString() : null,
-	};
-}
-
-export function apiWorker(worker: WorkerSummary): Record<string, unknown> {
-	return {
-		id: worker.id,
-		branch: worker.branch,
-		startedAt: worker.startedAt.toISOString(),
-		lastSeenAt: worker.lastSeenAt.toISOString(),
-		actor: {
-			type: worker.actor.type,
-			...(worker.actor.deviceName ? { deviceName: worker.actor.deviceName } : {}),
-			...(worker.actor.client ? { client: worker.actor.client } : {}),
-		},
-	};
 }
 
 export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';

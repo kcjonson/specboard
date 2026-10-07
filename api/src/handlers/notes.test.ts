@@ -9,27 +9,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { ResolvedProject } from '@specboard/db';
 
-vi.mock('@specboard/db', () => ({
-	getItems: vi.fn(),
-	createItem: vi.fn(),
-	createItems: vi.fn(),
-	updateItem: vi.fn(),
-	moveItem: vi.fn(),
-	wouldCreateCycle: vi.fn(),
-	deleteItem: vi.fn(),
-	startItem: vi.fn(),
-	completeItem: vi.fn(),
-	blockItem: vi.fn(),
-	unblockItem: vi.fn(),
-	getItemKeysBySpecPath: vi.fn(),
-	verifyItemOwnership: vi.fn(async () => true),
-	listItemNotes: vi.fn(async () => []),
-	addItemNote: vi.fn(async () => ({ id: 'n-1', note: 'entry', actor: null, createdAt: new Date('2026-01-01T00:00:00Z') })),
-	NoteValidationError: class extends Error {},
-	ParentItemNotFoundError: class extends Error {},
-	DiscoveredFromNotFoundError: class extends Error {},
-	ItemCycleError: class extends Error {},
-}));
+vi.mock('@specboard/db', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@specboard/db')>();
+	return {
+		itemView: actual.itemView,
+		noteView: actual.noteView,
+		getItems: vi.fn(),
+		createItem: vi.fn(),
+		createItems: vi.fn(),
+		updateItem: vi.fn(),
+		moveItem: vi.fn(),
+		wouldCreateCycle: vi.fn(),
+		deleteItem: vi.fn(),
+		startItem: vi.fn(),
+		completeItem: vi.fn(),
+		blockItem: vi.fn(),
+		unblockItem: vi.fn(),
+		getItemKeysBySpecPath: vi.fn(),
+		verifyItemOwnership: vi.fn(async () => true),
+		listItemNotes: vi.fn(async () => []),
+		addItemNote: vi.fn(async () => ({ id: 'n-1', note: 'entry', actor: null, createdAt: new Date('2026-01-01T00:00:00Z') })),
+		NoteValidationError: class extends Error {},
+		ParentItemNotFoundError: class extends Error {},
+		DiscoveredFromNotFoundError: class extends Error {},
+		ItemCycleError: class extends Error {},
+	};
+});
 
 import { listItemNotes, addItemNote, NoteValidationError } from '@specboard/db';
 import { handleListItemNotes, handleAddItemNote } from './notes.ts';

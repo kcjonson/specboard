@@ -5,7 +5,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@specboard/db', () => ({
+vi.mock('@specboard/db', async (importOriginal) => ({
+	itemView: (await importOriginal<typeof import('@specboard/db')>()).itemView,
 	getItems: vi.fn(async () => ({ items: [], total: 0 })),
 }));
 

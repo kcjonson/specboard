@@ -6,7 +6,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@specboard/db', () => ({
+vi.mock('@specboard/db', async (importOriginal) => ({
+	blockerView: (await importOriginal<typeof import('@specboard/db')>()).blockerView,
 	createItem: vi.fn(),
 	createItems: vi.fn(),
 	updateItem: vi.fn(async () => ({ key: 'SB-1', title: 'T', status: 'ready', subStatus: null, branchName: null, prUrl: null, blocked: false })),
@@ -30,6 +31,7 @@ vi.mock('@specboard/db', () => ({
 	BlockerValidationError: class extends Error {},
 	BlockerConflictError: class extends Error {},
 	BlockerTargetError: class extends Error {},
+	BlockerItemNotFoundError: class extends Error {},
 	ChecklistValidationError: class extends Error {},
 	ParentItemNotFoundError: class extends Error {},
 	DiscoveredFromNotFoundError: class extends Error {},

@@ -42,10 +42,20 @@ export class BlockerConflictError extends Error {
 }
 
 /**
- * Thrown when a blocker references an unusable item: the target doesn't exist in
- * the project, is the item itself, is already done (it could never clear
- * naturally), or would close a cycle of open item blockers. Also used when
- * blocking an already-done item.
+ * Thrown when a blocker key names no item in this project. Its own class so every
+ * surface answers it as the other item lookups do (not found), not as a bad target.
+ */
+export class BlockerItemNotFoundError extends Error {
+	constructor(itemNumber: number) {
+		super(`No item numbered ${itemNumber} in this project`);
+		this.name = 'BlockerItemNotFoundError';
+	}
+}
+
+/**
+ * Thrown when a blocker references an unusable item: the target is the item itself,
+ * is already done (it could never clear naturally), or would close a cycle of open
+ * item blockers. Also used when blocking an already-done item.
  */
 export class BlockerTargetError extends Error {
 	constructor(message: string) {
@@ -407,7 +417,7 @@ async function resolveBlockerTarget(
 		[targetNumber, projectId]
 	);
 	const row = target.rows[0];
-	if (!row) throw new BlockerTargetError(`No item numbered ${targetNumber} in this project`);
+	if (!row) throw new BlockerItemNotFoundError(targetNumber);
 	if (row.id === itemId) throw new BlockerTargetError('An item cannot block itself');
 	if (row.status === 'done') {
 		throw new BlockerTargetError(`Item ${targetNumber} is already done — it cannot be a blocker`);

@@ -32,6 +32,7 @@ import {
 	BlockerValidationError,
 	BlockerConflictError,
 	BlockerTargetError,
+	BlockerItemNotFoundError,
 	ChecklistValidationError,
 	ParentItemNotFoundError,
 	DiscoveredFromNotFoundError,
@@ -44,11 +45,12 @@ import {
 	type UpdateItemInput,
 	type AgentActor,
 	type BlockerInput,
-	type BlockerSummary,
+	type BlockerView,
 	type SpecSummary,
 	type ChecklistEntry,
 	type ChecklistEntryInput,
 	type ChecklistStatus,
+	blockerView,
 } from '@specboard/db';
 import { formatProjectRef, itemNumberInProject } from '@specboard/core/identifiers';
 
@@ -162,9 +164,11 @@ export async function createItem(
 			blockerWarning = `blockers not applied: ${inputs.content[0]?.text ?? 'invalid blockers'}. Add them with update_item.`;
 		} else {
 			try {
-				blockers = await setBlockersService(project.id, item.number, inputs, actor);
+				blockers = (await setBlockersService(project.id, item.number, inputs, actor))?.map(blockerView);
 			} catch (error) {
-				if (error instanceof BlockerValidationError || error instanceof BlockerTargetError || error instanceof BlockerConflictError) {
+				if (error instanceof BlockerItemNotFoundError) {
+					blockerWarning = 'blockers not applied: Blocker item not found. Add them with update_item.';
+				} else if (error instanceof BlockerValidationError || error instanceof BlockerTargetError || error instanceof BlockerConflictError) {
 					blockerWarning = `blockers not applied: ${error.message}. Add them with update_item.`;
 				} else {
 					throw error;
@@ -242,14 +246,15 @@ export async function updateItem(
 
 	// The blockers full-replace applies on EVERY update path — the schema promises
 	// it unconditionally, so the status shortcuts and the move path may not drop it.
-	const applyBlockers = async (): Promise<{ blockers?: BlockerSummary[] } | ToolResult> => {
+	const applyBlockers = async (): Promise<{ blockers?: BlockerView[] } | ToolResult> => {
 		if (!Array.isArray(args.blockers)) return {};
 		const inputs = parseBlockers(args.blockers, project);
 		if (!Array.isArray(inputs)) return inputs;
 		try {
 			const blockers = await setBlockersService(project.id, number, inputs, actor);
-			return blockers ? { blockers } : {};
+			return blockers ? { blockers: blockers.map(blockerView) } : {};
 		} catch (error) {
+			if (error instanceof BlockerItemNotFoundError) return err('Blocker item not found');
 			if (error instanceof BlockerValidationError || error instanceof BlockerTargetError || error instanceof BlockerConflictError) {
 				return err(error.message);
 			}
