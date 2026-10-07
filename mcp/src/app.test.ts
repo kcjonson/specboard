@@ -29,8 +29,7 @@ vi.mock('@specboard/auth', () => ({
 		return name ? { name, ...(client.version ? { version: client.version } : {}) } : undefined;
 	}),
 }));
-vi.mock('./tools/items/index.ts', () => ({ epicTools: [], handleEpicTool: vi.fn(async () => ({ content: [] })) }));
-vi.mock('./tools/projects.ts', () => ({ projectTools: [], handleProjectTool: vi.fn(async () => ({ content: [] })) }));
+vi.mock('./tools/index.ts', () => ({ tools: [], callTool: vi.fn(async () => ({ content: [] })) }));
 vi.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
 	Server: class {
 		handlers = new Map<unknown, (request: unknown) => Promise<unknown>>();
@@ -59,7 +58,7 @@ vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
 }));
 
 import { recordMcpClientInfo } from '@specboard/auth';
-import { handleEpicTool } from './tools/items/index.ts';
+import { callTool } from './tools/index.ts';
 import { createApp } from './app.ts';
 
 interface FakeOutgoing {
@@ -109,7 +108,7 @@ async function post(body: unknown, headers: Record<string, string> = {}): Promis
 async function lastActor(): Promise<Record<string, unknown>> {
 	const server = state.servers.at(-1)!;
 	await server.handlers.get(CallToolRequestSchema)!({ params: { name: 'get_items', arguments: {} } });
-	const call = vi.mocked(handleEpicTool).mock.calls.at(-1)!;
+	const call = vi.mocked(callTool).mock.calls.at(-1)!;
 	return call[2] as unknown as Record<string, unknown>;
 }
 
@@ -199,15 +198,15 @@ describe('POST /mcp', () => {
 	it('parses the X-Specboard-Project header into the binding every tool receives', async () => {
 		await post(TOOL_CALL, { 'x-specboard-project': ' Acme/Roadmap ' });
 		await lastActor();
-		expect(vi.mocked(handleEpicTool).mock.calls.at(-1)![3]).toEqual({ ref: { owner: 'acme', project: 'roadmap' } });
+		expect(vi.mocked(callTool).mock.calls.at(-1)![3]).toEqual({ ref: { owner: 'acme', project: 'roadmap' } });
 
 		await post(TOOL_CALL, { 'x-specboard-project': 'roadmap' });
 		await lastActor();
-		expect(vi.mocked(handleEpicTool).mock.calls.at(-1)![3]).toEqual({ ref: { owner: null, project: 'roadmap' } });
+		expect(vi.mocked(callTool).mock.calls.at(-1)![3]).toEqual({ ref: { owner: null, project: 'roadmap' } });
 
 		await post(TOOL_CALL);
 		await lastActor();
-		expect(vi.mocked(handleEpicTool).mock.calls.at(-1)![3]).toBeUndefined();
+		expect(vi.mocked(callTool).mock.calls.at(-1)![3]).toBeUndefined();
 	});
 
 	it('treats a malformed session id as absent rather than failing the request', async () => {

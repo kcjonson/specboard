@@ -25,18 +25,8 @@ import { logRequest } from '@specboard/core';
 import { mcpAuthMiddleware, recordMcpClientInfo, sanitizeMcpClientInfo, type McpAuthVariables, type McpClientInfo } from '@specboard/auth';
 import type { AgentActor } from '@specboard/db';
 
-import { epicTools, handleEpicTool } from './tools/items/index.ts';
-import { projectTools, handleProjectTool } from './tools/projects.ts';
+import { tools, callTool } from './tools/index.ts';
 import { parseProjectBinding, type ProjectBinding } from './tools/project-ref.ts';
-
-const epicToolNames = new Set([
-	'get_items',
-	'create_item',
-	'create_items',
-	'update_item',
-	'delete_item',
-]);
-const projectToolNames = new Set(['list_projects']);
 
 // Server-level instructions returned at MCP initialize. Reaches every connected client (no plugin
 // required). Claude Code truncates server instructions past 2,048 characters by default
@@ -86,32 +76,14 @@ function createMcpServer(actor: AgentActor, binding: ProjectBinding): Server {
 	);
 
 	server.setRequestHandler(ListToolsRequestSchema, async () => {
-		return {
-			tools: [...projectTools, ...epicTools],
-		};
+		return { tools };
 	});
 
 	server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		const { name, arguments: args } = request.params;
 
 		try {
-			if (projectToolNames.has(name)) {
-				return await handleProjectTool(name, actor.userId, binding);
-			}
-
-			if (epicToolNames.has(name)) {
-				return await handleEpicTool(name, args, actor, binding);
-			}
-
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Unknown tool: ${name}`,
-					},
-				],
-				isError: true,
-			};
+			return await callTool(name, args, actor, binding);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'Unknown error';
 			console.error(`Tool ${name} failed:`, error);
