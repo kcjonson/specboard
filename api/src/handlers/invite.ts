@@ -94,7 +94,6 @@ async function inviteView(invitation: InvitationDetails, addressedToYou: boolean
 function refusalResponse(context: Context, refusal: InvitationRefusal): Response {
 	switch (refusal.refused) {
 		case 'not_found':
-		case 'wrong_account':
 			return context.json(NOT_FOUND, 404);
 		case 'closed':
 			return context.json({ error: CLOSED_MESSAGES[refusal.state], code: 'INVITATION_CLOSED', state: refusal.state }, 410);
@@ -117,13 +116,11 @@ export async function handleLookupInvite(context: Context, redis: Redis): Promis
 	}
 
 	try {
-		const invitation = await getInvitationByTokenHash(hashToken(token));
-		if (!invitation) {
+		const found = await getInvitationByTokenHash(hashToken(token), await sessionUserId(context, redis));
+		if (!found) {
 			return context.json(NOT_FOUND, 404);
 		}
-		const userId = await sessionUserId(context, redis);
-		const addressedToYou = userId ? (await getInvitationForUser(invitation.id, userId)) !== null : null;
-		return context.json(await inviteView(invitation, addressedToYou));
+		return context.json(await inviteView(found.invitation, found.addressedToViewer));
 	} catch (error) {
 		console.error('Failed to look up invitation:', error);
 		return context.json({ error: 'Database error' }, 500);

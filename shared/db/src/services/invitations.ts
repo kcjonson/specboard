@@ -258,11 +258,34 @@ export async function revokeInvitation(projectId: string, invitationId: string):
 // Invitee side
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The invitation an emailed token names, in whatever state it is in. */
-export async function getInvitationByTokenHash(tokenHash: string): Promise<InvitationDetails | null> {
-	const result = await query<DetailsRow>(`${DETAILS_SELECT} WHERE i.token_hash = $1`, [tokenHash]);
+/** An invitation found by its emailed token, and whether it is addressed to whoever is looking. */
+export interface TokenInvitation {
+	invitation: InvitationDetails;
+	/** Null when nobody is signed in. */
+	addressedToViewer: boolean | null;
+}
+
+/**
+ * The invitation an emailed token names, in whatever state it is in. With a viewer, also
+ * whether they may answer it, in the same query.
+ */
+export async function getInvitationByTokenHash(tokenHash: string, viewerId: string | null): Promise<TokenInvitation | null> {
+	const result = await query<DetailsRow & { addressed: boolean | null }>(
+		`${DETAILS_SELECT.replace(/^SELECT /, `SELECT CASE WHEN $2::uuid IS NULL THEN NULL ELSE ${addressedToSql('$2::uuid')} END AS addressed, `)}
+		 WHERE i.token_hash = $1`,
+		[tokenHash, viewerId]
+	);
 	const row = result.rows[0];
-	return row ? toDetails(row) : null;
+	return row ? { invitation: toDetails(row), addressedToViewer: row.addressed } : null;
+}
+
+/**
+ * The address an invitation was sent to, for checking a sign-in code typed on the signup
+ * page it opened, which only knows the address masked. Null for an unknown id.
+ */
+export async function getInvitationAddress(invitationId: string): Promise<string | null> {
+	const result = await query<{ email: string }>('SELECT email FROM project_invitations WHERE id = $1', [invitationId]);
+	return result.rows[0]?.email ?? null;
 }
 
 /**
@@ -316,10 +339,11 @@ export async function newerOpenInvitationId(invitationId: string): Promise<strin
 
 /** Why an invitation can't be answered. */
 export type InvitationRefusal =
-	/** No invitation with that id. */
+	/**
+	 * No invitation with that id, or it is addressed to an address the caller's account
+	 * doesn't hold (verified): the two read the same.
+	 */
 	| { refused: 'not_found' }
-	/** It is addressed to an address the caller's account doesn't hold (verified). */
-	| { refused: 'wrong_account' }
 	/** Already accepted, declined, revoked, or expired. */
 	| { refused: 'closed'; state: Exclude<InvitationState, 'open'> }
 	/** Accepting only: the caller owns the project, and the owner is never a member. */
@@ -352,8 +376,8 @@ interface LockedInvitation {
 
 /**
  * Lock the invitation for the rest of the transaction and check the caller may answer
- * it. Checks run in this order: exists, addressed to the caller, still open. So a caller
- * learns nothing about an invitation sent to someone else, not even its state.
+ * it. Someone else's invitation is not found, before its state is looked at, so a caller
+ * learns nothing about it.
  */
 async function lockForAnswer(
 	client: pg.PoolClient,
@@ -371,8 +395,7 @@ async function lockForAnswer(
 		[invitationId, userId]
 	);
 	const row = result.rows[0];
-	if (!row) return { refused: 'not_found' };
-	if (!row.addressed) return { refused: 'wrong_account' };
+	if (!row?.addressed) return { refused: 'not_found' };
 	if (row.state !== 'open') return { refused: 'closed', state: row.state };
 	return row;
 }

@@ -19,6 +19,7 @@ import {
 	createInvitation,
 	declineInvitation,
 	getInvitationByTokenHash,
+	getInvitationAddress,
 	getInvitationForUser,
 	listInvitationsForUser,
 	listPendingInvitations,
@@ -58,7 +59,7 @@ async function issued(email: string, tokenHash: string, overrides: Partial<Creat
 
 /** The id of the invitation issued with hash(label). */
 async function idOf(label: string): Promise<string> {
-	return (await getInvitationByTokenHash(hash(label)))!.id;
+	return (await getInvitationByTokenHash(hash(label), null))!.invitation.id;
 }
 
 /** A stand-in token hash, distinct per label. */
@@ -126,7 +127,7 @@ describe('inviting', () => {
 
 		const pending = await listPendingInvitations(roadmapId);
 		expect(pending.map((i) => [i.id, i.role])).toEqual([[second.invitation.id, 'viewer']]);
-		expect((await getInvitationByTokenHash(hash('first')))?.state).toBe('revoked');
+		expect((await getInvitationByTokenHash(hash('first'), null))?.invitation.state).toBe('revoked');
 		expect(first.invitation.id).not.toBe(second.invitation.id);
 	});
 });
@@ -158,8 +159,8 @@ describe('resending', () => {
 
 		expect(resent?.invitation).toMatchObject({ id: sent.invitation.id, state: 'open' });
 		expect(resent!.invitation.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6.9 * 86_400_000);
-		expect(await getInvitationByTokenHash(hash('old'))).toBeNull();
-		expect((await getInvitationByTokenHash(hash('new')))?.state).toBe('open');
+		expect((await getInvitationByTokenHash(hash('old'), null))?.invitation ?? null).toBeNull();
+		expect((await getInvitationByTokenHash(hash('new'), null))?.invitation.state).toBe('open');
 	});
 
 	it('finds nothing to resend once the invitation is answered, revoked, or on another project', async () => {
@@ -175,14 +176,14 @@ describe('revoking', () => {
 		const sent = await issued('pat@example.com', hash('p'));
 		expect(await revokeInvitation(roadmapId, sent.invitation.id)).toBe(true);
 		expect(await revokeInvitation(roadmapId, sent.invitation.id)).toBe(false);
-		expect((await getInvitationByTokenHash(hash('p')))?.state).toBe('revoked');
+		expect((await getInvitationByTokenHash(hash('p'), null))?.invitation.state).toBe('revoked');
 	});
 });
 
 describe('the recipient\'s view', () => {
 	it('describes the invitation by token', async () => {
 		await issued('pat@example.com', hash('p'));
-		expect(await getInvitationByTokenHash(hash('p'))).toMatchObject({
+		expect((await getInvitationByTokenHash(hash('p'), null))?.invitation ?? null).toMatchObject({
 			email: 'pat@example.com',
 			role: 'editor',
 			state: 'open',
@@ -192,7 +193,7 @@ describe('the recipient\'s view', () => {
 			ownerName: 'Alice Ames',
 			inviterName: 'Alice Ames',
 		});
-		expect(await getInvitationByTokenHash(hash('nope'))).toBeNull();
+		expect((await getInvitationByTokenHash(hash('nope'), null))?.invitation ?? null).toBeNull();
 	});
 
 	it('lists a user\'s open, unexpired invitations by their verified address', async () => {
@@ -204,6 +205,21 @@ describe('the recipient\'s view', () => {
 		expect((await listInvitationsForUser(pat)).map((i) => i.projectSlug)).toEqual(['roadmap']);
 		expect(await listInvitationsForUser(unverified)).toEqual([]);
 		expect(await listInvitationsForUser(vera)).toEqual([]);
+	});
+
+	it('says in the token lookup whether the viewer may answer it', async () => {
+		await issued('pat@example.com', hash('p'));
+		expect((await getInvitationByTokenHash(hash('p'), null))?.addressedToViewer).toBeNull();
+		expect((await getInvitationByTokenHash(hash('p'), pat))?.addressedToViewer).toBe(true);
+		expect((await getInvitationByTokenHash(hash('p'), vera))?.addressedToViewer).toBe(false);
+		await issued('una@example.com', hash('u'));
+		expect((await getInvitationByTokenHash(hash('u'), unverified))?.addressedToViewer).toBe(false);
+	});
+
+	it('gives the invited address by id, for checking a typed sign-in code', async () => {
+		await issued('pat@example.com', hash('p'));
+		expect(await getInvitationAddress(await idOf('p'))).toBe('pat@example.com');
+		expect(await getInvitationAddress(crypto.randomUUID())).toBeNull();
 	});
 
 	it('reads an invitation by id only for the account it is addressed to, in any state', async () => {
@@ -262,13 +278,13 @@ describe('accepting', () => {
 
 	it('refuses an account that doesn\'t hold the invited address, and changes nothing', async () => {
 		await issued('pat@example.com', hash('p'));
-		expect(await acceptInvitation(await idOf('p'), vera)).toEqual({ refused: 'wrong_account' });
-		expect((await getInvitationByTokenHash(hash('p')))?.state).toBe('open');
+		expect(await acceptInvitation(await idOf('p'), vera)).toEqual({ refused: 'not_found' });
+		expect((await getInvitationByTokenHash(hash('p'), null))?.invitation.state).toBe('open');
 	});
 
 	it('refuses an unverified address', async () => {
 		await issued('una@example.com', hash('u'));
-		expect(await acceptInvitation(await idOf('u'), unverified)).toEqual({ refused: 'wrong_account' });
+		expect(await acceptInvitation(await idOf('u'), unverified)).toEqual({ refused: 'not_found' });
 		expect(await memberRole(unverified)).toBeUndefined();
 	});
 
@@ -315,7 +331,7 @@ describe('accepting', () => {
 	it('refuses an account that hasn\'t onboarded, leaving the invitation open', async () => {
 		await issued('newbie@example.com', hash('n'));
 		expect(await acceptInvitation(await idOf('n'), newbie)).toEqual({ refused: 'no_slug' });
-		expect((await getInvitationByTokenHash(hash('n')))?.state).toBe('open');
+		expect((await getInvitationByTokenHash(hash('n'), null))?.invitation.state).toBe('open');
 	});
 
 	it('finds nothing for an unknown token or id', async () => {
@@ -335,7 +351,7 @@ describe('declining', () => {
 
 	it('refuses someone it isn\'t addressed to', async () => {
 		await issued('pat@example.com', hash('p'));
-		expect(await declineInvitation(await idOf('p'), vera)).toEqual({ refused: 'wrong_account' });
-		expect((await getInvitationByTokenHash(hash('p')))?.state).toBe('open');
+		expect(await declineInvitation(await idOf('p'), vera)).toEqual({ refused: 'not_found' });
+		expect((await getInvitationByTokenHash(hash('p'), null))?.invitation.state).toBe('open');
 	});
 });

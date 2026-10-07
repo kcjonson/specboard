@@ -484,13 +484,38 @@ describe('signing up and in from an invitation', () => {
 
 	it('checks a typed code against the invited address without the client naming it', async () => {
 		const token = await inviteAndGetToken('pat@example.com');
+		const id = await idFor(token);
 		await call(null, 'POST', '/api/auth/signup', { invite_token: token });
 		const code = lastEmailedCode();
 
-		const wrong = await call(null, 'POST', '/api/auth/magic-link/verify', { invite_token: 'f'.repeat(64), code });
-		expect(wrong.status).toBe(401);
-		const verified = await call(null, 'POST', '/api/auth/magic-link/verify', { invite_token: token, code });
+		const unknown = await call(null, 'POST', '/api/auth/magic-link/verify', { invitation_id: crypto.randomUUID(), code });
+		expect(unknown.status).toBe(401);
+		const malformed = await call(null, 'POST', '/api/auth/magic-link/verify', { invitation_id: 'nope', code });
+		expect(malformed.status).toBe(401);
+		const verified = await call(null, 'POST', '/api/auth/magic-link/verify', { invitation_id: id, code });
 		expect(verified.status).toBe(200);
-		expect(verified.body).toMatchObject({ next: `/invite?id=${await idFor(token)}` });
+		expect(verified.body).toMatchObject({ next: `/invite?id=${id}` });
+	});
+
+	it('still verifies the code when the owner resends the invite mid-signup', async () => {
+		const token = await inviteAndGetToken('stranger@example.com');
+		const id = await idFor(token);
+		await call(null, 'POST', '/api/auth/signup', { invite_token: token });
+		const code = lastEmailedCode();
+
+		expect((await call('owner', 'POST', `${INVITATIONS}/${id}/resend`)).status).toBe(200);
+
+		// The old token is dead now, so only the id can name the address.
+		expect((await call(null, 'GET', `/api/invite?token=${token}`)).status).toBe(404);
+		const verified = await call(null, 'POST', '/api/auth/magic-link/verify', { invitation_id: id, code });
+		expect(verified.status).toBe(200);
+		expect(verified.body).toMatchObject({ next: `/invite?id=${id}` });
+	});
+
+	it('no longer takes an invitation token at verify', async () => {
+		const token = await inviteAndGetToken('pat@example.com');
+		await call(null, 'POST', '/api/auth/signup', { invite_token: token });
+		const response = await call(null, 'POST', '/api/auth/magic-link/verify', { invite_token: token, code: lastEmailedCode() });
+		expect(response.status).toBe(400);
 	});
 });

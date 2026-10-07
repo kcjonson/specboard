@@ -8,7 +8,8 @@
  * Opened from a project invitation (/signup?invite=<token>), the invitation stands
  * in for the invite key and the account is for the invited address, which shows
  * masked and locked. The page never learns the full address: a typed code is sent
- * with the invitation token and the server looks the address up. Signing in then
+ * with the invitation's id and the server looks the address up. The id, not the
+ * token, so the code still works if the owner resends the invite meanwhile. Signing in then
  * lands back on the invite.
  */
 import type { JSX } from 'preact';
@@ -119,6 +120,7 @@ export const signupScript = `(function() {
 
 	// A project invitation in place of the invite key: the account is for the invited address
 	var inviteToken = params.get('invite');
+	var inviteId = null;
 
 	function showError(message) {
 		errorEl.textContent = message;
@@ -149,6 +151,7 @@ export const signupScript = `(function() {
 					'. Create your account with the address the invite was sent to.';
 				inviteIntro.classList.remove('hidden');
 				emailInput.value = result.data.email;
+				inviteId = result.data.id;
 				loginLink.href = '/login?next=' + encodeURIComponent('/invite?id=' + result.data.id);
 				submitBtn.disabled = false;
 			} else {
@@ -184,7 +187,7 @@ export const signupScript = `(function() {
 			submitBtn.disabled = false;
 			submitBtn.textContent = 'Create Account';
 			if (result.ok) {
-				// Masked when an invitation opened the signup; the code then goes with the token.
+				// Masked when an invitation opened the signup; the code then goes with its id.
 				pendingEmail = result.data.email;
 				codeEmailEl.textContent = result.data.email;
 				signupSection.classList.add('hidden');
@@ -212,8 +215,8 @@ export const signupScript = `(function() {
 		fetch('/api/auth/magic-link/verify', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(inviteToken
-				? { invite_token: inviteToken, code: codeInput.value }
+			body: JSON.stringify(inviteId
+				? { invitation_id: inviteId, code: codeInput.value }
 				: { email: pendingEmail, code: codeInput.value }),
 			credentials: 'same-origin'
 		})

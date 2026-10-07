@@ -58,7 +58,7 @@ async function signupGrant(body: SignupRequest): Promise<SignupGrant | { error: 
 	if (body.invite_token !== undefined) {
 		const token = body.invite_token;
 		const invitation = typeof token === 'string' && INVITE_TOKEN_PATTERN.test(token)
-			? await getInvitationByTokenHash(hashToken(token))
+			? (await getInvitationByTokenHash(hashToken(token), null))?.invitation
 			: null;
 		if (!invitation || invitation.state !== 'open') {
 			return { error: 'This invitation is no longer valid', status: 403 };

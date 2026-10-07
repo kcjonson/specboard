@@ -261,7 +261,7 @@ describe('handleSignup with a project invitation token', () => {
 		// No early-access keys at all: the invitation alone has to open the gate.
 		process.env.INVITE_KEYS = '';
 		vi.mocked(checkRateLimitKey).mockResolvedValue(true);
-		vi.mocked(getInvitationByTokenHash).mockResolvedValue(INVITATION);
+		vi.mocked(getInvitationByTokenHash).mockResolvedValue({ invitation: INVITATION, addressedToViewer: null });
 	});
 
 	it('opens an account for the invited address, sending the magic link back to the invite by id', async () => {
@@ -271,7 +271,7 @@ describe('handleSignup with a project invitation token', () => {
 		expect(res.status).toBe(201);
 		// Masked: whoever holds the token may not own the address.
 		expect(await res.json()).toMatchObject({ email: 'n\u2022\u2022\u2022@example.com' });
-		expect(getInvitationByTokenHash).toHaveBeenCalledWith(createHash('sha256').update(INVITE_TOKEN).digest('hex'));
+		expect(getInvitationByTokenHash).toHaveBeenCalledWith(createHash('sha256').update(INVITE_TOKEN).digest('hex'), null);
 		const insert = vi.mocked(query).mock.calls.find((call) => (call[0] as string).includes('INSERT INTO users'));
 		expect(insert?.[1]?.[0]).toBe('new@example.com');
 		expect(JSON.parse(String(insert?.[1]?.[1]))).toEqual({ project_invitation_id: 'invitation-uuid' });
@@ -292,7 +292,7 @@ describe('handleSignup with a project invitation token', () => {
 	});
 
 	it.each(['expired', 'revoked', 'accepted', 'declined'] as const)('refuses an invitation that is %s', async (state) => {
-		vi.mocked(getInvitationByTokenHash).mockResolvedValue({ ...INVITATION, state });
+		vi.mocked(getInvitationByTokenHash).mockResolvedValue({ invitation: { ...INVITATION, state }, addressedToViewer: null });
 		const res = await postSignup(createApp(), { invite_token: INVITE_TOKEN });
 
 		expect(res.status).toBe(403);

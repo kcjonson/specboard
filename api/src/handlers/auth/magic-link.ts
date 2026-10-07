@@ -20,13 +20,12 @@ import {
 	MAGIC_LINK_EXPIRY_MS,
 	RATE_LIMIT_CONFIGS,
 } from '@specboard/auth';
-import { getInvitationByTokenHash, query, type User } from '@specboard/db';
+import { getInvitationAddress, query, type User } from '@specboard/db';
 import { sendEmail, getMagicLinkEmailContent } from '@specboard/email';
 import { safeNextPath } from '@specboard/core/next-path';
 
-import { isValidEmail } from '../../validation.ts';
+import { isValidEmail, isValidUUID } from '../../validation.ts';
 import { logAuthEvent, establishSession, isCrossOriginRequest, APP_URL } from './utils.ts';
-import { INVITE_TOKEN_PATTERN } from '../invite.ts';
 
 const MAX_CODE_ATTEMPTS = 5;
 
@@ -155,25 +154,24 @@ interface MagicLinkVerifyBody {
 	email?: string;
 	/**
 	 * In place of email, for a code from a signup a project invitation opened: the page
-	 * only knows the invited address masked, so the invitation names it.
+	 * only knows the invited address masked, so the invitation names it. By id, which
+	 * survives the owner resending the invite mid-signup; the token doesn't.
 	 */
-	invite_token?: string;
+	invitation_id?: string;
 	code?: string;
 }
 
 /** The address a typed code is for: the one in the body, or the invitation's. Null when neither names one. */
 async function codeEmail(body: MagicLinkVerifyBody): Promise<string | null> {
 	if (typeof body.email === 'string') return body.email.trim();
-	const token = body.invite_token;
-	if (typeof token !== 'string' || !INVITE_TOKEN_PATTERN.test(token)) return null;
-	return (await getInvitationByTokenHash(hashToken(token)))?.email ?? null;
+	return isValidUUID(body.invitation_id) ? getInvitationAddress(body.invitation_id) : null;
 }
 
 const GENERIC_FAILURE = 'That code or link is invalid or has expired.';
 
 /**
  * Handle magic link consumption: either {token} from the emailed link, or a code
- * typed into the login or signup page with {email, code} or {invite_token, code}. All failure modes return the same
+ * typed into the login or signup page with {email, code} or {invitation_id, code}. All failure modes return the same
  * message so responses don't distinguish invalid, expired, or consumed.
  */
 export async function handleMagicLinkVerify(
@@ -197,7 +195,7 @@ export async function handleMagicLinkVerify(
 	}
 
 	const hasToken = typeof body.token === 'string' && body.token.length > 0;
-	const hasCode = typeof body.code === 'string' && (typeof body.email === 'string' || typeof body.invite_token === 'string');
+	const hasCode = typeof body.code === 'string' && (typeof body.email === 'string' || typeof body.invitation_id === 'string');
 	if (!hasToken && !hasCode) {
 		return context.json({ error: 'A token, or an email or invitation and a code, is required' }, 400);
 	}
