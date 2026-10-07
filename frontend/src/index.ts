@@ -13,6 +13,7 @@ import { authMiddleware, getSession, requireAdminPath, SESSION_COOKIE_NAME, type
 import { reportError, captureException, installErrorHandlers, logRequest } from '@specboard/core';
 import { sessionIsAdmin } from './admin-check.ts';
 import { pages, spaIndex, type CachedPage } from './static-pages.ts';
+import { noReferrerOnTokenPages } from './referrer-policy.ts';
 
 // Vite dev server URL for hot reloading (set in docker-compose for dev mode)
 const VITE_DEV_SERVER = process.env.VITE_DEV_SERVER;
@@ -135,6 +136,9 @@ app.use('*', async (c, next) => {
 	c.header('X-Frame-Options', 'SAMEORIGIN');
 	c.header('Content-Security-Policy', "frame-ancestors 'self'");
 });
+
+// Pages with a token or an invitation in their URL never send it on as a Referer.
+app.use('*', noReferrerOnTokenPages());
 
 // Health check (no auth required)
 app.get('/health', (c) => c.json({ status: 'ok' }));
