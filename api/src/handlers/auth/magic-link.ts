@@ -22,6 +22,7 @@ import {
 } from '@specboard/auth';
 import { query, type User } from '@specboard/db';
 import { sendEmail, getMagicLinkEmailContent } from '@specboard/email';
+import { safeNextPath } from '@specboard/core/next-path';
 
 import { isValidEmail } from '../../validation.ts';
 import { logAuthEvent, establishSession, isCrossOriginRequest, APP_URL } from './utils.ts';
@@ -40,20 +41,6 @@ interface MagicLinkTokenRow {
 	code_attempts: number;
 	next_path: string | null;
 	expires_at: Date;
-}
-
-/**
- * Validate a client-supplied post-login path. Same-origin relative paths only.
- */
-function sanitizeNextPath(next: unknown): string | null {
-	if (typeof next !== 'string') return null;
-	if (!next.startsWith('/') || next.startsWith('//') || next.length > 2048) return null;
-	// Backslashes normalize to '//' in the browser (off-site redirect); control
-	// chars (esp. NUL) would also make the row INSERT throw and get masked as a
-	// fake "code sent". Drop the path rather than fail the whole request.
-	// eslint-disable-next-line no-control-regex
-	if (/[\x00-\x1f\\]/.test(next)) return null;
-	return next;
 }
 
 /**
@@ -152,7 +139,7 @@ export async function handleMagicLinkRequest(
 			return context.json(successResponse);
 		}
 
-		await issueMagicLink(user, sanitizeNextPath(body.next));
+		await issueMagicLink(user, safeNextPath(body.next));
 		logAuthEvent('magic_link_requested', { userId: user.id });
 
 		return context.json(successResponse);
