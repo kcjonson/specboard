@@ -7,8 +7,10 @@
  *
  * Signup is gated. Either an early-access key from INVITE_KEYS, or the token of an open
  * project invitation, which only ever opens an account for the invited address. An
- * invitation signup's magic link carries the invite page as its next path, so the new
- * user comes back to the invitation once they are signed in.
+ * invitation signup's magic link carries the invite page, by invitation id, as its next
+ * path, so the new user comes back to the invitation once they are signed in. The raw
+ * token is never stored, and the response shows the invited address only masked: the
+ * token holder may not be its owner.
  */
 
 import type { Context } from 'hono';
@@ -19,6 +21,7 @@ import { getInvitationByTokenHash, query, type User, type SignupMetadata } from 
 import { isValidEmail } from '../../validation.ts';
 import { logAuthEvent, isValidInviteKey } from './utils.ts';
 import { issueMagicLink } from './magic-link.ts';
+import { INVITE_TOKEN_PATTERN, maskEmail } from '../invite.ts';
 
 interface SignupRequest {
 	email?: string;
@@ -35,11 +38,11 @@ interface SignupRequest {
 	referral_source?: string;
 }
 
-const INVITE_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
-
 /** Who may sign up, and with what: the address, where the magic link lands, what to record. */
 interface SignupGrant {
 	email: string;
+	/** The address as the response shows it: masked for an invitation. */
+	shownEmail: string;
 	nextPath: string | null;
 	metadata: SignupMetadata;
 }
@@ -65,7 +68,8 @@ async function signupGrant(body: SignupRequest): Promise<SignupGrant | { error: 
 		}
 		return {
 			email: invitation.email,
-			nextPath: `/invite?token=${token}`,
+			shownEmail: maskEmail(invitation.email),
+			nextPath: `/invite?id=${invitation.id}`,
 			metadata: { project_invitation_id: invitation.id },
 		};
 	}
@@ -79,7 +83,7 @@ async function signupGrant(body: SignupRequest): Promise<SignupGrant | { error: 
 	if (!isValidEmail(email)) {
 		return { error: 'Invalid email format', status: 400 };
 	}
-	return { email, nextPath: null, metadata: { invite_key: body.invite_key.trim() } };
+	return { email, shownEmail: email, nextPath: null, metadata: { invite_key: body.invite_key.trim() } };
 }
 
 /**
@@ -115,7 +119,7 @@ export async function handleSignup(context: Context, redis: Redis): Promise<Resp
 	// Identical body whether the email is new or already registered
 	const successResponse = {
 		message: 'Check your email for a sign-in code.',
-		email,
+		email: grant.shownEmail,
 	};
 
 	try {

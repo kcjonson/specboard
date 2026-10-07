@@ -1,16 +1,16 @@
 /**
  * Project invitation handlers, the invitee's side.
  *
- * Two ways in. The emailed link opens the /invite page, which looks the invitation up
- * by token and accepts or declines it by token (`/api/invite...`). A signed-in user's
- * projects list shows the open invitations addressed to them and answers by id
- * (`/api/invitations...`). Neither is a project route: the caller isn't a member yet,
- * so requireProjectAccess has nothing to check. Instead every answer requires a session
- * whose account's verified email is the invited address, so a forwarded link or a
- * guessed id can't be used by anyone else.
+ * The emailed token only finds an invitation: `GET /api/invite?token=` is what the
+ * /invite page shows anyone holding the link, with the invited address masked, and no
+ * side effects (mail scanners prefetch links). Everything after that goes by the
+ * invitation's id, for a signed-in account whose verified email is the invited address:
+ * reading it, accepting, declining, and the user's own list. So the raw token never
+ * needs to travel past the first page load, and a forwarded link or a guessed id can't
+ * be used by anyone else.
  *
- * The token lookup is a GET with no side effects (mail scanners prefetch links); it
- * tells the visitor only what the invite card shows, with the invited address masked.
+ * None of these are project routes: the caller isn't a member yet, so
+ * requireProjectAccess has nothing to check. The address binding is the check.
  */
 
 import type { Context } from 'hono';
@@ -21,16 +21,16 @@ import {
 	acceptInvitation,
 	declineInvitation,
 	getInvitationByTokenHash,
-	isInvitationAddressedTo,
+	getInvitationForUser,
 	listInvitationsForUser,
+	newerOpenInvitationId,
 	type InvitationDetails,
 	type InvitationRefusal,
-	type InvitationTarget,
 } from '@specboard/db';
 import { formatProjectRef } from '@specboard/core/identifiers';
 import { isValidUUID } from '../validation.ts';
 
-const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
+export const INVITE_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 
 const NOT_FOUND = { error: 'Invitation not found', code: 'NOT_FOUND' } as const;
 
@@ -63,63 +63,45 @@ function projectOf(invitation: InvitationDetails): { ref: string; name: string }
 }
 
 /**
- * Why an answer was refused, as a response. Answering by id, an invitation addressed to
- * someone else is a 404 like an id that doesn't exist; by token, the page needs to say
- * it was sent to another address, so it is a 403.
+ * The invite card. Its recipient also gets the project, so an accepted invite can link
+ * to it, and for a revoked or expired invite the open one that replaced it, if any (the
+ * owner invited them again, say while they were signing up).
  */
-function refusalResponse(context: Context, refusal: InvitationRefusal, by: 'token' | 'id'): Response {
+async function inviteView(invitation: InvitationDetails, addressedToYou: boolean | null): Promise<Record<string, unknown>> {
+	const view: Record<string, unknown> = {
+		id: invitation.id,
+		state: invitation.state,
+		role: invitation.role,
+		projectName: invitation.projectName,
+		ownerName: invitation.ownerName,
+		inviterName: invitation.inviterName,
+		email: maskEmail(invitation.email),
+		addressedToYou,
+	};
+	if (addressedToYou) {
+		view.project = projectOf(invitation);
+		if (invitation.state !== 'open' && invitation.state !== 'accepted') {
+			view.openInvitationId = await newerOpenInvitationId(invitation.id);
+		}
+	}
+	return view;
+}
+
+/**
+ * Why an answer was refused, as a response. An invitation addressed to someone else is
+ * a 404 like an id that doesn't exist.
+ */
+function refusalResponse(context: Context, refusal: InvitationRefusal): Response {
 	switch (refusal.refused) {
 		case 'not_found':
-			return context.json(NOT_FOUND, 404);
 		case 'wrong_account':
-			return by === 'id'
-				? context.json(NOT_FOUND, 404)
-				: context.json({ error: 'This invitation was sent to a different email address', code: 'WRONG_ACCOUNT' }, 403);
+			return context.json(NOT_FOUND, 404);
 		case 'closed':
 			return context.json({ error: CLOSED_MESSAGES[refusal.state], code: 'INVITATION_CLOSED', state: refusal.state }, 410);
 		case 'owner':
 			return context.json({ error: 'You own this project', code: 'PROJECT_OWNER' }, 409);
 		case 'no_slug':
 			return context.json({ error: 'Finish setting up your account before accepting', code: 'ONBOARDING_REQUIRED' }, 409);
-	}
-}
-
-/** The token from a POST body, or null when it isn't one. */
-async function bodyToken(context: Context): Promise<string | null> {
-	try {
-		const body = await context.req.json<unknown>();
-		const token = (body as { token?: unknown } | null)?.token;
-		return typeof token === 'string' && TOKEN_PATTERN.test(token) ? token : null;
-	} catch {
-		return null;
-	}
-}
-
-type Answer = 'accept' | 'decline';
-
-/** Accept or decline, for the signed-in user. A null target is a malformed token or id. */
-async function answer(context: Context, redis: Redis, target: InvitationTarget | null, action: Answer): Promise<Response> {
-	const userId = await sessionUserId(context, redis);
-	if (!userId) {
-		return context.json({ error: 'Unauthorized' }, 401);
-	}
-	if (!target) {
-		return context.json(NOT_FOUND, 404);
-	}
-	const by = 'id' in target ? 'id' : 'token';
-
-	try {
-		if (action === 'accept') {
-			const result = await acceptInvitation(target, userId);
-			if ('refused' in result) return refusalResponse(context, result, by);
-			return context.json({ project: projectOf(result.invitation), role: result.role, alreadyMember: result.alreadyMember });
-		}
-		const result = await declineInvitation(target, userId);
-		if ('refused' in result) return refusalResponse(context, result, by);
-		return context.json({ success: true });
-	} catch (error) {
-		console.error(`Failed to ${action} invitation:`, error);
-		return context.json({ error: 'Database error' }, 500);
 	}
 }
 
@@ -130,42 +112,22 @@ async function answer(context: Context, redis: Redis, target: InvitationTarget |
  */
 export async function handleLookupInvite(context: Context, redis: Redis): Promise<Response> {
 	const token = context.req.query('token') ?? '';
-	if (!TOKEN_PATTERN.test(token)) {
+	if (!INVITE_TOKEN_PATTERN.test(token)) {
 		return context.json(NOT_FOUND, 404);
 	}
 
 	try {
-		const tokenHash = hashToken(token);
-		const invitation = await getInvitationByTokenHash(tokenHash);
+		const invitation = await getInvitationByTokenHash(hashToken(token));
 		if (!invitation) {
 			return context.json(NOT_FOUND, 404);
 		}
 		const userId = await sessionUserId(context, redis);
-		return context.json({
-			state: invitation.state,
-			role: invitation.role,
-			projectName: invitation.projectName,
-			ownerName: invitation.ownerName,
-			inviterName: invitation.inviterName,
-			email: maskEmail(invitation.email),
-			addressedToYou: userId ? await isInvitationAddressedTo(tokenHash, userId) : null,
-		});
+		const addressedToYou = userId ? (await getInvitationForUser(invitation.id, userId)) !== null : null;
+		return context.json(await inviteView(invitation, addressedToYou));
 	} catch (error) {
 		console.error('Failed to look up invitation:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
-}
-
-/** POST /api/invite/accept, body { token } */
-export async function handleAcceptInvite(context: Context, redis: Redis): Promise<Response> {
-	const token = await bodyToken(context);
-	return answer(context, redis, token ? { tokenHash: hashToken(token) } : null, 'accept');
-}
-
-/** POST /api/invite/decline, body { token } */
-export async function handleDeclineInvite(context: Context, redis: Redis): Promise<Response> {
-	const token = await bodyToken(context);
-	return answer(context, redis, token ? { tokenHash: hashToken(token) } : null, 'decline');
 }
 
 /** GET /api/invitations: the signed-in user's open, unexpired invitations, newest first. */
@@ -192,17 +154,63 @@ export async function handleListMyInvitations(context: Context, redis: Redis): P
 	}
 }
 
-function idTarget(context: Context): InvitationTarget | null {
+/** GET /api/invitations/:id: one invitation addressed to the signed-in user, in any state. */
+export async function handleGetMyInvitation(context: Context, redis: Redis): Promise<Response> {
+	const userId = await sessionUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
 	const id = context.req.param('id');
-	return isValidUUID(id) ? { id } : null;
+	if (!isValidUUID(id)) {
+		return context.json(NOT_FOUND, 404);
+	}
+
+	try {
+		const invitation = await getInvitationForUser(id, userId);
+		if (!invitation) {
+			return context.json(NOT_FOUND, 404);
+		}
+		return context.json(await inviteView(invitation, true));
+	} catch (error) {
+		console.error('Failed to read invitation:', error);
+		return context.json({ error: 'Database error' }, 500);
+	}
+}
+
+type Answer = 'accept' | 'decline';
+
+/** Accept or decline the invitation in the path, for the signed-in user. */
+async function answer(context: Context, redis: Redis, action: Answer): Promise<Response> {
+	const userId = await sessionUserId(context, redis);
+	if (!userId) {
+		return context.json({ error: 'Unauthorized' }, 401);
+	}
+	const id = context.req.param('id');
+	if (!isValidUUID(id)) {
+		return context.json(NOT_FOUND, 404);
+	}
+
+	try {
+		if (action === 'accept') {
+			const result = await acceptInvitation(id, userId);
+			if ('refused' in result) return refusalResponse(context, result);
+			return context.json({ project: projectOf(result.invitation), role: result.role, alreadyMember: result.alreadyMember });
+		}
+		const result = await declineInvitation(id, userId);
+		if ('refused' in result) return refusalResponse(context, result);
+		return context.json({ success: true });
+	} catch (error) {
+		console.error(`Failed to ${action} invitation:`, error);
+		return context.json({ error: 'Database error' }, 500);
+	}
 }
 
 /** POST /api/invitations/:id/accept */
 export function handleAcceptMyInvitation(context: Context, redis: Redis): Promise<Response> {
-	return answer(context, redis, idTarget(context), 'accept');
+	return answer(context, redis, 'accept');
 }
 
 /** POST /api/invitations/:id/decline */
 export function handleDeclineMyInvitation(context: Context, redis: Redis): Promise<Response> {
-	return answer(context, redis, idTarget(context), 'decline');
+	return answer(context, redis, 'decline');
 }

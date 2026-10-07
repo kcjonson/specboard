@@ -264,17 +264,18 @@ describe('handleSignup with a project invitation token', () => {
 		vi.mocked(getInvitationByTokenHash).mockResolvedValue(INVITATION);
 	});
 
-	it('opens an account for the invited address, sending the magic link back to the invite', async () => {
+	it('opens an account for the invited address, sending the magic link back to the invite by id', async () => {
 		mockNewUserQueries();
 		const res = await postSignup(createApp(), { invite_token: INVITE_TOKEN });
 
 		expect(res.status).toBe(201);
-		expect(await res.json()).toMatchObject({ email: 'new@example.com' });
+		// Masked: whoever holds the token may not own the address.
+		expect(await res.json()).toMatchObject({ email: 'n\u2022\u2022\u2022@example.com' });
 		expect(getInvitationByTokenHash).toHaveBeenCalledWith(createHash('sha256').update(INVITE_TOKEN).digest('hex'));
 		const insert = vi.mocked(query).mock.calls.find((call) => (call[0] as string).includes('INSERT INTO users'));
 		expect(insert?.[1]?.[0]).toBe('new@example.com');
 		expect(JSON.parse(String(insert?.[1]?.[1]))).toEqual({ project_invitation_id: 'invitation-uuid' });
-		expect(magicLinkNextPath()).toBe(`/invite?token=${INVITE_TOKEN}`);
+		expect(magicLinkNextPath()).toBe('/invite?id=invitation-uuid');
 	});
 
 	it('accepts the invited address in the body, in any case', async () => {
@@ -317,7 +318,7 @@ describe('handleSignup with a project invitation token', () => {
 		const res = await postSignup(createApp(), { invite_token: INVITE_TOKEN });
 
 		expect(res.status).toBe(201);
-		expect(magicLinkNextPath()).toBe(`/invite?token=${INVITE_TOKEN}`);
+		expect(magicLinkNextPath()).toBe('/invite?id=invitation-uuid');
 		expect(sendEmail).toHaveBeenCalledOnce();
 	});
 

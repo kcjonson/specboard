@@ -119,9 +119,8 @@ import {
 } from './handlers/invitations.ts';
 import {
 	handleLookupInvite,
-	handleAcceptInvite,
-	handleDeclineInvite,
 	handleListMyInvitations,
+	handleGetMyInvitation,
 	handleAcceptMyInvitation,
 	handleDeclineMyInvitation,
 } from './handlers/invite.ts';
@@ -482,12 +481,11 @@ export function createApp(redis: Redis): Hono<{ Variables: AppVariables }> {
 	app.delete('/api/projects/:owner/:project/invitations/:invitation', owner, handleRevokeInvitation);
 
 	// Invitations, the invitee's side: not project routes, since the caller isn't a member yet.
-	// Each answer checks the invitation is addressed to the signed-in account. The /invite
-	// page goes by the emailed token; the projects list goes by id.
+	// The emailed token only finds an invitation; reading and answering one goes by id, for
+	// a signed-in account the invitation is addressed to.
 	app.get('/api/invite', (context) => handleLookupInvite(context, redis));
-	app.post('/api/invite/accept', (context) => handleAcceptInvite(context, redis));
-	app.post('/api/invite/decline', (context) => handleDeclineInvite(context, redis));
 	app.get('/api/invitations', (context) => handleListMyInvitations(context, redis));
+	app.get('/api/invitations/:id', (context) => handleGetMyInvitation(context, redis));
 	app.post('/api/invitations/:id/accept', (context) => handleAcceptMyInvitation(context, redis));
 	app.post('/api/invitations/:id/decline', (context) => handleDeclineMyInvitation(context, redis));
 

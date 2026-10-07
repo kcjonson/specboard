@@ -3,7 +3,8 @@
  *
  * An owner invites an email address with a role; the invitee accepts or declines from
  * the emailed link or their projects list. Callers hash the token: only its SHA-256
- * reaches this module. Rows are never deleted. Re-inviting revokes the open row, and
+ * reaches this module. The token only finds an invitation; answering one goes by id,
+ * for a signed-in account the invitation is addressed to. Rows are never deleted. Re-inviting revokes the open row, and
  * accepting, declining or revoking stamps it, so the owner's view keeps the history.
  *
  * Owner-side functions take a project id that resolveProjectAccess has already
@@ -285,21 +286,37 @@ export async function listInvitationsForUser(userId: string): Promise<Invitation
 	return result.rows.map(toDetails);
 }
 
-/** Whether the user may answer the invitation behind a token. */
-export async function isInvitationAddressedTo(tokenHash: string, userId: string): Promise<boolean> {
-	const result = await query<{ addressed: boolean }>(
-		`SELECT ${addressedToSql('$2')} AS addressed FROM project_invitations i WHERE i.token_hash = $1`,
-		[tokenHash, userId]
-	);
-	return result.rows[0]?.addressed ?? false;
+/**
+ * The invitation with this id, in whatever state, when it is addressed to the user.
+ * Null when there is no such invitation or it is someone else's: the two read the same.
+ */
+export async function getInvitationForUser(invitationId: string, userId: string): Promise<InvitationDetails | null> {
+	const result = await query<DetailsRow>(`${DETAILS_SELECT} WHERE i.id = $1 AND ${addressedToSql('$2')}`, [invitationId, userId]);
+	const row = result.rows[0];
+	return row ? toDetails(row) : null;
 }
 
-/** Which invitation an answer is for: the emailed token's hash, or the id from the user's list. */
-export type InvitationTarget = { tokenHash: string } | { id: string };
+/**
+ * The newest open, unexpired invitation to the same address and project as this one,
+ * other than itself: where to send a recipient whose link was revoked or expired because
+ * the owner invited them again.
+ */
+export async function newerOpenInvitationId(invitationId: string): Promise<string | null> {
+	const result = await query<{ id: string }>(
+		`SELECT i.id FROM project_invitations i
+		 JOIN project_invitations old ON old.id = $1
+		 WHERE i.project_id = old.project_id AND i.email = old.email AND i.id <> old.id
+			AND ${OPEN_SQL} AND i.expires_at > NOW()
+		 ORDER BY i.created_at DESC
+		 LIMIT 1`,
+		[invitationId]
+	);
+	return result.rows[0]?.id ?? null;
+}
 
 /** Why an invitation can't be answered. */
 export type InvitationRefusal =
-	/** No invitation by that token or id. */
+	/** No invitation with that id. */
 	| { refused: 'not_found' }
 	/** It is addressed to an address the caller's account doesn't hold (verified). */
 	| { refused: 'wrong_account' }
@@ -334,25 +351,24 @@ interface LockedInvitation {
 }
 
 /**
- * Lock the target invitation for the rest of the transaction and check the caller may
- * answer it. Checks run in this order: exists, addressed to the caller, still open. So
- * a caller learns nothing about an invitation sent to someone else, not even its state.
+ * Lock the invitation for the rest of the transaction and check the caller may answer
+ * it. Checks run in this order: exists, addressed to the caller, still open. So a caller
+ * learns nothing about an invitation sent to someone else, not even its state.
  */
 async function lockForAnswer(
 	client: pg.PoolClient,
-	target: InvitationTarget,
+	invitationId: string,
 	userId: string
 ): Promise<LockedInvitation | InvitationRefusal> {
-	const [where, value] = 'tokenHash' in target ? ['i.token_hash = $1', target.tokenHash] : ['i.id = $1', target.id];
 	const result = await client.query<LockedInvitation>(
 		`SELECT i.id, i.project_id, i.role, i.invited_by, ${STATE_SQL} AS state, p.owner_id,
 			${addressedToSql('$2')} AS addressed,
 			(SELECT slug FROM users WHERE id = $2) AS user_slug
 		 FROM project_invitations i
 		 JOIN projects p ON p.id = i.project_id
-		 WHERE ${where}
+		 WHERE i.id = $1
 		 FOR UPDATE OF i`,
-		[value, userId]
+		[invitationId, userId]
 	);
 	const row = result.rows[0];
 	if (!row) return { refused: 'not_found' };
@@ -372,9 +388,20 @@ async function detailsById(client: pg.PoolClient, invitationId: string): Promise
  * they have (accepting an invite never changes an existing role; that is the owner's
  * call in the member list) and the invitation is still stamped accepted.
  */
-export async function acceptInvitation(target: InvitationTarget, userId: string): Promise<AcceptInvitationResult> {
+export async function acceptInvitation(invitationId: string, userId: string): Promise<AcceptInvitationResult> {
 	return transaction(async (client) => {
-		const locked = await lockForAnswer(client, target, userId);
+		// Share-lock the project first, the row createInvitation takes FOR NO KEY UPDATE. An
+		// invite of this address then waits for the membership to commit and refuses it as
+		// a member, instead of checking before it exists and leaving a member with an open
+		// invitation. Project before invitation, the same order the invite path locks in.
+		const project = await client.query<{ project_id: string }>(
+			'SELECT project_id FROM project_invitations WHERE id = $1',
+			[invitationId]
+		);
+		if (!project.rows[0]) return { refused: 'not_found' };
+		await client.query('SELECT 1 FROM projects WHERE id = $1 FOR SHARE', [project.rows[0].project_id]);
+
+		const locked = await lockForAnswer(client, invitationId, userId);
 		if ('refused' in locked) return locked;
 		if (locked.owner_id === userId) return { refused: 'owner' };
 		if (!locked.user_slug) return { refused: 'no_slug' };
@@ -402,9 +429,9 @@ export async function acceptInvitation(target: InvitationTarget, userId: string)
 }
 
 /** Decline an invitation. Nothing changes but the stamp; the owner sees it declined. */
-export async function declineInvitation(target: InvitationTarget, userId: string): Promise<DeclineInvitationResult> {
+export async function declineInvitation(invitationId: string, userId: string): Promise<DeclineInvitationResult> {
 	return transaction(async (client) => {
-		const locked = await lockForAnswer(client, target, userId);
+		const locked = await lockForAnswer(client, invitationId, userId);
 		if ('refused' in locked) return locked;
 
 		await client.query('UPDATE project_invitations SET declined_at = NOW() WHERE id = $1', [locked.id]);

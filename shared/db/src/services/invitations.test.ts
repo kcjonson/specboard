@@ -19,9 +19,10 @@ import {
 	createInvitation,
 	declineInvitation,
 	getInvitationByTokenHash,
-	isInvitationAddressedTo,
+	getInvitationForUser,
 	listInvitationsForUser,
 	listPendingInvitations,
+	newerOpenInvitationId,
 	resendInvitation,
 	revokeInvitation,
 	type CreateInvitationInput,
@@ -53,6 +54,11 @@ async function issued(email: string, tokenHash: string, overrides: Partial<Creat
 	const result = await invite(email, tokenHash, overrides);
 	if (!('issued' in result)) throw new Error(`expected an invitation, got ${JSON.stringify(result)}`);
 	return result.issued;
+}
+
+/** The id of the invitation issued with hash(label). */
+async function idOf(label: string): Promise<string> {
+	return (await getInvitationByTokenHash(hash(label)))!.id;
 }
 
 /** A stand-in token hash, distinct per label. */
@@ -133,7 +139,7 @@ describe('the owner\'s pending list', () => {
 		const gone = await issued('gone@example.com', hash('gone'));
 		await revokeInvitation(roadmapId, gone.invitation.id);
 		await issued('newbie@example.com', hash('nb'));
-		await declineInvitation({ tokenHash: hash('nb') }, newbie);
+		await declineInvitation(await idOf('nb'), newbie);
 
 		const pending = await listPendingInvitations(roadmapId);
 		expect(pending.map((i) => [i.email, i.state])).toEqual([
@@ -200,13 +206,27 @@ describe('the recipient\'s view', () => {
 		expect(await listInvitationsForUser(vera)).toEqual([]);
 	});
 
-	it('says whether a token\'s invitation is addressed to a user', async () => {
-		await issued('pat@example.com', hash('p'));
+	it('reads an invitation by id only for the account it is addressed to, in any state', async () => {
+		const sent = await issued('pat@example.com', hash('p'));
 		await issued('una@example.com', hash('u'));
-		expect(await isInvitationAddressedTo(hash('p'), pat)).toBe(true);
-		expect(await isInvitationAddressedTo(hash('p'), vera)).toBe(false);
-		expect(await isInvitationAddressedTo(hash('u'), unverified)).toBe(false);
-		expect(await isInvitationAddressedTo(hash('nope'), pat)).toBe(false);
+		await revokeInvitation(roadmapId, sent.invitation.id);
+
+		expect(await getInvitationForUser(sent.invitation.id, pat)).toMatchObject({ id: sent.invitation.id, state: 'revoked' });
+		expect(await getInvitationForUser(sent.invitation.id, vera)).toBeNull();
+		expect(await getInvitationForUser(await idOf('u'), unverified)).toBeNull();
+		expect(await getInvitationForUser(crypto.randomUUID(), pat)).toBeNull();
+	});
+
+	it('finds the open invitation that replaced a revoked or expired one', async () => {
+		const first = await issued('pat@example.com', hash('first'));
+		expect(await newerOpenInvitationId(first.invitation.id)).toBeNull();
+
+		const second = await issued('pat@example.com', hash('second'));
+		expect(await newerOpenInvitationId(first.invitation.id)).toBe(second.invitation.id);
+		expect(await newerOpenInvitationId(second.invitation.id)).toBeNull();
+
+		await db.query("UPDATE project_invitations SET expires_at = NOW() - interval '1 minute' WHERE id = $1", [second.invitation.id]);
+		expect(await newerOpenInvitationId(first.invitation.id)).toBeNull();
 	});
 });
 
@@ -228,7 +248,7 @@ async function memberRole(userId: string): Promise<string | undefined> {
 describe('accepting', () => {
 	it('adds the member with the invited role and stamps the invitation, by token or by id', async () => {
 		await issued('pat@example.com', hash('p'));
-		const result = await acceptInvitation({ tokenHash: hash('p') }, pat);
+		const result = await acceptInvitation(await idOf('p'), pat);
 
 		expect(result).toMatchObject({ role: 'editor', alreadyMember: false, invitation: { state: 'accepted', ownerSlug: 'alice', projectSlug: 'roadmap' } });
 		expect(await memberRole(pat)).toBe('editor');
@@ -237,33 +257,33 @@ describe('accepting', () => {
 
 		await db.query('DELETE FROM project_members WHERE user_id = $1', [pat]);
 		const byId = await issued('pat@example.com', hash('p2'), { role: 'viewer' });
-		expect(await acceptInvitation({ id: byId.invitation.id }, pat)).toMatchObject({ role: 'viewer', alreadyMember: false });
+		expect(await acceptInvitation(byId.invitation.id, pat)).toMatchObject({ role: 'viewer', alreadyMember: false });
 	});
 
 	it('refuses an account that doesn\'t hold the invited address, and changes nothing', async () => {
 		await issued('pat@example.com', hash('p'));
-		expect(await acceptInvitation({ tokenHash: hash('p') }, vera)).toEqual({ refused: 'wrong_account' });
+		expect(await acceptInvitation(await idOf('p'), vera)).toEqual({ refused: 'wrong_account' });
 		expect((await getInvitationByTokenHash(hash('p')))?.state).toBe('open');
 	});
 
 	it('refuses an unverified address', async () => {
 		await issued('una@example.com', hash('u'));
-		expect(await acceptInvitation({ tokenHash: hash('u') }, unverified)).toEqual({ refused: 'wrong_account' });
+		expect(await acceptInvitation(await idOf('u'), unverified)).toEqual({ refused: 'wrong_account' });
 		expect(await memberRole(unverified)).toBeUndefined();
 	});
 
 	it('says which way an invitation closed', async () => {
 		await issued('pat@example.com', hash('p'));
 		await db.query("UPDATE project_invitations SET expires_at = NOW() - interval '1 minute'");
-		expect(await acceptInvitation({ tokenHash: hash('p') }, pat)).toEqual({ refused: 'closed', state: 'expired' });
+		expect(await acceptInvitation(await idOf('p'), pat)).toEqual({ refused: 'closed', state: 'expired' });
 
 		const revoked = await issued('pat@example.com', hash('r'));
 		await revokeInvitation(roadmapId, revoked.invitation.id);
-		expect(await acceptInvitation({ tokenHash: hash('r') }, pat)).toEqual({ refused: 'closed', state: 'revoked' });
+		expect(await acceptInvitation(await idOf('r'), pat)).toEqual({ refused: 'closed', state: 'revoked' });
 
 		await issued('pat@example.com', hash('a'));
-		await acceptInvitation({ tokenHash: hash('a') }, pat);
-		expect(await acceptInvitation({ tokenHash: hash('a') }, pat)).toEqual({ refused: 'closed', state: 'accepted' });
+		await acceptInvitation(await idOf('a'), pat);
+		expect(await acceptInvitation(await idOf('a'), pat)).toEqual({ refused: 'closed', state: 'accepted' });
 		expect(await memberRole(pat)).toBe('editor');
 	});
 
@@ -272,7 +292,7 @@ describe('accepting', () => {
 		await issued('former-alice@example.com', hash('o'));
 		await db.query("UPDATE users SET email = 'former-alice@example.com' WHERE id = $1", [alice]);
 		try {
-			expect(await acceptInvitation({ tokenHash: hash('o') }, alice)).toEqual({ refused: 'owner' });
+			expect(await acceptInvitation(await idOf('o'), alice)).toEqual({ refused: 'owner' });
 			expect(await memberRole(alice)).toBeUndefined();
 		} finally {
 			await db.query("UPDATE users SET email = 'alice@example.com' WHERE id = $1", [alice]);
@@ -284,7 +304,7 @@ describe('accepting', () => {
 		await issued('vera-new@example.com', hash('v'), { role: 'editor' });
 		await db.query("UPDATE users SET email = 'vera-new@example.com' WHERE id = $1", [vera]);
 		try {
-			const result = await acceptInvitation({ tokenHash: hash('v') }, vera);
+			const result = await acceptInvitation(await idOf('v'), vera);
 			expect(result).toMatchObject({ role: 'viewer', alreadyMember: true, invitation: { state: 'accepted' } });
 			expect(await memberRole(vera)).toBe('viewer');
 		} finally {
@@ -294,28 +314,28 @@ describe('accepting', () => {
 
 	it('refuses an account that hasn\'t onboarded, leaving the invitation open', async () => {
 		await issued('newbie@example.com', hash('n'));
-		expect(await acceptInvitation({ tokenHash: hash('n') }, newbie)).toEqual({ refused: 'no_slug' });
+		expect(await acceptInvitation(await idOf('n'), newbie)).toEqual({ refused: 'no_slug' });
 		expect((await getInvitationByTokenHash(hash('n')))?.state).toBe('open');
 	});
 
 	it('finds nothing for an unknown token or id', async () => {
-		expect(await acceptInvitation({ tokenHash: hash('nope') }, pat)).toEqual({ refused: 'not_found' });
-		expect(await acceptInvitation({ id: crypto.randomUUID() }, pat)).toEqual({ refused: 'not_found' });
+		expect(await acceptInvitation(crypto.randomUUID(), pat)).toEqual({ refused: 'not_found' });
+		expect(await acceptInvitation(crypto.randomUUID(), pat)).toEqual({ refused: 'not_found' });
 	});
 });
 
 describe('declining', () => {
 	it('stamps the invitation without adding a member, and needs no slug', async () => {
 		await issued('newbie@example.com', hash('n'));
-		const result = await declineInvitation({ tokenHash: hash('n') }, newbie);
+		const result = await declineInvitation(await idOf('n'), newbie);
 		expect(result).toMatchObject({ invitation: { state: 'declined' } });
 		expect(await memberRole(newbie)).toBeUndefined();
-		expect(await declineInvitation({ tokenHash: hash('n') }, newbie)).toEqual({ refused: 'closed', state: 'declined' });
+		expect(await declineInvitation(await idOf('n'), newbie)).toEqual({ refused: 'closed', state: 'declined' });
 	});
 
 	it('refuses someone it isn\'t addressed to', async () => {
 		await issued('pat@example.com', hash('p'));
-		expect(await declineInvitation({ tokenHash: hash('p') }, vera)).toEqual({ refused: 'wrong_account' });
+		expect(await declineInvitation(await idOf('p'), vera)).toEqual({ refused: 'wrong_account' });
 		expect((await getInvitationByTokenHash(hash('p')))?.state).toBe('open');
 	});
 });

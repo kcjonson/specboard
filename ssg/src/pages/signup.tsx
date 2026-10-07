@@ -7,7 +7,9 @@
  *
  * Opened from a project invitation (/signup?invite=<token>), the invitation stands
  * in for the invite key and the account is for the invited address, which shows
- * masked and locked. Signing in then lands back on the invite.
+ * masked and locked. The page never learns the full address: a typed code is sent
+ * with the invitation token and the server looks the address up. Signing in then
+ * lands back on the invite.
  */
 import type { JSX } from 'preact';
 import { BrandLogo } from '../components/logo';
@@ -138,7 +140,6 @@ export const signupScript = `(function() {
 		inviteKeyInput.required = false;
 		emailInput.disabled = true;
 		submitBtn.disabled = true;
-		loginLink.href = '/login?next=' + encodeURIComponent('/invite?token=' + inviteToken);
 
 		fetch('/api/invite?token=' + encodeURIComponent(inviteToken), { credentials: 'same-origin' })
 		.then(parseJson)
@@ -148,6 +149,7 @@ export const signupScript = `(function() {
 					'. Create your account with the address the invite was sent to.';
 				inviteIntro.classList.remove('hidden');
 				emailInput.value = result.data.email;
+				loginLink.href = '/login?next=' + encodeURIComponent('/invite?id=' + result.data.id);
 				submitBtn.disabled = false;
 			} else {
 				showError('This invite is no longer valid. Ask whoever invited you to send a new one.');
@@ -182,6 +184,7 @@ export const signupScript = `(function() {
 			submitBtn.disabled = false;
 			submitBtn.textContent = 'Create Account';
 			if (result.ok) {
+				// Masked when an invitation opened the signup; the code then goes with the token.
 				pendingEmail = result.data.email;
 				codeEmailEl.textContent = result.data.email;
 				signupSection.classList.add('hidden');
@@ -209,7 +212,9 @@ export const signupScript = `(function() {
 		fetch('/api/auth/magic-link/verify', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ email: pendingEmail, code: codeInput.value }),
+			body: JSON.stringify(inviteToken
+				? { invite_token: inviteToken, code: codeInput.value }
+				: { email: pendingEmail, code: codeInput.value }),
 			credentials: 'same-origin'
 		})
 		.then(parseJson)
