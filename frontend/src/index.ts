@@ -152,6 +152,10 @@ app.get('/verify-email/confirm', (c) => servePage(c, pages.verifyEmailConfirm));
 // Magic link landing page (no auth required)
 app.get('/magic-link', (c) => servePage(c, pages.magicLink));
 
+// Project invite landing page (no auth required). Served signed in or out, and ahead of
+// the onboarding redirect: the page itself sends a not-yet-onboarded invitee there.
+app.get('/invite', (c) => servePage(c, pages.invite));
+
 // Password reset pages (no auth required)
 app.get('/forgot-password', (c) => servePage(c, pages.forgotPassword));
 app.get('/reset-password', (c) => servePage(c, pages.resetPassword));
@@ -504,7 +508,7 @@ function hiddenRouteResponse(): Response {
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/signup', '/home', '/privacy', '/setup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
+		excludePaths: ['/health', '/login', '/signup', '/invite', '/home', '/privacy', '/setup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
 		onUnauthenticated: hiddenRouteResponse,
 	})
 );

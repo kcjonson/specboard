@@ -1,0 +1,51 @@
+/**
+ * Project invite page. Builds on auth.css (card, states, .btn, .message-box).
+ */
+
+.invite-container .hidden {
+	display: none;
+}
+
+.invite-card {
+	padding: 1rem;
+	margin-bottom: 1.5rem;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	overflow-wrap: break-word;
+}
+
+.invite-card p {
+	margin: 0;
+}
+
+.invite-card .invite-owner {
+	margin-top: 0.5rem;
+	font-size: 0.875rem;
+	color: var(--color-text-muted);
+}
+
+.invite-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.invite-actions .description,
+.invite-actions .note {
+	margin-bottom: 0;
+}
+
+.invite-actions .btn {
+	margin-top: 0;
+	text-align: center;
+}
+
+.auth-container .btn.secondary {
+	background: var(--color-surface);
+	color: var(--color-text);
+	border: 1px solid var(--color-border);
+}
+
+.invite-container .message-box {
+	text-align: left;
+}
