@@ -247,10 +247,12 @@ the invited address masked and locked, hides the invite key, and posts
 `INVITE_KEYS` key, and the account is always for the invited address: an `email`
 in the body must equal it (403 otherwise), and the page sends none. An expired,
 revoked, used, or unknown token is a 403. The new account's `signup_metadata`
-records `project_invitation_id` instead of `invite_key`. The magic link's `next`
-is `/invite?token=<token>`, for a new account and an existing one alike, so the
-invitee comes back to the invitation once signed in. The response carries the
-address, which the code form needs to verify a typed code.
+records `project_invitation_id` instead of `invite_key`. The magic link's
+`next_path` is `/invite?id=<invitation id>`, for a new account and an existing one
+alike, so the invitee comes back to the invitation once signed in; the raw token
+is never stored. Whoever holds the token may not own the address, so the response
+shows it masked, and the code form sends `{ invite_token, code }` to
+`/api/auth/magic-link/verify`, which looks the address up from the invitation.
 
 **Onboarding**: the first magic-link login creates a session with
 `profile_complete: false` (username still NULL). The frontend service
@@ -268,7 +270,7 @@ self-heal on their next visit to `/onboarding`. `GET /api/auth/me` exposes
 
 Onboarding honors `?next=`: once the account is set up it leaves with a full page
 load to that path, or to `/` without one. The /invite page sends an invitee who
-hasn't onboarded to `/onboarding?next=/invite?token=...`, since accepting needs
+hasn't onboarded to `/onboarding?next=/invite?id=...`, since accepting needs
 the user slug onboarding claims. The server's own onboarding redirect carries no
 `next`.
 
@@ -278,6 +280,11 @@ Server-side, and in the onboarding page, that is `safeNextPath` in
 characters, at most 2048 characters). The SSG pages' inline scripts (login,
 signup, magic link) share its browser-side twin, `safeNext`
 (`ssg/src/scripts/safe-next.ts`), which also falls back to `/`.
+
+**Referrer-Policy**: pages whose URL carries an emailed token or an invitation
+(`/magic-link`, `/reset-password`, `/verify-email/confirm`, `/invite`, `/signup`,
+`/onboarding`) are served with `Referrer-Policy: no-referrer`
+(`frontend/src/referrer-policy.ts`), so the URL never leaves as a Referer.
 
 ### 2. User Login (Username or Email)
 
@@ -338,7 +345,8 @@ Browser                        API                      PostgreSQL
    │                            │                            │
    │ POST /api/auth/magic-link/ │                            │
    │ verify {token} OR          │                            │
-   │ {email, code}              │                            │
+   │ {email, code} OR           │                            │
+   │ {invite_token, code}       │                            │
    │───────────────────────────►│                            │
    │                            │ Lookup by hash; for codes, │
    │                            │ count attempt BEFORE       │

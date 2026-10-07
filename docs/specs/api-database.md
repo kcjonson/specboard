@@ -500,27 +500,35 @@ since it carries invitees' addresses. An invitation is
   `/invite?token=...`. It goes through the same `sendEmail` path as the magic link.
 
 The invitee's side is not under a project, since the caller isn't a member yet, so it has no
-`requireProjectAccess` gate. Every answer instead needs a session whose account's verified
-email is the invited address.
+`requireProjectAccess` gate. The emailed token only finds an invitation. Reading and answering
+one goes by its id, and needs a session whose account's verified email is the invited address.
+So the raw token never travels past the first page load: the /invite page's sign-in, signup and
+onboarding hops come back as `/invite?id=...`, and only the token's hash is stored anywhere.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/invite?token=... | What the /invite page shows: `{ state, role, projectName, ownerName, inviterName, email, addressedToYou }`. `email` is masked (`k•••@example.com`); `addressedToYou` is null signed out. No side effects |
-| POST | /api/invite/accept | Body `{ token }`; answers `{ project: { ref, name }, role, alreadyMember }` |
-| POST | /api/invite/decline | Body `{ token }` |
+| GET | /api/invite?token=... | What the /invite page shows: `{ id, state, role, projectName, ownerName, inviterName, email, addressedToYou }`. `email` is masked (`k•••@example.com`); `addressedToYou` is null signed out. No side effects |
 | GET | /api/invitations | The signed-in user's open, unexpired invitations: `{ id, role, project: { ref, name }, ownerName, inviterName, createdAt, expiresAt }` |
-| POST | /api/invitations/:id/accept | As above, by id |
-| POST | /api/invitations/:id/decline | As above, by id |
+| GET | /api/invitations/:id | One invitation addressed to the signed-in user, in any state, shaped like the token lookup |
+| POST | /api/invitations/:id/accept | Answers `{ project: { ref, name }, role, alreadyMember }` |
+| POST | /api/invitations/:id/decline | |
 
-Answers that are refused: no session 401; unknown or malformed token or id 404; addressed to
-another account 403 `WRONG_ACCOUNT` by token, 404 by id (an id says nothing about other
-people's invitations); expired, revoked, accepted or declined 410 `INVITATION_CLOSED` with
-`state`; the owner accepting 409 `PROJECT_OWNER` (the owner never gets a membership); an
-account without a slug accepting 409 `ONBOARDING_REQUIRED` (members are addressed by slug).
+When the invitation is the caller's (`addressedToYou: true`), both reads add `project: { ref, name }`,
+so an accepted invite can link to the project, and for a revoked, expired or declined one
+`openInvitationId`: the newest open invitation to the same address and project, if the owner
+invited them again, else null.
+
+Refusals: no session 401 (a session-less POST is refused by CSRF with 403 first); unknown,
+malformed or someone else's id 404, the same answer, so an id says nothing about other people's
+invitations; expired, revoked, accepted or declined 410 `INVITATION_CLOSED` with `state`; the
+owner accepting 409 `PROJECT_OWNER` (the owner never gets a membership); an account without a
+slug accepting 409 `ONBOARDING_REQUIRED` (members are addressed by slug).
 Accepting as someone who is already a member stamps the invitation accepted and keeps the
 role they have, `alreadyMember: true`; changing a role is the owner's call in the member list.
 Accepting adds the membership (`added_by` is the inviter) and stamps the invitation in one
-transaction.
+transaction. It share-locks the project row first, the row inviting takes, so a re-invite of
+the same address either waits and refuses them as a member or revokes the invite before they
+can accept it; never a member left with an open invitation.
 
 ### Project Storage (see [project-storage.md](./project-storage.md))
 
