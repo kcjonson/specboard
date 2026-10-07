@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { useModel, NotesCollection } from '@specboard/models';
+import { useModel, NotesCollection, writeFailure } from '@specboard/models';
 import { Button, Text } from '@specboard/ui';
 import { formatTimeAgo } from '../utils/time';
 import { actorLabel } from '../utils/actor';
-import { writeFailure } from '../utils/write-error';
 import styles from './NotesSection.module.css';
 
 export interface NotesSectionProps {

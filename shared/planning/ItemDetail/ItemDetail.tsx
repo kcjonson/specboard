@@ -3,10 +3,9 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
 import { navigate } from '@specboard/router';
-import { useModel, useProjectRole, ItemModel } from '@specboard/models';
+import { useModel, useProjectRole, ItemModel, writeFailure } from '@specboard/models';
 import { Icon, Notice, Page } from '@specboard/ui';
 import { ItemView } from '../ItemView/ItemView';
-import { writeFailure } from '../utils/write-error';
 import styles from './ItemDetail.module.css';
 
 export function ItemDetail({ params }: RouteProps): JSX.Element {

@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { useModel, BlockersCollection, type BlockerModel } from '@specboard/models';
+import { useModel, BlockersCollection, type BlockerModel, writeFailure } from '@specboard/models';
 import { Button, Text } from '@specboard/ui';
-import { writeFailure } from '../utils/write-error';
 import styles from './BlockersSection.module.css';
 
 export interface BlockersSectionProps {

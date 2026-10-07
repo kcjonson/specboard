@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
-import { useModel, type ItemModel, type ItemStatus, type SubStatus } from '@specboard/models';
+import { useModel, type ItemModel, type ItemStatus, type SubStatus, writeFailure } from '@specboard/models';
 import { Button, DialogFooter, Select } from '@specboard/ui';
 import { ItemPicker } from '@specboard/pages';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
@@ -14,7 +14,6 @@ import { actorLabel } from '../utils/actor';
 import { TYPE_LABELS } from '../utils/itemType';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import { formatDateTime, formatTimeAgo } from '../utils/time';
-import { writeFailure } from '../utils/write-error';
 import styles from './ItemView.module.css';
 
 /** Titles stay one line of text; the textarea is only there so it wraps visually. */

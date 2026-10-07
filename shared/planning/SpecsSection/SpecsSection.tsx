@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
-import { useModel, SpecsCollection, type SpecModel } from '@specboard/models';
+import { useModel, SpecsCollection, type SpecModel, writeFailure } from '@specboard/models';
 import { Button } from '@specboard/ui';
 import { FilePicker } from '../FilePicker/FilePicker';
-import { writeFailure } from '../utils/write-error';
 import styles from './SpecsSection.module.css';
 
 const TYPE_LABELS: Record<string, string> = {

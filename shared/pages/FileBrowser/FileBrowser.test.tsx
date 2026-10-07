@@ -33,14 +33,21 @@ describe('FileBrowser with no repository', () => {
 		delete window.platform;
 	});
 
-	it('points a web user at project settings instead of offering a local folder', async () => {
-		const { findByText, queryByText, getByRole } = render(<FileBrowser projectRef="acme/specboard" />);
+	it('points the owner at project settings instead of offering a local folder', async () => {
+		const { findByText, queryByText, getByRole } = render(<FileBrowser projectRef="acme/specboard" canOpenSettings />);
 
 		await findByText('No repository connected');
 		expect(queryByText('+ Add Folder')).toBeNull();
 		expect(getByRole('link', { name: 'Open project settings' }).getAttribute('href')).toBe(
 			'/projects?edit=acme/specboard'
 		);
+	});
+
+	it('leaves the settings link off for anyone but the owner', async () => {
+		const { findByText, queryByRole } = render(<FileBrowser projectRef="acme/specboard" />);
+
+		await findByText('No repository connected');
+		expect(queryByRole('link', { name: 'Open project settings' })).toBeNull();
 	});
 
 	it('still points at settings when the shell exposes no folder picker', async () => {

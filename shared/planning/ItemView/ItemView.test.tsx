@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, act, waitFor } from '@testing-library/preact';
-import { FetchError } from '@specboard/fetch';
+import { FetchError, fetchClient } from '@specboard/fetch';
 import { ItemModel } from '@specboard/models';
 import { ItemView } from './ItemView';
 
@@ -29,12 +29,6 @@ vi.mock('@specboard/fetch', async (importOriginal) => {
 	};
 });
 
-// A refused write re-reads the project's role; that read is not what these tests are about.
-const refreshProject = vi.fn();
-vi.mock('@specboard/models', async (importOriginal) => ({
-	...(await importOriginal<typeof import('@specboard/models')>()),
-	refreshProject: (...args: unknown[]) => refreshProject(...args),
-}));
 
 // The sections below the header each fetch and render their own trees; none of
 // them are what these tests are about. The parent picker fetches on open, and
@@ -327,7 +321,7 @@ describe('ItemView refused writes', () => {
 		fireEvent.change(container.querySelector('select#item-status')!, { target: { value: 'done' } });
 
 		await findByRole('alert');
-		expect(refreshProject).toHaveBeenCalledWith('acme/specboard');
+		expect(fetchClient.get).toHaveBeenCalledWith('/api/projects/acme/specboard');
 		expect(item.status).toBe('ready');
 	});
 
@@ -339,6 +333,6 @@ describe('ItemView refused writes', () => {
 		fireEvent.change(container.querySelector('select#item-status')!, { target: { value: 'done' } });
 
 		expect((await findByRole('alert')).textContent).toBe('Could not change the status.');
-		expect(refreshProject).not.toHaveBeenCalled();
+		expect(fetchClient.get).not.toHaveBeenCalled();
 	});
 });

@@ -7,18 +7,20 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor } from '@testing-library/preact';
-import { saveToLocalStorage } from '@specboard/models';
+import { render, waitFor, act } from '@testing-library/preact';
+import { FetchError } from '@specboard/fetch';
+import { saveToLocalStorage, type DocumentModel } from '@specboard/models';
 import { memoryStorage } from '../../planning/test-support/memory-storage';
 
 const get = vi.fn();
+const put = vi.fn();
 
 vi.mock('@specboard/fetch', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@specboard/fetch')>()),
 	fetchClient: {
 		get: (...args: unknown[]) => get(...args),
 		post: vi.fn(),
-		put: vi.fn(),
+		put: (...args: unknown[]) => put(...args),
 		delete: vi.fn(),
 	},
 }));
@@ -86,6 +88,7 @@ function renderEditor(project: string): ReturnType<typeof render> {
 beforeEach(() => {
 	vi.stubGlobal('localStorage', memoryStorage());
 	get.mockReset();
+	put.mockReset();
 	seen.editor = seen.header = seen.files = seen.chat = null;
 });
 
@@ -102,7 +105,7 @@ describe('Editor for a viewer', () => {
 		expect(seen.editor).toMatchObject({ readOnly: true, onAddComment: undefined, onReply: undefined, onToggleResolved: undefined });
 		expect(seen.header).toMatchObject({ onRename: undefined, onCreateEpic: undefined, onLinkEpic: undefined });
 		expect(seen.header?.onViewEpic).toBeTypeOf('function');
-		expect(seen.files).toMatchObject({ readOnly: true });
+		expect(seen.files).toMatchObject({ readOnly: true, canOpenSettings: false });
 		expect(seen.chat).toMatchObject({ onApplyEdit: undefined });
 	});
 
@@ -155,3 +158,33 @@ describe('Editor on a local project', () => {
 		expect(await findByTestId('file-browser')).toBeTruthy();
 	});
 });
+
+describe('Editor saves the server refuses', () => {
+	it('shows the server\'s reason, doesn\'t retry, and turns read-only', async () => {
+		const roles = { grantedRole: 'editor', effectiveRole: 'editor' };
+		serve('demoted', roles);
+		const { findByTestId, findByText, queryByText } = renderEditor('demoted');
+		await findByTestId('markdown-editor');
+		expect(seen.editor).toMatchObject({ readOnly: false });
+
+		// Demoted while the page was open; the next save is refused.
+		Object.assign(roles, { grantedRole: 'viewer', effectiveRole: 'viewer' });
+		put.mockRejectedValue(new FetchError('HTTP 403: Forbidden', 403, undefined, {
+			error: 'You have view access to this project',
+			reason: 'viewer',
+		}));
+		const model = seen.editor!.model as DocumentModel;
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		// Switching files saves the dirty one first, without waiting on the autosave debounce.
+		await act(async () => {
+			await (seen.files!.onFileSelect as (path: string) => Promise<void>)('/docs/other.md');
+		});
+
+		expect(await findByText(/You have view access to this project/)).toBeTruthy();
+		expect(queryByText(/Retrying automatically/)).toBeNull();
+		expect(queryByText('Retry Now')).toBeNull();
+		expect(put).toHaveBeenCalledTimes(1);
+		await waitFor(() => expect(seen.editor).toMatchObject({ readOnly: true }));
+	});
+});
+

@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { useModel, ChecklistCollection, type ChecklistEntryModel } from '@specboard/models';
+import { useModel, ChecklistCollection, type ChecklistEntryModel, writeFailure } from '@specboard/models';
 import { Button, Checkbox, Text } from '@specboard/ui';
-import { writeFailure } from '../utils/write-error';
 import styles from './ChecklistSection.module.css';
 
 export interface ChecklistSectionProps {

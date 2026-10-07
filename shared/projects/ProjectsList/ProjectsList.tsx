@@ -4,20 +4,12 @@ import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
 import { getCookie, setCookie } from '@specboard/core/cookies';
 import { formatProjectRef } from '@specboard/core/identifiers';
-import { fetchClient, FetchError } from '@specboard/fetch';
+import { fetchClient, fetchErrorText } from '@specboard/fetch';
 import { Button, Page } from '@specboard/ui';
 import { ProjectCard, isCloudRepository, type Project } from '../ProjectCard/ProjectCard';
 import { ProjectDialog, type RepositoryConfig } from '../ProjectDialog/ProjectDialog';
 import { SyncProgressDialog } from '../SyncProgressDialog/SyncProgressDialog';
 import styles from './ProjectsList.module.css';
-
-/** The API's own error text when it sent one, so 409s name the field that collided. */
-function apiErrorMessage(err: unknown, fallback: string): string {
-	if (err instanceof FetchError && typeof (err.data as { error?: unknown })?.error === 'string') {
-		return (err.data as { error: string }).error;
-	}
-	return err instanceof Error ? err.message : fallback;
-}
 
 function toProjectRef(project: Project): string {
 	return formatProjectRef(project.ownerSlug, project.slug);
@@ -147,7 +139,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			// with it) for a full-screen retry panel — a taken slug would discard the form.
 			// A taken slug or key comes back as a 409 whose body says which one; FetchError's
 			// own message is just "HTTP 409: Conflict", so prefer the server's wording.
-			throw new Error(apiErrorMessage(err, 'Failed to save project'), { cause: err });
+			throw new Error(fetchErrorText(err, 'Failed to save project'), { cause: err });
 		}
 	}
 
@@ -161,7 +153,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		} catch (err) {
 			// Rethrow for the same reason handleSaveProject does: the page-level error
 			// swaps the list — and the open confirm dialog with it — for a retry panel.
-			throw new Error(apiErrorMessage(err, 'Failed to delete project'), { cause: err });
+			throw new Error(fetchErrorText(err, 'Failed to delete project'), { cause: err });
 		}
 	}
 

@@ -1,12 +1,11 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { useModel, ItemModel, type ChildModel, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type ChildModel, type ItemType, writeFailure } from '@specboard/models';
 import { SplitButton, StatusGlyph, STATUS_LABELS, type SplitButtonOption } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import type { NewItemData } from '../NewItemForm/NewItemForm';
 import { TYPE_LABELS } from '../utils/itemType';
-import { writeFailure } from '../utils/write-error';
 import styles from './ChildrenSection.module.css';
 
 /**

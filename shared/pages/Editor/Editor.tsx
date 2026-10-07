@@ -11,6 +11,7 @@ import {
 	useModel,
 	useProject,
 	useProjectRole,
+	writeFailure,
 	saveToLocalStorage,
 	loadFromLocalStorage,
 	hasPersistedContent,
@@ -44,8 +45,11 @@ const CENTER_MIN_WIDTH = 360;
 interface SaveError {
 	hasLocalChanges: boolean;
 	lastAttempt: Date;
-	retryCount: number;
 	message: string;
+	/** Another attempt is scheduled. */
+	retrying: boolean;
+	/** The server refused the write (403); retrying can't help, so none is offered. */
+	refused: boolean;
 }
 
 interface LoadError {
@@ -337,7 +341,11 @@ export function Editor(props: RouteProps): JSX.Element {
 
 			return true;
 		} catch (err) {
-			const errorMessage = err instanceof Error ? err.message : 'Failed to save';
+			// A refusal (403) is the role having moved under the page: writeFailure re-reads
+			// the project so the editor turns read-only, and retrying would only be refused
+			// again. Anything else may be transient and is retried.
+			const refused = err instanceof FetchError && err.status === 403;
+			const errorMessage = writeFailure(err, 'Failed to save', projectRef);
 			console.error('Server save failed:', errorMessage);
 
 			// Ensure localStorage has latest changes as fallback
@@ -345,15 +353,16 @@ export function Editor(props: RouteProps): JSX.Element {
 
 			// Update error state
 			saveRetryCount.current++;
+			const retrying = !refused && saveRetryCount.current < MAX_SAVE_RETRIES;
 			setSaveError({
 				hasLocalChanges: true,
 				lastAttempt: new Date(),
-				retryCount: saveRetryCount.current,
 				message: errorMessage,
+				retrying,
+				refused,
 			});
 
-			// Schedule retry if under max retries
-			if (saveRetryCount.current < MAX_SAVE_RETRIES) {
+			if (retrying) {
 				if (saveRetryTimerRef.current) {
 					clearTimeout(saveRetryTimerRef.current);
 				}
@@ -762,9 +771,8 @@ export function Editor(props: RouteProps): JSX.Element {
 			{saveError && (
 				<SaveErrorBanner
 					message={saveError.message}
-					retryCount={saveError.retryCount}
-					maxRetries={MAX_SAVE_RETRIES}
-					onRetry={handleRetryManual}
+					retrying={saveError.retrying}
+					onRetry={saveError.refused ? undefined : handleRetryManual}
 				/>
 			)}
 			<div class={styles.body} ref={bodyRef}>
@@ -805,6 +813,7 @@ export function Editor(props: RouteProps): JSX.Element {
 						onBeforePull={handleBeforePull}
 						onPullComplete={handlePullComplete}
 						readOnly={!canEdit}
+						canOpenSettings={isOwner}
 						class={styles.sidebar}
 					/>
 				</ResizablePanel>
@@ -938,7 +947,9 @@ export function Editor(props: RouteProps): JSX.Element {
 								<div class={styles.emptyStateIcon}><Icon name="file" class="size-2xl" /></div>
 								<div class={styles.emptyStateTitle}>No file selected</div>
 								<div class={styles.emptyStateHint}>
-									Select a markdown file from the sidebar to start editing
+									{canEdit
+										? 'Select a markdown file from the sidebar to start editing'
+										: 'Select a markdown file from the sidebar to read it'}
 								</div>
 								<div class={`${styles.emptyStateActions} mobile-only`}>
 									<Button onClick={() => setFilesOpen(true)}>Browse files</Button>

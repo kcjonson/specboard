@@ -72,6 +72,8 @@ export interface FileBrowserProps {
 	 * and no pending-changes count. For someone who can't edit the project.
 	 */
 	readOnly?: boolean;
+	/** Whether to link to project settings when there's no repository; only the owner can change it. */
+	canOpenSettings?: boolean;
 	/** Additional CSS class */
 	class?: string;
 }
@@ -92,6 +94,7 @@ export function FileBrowser({
 	onBeforePull,
 	onPullComplete,
 	readOnly = false,
+	canOpenSettings = false,
 	class: className,
 }: FileBrowserProps): JSX.Element {
 	// Create model instance once per component
@@ -533,7 +536,7 @@ export function FileBrowser({
 							<div class={styles.emptyHint}>
 								Pages come from a GitHub repository. This project doesn't have one yet.
 							</div>
-							{!readOnly && (
+							{canOpenSettings && (
 								<a href={`/projects?edit=${projectRef}`} class={styles.settingsLink}>
 									Open project settings
 								</a>
