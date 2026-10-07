@@ -401,7 +401,7 @@ Single-user assumptions surface as soon as there are two users:
   back to initials. It replaces the three copies of `getInitials` (`UserMenu`,
   `ItemCard`, `InlineComment`).
 - **Actor names.** "Created by", "Working now" and the activity log print
-  "User" today, because `apiActorView` (`api/src/types.ts`) strips everything but
+  "User" today, because `actorView` (`shared/db/src/views.ts`) strips everything but
   type, device and client. Actor views gain the user's display name and avatar,
   resolved server-side. User ids stay stripped, per `item-relationships.md`.
 - **Assignee picker.** `items.assignee` already exists and nothing writes it.
@@ -494,7 +494,12 @@ Phase 2 (membership and the authorization boundary, SPE-206) is built:
   member projects with `grantedRole` and `effectiveRole` (and `ownerName` on the REST
   list); API project views no longer carry `ownerId`.
 - A local project is board-only for members: its files are on the owner's machine,
-  so storage routes give a member no storage.
+  so storage routes give a member no storage, and project responses send members no
+  repository (its `localPath` is a path on the owner's disk).
+- Item, note, blocker and worker views (`shared/db/src/views.ts`) are shared by REST and
+  MCP, so no surface hands another member's agent an actor's user id, OAuth client id
+  or session id. A blocker key that names no item in the project is "not found" (REST
+  404) on every path, like parent and discovered-from keys.
 - The member-management API (list, change role, remove, leave) is in
   [api-database.md](./api-database.md), Project Members. Members are addressed by user
   slug.

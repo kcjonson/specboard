@@ -419,7 +419,12 @@ project route registered without a role.
 
 Project responses carry `ownerSlug` next to `slug`, and the caller's `grantedRole` and
 `effectiveRole`. They carry no user ids; the list adds `ownerName` so shared projects can say
-whose they are.
+whose they are. A member is sent no `repository` for a local project, whose `localPath` is a
+path on the owner's disk.
+
+Items, notes, blockers and workers go out through the views in `shared/db/src/views.ts`, the
+same ones MCP uses: actors keep their type, device name and client, never a user id, OAuth
+client id or session id.
 
 ### Projects
 
