@@ -52,8 +52,19 @@ const EXPECTED: Record<Persona, Record<ProjectRole, Outcome>> = {
 
 const PERSONAS = Object.keys(EXPECTED) as Persona[];
 
-/** Tools that change the board; the spec makes every one of them editor. */
-const WRITE_TOOLS = new Set(['create_item', 'create_items', 'update_item', 'delete_item']);
+/**
+ * The role every tool should need, from the spec's matrix: reads are viewer, board
+ * writes are editor. Written out per tool, so a tool added to the registry without a
+ * line here fails, and so does one whose declared role drifts.
+ */
+const EXPECTED_ROLES: Record<string, ProjectRole> = {
+	list_projects: 'viewer',
+	get_items: 'viewer',
+	create_item: 'editor',
+	create_items: 'editor',
+	update_item: 'editor',
+	delete_item: 'editor',
+};
 
 const users = {} as Record<Persona, string>;
 
@@ -130,10 +141,9 @@ describe('the MCP tool registry', () => {
 		expect(tools.filter((tool) => !toolMinRole(tool.name)).map((tool) => tool.name)).toEqual([]);
 	});
 
-	it('makes every write tool editor and every other tool viewer', () => {
+	it('declares exactly the role the spec gives each tool, for exactly the listed tools', () => {
 		const roles = Object.fromEntries(tools.map((tool) => [tool.name, toolMinRole(tool.name)]));
-		const expected = Object.fromEntries(tools.map((tool) => [tool.name, WRITE_TOOLS.has(tool.name) ? 'editor' : 'viewer']));
-		expect(roles).toEqual(expected);
+		expect(roles).toEqual(EXPECTED_ROLES);
 	});
 
 	it('refuses to call a tool it has no role for', async () => {
