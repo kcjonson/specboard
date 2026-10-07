@@ -4,6 +4,7 @@ import { navigate } from '@specboard/router';
 import { useModel, SpecsCollection, type SpecModel } from '@specboard/models';
 import { Button } from '@specboard/ui';
 import { FilePicker } from '../FilePicker/FilePicker';
+import { writeFailure } from '../utils/write-error';
 import styles from './SpecsSection.module.css';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -14,6 +15,8 @@ const TYPE_LABELS: Record<string, string> = {
 export interface SpecsSectionProps {
 	projectRef: string;
 	itemKey: string;
+	/** Whether the caller may link and unlink specs (useProjectRole). */
+	canEdit: boolean;
 }
 
 /**
@@ -21,7 +24,7 @@ export interface SpecsSectionProps {
  * lets the user add a link via the file picker, and remove links. Backed by a
  * SpecsCollection whose add()/remove() persist to the API.
  */
-export function SpecsSection({ projectRef, itemKey }: SpecsSectionProps): JSX.Element {
+export function SpecsSection({ projectRef, itemKey, canEdit }: SpecsSectionProps): JSX.Element {
 	const specs = useMemo(() => new SpecsCollection({ projectRef, itemKey }), [projectRef, itemKey]);
 	useModel(specs);
 
@@ -33,19 +36,19 @@ export function SpecsSection({ projectRef, itemKey }: SpecsSectionProps): JSX.El
 		setError(null);
 		try {
 			await specs.add({ path, type });
-		} catch {
-			setError('Could not link that document — it may already be linked.');
+		} catch (err) {
+			setError(writeFailure(err, 'Could not link that document — it may already be linked.', projectRef));
 		}
-	}, [specs]);
+	}, [specs, projectRef]);
 
 	const handleRemove = useCallback(async (spec: SpecModel): Promise<void> => {
 		setError(null);
 		try {
 			await specs.remove(spec);
-		} catch {
-			setError('Could not remove that link.');
+		} catch (err) {
+			setError(writeFailure(err, 'Could not remove that link.', projectRef));
 		}
-	}, [specs]);
+	}, [specs, projectRef]);
 
 	const openSpec = useCallback((path: string): void => {
 		navigate(`/projects/${projectRef}/pages?file=${encodeURIComponent(path)}`);
@@ -65,9 +68,11 @@ export function SpecsSection({ projectRef, itemKey }: SpecsSectionProps): JSX.El
 							<button type="button" class={styles.specLink} onClick={() => openSpec(spec.path)}>
 								{spec.path}
 							</button>
-							<Button class="text" onClick={() => handleRemove(spec)}>
-								Remove
-							</Button>
+							{canEdit && (
+								<Button class="text" onClick={() => handleRemove(spec)}>
+									Remove
+								</Button>
+							)}
 						</div>
 					))}
 				</div>
@@ -75,13 +80,15 @@ export function SpecsSection({ projectRef, itemKey }: SpecsSectionProps): JSX.El
 
 			{error && <div class={styles.error}>{error}</div>}
 
-			<div class={styles.addRow}>
-				<Button class="text" onClick={() => setPickerOpen(true)}>
-					+ Link spec
-				</Button>
-			</div>
+			{canEdit && (
+				<div class={styles.addRow}>
+					<Button class="text" onClick={() => setPickerOpen(true)}>
+						+ Link spec
+					</Button>
+				</div>
+			)}
 
-			{pickerOpen && (
+			{pickerOpen && canEdit && (
 				<FilePicker
 					projectRef={projectRef}
 					onSelect={handleAdd}

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Text, Logo } from '@specboard/ui';
-import { fetchClient, FetchError } from '@specboard/fetch';
+import { fetchClient, fetchErrorText, FetchError } from '@specboard/fetch';
 import { useModel, UserModel } from '@specboard/models';
 import {
 	browserSupportsWebAuthn,
@@ -11,7 +11,6 @@ import {
 } from '../../lib/webauthn';
 import { defaultUserSlug, isValidUserSlug } from '@specboard/core/identifiers';
 import { safeNextPath } from '@specboard/core/next-path';
-import { fetchErrorText } from '../../lib/errors';
 import { UserSlugField } from '../../components/UserSlugField/UserSlugField';
 import styles from './Onboarding.module.css';
 

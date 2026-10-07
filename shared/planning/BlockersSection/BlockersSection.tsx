@@ -2,11 +2,14 @@ import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { useModel, BlockersCollection, type BlockerModel } from '@specboard/models';
 import { Button, Text } from '@specboard/ui';
+import { writeFailure } from '../utils/write-error';
 import styles from './BlockersSection.module.css';
 
 export interface BlockersSectionProps {
 	projectRef: string;
 	itemKey: string;
+	/** Whether the caller may add or clear blockers (useProjectRole). */
+	canEdit: boolean;
 	/** Open a blocking item's detail (clicking an item blocker). */
 	onOpenItem?: (itemKey: string) => void;
 	/** Called after a blocker is added or cleared, so the parent can refresh derived state. */
@@ -19,7 +22,7 @@ export interface BlockersSectionProps {
  * input shaped like one of THIS project's item keys (SB-12) links that item,
  * anything else (other prefixes included) is a written reason.
  */
-export function BlockersSection({ projectRef, itemKey, onOpenItem, onChange }: BlockersSectionProps): JSX.Element {
+export function BlockersSection({ projectRef, itemKey, canEdit, onOpenItem, onChange }: BlockersSectionProps): JSX.Element {
 	const blockers = useMemo(() => new BlockersCollection({ projectRef, itemKey }), [projectRef, itemKey]);
 	useModel(blockers);
 
@@ -51,12 +54,12 @@ export function BlockersSection({ projectRef, itemKey, onOpenItem, onChange }: B
 			}
 			setDraft('');
 			onChange?.();
-		} catch {
-			setError('Could not add that blocker — check the item key, or whether it already blocks this item.');
+		} catch (err) {
+			setError(writeFailure(err, 'Could not add that blocker — check the item key, or whether it already blocks this item.', projectRef));
 		} finally {
 			setBusy(false);
 		}
-	}, [blockers, draft, busy, keyPattern, onChange]);
+	}, [blockers, draft, busy, keyPattern, onChange, projectRef]);
 
 	const handleKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === 'Enter') {
@@ -71,10 +74,10 @@ export function BlockersSection({ projectRef, itemKey, onOpenItem, onChange }: B
 		try {
 			await blockers.remove(blocker);
 			onChange?.();
-		} catch {
-			setError('Could not clear that blocker.');
+		} catch (err) {
+			setError(writeFailure(err, 'Could not clear that blocker.', projectRef));
 		}
-	}, [blockers, onChange]);
+	}, [blockers, onChange, projectRef]);
 
 	// "Nothing blocking this item" is the answer to "why is this stuck", so it must
 	// never stand in for a failed or unfinished load: saying the opposite of the
@@ -111,9 +114,11 @@ export function BlockersSection({ projectRef, itemKey, onOpenItem, onChange }: B
 								<span class={styles.reason}>{blocker.text}</span>
 							</>
 						)}
-						<Button class="text" onClick={() => handleClear(blocker)}>
-							Clear
-						</Button>
+						{canEdit && (
+							<Button class="text" onClick={() => handleClear(blocker)}>
+								Clear
+							</Button>
+						)}
 					</div>
 				))}
 			</div>
@@ -128,19 +133,21 @@ export function BlockersSection({ projectRef, itemKey, onOpenItem, onChange }: B
 
 			{error && <div class={styles.error}>{error}</div>}
 
-			<div class={styles.addRow}>
-				<Text
-					value={draft}
-					onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
-					onKeyDown={handleKeyDown}
-					placeholder={`Item key (${prefix}-12) or a reason...`}
-					ariaLabel="Add a blocker"
-					compact
-				/>
-				<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim() || busy}>
-					+ Add
-				</Button>
-			</div>
+			{canEdit && (
+				<div class={styles.addRow}>
+					<Text
+						value={draft}
+						onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+						onKeyDown={handleKeyDown}
+						placeholder={`Item key (${prefix}-12) or a reason...`}
+						ariaLabel="Add a blocker"
+						compact
+					/>
+					<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim() || busy}>
+						+ Add
+					</Button>
+				</div>
+			)}
 		</section>
 	);
 }

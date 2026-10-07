@@ -2,11 +2,14 @@ import { useState, useMemo, useCallback, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { useModel, ChecklistCollection, type ChecklistEntryModel } from '@specboard/models';
 import { Button, Checkbox, Text } from '@specboard/ui';
+import { writeFailure } from '../utils/write-error';
 import styles from './ChecklistSection.module.css';
 
 export interface ChecklistSectionProps {
 	projectRef: string;
 	itemKey: string;
+	/** Whether the caller may change the checklist (useProjectRole). Off: boxes disabled, entries as text. */
+	canEdit: boolean;
 }
 
 /**
@@ -18,7 +21,7 @@ export interface ChecklistSectionProps {
  * status, its blocked flag) reads the checklist, so a write here never leaves
  * the rest of the drawer stale.
  */
-export function ChecklistSection({ projectRef, itemKey }: ChecklistSectionProps): JSX.Element {
+export function ChecklistSection({ projectRef, itemKey, canEdit }: ChecklistSectionProps): JSX.Element {
 	const checklist = useMemo(() => new ChecklistCollection({ projectRef, itemKey }), [projectRef, itemKey]);
 	useModel(checklist);
 
@@ -43,14 +46,14 @@ export function ChecklistSection({ projectRef, itemKey }: ChecklistSectionProps)
 		setDraft('');
 		try {
 			await checklist.add({ text: value });
-		} catch {
-			setError('Could not add that item.');
+		} catch (err) {
+			setError(writeFailure(err, 'Could not add that item.', projectRef));
 			// Hand the text back, unless the next entry is already being typed over it.
 			setDraft((current) => (current === '' ? value : current));
 		} finally {
 			setBusy(false);
 		}
-	}, [checklist, draft, busy]);
+	}, [checklist, draft, busy, projectRef]);
 
 	const handleDraftKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === 'Enter') {
@@ -83,13 +86,13 @@ export function ChecklistSection({ projectRef, itemKey }: ChecklistSectionProps)
 		try {
 			// patch, not save: save() would PUT this client's copy of the text too.
 			await entry.patch({ status: next });
-		} catch {
+		} catch (err) {
 			entry.status = previous;
-			setError('Could not save that item.');
+			setError(writeFailure(err, 'Could not save that item.', projectRef));
 		} finally {
 			togglingRef.current.delete(entry.id);
 		}
-	}, []);
+	}, [projectRef]);
 
 	const handleRename = useCallback(async (entry: ChecklistEntryModel, value: string): Promise<void> => {
 		const trimmed = value.trim();
@@ -100,20 +103,20 @@ export function ChecklistSection({ projectRef, itemKey }: ChecklistSectionProps)
 		entry.text = trimmed;
 		try {
 			await entry.patch({ text: trimmed });
-		} catch {
+		} catch (err) {
 			entry.text = previous;
-			setError('Could not save that item.');
+			setError(writeFailure(err, 'Could not save that item.', projectRef));
 		}
-	}, []);
+	}, [projectRef]);
 
 	const handleRemove = useCallback(async (entry: ChecklistEntryModel): Promise<void> => {
 		setError(null);
 		try {
 			await checklist.remove(entry);
-		} catch {
-			setError('Could not remove that item.');
+		} catch (err) {
+			setError(writeFailure(err, 'Could not remove that item.', projectRef));
 		}
-	}, [checklist]);
+	}, [checklist, projectRef]);
 
 	const renderRow = (entry: ChecklistEntryModel): JSX.Element => {
 		const value = editing?.id === entry.id ? editing.value : entry.text;
@@ -130,34 +133,41 @@ export function ChecklistSection({ projectRef, itemKey }: ChecklistSectionProps)
 					checked={entry.status === 'done'}
 					label=""
 					ariaLabel={entry.text}
+					disabled={!canEdit}
 					onChange={() => void handleToggle(entry)}
 				/>
-				<input
-					type="text"
-					class={entry.status === 'done' ? `${styles.text} ${styles.doneText}` : styles.text}
-					value={value}
-					aria-label={`Edit "${entry.text}"`}
-					onInput={(e) => setEditing({ id: entry.id, value: (e.target as HTMLInputElement).value })}
-					onBlur={(e) => commit(e.currentTarget as HTMLInputElement)}
-					onKeyDown={(e: KeyboardEvent) => {
-						const field = e.currentTarget as HTMLInputElement;
-						if (e.key === 'Enter') {
-							field.blur();
-						} else if (e.key === 'Escape' && field.value !== entry.text) {
-							// Escape closes the innermost thing with something to dismiss:
-							// an unsaved rename here, the drawer once there isn't one. The
-							// DOM value is reset first so the blur that follows sees no
-							// change and writes nothing.
-							e.stopPropagation();
-							setEditing(null);
-							field.value = entry.text;
-							field.blur();
-						}
-					}}
-				/>
-				<Button class="text" onClick={() => void handleRemove(entry)}>
-					Remove
-				</Button>
+				{canEdit ? (
+					<input
+						type="text"
+						class={entry.status === 'done' ? `${styles.text} ${styles.doneText}` : styles.text}
+						value={value}
+						aria-label={`Edit "${entry.text}"`}
+						onInput={(e) => setEditing({ id: entry.id, value: (e.target as HTMLInputElement).value })}
+						onBlur={(e) => commit(e.currentTarget as HTMLInputElement)}
+						onKeyDown={(e: KeyboardEvent) => {
+							const field = e.currentTarget as HTMLInputElement;
+							if (e.key === 'Enter') {
+								field.blur();
+							} else if (e.key === 'Escape' && field.value !== entry.text) {
+								// Escape closes the innermost thing with something to dismiss:
+								// an unsaved rename here, the drawer once there isn't one. The
+								// DOM value is reset first so the blur that follows sees no
+								// change and writes nothing.
+								e.stopPropagation();
+								setEditing(null);
+								field.value = entry.text;
+								field.blur();
+							}
+						}}
+					/>
+				) : (
+					<span class={entry.status === 'done' ? `${styles.readText} ${styles.doneText}` : styles.readText}>{entry.text}</span>
+				)}
+				{canEdit && (
+					<Button class="text" onClick={() => void handleRemove(entry)}>
+						Remove
+					</Button>
+				)}
 			</div>
 		);
 	};
@@ -187,19 +197,21 @@ export function ChecklistSection({ projectRef, itemKey }: ChecklistSectionProps)
 
 			{error && <div class={styles.error}>{error}</div>}
 
-			<div class={styles.addRow}>
-				<Text
-					value={draft}
-					onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
-					onKeyDown={handleDraftKeyDown}
-					placeholder="Add a checklist item..."
-					ariaLabel="Add a checklist item"
-					compact
-				/>
-				<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim() || busy}>
-					+ Add
-				</Button>
-			</div>
+			{canEdit && (
+				<div class={styles.addRow}>
+					<Text
+						value={draft}
+						onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+						onKeyDown={handleDraftKeyDown}
+						placeholder="Add a checklist item..."
+						ariaLabel="Add a checklist item"
+						compact
+					/>
+					<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim() || busy}>
+						+ Add
+					</Button>
+				</div>
+			)}
 		</section>
 	);
 }

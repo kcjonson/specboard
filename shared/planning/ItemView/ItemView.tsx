@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { useModel, type ItemModel, type ItemStatus, type SubStatus } from '@specboard/models';
-import { FetchError } from '@specboard/fetch';
 import { Button, DialogFooter, Select } from '@specboard/ui';
 import { ItemPicker } from '@specboard/pages';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
@@ -15,6 +14,7 @@ import { actorLabel } from '../utils/actor';
 import { TYPE_LABELS } from '../utils/itemType';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import { formatDateTime, formatTimeAgo } from '../utils/time';
+import { writeFailure } from '../utils/write-error';
 import styles from './ItemView.module.css';
 
 /** Titles stay one line of text; the textarea is only there so it wraps visually. */
@@ -24,6 +24,11 @@ function stripNewlines(value: string): string {
 
 export interface ItemViewProps {
 	item: ItemModel;
+	/**
+	 * Whether the caller may change the item (useProjectRole). Off, every field renders
+	 * as text and every add, remove and delete control is gone.
+	 */
+	canEdit: boolean;
 	onDelete?: (item: ItemModel) => void;
 	/** Open another item's detail by key — a child, this item's parent, or where it was discovered. */
 	onOpenItem?: (itemKey: string) => void;
@@ -56,6 +61,10 @@ function deriveStatusFromSubStatus(subStatus: SubStatus): ItemStatus | undefined
 	}
 }
 
+function optionLabel<T extends string>(options: { value: T; label: string }[], value: T): string {
+	return options.find((option) => option.value === value)?.label ?? value;
+}
+
 const DATE_FIELDS: { label: string; value: (item: ItemModel) => string | null | undefined }[] = [
 	{ label: 'Created', value: (item) => item.createdAt },
 	{ label: 'Started', value: (item) => item.startedAt },
@@ -75,7 +84,7 @@ const SUB_STATUS_OPTIONS: { value: SubStatus; label: string }[] = [
 	{ value: 'complete', label: 'Complete' },
 ];
 
-export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Element {
+export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps): JSX.Element {
 	// Fields can still be unpopulated on a list summary whose detail fetch is in flight.
 	const itemType = item.type || 'epic';
 	const typeLabel = TYPE_LABELS[itemType];
@@ -109,7 +118,20 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 	const descriptionDirtyRef = useRef(false);
 
 	const [parentPickerOpen, setParentPickerOpen] = useState(false);
-	const [parentError, setParentError] = useState<string | null>(null);
+	// The last write of a header field the server refused, in its words. Each field
+	// reverts on its own; the message says why.
+	const [fieldError, setFieldError] = useState<string | null>(null);
+	const reportFieldError = (err: unknown, fallback: string): void => {
+		setFieldError(writeFailure(err, fallback, item.projectRef));
+	};
+	const saveField = (revert: () => void, fallback: string): Promise<void> => {
+		setFieldError(null);
+		return item.save().catch((err: unknown) => {
+			revert();
+			reportFieldError(err, fallback);
+			throw err;
+		});
+	};
 
 	// Sync the title draft to whichever item is open. Keyed on the model as well as
 	// the title so switching to an item whose title hasn't arrived yet clears the
@@ -126,10 +148,11 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 		el.style.height = `${el.scrollHeight}px`;
 	};
 
-	useEffect(fitTitle, [titleDraft]);
+	useEffect(fitTitle, [titleDraft, canEdit]);
 
 	// Width changes rewrap the text, and the drawer and the full-screen view are
-	// very different widths, so the fitted height has to be recomputed.
+	// very different widths, so the fitted height has to be recomputed. The field only
+	// exists while the item is editable.
 	useEffect(() => {
 		const el = titleRef.current;
 		if (!el || typeof ResizeObserver === 'undefined') return;
@@ -141,7 +164,7 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 		});
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, []);
+	}, [canEdit]);
 
 	// Sync description AST state when item changes (for navigation between items)
 	useEffect(() => {
@@ -158,10 +181,10 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 		if (trimmed && trimmed !== stripNewlines(item.title).trim()) {
 			const previousTitle = item.title;
 			item.title = trimmed;
-			item.save().catch(() => {
+			saveField(() => {
 				item.title = previousTitle;
 				setTitleDraft(stripNewlines(previousTitle));
-			});
+			}, 'Could not save the title.').catch(() => undefined);
 		}
 	};
 
@@ -183,20 +206,20 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 		if (!descriptionDirtyRef.current) return;
 		const previousDescription = item.description;
 		item.description = serializeToText(descriptionAst);
-		item.save().then(() => {
-			descriptionDirtyRef.current = false;
-		}).catch(() => {
+		saveField(() => {
 			item.description = previousDescription;
-		});
+		}, 'Could not save the description.').then(() => {
+			descriptionDirtyRef.current = false;
+		}).catch(() => undefined);
 	};
 
 	const handleStatusChange = (e: Event): void => {
 		const target = e.target as HTMLSelectElement;
 		const previousStatus = item.status;
 		item.status = target.value as ItemStatus;
-		item.save().catch(() => {
+		saveField(() => {
 			item.status = previousStatus;
-		});
+		}, 'Could not change the status.').catch(() => undefined);
 	};
 
 	// Sub-status change (moves status too at the key transitions)
@@ -208,10 +231,10 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 		item.subStatus = newSubStatus;
 		const derived = deriveStatusFromSubStatus(newSubStatus);
 		if (derived && derived !== item.status) item.status = derived;
-		item.save().catch(() => {
+		saveField(() => {
 			item.subStatus = previousSubStatus;
 			item.status = previousStatus;
-		});
+		}, 'Could not change the sub-status.').catch(() => undefined);
 	};
 
 	const movingRef = useRef(false);
@@ -229,12 +252,9 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 		if (movingRef.current) return;
 		movingRef.current = true;
 		setParentPickerOpen(false);
-		setParentError(null);
+		setFieldError(null);
 		item.move(parentKey)
-			.catch((err: unknown) => {
-				const data = err instanceof FetchError ? (err.data as { error?: string } | undefined) : undefined;
-				setParentError(data?.error ?? 'Could not change the parent.');
-			})
+			.catch((err: unknown) => reportFieldError(err, 'Could not change the parent.'))
 			.finally(() => {
 				movingRef.current = false;
 			});
@@ -255,37 +275,56 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 					<span class={styles.titleBadge}>
 						<TypeBadge type={itemType} />
 					</span>
-					<textarea
-						ref={titleRef}
-						rows={1}
-						class={styles.titleInput}
-						value={titleDraft}
-						onInput={(e) => setTitleDraft(stripNewlines((e.target as HTMLTextAreaElement).value))}
-						onBlur={handleTitleBlur}
-						onKeyDown={handleTitleKeyDown}
-						placeholder={`${typeLabel} title...`}
-						aria-label={`${typeLabel} title`}
-					/>
+					{canEdit ? (
+						<textarea
+							ref={titleRef}
+							rows={1}
+							class={styles.titleInput}
+							value={titleDraft}
+							onInput={(e) => setTitleDraft(stripNewlines((e.target as HTMLTextAreaElement).value))}
+							onBlur={handleTitleBlur}
+							onKeyDown={handleTitleKeyDown}
+							placeholder={`${typeLabel} title...`}
+							aria-label={`${typeLabel} title`}
+						/>
+					) : (
+						<h2 class={styles.titleText}>{stripNewlines(item.title || '')}</h2>
+					)}
 				</div>
 				<div class={styles.fields}>
-					<div class={styles.field}>
-						<Select
-							id="item-status"
-							value={item.status || 'ready'}
-							options={STATUS_OPTIONS}
-							onChange={handleStatusChange}
-							label="Status"
-						/>
-					</div>
-					<div class={styles.field}>
-						<Select
-							id="item-sub-status"
-							value={item.subStatus || 'not_started'}
-							options={SUB_STATUS_OPTIONS}
-							onChange={handleSubStatusChange}
-							label="Sub-Status"
-						/>
-					</div>
+					{canEdit ? (
+						<>
+							<div class={styles.field}>
+								<Select
+									id="item-status"
+									value={item.status || 'ready'}
+									options={STATUS_OPTIONS}
+									onChange={handleStatusChange}
+									label="Status"
+								/>
+							</div>
+							<div class={styles.field}>
+								<Select
+									id="item-sub-status"
+									value={item.subStatus || 'not_started'}
+									options={SUB_STATUS_OPTIONS}
+									onChange={handleSubStatusChange}
+									label="Sub-Status"
+								/>
+							</div>
+						</>
+					) : (
+						<>
+							<div class={styles.field}>
+								<span class={styles.fieldLabel}>Status</span>
+								<span class={styles.fieldValue}>{optionLabel(STATUS_OPTIONS, item.status || 'ready')}</span>
+							</div>
+							<div class={styles.field}>
+								<span class={styles.fieldLabel}>Sub-Status</span>
+								<span class={styles.fieldValue}>{optionLabel(SUB_STATUS_OPTIONS, item.subStatus || 'not_started')}</span>
+							</div>
+						</>
+					)}
 					{/* A parented epic is legal, so an epic that has one still shows it; an
 					    epic without one is the ordinary top-level case and gets no row. */}
 					{(itemType !== 'epic' || item.parentKey) && (
@@ -304,14 +343,16 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 									</button>
 								) : 'None'}
 							</span>
-							<button
-								type="button"
-								class={styles.inlineLink}
-								onClick={() => setParentPickerOpen(true)}
-								aria-label="Change parent"
-							>
-								Change
-							</button>
+							{canEdit && (
+								<button
+									type="button"
+									class={styles.inlineLink}
+									onClick={() => setParentPickerOpen(true)}
+									aria-label="Change parent"
+								>
+									Change
+								</button>
+							)}
 						</div>
 					)}
 					<div class={styles.field}>
@@ -381,7 +422,7 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 							</span>
 						</div>
 					)}
-					{parentError && <div class={styles.fieldError} role="alert">{parentError}</div>}
+					{fieldError && <div class={styles.fieldError} role="alert">{fieldError}</div>}
 				</div>
 			</div>
 
@@ -400,38 +441,41 @@ export function ItemView({ item, onDelete, onOpenItem }: ItemViewProps): JSX.Ele
 				/>
 			)}
 
-			{/* Description — always editable */}
 			<section class={styles.section}>
 				<h3 class={styles.sectionTitle}>Description</h3>
-				<div onBlur={handleDescriptionBlur}>
+				<div onBlur={canEdit ? handleDescriptionBlur : undefined}>
 					<RichTextEditor
 						value={descriptionAst}
 						onChange={handleDescriptionChange}
-						placeholder="Add a description..."
+						placeholder={canEdit ? 'Add a description...' : 'No description'}
+						readOnly={!canEdit}
 					/>
 				</div>
 			</section>
 
-			<ChildrenSection item={item} onOpenItem={onOpenItem} />
+			<ChildrenSection item={item} canEdit={canEdit} onOpenItem={onOpenItem} />
 
-			<ChecklistSection projectRef={item.projectRef} itemKey={item.key} />
+			<ChecklistSection projectRef={item.projectRef} itemKey={item.key} canEdit={canEdit} />
 
 			<BlockersSection
 				projectRef={item.projectRef}
 				itemKey={item.key}
+				canEdit={canEdit}
 				onOpenItem={onOpenItem}
 				onChange={() => void item.fetch()}
 			/>
 
-			<SpecsSection projectRef={item.projectRef} itemKey={item.key} />
+			<SpecsSection projectRef={item.projectRef} itemKey={item.key} canEdit={canEdit} />
 
-			<NotesSection projectRef={item.projectRef} itemKey={item.key} />
+			<NotesSection projectRef={item.projectRef} itemKey={item.key} canEdit={canEdit} />
 
-			<DialogFooter divider>
-				<Button class="danger" onClick={handleDelete}>
-					Delete {typeLabel}
-				</Button>
-			</DialogFooter>
+			{canEdit && (
+				<DialogFooter divider>
+					<Button class="danger" onClick={handleDelete}>
+						Delete {typeLabel}
+					</Button>
+				</DialogFooter>
+			)}
 		</div>
 	);
 }

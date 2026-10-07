@@ -1,11 +1,12 @@
-import { useMemo } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
 import { navigate } from '@specboard/router';
-import { useModel, ItemModel } from '@specboard/models';
-import { Icon, Page } from '@specboard/ui';
+import { useModel, useProjectRole, ItemModel } from '@specboard/models';
+import { Icon, Notice, Page } from '@specboard/ui';
 import { ItemView } from '../ItemView/ItemView';
+import { writeFailure } from '../utils/write-error';
 import styles from './ItemDetail.module.css';
 
 export function ItemDetail({ params }: RouteProps): JSX.Element {
@@ -15,11 +16,15 @@ export function ItemDetail({ params }: RouteProps): JSX.Element {
 	// Model auto-fetches when given a key
 	const item = useMemo(() => new ItemModel({ key: itemKey, projectRef }), [itemKey, projectRef]);
 	useModel(item);
+	const { canEdit } = useProjectRole(projectRef);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
 
 	const handleDelete = (): void => {
-		item.delete().then(() => {
-			navigate(`/projects/${projectRef}/planning`);
-		});
+		setDeleteError(null);
+		item.delete().then(
+			() => navigate(`/projects/${projectRef}/planning`),
+			(err: unknown) => setDeleteError(writeFailure(err, 'Could not delete this item.', projectRef))
+		);
 	};
 
 	// Loading state - show while fetching and data hasn't arrived yet
@@ -33,8 +38,9 @@ export function ItemDetail({ params }: RouteProps): JSX.Element {
 		);
 	}
 
-	// Error state
-	if (item.$meta.error) {
+	// A first load that failed. `$meta.error` is also where a later refused write lands
+	// (a save, a delete), and those are reported beside the item rather than replacing it.
+	if (!item.$meta.lastFetched && item.$meta.error) {
 		return (
 			<Page projectRef={projectRef} activeTab="Planning">
 				<div class={styles.container}>
@@ -55,9 +61,15 @@ export function ItemDetail({ params }: RouteProps): JSX.Element {
 						<Icon name="arrow-left" class="size-sm" /> Back to Board
 					</a>
 				</nav>
+				{deleteError && (
+					<div role="alert">
+						<Notice variant="error">{deleteError}</Notice>
+					</div>
+				)}
 				<div class={styles.content}>
 					<ItemView
 						item={item}
+						canEdit={canEdit}
 						onDelete={handleDelete}
 						onOpenItem={(childKey) => navigate(`/projects/${projectRef}/items/${childKey}`)}
 					/>

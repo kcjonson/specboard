@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Text, Icon } from '@specboard/ui';
-import { fetchClient, FetchError } from '@specboard/fetch';
+import { fetchClient, fetchErrorText, FetchError } from '@specboard/fetch';
 import {
 	browserSupportsWebAuthn,
 	createPasskey,
 	passkeyErrorMessage,
 	type PublicKeyCredentialCreationOptionsJSON,
 } from '../../lib/webauthn';
-import { fetchErrorText } from '../../lib/errors';
 import styles from './Passkeys.module.css';
 
 interface Passkey {

@@ -6,6 +6,7 @@
 
 export { FetchClient, fetchClient } from './client';
 export { FetchError } from './types';
+export { fetchErrorText } from './errors';
 export type {
 	FetchConfig,
 	FetchResponse,

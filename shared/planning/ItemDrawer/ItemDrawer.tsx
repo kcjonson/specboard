@@ -15,6 +15,8 @@ export interface ItemDrawerProps {
 	 */
 	listed: boolean;
 	projectRef: string;
+	/** Whether the caller may change the item (useProjectRole); off renders it read-only. */
+	canEdit: boolean;
 	/** Upper bound for the drawer width, so it can't fully crowd out the board. */
 	maxWidth?: number;
 	onClose: () => void;
@@ -39,7 +41,7 @@ function unresolvedMessage(itemKey: string, error: Error | null): string {
  * Board and Table views. The content is the same {@link ItemView} used by the
  * full-screen item route; only the surrounding chrome differs.
  */
-export function ItemDrawer({ item, listed, projectRef, maxWidth, onClose, onResize, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
+export function ItemDrawer({ item, listed, projectRef, canEdit, maxWidth, onClose, onResize, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
 	useModel(item);
 
 	// An unlisted key has nothing behind it until its fetch lands, and may have
@@ -113,7 +115,7 @@ export function ItemDrawer({ item, listed, projectRef, maxWidth, onClose, onResi
 				</div>
 				<div class={styles.content}>
 					{resolved ? (
-						<ItemView item={item} onDelete={onDelete} onOpenItem={onOpenItem} />
+						<ItemView item={item} canEdit={canEdit} onDelete={onDelete} onOpenItem={onOpenItem} />
 					) : (
 						<p class={styles.placeholder}>{unresolvedMessage(item.key, loadError)}</p>
 					)}

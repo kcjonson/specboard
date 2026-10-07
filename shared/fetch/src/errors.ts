@@ -1,4 +1,4 @@
-import { FetchError } from '@specboard/fetch';
+import { FetchError } from './types';
 
 /**
  * Pull the server's friendly message out of a failed request. `FetchError.data`

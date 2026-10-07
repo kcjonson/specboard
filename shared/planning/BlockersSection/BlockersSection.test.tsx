@@ -13,7 +13,8 @@ const post = vi.fn();
 const put = vi.fn();
 const del = vi.fn();
 
-vi.mock('@specboard/fetch', () => ({
+vi.mock('@specboard/fetch', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@specboard/fetch')>()),
 	fetchClient: {
 		get: (...args: unknown[]) => get(...args),
 		post: (...args: unknown[]) => post(...args),
@@ -42,7 +43,7 @@ function textBlocker(overrides: Partial<BlockerPayload> = {}): BlockerPayload {
 }
 
 function renderSection(): ReturnType<typeof render> {
-	return render(<BlockersSection projectRef="acme/specboard" itemKey="SB-12" />);
+	return render(<BlockersSection canEdit projectRef="acme/specboard" itemKey="SB-12" />);
 }
 
 describe('BlockersSection', () => {
@@ -96,5 +97,22 @@ describe('BlockersSection', () => {
 		settle([]);
 		expect(await findByText('Nothing blocking this item')).toBeTruthy();
 		await waitFor(() => expect(container.textContent).not.toContain('Loading...'));
+	});
+});
+
+describe('BlockersSection for someone who can\'t edit', () => {
+	beforeEach(() => {
+		get.mockReset();
+	});
+
+	it('lists the blockers with nothing to add or clear', async () => {
+		get.mockResolvedValue([textBlocker()]);
+		const { findByText, queryByText, queryByRole } = render(
+			<BlockersSection canEdit={false} projectRef="acme/specboard" itemKey="SB-12" />
+		);
+
+		await findByText('Waiting on the design review');
+		expect(queryByText('Clear')).toBeNull();
+		expect(queryByRole('textbox', { name: 'Add a blocker' })).toBeNull();
 	});
 });

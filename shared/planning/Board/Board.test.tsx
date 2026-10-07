@@ -49,25 +49,36 @@ function serve(counts: Partial<Record<ItemStatus, number>>): void {
 	});
 }
 
+interface BoardTestProps {
+	selectedItemKey?: string;
+	onSelectItem?: (item: ItemModel | undefined) => void;
+	canEdit?: boolean;
+	onCreateItem?: () => void;
+	onWriteError?: (err: unknown, fallback: string) => void;
+}
+
 async function renderBoard(
 	counts: Partial<Record<ItemStatus, number>>,
-	props: { selectedItemKey?: string; onSelectItem?: (item: ItemModel | undefined) => void } = {}
-): Promise<ReturnType<typeof render>> {
+	props: BoardTestProps = {}
+): Promise<ReturnType<typeof render> & { items: ItemsCollection }> {
 	serve(counts);
 	const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
 	await items.fetch();
-	return render(
+	const rendered = render(
 		<Board
 			items={items}
 			projectRef="acme/demo"
 			selectedItemKey={props.selectedItemKey}
 			flashingIds={new Set()}
 			dialogOpen={false}
+			canEdit={props.canEdit ?? true}
 			onSelectItem={props.onSelectItem ?? vi.fn()}
 			onOpenItem={vi.fn()}
-			onCreateItem={vi.fn()}
+			onCreateItem={props.onCreateItem ?? vi.fn()}
+			onWriteError={props.onWriteError ?? vi.fn()}
 		/>
 	);
+	return { ...rendered, items };
 }
 
 function columnTitles(container: Element): string[] {
@@ -134,5 +145,54 @@ describe('Board columns', () => {
 		dropZone.dispatchEvent(dragOver);
 
 		expect(dragOver.defaultPrevented).toBe(false);
+	});
+});
+
+describe('Board for someone who can\'t edit', () => {
+	beforeEach(() => {
+		getResponse.mockReset();
+	});
+
+	it('offers no drag and takes no drops', async () => {
+		const { container, getByRole } = await renderBoard({ ready: 1, done: 1 }, { canEdit: false });
+
+		for (const card of container.querySelectorAll('[data-item-card]')) {
+			expect(card.getAttribute('draggable')).toBe('false');
+		}
+		const dragOver = new Event('dragover', { bubbles: true, cancelable: true });
+		getByRole('listbox', { name: 'Ready column' }).dispatchEvent(dragOver);
+		expect(dragOver.defaultPrevented).toBe(false);
+	});
+
+	it('ignores the create and move shortcuts', async () => {
+		const onCreateItem = vi.fn();
+		const { items } = await renderBoard({ ready: 1 }, { canEdit: false, selectedItemKey: 'SB-ready-1', onCreateItem });
+		const save = vi.spyOn(items[0]!, 'save');
+
+		fireEvent.keyDown(document, { key: 'n' });
+		fireEvent.keyDown(document, { key: '2' });
+
+		expect(onCreateItem).not.toHaveBeenCalled();
+		expect(save).not.toHaveBeenCalled();
+		expect(items[0]!.status).toBe('ready');
+	});
+});
+
+describe('Board refused moves', () => {
+	beforeEach(() => {
+		getResponse.mockReset();
+	});
+
+	it('puts the card back and reports the refusal', async () => {
+		const onWriteError = vi.fn();
+		const { items } = await renderBoard({ ready: 1 }, { selectedItemKey: 'SB-ready-1', onWriteError });
+		const refusal = new Error('HTTP 403: Forbidden');
+		vi.spyOn(items[0]!, 'save').mockRejectedValue(refusal);
+
+		fireEvent.keyDown(document, { key: '2' });
+
+		await waitFor(() => expect(onWriteError).toHaveBeenCalledWith(refusal, 'Could not move SB-ready-1.'));
+		expect(items[0]!.status).toBe('ready');
+		expect(items[0]!.rank).toBe(1);
 	});
 });

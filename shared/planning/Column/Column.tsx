@@ -26,6 +26,8 @@ interface ColumnProps {
 	flashingIds: Set<string>;
 	/** Whether cards can be dropped into this column (the Blocked column is display-only). */
 	droppable?: boolean;
+	/** Whether cards can be picked up at all; off for someone who can't edit the board. */
+	draggable?: boolean;
 	onSelectItem?: (item: ItemModel) => void;
 	onOpenItem?: (item: ItemModel) => void;
 	onDropItem?: (itemId: string, status: Status, index: number) => void;
@@ -43,6 +45,7 @@ export function Column({
 	selectedItemKey,
 	flashingIds,
 	droppable = true,
+	draggable = true,
 	onSelectItem,
 	onOpenItem,
 	onDropItem,
@@ -145,7 +148,7 @@ export function Column({
 									// A child row a search turned up is ranked among its parent's
 									// children, not among this column's cards, so there is no
 									// position here to drag it into. It still opens and selects.
-									draggable={!item.parentKey}
+									draggable={draggable && !item.parentKey}
 									isSelected={item.key === selectedItemKey}
 									isHighlighted={flashingIds.has(item.key)}
 									onSelect={onSelectItem}
