@@ -296,7 +296,8 @@ export function createApp(redis: Redis): Hono<{ Variables: AppVariables }> {
 			message: error.message,
 			stack: error.stack,
 			timestamp: Date.now(),
-			url: context.req.url,
+			// Origin and path only: a query string can carry a token, and this goes off-host.
+			url: new URL(context.req.url).origin + context.req.path,
 			userAgent: context.req.header('user-agent'),
 			userId,
 			source: 'api',

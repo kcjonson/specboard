@@ -589,7 +589,8 @@ app.onError((error, c) => {
 		message: error.message,
 		stack: error.stack,
 		timestamp: Date.now(),
-		url: c.req.url,
+		// Origin and path only: a query string can carry a token, and this goes off-host.
+		url: new URL(c.req.url).origin + c.req.path,
 		userAgent: c.req.header('user-agent'),
 		userId: user?.id,
 		source: 'frontend',
