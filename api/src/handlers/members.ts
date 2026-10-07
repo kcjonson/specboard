@@ -8,7 +8,9 @@
  */
 
 import type { Context } from 'hono';
+import type { Redis } from 'ioredis';
 import {
+	getProject,
 	leaveProject,
 	listProjectMembers,
 	removeProjectMember,
@@ -17,6 +19,7 @@ import {
 } from '@specboard/db';
 import { isValidUserSlug } from '@specboard/core/identifiers';
 import { apiUserId, requireAccess, requireResolvedProject } from '../project-access.ts';
+import { memberPushAccess } from '../services/push-access.ts';
 
 const MEMBER_ROLES: ReadonlySet<string> = new Set<MemberRole>(['editor', 'viewer']);
 
@@ -34,10 +37,20 @@ function memberSlug(context: Context): string | Response {
 	return slug;
 }
 
-/** GET /api/projects/:owner/:project/members */
-export async function handleListMembers(context: Context): Promise<Response> {
+/**
+ * GET /api/projects/:owner/:project/members. Each member carries `pushAccess`, whether
+ * their own GitHub account can push to the project's repository (null when unknown, or
+ * when there is no repository or no connection), so the owner can see who will be refused.
+ */
+export async function handleListMembers(context: Context, redis: Redis): Promise<Response> {
+	const projectId = requireResolvedProject(context).id;
 	try {
-		return context.json(await listProjectMembers(requireResolvedProject(context).id));
+		const [members, project] = await Promise.all([listProjectMembers(projectId), getProject(projectId)]);
+		const pushAccess = project ? await memberPushAccess(redis, project) : new Map<string, boolean | null>();
+		return context.json(members.map((member) => ({
+			...member,
+			pushAccess: (member.slug && pushAccess.get(member.slug)) ?? null,
+		})));
 	} catch (error) {
 		console.error('Failed to list members:', error);
 		return context.json({ error: 'Database error' }, 500);

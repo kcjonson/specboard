@@ -10,17 +10,26 @@ import { Hono } from 'hono';
 import type { ProjectAccess, ProjectRole } from '@specboard/db';
 
 vi.mock('@specboard/db', () => ({
+	getProject: vi.fn(async () => ({ id: 'proj-1' })),
 	listProjectMembers: vi.fn(async () => []),
 	setProjectMemberRole: vi.fn(),
 	removeProjectMember: vi.fn(),
 	leaveProject: vi.fn(async () => {}),
 }));
 
-import { leaveProject, removeProjectMember, setProjectMemberRole } from '@specboard/db';
-import { handleLeaveProject, handleRemoveMember, handleUpdateMember } from './members.ts';
+vi.mock('../services/push-access.ts', () => ({
+	memberPushAccess: vi.fn(async () => new Map()),
+}));
+
+import type { Redis } from 'ioredis';
+import { getProject, leaveProject, listProjectMembers, removeProjectMember, setProjectMemberRole } from '@specboard/db';
+import { memberPushAccess } from '../services/push-access.ts';
+import { handleLeaveProject, handleListMembers, handleRemoveMember, handleUpdateMember } from './members.ts';
 import type { AppVariables } from '../project-access.ts';
 
 const PROJECT = { id: 'proj-1', slug: 'roadmap', key: 'RM', ownerSlug: 'acme' };
+
+const redis = {} as Redis;
 
 function createApp(grantedRole: ProjectRole): Hono<{ Variables: AppVariables }> {
 	const access: ProjectAccess = { project: PROJECT, grantedRole, effectiveRole: grantedRole };
@@ -31,13 +40,14 @@ function createApp(grantedRole: ProjectRole): Hono<{ Variables: AppVariables }> 
 		context.set('userId', 'user-1');
 		await next();
 	});
+	app.get('/api/projects/:owner/:project/members', (context) => handleListMembers(context, redis));
 	app.put('/api/projects/:owner/:project/members/:member', handleUpdateMember);
 	app.delete('/api/projects/:owner/:project/members/:member', handleRemoveMember);
 	app.delete('/api/projects/:owner/:project/membership', handleLeaveProject);
 	return app;
 }
 
-function call(grantedRole: ProjectRole, method: 'PUT' | 'DELETE', path: string, body?: unknown): Promise<Response> {
+function call(grantedRole: ProjectRole, method: 'GET' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<Response> {
 	return Promise.resolve(
 		createApp(grantedRole).request(`http://localhost/api/projects/acme/roadmap/${path}`, {
 			method,
@@ -132,5 +142,24 @@ describe('leaving', () => {
 
 		expect(response.status).toBe(200);
 		expect(leaveProject).toHaveBeenCalledWith('proj-1', 'user-1');
+	});
+});
+
+describe('listing members', () => {
+	it('gives each member their push access, null where it is unknown', async () => {
+		const owner = { ...MEMBER, slug: 'acme', name: 'Alice', role: 'owner', effectiveRole: 'owner' } as const;
+		const viewer = { ...MEMBER, slug: 'sam', name: 'Sam', role: 'viewer', effectiveRole: 'viewer', githubConnected: false } as const;
+		vi.mocked(listProjectMembers).mockResolvedValue([owner, MEMBER, viewer]);
+		vi.mocked(memberPushAccess).mockResolvedValue(new Map([['acme', true], ['vera', false]]));
+
+		const response = await call('viewer', 'GET', 'members');
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual([
+			{ ...owner, pushAccess: true },
+			{ ...MEMBER, pushAccess: false },
+			{ ...viewer, pushAccess: null },
+		]);
+		expect(memberPushAccess).toHaveBeenCalledWith(redis, await vi.mocked(getProject).mock.results[0]!.value);
 	});
 });

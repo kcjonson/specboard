@@ -9,6 +9,8 @@ import { randomBytes } from 'node:crypto';
 import { getSession, SESSION_COOKIE_NAME, encrypt, decrypt, type EncryptedData } from '@specboard/auth';
 import { query } from '@specboard/db';
 import { log } from '@specboard/core';
+import { safeNextPath } from '@specboard/core/next-path';
+import { forgetPushAccess, warmPushAccess } from '../services/push-access.ts';
 
 // GitHub OAuth configuration
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
@@ -59,7 +61,10 @@ function getBaseUrl(): string {
 
 /**
  * Start GitHub OAuth flow
- * GET /api/auth/github
+ * GET /api/auth/github[?next=/path]
+ *
+ * `next` is where the callback lands on success (a project page connecting from its
+ * read-only banner); without it, Settings.
  */
 export async function handleGitHubAuthStart(
 	context: Context,
@@ -85,6 +90,10 @@ export async function handleGitHubAuthStart(
 	// Generate and store state token
 	const state = generateState();
 	await redis.setex(`github_oauth_state:${state}`, STATE_TTL_SECONDS, session.userId);
+	const next = safeNextPath(context.req.query('next'));
+	if (next) {
+		await redis.setex(`github_oauth_next:${state}`, STATE_TTL_SECONDS, next);
+	}
 
 	// Build authorization URL
 	const baseUrl = getBaseUrl();
@@ -133,7 +142,8 @@ export async function handleGitHubAuthCallback(
 	}
 
 	// Delete used state
-	await redis.del(`github_oauth_state:${state}`);
+	const next = await redis.get(`github_oauth_next:${state}`);
+	await redis.del(`github_oauth_state:${state}`, `github_oauth_next:${state}`);
 
 	// Exchange code for access token
 	const clientId = process.env.GITHUB_CLIENT_ID;
@@ -293,8 +303,22 @@ export async function handleGitHubAuthCallback(
 		githubUsername,
 	});
 
-	// Redirect to settings with success
-	return context.redirect('/settings?github_connected=true');
+	// Push-access answers belonged to whatever token came before; check again with this
+	// one. Forgetting is awaited so the page this redirects to can't read a stale answer;
+	// the fresh checks are not.
+	const logPushAccessError = (err: unknown): void => {
+		log({
+			type: 'github',
+			level: 'warn',
+			event: 'github_push_access_refresh_failed',
+			userId,
+			error: err instanceof Error ? err.message : String(err),
+		});
+	};
+	await forgetPushAccess(redis, userId).catch(logPushAccessError);
+	void warmPushAccess(redis, userId).catch(logPushAccessError);
+
+	return context.redirect(next ?? '/settings?github_connected=true');
 }
 
 /**
@@ -364,6 +388,7 @@ export async function handleGitHubDisconnect(
 	);
 
 	// Clear cached GitHub data for this user
+	await forgetPushAccess(redis, session.userId);
 	const reposCacheKey = `github_repos:${CACHE_VERSION}:${session.userId}`;
 	await redis.del(reposCacheKey);
 	// Note: Branch cache keys include owner/repo, so we use pattern matching

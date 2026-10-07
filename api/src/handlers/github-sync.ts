@@ -13,6 +13,7 @@ import { query } from '@specboard/db';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
 import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
+import { getEncryptedGitHubToken } from '../services/github-token.ts';
 import {
 	createGitHubCommit,
 	generateCommitMessage,
@@ -120,24 +121,6 @@ interface ProjectWithRepo {
 	syncStartedAt: string | null;
 	syncCompletedAt: string | null;
 	syncError: string | null;
-}
-
-/**
- * Get encrypted GitHub access token for a user.
- * Returns the encrypted token string (to pass to Lambda for decryption).
- */
-export async function getEncryptedGitHubToken(userId: string): Promise<string | null> {
-	const result = await query<{ access_token: string }>(
-		'SELECT access_token FROM github_connections WHERE user_id = $1',
-		[userId]
-	);
-
-	const row = result.rows[0];
-	if (!row) {
-		return null;
-	}
-
-	return row.access_token;
 }
 
 /**

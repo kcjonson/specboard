@@ -465,12 +465,12 @@ export function createApp(redis: Redis): Hono<{ Variables: AppVariables }> {
 
 	app.get('/api/projects', (context) => handleListProjects(context, redis));
 	app.post('/api/projects', (context) => handleCreateProject(context, redis));
-	app.get('/api/projects/:owner/:project', viewer, handleGetProject);
+	app.get('/api/projects/:owner/:project', viewer, (context) => handleGetProject(context, redis));
 	app.put('/api/projects/:owner/:project', owner, handleUpdateProject);
 	app.delete('/api/projects/:owner/:project', owner, handleDeleteProject);
 
 	// Members. Leaving removes the caller's own membership, on a path no member slug can collide with.
-	app.get('/api/projects/:owner/:project/members', viewer, handleListMembers);
+	app.get('/api/projects/:owner/:project/members', viewer, (context) => handleListMembers(context, redis));
 	app.put('/api/projects/:owner/:project/members/:member', owner, handleUpdateMember);
 	app.delete('/api/projects/:owner/:project/members/:member', owner, handleRemoveMember);
 	app.delete('/api/projects/:owner/:project/membership', viewer, handleLeaveProject);

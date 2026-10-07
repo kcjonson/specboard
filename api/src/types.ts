@@ -26,6 +26,8 @@ export interface ApiProject {
 	slug: string;
 	/** The owner's user slug; the project's address is ownerSlug/slug (acme/roadmap). */
 	ownerSlug: string;
+	/** The owner's display name. */
+	ownerName: string;
 	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
 	key: string;
 	name: string;
@@ -42,4 +44,10 @@ export interface ApiProject {
 	grantedRole: ProjectRole;
 	/** The role access checks use: a granted editor without GitHub works as a viewer. */
 	effectiveRole: ProjectRole;
+}
+
+/** One project as its own GET answers it: the caller's push access rides along. */
+export interface ApiProjectDetail extends ApiProject {
+	/** Whether the caller's GitHub account can push to the repository; null when unknown or not applicable. */
+	pushAccess: boolean | null;
 }

@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Hono } from 'hono';
+import { Hono, type Context, type Next } from 'hono';
 import type { Redis } from 'ioredis';
 import type { ProjectAccess, ProjectResponse } from '@specboard/db';
 
@@ -45,10 +45,15 @@ vi.mock('./github-sync.ts', () => ({
 	markSyncStartFailed: vi.fn(async () => undefined),
 }));
 
+vi.mock('../services/push-access.ts', () => ({
+	callerPushAccess: vi.fn(async () => null),
+}));
+
 import { getSession } from '@specboard/auth';
-import { createProject, updateProject, ProjectHasRepositoryError, ProjectOwnerWithoutSlugError } from '@specboard/db';
+import { createProject, getProject, updateProject, ProjectHasRepositoryError, ProjectOwnerWithoutSlugError } from '@specboard/db';
 import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
-import { handleCreateProject, handleUpdateProject } from './projects.ts';
+import { callerPushAccess } from '../services/push-access.ts';
+import { handleCreateProject, handleGetProject, handleUpdateProject } from './projects.ts';
 import type { AppVariables } from '../project-access.ts';
 
 const REPOSITORY = {
@@ -64,6 +69,7 @@ function projectResponse(overrides: Partial<ProjectResponse> = {}): ProjectRespo
 		id: 'proj-1',
 		slug: 'docs',
 		ownerSlug: 'acme',
+		ownerName: 'Alice Ames',
 		key: 'DOCS',
 		name: 'Docs',
 		description: null,
@@ -87,28 +93,26 @@ const OWNER_ACCESS: ProjectAccess = {
 	effectiveRole: 'owner',
 };
 
-function createApp(): Hono<{ Variables: AppVariables }> {
+function createApp(access: ProjectAccess = OWNER_ACCESS): Hono<{ Variables: AppVariables }> {
 	const app = new Hono<{ Variables: AppVariables }>();
+	const authorize = async (context: Context, next: Next): Promise<void> => {
+		context.set('access', access);
+		context.set('project', access.project);
+		context.set('userId', 'user-1');
+		await next();
+	};
 	app.post('/api/projects', (context) => handleCreateProject(context, redis));
-	app.put(
-		'/api/projects/:owner/:project',
-		async (context, next) => {
-			context.set('access', OWNER_ACCESS);
-			context.set('project', OWNER_ACCESS.project);
-			context.set('userId', 'user-1');
-			await next();
-		},
-		handleUpdateProject
-	);
+	app.get('/api/projects/:owner/:project', authorize, (context) => handleGetProject(context, redis));
+	app.put('/api/projects/:owner/:project', authorize, handleUpdateProject);
 	return app;
 }
 
-function request(method: 'POST' | 'PUT', path: string, body: unknown): Promise<Response> {
+function request(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, access?: ProjectAccess): Promise<Response> {
 	return Promise.resolve(
-		createApp().request(`http://localhost${path}`, {
+		createApp(access).request(`http://localhost${path}`, {
 			method,
 			headers: { 'Content-Type': 'application/json', Cookie: 'session=sess-1' },
-			body: JSON.stringify(body),
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
 		})
 	);
 }
@@ -239,5 +243,35 @@ describe('handleCreateProject', () => {
 		expect(res.status).toBe(201);
 		expect(vi.mocked(createProject)).toHaveBeenCalledWith('user-1', expect.objectContaining({ repository: undefined }));
 		expect(vi.mocked(startGitHubInitialSync)).not.toHaveBeenCalled();
+	});
+});
+
+describe('handleGetProject', () => {
+	const EDITOR_ACCESS: ProjectAccess = { ...OWNER_ACCESS, grantedRole: 'editor', effectiveRole: 'editor' };
+
+	it('answers with the caller\'s roles, the owner\'s name, and their push access', async () => {
+		const project = projectResponse({ storageMode: 'cloud' });
+		vi.mocked(getProject).mockResolvedValue(project);
+		vi.mocked(callerPushAccess).mockResolvedValue(false);
+
+		const res = await request('GET', '/api/projects/acme/docs', undefined, EDITOR_ACCESS);
+
+		expect(res.status).toBe(200);
+		expect(await res.json()).toMatchObject({
+			ownerName: 'Alice Ames',
+			grantedRole: 'editor',
+			effectiveRole: 'editor',
+			pushAccess: false,
+		});
+		expect(callerPushAccess).toHaveBeenCalledWith(redis, 'user-1', project);
+	});
+
+	it('sends null when push access is unknown', async () => {
+		vi.mocked(getProject).mockResolvedValue(projectResponse());
+		vi.mocked(callerPushAccess).mockResolvedValue(null);
+
+		const res = await request('GET', '/api/projects/acme/docs');
+
+		expect(await res.json()).toMatchObject({ pushAccess: null });
 	});
 });
