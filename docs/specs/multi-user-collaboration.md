@@ -573,9 +573,15 @@ Phase 5 (read-only mode and GitHub gating, SPE-209) is built:
 - Refused board writes show the server's message instead of disappearing; the QA case was a
   viewer's New Epic dialog closing on a silent 403.
 - `pushAccess` (`true`, `false`, `null` for unknown or not applicable) is on the caller's
-  project GET and on each member in the member list, from `GET /repos/{owner}/{repo}` on each
-  person's own token. It is cached in Redis for five minutes and never holds a response more
-  than a second; see [api-database.md](./api-database.md), Projects.
+  project GET, which never waits on GitHub (cache or null, with the check started for the next
+  page view), and on each row of the member list for the owner. It comes from
+  `GET /repos/{owner}/{repo}` on each person's own token and is cached in Redis for five
+  minutes, failures for one; see [api-database.md](./api-database.md), Projects. The project GET
+  also carries the caller's `githubUsername` for the banner.
+- A failed project read leaves the page read-only (and drops any role it had), and the next
+  page view or the next ask for the model retries it. An editor autosave refused with a 403
+  shows the server's reason, isn't retried, and re-reads the project, like the board's writes.
+  `writeFailure` in `@specboard/models` is the one helper for both.
 - Project responses carry `ownerName`, for the viewer banner's "Ask {owner}". The project GET's
   `?fields=` filter is gone; the header and editor were its only callers and now share the
   model.

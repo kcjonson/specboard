@@ -242,6 +242,10 @@ save it. The file browser drops commit, pull, the pending-changes count, and fil
 create, rename and delete. A member of a local project sees a note that its documents are on
 the owner's computer in place of the tree.
 
+An autosave the server refuses with a 403 (the role changed while the page was open) shows the
+server's reason, keeps the draft in local storage, isn't retried, and re-reads the project so
+the editor turns read-only. Other save failures retry as before.
+
 ## Keyboard Shortcuts
 
 ### Formatting Shortcuts

@@ -444,16 +444,18 @@ Project responses carry `ownerSlug` and `ownerName` next to `slug`, and the call
 `grantedRole` and `effectiveRole`. They carry no user ids. A member is sent no `repository` for
 a local project, whose `localPath` is a path on the owner's disk.
 
-The single-project GET also carries `pushAccess`: whether the caller's own GitHub account can
-push to the repository, `true`, `false`, or `null` when that's unknown or moot (no cloud
-repository, no GitHub connection, or GitHub didn't answer in time). It comes from
-`GET /repos/{owner}/{repo}` on the caller's token, `permissions.push`, and a 404 there (a
-private repo the token can't see) is `false`. Answers are cached in Redis for five minutes per
-user and repository; a request waits at most a second for an uncached one and reports `null`
-past that, while the check finishes in the background and fills the cache. Connecting or
-disconnecting GitHub clears the user's answers, and connecting re-checks their cloud projects.
-Specboard doesn't enforce push access; GitHub refuses the commit. It is surfaced so a member
-isn't surprised (`api/src/services/push-access.ts`).
+The single-project GET also carries the caller's `githubUsername` (null without a connection)
+and `pushAccess`: whether their own GitHub account can push to the repository, `true`,
+`false`, or `null` when that's unknown or moot (no cloud repository, no GitHub connection,
+or GitHub hasn't answered yet). It comes from `GET /repos/{owner}/{repo}` on the caller's
+token, `permissions.push`, and a 404 there (a private repo the token can't see) is `false`.
+The GET never waits on GitHub: it answers from the cache, or `null` while a check starts in
+the background for the next page view. Answers are cached in Redis for five minutes per user,
+GitHub connection and repository; failures (an expired token, a rate limit, an outage, a
+timeout) are cached as unknown for a minute so a broken token isn't re-asked every load.
+Connecting or disconnecting GitHub clears the user's answers, and connecting re-checks their
+cloud projects. Specboard doesn't enforce push access; GitHub refuses the commit. It is
+surfaced so a member isn't surprised (`api/src/services/push-access.ts`).
 
 Items, notes, blockers and workers go out through the views in `shared/db/src/views.ts`, the
 same ones MCP uses: actors keep their type, device name and client, never a user id, OAuth
@@ -474,9 +476,10 @@ client id or session id.
 
 Members are addressed by user slug, and the member view carries no user id:
 `{ slug, name, email, avatarUrl, role, effectiveRole, githubConnected }`, where `role` is the
-granted role (`owner` for the owner). The list adds `pushAccess` per person, computed the same
-way as the project GET's but on each person's own stored token, so the owner can see who will
-have commits refused. The owner isn't a membership, so naming the owner's slug
+granted role (`owner` for the owner). For the owner, the list adds `pushAccess` per person, on
+each person's own stored token, so they can see who will have commits refused; it waits at most
+a second per uncached person, and a failure leaves the rows `null` rather than failing the list.
+Every other caller gets `null` on every row (their own is on the project GET). The owner isn't a membership, so naming the owner's slug
 in a member route is a 409 `PROJECT_OWNER`, and so is the owner leaving.
 
 | Method | Path | Description |
