@@ -17,8 +17,8 @@ export interface GitStatusBarProps {
 	onPullComplete?: () => void | Promise<void>;
 	/** Called before a commit, to save the open document */
 	onBeforeCommit?: () => Promise<void>;
-	/** Called when a commit attempt ends, landed or not */
-	onAfterCommit?: (committed: boolean) => void | Promise<void>;
+	/** Called when a commit attempt ends: the paths of the drafts it took, or null if it didn't land */
+	onAfterCommit?: (committedPaths: string[] | null) => void | Promise<void>;
 	/** Called before a draft conflict on this path is kept or discarded */
 	onBeforeResolveDraft?: (path: string) => Promise<void>;
 	/** Called after a draft conflict on this path was kept or discarded */
@@ -71,11 +71,11 @@ export function GitStatusBar({
 		// Store the message for potential retry
 		lastCommitMessageRef.current = message || '';
 		await onBeforeCommit?.();
-		let committed = false;
+		let committedPaths: string[] | null = null;
 		try {
-			committed = (await gitStatus.commit(message)) !== null;
+			committedPaths = (await gitStatus.commit(message))?.paths ?? null;
 		} finally {
-			await onAfterCommit?.(committed);
+			await onAfterCommit?.(committedPaths);
 		}
 
 		// Refused over drafts someone else's commit has changed under: those get resolved

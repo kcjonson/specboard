@@ -412,6 +412,23 @@ export function Editor(props: RouteProps): JSX.Element {
 		await loadFileFromServer(path);
 	}, [canEdit, projectId, loadFileFromServer, documentModel, performServerSave]);
 
+	// Take the open file's base from the server without touching what's on screen: after
+	// a commit took its draft (the base is the version just committed) or a rename moved
+	// it (the base is the new path's). Never otherwise: the server's base for a file with
+	// no draft is what's committed now, which may be newer than what's on screen.
+	const refreshOpenDocumentBase = useCallback(async () => {
+		const path = documentModel.filePath;
+		if (!path) return;
+		try {
+			const response = await fetchClient.get<{ baseContentHash?: string | null }>(
+				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}`
+			);
+			if (documentModel.filePath === path) documentModel.baseContentHash = response.baseContentHash;
+		} catch (err) {
+			captureError(err instanceof Error ? err : new Error(String(err)), { type: 'file_base_refresh_error', filePath: path, projectRef });
+		}
+	}, [documentModel, projectRef]);
+
 	// Handle file renamed via sidebar double-click
 	const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
 		// If the renamed file is the currently open file, update the model
@@ -421,8 +438,9 @@ export function Editor(props: RouteProps): JSX.Element {
 				saveSelectedFile(projectId, newPath);
 			}
 			documentModel.updateFilePath(newPath);
+			void refreshOpenDocumentBase();
 		}
-	}, [projectId, documentModel]);
+	}, [projectId, documentModel, refreshOpenDocumentBase]);
 
 	// Handle restore from recovery dialog
 	const handleRestore = useCallback(() => {
@@ -688,21 +706,6 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [documentModel, loadFileFromServer]);
 
-	// Take the open file's base from the server without touching what's on screen: after
-	// a commit cleared its draft (the base is the version just committed) or a rename
-	// moved it (the base is the new path's).
-	const refreshOpenDocumentBase = useCallback(async () => {
-		const path = documentModel.filePath;
-		if (!path) return;
-		try {
-			const response = await fetchClient.get<{ baseContentHash?: string | null }>(
-				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}`
-			);
-			if (documentModel.filePath === path) documentModel.baseContentHash = response.baseContentHash;
-		} catch (err) {
-			captureError(err instanceof Error ? err : new Error(String(err)), { type: 'file_base_refresh_error', filePath: path, projectRef });
-		}
-	}, [documentModel, projectRef]);
 
 	// Before anything that acts on a file's draft as the server has it (resolving a
 	// conflict, a rename, a delete): if it's the open file, save what's on screen first.
@@ -726,9 +729,12 @@ export function Editor(props: RouteProps): JSX.Element {
 		holdSavesRef.current = true;
 	}, [documentModel, performServerSave]);
 
-	const handleAfterCommit = useCallback(async (committed: boolean) => {
+	// `committedPaths`: the drafts the commit took, or null when it didn't land.
+	const handleAfterCommit = useCallback(async (committedPaths: string[] | null) => {
 		try {
-			if (committed) await refreshOpenDocumentBase();
+			if (documentModel.filePath && committedPaths?.includes(documentModel.filePath)) {
+				await refreshOpenDocumentBase();
+			}
 		} finally {
 			holdSavesRef.current = false;
 		}

@@ -726,6 +726,9 @@ async function commitLocked(context: Context, projectId: string, userId: string,
 		sha: result.sha,
 		url: result.url,
 		filesCommitted: result.filesCommitted,
+		// The drafts the commit took, so an editor holding one of them open knows its
+		// next save is made against the version just committed.
+		paths: pendingChanges.map((change) => '/' + change.path),
 	};
 	// Either way the sync point is still the old commit, so a pull brings this one in.
 	const unfinished = (warning: string): Response => context.json({ ...committed, warning });

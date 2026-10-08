@@ -68,8 +68,8 @@ export interface FileBrowserProps {
 	onPullComplete?: () => void | Promise<void>;
 	/** Called before a commit, to save the open document */
 	onBeforeCommit?: () => Promise<void>;
-	/** Called when a commit attempt ends, landed or not */
-	onAfterCommit?: (committed: boolean) => void | Promise<void>;
+	/** Called when a commit attempt ends: the paths of the drafts it took, or null if it didn't land */
+	onAfterCommit?: (committedPaths: string[] | null) => void | Promise<void>;
 	/** Called before this path's draft is renamed, deleted, kept, or discarded (save it first if it's open) */
 	onBeforeFileChange?: (path: string) => Promise<void>;
 	/** What the open document at this path was made against; undefined when it isn't open */

@@ -47,6 +47,8 @@ interface CommitResponse {
 	error?: CommitError;
 	conflictDetected?: boolean;
 	reason?: string;
+	/** The paths of the drafts the commit took */
+	paths?: string[];
 	/** The commit landed but something after it didn't; says what to do (pull). */
 	warning?: string;
 }
@@ -205,7 +207,8 @@ export class GitStatusModel extends Model {
 	}
 
 	/** Commit all changes */
-	async commit(commitMessage?: string): Promise<{ sha: string } | null> {
+	/** Commit all changes. Landed: the commit's sha and the paths of the drafts it took. */
+	async commit(commitMessage?: string): Promise<{ sha: string; paths: string[] } | null> {
 		if (!this.projectRef) return null;
 
 		this.committing = true;
@@ -230,7 +233,7 @@ export class GitStatusModel extends Model {
 			await this.refresh();
 
 			this.committing = false;
-			return response.sha ? { sha: response.sha } : null;
+			return response.sha ? { sha: response.sha, paths: response.paths ?? [] } : null;
 		} catch (err) {
 			// A refused commit (409: the branch moved, pull first) carries its CommitError
 			// in the body; anything else is the server's message or a fallback.

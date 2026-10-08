@@ -605,7 +605,12 @@ describe('after a commit', () => {
 	it('shows the committer the committed files, with no drafts left', async () => {
 		await draftEverything();
 
-		expect((await commit()).status).toBe(200);
+		const response = await commit();
+		expect(response.status).toBe(200);
+		// The drafts it took, so an editor holding one open takes the new base.
+		expect(((await response.json()) as { paths: string[] }).paths.sort()).toEqual(
+			['/docs/new.md', '/docs/other.md', '/docs/spec.md', '/guides/spec.md']
+		);
 
 		expect(storage.mine(alice).size).toBe(0);
 		expect(await read('alice', '/guides/spec.md')).toBe('# Spec, edited');

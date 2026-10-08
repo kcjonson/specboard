@@ -266,9 +266,71 @@ describe('Editor and the version a draft is made against', () => {
 		expect(put).toHaveBeenCalledTimes(1);
 
 		await act(async () => {
-			await (seen.files!.onAfterCommit as (committed: boolean) => Promise<void>)(true);
+			await (seen.files!.onAfterCommit as (paths: string[]) => Promise<void>)([FILE]);
 		});
 		expect(put).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps the open file\'s base when a commit didn\'t take its draft', async () => {
+		const OPENED = 'a'.repeat(40);
+		const COMMITTED_SINCE = 'b'.repeat(40);
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		let base = OPENED;
+		get.mockImplementation(async (url: string) =>
+			url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: base } : files(url)
+		);
+		put.mockResolvedValue({});
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+		const model = seen.editor!.model as DocumentModel;
+
+		// Someone else commits this file, then the caller commits a different one.
+		base = COMMITTED_SINCE;
+		await act(async () => {
+			await (seen.files!.onBeforeCommit as () => Promise<void>)();
+			await (seen.files!.onAfterCommit as (paths: string[]) => Promise<void>)(['/docs/other.md']);
+		});
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		await act(async () => {
+			await (seen.files!.onBeforeFileChange as (path: string) => Promise<void>)(FILE);
+		});
+
+		expect(put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ baseContentHash: OPENED }));
+	});
+
+	it('takes the new base when the commit took the open file\'s draft', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		let base = 'a'.repeat(40);
+		get.mockImplementation(async (url: string) =>
+			url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: base } : files(url)
+		);
+		put.mockResolvedValue({});
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+
+		base = 'c'.repeat(40);
+		await act(async () => {
+			await (seen.files!.onAfterCommit as (paths: string[]) => Promise<void>)([FILE]);
+		});
+
+		expect((seen.editor!.model as DocumentModel).baseContentHash).toBe('c'.repeat(40));
+	});
+
+	it('takes the new path\'s base after a tree rename of the open file', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		get.mockImplementation(async (url: string) =>
+			url.includes('path=%2Fdocs%2Fmoved.md') ? { content: '# Spec', baseContentHash: null }
+				: url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: 'a'.repeat(40) } : files(url)
+		);
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+
+		act(() => (seen.files!.onFileRenamed as (from: string, to: string) => void)(FILE, '/docs/moved.md'));
+
+		await waitFor(() => expect((seen.editor!.model as DocumentModel).baseContentHash).toBeNull());
 	});
 });
 
