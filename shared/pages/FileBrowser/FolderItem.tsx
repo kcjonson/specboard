@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { Icon } from '@specboard/ui';
+import { ConflictMark } from './FileStatus';
 import styles from './FileBrowser.module.css';
 
 export interface FolderItemProps {
@@ -15,6 +16,8 @@ export interface FolderItemProps {
 	readOnly?: boolean;
 	/** Whether a root folder can be removed from the project, which only the owner may do */
 	canRemove?: boolean;
+	/** A draft at or under this folder conflicts with a newer commit; marked while collapsed */
+	hasConflict?: boolean;
 	/** Called when folder is clicked (to toggle expand) */
 	onClick: () => void;
 	/** Called when add file button is clicked */
@@ -32,6 +35,7 @@ export function FolderItem({
 	isRoot,
 	readOnly = false,
 	canRemove = false,
+	hasConflict = false,
 	onClick,
 	onAddFileClick,
 	onDeleteClick,
@@ -48,6 +52,9 @@ export function FolderItem({
 				<Icon name={isExpanded ? 'folder-open' : 'folder'} class="size-sm" />
 			</span>
 			<span class={styles.fileName}>{name}</span>
+			{hasConflict && !isExpanded && (
+				<ConflictMark label={`${name} has files someone else changed since your drafts began`} />
+			)}
 			{!readOnly && (
 				<div class={styles.folderActions}>
 					<button

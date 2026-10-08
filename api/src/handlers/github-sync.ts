@@ -495,6 +495,9 @@ export async function handleGitHubSyncStatus(context: Context): Promise<Response
 /** A full commit SHA; anything shorter can't be GitHub's expectedHeadOid. */
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
+/** What the editor shows when drafts were made against files someone has changed since. */
+export const DRAFT_CONFLICTS_MESSAGE = 'Some files you changed were also changed by someone else since you started. Keep your version or discard it for each one, then commit.';
+
 /** How many times to try recording a commit GitHub and storage already have. */
 const RECORD_ATTEMPTS = 3;
 
@@ -588,8 +591,35 @@ async function commitLocked(context: Context, projectId: string, userId: string,
 		}, 409);
 	}
 
-	// Get pending changes with content
+	// A draft is the whole file, so one made against a committed version that has since
+	// changed would replace that change wholesale. Refuse until the caller keeps or
+	// discards each one. Commits and pulls hold the same lock, so what's committed can't
+	// move between this check and GitHub; expectedHeadOid covers pushes from outside.
 	const storageClient = getStorageClient();
+	let conflicts;
+	try {
+		conflicts = (await storageClient.listPendingChanges(projectId, userId)).filter((change) => change.conflict);
+	} catch (err) {
+		log({
+			type: 'storage',
+			level: 'error',
+			event: 'list_pending_changes_failed',
+			userId,
+			projectId,
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return context.json({ success: false, error: { stage: 'commit', message: 'Failed to load pending changes. Please try again.' } }, 500);
+	}
+	if (conflicts.length > 0) {
+		return context.json({
+			success: false,
+			reason: 'draft_conflicts',
+			conflicts: conflicts.map((change) => ({ path: '/' + change.path, action: change.action })),
+			error: { stage: 'commit', message: DRAFT_CONFLICTS_MESSAGE },
+		}, 409);
+	}
+
+	// Get pending changes with content
 	let pendingChanges;
 	try {
 		pendingChanges = await storageClient.listPendingChangesWithContent(
@@ -696,6 +726,9 @@ async function commitLocked(context: Context, projectId: string, userId: string,
 		sha: result.sha,
 		url: result.url,
 		filesCommitted: result.filesCommitted,
+		// The drafts the commit took, so an editor holding one of them open knows its
+		// next save is made against the version just committed.
+		paths: pendingChanges.map((change) => '/' + change.path),
 	};
 	// Either way the sync point is still the old commit, so a pull brings this one in.
 	const unfinished = (warning: string): Response => context.json({ ...committed, warning });

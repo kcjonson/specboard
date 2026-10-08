@@ -22,6 +22,14 @@ interface PendingChange {
 	action: 'modified' | 'created' | 'deleted';
 	/** The committed path this change was renamed from, when it is the new side of a rename. */
 	renamedFrom: string | null;
+	/** What's committed at this path changed since the draft began (someone else's commit or a pull). */
+	conflict: boolean;
+	/** The committed version the draft was made against; null when none was committed. */
+	baseContentHash: string | null;
+	/** The draft's own content hash; null for a deletion. */
+	contentHash: string | null;
+	/** The committed file's hash at this path now; null when none is. */
+	committedHash: string | null;
 	hasContent: boolean;
 	isLarge: boolean;
 	updatedAt: string;
@@ -32,6 +40,8 @@ export interface PendingChangeContent {
 	content: string | null;
 	action: 'modified' | 'created' | 'deleted';
 	renamedFrom: string | null;
+	/** The committed version the draft was made against; null when none was committed. */
+	baseContentHash: string | null;
 	updatedAt: string;
 }
 
@@ -169,12 +179,16 @@ export class StorageClient {
 		path: string,
 		content: string | null,
 		action: 'modified' | 'created' | 'deleted',
-		renamedFrom: string | null
+		renamedFrom: string | null,
+		baseContentHash: string | null | undefined
 	): Promise<{ path: string; action: string; isLarge: boolean }> {
+		// Storage reads a missing baseContentHash key as "not known" and an explicit null
+		// as "nothing was committed", so the key is only sent when there is one.
 		return this.request('PUT', `/pending/${projectId}/${userId}/${path}`, {
 			content,
 			action,
 			renamedFrom,
+			...(baseContentHash === undefined ? {} : { baseContentHash }),
 		});
 	}
 
@@ -183,6 +197,23 @@ export class StorageClient {
 	 */
 	async deletePendingChange(projectId: string, userId: string, path: string): Promise<void> {
 		await this.request('DELETE', `/pending/${projectId}/${userId}/${path}`);
+	}
+
+	/** Undo the user's rename of oldPath to newPath: both drafts dropped in one storage transaction. */
+	async undoRename(projectId: string, userId: string, oldPath: string, newPath: string): Promise<void> {
+		await this.request('POST', `/pending/${projectId}/${userId}/undo-rename`, { oldPath, newPath });
+	}
+
+	/**
+	 * Keep the user's drafts at these paths over what's committed there now ("keep
+	 * mine"): each draft's base becomes the current committed version.
+	 */
+	async rebasePendingChanges(
+		projectId: string,
+		userId: string,
+		paths: string[]
+	): Promise<{ rebased: string[]; dropped: string[] }> {
+		return this.request('POST', `/pending/${projectId}/${userId}/rebase`, { paths });
 	}
 
 	/**

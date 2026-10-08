@@ -46,6 +46,17 @@ describe('documentPersistence', () => {
 		expect(loadFromLocalStorage(PROJECT_ID, PATH)?.content).toEqual(CONTENT);
 	});
 
+	it('keeps the base a local copy was made against, and reports none when it had none', () => {
+		saveToLocalStorage(PROJECT_ID, PATH, CONTENT, [], 'v1');
+		expect(loadFromLocalStorage(PROJECT_ID, PATH)?.baseContentHash).toBe('v1');
+
+		saveToLocalStorage(PROJECT_ID, PATH, CONTENT, [], null);
+		expect(loadFromLocalStorage(PROJECT_ID, PATH)?.baseContentHash).toBeNull();
+
+		saveToLocalStorage(PROJECT_ID, PATH, CONTENT);
+		expect(loadFromLocalStorage(PROJECT_ID, PATH)).not.toHaveProperty('baseContentHash');
+	});
+
 	it('keys by the project id, so two projects never see each other drafts', () => {
 		saveToLocalStorage(PROJECT_ID, PATH, CONTENT);
 		expect(hasPersistedContent(OTHER_PROJECT_ID, PATH)).toBe(false);

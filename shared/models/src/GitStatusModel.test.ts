@@ -34,7 +34,7 @@ describe('GitStatusModel.commit', () => {
 		const gitStatus = model();
 		expect(await gitStatus.commit()).toBeNull();
 
-		expect(gitStatus.commitError).toEqual({ ...reason, conflictDetected: true });
+		expect(gitStatus.commitError).toEqual({ ...reason, conflictDetected: true, draftConflicts: false });
 		expect(gitStatus.committing).toBe(false);
 	});
 
@@ -57,6 +57,70 @@ describe('GitStatusModel.commit', () => {
 
 		expect(gitStatus.commitError).toBeNull();
 		expect(gitStatus.commitWarning).toContain('Pull');
+	});
+});
+
+describe('draft conflicts', () => {
+	it('marks a commit refused over conflicting drafts and loads which files they are', async () => {
+		vi.mocked(fetchClient.post).mockRejectedValue(new FetchError('HTTP 409: Conflict', 409, undefined, {
+			success: false,
+			reason: 'draft_conflicts',
+			conflicts: [{ path: '/docs/spec.md', action: 'modified' }],
+			error: { stage: 'commit', message: 'Some files you changed were also changed by someone else since you started.' },
+		}));
+		vi.mocked(fetchClient.get).mockResolvedValue({
+			branch: 'main', ahead: 0, behind: 0,
+			changedFiles: [{ path: '/docs/spec.md', status: 'modified', isUntracked: false, conflict: true }, { path: '/docs/b.md', status: 'modified', isUntracked: false, conflict: false }],
+		});
+
+		const gitStatus = model();
+		await gitStatus.commit();
+
+		expect(gitStatus.commitError).toMatchObject({ draftConflicts: true, conflictDetected: false });
+		expect(gitStatus.conflictedFiles.map((f) => f.path)).toEqual(['/docs/spec.md']);
+		expect(gitStatus.hasConflict('/docs/spec.md')).toBe(true);
+		expect(gitStatus.hasConflict('/docs/b.md')).toBe(false);
+	});
+
+	it('keeps chosen drafts and refreshes', async () => {
+		vi.mocked(fetchClient.post).mockResolvedValue({ rebased: ['/docs/spec.md'], dropped: [] });
+		vi.mocked(fetchClient.get).mockResolvedValue({ branch: 'main', ahead: 0, behind: 0, changedFiles: [] });
+
+		const gitStatus = model();
+		expect(await gitStatus.keepMine(['/docs/spec.md'])).toBe(true);
+
+		expect(fetchClient.post).toHaveBeenCalledWith('/api/projects/acme/docs/git/keep-mine', { paths: ['/docs/spec.md'] });
+		expect(fetchClient.get).toHaveBeenCalledWith('/api/projects/acme/docs/git/status');
+	});
+
+	it('undoes a rename in one request', async () => {
+		vi.mocked(fetchClient.post).mockResolvedValue({ success: true });
+		vi.mocked(fetchClient.get).mockResolvedValue({ branch: 'main', ahead: 0, behind: 0, changedFiles: [] });
+
+		expect(await model().undoRename('/docs/spec.md', '/docs/moved.md')).toBe(true);
+
+		expect(vi.mocked(fetchClient.post).mock.calls).toEqual([
+			['/api/projects/acme/docs/git/undo-rename', { oldPath: '/docs/spec.md', newPath: '/docs/moved.md' }],
+		]);
+	});
+
+	it('knows which folders hold a conflicting draft', () => {
+		const gitStatus = model();
+		gitStatus.changedFiles = [
+			{ path: '/docs/guides/a.md', status: 'modified', isUntracked: false, conflict: true },
+			{ path: '/notes/b.md', status: 'modified', isUntracked: false, conflict: false },
+		];
+
+		expect(gitStatus.hasConflictUnder('/docs')).toBe(true);
+		expect(gitStatus.hasConflictUnder('/docs/guides')).toBe(true);
+		expect(gitStatus.hasConflictUnder('/notes')).toBe(false);
+		expect(gitStatus.hasConflictUnder('/do')).toBe(false);
+	});
+
+	it('reads a deleted draft as null', async () => {
+		vi.mocked(fetchClient.get).mockRejectedValue(new FetchError('HTTP 404: Not Found', 404, undefined, { error: 'File not found' }));
+
+		expect(await model().readDraft('/docs/gone.md')).toBeNull();
 	});
 });
 

@@ -4,12 +4,17 @@
  */
 
 import { Hono } from 'hono';
+import crypto from 'crypto';
 
 import {
 	getPendingChange,
 	listPendingChanges,
 	upsertPendingChange,
 	deletePendingChange,
+	rebasePendingChanges,
+	undoPendingRename,
+	isDraftBaseHash,
+	type DraftBase,
 	shouldStoreInS3,
 } from '../db/queries.ts';
 import {
@@ -53,11 +58,61 @@ pendingRoutes.get('/:projectId/:userId', async (c) => {
 			path: change.path,
 			action: change.action,
 			renamedFrom: change.renamedFrom,
+			conflict: change.conflict,
+			baseContentHash: change.baseContentHash,
+			contentHash: change.contentHash,
+			committedHash: change.committedHash,
 			hasContent: change.content !== null || change.s3Key !== null,
 			isLarge: change.s3Key !== null,
 			updatedAt: change.updatedAt.toISOString(),
 		})),
 	});
+});
+
+/**
+ * Keep the user's drafts at these paths over whatever is committed there now: each
+ * draft's base becomes the current committed version (see rebasePendingChanges).
+ * POST /pending/:projectId/:userId/rebase { paths }
+ */
+pendingRoutes.post('/:projectId/:userId/rebase', async (c) => {
+	const projectId = c.req.param('projectId');
+	const userId = c.req.param('userId');
+	const body = await c.req.json<{ paths?: unknown }>().catch(() => null);
+	const raw = body?.paths;
+	if (!Array.isArray(raw) || raw.length === 0) {
+		return c.json({ error: 'paths must be a non-empty array' }, 400);
+	}
+	const paths: string[] = [];
+	for (const path of raw) {
+		const valid = typeof path === 'string' ? validatePath(path) : null;
+		if (!valid) return c.json({ error: 'Invalid path' }, 400);
+		paths.push(valid);
+	}
+
+	auditLog('rebase', projectId, userId, paths.join(','));
+	return c.json(await rebasePendingChanges(projectId, userId, paths));
+});
+
+/**
+ * Undo the user's rename of oldPath to newPath, both drafts in one transaction.
+ * POST /pending/:projectId/:userId/undo-rename { oldPath, newPath }
+ */
+pendingRoutes.post('/:projectId/:userId/undo-rename', async (c) => {
+	const projectId = c.req.param('projectId');
+	const userId = c.req.param('userId');
+	const body = await c.req.json<{ oldPath?: unknown; newPath?: unknown }>().catch(() => null);
+	const oldPath = typeof body?.oldPath === 'string' ? validatePath(body.oldPath) : null;
+	const newPath = typeof body?.newPath === 'string' ? validatePath(body.newPath) : null;
+	if (!oldPath || !newPath || oldPath === newPath) {
+		return c.json({ error: 'oldPath and newPath must be two valid paths' }, 400);
+	}
+
+	auditLog('undo-rename', projectId, userId, `${oldPath} -> ${newPath}`);
+	const largeDropped = await undoPendingRename(projectId, userId, oldPath, newPath);
+	for (const { path } of largeDropped) {
+		await deletePendingContent(projectId, userId, path).catch((err) => console.warn(`Failed to delete pending S3 content for ${path}:`, err));
+	}
+	return c.json({ undone: true });
 });
 
 /**
@@ -96,6 +151,7 @@ pendingRoutes.get('/:projectId/:userId/:path{.+}', async (c) => {
 		content,
 		action: change.action,
 		renamedFrom: change.renamedFrom,
+		baseContentHash: change.baseContentHash,
 		updatedAt: change.updatedAt.toISOString(),
 	});
 });
@@ -122,6 +178,7 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 		content?: string;
 		action: 'modified' | 'created' | 'deleted';
 		renamedFrom?: string | null;
+		baseContentHash?: string | null;
 	}>();
 
 	if (!body.action || !['modified', 'created', 'deleted'].includes(body.action)) {
@@ -134,6 +191,15 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 		if (!renamedFrom) {
 			return c.json({ error: 'Invalid renamedFrom path' }, 400);
 		}
+	}
+
+	// A key that's present (a hash, or null for nothing committed) is the writer's
+	// base; one that's absent leaves it to what's committed now.
+	const base: DraftBase = 'baseContentHash' in body
+		? { given: true, hash: body.baseContentHash ?? null }
+		: { given: false };
+	if (base.given && base.hash !== null && !isDraftBaseHash(base.hash)) {
+		return c.json({ error: 'Invalid baseContentHash' }, 400);
 	}
 
 	// For delete action, content is not required
@@ -159,7 +225,10 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 
 	// Update database - if this fails after S3 upload, clean up S3
 	try {
-		await upsertPendingChange(projectId, userId, validPath, inlineContent, s3Key, body.action, renamedFrom);
+		const contentHash = typeof body.content === 'string' && body.action !== 'deleted'
+			? crypto.createHash('sha1').update(body.content).digest('hex')
+			: null;
+		await upsertPendingChange(projectId, userId, validPath, inlineContent, s3Key, body.action, renamedFrom, base, contentHash);
 	} catch (err) {
 		// Clean up S3 content if DB update failed
 		if (s3Key) {

@@ -49,6 +49,8 @@ function getStorageKey(projectId: string, filePath: string): string {
 interface PersistedDocument {
 	content: SlateContent;
 	comments?: DocumentComment[];
+	/** What the content was made against (see DocumentModel.baseContentHash); absent when unknown. */
+	baseContentHash?: string | null;
 	savedAt: number;
 }
 
@@ -59,12 +61,14 @@ interface PersistedDocument {
  * @param filePath - File path within the project
  * @param content - Slate AST content to persist
  * @param comments - Optional comments to persist alongside content
+ * @param baseContentHash - What the content was made against, restored with it
  */
 export function saveToLocalStorage(
 	projectId: string,
 	filePath: string,
 	content: SlateContent,
-	comments?: DocumentComment[]
+	comments?: DocumentComment[],
+	baseContentHash?: string | null
 ): void {
 	if (!canPersist(projectId)) return;
 	const storage = getStorage();
@@ -75,6 +79,7 @@ export function saveToLocalStorage(
 		const data: PersistedDocument = {
 			content,
 			comments,
+			...(baseContentHash === undefined ? {} : { baseContentHash }),
 			savedAt: Date.now(),
 		};
 		storage.setItem(key, JSON.stringify(data));
@@ -90,6 +95,7 @@ export function saveToLocalStorage(
 export interface LoadedPersistedDocument {
 	content: SlateContent;
 	comments?: DocumentComment[];
+	baseContentHash?: string | null;
 }
 
 /**
@@ -116,6 +122,7 @@ export function loadFromLocalStorage(
 		return {
 			content: data.content,
 			comments: data.comments,
+			...('baseContentHash' in data ? { baseContentHash: data.baseContentHash } : {}),
 		};
 	} catch (err) {
 		console.warn('Failed to load document from localStorage:', err);

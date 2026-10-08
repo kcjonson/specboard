@@ -16,6 +16,8 @@ export interface FileEntry {
 	type: 'file' | 'directory';
 	size?: number;
 	modifiedAt?: Date;
+	/** Cloud: the committed version's hash, which a tree delete or rename sends as its base. */
+	contentHash?: string;
 }
 
 export interface ListDirectoryOptions {
@@ -38,6 +40,12 @@ export interface FileChange {
 	path: string;
 	status: 'added' | 'modified' | 'deleted' | 'renamed';
 	oldPath?: string; // For renames
+	/** Cloud drafts: what's committed at this path changed since the draft began. */
+	conflict?: boolean;
+	/** Cloud drafts: a deletion that is the old side of a rename, and where the file went. */
+	renamedTo?: string;
+	/** Cloud drafts, with renamedTo: the file at its new path is exactly what's committed at the old one now. */
+	renameKeepsCommitted?: boolean;
 }
 
 export interface Commit {
@@ -61,14 +69,34 @@ export interface PullResult {
  * Storage provider interface
  * Implementations: LocalStorageProvider, GitStorageProvider (cloud)
  */
+/**
+ * A file as the editor opens it. `baseContentHash` is the committed version the content
+ * comes from (cloud projects): the committed file's hash, or for one of the caller's
+ * drafts, the version the draft was made against; null when nothing is committed there.
+ * Absent where there's no committed copy to compare against (local projects).
+ */
+export interface OpenedDocument {
+	content: string;
+	baseContentHash?: string | null;
+}
+
 export interface StorageProvider {
 	// File operations
 	listDirectory(relativePath: string, options?: ListDirectoryOptions): Promise<FileEntry[]>;
 	readFile(relativePath: string): Promise<string>;
-	writeFile(relativePath: string, content: string): Promise<void>;
-	deleteFile(relativePath: string): Promise<void>;
+	/** readFile, plus what the content was made against, for an editor that will save it back. */
+	readDocument(relativePath: string): Promise<OpenedDocument>;
+	/**
+	 * `baseContentHash` is what the content was made against, as readDocument gave it
+	 * (null: nothing committed). Undefined when the writer doesn't know (an agent, a
+	 * script), which takes what's committed at the path now.
+	 */
+	writeFile(relativePath: string, content: string, baseContentHash?: string | null): Promise<void>;
+	/** `baseContentHash`: what the caller last saw of the file, as for writeFile. */
+	deleteFile(relativePath: string, baseContentHash?: string | null): Promise<void>;
 	createDirectory(relativePath: string): Promise<void>;
-	rename(oldPath: string, newPath: string): Promise<void>;
+	/** `sourceBaseContentHash`: what the caller last saw of the file being renamed. */
+	rename(oldPath: string, newPath: string, sourceBaseContentHash?: string | null): Promise<void>;
 	exists(relativePath: string): Promise<boolean>;
 
 	// Git operations

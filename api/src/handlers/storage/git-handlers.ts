@@ -4,12 +4,14 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { getStorageProvider, normalizePath } from './utils.ts';
+import { getStorageProvider, isPathWithinRoots, normalizePath } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
 import { isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
 import { apiUserId, loadAuthorizedProject, requireAccess } from '../../project-access.ts';
 import { jsonObjectBody } from '../../request-body.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
+import { getStorageClient } from '../../services/storage/storage-client.ts';
+import type { FileChange } from '../../services/storage/types.ts';
 
 /**
  * GET /api/projects/:owner/:project/git/status
@@ -48,24 +50,32 @@ export async function handleGetGitStatus(context: Context): Promise<Response> {
 
 		// Combine staged, unstaged, and untracked into a single changedFiles array
 		// Use a Map to dedupe by path, preferring staged status
-		const changedMap = new Map<string, { path: string; status: string; isUntracked: boolean }>();
+		type ChangedFile = { path: string; status: string; isUntracked: boolean; conflict: boolean; renamedTo?: string; renameKeepsCommitted?: boolean };
+		const changedMap = new Map<string, ChangedFile>();
+		const changed = (file: FileChange): ChangedFile => ({
+			path: file.path,
+			status: file.status,
+			isUntracked: false,
+			conflict: file.conflict === true,
+			...(file.renamedTo ? { renamedTo: file.renamedTo, renameKeepsCommitted: file.renameKeepsCommitted === true } : {}),
+		});
 
 		// Add staged files
 		for (const file of status.staged) {
-			changedMap.set(file.path, { path: file.path, status: file.status, isUntracked: false });
+			changedMap.set(file.path, changed(file));
 		}
 
 		// Add unstaged files (don't override if already staged)
 		for (const file of status.unstaged) {
 			if (!changedMap.has(file.path)) {
-				changedMap.set(file.path, { path: file.path, status: file.status, isUntracked: false });
+				changedMap.set(file.path, changed(file));
 			}
 		}
 
 		// Add untracked files
 		for (const path of status.untracked) {
 			if (!changedMap.has(path)) {
-				changedMap.set(path, { path, status: 'added', isUntracked: true });
+				changedMap.set(path, { path, status: 'added', isUntracked: true, conflict: false });
 			}
 		}
 
@@ -258,6 +268,128 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 		console.error('Restore failed:', error);
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		return context.json({ error: `Restore failed: ${errorMessage}` }, 500);
+	}
+}
+
+/**
+ * POST /api/projects/:owner/:project/git/keep-mine { paths }
+ * Keep the caller's drafts at these paths over what someone else committed since they
+ * began: each draft's base becomes the current committed version, so the next commit
+ * takes the draft as it is (docs/specs/project-storage.md, Draft conflicts). Cloud only;
+ * a local project's drafts are its working tree.
+ */
+export async function handleKeepMine(context: Context, redis: Redis): Promise<Response> {
+	const userId = apiUserId(context);
+
+	const project = await loadAuthorizedProject(context);
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	if (!isCloudRepository(project.repository)) {
+		return context.json({ error: 'Only cloud projects keep drafts against a committed version', code: 'NOT_CLOUD' }, 400);
+	}
+
+	const body = await jsonObjectBody<{ paths?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const raw = body.paths;
+	if (!Array.isArray(raw) || raw.length === 0) {
+		return context.json({ error: 'paths must be a non-empty array', code: 'PATHS_REQUIRED' }, 400);
+	}
+	const paths: string[] = [];
+	for (const path of raw) {
+		const normalized = typeof path === 'string' ? normalizePath(path) : null;
+		if (!normalized) {
+			return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
+		}
+		if (!isPathWithinRoots(normalized, project.rootPaths)) {
+			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
+		}
+		paths.push(normalized.slice(1));
+	}
+
+	try {
+		const result = await getStorageClient().rebasePendingChanges(project.id, userId, paths);
+		if (paths.some((path) => isConventionFile('/' + path))) {
+			await invalidateRepoConventions(project.id, userId, redis);
+		}
+		return context.json({
+			rebased: result.rebased.map((path) => '/' + path),
+			dropped: result.dropped.map((path) => '/' + path),
+		});
+	} catch (error) {
+		console.error('Keep mine failed:', error);
+		return context.json({ error: 'Failed to keep your drafts' }, 500);
+	}
+}
+
+/**
+ * POST /api/projects/:owner/:project/git/undo-rename { oldPath, newPath }
+ * Undo the caller's rename of a file: the draft at the new path and the deletion at the
+ * old one are dropped together, so the file is back as it's committed. Cloud only.
+ */
+export async function handleUndoRename(context: Context, redis: Redis): Promise<Response> {
+	const userId = apiUserId(context);
+
+	const project = await loadAuthorizedProject(context);
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	if (!isCloudRepository(project.repository)) {
+		return context.json({ error: 'Only cloud projects keep drafts against a committed version', code: 'NOT_CLOUD' }, 400);
+	}
+
+	const body = await jsonObjectBody<{ oldPath?: unknown; newPath?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const oldPath = typeof body.oldPath === 'string' ? normalizePath(body.oldPath) : null;
+	const newPath = typeof body.newPath === 'string' ? normalizePath(body.newPath) : null;
+	if (!oldPath || !newPath || oldPath === newPath) {
+		return context.json({ error: 'oldPath and newPath must be two valid paths', code: 'INVALID_PATH' }, 400);
+	}
+	if (!isPathWithinRoots(oldPath, project.rootPaths) || !isPathWithinRoots(newPath, project.rootPaths)) {
+		return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
+	}
+
+	try {
+		await getStorageClient().undoRename(project.id, userId, oldPath.slice(1), newPath.slice(1));
+		if (isConventionFile(oldPath) || isConventionFile(newPath)) {
+			await invalidateRepoConventions(project.id, userId, redis);
+		}
+		return context.json({ success: true, path: oldPath });
+	} catch (error) {
+		console.error('Undo rename failed:', error);
+		return context.json({ error: 'Failed to undo the rename' }, 500);
+	}
+}
+
+/**
+ * GET /api/projects/:owner/:project/git/committed?path=/docs/file.md
+ * The committed version of a file, without the caller's draft over it: what a draft
+ * conflict is with. Cloud only. `content` is null when nothing is committed at the path.
+ */
+export async function handleReadCommittedFile(context: Context): Promise<Response> {
+	const rawPath = context.req.query('path');
+	const filePath = rawPath ? normalizePath(rawPath) : null;
+	if (!filePath) {
+		return context.json({ error: 'A valid path query parameter is required', code: 'INVALID_PATH' }, 400);
+	}
+
+	const project = await loadAuthorizedProject(context);
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	if (!isCloudRepository(project.repository)) {
+		return context.json({ error: 'Only cloud projects keep a committed copy', code: 'NOT_CLOUD' }, 400);
+	}
+	if (!isPathWithinRoots(filePath, project.rootPaths)) {
+		return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
+	}
+
+	try {
+		const file = await getStorageClient().getFile(project.id, filePath.slice(1));
+		return context.json({ path: filePath, content: file?.content ?? null });
+	} catch (error) {
+		console.error('Failed to read committed file:', error);
+		return context.json({ error: 'Server error' }, 500);
 	}
 }
 

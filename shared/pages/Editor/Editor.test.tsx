@@ -188,3 +188,176 @@ describe('Editor saves the server refuses', () => {
 	});
 });
 
+describe('Editor and the version a draft is made against', () => {
+	it('sends the base the file was opened with, even when the first save comes much later', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		get.mockImplementation(async (url: string) =>
+			url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: 'v1' } : files(url)
+		);
+		put.mockResolvedValue({});
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+
+		const model = seen.editor!.model as DocumentModel;
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		await act(async () => {
+			await (seen.files!.onFileSelect as (path: string) => Promise<void>)('/docs/other.md');
+		});
+
+		expect(put).toHaveBeenCalledWith(
+			'/api/projects/acme/docs/files?path=%2Fdocs%2Fspec.md',
+			expect.objectContaining({ baseContentHash: 'v1' })
+		);
+	});
+
+	it('restores a local copy with the base it was made against', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		saveToLocalStorage('id-docs', FILE, [{ type: 'paragraph', children: [{ text: 'Local' }] }] as never, [], 'v0');
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('recovery-dialog');
+
+		const { loadFromLocalStorage } = await import('@specboard/models');
+		expect(loadFromLocalStorage('id-docs', FILE)?.baseContentHash).toBe('v0');
+	});
+
+	it('saves before a header rename and sends the base the file was opened with', async () => {
+		const BASE = 'a'.repeat(40);
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		get.mockImplementation(async (url: string) =>
+			url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: BASE } : files(url)
+		);
+		const order: string[] = [];
+		put.mockImplementation(async () => { order.push('save'); return {}; });
+		const renameFile = vi.fn(async (_path: string, name: string) => { order.push('rename'); return `/docs/${name}`; });
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+		act(() => (seen.files!.onRenameFileRef as (fn: typeof renameFile) => void)(renameFile));
+
+		const model = seen.editor!.model as DocumentModel;
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		await act(async () => {
+			await (seen.header!.onRename as (name: string) => Promise<void>)('renamed.md');
+		});
+
+		expect(order).toEqual(['save', 'rename']);
+		expect(renameFile).toHaveBeenCalledWith(FILE, 'renamed.md', BASE);
+		// Then it shows the file as the server has it under the new name, and the changes.
+		const reads = get.mock.calls.map(([url]) => String(url));
+		expect(reads).toContain('/api/projects/acme/docs/files?path=%2Fdocs%2Frenamed.md');
+		expect(reads.filter((url) => url.endsWith('/git/status')).length).toBeGreaterThanOrEqual(2);
+		expect(model.filePath).toBe('/docs/renamed.md');
+	});
+
+	it('doesn\'t rename when the open file couldn\'t be saved first', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		put.mockRejectedValue(new Error('offline'));
+		const renameFile = vi.fn(async (_path: string, name: string) => `/docs/${name}`);
+		const alert = vi.fn();
+		vi.stubGlobal('alert', alert);
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+		act(() => (seen.files!.onRenameFileRef as (fn: typeof renameFile) => void)(renameFile));
+
+		const model = seen.editor!.model as DocumentModel;
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		await act(async () => {
+			await (seen.header!.onRename as (name: string) => Promise<void>)('renamed.md');
+		});
+
+		expect(renameFile).not.toHaveBeenCalled();
+		expect(alert).toHaveBeenCalled();
+		expect(model.filePath).toBe(FILE);
+	});
+
+	it('saves before a commit and holds saves until the commit is done', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		put.mockResolvedValue({});
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+		const model = seen.editor!.model as DocumentModel;
+
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'Before' }] }] }));
+		await act(async () => {
+			await (seen.files!.onBeforeCommit as () => Promise<void>)();
+		});
+		expect(put).toHaveBeenCalledTimes(1);
+
+		// An edit while the commit runs isn't saved until it's over, and nothing that needs
+		// it saved first (a rename, a delete) goes ahead meanwhile.
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'During' }] }] }));
+		await act(async () => {
+			await expect((seen.files!.onBeforeFileChange as (path: string) => Promise<void>)(FILE)).rejects.toThrow('couldn\'t be saved');
+		});
+		expect(put).toHaveBeenCalledTimes(1);
+
+		await act(async () => {
+			await (seen.files!.onAfterCommit as (paths: string[]) => Promise<void>)([FILE]);
+		});
+		expect(put).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps the open file\'s base when a commit didn\'t take its draft', async () => {
+		const OPENED = 'a'.repeat(40);
+		const COMMITTED_SINCE = 'b'.repeat(40);
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		let base = OPENED;
+		get.mockImplementation(async (url: string) =>
+			url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: base } : files(url)
+		);
+		put.mockResolvedValue({});
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+		const model = seen.editor!.model as DocumentModel;
+
+		// Someone else commits this file, then the caller commits a different one.
+		base = COMMITTED_SINCE;
+		await act(async () => {
+			await (seen.files!.onBeforeCommit as () => Promise<void>)();
+			await (seen.files!.onAfterCommit as (paths: string[]) => Promise<void>)(['/docs/other.md']);
+		});
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		await act(async () => {
+			await (seen.files!.onBeforeFileChange as (path: string) => Promise<void>)(FILE);
+		});
+
+		expect(put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ baseContentHash: OPENED }));
+	});
+
+	it('takes the new base when the commit took the open file\'s draft', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		let base = 'a'.repeat(40);
+		get.mockImplementation(async (url: string) =>
+			url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: base } : files(url)
+		);
+		put.mockResolvedValue({});
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+
+		base = 'c'.repeat(40);
+		await act(async () => {
+			await (seen.files!.onAfterCommit as (paths: string[]) => Promise<void>)([FILE]);
+		});
+
+		expect((seen.editor!.model as DocumentModel).baseContentHash).toBe('c'.repeat(40));
+	});
+
+	it('takes the new path\'s base after a tree rename of the open file', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		get.mockImplementation(async (url: string) =>
+			url.includes('path=%2Fdocs%2Fmoved.md') ? { content: '# Spec', baseContentHash: null }
+				: url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: 'a'.repeat(40) } : files(url)
+		);
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+
+		act(() => (seen.files!.onFileRenamed as (from: string, to: string) => void)(FILE, '/docs/moved.md'));
+
+		await waitFor(() => expect((seen.editor!.model as DocumentModel).baseContentHash).toBeNull());
+	});
+});
+

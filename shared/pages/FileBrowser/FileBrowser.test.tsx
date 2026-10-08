@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/preact';
 import { FetchError, fetchClient } from '@specboard/fetch';
+import { GitStatusModel } from '@specboard/models';
 import { FileBrowser } from './FileBrowser';
 
 const post = vi.fn();
@@ -99,6 +100,10 @@ describe('FileBrowser read-only', () => {
 	beforeEach(() => {
 		post.mockReset();
 		post.mockResolvedValue(TREE);
+		del.mockReset();
+		// jsdom has no <dialog> modal support.
+		HTMLDialogElement.prototype.showModal = function showModal(): void { this.open = true; };
+		HTMLDialogElement.prototype.close = function close(): void { this.open = false; };
 	});
 
 	it('browses with no create, delete or remove controls', async () => {
@@ -147,6 +152,25 @@ describe('FileBrowser read-only', () => {
 		expect(await findByText('Connect GitHub to edit this project')).toBeTruthy();
 		expect(queryByText('HTTP 403: Forbidden')).toBeNull();
 		expect(fetchClient.get).toHaveBeenCalledWith('/api/projects/acme/refused');
+	});
+
+	it('deletes a file with no draft without asking, and asks for one with a draft', async () => {
+		del.mockResolvedValue({});
+		const gitStatus = new GitStatusModel();
+		gitStatus.projectRef = 'acme/specboard';
+		// The status the test sets is the status; a delete's refresh would replace it.
+		gitStatus.refresh = vi.fn(async () => {});
+		const { findByText, getByRole, queryByText } = render(<FileBrowser projectRef="acme/specboard" gitStatus={gitStatus} />);
+		await findByText('spec.md');
+
+		fireEvent.click(getByRole('button', { name: 'Delete file' }));
+		await waitFor(() => expect(del).toHaveBeenCalledTimes(1));
+		expect(queryByText('This file has uncommitted changes that will be lost.')).toBeNull();
+
+		gitStatus.changedFiles = [{ path: '/docs/spec.md', status: 'modified', isUntracked: false }];
+		fireEvent.click(getByRole('button', { name: 'Delete file' }));
+		expect(await findByText('This file has uncommitted changes that will be lost.')).toBeTruthy();
+		expect(del).toHaveBeenCalledTimes(1);
 	});
 
 	it('hides the sync retry, which only an editor can run', async () => {

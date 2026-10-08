@@ -18,6 +18,7 @@ import {
 	pathsToExpandedTree,
 	sortPathsByDepth,
 	getDisplayName,
+	readDraftBase,
 } from './utils.ts';
 
 const MAX_EXPANDED_PATHS = 200;
@@ -195,12 +196,15 @@ export async function handleReadFile(context: Context): Promise<Response> {
 			return context.json({ error: 'File not found' }, 404);
 		}
 
-		const content = await provider.readFile(filePath);
+		const document = await provider.readDocument(filePath);
 
 		return context.json({
 			path: filePath,
-			content,
+			content: document.content,
 			encoding: 'utf-8',
+			// What an editor sends back with its saves, so a draft records what it was
+			// made against rather than whatever is committed when it first saves.
+			...(document.baseContentHash === undefined ? {} : { baseContentHash: document.baseContentHash }),
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -263,8 +267,8 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'File already exists', code: 'FILE_EXISTS' }, 409);
 		}
 
-		// Create file with default markdown heading
-		await provider.writeFile(filePath, '# Untitled\n\n');
+		// Create file with default markdown heading; nothing is committed at the path.
+		await provider.writeFile(filePath, '# Untitled\n\n', null);
 
 		// Invalidate convention file cache if a convention file was created
 		if (isConventionFile(filePath)) {
@@ -289,11 +293,17 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 	const userId = apiUserId(context);
 	const access = requireAccess(context);
 
-	const body = await jsonObjectBody<{ oldPath?: string; newPath?: string }>(context);
+	const body = await jsonObjectBody<{ oldPath?: string; newPath?: string; baseContentHash?: unknown }>(context);
 	if (body instanceof Response) return body;
 	const { oldPath: rawOldPath, newPath: rawNewPath } = body;
 	if (!rawOldPath || !rawNewPath) {
 		return context.json({ error: 'oldPath and newPath are required' }, 400);
+	}
+	// What the caller last saw of the source (the open document's base, or the tree's
+	// hash for it), so the rename's old side conflicts if someone changed it since.
+	const sourceBase = readDraftBase(body.baseContentHash);
+	if (!sourceBase.ok) {
+		return context.json({ error: 'Invalid baseContentHash', code: 'INVALID_BASE' }, 400);
 	}
 
 	try {
@@ -336,7 +346,7 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'A file with that name already exists', code: 'FILE_EXISTS' }, 409);
 		}
 
-		await provider.rename(oldPath, newPath);
+		await provider.rename(oldPath, newPath, sourceBase.base);
 
 		// A local rename is on disk now, so spec links follow it now, and a failure puts
 		// the file back. A cloud rename is the caller's draft until they commit it; the
@@ -391,6 +401,14 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 		return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
 	}
 
+	// What the caller last saw of the file, so the deletion conflicts if someone changed
+	// it since. A delete without one (a tree entry from before hashes were listed) is
+	// taken as intent for the path as it's committed now.
+	const deleteBase = readDraftBase(context.req.query('baseContentHash'));
+	if (!deleteBase.ok) {
+		return context.json({ error: 'Invalid baseContentHash', code: 'INVALID_BASE' }, 400);
+	}
+
 	try {
 		const project = await loadAuthorizedProject(context);
 		if (!project) {
@@ -419,7 +437,7 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'File or folder not found' }, 404);
 		}
 
-		await provider.deleteFile(filePath);
+		await provider.deleteFile(filePath, deleteBase.base);
 
 		// Same split as a rename: a local delete drops the file's spec links now, a cloud
 		// delete is a draft whose commit drops them.
@@ -462,12 +480,21 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 		return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
 	}
 
-	const body = await jsonObjectBody<{ content?: unknown }>(context);
+	const body = await jsonObjectBody<{ content?: unknown; baseContentHash?: unknown }>(context);
 	if (body instanceof Response) return body;
 	const { content } = body;
 	if (typeof content !== 'string') {
 		return context.json({ error: 'Content is required' }, 400);
 	}
+
+	// The committed version the content was made against, as GET files gave it (null:
+	// nothing committed). A write without it (an agent, an older client) leaves the
+	// base to what's committed when the draft is first written.
+	const writeBase = readDraftBase(body.baseContentHash);
+	if (!writeBase.ok) {
+		return context.json({ error: 'Invalid baseContentHash', code: 'INVALID_BASE' }, 400);
+	}
+	const baseContentHash = writeBase.base;
 
 	try {
 		const project = await loadAuthorizedProject(context);
@@ -486,7 +513,7 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 			return context.json({ error: 'No repository configured' }, 404);
 		}
 
-		await provider.writeFile(filePath, content);
+		await provider.writeFile(filePath, content, baseContentHash);
 
 		// Invalidate convention file cache if a convention file was edited
 		if (isConventionFile(filePath)) {

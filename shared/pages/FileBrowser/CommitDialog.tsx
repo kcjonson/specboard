@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { Button, Dialog, DialogFooter, Icon } from '@specboard/ui';
 import type { IconName } from '@specboard/ui';
@@ -52,6 +52,10 @@ export function CommitDialog({
 	initialMessage = '',
 }: CommitDialogProps): JSX.Element | null {
 	const [commitMessage, setCommitMessage] = useState('');
+	// One commit request at a time: ⌘+Enter and a click can both land before the commit
+	// itself marks the model busy (saving the open file comes first).
+	const submittingRef = useRef(false);
+	const [submitting, setSubmitting] = useState(false);
 
 	// Reset commit message when dialog opens (use initialMessage for retries)
 	useEffect(() => {
@@ -62,16 +66,28 @@ export function CommitDialog({
 
 	if (!open) return null;
 
+	const submit = async (): Promise<void> => {
+		if (submittingRef.current || gitStatus.committing) return;
+		submittingRef.current = true;
+		setSubmitting(true);
+		try {
+			await onCommit(commitMessage.trim() || undefined);
+		} finally {
+			submittingRef.current = false;
+			setSubmitting(false);
+		}
+	};
+
 	const handleSubmit = async (e: Event): Promise<void> => {
 		e.preventDefault();
-		await onCommit(commitMessage.trim() || undefined);
+		await submit();
 	};
 
 	const handleKeyDown = async (e: KeyboardEvent): Promise<void> => {
 		// Submit on Cmd/Ctrl + Enter
 		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
-			await onCommit(commitMessage.trim() || undefined);
+			await submit();
 		}
 	};
 
@@ -133,9 +149,9 @@ export function CommitDialog({
 					<Button
 						type="submit"
 						class="primary"
-						disabled={gitStatus.committing}
+						busy={submitting || gitStatus.committing}
 					>
-						{gitStatus.committing ? 'Committing...' : 'Commit'}
+						{submitting || gitStatus.committing ? 'Committing...' : 'Commit'}
 					</Button>
 				</DialogFooter>
 			</form>

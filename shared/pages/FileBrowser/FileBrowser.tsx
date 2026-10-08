@@ -53,19 +53,31 @@ export interface FileBrowserProps {
 	/** Callback when file creation is cancelled */
 	onCancelNewFile?: () => void;
 	/** Callback when a file is renamed via double-click in sidebar */
-	onFileRenamed?: (oldPath: string, newPath: string) => void;
+	onFileRenamed?: (oldPath: string, newPath: string) => void | Promise<void>;
 	/** Callback when a file or folder is deleted */
 	onFileDeleted?: (path: string) => void;
 	/** Callback to receive the startNewFile function. parentPath is optional - uses first rootPath if not provided */
 	onStartNewFileRef?: (startNewFile: (parentPath?: string) => void) => void;
 	/** Callback to receive the renameFile function. Returns new path on success */
-	onRenameFileRef?: (renameFile: (path: string, newFilename: string) => Promise<string>) => void;
+	onRenameFileRef?: (renameFile: (path: string, newFilename: string, baseContentHash?: string | null) => Promise<string>) => void;
 	/** Whether the editor has unsaved changes */
 	hasUnsavedChanges?: boolean;
 	/** Called before pull starts - use to save dirty content */
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes (file tree is already reloaded) */
 	onPullComplete?: () => void | Promise<void>;
+	/** Called before a commit, to save the open document */
+	onBeforeCommit?: () => Promise<void>;
+	/** Called when a commit attempt ends: the paths of the drafts it took, or null if it didn't land */
+	onAfterCommit?: (committedPaths: string[] | null) => void | Promise<void>;
+	/** Called before this path's draft is renamed, deleted, kept, or discarded (save it first if it's open) */
+	onBeforeFileChange?: (path: string) => Promise<void>;
+	/** What the open document at this path was made against; undefined when it isn't open */
+	openDocumentBase?: (path: string) => string | null | undefined;
+	/** Called after a draft conflict on this path was kept or discarded (file tree is already reloaded) */
+	onDraftResolved?: (path: string) => void | Promise<void>;
+	/** Called after a rename was undone, the file back at oldPath (file tree is already reloaded) */
+	onRenameUndone?: (oldPath: string, newPath: string) => void | Promise<void>;
 	/**
 	 * Browse only: no create, rename, delete, folder changes, sync retry, commit or pull,
 	 * and no pending-changes count. For someone who can't edit the project.
@@ -95,6 +107,12 @@ export function FileBrowser({
 	hasUnsavedChanges,
 	onBeforePull,
 	onPullComplete,
+	onBeforeCommit,
+	onAfterCommit,
+	onBeforeFileChange,
+	openDocumentBase,
+	onDraftResolved,
+	onRenameUndone,
 	readOnly = false,
 	isOwner = false,
 	class: className,
@@ -165,7 +183,7 @@ export function FileBrowser({
 	}, [onStartNewFileRef, handleStartNewFile]);
 
 	// Expose renameFile function to parent
-	const handleRenameFile = useCallback(async (path: string, newFilename: string): Promise<string> => {
+	const handleRenameFile = useCallback(async (path: string, newFilename: string, baseContentHash?: string | null): Promise<string> => {
 		// Get parent directory from path
 		const lastSlash = path.lastIndexOf('/');
 		const parentPath = lastSlash > 0 ? path.slice(0, lastSlash) : '/';
@@ -177,10 +195,12 @@ export function FileBrowser({
 			return path;
 		}
 
-		// Call API directly (simpler than going through model for external calls)
+		// Call API directly (simpler than going through model for external calls). The
+		// caller's base for the source makes its old side conflict if someone changed it.
+		const base = baseContentHash !== undefined ? baseContentHash : model.contentHashOf(path);
 		await fetchClient.put<{ success: boolean }>(
 			`/api/projects/${projectRef}/files/rename`,
-			{ oldPath: path, newPath }
+			base === undefined ? { oldPath: path, newPath } : { oldPath: path, newPath, baseContentHash: base }
 		);
 
 		// Reload tree to show renamed file
@@ -284,10 +304,16 @@ export function FileBrowser({
 
 		const oldPath = model.pendingRename?.path;
 		try {
-			const newPath = await model.commitRename(renameName);
+			if (oldPath) await onBeforeFileChange?.(oldPath);
+		} catch (err) {
+			model.error = err instanceof Error ? err.message : 'Couldn\'t save before renaming';
+			return;
+		}
+		try {
+			const newPath = await model.commitRename(renameName, oldPath ? baseForPath(oldPath) : undefined);
 			// Notify parent of the rename
 			if (oldPath) {
-				onFileRenamed?.(oldPath, newPath);
+				await onFileRenamed?.(oldPath, newPath);
 			}
 			// Refresh git status to show the renamed file as changed
 			gitStatus?.refresh();
@@ -350,6 +376,25 @@ export function FileBrowser({
 		await model.reload();
 		await onPullComplete?.();
 	}, [model, onPullComplete]);
+
+	// A discarded draft can take a file out of the tree (one the caller created) or put one back
+	const handleDraftResolved = useCallback(async (path: string) => {
+		await model.reload();
+		await onDraftResolved?.(path);
+	}, [model, onDraftResolved]);
+
+	const handleRenameUndone = useCallback(async (oldPath: string, newPath: string) => {
+		await model.reload();
+		await onRenameUndone?.(oldPath, newPath);
+	}, [model, onRenameUndone]);
+
+	// What a rename or delete of this path says the caller last saw: the open document's
+	// base, else the hash the tree listed. A file listed before hashes were (or a new one)
+	// has none, and the server takes the path as it's committed now.
+	const baseForPath = useCallback((path: string): string | null | undefined => {
+		const open = openDocumentBase?.(path);
+		return open !== undefined ? open : model.contentHashOf(path);
+	}, [model, openDocumentBase]);
 
 	// Handle add folder. The picker is the desktop shell's, and its failure is its own
 	// message; the add is a write, reported in the server's words.
@@ -428,8 +473,17 @@ export function FileBrowser({
 		const itemType = type === 'directory' ? 'folder' : 'file';
 
 		try {
+			await onBeforeFileChange?.(path);
+		} catch (err) {
+			model.error = err instanceof Error ? err.message : `Couldn't save before deleting the ${itemType}`;
+			return;
+		}
+
+		try {
+			const base = type === 'file' ? baseForPath(path) : undefined;
+			const baseQuery = base === undefined || base === null ? '' : `&baseContentHash=${encodeURIComponent(base)}`;
 			await fetchClient.delete(
-				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}`
+				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}${baseQuery}`
 			);
 			model.reload();
 			gitStatus?.refresh();
@@ -444,16 +498,14 @@ export function FileBrowser({
 	const handleDeleteClick = (path: string, type: 'file' | 'directory', event: Event): void => {
 		event.stopPropagation();
 
-		// Check git status to determine if confirmation is needed
-		const changeStatus = gitStatus?.getChangeStatus(path);
-		const isUntracked = gitStatus?.isUntracked(path);
-		const hasChanges = changeStatus !== undefined || isUntracked;
+		// A folder always asks (what's in it goes too); a file asks only when it has a draft
+		// that would be lost. A committed file with no draft can be restored from git.
+		const isUntracked = gitStatus?.isUntracked(path) ?? false;
+		const hasDraft = gitStatus?.hasChanges(path) ?? false;
 
-		if (hasChanges) {
-			// Untracked or modified files need confirmation (data loss)
-			setDeleteTarget({ path, type, isUntracked: isUntracked ?? false });
+		if (type === 'directory' || hasDraft || isUntracked) {
+			setDeleteTarget({ path, type, isUntracked });
 		} else {
-			// Tracked files without changes can be deleted directly (recoverable from git)
 			performDelete(path, type);
 		}
 	};
@@ -569,6 +621,11 @@ export function FileBrowser({
 					hasUnsavedChanges={hasUnsavedChanges}
 					onBeforePull={onBeforePull}
 					onPullComplete={handlePullComplete}
+					onBeforeCommit={onBeforeCommit}
+					onAfterCommit={onAfterCommit}
+					onBeforeResolveDraft={onBeforeFileChange}
+					onDraftResolved={handleDraftResolved}
+					onRenameUndone={handleRenameUndone}
 				/>
 			)}
 			<div class={styles.header}>
@@ -600,6 +657,7 @@ export function FileBrowser({
 										isRoot={isRoot}
 										readOnly={readOnly}
 										canRemove={isOwner}
+										hasConflict={gitStatus?.hasConflictUnder(file.path) ?? false}
 										onClick={() => handleItemClick(file.path, 'directory')}
 										onAddFileClick={(e) => handleNewFileInFolder(file.path, e)}
 										onDeleteClick={(e) => handleDeleteClick(file.path, 'directory', e)}
@@ -616,6 +674,7 @@ export function FileBrowser({
 										renameValue={renameName}
 										renameInputRef={renameInputRef}
 										changeStatus={changeStatus}
+										conflict={gitStatus?.hasConflict(file.path) ?? false}
 										isDeleted={isDeleted}
 										readOnly={readOnly}
 										onClick={() => handleItemClick(file.path, 'file')}
@@ -642,9 +701,11 @@ export function FileBrowser({
 				open={deleteTarget !== null}
 				title={`Delete ${deleteTarget?.type === 'directory' ? 'folder' : 'file'}?`}
 				detail={deleteTarget?.path}
-				warning={deleteTarget?.isUntracked
-					? "This file has never been committed and cannot be recovered."
-					: "This file has uncommitted changes that will be lost."
+				warning={deleteTarget?.type === 'directory'
+					? 'Every file in it is deleted too, along with any changes you haven\'t committed.'
+					: deleteTarget?.isUntracked
+						? 'This file has never been committed and cannot be recovered.'
+						: 'This file has uncommitted changes that will be lost.'
 				}
 				confirmText="Delete"
 				onConfirm={handleDeleteConfirm}

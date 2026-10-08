@@ -4,6 +4,7 @@ import { Badge, Button, ConfirmDialog, Icon, Notice } from '@specboard/ui';
 import type { GitStatusModel } from '@specboard/models';
 import { CommitErrorBanner } from './CommitErrorBanner';
 import { CommitDialog } from './CommitDialog';
+import { DraftConflictsDialog } from './DraftConflictsDialog';
 import styles from './GitStatusBar.module.css';
 
 export interface GitStatusBarProps {
@@ -14,11 +15,32 @@ export interface GitStatusBarProps {
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes */
 	onPullComplete?: () => void | Promise<void>;
+	/** Called before a commit, to save the open document */
+	onBeforeCommit?: () => Promise<void>;
+	/** Called when a commit attempt ends: the paths of the drafts it took, or null if it didn't land */
+	onAfterCommit?: (committedPaths: string[] | null) => void | Promise<void>;
+	/** Called before a draft conflict on this path is kept or discarded */
+	onBeforeResolveDraft?: (path: string) => Promise<void>;
+	/** Called after a draft conflict on this path was kept or discarded */
+	onDraftResolved?: (path: string) => void | Promise<void>;
+	/** Called after a rename was undone, the file back at oldPath */
+	onRenameUndone?: (oldPath: string, newPath: string) => void | Promise<void>;
 }
 
-export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPullComplete }: GitStatusBarProps): JSX.Element {
+export function GitStatusBar({
+	gitStatus,
+	hasUnsavedChanges,
+	onBeforePull,
+	onPullComplete,
+	onBeforeCommit,
+	onAfterCommit,
+	onBeforeResolveDraft,
+	onDraftResolved,
+	onRenameUndone,
+}: GitStatusBarProps): JSX.Element {
 	const [showCommitDialog, setShowCommitDialog] = useState(false);
 	const [showPullConfirm, setShowPullConfirm] = useState(false);
+	const [showConflicts, setShowConflicts] = useState(false);
 	// Track last commit message for retry scenarios
 	const lastCommitMessageRef = useRef<string>('');
 
@@ -48,7 +70,22 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 	const handleCommit = async (message?: string): Promise<void> => {
 		// Store the message for potential retry
 		lastCommitMessageRef.current = message || '';
-		await gitStatus.commit(message);
+		await onBeforeCommit?.();
+		let committedPaths: string[] | null = null;
+		try {
+			committedPaths = (await gitStatus.commit(message))?.paths ?? null;
+		} finally {
+			await onAfterCommit?.(committedPaths);
+		}
+
+		// Refused over drafts someone else's commit has changed under: those get resolved
+		// first, in their own dialog; the message is kept for the commit after.
+		if (gitStatus.commitError?.draftConflicts) {
+			gitStatus.clearErrors();
+			setShowCommitDialog(false);
+			setShowConflicts(true);
+			return;
+		}
 
 		// Close dialog and clear stored message on success
 		if (!gitStatus.commitError) {
@@ -56,6 +93,8 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 			lastCommitMessageRef.current = '';
 		}
 	};
+
+	const conflictCount = gitStatus.conflictedFiles.length;
 
 	const handleRetry = (): void => {
 		// Open dialog - it will use initialMessage prop to restore previous message
@@ -91,8 +130,21 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 					onDismiss={handleDismiss}
 				/>
 			)}
+			{/* Stays up while the dialog is open, so closing it returns focus to Review. */}
+			{conflictCount > 0 && (
+				<Notice variant="warning" announce class={styles.notice}>
+					<span class={styles.noticeText}>
+						{conflictCount === 1
+							? 'Someone changed a file you\'re editing since you started.'
+							: `Someone changed ${conflictCount} files you're editing since you started.`}
+					</span>
+					<Button onClick={() => setShowConflicts(true)} class="secondary size-sm">
+						Review
+					</Button>
+				</Notice>
+			)}
 			{gitStatus.commitWarning && (
-				<Notice variant="warning" class={styles.notice}>
+				<Notice variant="warning" announce class={styles.notice}>
 					<span class={styles.noticeText}>{gitStatus.commitWarning}</span>
 					<Button onClick={handlePullFromNotice} class="secondary size-sm">
 						Pull
@@ -154,12 +206,21 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 				initialMessage={lastCommitMessageRef.current}
 			/>
 
+			<DraftConflictsDialog
+				open={showConflicts}
+				gitStatus={gitStatus}
+				onClose={() => setShowConflicts(false)}
+				onBeforeResolve={onBeforeResolveDraft}
+				onResolved={onDraftResolved}
+				onRenameUndone={onRenameUndone}
+			/>
+
 			{/* Pull confirmation when there are unsaved changes */}
 			<ConfirmDialog
 				open={showPullConfirm}
 				title="Unsaved changes"
 				message="You have unsaved changes in the editor. Pulling will save your changes first, then update with the latest from remote."
-				warning="If someone else edited the same file, your changes may need to be merged."
+				warning="If someone else changed a file you're editing, you'll choose whether to keep your version or theirs before you commit."
 				confirmText="Save & Pull"
 				confirmVariant="primary"
 				cancelText="Cancel"

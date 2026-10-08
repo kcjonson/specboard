@@ -17,6 +17,12 @@ export interface ChangedFile {
 	path: string;
 	status: 'added' | 'modified' | 'deleted' | 'renamed';
 	isUntracked: boolean;
+	/** Someone committed a change to this file since this draft began (cloud projects). */
+	conflict?: boolean;
+	/** A deletion that is the old side of the caller's rename: where the file went. */
+	renamedTo?: string;
+	/** With renamedTo: the file under its new name is exactly what's committed now (their latest version). */
+	renameKeepsCommitted?: boolean;
 }
 
 export interface CommitError {
@@ -24,6 +30,8 @@ export interface CommitError {
 	message: string;
 	/** The branch moved since the last pull: the way forward is to pull, not to retry. */
 	conflictDetected?: boolean;
+	/** Drafts conflict with newer commits: the way forward is to keep or discard each. */
+	draftConflicts?: boolean;
 }
 
 interface GitStatusResponse {
@@ -40,6 +48,9 @@ interface CommitResponse {
 	filesCommitted?: number;
 	error?: CommitError;
 	conflictDetected?: boolean;
+	reason?: string;
+	/** The paths of the drafts the commit took */
+	paths?: string[];
 	/** The commit landed but something after it didn't; says what to do (pull). */
 	warning?: string;
 }
@@ -139,6 +150,16 @@ export class GitStatusModel extends Model {
 		return file?.status ?? null;
 	}
 
+	/** Check if a file's draft conflicts with a newer commit */
+	hasConflict(path: string): boolean {
+		return this.changedFiles.some((f) => f.path === path && f.conflict === true);
+	}
+
+	/** Drafts made against a committed version that someone has changed since */
+	get conflictedFiles(): ChangedFile[] {
+		return this.changedFiles.filter((f) => f.conflict === true);
+	}
+
 	/** Check if a file is deleted */
 	isDeleted(path: string): boolean {
 		return this.getChangeStatus(path) === 'deleted';
@@ -188,7 +209,8 @@ export class GitStatusModel extends Model {
 	}
 
 	/** Commit all changes */
-	async commit(commitMessage?: string): Promise<{ sha: string } | null> {
+	/** Commit all changes. Landed: the commit's sha and the paths of the drafts it took. */
+	async commit(commitMessage?: string): Promise<{ sha: string; paths: string[] } | null> {
 		if (!this.projectRef) return null;
 
 		this.committing = true;
@@ -213,16 +235,18 @@ export class GitStatusModel extends Model {
 			await this.refresh();
 
 			this.committing = false;
-			return response.sha ? { sha: response.sha } : null;
+			return response.sha ? { sha: response.sha, paths: response.paths ?? [] } : null;
 		} catch (err) {
 			// A refused commit (409: the branch moved, pull first) carries its CommitError
 			// in the body; anything else is the server's message or a fallback.
 			const data = err instanceof FetchError ? (err.data as Partial<CommitResponse> | undefined) : undefined;
 			const sent = data?.error;
 			this.commitError = typeof sent === 'object' && sent !== null
-				? { ...sent, conflictDetected: data?.conflictDetected === true }
+				? { ...sent, conflictDetected: data?.conflictDetected === true, draftConflicts: data?.reason === 'draft_conflicts' }
 				: { stage: 'commit', message: writeFailure(err, 'Commit failed', this.projectRef) };
 			this.committing = false;
+			// The refusal names the conflicting drafts; status carries them per file.
+			if (this.commitError.draftConflicts) await this.refresh();
 			return null;
 		}
 	}
@@ -246,6 +270,62 @@ export class GitStatusModel extends Model {
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Restore failed';
 			return false;
+		}
+	}
+
+	/**
+	 * Keep these drafts over what someone else committed since they began, so the next
+	 * commit takes them as they are.
+	 */
+	async keepMine(paths: string[]): Promise<boolean> {
+		if (!this.projectRef) return false;
+		try {
+			await fetchClient.post(`/api/projects/${this.projectRef}/git/keep-mine`, { paths });
+			await this.refresh();
+			return true;
+		} catch (err) {
+			this.error = writeFailure(err, 'Could not keep your version', this.projectRef);
+			return false;
+		}
+	}
+
+	/** Undo a rename: the new path's draft and the old path's deletion go together. */
+	async undoRename(oldPath: string, newPath: string): Promise<boolean> {
+		if (!this.projectRef) return false;
+		try {
+			await fetchClient.post(`/api/projects/${this.projectRef}/git/undo-rename`, { oldPath, newPath });
+			await this.refresh();
+			return true;
+		} catch (err) {
+			this.error = writeFailure(err, 'Could not undo the rename', this.projectRef);
+			return false;
+		}
+	}
+
+	/** Whether any conflicting draft is at or under this folder */
+	hasConflictUnder(folderPath: string): boolean {
+		const prefix = folderPath.endsWith('/') ? folderPath : `${folderPath}/`;
+		return this.changedFiles.some((f) => f.conflict === true && f.path.startsWith(prefix));
+	}
+
+	/** The committed version of a file, without the caller's draft; null when none is committed. */
+	async readCommitted(path: string): Promise<string | null> {
+		const response = await fetchClient.get<{ content: string | null }>(
+			`/api/projects/${this.projectRef}/git/committed?path=${encodeURIComponent(path)}`
+		);
+		return response.content;
+	}
+
+	/** The caller's draft of a file; null when the draft deletes it. */
+	async readDraft(path: string): Promise<string | null> {
+		try {
+			const response = await fetchClient.get<{ content: string }>(
+				`/api/projects/${this.projectRef}/files?path=${encodeURIComponent(path)}`
+			);
+			return response.content;
+		} catch (err) {
+			if (err instanceof FetchError && err.status === 404) return null;
+			throw err;
 		}
 	}
 

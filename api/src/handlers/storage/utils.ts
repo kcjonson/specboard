@@ -49,6 +49,23 @@ export function getStorageProvider(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Draft bases
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A client's `baseContentHash`: a committed file's sha1, the marker storage migration 003
+ * gave drafts whose file was gone, or null (nothing committed). Undefined (absent) means
+ * the client doesn't know; anything else is refused.
+ */
+export function readDraftBase(value: unknown): { ok: true; base: string | null | undefined } | { ok: false } {
+	if (value === undefined || value === null) return { ok: true, base: value };
+	if (typeof value === 'string' && (/^[0-9a-f]{40}$/.test(value) || value === 'missing-before-migration')) {
+		return { ok: true, base: value };
+	}
+	return { ok: false };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Path validation
 // ─────────────────────────────────────────────────────────────────────────────
 

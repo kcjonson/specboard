@@ -239,6 +239,9 @@ back if it's done piecemeal.
   user's token, which is why they need an effective editor. Pending changes stay
   keyed by `(project, user)`, and spec links only follow a rename or delete once it
   is committed ([project-storage.md](project-storage.md#pending-changes-and-spec-links)).
+  Two members can draft the same file; whoever commits second is stopped and chooses,
+  per file, to keep their draft or discard it
+  ([project-storage.md](project-storage.md#draft-conflicts)). There's no merge.
 
 ---
 
