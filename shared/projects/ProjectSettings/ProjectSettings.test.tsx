@@ -133,10 +133,15 @@ describe('ProjectSettings for the owner', () => {
 		put.mockRejectedValue(new FetchError('HTTP 409', 409, undefined, { error: 'That slug is already in use', code: 'IDENTIFIER_TAKEN', field: 'slug' }));
 		const { findByRole, getByRole } = renderSettings(slug);
 
-		fireEvent.input(await findByRole('textbox', { name: /URL slug/ }), { target: { value: 'taken' } });
+		const field = await findByRole('textbox', { name: /URL slug/ });
+		fireEvent.input(field, { target: { value: 'taken' } });
 		fireEvent.click(getByRole('button', { name: 'Save' }));
+		fireEvent.click(within(getByRole('dialog')).getByRole('button', { name: 'Save changes' }));
 
-		expect((await findByRole('alert')).textContent).toBe('That slug is already in use');
+		const error = await findByRole('alert');
+		expect(error.textContent).toBe('That slug is already in use');
+		expect(field.parentElement!.contains(error)).toBe(true);
+		expect(field.getAttribute('aria-invalid')).toBe('true');
 		expect(navigate).not.toHaveBeenCalled();
 		expect((getByRole('textbox', { name: /URL slug/ }) as HTMLInputElement).value).toBe('taken');
 	});
@@ -237,6 +242,8 @@ describe('ProjectSettings for the owner', () => {
 
 		await waitFor(() => expect(del).toHaveBeenCalledWith(`/api/projects/dana/${slug}/members/sam`));
 		await waitFor(() => expect(queryByText('sam@example.com')).toBeNull());
+		// Sam was last, so focus moves up to Alex's row instead of falling to the page.
+		await waitFor(() => expect(document.activeElement).toBe(getByRole('combobox', { name: 'Role for Alex Rivera' })));
 	});
 
 	it('resends and revokes pending invitations', async () => {
@@ -246,14 +253,19 @@ describe('ProjectSettings for the owner', () => {
 		window.history.replaceState(null, '', '#members');
 		const { findByRole, getByRole, findByText, queryByText } = renderSettings(slug);
 
-		fireEvent.click(await findByRole('button', { name: 'Resend' }));
+		fireEvent.click(await findByRole('button', { name: 'Resend the invitation to pat@example.com' }));
 		await waitFor(() => expect(post).toHaveBeenCalledWith(`/api/projects/dana/${slug}/invitations/inv-1/resend`));
 		expect(await findByText('expires in 7 days')).toBeTruthy();
+		expect(getByRole('status').textContent).toBe('Sent a new invitation to pat@example.com.');
 
-		fireEvent.click(getByRole('button', { name: 'Revoke' }));
+		fireEvent.click(getByRole('button', { name: 'Revoke the invitation to pat@example.com' }));
+		// A new action clears the last one's notice.
+		expect(queryByText('Sent a new invitation to pat@example.com.')).toBeNull();
 		fireEvent.click(within(getByRole('dialog')).getByRole('button', { name: 'Revoke' }));
 		await waitFor(() => expect(del).toHaveBeenCalledWith(`/api/projects/dana/${slug}/invitations/inv-1`));
 		await waitFor(() => expect(queryByText('pat@example.com')).toBeNull());
+		// No pending row left to land on, so focus goes to Invite rather than the page.
+		await waitFor(() => expect(document.activeElement).toBe(getByRole('button', { name: 'Invite' })));
 	});
 
 	it('re-reads the project when a role change is refused with a 403', async () => {
@@ -298,16 +310,50 @@ describe('ProjectSettings for the owner', () => {
 		await waitFor(() => expect(navigate).toHaveBeenCalledWith('/projects', { replace: true }));
 	});
 
-	it('moves to the new address when the slug changes', async () => {
+	it('confirms a slug change, naming what breaks, then moves to the new address', async () => {
 		const slug = serve('owner');
 		put.mockResolvedValue({ slug: 'plans', ownerSlug: 'dana', name: 'Roadmap', key: 'RM' });
-		const { findByRole, getByRole } = renderSettings(slug);
+		const { findByRole, getByRole, findByText } = renderSettings(slug);
 
 		fireEvent.input(await findByRole('textbox', { name: /URL slug/ }), { target: { value: 'plans' } });
 		fireEvent.click(getByRole('button', { name: 'Save' }));
 
+		const dialog = getByRole('dialog');
+		expect(dialog.textContent).toContain('.mcp.json');
+		expect(put).not.toHaveBeenCalled();
+		fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
 		await waitFor(() => expect(put).toHaveBeenCalledWith(`/api/projects/dana/${slug}`, { name: 'Roadmap', description: 'Plans', slug: 'plans' }));
 		await waitFor(() => expect(navigate).toHaveBeenCalledWith('/projects/dana/plans/settings', { replace: true }));
+		expect(await findByText('Saved.')).toBeTruthy();
+	});
+
+	it('confirms a key change, naming what breaks, and saves nothing on cancel', async () => {
+		const slug = serve('owner');
+		const { findByRole, getByRole, queryByRole } = renderSettings(slug);
+
+		fireEvent.input(await findByRole('textbox', { name: /Item key prefix/ }), { target: { value: 'RD' } });
+		fireEvent.click(getByRole('button', { name: 'Save' }));
+
+		const dialog = getByRole('dialog');
+		expect(dialog.textContent).toContain('Every item key is renamed');
+		fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+		await waitFor(() => expect(queryByRole('dialog')).toBeNull());
+		expect(put).not.toHaveBeenCalled();
+	});
+
+	it('saves a name change without asking', async () => {
+		const slug = serve('owner');
+		put.mockResolvedValue({ slug, ownerSlug: 'dana', name: 'Plans', key: 'RM' });
+		const { findByRole, getByRole, queryByRole, findByText } = renderSettings(slug);
+
+		fireEvent.input(await findByRole('textbox', { name: 'Name' }), { target: { value: 'Plans' } });
+		fireEvent.click(getByRole('button', { name: 'Save' }));
+
+		expect(queryByRole('dialog')).toBeNull();
+		expect(await findByText('Saved.')).toBeTruthy();
+		expect(put).toHaveBeenCalledWith(`/api/projects/dana/${slug}`, { name: 'Plans', description: 'Plans' });
 	});
 });
 
@@ -317,10 +363,9 @@ describe.each(['editor', 'viewer'] as const)('ProjectSettings for a %s', (role) 
 		window.history.replaceState(null, '', '#general');
 		const { findByRole, getByRole, queryByRole, queryByText } = renderSettings(slug);
 
-		const nav = await findByRole('navigation', { name: 'Settings sections' });
-		expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Members']);
-		expect(getByRole('heading', { name: 'Members' })).toBeTruthy();
 		await findByRole('list', { name: 'Members' });
+		expect(getByRole('heading', { name: 'Members' })).toBeTruthy();
+		expect(queryByRole('navigation', { name: 'Settings sections' })).toBeNull();
 
 		expect(queryByRole('combobox')).toBeNull();
 		expect(queryByRole('button', { name: /Remove/ })).toBeNull();
@@ -379,6 +424,7 @@ describe('ProjectSettings after a rename', () => {
 		const view = renderSettings(from);
 		fireEvent.input(await view.findByRole('textbox', { name: /URL slug/ }), { target: { value: to } });
 		fireEvent.click(view.getByRole('button', { name: 'Save' }));
+		fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: 'Save changes' }));
 		await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/projects/dana/${to}/settings`, { replace: true }));
 		view.unmount();
 		navigate.mockReset();

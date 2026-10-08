@@ -3,17 +3,19 @@ import type { JSX } from 'preact';
 import { Button, Notice } from '@specboard/ui';
 import { writeFailure, type ProjectModel } from '@specboard/models';
 import { saveProject } from './settings-api';
+import { SectionHeader } from './SectionHeader';
 import styles from './ProjectSettings.module.css';
 
 const MAX_PROMPT_LENGTH = 10000;
 
 export interface AiSectionProps {
+	title: string;
 	project: ProjectModel;
 	projectRef: string;
 }
 
 /** The project's instructions for the AI assistant. */
-export function AiSection({ project, projectRef }: AiSectionProps): JSX.Element {
+export function AiSection({ title, project, projectRef }: AiSectionProps): JSX.Element {
 	const [systemPrompt, setSystemPrompt] = useState(project.systemPrompt ?? '');
 	const [saving, setSaving] = useState(false);
 	const [status, setStatus] = useState<{ variant: 'success' | 'error'; text: string } | null>(null);
@@ -34,6 +36,7 @@ export function AiSection({ project, projectRef }: AiSectionProps): JSX.Element 
 
 	return (
 		<form class={styles.form} onSubmit={handleSubmit}>
+			<SectionHeader title={title} />
 			<label class={styles.field}>
 				<span class={styles.label}>AI instructions</span>
 				<span class={styles.hint}>Custom instructions for the AI assistant when working in this project.</span>

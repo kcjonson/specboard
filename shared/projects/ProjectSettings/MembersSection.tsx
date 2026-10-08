@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
 import { fetchClient, FetchError } from '@specboard/fetch';
 import { writeFailure } from '@specboard/models';
-import { Avatar, Badge, Button, ConfirmDialog, Icon, Notice } from '@specboard/ui';
+import { Avatar, Badge, Button, ConfirmDialog, Icon, Notice, Select } from '@specboard/ui';
 import { InviteDialog } from './InviteDialog';
 import { expiryText, ROLE_LABELS, type Member, type MemberRole, type PendingInvitation } from './settings-api';
+import { SectionHeader } from './SectionHeader';
 import styles from './ProjectSettings.module.css';
 
 export interface MembersSectionProps {
+	title: string;
 	projectRef: string;
 	projectName: string;
 	/** Whether the caller owns the project: roles, removal and invitations are theirs alone. */
@@ -26,11 +28,15 @@ type Confirmation =
  * The owner and members. The owner changes roles, removes people and invites them; a
  * member sees the list read-only and can leave.
  */
-export function MembersSection({ projectRef, projectName, isOwner, repositoryName }: MembersSectionProps): JSX.Element {
+export function MembersSection({ title, projectRef, projectName, isOwner, repositoryName }: MembersSectionProps): JSX.Element {
 	const [members, setMembers] = useState<Member[] | null>(null);
 	const [pending, setPending] = useState<PendingInvitation[]>([]);
 	const [loadError, setLoadError] = useState<string | null>(null);
-	const [status, setStatus] = useState<{ variant: 'success' | 'error'; text: string } | null>(null);
+	// The last action's outcome, shown by the list it came from.
+	const [status, setStatus] = useState<{ list: 'members' | 'pending'; variant: 'success' | 'error'; text: string } | null>(null);
+	// Where focus goes once a confirm closes over a row that's gone: the next row, else Invite.
+	const [refocus, setRefocus] = useState<string | null>(null);
+	const sectionRef = useRef<HTMLDivElement>(null);
 	// Rows with a request in flight, by member slug or invitation id.
 	const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
 	const [inviting, setInviting] = useState(false);
@@ -53,6 +59,27 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 	useEffect(() => {
 		void load();
 	}, [load]);
+
+	// Runs after the confirm dialog has closed (its unmount puts focus back on the button
+	// that opened it, which went with the row).
+	useEffect(() => {
+		if (!refocus || confirming) return;
+		const root = sectionRef.current;
+		const row = Array.from(root?.querySelectorAll<HTMLElement>('[data-row]') ?? []).find((el) => el.dataset.row === refocus);
+		const target = row?.querySelector<HTMLElement>('select, button') ?? root?.querySelector<HTMLElement>('[data-section-action] button');
+		target?.focus();
+		setRefocus(null);
+	}, [refocus, confirming]);
+
+	/** The row after `index` in `rows`, else the one before it: where focus goes when it's removed. */
+	function neighbor(rows: readonly string[], index: number): string {
+		return rows[index + 1] ?? rows[index - 1] ?? 'none';
+	}
+
+	function startConfirm(confirmation: Confirmation): void {
+		setStatus(null);
+		setConfirming(confirmation);
+	}
 
 	/** Run one row's request, at most one at a time per row. */
 	async function forRow(id: string, request: () => Promise<void>): Promise<void> {
@@ -79,7 +106,7 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 				// The answer carries no push access; that doesn't change with the role.
 				setMembers((rows) => rows?.map((row) => (row.slug === slug ? { ...row, ...updated, pushAccess: row.pushAccess } : row)) ?? null);
 			} catch (err) {
-				setStatus({ variant: 'error', text: writeFailure(err, `Couldn't change ${member.name}'s role.`, projectRef) });
+				setStatus({ list: 'members', variant: 'error', text: writeFailure(err, `Couldn't change ${member.name}'s role.`, projectRef) });
 			}
 		});
 	}
@@ -89,9 +116,9 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 			try {
 				const resent = await fetchClient.post<PendingInvitation>(`/api/projects/${projectRef}/invitations/${invitation.id}/resend`);
 				setPending((rows) => rows.map((row) => (row.id === invitation.id ? resent : row)));
-				setStatus({ variant: 'success', text: `Sent a new invitation to ${invitation.email}.` });
+				setStatus({ list: 'pending', variant: 'success', text: `Sent a new invitation to ${invitation.email}.` });
 			} catch (err) {
-				setStatus({ variant: 'error', text: writeFailure(err, `Couldn't resend the invitation to ${invitation.email}.`, projectRef) });
+				setStatus({ list: 'pending', variant: 'error', text: writeFailure(err, `Couldn't resend the invitation to ${invitation.email}.`, projectRef) });
 			}
 		});
 	}
@@ -100,7 +127,7 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 		setInviting(false);
 		// Inviting an address that had an open invitation revokes the old one.
 		setPending((rows) => [...rows.filter((row) => row.email !== invitation.email), invitation]);
-		setStatus({ variant: 'success', text: `Invited ${invitation.email}.` });
+		setStatus({ list: 'pending', variant: 'success', text: `Invited ${invitation.email}.` });
 	}
 
 	async function leave(): Promise<void> {
@@ -119,10 +146,14 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 			if (confirming.kind === 'remove') {
 				const { member } = confirming;
 				await fetchClient.delete(`/api/projects/${projectRef}/members/${member.slug}`);
+				const slugs = (members ?? []).map((row) => row.slug ?? row.email);
+				setRefocus(neighbor(slugs.filter((row) => row !== slugs[0]), slugs.indexOf(member.slug ?? '') - 1));
 				setMembers((rows) => rows?.filter((row) => row.slug !== member.slug) ?? null);
 			} else if (confirming.kind === 'revoke') {
 				const { invitation } = confirming;
 				await fetchClient.delete(`/api/projects/${projectRef}/invitations/${invitation.id}`);
+				const ids = pending.map((row) => row.id);
+				setRefocus(neighbor(ids, ids.indexOf(invitation.id)));
 				setPending((rows) => rows.filter((row) => row.id !== invitation.id));
 			} else {
 				await leave();
@@ -155,22 +186,27 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 				busyText: 'Leaving...',
 			};
 
+	const notice = (list: 'members' | 'pending'): JSX.Element | null =>
+		status?.list === list ? <Notice variant={status.variant} announce>{status.text}</Notice> : null;
+
 	return (
-		<div class={styles.form}>
-			<div class={styles.sectionActions}>
+		<div class={styles.form} ref={sectionRef}>
+			<SectionHeader title={title}>
 				{isOwner ? (
-					<Button onClick={() => setInviting(true)}>Invite</Button>
+					<span data-section-action>
+						<Button onClick={() => { setStatus(null); setInviting(true); }}>Invite</Button>
+					</span>
 				) : (
-					<Button class="secondary" onClick={() => setConfirming({ kind: 'leave' })}>Leave project</Button>
+					<Button class="secondary" onClick={() => startConfirm({ kind: 'leave' })}>Leave project</Button>
 				)}
-			</div>
+			</SectionHeader>
 
 			{loadError && (
 				<Notice variant="error" announce>
 					{loadError} <button type="button" class={styles.inlineLink} onClick={() => void load()}>Retry</button>
 				</Notice>
 			)}
-			{status && <Notice variant={status.variant} announce>{status.text}</Notice>}
+			{notice('members')}
 
 			{members && (
 				<ul class={styles.memberList} aria-label="Members">
@@ -182,7 +218,7 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 							repositoryName={repositoryName}
 							busy={member.slug !== null && busy.has(member.slug)}
 							onRoleChange={handleRoleChange}
-							onRemove={() => setConfirming({ kind: 'remove', member })}
+							onRemove={() => startConfirm({ kind: 'remove', member })}
 						/>
 					))}
 				</ul>
@@ -191,21 +227,29 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 			{isOwner && pending.length > 0 && (
 				<div class={styles.pending}>
 					<h3 class={styles.subheading}>Pending</h3>
+					{notice('pending')}
 					<ul class={styles.memberList} aria-label="Pending invitations">
 						{pending.map((invitation) => (
-							<li key={invitation.id} class={styles.memberRow}>
-								<div class={styles.memberIdentity}>
-									<span class={styles.memberEmail}>{invitation.email}</span>
-								</div>
+							<li key={invitation.id} class={`${styles.memberRow} ${styles.pendingRow}`} data-row={invitation.id}>
+								<span class={styles.pendingEmail}>{invitation.email}</span>
 								<span class={styles.memberRole}>{ROLE_LABELS[invitation.role]}</span>
 								<span class={`${styles.expiry} ${invitation.state === 'expired' ? styles.expired : ''}`}>
 									{expiryText(invitation)}
 								</span>
 								<div class={styles.rowActions}>
-									<Button class="secondary size-sm" onClick={() => void handleResend(invitation)} busy={busy.has(invitation.id)}>
+									<Button
+										class="secondary size-sm"
+										onClick={() => void handleResend(invitation)}
+										busy={busy.has(invitation.id)}
+										aria-label={`Resend the invitation to ${invitation.email}`}
+									>
 										{busy.has(invitation.id) ? 'Sending...' : 'Resend'}
 									</Button>
-									<Button class="text danger size-sm" onClick={() => setConfirming({ kind: 'revoke', invitation })}>
+									<Button
+										class="text danger size-sm"
+										onClick={() => startConfirm({ kind: 'revoke', invitation })}
+										aria-label={`Revoke the invitation to ${invitation.email}`}
+									>
 										Revoke
 									</Button>
 								</div>
@@ -235,6 +279,11 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 	);
 }
 
+const ROLE_OPTIONS = [
+	{ value: 'editor', label: 'Editor' },
+	{ value: 'viewer', label: 'Viewer' },
+];
+
 interface MemberRowProps {
 	member: Member;
 	isOwner: boolean;
@@ -252,7 +301,7 @@ function MemberRow({ member, isOwner, repositoryName, busy, onRoleChange, onRemo
 	const [picked, setPicked] = useState<MemberRole | null>(null);
 
 	return (
-		<li class={styles.memberRow} aria-busy={busy || undefined}>
+		<li class={styles.memberRow} aria-busy={busy || undefined} data-row={member.slug ?? member.email}>
 			<div class={styles.memberIdentity}>
 				<Avatar name={member.name} avatarUrl={member.avatarUrl} size="md" decorative />
 				<div class={styles.memberText}>
@@ -260,28 +309,26 @@ function MemberRow({ member, isOwner, repositoryName, busy, onRoleChange, onRemo
 					<span class={styles.memberEmail}>{member.email}</span>
 				</div>
 			</div>
-			{manageable ? (
-				// Stays enabled while its change saves, so it keeps focus; forRow lets one
-				// change per row run at a time.
-				<select
-					class={styles.roleSelect}
-					value={picked ?? member.role}
-					aria-label={`Role for ${member.name}`}
-					aria-busy={busy || undefined}
-					onChange={(e) => {
-						const role = (e.target as HTMLSelectElement).value as MemberRole;
-						setPicked(role);
-						void onRoleChange(member, role).finally(() => setPicked(null));
-					}}
-				>
-					<option value="editor">Editor</option>
-					<option value="viewer">Viewer</option>
-				</select>
-			) : (
-				<span class={styles.memberRole}>{ROLE_LABELS[member.role]}</span>
-			)}
-			<div class={styles.rowActions}>
-				{manageable && (
+			<div class={styles.memberControls}>
+				{manageable ? (
+					// Stays enabled while its change saves, so it keeps focus; forRow lets one
+					// change per row run at a time.
+					<Select
+						class={styles.roleSelect}
+						value={picked ?? member.role}
+						options={ROLE_OPTIONS}
+						ariaLabel={`Role for ${member.name}`}
+						compact
+						onChange={(e) => {
+							const role = (e.target as HTMLSelectElement).value as MemberRole;
+							setPicked(role);
+							void onRoleChange(member, role).finally(() => setPicked(null));
+						}}
+					/>
+				) : (
+					<span class={styles.ownerRole}>{ROLE_LABELS[member.role]}</span>
+				)}
+				{manageable ? (
 					<button
 						type="button"
 						class="icon size-sm"
@@ -291,13 +338,15 @@ function MemberRow({ member, isOwner, repositoryName, busy, onRoleChange, onRemo
 					>
 						<Icon name="close" class="size-sm" />
 					</button>
+				) : (
+					isOwner && <span class={styles.removeSpacer} />
 				)}
 			</div>
 			{isOwner && (needsGitHub || noPushAccess) && (
 				<div class={styles.chips}>
-					{needsGitHub && <Badge class="variant-warning size-sm">Needs GitHub to edit</Badge>}
+					{needsGitHub && <Badge class="variant-warning-subtle size-sm">Needs GitHub to edit</Badge>}
 					{noPushAccess && repositoryName && (
-						<Badge class="variant-warning size-sm">No push access to {repositoryName}</Badge>
+						<Badge class="variant-warning-subtle size-sm">No push access to {repositoryName}</Badge>
 					)}
 				</div>
 			)}

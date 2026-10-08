@@ -105,6 +105,10 @@ describe('ProjectsList grouping', () => {
 		expect(within(mine).getByRole('button', { name: 'Retry' })).toBeTruthy();
 		expect(within(atlas).queryByRole('button', { name: 'Project settings' })).toBeNull();
 		expect(within(atlas).queryByRole('button', { name: 'Retry' })).toBeNull();
+		// The raw error is about the owner's repository; a member gets only that it failed.
+		expect(within(mine).getByText('Clone failed')).toBeTruthy();
+		expect(within(atlas).getByText('Sync failed')).toBeTruthy();
+		expect(within(atlas).queryByText('Clone failed')).toBeNull();
 
 		fireEvent.click(within(mine).getByRole('button', { name: 'Project settings' }));
 		expect(navigate).toHaveBeenCalledWith('/projects/dana/roadmap/settings');
@@ -142,7 +146,7 @@ describe('ProjectsList invitations', () => {
 		post.mockResolvedValue({ project: { ref: 'pat/website', name: 'Website' }, role: 'editor', alreadyMember: false });
 		const { findByRole } = render(<ProjectsList params={{}} />);
 
-		fireEvent.click(await findByRole('button', { name: 'Accept' }));
+		fireEvent.click(await findByRole('button', { name: 'Accept the invitation to Website' }));
 
 		await waitFor(() => expect(post).toHaveBeenCalledWith('/api/invitations/inv-1/accept'));
 		await waitFor(() => expect(navigate).toHaveBeenCalledWith('/projects/pat/website/planning'));
@@ -153,7 +157,7 @@ describe('ProjectsList invitations', () => {
 		post.mockResolvedValue({ success: true });
 		const { findByRole, queryByRole } = render(<ProjectsList params={{}} />);
 
-		fireEvent.click(await findByRole('button', { name: 'Decline' }));
+		fireEvent.click(await findByRole('button', { name: 'Decline the invitation to Website' }));
 
 		await waitFor(() => expect(post).toHaveBeenCalledWith('/api/invitations/inv-1/decline'));
 		await waitFor(() => expect(queryByRole('region', { name: 'Invitations' })).toBeNull());
@@ -165,10 +169,10 @@ describe('ProjectsList invitations', () => {
 		post.mockRejectedValue(new FetchError('HTTP 500', 500, undefined, { error: 'Database error' }));
 		const { findByRole, getByRole } = render(<ProjectsList params={{}} />);
 
-		fireEvent.click(await findByRole('button', { name: 'Accept' }));
+		fireEvent.click(await findByRole('button', { name: 'Accept the invitation to Website' }));
 
 		expect((await findByRole('alert')).textContent).toBe('Database error');
-		expect(getByRole('button', { name: 'Accept' }).hasAttribute('disabled')).toBe(false);
+		expect(getByRole('button', { name: 'Accept the invitation to Website' }).hasAttribute('disabled')).toBe(false);
 		expect(navigate).not.toHaveBeenCalled();
 	});
 
@@ -177,9 +181,9 @@ describe('ProjectsList invitations', () => {
 		post.mockRejectedValue(new FetchError('HTTP 410', 410, undefined, { error: 'This invitation was revoked', code: 'INVITATION_CLOSED', state: 'revoked' }));
 		const { findByRole, findByText } = render(<ProjectsList params={{}} />);
 
-		fireEvent.click(await findByRole('button', { name: 'Accept' }));
+		fireEvent.click(await findByRole('button', { name: 'Accept the invitation to Website' }));
 
-		expect(await findByText('This invitation was revoked')).toBeTruthy();
+		expect(await findByText('The invitation to Website was revoked.')).toBeTruthy();
 		await waitFor(() => expect(get.mock.calls.filter(([url]) => url === '/api/invitations')).toHaveLength(2));
 	});
 
@@ -188,9 +192,9 @@ describe('ProjectsList invitations', () => {
 		post.mockRejectedValue(new FetchError('HTTP 404', 404, undefined, { error: 'Invitation not found' }));
 		const { findByRole, findByText } = render(<ProjectsList params={{}} />);
 
-		fireEvent.click(await findByRole('button', { name: 'Decline' }));
+		fireEvent.click(await findByRole('button', { name: 'Decline the invitation to Website' }));
 
-		expect(await findByText('That invitation is no longer open.')).toBeTruthy();
+		expect(await findByText('The invitation to Website is no longer open.')).toBeTruthy();
 		await waitFor(() => expect(get.mock.calls.filter(([url]) => url === '/api/invitations')).toHaveLength(2));
 	});
 

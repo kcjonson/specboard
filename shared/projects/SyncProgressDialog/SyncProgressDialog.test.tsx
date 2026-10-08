@@ -102,7 +102,7 @@ describe('SyncProgressDialog before the sync status is written', () => {
 		await vi.advanceTimersByTimeAsync(3000);
 		expect(queryByText('Sync failed')).not.toBeNull();
 		expect(queryByText('The repository sync never started. Retry to start it again.')).not.toBeNull();
-		expect(queryByText('Retry Sync')).not.toBeNull();
+		expect(queryByText('Retry sync')).not.toBeNull();
 
 		const calls = get.mock.calls.length;
 		await vi.advanceTimersByTimeAsync(30_000);

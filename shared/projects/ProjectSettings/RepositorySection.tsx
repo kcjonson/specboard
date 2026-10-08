@@ -7,9 +7,11 @@ import { writeFailure, type ProjectModel } from '@specboard/models';
 import { RepositoryPicker, type RepositoryConfig } from '../RepositoryPicker/RepositoryPicker';
 import { SyncProgressDialog } from '../SyncProgressDialog/SyncProgressDialog';
 import { saveProject } from './settings-api';
+import { SectionHeader } from './SectionHeader';
 import styles from './ProjectSettings.module.css';
 
 export interface RepositorySectionProps {
+	title: string;
 	project: ProjectModel;
 	projectRef: string;
 }
@@ -18,7 +20,7 @@ export interface RepositorySectionProps {
  * The project's GitHub repository: shown once connected (it can't be changed), or picked
  * and attached for a project that has none. Attaching starts the initial clone.
  */
-export function RepositorySection({ project, projectRef }: RepositorySectionProps): JSX.Element {
+export function RepositorySection({ title, project, projectRef }: RepositorySectionProps): JSX.Element {
 	const [picked, setPicked] = useState<RepositoryConfig | null>(null);
 	const [attaching, setAttaching] = useState(false);
 	const [retrying, setRetrying] = useState(false);
@@ -120,6 +122,7 @@ export function RepositorySection({ project, projectRef }: RepositorySectionProp
 
 	return (
 		<div class={styles.form}>
+			<SectionHeader title={title} />
 			{body}
 			{error && <Notice variant="error" announce>{error}</Notice>}
 			{syncing && (

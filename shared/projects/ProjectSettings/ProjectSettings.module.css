@@ -32,6 +32,7 @@
 .navItem:hover {
 	background: var(--color-surface-hover);
 	color: var(--color-text);
+	text-decoration: none;
 }
 
 .navItemActive,
@@ -48,8 +49,21 @@
 	min-width: 0;
 }
 
+.panelHeader {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+}
+
+.panelActions {
+	display: flex;
+	gap: var(--space-2);
+}
+
 .panelTitle {
-	margin: 0 0 var(--space-5) 0;
+	margin: 0;
 	font-size: var(--text-xl);
 	font-weight: var(--font-semibold);
 	color: var(--color-text);
@@ -66,7 +80,13 @@
 	color: var(--color-text-muted);
 }
 
-@media (width < 768px) { /* bp-small: the section nav becomes a scrolling row above the panel */
+/* A member's view has one section and no nav. */
+.layout.single {
+	grid-template-columns: minmax(0, 1fr);
+	max-width: 760px;
+}
+
+@media (width < 768px) { /* bp-small: the section nav wraps into rows above the panel */
 	.layout {
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-4);
@@ -76,7 +96,7 @@
 	.nav {
 		position: static;
 		flex-direction: row;
-		overflow-x: auto;
+		flex-wrap: wrap;
 	}
 
 	.navItem {
@@ -126,8 +146,7 @@
 	text-align: right;
 }
 
-.formActions,
-.sectionActions {
+.formActions {
 	display: flex;
 	justify-content: flex-end;
 	gap: var(--space-2);
@@ -250,9 +269,11 @@
 	border-radius: var(--radius-md);
 }
 
+/* Identity on the left, then the role and remove columns, which every row shares so the
+   owner's role lines up with the members' selects. */
 .memberRow {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto auto;
+	grid-template-columns: minmax(0, 1fr) auto;
 	align-items: center;
 	gap: var(--space-2) var(--space-4);
 	padding: var(--space-3) var(--space-4);
@@ -260,11 +281,6 @@
 
 .memberRow + .memberRow {
 	border-top: 1px solid var(--color-border);
-}
-
-/* A pending row has an expiry between the role and the buttons. */
-.pending .memberRow {
-	grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
 
 .memberIdentity {
@@ -288,7 +304,8 @@
 	white-space: nowrap;
 }
 
-.memberEmail {
+.memberEmail,
+.pendingEmail {
 	font-size: var(--text-sm);
 	color: var(--color-text-muted);
 	overflow: hidden;
@@ -296,21 +313,37 @@
 	white-space: nowrap;
 }
 
-.memberRole {
+.memberControls {
+	display: grid;
+	grid-template-columns: 128px 32px;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.roleSelect {
+	width: 100%;
+}
+
+/* Text in the select's column, starting where a select's text does. */
+.ownerRole {
+	padding-left: var(--space-3);
 	font-size: var(--text-sm);
 	color: var(--color-text-muted);
 }
 
-.roleSelect {
-	width: auto;
-	min-width: 110px;
+.removeSpacer {
+	width: 32px;
+}
+
+.memberRole {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
 }
 
 .rowActions {
 	display: flex;
 	justify-content: flex-end;
 	gap: var(--space-2);
-	min-width: 32px;
 }
 
 .chips {
@@ -325,6 +358,11 @@
 	display: flex;
 	flex-direction: column;
 	gap: var(--space-3);
+}
+
+/* Fixed columns, so role, expiry and the buttons line up from row to row. */
+.pendingRow {
+	grid-template-columns: minmax(0, 1fr) 64px 128px auto;
 }
 
 .subheading {
@@ -344,14 +382,28 @@
 	color: var(--color-error);
 }
 
-@media (width < 768px) { /* bp-small: a row's controls drop under the person */
-	.memberRow,
-	.pending .memberRow {
+@media (width < 768px) { /* bp-small: a row's controls go under the person, on one line */
+	.memberRow {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.memberControls,
+	.chips {
+		padding-left: calc(28px + var(--space-3));
+	}
+
+	.memberEmail,
+	.pendingEmail {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+
+	.pendingRow {
 		grid-template-columns: minmax(0, 1fr) auto;
 	}
 
-	.chips {
-		padding-left: 0;
+	.pendingEmail {
+		grid-column: 1 / -1;
 	}
 }
 
@@ -364,6 +416,11 @@
 	padding: var(--space-4);
 	border: 1px solid var(--color-error);
 	border-radius: var(--radius-md);
+}
+
+.dangerRow button {
+	flex-shrink: 0;
+	white-space: nowrap;
 }
 
 .dangerTitle {

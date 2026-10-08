@@ -119,7 +119,7 @@ export function ProjectDialog({ onClose, onCreate }: ProjectDialogProps): JSX.El
 					<RepositoryPicker onChange={setRepository} disabled={saving} />
 				</div>
 
-				<DialogFooter>
+				<DialogFooter pinned>
 					<Button type="button" class="text" onClick={onClose}>
 						Cancel
 					</Button>

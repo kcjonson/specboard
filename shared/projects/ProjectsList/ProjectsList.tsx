@@ -24,6 +24,19 @@ function rememberProject(projectRef: string, name: string): void {
 	setCookie('lastProjectName', name, 30);
 }
 
+const CLOSED_STATES: Record<string, string> = {
+	revoked: 'was revoked',
+	expired: 'has expired',
+	accepted: 'was already accepted',
+	declined: 'was declined',
+};
+
+/** "The invitation to Website was revoked." A 404 (the project is gone) says no more than closed. */
+function closedNotice(invitation: Invitation, err: FetchError): string {
+	const state = (err.data as { state?: string } | undefined)?.state;
+	return `The invitation to ${invitation.project.name} ${(state && CLOSED_STATES[state]) || 'is no longer open'}.`;
+}
+
 export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -139,13 +152,17 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		} catch (err) {
 			const fallback = action === 'accept' ? 'Couldn\'t accept the invitation.' : 'Couldn\'t decline the invitation.';
 			if (err instanceof FetchError && (err.status === 410 || err.status === 404)) {
-				setInvitationNotice(err.status === 410 ? fetchErrorText(err, 'That invitation is no longer open.') : 'That invitation is no longer open.');
+				setInvitationNotice(closedNotice(invitation, err));
 				await fetchInvitations();
 				return;
 			}
 			throw new Error(fetchErrorText(err, fallback), { cause: err });
 		}
 	}
+
+	const owned = projects.filter((p) => p.grantedRole === 'owner');
+	const shared = projects.filter((p) => p.grantedRole !== 'owner');
+	const nothingHere = projects.length === 0 && invitations.length === 0;
 
 	if (loading) {
 		return (
@@ -167,16 +184,13 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		);
 	}
 
-	const owned = projects.filter((p) => p.grantedRole === 'owner');
-	const shared = projects.filter((p) => p.grantedRole !== 'owner');
-	const nothingHere = projects.length === 0 && invitations.length === 0;
 
 	return (
 		<Page title="Projects">
 			<main class={styles.main}>
 				{picker.active ? (
 					<PickerBar picker={picker} />
-				) : (
+				) : nothingHere ? null : (
 					<div class={styles.toolbar}>
 						{projects.length >= MIN_PROJECTS && (
 							<button type="button" class="secondary" ref={picker.triggerRef} onClick={picker.start}>

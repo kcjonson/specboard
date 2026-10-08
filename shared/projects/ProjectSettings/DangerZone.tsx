@@ -3,14 +3,16 @@ import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
 import { fetchClient } from '@specboard/fetch';
 import { Button, ConfirmDialog } from '@specboard/ui';
+import { SectionHeader } from './SectionHeader';
 import styles from './ProjectSettings.module.css';
 
 export interface DangerZoneProps {
+	title: string;
 	projectRef: string;
 	projectName: string;
 }
 
-export function DangerZone({ projectRef, projectName }: DangerZoneProps): JSX.Element {
+export function DangerZone({ title, projectRef, projectName }: DangerZoneProps): JSX.Element {
 	const [confirming, setConfirming] = useState(false);
 
 	async function handleDelete(): Promise<void> {
@@ -20,6 +22,7 @@ export function DangerZone({ projectRef, projectName }: DangerZoneProps): JSX.El
 
 	return (
 		<div class={styles.form}>
+			<SectionHeader title={title} />
 			<div class={styles.dangerRow}>
 				<div>
 					<p class={styles.dangerTitle}>Delete this project</p>

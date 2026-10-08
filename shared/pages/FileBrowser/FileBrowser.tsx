@@ -520,7 +520,7 @@ export function FileBrowser({
 							)}
 							{!readOnly && (
 								<Button onClick={handleRetrySync} class={styles.addButton} disabled={retryingSync}>
-									{retryingSync ? 'Retrying...' : 'Retry Sync'}
+									{retryingSync ? 'Retrying...' : 'Retry sync'}
 								</Button>
 							)}
 						</>
@@ -543,7 +543,7 @@ export function FileBrowser({
 								Pages come from a GitHub repository. This project doesn't have one yet.
 							</div>
 							{isOwner && (
-								<a href={`/projects/${projectRef}/settings`} class={styles.settingsLink}>
+								<a href={`/projects/${projectRef}/settings#repository`} class={styles.settingsLink}>
 									Open project settings
 								</a>
 							)}

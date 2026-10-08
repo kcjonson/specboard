@@ -81,34 +81,41 @@ export function ProjectSettings({ params }: RouteProps): JSX.Element {
 	const repositoryName = project.repository?.type === 'cloud' && project.repository.remote
 		? `${project.repository.remote.owner}/${project.repository.remote.repo}`
 		: null;
+	const title = SECTIONS.find((section) => section.id === current)!.label;
 
 	return (
 		<Page projectRef={projectRef} activeTab="Settings">
-			<div class={styles.layout}>
-				<nav class={styles.nav} aria-label="Settings sections">
-					{SECTIONS.filter((section) => available.includes(section.id)).map((section) => (
-						<a
-							key={section.id}
-							href={`#${section.id}`}
-							class={`${styles.navItem} ${section.id === current ? styles.navItemActive : ''}`}
-							aria-current={section.id === current ? 'page' : undefined}
-						>
-							{section.label}
-						</a>
-					))}
-				</nav>
+			<div class={`${styles.layout} ${available.length === 1 ? styles.single : ''}`}>
+				{/* One section (a member's view) needs no way to choose it. */}
+				{available.length > 1 && (
+					<nav class={styles.nav} aria-label="Settings sections">
+						{SECTIONS.filter((section) => available.includes(section.id)).map((section) => (
+							<a
+								key={section.id}
+								href={`#${section.id}`}
+								class={`${styles.navItem} ${section.id === current ? styles.navItemActive : ''}`}
+								aria-current={section.id === current ? 'page' : undefined}
+							>
+								{section.label}
+							</a>
+						))}
+					</nav>
+				)}
 				<section class={styles.panel} aria-labelledby="settings-section-title">
-					<h2 id="settings-section-title" class={styles.panelTitle}>
-						{SECTIONS.find((section) => section.id === current)!.label}
-					</h2>
 					{/* Keyed by project, so opening another project's settings starts its forms over. */}
-					{current === 'general' && <GeneralSection key={project.id} project={project} projectRef={projectRef} />}
-					{current === 'ai' && <AiSection key={project.id} project={project} projectRef={projectRef} />}
-					{current === 'repository' && <RepositorySection project={project} projectRef={projectRef} />}
+					{current === 'general' && <GeneralSection key={project.id} title={title} project={project} projectRef={projectRef} />}
+					{current === 'ai' && <AiSection key={project.id} title={title} project={project} projectRef={projectRef} />}
+					{current === 'repository' && <RepositorySection title={title} project={project} projectRef={projectRef} />}
 					{current === 'members' && (
-						<MembersSection projectRef={projectRef} projectName={project.name} isOwner={isOwner} repositoryName={repositoryName} />
+						<MembersSection
+							title={title}
+							projectRef={projectRef}
+							projectName={project.name}
+							isOwner={isOwner}
+							repositoryName={repositoryName}
+						/>
 					)}
-					{current === 'danger' && <DangerZone projectRef={projectRef} projectName={project.name} />}
+					{current === 'danger' && <DangerZone title={title} projectRef={projectRef} projectName={project.name} />}
 				</section>
 			</div>
 		</Page>

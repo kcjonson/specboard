@@ -188,7 +188,7 @@ export function SyncProgressDialog({
 								Continue anyway
 							</Button>
 							<Button onClick={handleRetry} disabled={retrying}>
-								{retrying ? 'Retrying...' : 'Retry Sync'}
+								{retrying ? 'Retrying...' : 'Retry sync'}
 							</Button>
 						</DialogFooter>
 					</>

@@ -181,7 +181,8 @@ export function ProjectCard({ project, onClick, onOpenSettings, onRetrySync, sel
 							</button>
 						)}
 					</div>
-					{syncError && (
+					{/* The raw error is about the owner's repository and GitHub connection; theirs to act on. */}
+					{syncError && !shared && (
 						<p class={styles.syncErrorMessage}>{syncError}</p>
 					)}
 				</div>

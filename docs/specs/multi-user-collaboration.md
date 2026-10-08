@@ -595,7 +595,10 @@ Phase 4 (project settings page and member management, SPE-208) is built:
   description, URL slug, item key), AI (instructions), Repository, Members and Danger zone,
   one at a time from a side nav of links to `#general`, `#members` and so on, so a section can
   be linked to. It reads the page's shared `ProjectModel`, so a save shows in the header at
-  once. The forms wait for a read made since the page opened, so a model cached earlier in the
+  once. Saving a new slug or item key asks first, naming what breaks (old links and
+  `.mcp.json` bindings; item keys in links, branch names and MCP references), and a taken
+  one is shown under its field. A member's view has one section, so it has no side nav. The
+  forms wait for a read made since the page opened, so a model cached earlier in the
   session can't seed them with stale values. A slug change moves the model to the new ref
   (`moveProject`), leaving nothing cached under the old address, and the page follows it.
   Writes report through `writeFailure`, so a 403 re-reads the role; leaving a project that
@@ -608,7 +611,9 @@ Phase 4 (project settings page and member management, SPE-208) is built:
 - The owner's Members section changes roles with a select, removes after a confirm, and shows
   **Needs GitHub to edit** (granted editor, no connection) and **No push access to
   owner/repo** (`pushAccess` false) under the row. Pending invitations show role and "expires
-  in N days" or "expired", with Resend and Revoke. Remove, revoke, leave and delete all go
+  in N days" or "expired", with Resend and Revoke. Invite (or Leave project) sits on the
+  section's title row, an action's notice shows by the list it came from and clears on the
+  next action, and focus moves to the next row (or Invite) after a removal or revoke. Remove, revoke, leave and delete all go
   through `ConfirmDialog` (`@specboard/ui`), which shows a refused request's message in place.
 - The invite dialog takes email and role and shows the server's refusals inline (409 owner or
   member, 429 the hourly budget). The private-repository note reads the owner's own GitHub
