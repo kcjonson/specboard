@@ -42,7 +42,7 @@ describe('writeFile', () => {
 		await provider().writeFile('/a.md', 'new');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', 'new', 'modified', null
+			'project-1', 'user-1', 'a.md', 'new', 'modified', null, undefined
 		);
 	});
 
@@ -52,7 +52,7 @@ describe('writeFile', () => {
 		await provider().writeFile('/a.md', 'new');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', 'new', 'created', null
+			'project-1', 'user-1', 'a.md', 'new', 'created', null, undefined
 		);
 	});
 
@@ -66,6 +66,28 @@ describe('writeFile', () => {
 	});
 });
 
+describe('the base a draft is made against', () => {
+	it('passes the base the editor loaded to the first write', async () => {
+		mockClient.getFile.mockResolvedValue({ path: 'a.md', content: 'committed', contentHash: 'h2' });
+
+		await provider().writeFile('/a.md', 'mine', 'h1');
+
+		expect(mockClient.putPendingChange).toHaveBeenCalledWith('project-1', 'user-1', 'a.md', 'mine', 'modified', null, 'h1');
+	});
+
+	it('opens a draft with its base and a committed file with its own hash', async () => {
+		mockClient.getPendingChange.mockImplementation((_p, _u, path) =>
+			path === 'a.md'
+				? Promise.resolve({ path: 'a.md', content: 'draft', action: 'modified', renamedFrom: null, baseContentHash: 'h1', updatedAt: 'now' })
+				: Promise.resolve(null)
+		);
+		mockClient.getFile.mockResolvedValue({ path: 'b.md', content: 'committed', contentHash: 'h2' });
+
+		expect(await provider().readDocument('/a.md')).toEqual({ content: 'draft', baseContentHash: 'h1' });
+		expect(await provider().readDocument('/b.md')).toEqual({ content: 'committed', baseContentHash: 'h2' });
+	});
+});
+
 describe('deleteFile', () => {
 	it('records a deletion for a committed file', async () => {
 		mockClient.getFile.mockResolvedValue({ path: 'a.md', content: 'x' });
@@ -73,7 +95,7 @@ describe('deleteFile', () => {
 		await provider().deleteFile('/a.md');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', null, 'deleted', null
+			'project-1', 'user-1', 'a.md', null, 'deleted', null, undefined
 		);
 	});
 
@@ -119,10 +141,10 @@ describe('rename', () => {
 		await provider().rename('/a.md', '/b.md');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'b.md', 'content', 'created', 'a.md'
+			'project-1', 'user-1', 'b.md', 'content', 'created', 'a.md', undefined
 		);
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', null, 'deleted', null
+			'project-1', 'user-1', 'a.md', null, 'deleted', null, undefined
 		);
 	});
 
@@ -137,7 +159,7 @@ describe('rename', () => {
 		await provider().rename('/b.md', '/c.md');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'c.md', 'edited', 'created', 'a.md'
+			'project-1', 'user-1', 'c.md', 'edited', 'created', 'a.md', undefined
 		);
 		expect(mockClient.deletePendingChange).toHaveBeenCalledWith('project-1', 'user-1', 'b.md');
 	});
@@ -152,7 +174,7 @@ describe('rename', () => {
 		await provider().rename('/new.md', '/b.md');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'b.md', 'draft', 'created', null
+			'project-1', 'user-1', 'b.md', 'draft', 'created', null, undefined
 		);
 		expect(mockClient.deletePendingChange).toHaveBeenCalledWith('project-1', 'user-1', 'new.md');
 	});
@@ -172,7 +194,7 @@ describe('rename', () => {
 		await provider().rename('/b.md', '/a.md');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', 'edited', 'modified', null
+			'project-1', 'user-1', 'a.md', 'edited', 'modified', null, undefined
 		);
 	});
 });

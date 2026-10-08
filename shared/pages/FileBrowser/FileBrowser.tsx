@@ -66,6 +66,12 @@ export interface FileBrowserProps {
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes (file tree is already reloaded) */
 	onPullComplete?: () => void | Promise<void>;
+	/** Called after a commit lands, so an open document takes its new base */
+	onCommitted?: () => void | Promise<void>;
+	/** Called before a draft conflict on this path is kept or discarded (save it first) */
+	onBeforeResolveDraft?: (path: string) => Promise<void>;
+	/** Called after a draft conflict on this path was kept or discarded (file tree is already reloaded) */
+	onDraftResolved?: (path: string) => void | Promise<void>;
 	/**
 	 * Browse only: no create, rename, delete, folder changes, sync retry, commit or pull,
 	 * and no pending-changes count. For someone who can't edit the project.
@@ -95,6 +101,9 @@ export function FileBrowser({
 	hasUnsavedChanges,
 	onBeforePull,
 	onPullComplete,
+	onCommitted,
+	onBeforeResolveDraft,
+	onDraftResolved,
 	readOnly = false,
 	isOwner = false,
 	class: className,
@@ -351,6 +360,12 @@ export function FileBrowser({
 		await onPullComplete?.();
 	}, [model, onPullComplete]);
 
+	// A discarded draft can take a file out of the tree (one the caller created) or put one back
+	const handleDraftResolved = useCallback(async (path: string) => {
+		await model.reload();
+		await onDraftResolved?.(path);
+	}, [model, onDraftResolved]);
+
 	// Handle add folder. The picker is the desktop shell's, and its failure is its own
 	// message; the add is a write, reported in the server's words.
 	const handleAddFolder = async (): Promise<void> => {
@@ -569,6 +584,9 @@ export function FileBrowser({
 					hasUnsavedChanges={hasUnsavedChanges}
 					onBeforePull={onBeforePull}
 					onPullComplete={handlePullComplete}
+					onCommitted={onCommitted}
+					onBeforeResolveDraft={onBeforeResolveDraft}
+					onDraftResolved={handleDraftResolved}
 				/>
 			)}
 			<div class={styles.header}>
@@ -600,6 +618,7 @@ export function FileBrowser({
 										isRoot={isRoot}
 										readOnly={readOnly}
 										canRemove={isOwner}
+										hasConflict={gitStatus?.hasConflictUnder(file.path) ?? false}
 										onClick={() => handleItemClick(file.path, 'directory')}
 										onAddFileClick={(e) => handleNewFileInFolder(file.path, e)}
 										onDeleteClick={(e) => handleDeleteClick(file.path, 'directory', e)}

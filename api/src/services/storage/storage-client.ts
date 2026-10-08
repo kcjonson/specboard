@@ -34,6 +34,8 @@ export interface PendingChangeContent {
 	content: string | null;
 	action: 'modified' | 'created' | 'deleted';
 	renamedFrom: string | null;
+	/** The committed version the draft was made against; null when none was committed. */
+	baseContentHash: string | null;
 	updatedAt: string;
 }
 
@@ -171,12 +173,16 @@ export class StorageClient {
 		path: string,
 		content: string | null,
 		action: 'modified' | 'created' | 'deleted',
-		renamedFrom: string | null
+		renamedFrom: string | null,
+		baseContentHash: string | null | undefined
 	): Promise<{ path: string; action: string; isLarge: boolean }> {
+		// Storage reads a missing baseContentHash key as "not known" and an explicit null
+		// as "nothing was committed", so the key is only sent when there is one.
 		return this.request('PUT', `/pending/${projectId}/${userId}/${path}`, {
 			content,
 			action,
 			renamedFrom,
+			...(baseContentHash === undefined ? {} : { baseContentHash }),
 		});
 	}
 

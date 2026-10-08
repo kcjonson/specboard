@@ -160,8 +160,42 @@ describe('a draft\'s base and its conflicts', () => {
 	});
 });
 
+describe('the base a writer gives', () => {
+	it('is used on the first write instead of what\'s committed then', async () => {
+		await commitVersion('docs/a.md', 'v2');
+		// The editor loaded v1, someone committed v2, then the first save arrives.
+		await upsertPendingChange(PROJECT, USER, 'docs/a.md', '# Mine', null, 'modified', null, { given: true, hash: 'v1' }, 'mine');
+
+		expect(await listed('docs/a.md')).toMatchObject({ baseContentHash: 'v1', conflict: true });
+	});
+
+	it('records a null base as "nothing was committed here"', async () => {
+		await commitVersion('docs/new.md', 'theirs');
+		await upsertPendingChange(PROJECT, USER, 'docs/new.md', '# Mine', null, 'created', null, { given: true, hash: null }, 'mine');
+
+		expect(await listed('docs/new.md')).toMatchObject({ baseContentHash: null, conflict: true });
+	});
+
+	it('doesn\'t replace the base of a draft that already has one', async () => {
+		await commitVersion('docs/a.md', 'v1');
+		await upsertPendingChange(PROJECT, USER, 'docs/a.md', '# Mine', null, 'modified', null, { given: true, hash: 'v1' }, 'mine');
+		await upsertPendingChange(PROJECT, USER, 'docs/a.md', '# Mine, more', null, 'modified', null, { given: true, hash: 'v9' }, 'mine2');
+
+		expect(await listed('docs/a.md')).toMatchObject({ baseContentHash: 'v1' });
+	});
+
+	it('isn\'t a conflict when the draft holds exactly what\'s committed now', async () => {
+		await commitVersion('docs/a.md', 'v1');
+		await upsertPendingChange(PROJECT, USER, 'docs/a.md', '# Mine', null, 'modified', null, { given: true, hash: 'v1' }, 'mine');
+		// The committer's own commit came back in through a pull after its promotion failed.
+		await commitVersion('docs/a.md', 'mine');
+
+		expect(await listed('docs/a.md')).toMatchObject({ conflict: false });
+	});
+});
+
 describe('migration 003 on drafts from before it', () => {
-	it('gives each existing draft today\'s committed hash as its base', async () => {
+	it('gives each existing draft today\'s committed hash as its base, and flags one whose file is gone', async () => {
 		const db = new PGlite();
 		const dir = join(import.meta.dirname, 'migrations');
 		const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
@@ -174,7 +208,8 @@ describe('migration 003 on drafts from before it', () => {
 		);
 		await db.query(
 			`INSERT INTO pending_changes (project_id, user_id, path, content, action) VALUES
-			 ($1, $2, 'docs/a.md', '# Mine', 'modified'), ($1, $2, 'docs/new.md', '# Mine', 'created')`,
+			 ($1, $2, 'docs/a.md', '# Mine', 'modified'), ($1, $2, 'docs/new.md', '# Mine', 'created'),
+			 ($1, $2, 'docs/lost.md', '# Mine', 'modified')`,
 			[PROJECT, USER]
 		);
 
@@ -185,6 +220,8 @@ describe('migration 003 on drafts from before it', () => {
 		);
 		expect(rows.rows).toEqual([
 			{ path: 'docs/a.md', base_content_hash: 'v1' },
+			// Edits a file that isn't committed any more: flagged.
+			{ path: 'docs/lost.md', base_content_hash: 'missing-before-migration' },
 			{ path: 'docs/new.md', base_content_hash: null },
 		]);
 		await db.close();

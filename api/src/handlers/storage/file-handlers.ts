@@ -195,12 +195,15 @@ export async function handleReadFile(context: Context): Promise<Response> {
 			return context.json({ error: 'File not found' }, 404);
 		}
 
-		const content = await provider.readFile(filePath);
+		const document = await provider.readDocument(filePath);
 
 		return context.json({
 			path: filePath,
-			content,
+			content: document.content,
 			encoding: 'utf-8',
+			// What an editor sends back with its saves, so a draft records what it was
+			// made against rather than whatever is committed when it first saves.
+			...(document.baseContentHash === undefined ? {} : { baseContentHash: document.baseContentHash }),
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -263,8 +266,8 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'File already exists', code: 'FILE_EXISTS' }, 409);
 		}
 
-		// Create file with default markdown heading
-		await provider.writeFile(filePath, '# Untitled\n\n');
+		// Create file with default markdown heading; nothing is committed at the path.
+		await provider.writeFile(filePath, '# Untitled\n\n', null);
 
 		// Invalidate convention file cache if a convention file was created
 		if (isConventionFile(filePath)) {
@@ -462,11 +465,19 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 		return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
 	}
 
-	const body = await jsonObjectBody<{ content?: unknown }>(context);
+	const body = await jsonObjectBody<{ content?: unknown; baseContentHash?: unknown }>(context);
 	if (body instanceof Response) return body;
 	const { content } = body;
 	if (typeof content !== 'string') {
 		return context.json({ error: 'Content is required' }, 400);
+	}
+
+	// The committed version the content was made against, as GET files gave it (null:
+	// nothing committed). A write without it (an agent, an older client) leaves the
+	// base to what's committed when the draft is first written.
+	const baseContentHash = body.baseContentHash;
+	if (baseContentHash !== undefined && baseContentHash !== null && typeof baseContentHash !== 'string') {
+		return context.json({ error: 'Invalid baseContentHash', code: 'INVALID_BASE' }, 400);
 	}
 
 	try {
@@ -486,7 +497,7 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 			return context.json({ error: 'No repository configured' }, 404);
 		}
 
-		await provider.writeFile(filePath, content);
+		await provider.writeFile(filePath, content, baseContentHash);
 
 		// Invalidate convention file cache if a convention file was edited
 		if (isConventionFile(filePath)) {

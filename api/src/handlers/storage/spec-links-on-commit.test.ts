@@ -46,25 +46,33 @@ const storage = vi.hoisted(() => {
 		}
 		return changes;
 	};
+	// A draft holding exactly what's committed now would commit as a no-op: not a conflict.
 	const list = (userId: string): Array<Pending & { path: string; conflict: boolean }> =>
-		[...mine(userId)].map(([path, change]) => ({ path, ...change, conflict: change.base !== (committed.get(path) ?? null) }));
+		[...mine(userId)].map(([path, change]) => {
+			const now = committed.get(path) ?? null;
+			const noOp = change.action !== 'deleted' && change.content === now;
+			return { path, ...change, conflict: change.base !== now && !noOp };
+		});
 	const client = {
 		listFiles: async () => [...committed.keys()].map((path) => ({ path, contentHash: 'h', sizeBytes: 1, syncedAt: 'then' })),
 		getFile: async (_projectId: string, path: string) => {
 			const content = committed.get(path);
-			return content === undefined ? null : { path, content };
+			return content === undefined ? null : { path, content, contentHash: content };
 		},
 		listPendingChanges: async (_projectId: string, userId: string) => list(userId),
 		listPendingChangesWithContent: async (_projectId: string, userId: string) => list(userId),
 		getPendingChange: async (_projectId: string, userId: string, path: string) => {
 			const change = mine(userId).get(path);
-			return change ? { path, ...change } : null;
+			return change ? { path, ...change, baseContentHash: change.base } : null;
 		},
-		putPendingChange: async (_projectId: string, userId: string, path: string, content: string | null, action: Action, renamedFrom: string | null) => {
+		putPendingChange: async (
+			_projectId: string, userId: string, path: string, content: string | null, action: Action,
+			renamedFrom: string | null, baseContentHash: string | null | undefined
+		) => {
 			const existing = mine(userId).get(path);
 			const kept = renamedFrom ?? existing?.renamedFrom ?? null;
 			const updatedAt = new Date(Date.UTC(2026, 0, 1) + ++clock).toISOString();
-			const base = existing ? existing.base : (committed.get(path) ?? null);
+			const base = existing ? existing.base : baseContentHash !== undefined ? baseContentHash : (committed.get(path) ?? null);
 			mine(userId).set(path, { content, action, renamedFrom: action === 'deleted' ? null : kept, updatedAt, base });
 			return { path, action, isLarge: false };
 		},
@@ -616,7 +624,7 @@ describe('after a commit', () => {
 	it('keeps a draft saved while the commit was in flight', async () => {
 		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Committed' });
 		vi.mocked(createGitHubCommit).mockImplementation(async () => {
-			await storage.client.putPendingChange('', alice, 'docs/spec.md', '# Saved during the commit', 'modified', null);
+			await storage.client.putPendingChange('', alice, 'docs/spec.md', '# Saved during the commit', 'modified', null, undefined);
 			return { success: true, sha: COMMIT_SHA, url: 'https://github.com/acme/docs/commit/c0ffee0', filesCommitted: 1 };
 		});
 
@@ -792,5 +800,53 @@ describe('a draft someone else\'s commit changed under', () => {
 		expect(await committed.json()).toEqual({ path: '/docs/spec.md', content: '# Spec' });
 		expect(await gone.json()).toEqual({ path: '/docs/never.md', content: null });
 	});
-});
 
+	it('catches a draft whose first save comes after someone else\'s commit to the file it loaded', async () => {
+		// Erin opens spec.md, then Alice commits a change to it.
+		const opened = (await (await call('erin', 'GET', 'files?path=/docs/spec.md')).json()) as { content: string; baseContentHash: string };
+		expect(opened.baseContentHash).toBe('# Spec');
+		await save('alice', '/docs/spec.md', '# Spec, Alice\'s take');
+		await commit('alice');
+
+		// Erin's first save arrives only now, carrying what she loaded.
+		await call('erin', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, Erin\'s take', baseContentHash: opened.baseContentHash });
+		const response = await commit('erin');
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ conflicts: [{ path: '/docs/spec.md' }] });
+		expect(storage.committed.get('docs/spec.md')).toBe('# Spec, Alice\'s take');
+	});
+
+	it('gives the open document its draft\'s base, not what\'s committed now', async () => {
+		await save('erin', '/docs/spec.md', '# Spec, Erin\'s take');
+		await save('alice', '/docs/spec.md', '# Spec, Alice\'s take');
+		await commit('alice');
+
+		const reopened = (await (await call('erin', 'GET', 'files?path=/docs/spec.md')).json()) as { baseContentHash: string };
+
+		expect(reopened.baseContentHash).toBe('# Spec');
+	});
+
+	it('doesn\'t count a draft that holds exactly what\'s committed now', async () => {
+		await save('erin', '/docs/spec.md', '# Same words');
+		await save('alice', '/docs/spec.md', '# Same words');
+		await commit('alice');
+
+		const status = await call('erin', 'GET', 'git/status');
+
+		expect(((await status.json()) as { changedFiles: Array<{ conflict: boolean }> }).changedFiles[0]!.conflict).toBe(false);
+	});
+
+	it('refuses to read a committed file outside the project\'s roots', async () => {
+		const projectId = projects.get('docs')!.id;
+		await state.db!.query(`UPDATE projects SET root_paths = '["/docs"]' WHERE id = $1`, [projectId]);
+		try {
+			const response = await call('erin', 'GET', 'git/committed?path=/secrets/env.md');
+
+			expect(response.status).toBe(403);
+			expect(await response.json()).toMatchObject({ code: 'PATH_OUTSIDE_ROOTS' });
+		} finally {
+			await state.db!.query(`UPDATE projects SET root_paths = '["/"]' WHERE id = $1`, [projectId]);
+		}
+	});
+});

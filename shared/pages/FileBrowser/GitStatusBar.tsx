@@ -15,9 +15,23 @@ export interface GitStatusBarProps {
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes */
 	onPullComplete?: () => void | Promise<void>;
+	/** Called after a commit lands */
+	onCommitted?: () => void | Promise<void>;
+	/** Called before a draft conflict on this path is kept or discarded */
+	onBeforeResolveDraft?: (path: string) => Promise<void>;
+	/** Called after a draft conflict on this path was kept or discarded */
+	onDraftResolved?: (path: string) => void | Promise<void>;
 }
 
-export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPullComplete }: GitStatusBarProps): JSX.Element {
+export function GitStatusBar({
+	gitStatus,
+	hasUnsavedChanges,
+	onBeforePull,
+	onPullComplete,
+	onCommitted,
+	onBeforeResolveDraft,
+	onDraftResolved,
+}: GitStatusBarProps): JSX.Element {
 	const [showCommitDialog, setShowCommitDialog] = useState(false);
 	const [showPullConfirm, setShowPullConfirm] = useState(false);
 	const [showConflicts, setShowConflicts] = useState(false);
@@ -50,7 +64,8 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 	const handleCommit = async (message?: string): Promise<void> => {
 		// Store the message for potential retry
 		lastCommitMessageRef.current = message || '';
-		await gitStatus.commit(message);
+		const committed = await gitStatus.commit(message);
+		if (committed) await onCommitted?.();
 
 		// Refused over drafts someone else's commit has changed under: those get resolved
 		// first, in their own dialog; the message is kept for the commit after.
@@ -66,10 +81,6 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 			setShowCommitDialog(false);
 			lastCommitMessageRef.current = '';
 		}
-	};
-
-	const handleConflictsResolved = async (): Promise<void> => {
-		await onPullComplete?.();
 	};
 
 	const conflictCount = gitStatus.conflictedFiles.length;
@@ -187,7 +198,8 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 				open={showConflicts}
 				gitStatus={gitStatus}
 				onClose={() => setShowConflicts(false)}
-				onResolved={handleConflictsResolved}
+				onBeforeResolve={onBeforeResolveDraft}
+				onResolved={onDraftResolved}
 			/>
 
 			{/* Pull confirmation when there are unsaved changes */}

@@ -93,6 +93,28 @@ describe('draft conflicts', () => {
 		expect(fetchClient.get).toHaveBeenCalledWith('/api/projects/acme/docs/git/status');
 	});
 
+	it('undoes a rename by discarding the new path and restoring the old one', async () => {
+		vi.mocked(fetchClient.post).mockResolvedValue({ success: true });
+		vi.mocked(fetchClient.get).mockResolvedValue({ branch: 'main', ahead: 0, behind: 0, changedFiles: [] });
+
+		expect(await model().undoRename('/docs/spec.md', '/docs/moved.md')).toBe(true);
+
+		expect(vi.mocked(fetchClient.post).mock.calls.map((call) => call[1])).toEqual([{ path: '/docs/moved.md' }, { path: '/docs/spec.md' }]);
+	});
+
+	it('knows which folders hold a conflicting draft', () => {
+		const gitStatus = model();
+		gitStatus.changedFiles = [
+			{ path: '/docs/guides/a.md', status: 'modified', isUntracked: false, conflict: true },
+			{ path: '/notes/b.md', status: 'modified', isUntracked: false, conflict: false },
+		];
+
+		expect(gitStatus.hasConflictUnder('/docs')).toBe(true);
+		expect(gitStatus.hasConflictUnder('/docs/guides')).toBe(true);
+		expect(gitStatus.hasConflictUnder('/notes')).toBe(false);
+		expect(gitStatus.hasConflictUnder('/do')).toBe(false);
+	});
+
 	it('reads a deleted draft as null', async () => {
 		vi.mocked(fetchClient.get).mockRejectedValue(new FetchError('HTTP 404: Not Found', 404, undefined, { error: 'File not found' }));
 

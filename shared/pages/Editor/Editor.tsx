@@ -101,7 +101,7 @@ function migrateLocalStorageContent(projectId: string, oldPath: string, newPath:
 	if (hasPersistedContent(projectId, oldPath)) {
 		const cached = loadFromLocalStorage(projectId, oldPath);
 		if (cached) {
-			saveToLocalStorage(projectId, newPath, cached.content, cached.comments);
+			saveToLocalStorage(projectId, newPath, cached.content, cached.comments, cached.baseContentHash);
 		}
 		clearLocalStorage(projectId, oldPath);
 	}
@@ -279,11 +279,14 @@ export function Editor(props: RouteProps): JSX.Element {
 	// Load file from server
 	const loadFileFromServer = useCallback(async (path: string) => {
 		try {
-			const response = await fetchClient.get<{ content: string }>(
+			const response = await fetchClient.get<{ content: string; baseContentHash?: string | null }>(
 				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}`
 			);
 			const { content: slateContent, comments } = fromMarkdown(response.content);
-			documentModel.loadDocument(projectId ?? '', path, slateContent, { comments });
+			documentModel.loadDocument(projectId ?? '', path, slateContent, {
+				comments,
+				baseContentHash: response.baseContentHash,
+			});
 			if (projectId) saveSelectedFile(projectId, path);
 			// Check if this document has a linked epic
 			checkLinkedEpic(path);
@@ -314,14 +317,16 @@ export function Editor(props: RouteProps): JSX.Element {
 
 		// `pid` is the project's immutable id and keys localStorage ONLY. API paths are
 		// addressed by owner/project ref — sending the UUID here 404s against those routes.
-		const { projectId: pid, filePath: fpath, content, comments } = documentModel;
+		const { projectId: pid, filePath: fpath, content, comments, baseContentHash } = documentModel;
 
 		setIsSaving(true);
 		try {
 			const markdown = toMarkdown(content as Descendant[], comments);
+			// The base tells a cloud draft what it was made against, so a commit can refuse
+			// it if someone changed the file since it was opened.
 			await fetchClient.put(
 				`/api/projects/${projectRef}/files?path=${encodeURIComponent(fpath)}`,
-				{ content: markdown }
+				baseContentHash === undefined ? { content: markdown } : { content: markdown, baseContentHash }
 			);
 			documentModel.markSaved();
 
@@ -349,7 +354,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			console.error('Server save failed:', errorMessage);
 
 			// Ensure localStorage has latest changes as fallback
-			saveToLocalStorage(pid ?? '', fpath, content, comments);
+			saveToLocalStorage(pid ?? '', fpath, content, comments, baseContentHash);
 
 			// Update error state
 			saveRetryCount.current++;
@@ -423,6 +428,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			documentModel.loadDocument(projectId ?? '', pendingRecovery, cached.content, {
 				dirty: true,
 				comments: cached.comments,
+				baseContentHash: cached.baseContentHash,
 			});
 			if (projectId) saveSelectedFile(projectId, pendingRecovery);
 			// Check if this document has a linked epic
@@ -618,7 +624,7 @@ export function Editor(props: RouteProps): JSX.Element {
 		if (!documentModel.isDirty) return;
 
 		// Immediate localStorage save (crash recovery)
-		saveToLocalStorage(pid, filePath, content, comments);
+		saveToLocalStorage(pid, filePath, content, comments, documentModel.baseContentHash);
 
 		// Clear previous server save timer
 		if (serverSaveTimerRef.current) {
@@ -676,6 +682,36 @@ export function Editor(props: RouteProps): JSX.Element {
 			await loadFileFromServer(documentModel.filePath);
 		}
 	}, [documentModel, loadFileFromServer]);
+
+	// A commit cleared the open file's draft, so what its next save is made against is
+	// the version just committed: take the new base without touching what's on screen.
+	const handleCommitted = useCallback(async () => {
+		const path = documentModel.filePath;
+		if (!path) return;
+		try {
+			const response = await fetchClient.get<{ baseContentHash?: string | null }>(
+				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}`
+			);
+			if (documentModel.filePath === path) documentModel.baseContentHash = response.baseContentHash;
+		} catch (err) {
+			captureError(err instanceof Error ? err : new Error(String(err)), { type: 'file_base_refresh_error', filePath: path, projectRef });
+		}
+	}, [documentModel, projectRef]);
+
+	// Resolving a draft conflict on the open file: save what's on screen first, so keep
+	// mine keeps it and discard discards it, then show the result.
+	const handleBeforeResolveDraft = useCallback(async (path: string) => {
+		if (path === documentModel.filePath && documentModel.isDirty) {
+			await performServerSave();
+		}
+	}, [documentModel, performServerSave]);
+
+	const handleDraftResolved = useCallback(async (path: string) => {
+		if (path === documentModel.filePath) {
+			if (projectId) clearLocalStorage(projectId, path);
+			await loadFileFromServer(path);
+		}
+	}, [documentModel, projectId, loadFileFromServer]);
 
 	// Handle file deleted - clear selection if deleted file was open
 	const handleFileDeleted = useCallback((deletedPath: string) => {
@@ -811,6 +847,9 @@ export function Editor(props: RouteProps): JSX.Element {
 						onRenameFileRef={handleRenameFileRef}
 						hasUnsavedChanges={documentModel.isDirty}
 						onBeforePull={handleBeforePull}
+						onCommitted={handleCommitted}
+						onBeforeResolveDraft={handleBeforeResolveDraft}
+						onDraftResolved={handleDraftResolved}
 						onPullComplete={handlePullComplete}
 						readOnly={!canEdit}
 						isOwner={isOwner}

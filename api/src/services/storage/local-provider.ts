@@ -10,6 +10,7 @@ import {
 	type StorageProvider,
 	type FileEntry,
 	type ListDirectoryOptions,
+	type OpenedDocument,
 	type GitStatus,
 	type FileChange,
 	type Commit,
@@ -108,6 +109,11 @@ export class LocalStorageProvider implements StorageProvider {
 		return fs.readFile(absolutePath, 'utf-8');
 	}
 
+	async readDocument(relativePath: string): Promise<OpenedDocument> {
+		return { content: await this.readFile(relativePath) };
+	}
+
+	// A local project's drafts are its working tree; there's no base to record.
 	async writeFile(relativePath: string, content: string): Promise<void> {
 		const absolutePath = await validatePath(this.repoPath, relativePath);
 		await fs.writeFile(absolutePath, content, 'utf-8');

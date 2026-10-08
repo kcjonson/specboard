@@ -30,8 +30,10 @@ export interface PendingChange {
 	s3Key: string | null;
 	action: 'modified' | 'created' | 'deleted';
 	renamedFrom: string | null;
-	/** The committed file's content_hash at this path when the draft began; null when none was committed. */
+	/** The committed file's content_hash the draft was made against; null when none was committed. */
 	baseContentHash: string | null;
+	/** The draft's own content hash; null for a deletion (and for drafts from before it was recorded). */
+	contentHash: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -191,10 +193,11 @@ export async function getPendingChange(
 		action: 'modified' | 'created' | 'deleted';
 		renamed_from: string | null;
 		base_content_hash: string | null;
+		content_hash: string | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`SELECT id, project_id, user_id, path, content, s3_key, action, renamed_from, base_content_hash, created_at, updated_at
+		`SELECT id, project_id, user_id, path, content, s3_key, action, renamed_from, base_content_hash, content_hash, created_at, updated_at
 		 FROM pending_changes
 		 WHERE project_id = $1 AND user_id = $2 AND path = $3`,
 		[projectId, userId, path]
@@ -213,6 +216,7 @@ export async function getPendingChange(
 		action: row.action,
 		renamedFrom: row.renamed_from,
 		baseContentHash: row.base_content_hash,
+		contentHash: row.content_hash,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -220,8 +224,10 @@ export async function getPendingChange(
 
 /**
  * A user's drafts, each with `conflict`: what's committed at its path now differs from
- * what was committed when the draft began (a changed file, a file deleted under a draft,
- * or a file created where the draft creates one).
+ * what the draft was made against (a changed file, a file deleted under a draft, or a
+ * file created where the draft creates one), unless the draft already holds exactly
+ * what's committed (the committer's own commit brought in by a pull, say), which would
+ * commit as a no-op.
  */
 export async function listPendingChanges(
 	projectId: string,
@@ -238,12 +244,15 @@ export async function listPendingChanges(
 		action: 'modified' | 'created' | 'deleted';
 		renamed_from: string | null;
 		base_content_hash: string | null;
+		content_hash: string | null;
 		conflict: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
 		`SELECT p.id, p.project_id, p.user_id, p.path, p.content, p.s3_key, p.action, p.renamed_from,
-		        p.base_content_hash, p.base_content_hash IS DISTINCT FROM d.content_hash AS conflict,
+		        p.base_content_hash, p.content_hash,
+		        p.base_content_hash IS DISTINCT FROM d.content_hash
+		          AND NOT (p.action <> 'deleted' AND COALESCE(p.content_hash = d.content_hash, false)) AS conflict,
 		        p.created_at, p.updated_at
 		 FROM pending_changes p
 		 LEFT JOIN project_documents d ON d.project_id = p.project_id AND d.path = p.path
@@ -262,11 +271,20 @@ export async function listPendingChanges(
 		action: row.action,
 		renamedFrom: row.renamed_from,
 		baseContentHash: row.base_content_hash,
+		contentHash: row.content_hash,
 		conflict: row.conflict,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}));
 }
+
+/**
+ * What the draft's content was made against: `{ given: true, hash }` when the writer
+ * says (the editor sends the committed hash it loaded, or null for a file nothing was
+ * committed at), `{ given: false }` when it doesn't (a deletion, a rename, an agent's
+ * write, an older client), which falls back to what's committed at the path then.
+ */
+export type DraftBase = { given: true; hash: string | null } | { given: false };
 
 export async function upsertPendingChange(
 	projectId: string,
@@ -275,26 +293,31 @@ export async function upsertPendingChange(
 	content: string | null,
 	s3Key: string | null,
 	action: 'modified' | 'created' | 'deleted',
-	renamedFrom: string | null
+	renamedFrom: string | null,
+	base: DraftBase = { given: false },
+	contentHash: string | null = null
 ): Promise<void> {
 	const db = pool.instance;
 	// Saving a renamed file again doesn't name where it came from, so an existing origin
-	// is kept unless the write gives one; a deletion has none. The base is what was
-	// committed at this path when the draft row was first written, and later saves keep it.
+	// is kept unless the write gives one; a deletion has none. The base is set when the
+	// draft row is first written and later saves keep it.
 	await db.query(
-		`INSERT INTO pending_changes (project_id, user_id, path, content, s3_key, action, renamed_from, base_content_hash, created_at, updated_at)
+		`INSERT INTO pending_changes (project_id, user_id, path, content, s3_key, action, renamed_from, base_content_hash, content_hash, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $6 = 'deleted' THEN NULL ELSE $7 END,
-		         (SELECT content_hash FROM project_documents WHERE project_id = $1 AND path = $3), NOW(), NOW())
+		         CASE WHEN $8::boolean THEN $9
+		              ELSE (SELECT content_hash FROM project_documents WHERE project_id = $1 AND path = $3) END,
+		         $10, NOW(), NOW())
 		 ON CONFLICT (project_id, user_id, path) DO UPDATE SET
 		   content = EXCLUDED.content,
 		   s3_key = EXCLUDED.s3_key,
 		   action = EXCLUDED.action,
+		   content_hash = EXCLUDED.content_hash,
 		   renamed_from = CASE
 		     WHEN EXCLUDED.action = 'deleted' THEN NULL
 		     ELSE COALESCE(EXCLUDED.renamed_from, pending_changes.renamed_from)
 		   END,
 		   updated_at = NOW()`,
-		[projectId, userId, path, content, s3Key, action, renamedFrom]
+		[projectId, userId, path, content, s3Key, action, renamedFrom, base.given, base.given ? base.hash : null, contentHash]
 	);
 }
 

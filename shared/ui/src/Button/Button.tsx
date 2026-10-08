@@ -20,6 +20,10 @@ export interface ButtonProps {
 	'aria-label'?: string;
 	/** Toggle state; a secondary button renders pressed when true */
 	'aria-pressed'?: boolean;
+	/** For a button that shows and hides a region: whether it's showing */
+	'aria-expanded'?: boolean;
+	/** The id of the region the button shows and hides */
+	'aria-controls'?: string;
 	/** Tooltip text */
 	title?: string;
 	/** Button style variant */
@@ -35,6 +39,8 @@ export function Button({
 	class: className,
 	'aria-label': ariaLabel,
 	'aria-pressed': ariaPressed,
+	'aria-expanded': ariaExpanded,
+	'aria-controls': ariaControls,
 	title,
 	variant,
 }: ButtonProps): JSX.Element {
@@ -49,6 +55,8 @@ export function Button({
 			aria-disabled={busy || undefined}
 			aria-label={ariaLabel}
 			aria-pressed={ariaPressed}
+			aria-expanded={ariaExpanded}
+			aria-controls={ariaControls}
 			title={title}
 		>
 			{children}

@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono';
+import crypto from 'crypto';
 
 import {
 	getPendingChange,
@@ -11,6 +12,7 @@ import {
 	upsertPendingChange,
 	deletePendingChange,
 	rebasePendingChanges,
+	type DraftBase,
 	shouldStoreInS3,
 } from '../db/queries.ts';
 import {
@@ -122,6 +124,7 @@ pendingRoutes.get('/:projectId/:userId/:path{.+}', async (c) => {
 		content,
 		action: change.action,
 		renamedFrom: change.renamedFrom,
+		baseContentHash: change.baseContentHash,
 		updatedAt: change.updatedAt.toISOString(),
 	});
 });
@@ -148,6 +151,7 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 		content?: string;
 		action: 'modified' | 'created' | 'deleted';
 		renamedFrom?: string | null;
+		baseContentHash?: string | null;
 	}>();
 
 	if (!body.action || !['modified', 'created', 'deleted'].includes(body.action)) {
@@ -160,6 +164,15 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 		if (!renamedFrom) {
 			return c.json({ error: 'Invalid renamedFrom path' }, 400);
 		}
+	}
+
+	// A key that's present (a hash, or null for nothing committed) is the writer's
+	// base; one that's absent leaves it to what's committed now.
+	const base: DraftBase = 'baseContentHash' in body
+		? { given: true, hash: body.baseContentHash ?? null }
+		: { given: false };
+	if (base.given && base.hash !== null && typeof base.hash !== 'string') {
+		return c.json({ error: 'Invalid baseContentHash' }, 400);
 	}
 
 	// For delete action, content is not required
@@ -185,7 +198,10 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 
 	// Update database - if this fails after S3 upload, clean up S3
 	try {
-		await upsertPendingChange(projectId, userId, validPath, inlineContent, s3Key, body.action, renamedFrom);
+		const contentHash = typeof body.content === 'string' && body.action !== 'deleted'
+			? crypto.createHash('sha1').update(body.content).digest('hex')
+			: null;
+		await upsertPendingChange(projectId, userId, validPath, inlineContent, s3Key, body.action, renamedFrom, base, contentHash);
 	} catch (err) {
 		// Clean up S3 content if DB update failed
 		if (s3Key) {

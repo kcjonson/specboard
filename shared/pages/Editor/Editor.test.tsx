@@ -188,3 +188,37 @@ describe('Editor saves the server refuses', () => {
 	});
 });
 
+describe('Editor and the version a draft is made against', () => {
+	it('sends the base the file was opened with, even when the first save comes much later', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		get.mockImplementation(async (url: string) =>
+			url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: 'v1' } : files(url)
+		);
+		put.mockResolvedValue({});
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+
+		const model = seen.editor!.model as DocumentModel;
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		await act(async () => {
+			await (seen.files!.onFileSelect as (path: string) => Promise<void>)('/docs/other.md');
+		});
+
+		expect(put).toHaveBeenCalledWith(
+			'/api/projects/acme/docs/files?path=%2Fdocs%2Fspec.md',
+			expect.objectContaining({ baseContentHash: 'v1' })
+		);
+	});
+
+	it('restores a local copy with the base it was made against', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		saveToLocalStorage('id-docs', FILE, [{ type: 'paragraph', children: [{ text: 'Local' }] }] as never, [], 'v0');
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('recovery-dialog');
+
+		const { loadFromLocalStorage } = await import('@specboard/models');
+		expect(loadFromLocalStorage('id-docs', FILE)?.baseContentHash).toBe('v0');
+	});
+});
+

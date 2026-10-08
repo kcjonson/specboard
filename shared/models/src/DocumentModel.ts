@@ -76,6 +76,13 @@ export class DocumentModel extends Model {
 	@prop accessor savedComments: DocumentComment[] = [];
 
 	/**
+	 * The committed version this content was made against, as the server gave it when
+	 * the file was opened (null: nothing committed). Sent with saves so a cloud draft
+	 * records it; undefined where the server gives none (local projects).
+	 */
+	@prop accessor baseContentHash: string | null | undefined = undefined;
+
+	/**
 	 * Check if current content differs from saved content.
 	 * Uses JSON comparison for deep equality.
 	 */
@@ -94,12 +101,13 @@ export class DocumentModel extends Model {
 	 * @param options - Optional settings
 	 * @param options.dirty - Mark document as dirty (e.g., when restoring unsaved changes)
 	 * @param options.comments - Comments attached to the document
+	 * @param options.baseContentHash - The committed version the content was made against
 	 */
 	loadDocument(
 		projectId: string,
 		filePath: string,
 		content: SlateContent,
-		options?: { dirty?: boolean; comments?: DocumentComment[] }
+		options?: { dirty?: boolean; comments?: DocumentComment[]; baseContentHash?: string | null }
 	): void {
 		this.documentId = crypto.randomUUID();
 		this.projectId = projectId;
@@ -110,6 +118,7 @@ export class DocumentModel extends Model {
 		this.comments = options?.comments ?? [];
 		this.savedComments = options?.dirty ? [] : deepClone(this.comments);
 		this.dirty = options?.dirty ?? false;
+		this.baseContentHash = options?.baseContentHash;
 	}
 
 	/**
@@ -147,6 +156,7 @@ export class DocumentModel extends Model {
 		this.comments = [];
 		this.savedComments = [];
 		this.dirty = false;
+		this.baseContentHash = undefined;
 	}
 
 	/**

@@ -371,35 +371,54 @@ other push. What that recovers:
 A draft is the whole file, so committing one made against an older version replaces
 whatever changed since: another member's commit (which moves the sync point, so
 `expectedHeadOid` doesn't catch it) or anything a pull brought in. Each pending change
-records its base, `base_content_hash` (storage migration 003): the committed file's
-`content_hash` at the draft's own path when the draft row was first written, or NULL
-when nothing was committed there. Later saves keep it; discarding the draft (restore)
-removes the row with it. A commit that promotes a file re-bases the committer's own
-drafts at that path, so a draft saved mid-commit doesn't conflict with its own commit.
+records its base, `base_content_hash` (storage migration 003): the committed version the
+draft's content was made against, NULL when nothing was committed there.
+
+The base comes from the editor, not from the moment of the first save. `GET files`
+returns `baseContentHash` with the content: the committed file's hash, or for a file
+the caller already has a draft of, that draft's base. The editor keeps it with the open
+document and with its local (crash-recovery) copy, and sends it with every `PUT files`.
+Storage uses it when the draft row is first written; later saves keep the row's base.
+So a file opened before someone else's commit and first saved after it still conflicts,
+and so does a local copy restored long after it was made. A write without a base (an
+agent's, a script's, or an older client's during a deploy) takes what's committed at
+the path at that moment, as does a deletion or a rename from the file tree. After the
+caller's own commit the editor takes the new base for the open file, so its next save
+isn't measured against the version it just replaced.
 
 A draft conflicts when what's committed at its path now differs from its base (`IS
 DISTINCT FROM`): an edit of a file someone changed or deleted, a created file where
-someone committed one, or a deletion of a file someone changed or already deleted. The
+someone committed one, or a deletion of a file someone changed or already deleted. It
+doesn't when the draft already holds exactly what's committed (pending changes record a
+`content_hash` too): that's what happens when the caller's own commit comes back in
+through a pull after its promotion failed, and committing it would change nothing. The
 storage service computes this when it lists a user's drafts, so git status carries it
 per file and the commit checks it under the sync lock (which keeps commits and pulls
-from moving the committed files during the check).
+from moving the committed files during the check). A commit that promotes a file
+re-bases the committer's own drafts at that path, so a draft saved mid-commit doesn't
+conflict with its own commit.
 
 A rename's new path starts with the base of whatever was committed there (normally
 nothing, since a rename can't land on an existing file). The file it came from is
 tracked by the old path's own `deleted` draft, whose base is the old file's hash, so a
-rename whose source someone changed conflicts through the source path.
+rename whose source someone changed conflicts through the source path, and git status
+names where the file went (`renamedTo`).
 
-The editor shows a notice when any draft conflicts and a dialog listing them, also
-opened when a commit is refused for them. Per file it offers Compare (the version
-committed now, `GET git/committed`, beside the draft, read-only), Keep mine, and
-Discard mine. Keep mine (`POST git/keep-mine { paths }`, editor-gated) re-bases the
-drafts on what's committed now, in one storage call, so the next commit takes them as
-they are; a draft that writes the file becomes `created` or `modified` to match, and a
-deletion of a file that's already gone is dropped. Discard mine is restore.
+The editor marks a conflicting file in the tree with an alert glyph (and a collapsed
+folder holding one), shows a notice, and lists them in a dialog, also opened when a
+commit is refused for them. Per file it offers Compare (the version committed now, `GET
+git/committed`, beside the draft, read-only), keep, and discard; a rename's row reads
+"You renamed it to ..." with Keep my rename and Undo my rename. Keep (`POST git/keep-mine
+{ paths }`, editor-gated) re-bases the drafts on what's committed now, in one storage
+call, so the next commit takes them as they are; a draft that writes the file becomes
+`created` or `modified` to match, and a deletion of a file that's already gone is
+dropped. Discard is restore (for a rename, of both paths) and asks first. When the
+resolved file is open, the editor saves it first and reloads it after.
 
 Drafts that existed before migration 003 got today's committed hash as their base, since
-what they were made against was never recorded. They're treated as current: a change
-committed before the migration won't be caught for them.
+what they were made against was never recorded. They're treated as current, so a change
+committed before the migration isn't caught for them, except that one editing or
+deleting a file nothing is committed at any more is flagged.
 
 ### Pulling
 

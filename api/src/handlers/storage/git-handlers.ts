@@ -4,13 +4,14 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { getStorageProvider, normalizePath } from './utils.ts';
+import { getStorageProvider, isPathWithinRoots, normalizePath } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
 import { isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
 import { apiUserId, loadAuthorizedProject, requireAccess } from '../../project-access.ts';
 import { jsonObjectBody } from '../../request-body.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 import { getStorageClient } from '../../services/storage/storage-client.ts';
+import type { FileChange } from '../../services/storage/types.ts';
 
 /**
  * GET /api/projects/:owner/:project/git/status
@@ -49,17 +50,24 @@ export async function handleGetGitStatus(context: Context): Promise<Response> {
 
 		// Combine staged, unstaged, and untracked into a single changedFiles array
 		// Use a Map to dedupe by path, preferring staged status
-		const changedMap = new Map<string, { path: string; status: string; isUntracked: boolean; conflict: boolean }>();
+		const changedMap = new Map<string, { path: string; status: string; isUntracked: boolean; conflict: boolean; renamedTo?: string }>();
+		const changed = (file: FileChange): { path: string; status: string; isUntracked: boolean; conflict: boolean; renamedTo?: string } => ({
+			path: file.path,
+			status: file.status,
+			isUntracked: false,
+			conflict: file.conflict === true,
+			...(file.renamedTo ? { renamedTo: file.renamedTo } : {}),
+		});
 
 		// Add staged files
 		for (const file of status.staged) {
-			changedMap.set(file.path, { path: file.path, status: file.status, isUntracked: false, conflict: file.conflict === true });
+			changedMap.set(file.path, changed(file));
 		}
 
 		// Add unstaged files (don't override if already staged)
 		for (const file of status.unstaged) {
 			if (!changedMap.has(file.path)) {
-				changedMap.set(file.path, { path: file.path, status: file.status, isUntracked: false, conflict: file.conflict === true });
+				changedMap.set(file.path, changed(file));
 			}
 		}
 
@@ -280,8 +288,9 @@ export async function handleKeepMine(context: Context, redis: Redis): Promise<Re
 		return context.json({ error: 'Only cloud projects keep drafts against a committed version', code: 'NOT_CLOUD' }, 400);
 	}
 
-	const body = await context.req.json().catch(() => null) as { paths?: unknown } | null;
-	const raw = body?.paths;
+	const body = await jsonObjectBody<{ paths?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const raw = body.paths;
 	if (!Array.isArray(raw) || raw.length === 0) {
 		return context.json({ error: 'paths must be a non-empty array', code: 'PATHS_REQUIRED' }, 400);
 	}
@@ -290,6 +299,9 @@ export async function handleKeepMine(context: Context, redis: Redis): Promise<Re
 		const normalized = typeof path === 'string' ? normalizePath(path) : null;
 		if (!normalized) {
 			return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
+		}
+		if (!isPathWithinRoots(normalized, project.rootPaths)) {
+			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
 		paths.push(normalized.slice(1));
 	}
@@ -327,6 +339,9 @@ export async function handleReadCommittedFile(context: Context): Promise<Respons
 	}
 	if (!isCloudRepository(project.repository)) {
 		return context.json({ error: 'Only cloud projects keep a committed copy', code: 'NOT_CLOUD' }, 400);
+	}
+	if (!isPathWithinRoots(filePath, project.rootPaths)) {
+		return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 	}
 
 	try {

@@ -20,7 +20,10 @@
 	background: var(--color-warning);
 }
 
-/* A draft someone else's commit has changed under */
+/* A draft someone else's commit has changed under: a glyph, not a dot */
 .conflict {
-	background: var(--color-error);
+	display: inline-flex;
+	align-items: center;
+	color: var(--color-error);
+	flex-shrink: 0;
 }

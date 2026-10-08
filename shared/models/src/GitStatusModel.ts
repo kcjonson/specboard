@@ -19,6 +19,8 @@ export interface ChangedFile {
 	isUntracked: boolean;
 	/** Someone committed a change to this file since this draft began (cloud projects). */
 	conflict?: boolean;
+	/** A deletion that is the old side of the caller's rename: where the file went. */
+	renamedTo?: string;
 }
 
 export interface CommitError {
@@ -280,6 +282,17 @@ export class GitStatusModel extends Model {
 			this.error = writeFailure(err, 'Could not keep your version', this.projectRef);
 			return false;
 		}
+	}
+
+	/** Undo a rename: discard the new path's draft and put the old path back. */
+	async undoRename(oldPath: string, newPath: string): Promise<boolean> {
+		return (await this.restore(newPath)) && (await this.restore(oldPath));
+	}
+
+	/** Whether any conflicting draft is at or under this folder */
+	hasConflictUnder(folderPath: string): boolean {
+		const prefix = folderPath.endsWith('/') ? folderPath : `${folderPath}/`;
+		return this.changedFiles.some((f) => f.conflict === true && f.path.startsWith(prefix));
 	}
 
 	/** The committed version of a file, without the caller's draft; null when none is committed. */

@@ -7,6 +7,7 @@ import { StorageClient, getStorageClient } from './storage-client.ts';
 import type {
 	StorageProvider,
 	FileEntry,
+	OpenedDocument,
 	ListDirectoryOptions,
 	GitStatus,
 	Commit,
@@ -157,28 +158,49 @@ export class CloudStorageProvider implements StorageProvider {
 		return file.content;
 	}
 
+	async readDocument(relativePath: string): Promise<OpenedDocument> {
+		const file = await this.readWithOrigin(toStoragePath(relativePath));
+		if (!file) {
+			throw new Error(`File not found: ${relativePath}`);
+		}
+		return { content: file.content, baseContentHash: file.base };
+	}
+
 	/**
-	 * The caller's current content for a path, and the committed path it carries the
-	 * identity of: the path itself when committed, where a rename started when the path
-	 * is the new side of one, or null for a file that was never committed.
+	 * The caller's current content for a path; the committed path it carries the
+	 * identity of (the path itself when committed, where a rename started when the path
+	 * is the new side of one, or null for a file that was never committed); and the
+	 * committed version it was made against (the draft's base, or the committed file's
+	 * own hash when there's no draft).
 	 */
-	private async readWithOrigin(storagePath: string): Promise<{ content: string; origin: string | null } | null> {
+	private async readWithOrigin(
+		storagePath: string
+	): Promise<{ content: string; origin: string | null; base: string | null } | null> {
 		const pending = await this.client.getPendingChange(this.projectId, this.userId, storagePath);
 		if (pending && pending.action !== 'deleted' && pending.content !== null) {
 			const origin = pending.renamedFrom ?? (pending.action === 'modified' ? storagePath : null);
-			return { content: pending.content, origin };
+			return { content: pending.content, origin, base: pending.baseContentHash };
 		}
 
 		const file = await this.client.getFile(this.projectId, storagePath);
-		return file ? { content: file.content, origin: storagePath } : null;
+		return file ? { content: file.content, origin: storagePath, base: file.contentHash } : null;
 	}
 
-	async writeFile(relativePath: string, content: string): Promise<void> {
-		await this.putContent(toStoragePath(relativePath), content, null);
+	async writeFile(relativePath: string, content: string, baseContentHash?: string | null): Promise<void> {
+		await this.putContent(toStoragePath(relativePath), content, null, baseContentHash);
 	}
 
-	/** `renamedFrom` null keeps whatever origin the pending change already records. */
-	private async putContent(storagePath: string, content: string, renamedFrom: string | null): Promise<void> {
+	/**
+	 * `renamedFrom` null keeps whatever origin the pending change already records;
+	 * `baseContentHash` undefined leaves the base to what's committed when the draft
+	 * row is first written.
+	 */
+	private async putContent(
+		storagePath: string,
+		content: string,
+		renamedFrom: string | null,
+		baseContentHash: string | null | undefined
+	): Promise<void> {
 		const committed = await this.client.getFile(this.projectId, storagePath);
 
 		// Writing the committed content back clears the pending change instead of
@@ -194,7 +216,8 @@ export class CloudStorageProvider implements StorageProvider {
 			storagePath,
 			content,
 			committed ? 'modified' : 'created',
-			renamedFrom
+			renamedFrom,
+			baseContentHash
 		);
 	}
 
@@ -216,7 +239,8 @@ export class CloudStorageProvider implements StorageProvider {
 			storagePath,
 			null,
 			'deleted',
-			null
+			null,
+			undefined
 		);
 	}
 
@@ -237,7 +261,9 @@ export class CloudStorageProvider implements StorageProvider {
 		}
 		const to = toStoragePath(newPath);
 		// Moving back onto its own committed path isn't a rename of anything.
-		await this.putContent(to, file.content, file.origin === to ? null : file.origin);
+		// The new path starts from what's committed there (normally nothing); the old
+		// path's own draft keeps what the file was made against.
+		await this.putContent(to, file.content, file.origin === to ? null : file.origin, undefined);
 		await this.deleteFile(oldPath);
 	}
 
@@ -272,6 +298,11 @@ export class CloudStorageProvider implements StorageProvider {
 		const staged: GitStatus['staged'] = [];
 		const unstaged: GitStatus['unstaged'] = [];
 
+		// The deletion a rename journals at the old path, keyed to where the file went.
+		const renamedTo = new Map(
+			pending.flatMap((change) => (change.renamedFrom && change.action !== 'deleted' ? [[change.renamedFrom, change.path] as const] : []))
+		);
+
 		for (const change of pending) {
 			const status =
 				change.action === 'created'
@@ -281,10 +312,12 @@ export class CloudStorageProvider implements StorageProvider {
 						: 'modified';
 
 			// Return paths with leading slash to match API convention
+			const movedTo = change.action === 'deleted' ? renamedTo.get(change.path) : undefined;
 			unstaged.push({
 				path: '/' + change.path,
 				status,
 				conflict: change.conflict,
+				...(movedTo ? { renamedTo: '/' + movedTo } : {}),
 			});
 		}
 
