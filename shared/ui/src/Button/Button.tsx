@@ -7,6 +7,11 @@ export interface ButtonProps {
 	onClick?: (e: MouseEvent) => void;
 	/** Disabled state */
 	disabled?: boolean;
+	/**
+	 * Working on the last click: announced as busy and ignoring clicks, but still enabled,
+	 * so a focused button keeps focus (a disabled one drops it to the page).
+	 */
+	busy?: boolean;
 	/** Button type */
 	type?: 'button' | 'submit' | 'reset';
 	/** CSS classes (e.g., "secondary size-sm") */
@@ -25,6 +30,7 @@ export function Button({
 	children,
 	onClick,
 	disabled = false,
+	busy = false,
 	type = 'button',
 	class: className,
 	'aria-label': ariaLabel,
@@ -37,8 +43,10 @@ export function Button({
 		<button
 			type={type}
 			class={classes}
-			onClick={onClick}
+			onClick={busy ? (e) => e.preventDefault() : onClick}
 			disabled={disabled}
+			aria-busy={busy || undefined}
+			aria-disabled={busy || undefined}
 			aria-label={ariaLabel}
 			aria-pressed={ariaPressed}
 			title={title}

@@ -37,3 +37,14 @@
 	background: var(--color-error);
 	color: var(--color-text-inverse);
 }
+
+/* Subtle: tinted background, colored text. For status chips that sit in a list. */
+.badge:global(.variant-warning-subtle) {
+	background: var(--color-warning-bg);
+	color: var(--color-warning);
+}
+
+.badge:global(.variant-info-subtle) {
+	background: var(--color-info-bg);
+	color: var(--color-info);
+}

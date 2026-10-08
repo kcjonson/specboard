@@ -28,6 +28,11 @@ export interface NoticeProps {
 	children: ComponentChildren;
 	/** Attention level - determines color and visual weight */
 	variant?: NoticeVariant;
+	/**
+	 * Announce it when it appears: an error as an alert, anything else as a status. For a
+	 * notice that answers something the user just did; leave it off for standing ones.
+	 */
+	announce?: boolean;
 	/** Additional CSS classes */
 	class?: string;
 }
@@ -62,10 +67,12 @@ export interface NoticeProps {
 export function Notice({
 	children,
 	variant = 'info',
+	announce = false,
 	class: className,
 }: NoticeProps): JSX.Element {
+	const role = announce ? (variant === 'error' ? 'alert' : 'status') : undefined;
 	return (
-		<div class={`${styles.notice} ${styles[variant]} ${className || ''}`}>
+		<div class={`${styles.notice} ${styles[variant]} ${className || ''}`} role={role}>
 			{children}
 		</div>
 	);

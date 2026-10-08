@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
+import { Avatar } from '../Avatar/Avatar';
 import styles from './UserMenu.module.css';
 
 export interface UserMenuProps {
-	/** User's display name (used to generate initials) */
+	/** User's display name (the avatar's initials when there is no picture) */
 	displayName: string;
+	/** User's picture, if they have one */
+	avatarUrl?: string | null;
 	/** User's email (optional, shown in menu header) */
 	email?: string;
 	/** Whether the user is an admin (shows Admin link if true) */
@@ -13,26 +16,13 @@ export interface UserMenuProps {
 	class?: string;
 }
 
-function getInitials(name: string): string {
-	const trimmed = name.trim();
-	if (!trimmed) {
-		return '?';
-	}
-	const parts = trimmed.split(/\s+/);
-	if (parts.length >= 2) {
-		const first = parts[0];
-		const last = parts[parts.length - 1];
-		return (first?.[0] || '').toUpperCase() + (last?.[0] || '').toUpperCase();
-	}
-	return trimmed[0]?.toUpperCase() || '?';
-}
-
 const BASE_MENU_ITEMS = ['projects', 'settings', 'logout'] as const;
 const ADMIN_MENU_ITEMS = ['projects', 'admin', 'settings', 'logout'] as const;
 type MenuItemId = 'projects' | 'admin' | 'settings' | 'logout';
 
 export function UserMenu({
 	displayName,
+	avatarUrl,
 	email,
 	isAdmin,
 	class: className,
@@ -42,8 +32,6 @@ export function UserMenu({
 	const [focusedIndex, setFocusedIndex] = useState(-1);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const menuItemRefs = useRef<Map<MenuItemId, HTMLElement>>(new Map());
-
-	const initials = getInitials(displayName);
 
 	const handleToggle = useCallback((): void => {
 		setIsOpen((prev) => !prev);
@@ -138,13 +126,13 @@ export function UserMenu({
 		<div class={`${styles.container} ${className || ''}`} ref={menuRef}>
 			<button
 				type="button"
-				class={styles.avatar}
+				class={styles.trigger}
 				onClick={handleToggle}
 				aria-expanded={isOpen}
 				aria-haspopup="menu"
 				aria-label={`User menu for ${displayName}`}
 			>
-				{initials}
+				<Avatar name={displayName} avatarUrl={avatarUrl} size="lg" decorative />
 			</button>
 
 			{isOpen && (

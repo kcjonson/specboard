@@ -1,0 +1,457 @@
+/* Page layout: section nav beside one section's panel. */
+.layout {
+	display: grid;
+	grid-template-columns: 180px minmax(0, 1fr);
+	gap: var(--space-6);
+	width: 100%;
+	max-width: 960px;
+	margin: 0 auto;
+	padding: var(--space-6);
+	box-sizing: border-box;
+	align-items: start;
+}
+
+.nav {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	position: sticky;
+	top: 0;
+}
+
+.navItem {
+	display: block;
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-sm);
+	color: var(--color-text-muted);
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	text-decoration: none;
+}
+
+.navItem:hover {
+	background: var(--color-surface-hover);
+	color: var(--color-text);
+	text-decoration: none;
+}
+
+.navItemActive,
+.navItemActive:hover {
+	background: var(--color-primary-subtle);
+	color: var(--color-primary);
+}
+
+.panel {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	padding: var(--space-6);
+	min-width: 0;
+}
+
+.panelHeader {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+}
+
+.panelActions {
+	display: flex;
+	gap: var(--space-2);
+}
+
+.panelTitle {
+	margin: 0;
+	font-size: var(--text-xl);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+}
+
+.state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-4);
+	flex: 1;
+	padding: var(--space-6);
+	color: var(--color-text-muted);
+}
+
+/* A member's view has one section and no nav. */
+.layout.single {
+	grid-template-columns: minmax(0, 1fr);
+	max-width: 760px;
+}
+
+@media (width < 768px) { /* bp-small: the section nav wraps into rows above the panel */
+	.layout {
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-4);
+		padding: var(--space-4);
+	}
+
+	.nav {
+		position: static;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.navItem {
+		white-space: nowrap;
+	}
+
+	.panel {
+		padding: var(--space-4);
+	}
+}
+
+/* Forms */
+.form {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-5);
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.label {
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	color: var(--color-text);
+}
+
+.hint {
+	margin: 0;
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+.fieldError,
+.formError {
+	margin: 0;
+	font-size: var(--text-sm);
+	color: var(--color-error);
+}
+
+.charCount {
+	font-size: var(--text-xs);
+	color: var(--color-text-muted);
+	text-align: right;
+}
+
+.formActions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-2);
+}
+
+.privateNote {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-2);
+	margin: 0;
+	padding: var(--space-3);
+	border-radius: var(--radius-md);
+	background: var(--color-info-bg);
+	color: var(--color-info);
+	font-size: var(--text-sm);
+}
+
+.inlineLink {
+	min-height: 0;
+	padding: 0;
+	border: none;
+	background: none;
+	color: inherit;
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+/* Repository */
+.repoDisplay {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-3);
+	background: var(--color-background);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	min-width: 0;
+}
+
+.repoLink {
+	color: var(--color-text);
+	text-decoration: none;
+	font-weight: var(--font-medium);
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.repoLink:hover {
+	text-decoration: underline;
+	color: var(--color-primary);
+}
+
+.branchBadge {
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	margin-left: auto;
+	padding: var(--space-1) var(--space-2);
+	background: var(--color-surface-hover);
+	border-radius: var(--radius-sm);
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+.syncStatus {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-2);
+	font-size: var(--text-sm);
+}
+
+.spinner {
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--color-border);
+	border-top-color: var(--color-primary);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.successDot,
+.errorDot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+}
+
+.successDot {
+	background: var(--color-success);
+}
+
+.errorDot {
+	background: var(--color-error);
+}
+
+.errorText {
+	color: var(--color-error);
+}
+
+.errorDetail {
+	color: var(--color-text-muted);
+}
+
+/* Members */
+.memberList {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+}
+
+/* Identity on the left, then the role and remove columns, which every row shares so the
+   owner's role lines up with the members' selects. */
+.memberRow {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: var(--space-2) var(--space-4);
+	padding: var(--space-3) var(--space-4);
+}
+
+.memberRow + .memberRow {
+	border-top: 1px solid var(--color-border);
+}
+
+.memberIdentity {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	min-width: 0;
+}
+
+.memberText {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.memberName {
+	font-weight: var(--font-medium);
+	color: var(--color-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.memberEmail,
+.pendingEmail {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.memberControls {
+	display: grid;
+	grid-template-columns: 128px 32px;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.roleSelect {
+	width: 100%;
+}
+
+/* Text in the select's column, starting where a select's text does. */
+.ownerRole {
+	padding-left: var(--space-3);
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+.removeSpacer {
+	width: 32px;
+}
+
+.memberRole {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+.rowActions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-2);
+}
+
+.chips {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	padding-left: calc(28px + var(--space-3));
+}
+
+/* A chip that wraps (a long repository name on a phone) reads as a box, not a lozenge. */
+.chips > * {
+	border-radius: var(--radius-md);
+}
+
+.nowrap {
+	white-space: nowrap;
+}
+
+.pending {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+}
+
+/* Fixed columns, so role, expiry and the buttons line up from row to row. */
+.pendingRow {
+	grid-template-columns: minmax(0, 1fr) 64px 128px auto;
+}
+
+.subheading {
+	margin: 0;
+	font-size: var(--text-base);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+}
+
+.expiry {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	white-space: nowrap;
+}
+
+.expired {
+	color: var(--color-error);
+}
+
+@media (width < 768px) { /* bp-small: a row's controls go under the person, on one line */
+	.memberRow {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.memberControls,
+	.chips {
+		padding-left: calc(28px + var(--space-3));
+	}
+
+	.memberEmail,
+	.pendingEmail {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+
+	.pendingRow {
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.pendingEmail {
+		grid-column: 1 / -1;
+	}
+
+	/* Its own line, starting where the email does. */
+	.pendingRow .rowActions {
+		grid-column: 1 / -1;
+		justify-content: flex-start;
+	}
+
+	/* No select beside it on a phone, so no select padding to line up with. */
+	.ownerRole {
+		padding-left: 0;
+	}
+}
+
+/* Danger zone */
+.dangerRow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-4);
+	padding: var(--space-4);
+	border: 1px solid var(--color-error);
+	border-radius: var(--radius-md);
+}
+
+.dangerRow button {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+
+.dangerTitle {
+	margin: 0 0 var(--space-1) 0;
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+}
+
+@media (width < 768px) { /* bp-small */
+	.dangerRow {
+		flex-direction: column;
+		align-items: stretch;
+	}
+}

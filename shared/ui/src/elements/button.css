@@ -29,6 +29,12 @@ button:disabled {
 	cursor: not-allowed;
 }
 
+/* Busy: still enabled so it keeps focus, but looks and acts held. */
+button[aria-busy="true"] {
+	opacity: 0.7;
+	cursor: progress;
+}
+
 /* Button sizes */
 button.size-sm {
 	padding: var(--space-1) var(--space-2);
@@ -85,6 +91,17 @@ button.danger {
 button.danger:hover:not(:disabled) {
 	background: var(--color-error);
 	color: var(--color-text-inverse);
+}
+
+/* The committing destructive action, e.g. a confirm dialog's Delete: filled from the start. */
+button.danger.solid {
+	background: var(--color-error);
+	color: var(--color-text-inverse);
+}
+
+button.danger.solid:hover:not(:disabled) {
+	background: var(--color-error);
+	filter: brightness(0.9);
 }
 
 /* Borderless destructive action (e.g. Delete in a dialog footer). */

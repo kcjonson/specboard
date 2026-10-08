@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
+import { Avatar } from '@specboard/ui';
 import type { Comment } from './types';
 import styles from './InlineComment.module.css';
 
@@ -40,19 +41,6 @@ function formatTimestamp(timestamp: string): string {
 	} else {
 		return date.toLocaleDateString();
 	}
-}
-
-function getInitials(name: string): string {
-	if (!name || !name.trim()) {
-		return '?';
-	}
-	return name
-		.split(' ')
-		.filter(word => word.length > 0)
-		.map(word => word[0])
-		.join('')
-		.toUpperCase()
-		.slice(0, 2) || '?';
 }
 
 export function InlineComment({
@@ -115,7 +103,7 @@ export function InlineComment({
 			<div class={styles.connector} />
 			<div class={styles.card}>
 				<div class={styles.header}>
-					<div class={styles.avatar}>{getInitials(comment.author)}</div>
+					<Avatar name={comment.author} size="md" decorative />
 					<div class={styles.meta}>
 						<span class={styles.author}>{comment.author}</span>
 						<span class={styles.timestamp}>{formatTimestamp(comment.timestamp)}</span>
@@ -140,7 +128,7 @@ export function InlineComment({
 						{comment.replies.map(reply => (
 							<div key={reply.id} class={styles.reply}>
 								<div class={styles.replyHeader}>
-									<span class={styles.replyAvatar}>{getInitials(reply.author)}</span>
+									<Avatar name={reply.author} size="xs" tone="muted" decorative />
 									<span class={styles.replyAuthor}>{reply.author}</span>
 									<span class={styles.replyTimestamp}>{formatTimestamp(reply.timestamp)}</span>
 								</div>

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { useModel, type ItemModel, type ItemStatus, type SubStatus, writeFailure } from '@specboard/models';
-import { Button, DialogFooter, Select } from '@specboard/ui';
+import { Button, ConfirmDialog, DialogFooter, Select } from '@specboard/ui';
 import { ItemPicker } from '@specboard/pages';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { ChildrenSection } from '../ChildrenSection/ChildrenSection';
@@ -28,7 +28,8 @@ export interface ItemViewProps {
 	 * as text and every add, remove and delete control is gone.
 	 */
 	canEdit: boolean;
-	onDelete?: (item: ItemModel) => void;
+	/** Delete the item, once confirmed. A rejection's message is shown in the confirm dialog. */
+	onDelete?: (item: ItemModel) => Promise<void>;
 	/** Open another item's detail by key — a child, this item's parent, or where it was discovered. */
 	onOpenItem?: (itemKey: string) => void;
 }
@@ -110,6 +111,7 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 
 	// State
 	const [titleDraft, setTitleDraft] = useState(stripNewlines(item.title || ''));
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const titleRef = useRef<HTMLTextAreaElement>(null);
 	const [descriptionAst, setDescriptionAst] = useState<Descendant[]>(initialDescriptionAst);
 
@@ -259,12 +261,6 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 			});
 	};
 
-	// Delete item
-	const handleDelete = (): void => {
-		if (confirm(`Are you sure you want to delete this ${typeLabel.toLowerCase()}?`)) {
-			onDelete?.(item);
-		}
-	};
 
 	return (
 		<div class={styles.container}>
@@ -470,11 +466,25 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 
 			{canEdit && (
 				<DialogFooter divider>
-					<Button class="danger" onClick={handleDelete}>
+					<Button class="danger" onClick={() => setConfirmingDelete(true)}>
 						Delete {typeLabel}
 					</Button>
 				</DialogFooter>
 			)}
+
+			<ConfirmDialog
+				open={confirmingDelete}
+				title={`Delete this ${typeLabel.toLowerCase()}?`}
+				message={stripNewlines(item.title || '')}
+				warning="This can't be undone."
+				confirmText={`Delete ${typeLabel}`}
+				busyText="Deleting..."
+				onConfirm={async () => {
+					await onDelete?.(item);
+					setConfirmingDelete(false);
+				}}
+				onCancel={() => setConfirmingDelete(false)}
+			/>
 		</div>
 	);
 }

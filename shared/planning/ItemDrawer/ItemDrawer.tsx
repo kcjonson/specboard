@@ -22,7 +22,7 @@ export interface ItemDrawerProps {
 	onClose: () => void;
 	/** Called with the drawer's width whenever it changes, for a host that lays something out around it. */
 	onResize?: (width: number) => void;
-	onDelete?: (item: ItemModel) => void;
+	onDelete?: (item: ItemModel) => Promise<void>;
 	/** Open a child's detail by key (children are first-class items). */
 	onOpenItem?: (itemKey: string) => void;
 }

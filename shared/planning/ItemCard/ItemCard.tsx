@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import type { ItemModel, SubStatus } from '@specboard/models';
-import { Icon } from '@specboard/ui';
+import { Avatar, Icon } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { formatTimeAgo } from '../utils/time';
 import styles from './ItemCard.module.css';
@@ -24,15 +24,6 @@ interface ItemCardProps {
 	onOpen?: (item: ItemModel) => void;
 	onDragStart?: (e: DragEvent, item: ItemModel) => void;
 	onDragEnd?: (e: DragEvent) => void;
-}
-
-function getInitials(name: string): string {
-	return name
-		.split(/\s+/)
-		.map((part) => part[0])
-		.join('')
-		.toUpperCase()
-		.slice(0, 2);
 }
 
 export function ItemCard({
@@ -109,11 +100,7 @@ export function ItemCard({
 					>
 						<Icon name="external-link" />
 					</button>
-					{item.assignee && (
-						<div class={styles.assignee} title={item.assignee}>
-							{getInitials(item.assignee)}
-						</div>
-					)}
+					{item.assignee && <Avatar name={item.assignee} size="sm" tone="muted" />}
 				</div>
 			</div>
 

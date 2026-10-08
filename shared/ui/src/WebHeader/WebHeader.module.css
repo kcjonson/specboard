@@ -25,11 +25,34 @@
 	flex-shrink: 0;
 }
 
+.projectTitle {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-2);
+	min-width: 0;
+}
+
 .projectName,
 .pageTitle {
 	font-size: var(--text-lg);
 	font-weight: var(--font-semibold);
 	color: var(--color-text);
+}
+
+.ownerLink {
+	font-size: var(--text-lg);
+	color: var(--color-text-muted);
+	text-decoration: none;
+}
+
+.ownerLink:hover {
+	color: var(--color-primary);
+	text-decoration: underline;
+}
+
+.titleSeparator {
+	font-size: var(--text-lg);
+	color: var(--color-text-muted);
 }
 
 .nav {
@@ -53,6 +76,11 @@
 	background-color: var(--color-surface-hover);
 }
 
+.settingsTab {
+	display: flex;
+	align-items: center;
+}
+
 .navTabActive {
 	color: var(--color-primary);
 	background-color: var(--color-primary-subtle);
@@ -69,10 +97,20 @@
 }
 
 @media (width < 768px) { /* bp-small: brand text + inline project nav collapse; hamburger menu takes over */
-	.projectName,
+	.ownerLink,
+	.titleSeparator,
 	.pageTitle,
 	.brandDivider {
 		display: none;
+	}
+
+	/* The project's name stays, so the View only badge never sits alone by the logo. */
+	.projectName {
+		max-width: 40vw;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--text-base);
 	}
 
 	/* Project pages only; the lone Projects tab on non-project pages stays. */

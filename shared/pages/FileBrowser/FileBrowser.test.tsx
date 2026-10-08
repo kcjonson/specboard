@@ -41,7 +41,7 @@ describe('FileBrowser with no repository', () => {
 		await findByText('No repository connected');
 		expect(queryByText('+ Add Folder')).toBeNull();
 		expect(getByRole('link', { name: 'Open project settings' }).getAttribute('href')).toBe(
-			'/projects?edit=acme/specboard'
+			'/projects/acme/specboard/settings#repository'
 		);
 	});
 
@@ -154,6 +154,6 @@ describe('FileBrowser read-only', () => {
 		const { findByText, queryByText } = render(<FileBrowser projectRef="acme/specboard" readOnly />);
 
 		await findByText('Sync failed');
-		expect(queryByText('Retry Sync')).toBeNull();
+		expect(queryByText('Retry sync')).toBeNull();
 	});
 });

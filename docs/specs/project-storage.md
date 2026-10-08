@@ -161,7 +161,7 @@ A local project's files are on its owner's machine, so only the owner reaches th
 
 The API only registers `POST /api/projects/:owner/:project/folders` when it starts with `LOCAL_STORAGE_ENABLED=true`. Today only the dev compose stack sets it (the host repo is mounted at `/host/specboard`); the cloud build never does, so a web user cannot point a project at a path on the API container. A desktop shell that runs its own API process will need to set it too.
 
-The file browser decides which empty state to show by asking `@specboard/platform` for the desktop bridge (`getPlatformBridge()`) and checking for `showOpenDialog`. With it, the browser offers "Add Folder" and opens that picker; without it (the browser, or a shell that exposes no picker) a project without a repository gets a note that pages come from a GitHub repository and a link to the project's settings dialog (`/projects?edit=<slug>`).
+The file browser decides which empty state to show by asking `@specboard/platform` for the desktop bridge (`getPlatformBridge()`) and checking for `showOpenDialog`. With it, the browser offers "Add Folder" and opens that picker; without it (the browser, or a shell that exposes no picker) a project without a repository gets a note that pages come from a GitHub repository and for the owner, a link to the project's settings page (`/projects/<owner>/<project>/settings`).
 
 ### Add Folder Flow
 
@@ -246,12 +246,13 @@ async function addFolder(projectId: string, folderPath: string): Promise<void> {
 
 ### Connect Repository Flow
 
-A repository is attached either when the project is created or later from the Edit
-Project dialog, which shows the repository picker whenever the project has no
-repository yet.
+A repository is attached either when the project is created or later from the
+Repository section of the project settings page, which shows the repository picker
+whenever the project has no repository yet. Both use the one `RepositoryPicker`
+(`shared/projects/RepositoryPicker`).
 
 ```
-1. User opens Create Project, or Edit Project on a project with no repository
+1. User opens Create Project, or project settings > Repository on a project with no repository
 2. User authenticates with GitHub (if not already)
 3. User selects repository and branch from the list
 

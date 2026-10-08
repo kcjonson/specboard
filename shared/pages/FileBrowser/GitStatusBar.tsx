@@ -1,10 +1,9 @@
 import { useState, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Badge, Button, Icon, Notice } from '@specboard/ui';
+import { Badge, Button, ConfirmDialog, Icon, Notice } from '@specboard/ui';
 import type { GitStatusModel } from '@specboard/models';
 import { CommitErrorBanner } from './CommitErrorBanner';
 import { CommitDialog } from './CommitDialog';
-import { ConfirmDialog } from './ConfirmDialog';
 import styles from './GitStatusBar.module.css';
 
 export interface GitStatusBarProps {

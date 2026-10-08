@@ -5,8 +5,8 @@
  * @vitest-environment jsdom
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, act, waitFor } from '@testing-library/preact';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { render, fireEvent, act, waitFor, within } from '@testing-library/preact';
 import { FetchError, fetchClient } from '@specboard/fetch';
 import { ItemModel } from '@specboard/models';
 import { ItemView } from './ItemView';
@@ -334,5 +334,51 @@ describe('ItemView refused writes', () => {
 
 		expect((await findByRole('alert')).textContent).toBe('Could not change the status.');
 		expect(fetchClient.get).not.toHaveBeenCalled();
+	});
+});
+
+describe('ItemView delete', () => {
+	const realShowModal = HTMLDialogElement.prototype.showModal;
+	const realClose = HTMLDialogElement.prototype.close;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		HTMLDialogElement.prototype.showModal = function showModal(): void { this.open = true; };
+		HTMLDialogElement.prototype.close = function close(): void { this.open = false; };
+	});
+
+	// After cleanup unmounts, which closes the dialog; restoring per test would race it.
+	afterAll(() => {
+		HTMLDialogElement.prototype.showModal = realShowModal;
+		HTMLDialogElement.prototype.close = realClose;
+	});
+
+	it('asks first, and deletes only on confirm', async () => {
+		const onDelete = vi.fn(async () => {});
+		const item = makeItem('Ship it');
+		const { getByRole, queryByRole } = render(<ItemView canEdit item={item} onDelete={onDelete} />);
+
+		fireEvent.click(getByRole('button', { name: 'Delete Task' }));
+		expect(onDelete).not.toHaveBeenCalled();
+		const dialog = getByRole('dialog');
+		expect(dialog.textContent).toContain('Ship it');
+
+		fireEvent.click(within(dialog).getByRole('button', { name: 'Delete Task' }));
+
+		await waitFor(() => expect(onDelete).toHaveBeenCalledWith(item));
+		await waitFor(() => expect(queryByRole('dialog')).toBeNull());
+	});
+
+	it('shows a failed delete in the dialog and keeps it open', async () => {
+		const onDelete = vi.fn(async () => {
+			throw new Error('You have view access to this project');
+		});
+		const { getByRole, findByRole } = render(<ItemView canEdit item={makeItem('Ship it')} onDelete={onDelete} />);
+
+		fireEvent.click(getByRole('button', { name: 'Delete Task' }));
+		fireEvent.click(within(getByRole('dialog')).getByRole('button', { name: 'Delete Task' }));
+
+		expect((await findByRole('alert')).textContent).toBe('You have view access to this project');
+		expect(getByRole('dialog')).toBeTruthy();
 	});
 });
