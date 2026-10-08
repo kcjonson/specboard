@@ -32,6 +32,8 @@ vi.mock('./shared/db-utils.ts', () => ({
 	completeSync: vi.fn(async () => true),
 }));
 
+vi.mock('./tree.ts', () => ({ fetchTree: vi.fn(async () => new Map()) }));
+
 vi.mock('./zip-stream.ts', () => ({
 	streamGitHubZipToStorage: vi.fn(),
 	getHeadCommitSha: vi.fn(async () => HEAD),

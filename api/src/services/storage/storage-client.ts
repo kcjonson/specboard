@@ -53,6 +53,14 @@ export interface PendingChangeContent {
 }
 
 /**
+ * A path as it goes into a storage URL: each segment encoded, so `#`, `?`, `%`, spaces,
+ * and non-ASCII names reach the service as the path they are.
+ */
+export function storageUrlPath(path: string): string {
+	return path.split('/').map(encodeURIComponent).join('/');
+}
+
+/**
  * Storage service HTTP client.
  * All methods throw on error.
  */
@@ -130,7 +138,7 @@ export class StorageClient {
 		try {
 			return await this.request<StorageFileContent>(
 				'GET',
-				`/files/${projectId}/${path}`
+				`/files/${projectId}/${storageUrlPath(path)}`
 			);
 		} catch (error) {
 			if (error instanceof Error && error.message.includes('not found')) {
@@ -166,7 +174,7 @@ export class StorageClient {
 		try {
 			return await this.request<PendingChangeContent>(
 				'GET',
-				`/pending/${projectId}/${userId}/${path}`
+				`/pending/${projectId}/${userId}/${storageUrlPath(path)}`
 			);
 		} catch (error) {
 			if (error instanceof Error && error.message.includes('not found')) {
@@ -191,7 +199,7 @@ export class StorageClient {
 	): Promise<{ path: string; action: string; isLarge: boolean }> {
 		// Storage reads a missing baseContentHash key as "not known" and an explicit null
 		// as "nothing was committed", so the key is only sent when there is one.
-		return this.request('PUT', `/pending/${projectId}/${userId}/${path}`, {
+		return this.request('PUT', `/pending/${projectId}/${userId}/${storageUrlPath(path)}`, {
 			content,
 			action,
 			renamedFrom,
@@ -203,7 +211,7 @@ export class StorageClient {
 	 * Delete pending change.
 	 */
 	async deletePendingChange(projectId: string, userId: string, path: string): Promise<void> {
-		await this.request('DELETE', `/pending/${projectId}/${userId}/${path}`);
+		await this.request('DELETE', `/pending/${projectId}/${userId}/${storageUrlPath(path)}`);
 	}
 
 	/** Undo the user's rename of oldPath to newPath: both drafts dropped in one storage transaction. */

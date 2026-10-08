@@ -20,6 +20,7 @@ import {
 	getDisplayName,
 	readDraftBase,
 	fileUnavailableResponse,
+	notSyncedPathResponse,
 } from './utils.ts';
 
 const MAX_EXPANDED_PATHS = 200;
@@ -259,6 +260,9 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
 
+		const notSynced = notSyncedPathResponse(context, project, filePath);
+		if (notSynced) return notSynced;
+
 		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
 			return context.json({ error: 'No repository configured' }, 404);
@@ -331,6 +335,9 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 		if (!isPathWithinRoots(newPath, project.rootPaths)) {
 			return context.json({ error: 'Destination path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
+
+		const notSynced = notSyncedPathResponse(context, project, newPath);
+		if (notSynced) return notSynced;
 
 		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
@@ -512,6 +519,9 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 		if (!isPathWithinRoots(filePath, project.rootPaths)) {
 			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
+
+		const notSynced = notSyncedPathResponse(context, project, filePath);
+		if (notSynced) return notSynced;
 
 		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {

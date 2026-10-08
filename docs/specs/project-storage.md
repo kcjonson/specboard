@@ -468,21 +468,43 @@ delete, so it leaves spec links alone.
 ### Files the editor can't hold
 
 Syncs store text files up to 500 KB. Files in skipped directories (`node_modules`,
-`.git`, build output, and the like) are never stored. A file that's binary or over the
-limit is stored as a row with no content (`project_documents.unavailable_reason`,
-`too_large` or `binary`; storage migration 004) and a `content_hash` of the new version
-(sha1 of its bytes), and any older content stored for it is removed. That happens
-whenever a sync meets such a file, incremental or full, including one a push just made
-too large or binary, so nobody reads or commits over an older copy. A later sync that
-finds the file editable again stores it as usual.
+`.git`, build output, tool settings; the list is `@specboard/core/sync-paths`, shared by
+the sync and the API) are never stored, and for a cloud project the API refuses to
+create a file in one, or rename one into it (`400 PATH_NOT_SYNCED`), since a commit
+would put it on GitHub where no sync brings it back. Submodules (gitlinks in the tree)
+have no content in this repository and aren't stored either; GitHub's compare lists a
+submodule bump as a changed file, and the sync skips it.
+
+Before downloading anything, a sync reads the commit's tree (`GET git/trees/<sha>
+?recursive=1`) for each file's blob sha and size, and refuses a truncated tree. A file
+over the limit is recorded from its listed size without downloading it; a smaller one is
+downloaded, and if it's binary it's recorded too. Recorded means stored as a row with no
+content (`project_documents.unavailable_reason`, `too_large` or `binary`; storage
+migration 004) whose `content_hash` is the file's git blob sha, and any older content
+stored for it is removed. Both kinds of sync do this, including for a file a push just
+made too large or binary, so nobody reads or commits over an older copy. A later sync
+that finds the file editable again stores it as usual.
 
 Such a file is listed, but reading it, saving a draft of it, or renaming it answers `409
 FILE_UNAVAILABLE` with a message saying it's binary or too large to edit here; the
 editor shows that message instead of the file, and doesn't retry the save. Deleting it
-is allowed. A commit with a draft (other than a deletion) of a path that has since
-become unavailable answers `409` with `reason: 'unavailable_files'` and the paths, and
-writes nothing; the way on is to discard those drafts and change the files in the
-repository directly.
+is allowed. A commit answers `409` with `reason: 'unavailable_files'` and the paths, and
+writes nothing, when a draft (other than a deletion) would put back what the sync can't
+store: a draft over a file that has since become unavailable, a rename of one, or a
+draft in a skipped directory. The way on is to discard those drafts and change the
+files in the repository directly.
+
+### Sync traffic to the storage service
+
+The storage service rate-limits each API key and client to 1000 requests a minute, in
+memory per task. The sync Lambda sends `X-Storage-Client: sync` and has its own budget,
+so a large full sync doesn't use up the API's, and the API's interactive traffic doesn't
+stall a sync. A full sync uploads at most ten files at once, holding the archive back
+while it waits. On a 429 the sync waits as long as Retry-After says (backing off when it
+says nothing) and tries again, up to eight times, before failing; other refusals aren't
+retried, and server errors are retried three times. Paths go into storage URLs encoded
+segment by segment, so names with `#`, `?`, `%`, spaces, or non-ASCII characters arrive
+as themselves.
 
 ### Managed Checkout Location
 

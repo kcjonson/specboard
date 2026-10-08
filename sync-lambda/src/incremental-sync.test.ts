@@ -8,7 +8,6 @@
  * can't list everything, and it changes nothing when its lock or base isn't current.
  */
 
-import { createHash } from 'node:crypto';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 import type { PGlite } from '@electric-sql/pglite';
 
@@ -45,20 +44,42 @@ function json(body: unknown): Response {
 	return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
-/** GitHub with the branch at HEAD, this compare from the base, and these blobs by sha ("# New" otherwise). */
+interface CompareFile { sha: string; filename: string; status: string; previous_filename?: string }
+
+/**
+ * GitHub with the branch at HEAD, this compare from the base, and these blobs by sha
+ * ("# New" otherwise). The head's tree lists every file the compare names as a 5-byte
+ * blob, unless `tree` says otherwise (a size, or a submodule).
+ */
 function github(
-	compare: { files: unknown[]; total_commits?: number; commits?: unknown[]; status?: string },
-	blobs: Record<string, Buffer> = {}
-): void {
-	vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+	compare: { files: CompareFile[]; total_commits?: number; commits?: unknown[]; status?: string },
+	blobs: Record<string, Buffer> = {},
+	tree: Record<string, { size?: number; submodule?: boolean }> = {}
+): ReturnType<typeof vi.fn> {
+	const fetchMock = vi.fn(async (url: string) => {
 		if (url.includes('/git/refs/heads/')) return json({ object: { sha: HEAD } });
 		if (url.includes('/compare/')) {
 			return json({ status: 'ahead', ahead_by: 1, behind_by: 0, total_commits: 1, commits: [{ sha: HEAD }], ...compare });
 		}
+		if (url.includes('/git/trees/')) {
+			return json({
+				truncated: false,
+				tree: compare.files.filter((f) => f.status !== 'removed').map((f) => ({
+					path: f.filename,
+					mode: tree[f.filename]?.submodule ? '160000' : '100644',
+					type: tree[f.filename]?.submodule ? 'commit' : 'blob',
+					sha: f.sha,
+					...(tree[f.filename]?.submodule ? {} : { size: tree[f.filename]?.size ?? blobs[f.sha]?.length ?? 5 }),
+				})),
+			});
+		}
 		const sha = url.split('/git/blobs/')[1]!;
+		if (sha === 'missing') return new Response('{}', { status: 404 });
 		const blob = blobs[sha] ?? Buffer.from('# New');
 		return json({ content: blob.toString('base64'), encoding: 'base64', sha, size: blob.length });
-	}));
+	});
+	vi.stubGlobal('fetch', fetchMock);
+	return fetchMock;
 }
 
 async function project(): Promise<{ last_synced_commit_sha: string; sync_status: string; sync_error: string | null }> {
@@ -229,15 +250,39 @@ describe('performIncrementalSync', () => {
 		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
 	});
 
-	it('records a file a push made too large, instead of keeping the old copy', async () => {
-		const big = Buffer.from('x'.repeat(500 * 1024 + 1));
-		github({ files: [{ sha: 'big', filename: 'docs/kept.md', status: 'modified' }] }, { big });
+	it('records a file a push made too large from its listed size, without downloading it', async () => {
+		const fetchMock = github({ files: [{ sha: 'b'.repeat(40), filename: 'docs/kept.md', status: 'modified' }] }, {}, { 'docs/kept.md': { size: 600_000 } });
 
 		expect(await sync()).toMatchObject({ success: true, unavailable: 1, synced: 0 });
 
-		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'too_large', createHash('sha1').update(big).digest('hex'), big.length);
+		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'too_large', 'b'.repeat(40), 600_000);
 		expect(storage.putFile).not.toHaveBeenCalled();
+		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/git/blobs/'))).toBe(false);
 		expect((await project()).last_synced_commit_sha).toBe(HEAD);
+	});
+
+	it('skips a submodule bump instead of failing on its "blob"', async () => {
+		const fetchMock = github(
+			{ files: [{ sha: 'c'.repeat(40), filename: 'vendored', status: 'modified' }, { sha: 'b2', filename: 'docs/gone.md', status: 'removed' }] },
+			{},
+			{ vendored: { submodule: true } }
+		);
+
+		expect(await sync()).toMatchObject({ success: true, commitSha: HEAD });
+
+		expect(storage.deleteFile).toHaveBeenCalledWith(projectId, 'vendored');
+		expect(storage.putFile).not.toHaveBeenCalled();
+		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/git/blobs/'))).toBe(false);
+	});
+
+	it('fails on a blob that\'s genuinely missing', async () => {
+		github({ files: [{ sha: 'missing', filename: 'docs/kept.md', status: 'modified' }] });
+
+		const result = await sync();
+
+		expect(result).toMatchObject({ success: false });
+		expect(result.error).toContain('docs/kept.md');
+		expect((await project()).last_synced_commit_sha).toBe(BASE);
 	});
 
 	it('records a file a push made binary', async () => {
@@ -246,7 +291,7 @@ describe('performIncrementalSync', () => {
 
 		expect(await sync()).toMatchObject({ success: true, unavailable: 1 });
 
-		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'binary', expect.stringMatching(/^[0-9a-f]{40}$/), binary.length);
+		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'binary', 'bin', binary.length);
 	});
 
 	it('removes the old path of a file renamed into a skipped directory', async () => {

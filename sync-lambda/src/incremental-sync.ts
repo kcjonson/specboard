@@ -4,8 +4,9 @@
  */
 
 import type { SpecPathChanges } from '@specboard/db';
-import { createHash } from 'crypto';
-import { shouldSkipDirectory, unsyncableReason } from './file-filter.ts';
+import { isInSkippedDirectory } from '@specboard/core/sync-paths';
+import { isBinaryContent, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
+import { fetchTree } from './tree.ts';
 import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
 import { SUPERSEDED, syncArchive } from './initial-sync.ts';
 import { getHeadCommitSha } from './zip-stream.ts';
@@ -225,13 +226,13 @@ export async function performIncrementalSync(
 			const toRemove: string[] = [];
 			for (const file of files) {
 				if (file.status === 'removed') {
-					if (!shouldSkipDirectory(file.filename)) toRemove.push(file.filename);
+					if (!isInSkippedDirectory(file.filename)) toRemove.push(file.filename);
 					continue;
 				}
-				if (file.status === 'renamed' && file.previous_filename && !shouldSkipDirectory(file.previous_filename)) {
+				if (file.status === 'renamed' && file.previous_filename && !isInSkippedDirectory(file.previous_filename)) {
 					toRemove.push(file.previous_filename);
 				}
-				if (!shouldSkipDirectory(file.filename)) toSync.push(file);
+				if (!isInSkippedDirectory(file.filename)) toSync.push(file);
 			}
 
 			// Every file has to land: one that didn't would leave storage behind the sync
@@ -243,15 +244,29 @@ export async function performIncrementalSync(
 				failures.push(`${path}: ${err instanceof Error ? err.message : String(err)}`);
 			};
 
-			// A file now binary or over the size limit keeps a row with the new version's
-			// hash and no content, so nobody reads or commits over the older copy.
+			// The head's tree says how to store each changed file before anything is
+			// downloaded: a submodule (the compare lists it with its commit as the "blob")
+			// has no content in this repository and isn't stored; a file over the limit is
+			// recorded unavailable from its listed size; only the rest is downloaded, and a
+			// binary one is recorded unavailable too.
+			const tree = await fetchTree(owner, repo, headSha, token);
 			await processBatches(toSync, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
 				try {
-					const buffer = await fetchBlobBuffer(owner, repo, file.sha, token);
-					const reason = await unsyncableReason(file.filename, buffer);
-					if (reason === 'too_large' || reason === 'binary') {
-						const contentHash = createHash('sha1').update(buffer).digest('hex');
-						await storageClient.markUnavailable(projectId, file.filename, reason, contentHash, buffer.length);
+					const listed = tree.get(file.filename);
+					if (!listed) throw new Error('not in the head commit\'s tree');
+					if (listed.submodule) {
+						// It may have been a file before; it isn't stored now.
+						await storageClient.deleteFile(projectId, file.filename);
+						return;
+					}
+					if (listed.size > MAX_FILE_SIZE_BYTES) {
+						await storageClient.markUnavailable(projectId, file.filename, 'too_large', listed.sha, listed.size);
+						unavailable++;
+						return;
+					}
+					const buffer = await fetchBlobBuffer(owner, repo, listed.sha, token);
+					if (await isBinaryContent(buffer)) {
+						await storageClient.markUnavailable(projectId, file.filename, 'binary', listed.sha, listed.size);
 						unavailable++;
 						return;
 					}

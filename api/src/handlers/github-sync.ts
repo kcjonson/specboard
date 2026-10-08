@@ -12,6 +12,7 @@ import { decrypt, type EncryptedData } from '@specboard/auth';
 import { query, recordCommit } from '@specboard/db';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
 import { log } from '@specboard/core';
+import { isInSkippedDirectory } from '@specboard/core/sync-paths';
 import { getStorageClient } from '../services/storage/storage-client.ts';
 import { getGitHubConnection } from '../services/github-token.ts';
 import {
@@ -646,27 +647,37 @@ async function commitLocked(context: Context, projectId: string, userId: string,
 		return context.json({ error: 'No changes to commit' }, 400);
 	}
 
-	// A draft over a file the editor can't hold (a sync found it binary or over its size
-	// limit since the draft began) would replace a version nobody here has seen. Deleting
-	// one is fine.
-	let unavailableDrafts;
+	// Drafts the sync could never bring back as written: one over a file the editor can't
+	// hold (a sync found it binary or over its size limit since the draft began), a rename
+	// of such a file (the stale text would land under the new name and the real file
+	// would be deleted), or one in a directory syncs skip. Each would leave GitHub ahead
+	// of storage under a sync point that claims otherwise. Deleting is fine.
+	let unsyncable;
 	try {
 		const unavailable = new Set(
 			(await storageClient.listFiles(projectId)).filter((file) => file.unavailable).map((file) => file.path)
 		);
-		unavailableDrafts = pendingChanges.filter((change) => change.action !== 'deleted' && unavailable.has(change.path));
+		unsyncable = pendingChanges.flatMap((change): Array<{ path: string; why: 'unavailable' | 'not_synced' }> => {
+			if (change.action === 'deleted') return [];
+			if (unavailable.has(change.path) || (change.renamedFrom !== null && unavailable.has(change.renamedFrom))) {
+				return [{ path: '/' + change.path, why: 'unavailable' as const }];
+			}
+			if (isInSkippedDirectory(change.path)) return [{ path: '/' + change.path, why: 'not_synced' as const }];
+			return [];
+		});
 	} catch (err) {
 		log({ type: 'storage', level: 'error', event: 'list_files_failed', userId, projectId, error: err instanceof Error ? err.message : String(err) });
 		return context.json({ success: false, error: { stage: 'commit', message: 'Failed to check the committed files. Please try again.' } }, 500);
 	}
-	if (unavailableDrafts.length > 0) {
+	if (unsyncable.length > 0) {
+		const paths = unsyncable.map((file) => file.path).join(', ');
 		return context.json({
 			success: false,
 			reason: 'unavailable_files',
-			files: unavailableDrafts.map((change) => ({ path: '/' + change.path })),
+			files: unsyncable,
 			error: {
 				stage: 'commit',
-				message: `${unavailableDrafts.map((change) => '/' + change.path).join(', ')} ${unavailableDrafts.length === 1 ? 'is' : 'are'} now binary or larger than 500 KB on the branch, so ${unavailableDrafts.length === 1 ? 'it' : 'they'} can't be edited here. Discard your changes to ${unavailableDrafts.length === 1 ? 'it' : 'them'}, then commit.`,
+				message: `These files can't be committed from here: ${paths}. A file that's binary or larger than 500 KB on the branch, or that's in a folder the sync skips, has to be changed in the repository directly. Discard your changes to them, then commit.`,
 			},
 		}, 409);
 	}

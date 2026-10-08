@@ -154,6 +154,9 @@ vi.mock('../../services/storage/local-provider.ts', () => ({
 		async deleteFile(path: string): Promise<void> {
 			disk.files.delete(path);
 		}
+		async writeFile(path: string): Promise<void> {
+			disk.files.add(path);
+		}
 	},
 }));
 
@@ -984,6 +987,57 @@ describe('a file a sync found binary or too large', () => {
 		expect((await deleteFile('/docs/other.md')).status).toBe(200);
 		expect((await commit()).status).toBe(200);
 		expect(storage.committed.has('docs/other.md')).toBe(false);
+	});
+
+	it('can\'t be renamed with a draft made before it became one', async () => {
+		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, mine' });
+		storage.unavailable.add('docs/spec.md');
+
+		const response = await renameFile('/docs/spec.md', '/docs/renamed.md');
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ code: 'FILE_UNAVAILABLE' });
+		expect([...storage.mine(alice).keys()]).toEqual(['docs/spec.md']);
+	});
+
+	it('refuses a commit carrying a rename of one made before it became one', async () => {
+		await renameFile('/docs/spec.md', '/docs/renamed.md');
+		storage.unavailable.add('docs/spec.md');
+
+		const response = await commit();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ reason: 'unavailable_files', files: [{ path: '/docs/renamed.md', why: 'unavailable' }] });
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+	});
+});
+
+describe('a folder the sync never stores', () => {
+	it('refuses creating a file there, or renaming one into it', async () => {
+		const created = await call('alice', 'POST', 'files?path=/docs/build/notes.md');
+		const renamed = await renameFile('/docs/spec.md', '/node_modules/spec.md');
+
+		expect(created.status).toBe(400);
+		expect(await created.json()).toMatchObject({ code: 'PATH_NOT_SYNCED' });
+		expect(renamed.status).toBe(400);
+		expect(storage.mine(alice).size).toBe(0);
+	});
+
+	it('refuses committing a draft that got there before the check', async () => {
+		await storage.client.putPendingChange('', alice, 'docs/build/notes.md', '# Notes', 'created', null);
+
+		const response = await commit();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ files: [{ path: '/docs/build/notes.md', why: 'not_synced' }] });
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+	});
+
+	it('leaves a local project\'s folders alone', async () => {
+		const created = await call('alice', 'POST', 'files?path=/docs/build/notes.md', undefined, 'local');
+
+		expect(created.status).toBe(200);
+		expect(disk.files.has('/docs/build/notes.md')).toBe(true);
 	});
 });
 

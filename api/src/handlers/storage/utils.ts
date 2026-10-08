@@ -13,6 +13,7 @@ import {
 } from '@specboard/db';
 import { LocalStorageProvider } from '../../services/storage/local-provider.ts';
 import { CloudStorageProvider, FILE_UNAVAILABLE } from '../../services/storage/cloud-provider.ts';
+import { isInSkippedDirectory } from '@specboard/core/sync-paths';
 import type { StorageProvider } from '../../services/storage/types.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,6 +79,20 @@ export const FILE_UNAVAILABLE_MESSAGE =
 export function fileUnavailableResponse(context: Context, error: unknown): Response | null {
 	if (!(error instanceof Error) || error.message !== FILE_UNAVAILABLE) return null;
 	return context.json({ error: FILE_UNAVAILABLE_MESSAGE, code: FILE_UNAVAILABLE }, 409);
+}
+
+/**
+ * The 400 for writing a cloud project's file into a directory its sync never stores
+ * (`@specboard/core/sync-paths`), or null when the path is fine. A commit would put such
+ * a file on GitHub where no sync brings it back, so storage would go stale under a sync
+ * point that claims it's current. Local projects aren't synced and take any path.
+ */
+export function notSyncedPathResponse(context: Context, project: ProjectResponse, path: string): Response | null {
+	if (!isCloudRepository(project.repository) || !isInSkippedDirectory(path)) return null;
+	return context.json({
+		error: 'Files in this folder aren\'t synced from the repository (dependencies, build output, tool settings), so they can\'t be created here.',
+		code: 'PATH_NOT_SYNCED',
+	}, 400);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

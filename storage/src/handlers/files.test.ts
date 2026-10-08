@@ -101,3 +101,20 @@ describe('a file the editor can\'t hold', () => {
 		expect(await (await call('GET', '/docs/spec.md')).json()).toMatchObject({ content: '# Spec' });
 	});
 });
+
+describe('paths with characters URLs treat specially', () => {
+	it.each(['docs/C#.md', 'docs/what?.md', 'docs/100%.md', 'docs/two words.md', 'docs/ünïcødé.md'])(
+		'stores and reads %s under its own name',
+		async (path) => {
+			const urlPath = path.split('/').map(encodeURIComponent).join('/');
+
+			expect((await call('PUT', `/${urlPath}`, { content: '# Odd' })).status).toBe(200);
+
+			expect(await (await call('GET', `/${urlPath}`)).json()).toMatchObject({ path, content: '# Odd' });
+			expect(state.s3.get(`${PROJECT}/files/${path}`)).toBe('# Odd');
+			expect((await call('DELETE', `/${urlPath}`)).status).toBe(200);
+			expect((await call('GET', `/${urlPath}`)).status).toBe(404);
+		}
+	);
+});
+

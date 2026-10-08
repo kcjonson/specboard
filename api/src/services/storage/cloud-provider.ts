@@ -267,6 +267,11 @@ export class CloudStorageProvider implements StorageProvider {
 		// discards the creation rather than recording a phantom deletion. The new side
 		// records where the file was committed, which is how a commit tells this rename
 		// from an unrelated delete and create and moves the file's spec links with it.
+		// A draft over a file that has since become one the editor can't hold would carry
+		// stale text to the new name, and the commit would delete the real file.
+		if ((await this.client.getFile(this.projectId, toStoragePath(oldPath)))?.content === null) {
+			throw new Error(FILE_UNAVAILABLE);
+		}
 		const file = await this.readWithOrigin(toStoragePath(oldPath));
 		if (!file) {
 			throw new Error(`File not found: ${oldPath}`);

@@ -4,11 +4,35 @@
  * Memory-efficient: never loads the entire ZIP into memory.
  */
 
-import { createHash } from 'crypto';
 import { Readable } from 'stream';
 import unzipper from 'unzipper';
-import { shouldSkipDirectory, unsyncableReason, stripRootFolder, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
+import { isInSkippedDirectory } from '@specboard/core/sync-paths';
+import { isBinaryContent, stripRootFolder, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
 import type { StorageClient } from './shared/storage-client.ts';
+import type { TreeEntry } from './tree.ts';
+
+/**
+ * Entries handled at once. The parser only moves on once an entry is read, so waiting
+ * for a slot before reading one holds the archive back too, which keeps uploads from
+ * bursting past the storage service's rate limit and bounds memory.
+ */
+const UPLOAD_CONCURRENCY = 10;
+
+/** Run tasks with at most `limit` running; the rest wait their turn, in order. */
+function createLimiter(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
+	let active = 0;
+	const waiting: Array<() => void> = [];
+	return async <T>(task: () => Promise<T>): Promise<T> => {
+		if (active >= limit) await new Promise<void>((resolve) => waiting.push(resolve));
+		active++;
+		try {
+			return await task();
+		} finally {
+			active--;
+			waiting.shift()?.();
+		}
+	};
+}
 
 const GITHUB_API_URL = 'https://api.github.com';
 
@@ -36,7 +60,8 @@ export async function streamGitHubZipToStorage(
 	ref: string,
 	token: string,
 	projectId: string,
-	storageClient: Pick<StorageClient, 'putFile' | 'markUnavailable'>
+	storageClient: Pick<StorageClient, 'putFile' | 'markUnavailable'>,
+	tree: Map<string, TreeEntry>
 ): Promise<StreamResult> {
 	const result: StreamResult = {
 		synced: 0,
@@ -96,32 +121,40 @@ export async function streamGitHubZipToStorage(
 			}
 
 			// Files in ignored directories are never stored
-			if (shouldSkipDirectory(path)) {
+			if (isInSkippedDirectory(path)) {
 				result.skipped++;
 				entry.autodrain();
 				return;
 			}
 
 			try {
-				// Hash every byte, but only keep the bytes of a file small enough to store,
-				// so a huge file costs its hash and nothing more.
-				const hash = createHash('sha1');
-				const chunks: Buffer[] = [];
-				let size = 0;
-				for await (const chunk of entry) {
-					const bytes = chunk as Buffer;
-					hash.update(bytes);
-					size += bytes.length;
-					if (size <= MAX_FILE_SIZE_BYTES) chunks.push(bytes);
+				// The tree is the commit's file list: a file the archive has and it doesn't
+				// means the two don't describe the same commit.
+				const listed = tree.get(path);
+				if (!listed || listed.submodule) {
+					entry.autodrain();
+					throw new Error('not in the commit\'s tree');
 				}
-				const contentHash = hash.digest('hex');
 
-				const reason = size > MAX_FILE_SIZE_BYTES ? 'too_large' : await unsyncableReason(path, Buffer.concat(chunks));
-				if (reason === 'too_large' || reason === 'binary') {
-					await storageClient.markUnavailable(projectId, path, reason, contentHash, size);
+				// Too large to hold: recorded from the tree without reading the bytes.
+				if (listed.size > MAX_FILE_SIZE_BYTES) {
+					entry.autodrain();
+					await storageClient.markUnavailable(projectId, path, 'too_large', listed.sha, listed.size);
+					result.skipped++;
+					result.kept.add(path);
+					return;
+				}
+
+				const chunks: Buffer[] = [];
+				for await (const chunk of entry) {
+					chunks.push(chunk as Buffer);
+				}
+				const buffer = Buffer.concat(chunks);
+				if (await isBinaryContent(buffer)) {
+					await storageClient.markUnavailable(projectId, path, 'binary', listed.sha, listed.size);
 					result.skipped++;
 				} else {
-					await storageClient.putFile(projectId, path, Buffer.concat(chunks).toString('utf-8'));
+					await storageClient.putFile(projectId, path, buffer.toString('utf-8'));
 					result.synced++;
 				}
 				result.kept.add(path);
@@ -131,11 +164,12 @@ export async function streamGitHubZipToStorage(
 				);
 			}
 		};
+		const limit = createLimiter(UPLOAD_CONCURRENCY);
 
 		nodeStream
 			.pipe(unzipper.Parse())
 			.on('entry', (entry: unzipper.Entry) => {
-				inFlight.push(handleEntry(entry));
+				inFlight.push(limit(() => handleEntry(entry)));
 			})
 			.on('error', reject)
 			.on('close', () => {

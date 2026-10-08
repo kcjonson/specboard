@@ -5,6 +5,7 @@
  */
 
 import { streamGitHubZipToStorage, getHeadCommitSha } from './zip-stream.ts';
+import { fetchTree } from './tree.ts';
 import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
 import { createStorageClient, type StorageClient } from './shared/storage-client.ts';
 
@@ -41,7 +42,8 @@ export async function syncArchive(
 	head: string
 ): Promise<{ synced: number; skipped: number; pruned: number }> {
 	const { projectId, owner, repo, token } = params;
-	const result = await streamGitHubZipToStorage(owner, repo, head, token, projectId, storageClient);
+	const tree = await fetchTree(owner, repo, head, token);
+	const result = await streamGitHubZipToStorage(owner, repo, head, token, projectId, storageClient, tree);
 	// A file that didn't make it in would otherwise be pruned, or left stale, under a
 	// sync point that says it's current: fail, and leave it to a retry.
 	if (result.errors.length > 0) {

@@ -19,6 +19,7 @@
 		"@aws-sdk/client-secrets-manager": "3.1119.0",
 		"@aws-sdk/lib-storage": "3.1119.0",
 		"@specboard/auth": "*",
+		"@specboard/core": "*",
 		"@specboard/db": "*",
 		"isbinaryfile": "6.0.0",
 		"unzipper": "0.12.5"
