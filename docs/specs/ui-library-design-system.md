@@ -46,15 +46,19 @@ Below the breakpoint every dialog is a full-screen slide-up takeover, and the he
 
 ### DialogFooter
 
-The one action-row pattern for dialog, drawer, and detail footers. DOM order is secondary first, primary last (desktop reads left to right); below the breakpoint the row stacks full-width via `column-reverse`, putting the primary on top without changing tab order. Don't hand-roll footer flex rows.
+The one action-row pattern for dialog, drawer, and detail footers. DOM order is secondary first, primary last (desktop reads left to right); below the breakpoint the row stacks full-width via `column-reverse`, putting the primary on top without changing tab order. `pinned` keeps the footer in view at the bottom of a dialog whose body scrolls (a long form), so the primary action is never below the fold. Don't hand-roll footer flex rows.
 
 ### ConfirmDialog
 
-The one "are you sure?" dialog, built on `Dialog` and `DialogFooter`: a title, a `message`, an optional monospace `detail` (a path) and a `warning`. When `onConfirm` returns a promise the dialog holds both buttons busy (with `busyText` on the confirm) until it settles, and a rejection is shown in the dialog as an alert, the server's message for a failed request, rather than closing. The caller closes it by flipping `open`. It is the one confirm path: item delete, file delete, pull over unsaved changes, and the project settings page's remove, revoke, leave and delete. Don't use `window.confirm()`, which freezes the page and can't show a failure.
+The one "are you sure?" dialog, built on `Dialog` and `DialogFooter`: a title, a `message`, an optional monospace `detail` (a path) and a `warning`. When `onConfirm` returns a promise the dialog holds both buttons busy (with `busyText` on the confirm) until it settles, and a rejection is shown in the dialog as an alert, the server's message for a failed request, rather than closing. The caller closes it by flipping `open`. A danger confirm is a solid danger button (`danger solid`), since it is the committing action; the outline `danger` is for the button that opens the confirm. It is the one confirm path: item delete, file delete, pull over unsaved changes, and the project settings page's remove, revoke, leave and delete. Don't use `window.confirm()`, which freezes the page and can't show a failure.
 
 ### Busy buttons
 
 `Button`'s `busy` marks a click in progress: `aria-busy`, clicks ignored, but the button stays enabled. Disabling the button that has focus drops focus to the page, so a pending action uses `busy` and keeps `disabled` for actions that aren't available at all (an empty form).
+
+### Badge
+
+Variants are `variant-primary`, `-success`, `-warning`, `-error` (solid) and `variant-warning-subtle` (tinted background, colored text) for status chips that sit inside a list, where a solid fill would outweigh the row.
 
 ### Notice
 

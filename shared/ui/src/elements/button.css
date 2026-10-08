@@ -93,6 +93,17 @@ button.danger:hover:not(:disabled) {
 	color: var(--color-text-inverse);
 }
 
+/* The committing destructive action, e.g. a confirm dialog's Delete: filled from the start. */
+button.danger.solid {
+	background: var(--color-error);
+	color: var(--color-text-inverse);
+}
+
+button.danger.solid:hover:not(:disabled) {
+	background: var(--color-error);
+	filter: brightness(0.9);
+}
+
 /* Borderless destructive action (e.g. Delete in a dialog footer). */
 button.text.danger {
 	color: var(--color-error);

@@ -6,6 +6,8 @@ export interface DialogFooterProps {
 	children: ComponentChildren;
 	/** Draw a top border — for footers that cap a scrolling body. */
 	divider?: boolean;
+	/** Keep it in view at the bottom of a Dialog whose body scrolls (a long form). */
+	pinned?: boolean;
 	class?: string;
 }
 
@@ -15,10 +17,11 @@ export interface DialogFooterProps {
  * Below the small-screen breakpoint the row stacks full-width with the
  * primary action on top (via column-reverse over the secondary-first DOM order).
  */
-export function DialogFooter({ children, divider, class: className }: DialogFooterProps): JSX.Element {
+export function DialogFooter({ children, divider, pinned, class: className }: DialogFooterProps): JSX.Element {
 	const classes = [
 		styles.footer,
 		divider && styles.divider,
+		pinned && styles.pinned,
 		className,
 	].filter(Boolean).join(' ');
 

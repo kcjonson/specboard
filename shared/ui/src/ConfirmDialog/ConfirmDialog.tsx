@@ -89,7 +89,7 @@ export function ConfirmDialog({
 					<Button onClick={handleCancel} class="secondary" busy={busy}>
 						{cancelText}
 					</Button>
-					<Button onClick={handleConfirm} class={confirmVariant} busy={busy}>
+					<Button onClick={handleConfirm} class={confirmVariant === 'danger' ? 'danger solid' : undefined} busy={busy}>
 						{busy && busyText ? busyText : confirmText}
 					</Button>
 				</DialogFooter>

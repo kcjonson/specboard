@@ -97,10 +97,20 @@
 }
 
 @media (width < 768px) { /* bp-small: brand text + inline project nav collapse; hamburger menu takes over */
-	.projectTitle,
+	.ownerLink,
+	.titleSeparator,
 	.pageTitle,
 	.brandDivider {
 		display: none;
+	}
+
+	/* The project's name stays, so the View only badge never sits alone by the logo. */
+	.projectName {
+		max-width: 40vw;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--text-base);
 	}
 
 	/* Project pages only; the lone Projects tab on non-project pages stays. */

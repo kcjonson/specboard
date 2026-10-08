@@ -4,7 +4,7 @@ import styles from './Badge.module.css';
 export interface BadgeProps {
 	/** Badge content */
 	children: ComponentChildren;
-	/** Additional CSS class (use variant-*, size-sm for modifiers) */
+	/** Additional CSS class (variant-primary, -success, -warning, -warning-subtle, -error; size-sm) */
 	class?: string;
 	/** Tooltip text */
 	title?: string;
