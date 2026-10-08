@@ -53,6 +53,9 @@ export function EditorHeader({
 	const [isEditing, setIsEditing] = useState(false);
 	const [editTitle, setEditTitle] = useState('');
 	const inputRef = useRef<HTMLInputElement>(null);
+	// Enter submits and closes the input, whose blur then fires too; this lets only the
+	// first of them through.
+	const editingRef = useRef(false);
 	const showEpicButton = isMarkdownFile(filePath);
 
 	// Focus and select input when editing starts
@@ -74,10 +77,13 @@ export function EditorHeader({
 	const handleStartEditing = (): void => {
 		if (!filePath || !onRename) return;
 		setEditTitle(title);
+		editingRef.current = true;
 		setIsEditing(true);
 	};
 
 	const handleSubmit = (): void => {
+		if (!editingRef.current) return;
+		editingRef.current = false;
 		const trimmed = editTitle.trim();
 		if (trimmed && trimmed !== title && onRename) {
 			onRename(trimmed);
@@ -91,17 +97,14 @@ export function EditorHeader({
 			handleSubmit();
 		} else if (e.key === 'Escape') {
 			e.preventDefault();
+			editingRef.current = false;
 			setIsEditing(false);
 		}
 	};
 
 	const handleBlur = (): void => {
 		// Delay to allow click events to fire first (200ms handles slower devices)
-		setTimeout(() => {
-			if (isEditing) {
-				handleSubmit();
-			}
-		}, 200);
+		setTimeout(handleSubmit, 200);
 	};
 
 	return (

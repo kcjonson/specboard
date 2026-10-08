@@ -130,7 +130,8 @@ export function GitStatusBar({
 					onDismiss={handleDismiss}
 				/>
 			)}
-			{conflictCount > 0 && !showConflicts && (
+			{/* Stays up while the dialog is open, so closing it returns focus to Review. */}
+			{conflictCount > 0 && (
 				<Notice variant="warning" announce class={styles.notice}>
 					<span class={styles.noticeText}>
 						{conflictCount === 1

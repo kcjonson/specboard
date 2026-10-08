@@ -19,7 +19,10 @@ export interface DraftConflictsDialogProps {
 /** How the row describes what the caller did, and what its two actions are called. */
 function describe(file: ChangedFile): { did: string; keep: string; discard: string } {
 	if (file.status === 'deleted' && file.renamedTo) {
-		return { did: `You renamed it to ${file.renamedTo}`, keep: 'Keep my rename', discard: 'Undo my rename' };
+		const did = file.renameKeepsCommitted
+			? `You renamed it; ${file.renamedTo} has their latest version`
+			: `You renamed it to ${file.renamedTo}`;
+		return { did, keep: 'Keep my rename', discard: 'Undo my rename' };
 	}
 	switch (file.status) {
 		case 'deleted':
@@ -67,6 +70,7 @@ export function DraftConflictsDialog({
 	const [comparing, setComparing] = useState<string | null>(null);
 	const [versions, setVersions] = useState<Versions | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
+	const [actionError, setActionError] = useState<string | null>(null);
 	// The rows with a keep or discard in flight; each clears only itself.
 	const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
 	const [confirmDiscard, setConfirmDiscard] = useState<ChangedFile | null>(null);
@@ -116,9 +120,15 @@ export function DraftConflictsDialog({
 		const index = conflicts.findIndex((f) => f.path === file.path);
 		const undoingRename = action === 'discard' && file.status === 'deleted' && file.renamedTo !== undefined;
 		setBusy((rows) => new Set(rows).add(file.path));
+		setActionError(null);
 		let done: boolean;
 		try {
-			await onBeforeResolve?.(undoingRename ? file.renamedTo! : file.path);
+			try {
+				await onBeforeResolve?.(undoingRename ? file.renamedTo! : file.path);
+			} catch (err) {
+				setActionError(err instanceof Error ? err.message : 'Couldn\'t save first, so nothing was changed.');
+				return;
+			}
 			if (action === 'keep') {
 				done = await gitStatus.keepMine([file.path]);
 			} else if (undoingRename) {
@@ -155,10 +165,13 @@ export function DraftConflictsDialog({
 				<>
 					<p class={styles.intro}>
 						Someone committed changes to these files after you started yours. Your draft
-						replaces the whole file, so keeping it drops their changes; discarding it
-						drops yours. Compare them first if you want to carry anything over.
+						replaces the whole file, so keeping it drops their changes unless it already
+						has them; discarding it drops yours. Compare them first if you want to carry
+						anything over.
 					</p>
-					{gitStatus.error && <Notice variant="error" announce class={styles.notice}>{gitStatus.error}</Notice>}
+					{(actionError ?? gitStatus.error) && (
+						<Notice variant="error" announce class={styles.notice}>{actionError ?? gitStatus.error}</Notice>
+					)}
 					<ul class={styles.list} ref={listRef}>
 						{conflicts.map((file) => {
 							const copy = describe(file);

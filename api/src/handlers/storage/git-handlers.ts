@@ -50,13 +50,14 @@ export async function handleGetGitStatus(context: Context): Promise<Response> {
 
 		// Combine staged, unstaged, and untracked into a single changedFiles array
 		// Use a Map to dedupe by path, preferring staged status
-		const changedMap = new Map<string, { path: string; status: string; isUntracked: boolean; conflict: boolean; renamedTo?: string }>();
-		const changed = (file: FileChange): { path: string; status: string; isUntracked: boolean; conflict: boolean; renamedTo?: string } => ({
+		type ChangedFile = { path: string; status: string; isUntracked: boolean; conflict: boolean; renamedTo?: string; renameKeepsCommitted?: boolean };
+		const changedMap = new Map<string, ChangedFile>();
+		const changed = (file: FileChange): ChangedFile => ({
 			path: file.path,
 			status: file.status,
 			isUntracked: false,
 			conflict: file.conflict === true,
-			...(file.renamedTo ? { renamedTo: file.renamedTo } : {}),
+			...(file.renamedTo ? { renamedTo: file.renamedTo, renameKeepsCommitted: file.renameKeepsCommitted === true } : {}),
 		});
 
 		// Add staged files

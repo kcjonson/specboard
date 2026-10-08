@@ -44,6 +44,8 @@ export interface FileChange {
 	conflict?: boolean;
 	/** Cloud drafts: a deletion that is the old side of a rename, and where the file went. */
 	renamedTo?: string;
+	/** Cloud drafts, with renamedTo: the file at its new path is exactly what's committed at the old one now. */
+	renameKeepsCommitted?: boolean;
 }
 
 export interface Commit {

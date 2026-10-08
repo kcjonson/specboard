@@ -412,10 +412,10 @@ export function Editor(props: RouteProps): JSX.Element {
 		await loadFileFromServer(path);
 	}, [canEdit, projectId, loadFileFromServer, documentModel, performServerSave]);
 
-	// Take the open file's base from the server without touching what's on screen: after
-	// a commit took its draft (the base is the version just committed) or a rename moved
-	// it (the base is the new path's). Never otherwise: the server's base for a file with
-	// no draft is what's committed now, which may be newer than what's on screen.
+	// Take the open file's base from the server without touching what's on screen, after
+	// a commit took its draft (the base is then the version just committed). Never
+	// otherwise: the server's base for a file with no draft is what's committed now, which
+	// may be newer than what's on screen.
 	const refreshOpenDocumentBase = useCallback(async () => {
 		const path = documentModel.filePath;
 		if (!path) return;
@@ -430,17 +430,14 @@ export function Editor(props: RouteProps): JSX.Element {
 	}, [documentModel, projectRef]);
 
 	// Handle file renamed via sidebar double-click
-	const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
-		// If the renamed file is the currently open file, update the model
+	// If the renamed file is the open one, show it from its new path: what the server holds
+	// there (saved before the rename) and its base.
+	const handleFileRenamed = useCallback(async (oldPath: string, newPath: string) => {
 		if (documentModel.filePath === oldPath) {
-			if (projectId) {
-				migrateLocalStorageContent(projectId, oldPath, newPath);
-				saveSelectedFile(projectId, newPath);
-			}
-			documentModel.updateFilePath(newPath);
-			void refreshOpenDocumentBase();
+			if (projectId) migrateLocalStorageContent(projectId, oldPath, newPath);
+			await loadFileFromServer(newPath);
 		}
-	}, [projectId, documentModel, refreshOpenDocumentBase]);
+	}, [projectId, documentModel, loadFileFromServer]);
 
 	// Handle restore from recovery dialog
 	const handleRestore = useCallback(() => {
@@ -709,9 +706,14 @@ export function Editor(props: RouteProps): JSX.Element {
 
 	// Before anything that acts on a file's draft as the server has it (resolving a
 	// conflict, a rename, a delete): if it's the open file, save what's on screen first.
+	// If it can't be saved, nothing goes ahead: the change would act on an older draft and
+	// the reload after it would drop what's on screen.
 	const handleBeforeFileChange = useCallback(async (path: string) => {
 		if (path === documentModel.filePath && documentModel.isDirty) {
 			await performServerSave();
+			if (documentModel.isDirty) {
+				throw new Error('Your latest changes couldn\'t be saved, so nothing was changed. Try again once they save.');
+			}
 		}
 	}, [documentModel, performServerSave]);
 
@@ -781,13 +783,13 @@ export function Editor(props: RouteProps): JSX.Element {
 			// someone changed it since.
 			await handleBeforeFileChange(oldPath);
 			const newPath = await renameFileRef.current(oldPath, newFilename, documentModel.baseContentHash);
+			if (newPath === oldPath) return;
 
-			if (projectId) {
-				migrateLocalStorageContent(projectId, oldPath, newPath);
-				saveSelectedFile(projectId, newPath);
-			}
-			documentModel.updateFilePath(newPath);
-			await refreshOpenDocumentBase();
+			// Show the file as the server has it now under its new name, and the changes
+			// the rename made.
+			if (projectId) migrateLocalStorageContent(projectId, oldPath, newPath);
+			await loadFileFromServer(newPath);
+			await gitStatusModel.refresh();
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
 			captureError(error, {
@@ -800,7 +802,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			// (File operations typically succeed, so a dedicated UI component isn't warranted)
 			alert(writeFailure(err, 'Failed to rename file', projectRef));
 		}
-	}, [projectRef, projectId, documentModel, handleBeforeFileChange, refreshOpenDocumentBase]);
+	}, [projectRef, projectId, documentModel, handleBeforeFileChange, loadFileFromServer, gitStatusModel]);
 
 	// Handle applying AI-suggested edits from ChatSidebar
 	const handleApplyEdit = useCallback((newMarkdown: string) => {

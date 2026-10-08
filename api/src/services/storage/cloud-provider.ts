@@ -302,18 +302,17 @@ export class CloudStorageProvider implements StorageProvider {
 		const staged: GitStatus['staged'] = [];
 		const unstaged: GitStatus['unstaged'] = [];
 
-		// The deletion a rename journals at the old path, keyed to where the file went.
+		// The deletion a rename journals at the old path, keyed to the draft where the file went.
 		const renamedTo = new Map(
-			pending.flatMap((change) => (change.renamedFrom && change.action !== 'deleted' ? [[change.renamedFrom, change.path] as const] : []))
+			pending.flatMap((change) => (change.renamedFrom && change.action !== 'deleted' ? [[change.renamedFrom, change] as const] : []))
 		);
 
 		for (const change of pending) {
-			const status =
-				change.action === 'created'
-					? 'added'
-					: change.action === 'deleted'
-						? 'deleted'
-						: 'modified';
+			// A draft started where nothing was committed is one the caller created, even
+			// once someone has committed a file at the same path (a later save then calls
+			// it 'modified').
+			const created = change.action === 'created' || (change.action === 'modified' && change.baseContentHash === null);
+			const status = change.action === 'deleted' ? 'deleted' : created ? 'added' : 'modified';
 
 			// Return paths with leading slash to match API convention
 			const movedTo = change.action === 'deleted' ? renamedTo.get(change.path) : undefined;
@@ -321,7 +320,14 @@ export class CloudStorageProvider implements StorageProvider {
 				path: '/' + change.path,
 				status,
 				conflict: change.conflict,
-				...(movedTo ? { renamedTo: '/' + movedTo } : {}),
+				...(movedTo
+					? {
+						renamedTo: '/' + movedTo.path,
+						// A rename that carried what's committed now (nothing edited since)
+						// keeps the other person's version under the new name.
+						renameKeepsCommitted: movedTo.contentHash !== null && movedTo.contentHash === change.committedHash,
+					}
+					: {}),
 			});
 		}
 

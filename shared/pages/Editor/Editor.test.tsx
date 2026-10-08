@@ -243,6 +243,32 @@ describe('Editor and the version a draft is made against', () => {
 
 		expect(order).toEqual(['save', 'rename']);
 		expect(renameFile).toHaveBeenCalledWith(FILE, 'renamed.md', BASE);
+		// Then it shows the file as the server has it under the new name, and the changes.
+		const reads = get.mock.calls.map(([url]) => String(url));
+		expect(reads).toContain('/api/projects/acme/docs/files?path=%2Fdocs%2Frenamed.md');
+		expect(reads.filter((url) => url.endsWith('/git/status')).length).toBeGreaterThanOrEqual(2);
+		expect(model.filePath).toBe('/docs/renamed.md');
+	});
+
+	it('doesn\'t rename when the open file couldn\'t be saved first', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		put.mockRejectedValue(new Error('offline'));
+		const renameFile = vi.fn(async (_path: string, name: string) => `/docs/${name}`);
+		const alert = vi.fn();
+		vi.stubGlobal('alert', alert);
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+		act(() => (seen.files!.onRenameFileRef as (fn: typeof renameFile) => void)(renameFile));
+
+		const model = seen.editor!.model as DocumentModel;
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		await act(async () => {
+			await (seen.header!.onRename as (name: string) => Promise<void>)('renamed.md');
+		});
+
+		expect(renameFile).not.toHaveBeenCalled();
+		expect(alert).toHaveBeenCalled();
+		expect(model.filePath).toBe(FILE);
 	});
 
 	it('saves before a commit and holds saves until the commit is done', async () => {
@@ -258,10 +284,11 @@ describe('Editor and the version a draft is made against', () => {
 		});
 		expect(put).toHaveBeenCalledTimes(1);
 
-		// An edit while the commit runs isn't saved until it's over.
+		// An edit while the commit runs isn't saved until it's over, and nothing that needs
+		// it saved first (a rename, a delete) goes ahead meanwhile.
 		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'During' }] }] }));
 		await act(async () => {
-			await (seen.files!.onBeforeFileChange as (path: string) => Promise<void>)(FILE);
+			await expect((seen.files!.onBeforeFileChange as (path: string) => Promise<void>)(FILE)).rejects.toThrow('couldn\'t be saved');
 		});
 		expect(put).toHaveBeenCalledTimes(1);
 

@@ -38,9 +38,11 @@ export interface PendingChange {
 	updatedAt: Date;
 }
 
-/** A draft as listed: with whether what's committed at its path moved since the draft began. */
+/** A draft as listed: with what's committed at its path now, and whether that moved since the draft began. */
 export interface ListedPendingChange extends PendingChange {
 	conflict: boolean;
+	/** content_hash of the committed file at this path now; null when none is. */
+	committedHash: string | null;
 }
 
 // ============================================================
@@ -245,12 +247,13 @@ export async function listPendingChanges(
 		renamed_from: string | null;
 		base_content_hash: string | null;
 		content_hash: string | null;
+		committed_hash: string | null;
 		conflict: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
 		`SELECT p.id, p.project_id, p.user_id, p.path, p.content, p.s3_key, p.action, p.renamed_from,
-		        p.base_content_hash, p.content_hash,
+		        p.base_content_hash, p.content_hash, d.content_hash AS committed_hash,
 		        p.base_content_hash IS DISTINCT FROM d.content_hash
 		          AND NOT (p.action <> 'deleted' AND COALESCE(p.content_hash = d.content_hash, false)) AS conflict,
 		        p.created_at, p.updated_at
@@ -272,6 +275,7 @@ export async function listPendingChanges(
 		renamedFrom: row.renamed_from,
 		baseContentHash: row.base_content_hash,
 		contentHash: row.content_hash,
+		committedHash: row.committed_hash,
 		conflict: row.conflict,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,

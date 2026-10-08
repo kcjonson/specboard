@@ -21,6 +21,8 @@ export interface ChangedFile {
 	conflict?: boolean;
 	/** A deletion that is the old side of the caller's rename: where the file went. */
 	renamedTo?: string;
+	/** With renamedTo: the file under its new name is exactly what's committed now (their latest version). */
+	renameKeepsCommitted?: boolean;
 }
 
 export interface CommitError {

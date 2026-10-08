@@ -53,7 +53,7 @@ export interface FileBrowserProps {
 	/** Callback when file creation is cancelled */
 	onCancelNewFile?: () => void;
 	/** Callback when a file is renamed via double-click in sidebar */
-	onFileRenamed?: (oldPath: string, newPath: string) => void;
+	onFileRenamed?: (oldPath: string, newPath: string) => void | Promise<void>;
 	/** Callback when a file or folder is deleted */
 	onFileDeleted?: (path: string) => void;
 	/** Callback to receive the startNewFile function. parentPath is optional - uses first rootPath if not provided */
@@ -305,10 +305,15 @@ export function FileBrowser({
 		const oldPath = model.pendingRename?.path;
 		try {
 			if (oldPath) await onBeforeFileChange?.(oldPath);
+		} catch (err) {
+			model.error = err instanceof Error ? err.message : 'Couldn\'t save before renaming';
+			return;
+		}
+		try {
 			const newPath = await model.commitRename(renameName, oldPath ? baseForPath(oldPath) : undefined);
 			// Notify parent of the rename
 			if (oldPath) {
-				onFileRenamed?.(oldPath, newPath);
+				await onFileRenamed?.(oldPath, newPath);
 			}
 			// Refresh git status to show the renamed file as changed
 			gitStatus?.refresh();
@@ -469,6 +474,12 @@ export function FileBrowser({
 
 		try {
 			await onBeforeFileChange?.(path);
+		} catch (err) {
+			model.error = err instanceof Error ? err.message : `Couldn't save before deleting the ${itemType}`;
+			return;
+		}
+
+		try {
 			const base = type === 'file' ? baseForPath(path) : undefined;
 			const baseQuery = base === undefined || base === null ? '' : `&baseContentHash=${encodeURIComponent(base)}`;
 			await fetchClient.delete(
@@ -487,16 +498,14 @@ export function FileBrowser({
 	const handleDeleteClick = (path: string, type: 'file' | 'directory', event: Event): void => {
 		event.stopPropagation();
 
-		// Check git status to determine if confirmation is needed
-		const changeStatus = gitStatus?.getChangeStatus(path);
-		const isUntracked = gitStatus?.isUntracked(path);
-		const hasChanges = changeStatus !== undefined || isUntracked;
+		// A folder always asks (what's in it goes too); a file asks only when it has a draft
+		// that would be lost. A committed file with no draft can be restored from git.
+		const isUntracked = gitStatus?.isUntracked(path) ?? false;
+		const hasDraft = gitStatus?.hasChanges(path) ?? false;
 
-		if (hasChanges) {
-			// Untracked or modified files need confirmation (data loss)
-			setDeleteTarget({ path, type, isUntracked: isUntracked ?? false });
+		if (type === 'directory' || hasDraft || isUntracked) {
+			setDeleteTarget({ path, type, isUntracked });
 		} else {
-			// Tracked files without changes can be deleted directly (recoverable from git)
 			performDelete(path, type);
 		}
 	};
@@ -692,9 +701,11 @@ export function FileBrowser({
 				open={deleteTarget !== null}
 				title={`Delete ${deleteTarget?.type === 'directory' ? 'folder' : 'file'}?`}
 				detail={deleteTarget?.path}
-				warning={deleteTarget?.isUntracked
-					? "This file has never been committed and cannot be recovered."
-					: "This file has uncommitted changes that will be lost."
+				warning={deleteTarget?.type === 'directory'
+					? 'Every file in it is deleted too, along with any changes you haven\'t committed.'
+					: deleteTarget?.isUntracked
+						? 'This file has never been committed and cannot be recovered.'
+						: 'This file has uncommitted changes that will be lost.'
 				}
 				confirmText="Delete"
 				onConfirm={handleDeleteConfirm}

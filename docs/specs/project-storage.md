@@ -392,7 +392,12 @@ the path at that moment: for a delete that means the path as committed now. A ba
 be a committed file's sha1; anything else is refused.
 
 The editor saves the open file before anything that acts on its draft as the server has
-it (a rename, a delete, resolving a conflict, a commit). During a commit it holds further
+it (a rename, a delete, resolving a conflict, a commit), and if that save fails the
+action doesn't go ahead. After a rename it shows the file as the server has it under
+the new name and refetches git status. A rename row whose new path holds exactly what's
+committed at the old path now says the rename keeps their latest version, and a draft
+started where nothing was committed reads as one the caller created even after a later
+save. During a commit it holds further
 saves (the local copy keeps them) until the commit is done and it has taken the new base
 for the open file, then saves, so an edit made mid-commit isn't measured against the
 version the commit just replaced.

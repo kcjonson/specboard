@@ -55,7 +55,14 @@ const storage = vi.hoisted(() => {
 		[...mine(userId)].map(([path, change]) => {
 			const now = hashOf(committed.get(path));
 			const noOp = change.action !== 'deleted' && change.content === (committed.get(path) ?? null);
-			return { path, ...change, conflict: change.base !== now && !noOp };
+			return {
+				path,
+				...change,
+				conflict: change.base !== now && !noOp,
+				baseContentHash: change.base,
+				contentHash: change.content === null ? null : hashOf(change.content),
+				committedHash: now,
+			};
 		});
 	const client = {
 		listFiles: async () => [...committed.keys()].map((path) => ({ path, contentHash: 'h', sizeBytes: 1, syncedAt: 'then' })),
@@ -906,6 +913,30 @@ describe('a draft someone else\'s commit changed under', () => {
 		expect(response.status).toBe(200);
 		expect(storage.client.undoRename).toHaveBeenCalledTimes(1);
 		expect(storage.mine(erin).size).toBe(0);
+	});
+
+	it('says a created file is one the caller created, even after a later save', async () => {
+		await call('erin', 'POST', 'files?path=/docs/new.md');
+		await call('alice', 'POST', 'files?path=/docs/new.md');
+		await call('alice', 'PUT', 'files?path=/docs/new.md', { content: '# Alice\'s new page' });
+		await commit('alice');
+		await call('erin', 'PUT', 'files?path=/docs/new.md', { content: '# Erin\'s new page' });
+
+		const status = (await (await call('erin', 'GET', 'git/status')).json()) as { changedFiles: Array<{ path: string; status: string; conflict: boolean }> };
+
+		expect(status.changedFiles).toEqual([expect.objectContaining({ path: '/docs/new.md', status: 'added', conflict: true })]);
+	});
+
+	it('says when a rename carries the other person\'s latest version', async () => {
+		const opened = (await (await call('erin', 'GET', 'files?path=/docs/spec.md')).json()) as { baseContentHash: string };
+		await save('alice', '/docs/spec.md', '# Spec, Alice\'s take');
+		await commit('alice');
+
+		// No edits: the server copies what's committed now to the new name.
+		await call('erin', 'PUT', 'files/rename', { oldPath: '/docs/spec.md', newPath: '/docs/d2.md', baseContentHash: opened.baseContentHash });
+		const status = (await (await call('erin', 'GET', 'git/status')).json()) as { changedFiles: Array<{ path: string; renameKeepsCommitted?: boolean }> };
+
+		expect(status.changedFiles.find((f) => f.path === '/docs/spec.md')).toMatchObject({ renamedTo: '/docs/d2.md', renameKeepsCommitted: true, conflict: true });
 	});
 });
 

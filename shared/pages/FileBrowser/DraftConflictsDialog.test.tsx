@@ -149,6 +149,14 @@ describe('DraftConflictsDialog', () => {
 		expect(getByRole('button', { name: 'Keep my rename: /docs/old.md' }).getAttribute('aria-busy')).toBe('true');
 	});
 
+	it('says when a rename carries their latest version', () => {
+		const model = gitStatus();
+		model.files = [{ path: '/docs/d.md', status: 'deleted', isUntracked: false, conflict: true, renamedTo: '/docs/d2.md', renameKeepsCommitted: true }];
+		const { getByText } = render(<DraftConflictsDialog open gitStatus={model} onClose={vi.fn()} />);
+
+		expect(getByText('You renamed it; /docs/d2.md has their latest version')).toBeTruthy();
+	});
+
 	it('marks only the row being resolved as busy', async () => {
 		const model = gitStatus();
 		vi.mocked(model.keepMine).mockImplementationOnce(() => new Promise(() => {}));

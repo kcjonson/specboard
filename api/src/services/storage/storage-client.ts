@@ -24,6 +24,12 @@ interface PendingChange {
 	renamedFrom: string | null;
 	/** What's committed at this path changed since the draft began (someone else's commit or a pull). */
 	conflict: boolean;
+	/** The committed version the draft was made against; null when none was committed. */
+	baseContentHash: string | null;
+	/** The draft's own content hash; null for a deletion. */
+	contentHash: string | null;
+	/** The committed file's hash at this path now; null when none is. */
+	committedHash: string | null;
 	hasContent: boolean;
 	isLarge: boolean;
 	updatedAt: string;
