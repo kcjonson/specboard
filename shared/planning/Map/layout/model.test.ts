@@ -1,3 +1,4 @@
+import type { MapItemRow } from '@specboard/core/map-read';
 import { describe, expect, it } from 'vitest';
 import { BoardBuilder, NOW, iso } from './board-fixture';
 import { buildModel, compareKeys } from './model';
@@ -121,6 +122,25 @@ describe('buildModel', () => {
 			[0, 1],
 			[1, 2],
 		]);
+	});
+
+	it('relates chains only under one parent, never across regions', () => {
+		const b = new BoardBuilder();
+		const chainUnder = (epic: MapItemRow): MapItemRow[] => {
+			const first = b.add({ parentKey: epic.key, status: 'ready' });
+			const second = b.add({ parentKey: epic.key, status: 'ready' });
+			b.block(second, first);
+			return [first, second];
+		};
+		const left = b.add({ type: 'epic', status: 'in_progress' });
+		const right = b.add({ type: 'epic', status: 'in_progress' });
+		const [, leftEnd] = chainUnder(left);
+		const [rightStart] = chainUnder(right);
+		b.block(rightStart!, leftEnd!);
+		b.add({ parentKey: right.key, status: 'ready', discoveredFromKey: leftEnd!.key });
+		const model = buildModel(b.rows, NOW, {});
+		expect(model.chains).toHaveLength(2);
+		expect(model.relatedChains).toEqual([]);
 	});
 
 	it('picks up next in the agents’ order: in-flight parents first, then the ready list', () => {

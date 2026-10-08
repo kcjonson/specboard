@@ -59,7 +59,7 @@ them doesn't belong in v1.
    made the map unreadable in the design pass. An open blocker also orders: the
    blocked item sits right of what blocks it, since it can't happen first. Inside
    a family, blocked siblings form a chain that hangs off its first item, and
-   chains that relate to each other pull together. A dependency stays drawn after
+   related chains in one family pull together. A dependency stays drawn after
    it's satisfied: finishing the work doesn't erase the relation.
 5. **Labeled Map, as a third planning view beside Board and Table.** `?view=map` on
    the planning route, picked from the same view toggle and remembered the same
@@ -223,9 +223,13 @@ build.
 6. **Chains.** Inside a family, siblings that block one another form a chain. Only
    the chain's first item keeps its link to the parent; each later item hangs off
    what blocks it, and the chain holds itself level, so it reads as a row in the
-   order the work can happen. Chains whose items relate in any way (a shared
-   parent, a parent-child link, a blocker, or discovered-from) pull into one band,
-   a row apart, so they read as associated.
+   order the work can happen. Chains in the same family whose items relate (a
+   blocker or discovered-from, or simply stacking as siblings) pull into one band,
+   a row apart, so they read as associated. Chains in different families don't:
+   region bands keep families apart, and a pull across them drags a chain out of
+   its region, the region grows, the band pushes harder, and the two feed each
+   other without bound (a 273-dot board reached y of ±4e8 and never finished
+   tracing its outlines).
 7. **Spacing.** Dots repel each other a little and never overlap, so work that
    landed in one burst blooms into a cloud instead of stacking in a column, and
    families keep their own room.
@@ -275,7 +279,7 @@ to fit; r is a dot's radius.
 | Dependencies | An unfinished item at least r1 + r2 + 10 right of each blocker, open or satisfied, enforced after every tick |
 | Chain link | Rest length r1 + r2 + 16, strength 0.7, in place of the later item's parent link |
 | Chain row | Strength 3 pulling every dot of a chain to the chain's common height, so it reads level (it was 0.6 pulling each later item level with what blocked it, which left a chain sloping about 15 units a step) |
-| Related chains | Strength 0.25 toward one row apart (their largest radii plus 10) |
+| Related chains | Strength 0.25 toward one row apart (their largest radii plus 10), only between chains under the same parent |
 | Session to item | Rest length r1 + r2 + 30, strength 0.9, the pull capped at 160 so an item far from its session stays with its family; the item takes 0.7 of it, and all of a session's items together can move it by at most 50, so it stays beside its computer |
 | Computer to session | Rest length r1 + r2 + 26, strength 1; the session's time target is its computer's, less that length |
 | Repulsion | 40, ignored past 260 |

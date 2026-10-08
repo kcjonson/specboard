@@ -418,6 +418,28 @@ describe('layoutMap edge cases', () => {
 		expectOrdersHold(result, b.rows);
 	});
 
+	it('stays a band when chains in sibling regions block each other', () => {
+		// The shape that sent a real board's y to ±4e8: open epics filed together, each holding
+		// a chain, with blockers and discovered-from links reaching across into the next epic's chain.
+		const b = new BoardBuilder();
+		const chains = Array.from({ length: 7 }, () => {
+			const epic = b.add({ type: 'epic', status: 'in_progress', created: NOW - 2 * DAY });
+			const chain = Array.from({ length: 4 }, () => b.add({ parentKey: epic.key, status: 'ready', created: NOW - 2 * DAY }));
+			for (let i = 1; i < chain.length; i++) b.block(chain[i]!, chain[i - 1]!);
+			return chain;
+		});
+		for (let i = 1; i < chains.length; i++) {
+			b.block(chains[i]![1]!, chains[i - 1]![2]!);
+			b.add({ parentKey: chains[i]![0]!.parentKey, status: 'ready', created: NOW - DAY, discoveredFromKey: chains[i - 1]![3]!.key });
+		}
+		for (let i = 0; i < 10; i++) b.add({ status: 'done', completed: NOW - (i + 3) * DAY });
+		const result = layout(b.rows);
+		const items = dots(result);
+		const extent = (values: number[]): number => Math.max(...values) - Math.min(...values);
+		expect(extent(items.map((n) => n.y))).toBeLessThan(extent(items.map((n) => n.x)));
+		expect(result.stats.settle).toBeLessThan(0.05);
+	});
+
 	it('doesn’t hold a collapsed open family right of a done child’s old blocker', () => {
 		const b = new BoardBuilder();
 		const blocker = b.add({ status: 'ready', created: NOW - HOUR });
