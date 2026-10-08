@@ -23,6 +23,7 @@ import { requireResolvedProject } from '../project-access.ts';
 import { apiActor } from './items.ts';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import { isValidUUID } from '../validation.ts';
+import { jsonObjectBody } from '../request-body.ts';
 
 function resolve(context: Context): { project: ResolvedProject; itemNumber: number } | Response {
 	const project = requireResolvedProject(context);
@@ -55,7 +56,8 @@ export async function handleAddBlocker(context: Context): Promise<Response> {
 	if (resolved instanceof Response) return resolved;
 	const { project, itemNumber } = resolved;
 
-	const body = await context.req.json<{ blockerKey?: unknown; text?: unknown }>();
+	const body = await jsonObjectBody<{ blockerKey?: unknown; text?: unknown }>(context);
+	if (body instanceof Response) return body;
 
 	try {
 		let input: { itemNumber: number } | { text: string };

@@ -22,6 +22,7 @@ import {
 import { sendEmail, getProjectInvitationEmailContent } from '@specboard/email';
 import { isValidEmail, isValidUUID } from '../validation.ts';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
+import { jsonObjectBody } from '../request-body.ts';
 import { APP_URL } from './auth/utils.ts';
 
 const MEMBER_ROLES: ReadonlySet<string> = new Set<MemberRole>(['editor', 'viewer']);
@@ -58,13 +59,9 @@ const RATE_LIMITED = { error: RATE_LIMIT_CONFIGS.projectInvite.message } as cons
 
 /** POST /api/projects/:owner/:project/invitations, body { email, role } */
 export async function handleCreateInvitation(context: Context, redis: Redis): Promise<Response> {
-	let body: unknown;
-	try {
-		body = await context.req.json();
-	} catch {
-		return context.json({ error: 'Invalid JSON' }, 400);
-	}
-	const { email, role } = (body ?? {}) as { email?: unknown; role?: unknown };
+	const body = await jsonObjectBody<{ email?: unknown; role?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const { email, role } = body;
 
 	const address = typeof email === 'string' ? email.trim().toLowerCase() : '';
 	if (!address || address.length > MAX_EMAIL_LENGTH || !isValidEmail(address)) {

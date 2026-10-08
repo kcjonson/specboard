@@ -34,6 +34,7 @@ import {
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import { isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../validation.ts';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
+import { jsonObjectBody } from '../request-body.ts';
 
 /** The authenticated user as a provenance actor. */
 export function apiActor(context: Context): UserActor {
@@ -146,9 +147,11 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 export async function handleCreateItem(context: Context): Promise<Response> {
 	const { id: projectId, key: projectKey } = project(context);
 
-	const body = await context.req.json<{ title?: string; type?: unknown; parentKey?: string | null; description?: string; status?: unknown; discoveredFromKey?: unknown }>();
-	const title = body.title || 'Untitled';
-	if (!isValidTitle(title)) return context.json({ error: `Title must be between 1 and ${MAX_TITLE_LENGTH} characters` }, 400);
+	const body = await jsonObjectBody<{ title?: unknown; type?: unknown; parentKey?: string | null; description?: string; status?: unknown; discoveredFromKey?: unknown }>(context);
+	if (body instanceof Response) return body;
+	if (typeof body.title !== 'string' || !isValidTitle(body.title)) {
+		return context.json({ error: `Title must be between 1 and ${MAX_TITLE_LENGTH} characters` }, 400);
+	}
 	if (body.type !== undefined && !isValidType(body.type)) return context.json({ error: 'Invalid type. Must be one of: epic, task, bug' }, 400);
 	if (body.status !== undefined && !isValidStatus(body.status)) return context.json({ error: 'Invalid status' }, 400);
 
@@ -176,7 +179,7 @@ export async function handleCreateItem(context: Context): Promise<Response> {
 			return context.json({ error: 'Parent item not found' }, 404);
 		}
 		const item = await createItem(projectId, {
-			title,
+			title: body.title,
 			type: body.type as ItemType | undefined,
 			parentNumber,
 			description: body.description,
@@ -199,11 +202,14 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 	const parentNumber = pathItemNumber(context);
 	if (typeof parentNumber !== 'number') return parentNumber;
 
-	const body = await context.req.json<{ items?: Array<{ title?: string; description?: string; type?: unknown }> }>();
+	const body = await jsonObjectBody<{ items?: Array<{ title?: unknown; description?: string; type?: unknown } | null> }>(context);
+	if (body instanceof Response) return body;
 	if (!Array.isArray(body.items) || body.items.length === 0) return context.json({ error: 'items array is required' }, 400);
+	const children: Array<{ title: string; description?: string; type?: ItemType }> = [];
 	for (const it of body.items) {
-		if (!it.title || !isValidTitle(it.title)) return context.json({ error: 'Each item needs a valid title' }, 400);
+		if (typeof it?.title !== 'string' || !isValidTitle(it.title)) return context.json({ error: 'Each item needs a valid title' }, 400);
 		if (it.type !== undefined && !isValidType(it.type)) return context.json({ error: 'Invalid type. Must be one of: epic, task, bug' }, 400);
+		children.push({ title: it.title, description: it.description, type: it.type as ItemType | undefined });
 	}
 
 	try {
@@ -211,7 +217,7 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 		const created = await createItems(
 			projectId,
 			parentNumber,
-			body.items.map((it) => ({ title: it.title!, description: it.description, type: it.type as ItemType | undefined })),
+			children,
 			{ actor: apiActor(context) }
 		);
 		return context.json(created.map(itemView), 201);
@@ -228,7 +234,8 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 	const itemNumber = pathItemNumber(context);
 	if (typeof itemNumber !== 'number') return itemNumber;
 
-	const body = await context.req.json<Record<string, unknown>>();
+	const body = await jsonObjectBody(context);
+	if (body instanceof Response) return body;
 	if (body.status !== undefined && !isValidStatus(body.status)) return context.json({ error: 'Invalid status' }, 400);
 	if (typeof body.title === 'string' && !isValidTitle(body.title)) return context.json({ error: 'Invalid title' }, 400);
 
@@ -256,7 +263,8 @@ export async function handleMoveItem(context: Context): Promise<Response> {
 	const itemNumber = pathItemNumber(context);
 	if (typeof itemNumber !== 'number') return itemNumber;
 
-	const body = await context.req.json<{ parentKey?: string | null }>();
+	const body = await jsonObjectBody<{ parentKey?: unknown }>(context);
+	if (body instanceof Response) return body;
 	let newParentNumber: number | null = null;
 	if (body.parentKey != null) {
 		if (typeof body.parentKey !== 'string' || !parseItemKey(body.parentKey)) {
