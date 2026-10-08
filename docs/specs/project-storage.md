@@ -277,10 +277,7 @@ was never committed has none.
 Spec links (`epic_specs`) are project-wide, so they follow committed files, never one
 user's draft. A cloud rename or delete leaves every link alone; the editor still shows
 the file to every other member, and discarding the draft (`git/restore`) has nothing to
-undo. When the commit lands on GitHub, `handleGitHubCommit` turns the change set into
-renames and deletions (`committedSpecPathChanges` in `api/src/services/github-commit.ts`)
-and applies them in one transaction (`applySpecPathChanges` in
-`shared/db/src/services/specs.ts`):
+undo. The commit moves them (step 4 of Committing, below), by these rules:
 
 - a path is vacated when the commit deletes it or a renamed file lands on it (the
   pending change there is `modified` with a `renamed_from`)
@@ -295,19 +292,57 @@ together: a file archived and another promoted into its place, a chain, and a sw
 through a temporary name each land where they should. The moves go through a marker
 path in the same transaction because `(item_id, path)` is unique and not deferrable.
 
-If GitHub refuses the commit, no links change. If GitHub accepts it and the link update
-fails, the handler answers success with a warning and stops there: pending changes stay
-and `last_synced_commit_sha` doesn't move.
-
-Commits pushed outside Specboard move links the same way when a pull brings them in:
-the incremental sync reads `removed` and `renamed` files from GitHub's compare and
-applies them before it marks the sync complete, so a failed sync retries them. Today a
-commit made in Specboard doesn't come back through the sync, since the commit handler
-sets `last_synced_commit_sha` to the new commit without promoting its content into the
-storage service's committed files; that gap is SPE-251.
-
 A local project writes to disk at once, so its rename and delete handlers move or drop
 links on the request itself.
+
+### Committing
+
+A commit (`handleGitHubCommit` in `api/src/handlers/github-sync.ts`) runs in this order:
+
+1. Read the committer's pending changes. Each is read on its own, so its content,
+   action, and `updatedAt` belong together.
+2. Create the commit with GitHub's `createCommitOnBranch`, with `expectedHeadOid` set to
+   the project's `last_synced_commit_sha`, the commit every draft was made against. If
+   anything landed on the branch since (a push from outside, another tool), GitHub
+   refuses, the API answers `409` with `conflictDetected` and a message saying to pull
+   first, and nothing changes: pending changes, files, links, and the sync point stay.
+   The editor's commit banner shows that message.
+3. Promote the commit in the storage service (`POST /commits/:projectId/:userId`, same
+   internal API key as every other API-to-storage call; the API's route is editor-gated).
+   Its added and modified files become the committed files, its deleted and
+   renamed-away paths stop being committed files, and the committer's pending changes it
+   took are cleared, all in one storage transaction. A pending change saved again while
+   the commit was in flight no longer matches the `updatedAt` read in step 1 and stays a
+   draft. File content goes to S3 before the transaction, under each file's own key.
+4. Move spec links (above) and set `last_synced_commit_sha` to the new commit, in one
+   transaction (`recordCommit` in `shared/db/src/services/specs.ts`).
+
+Every member reads committed files plus their own pending changes, so after step 3 the
+committer sees their commit with no drafts left and every other member sees it too.
+
+Steps 3 and 4 run after GitHub has the commit and can't undo it, so a failure in either
+answers success with a warning to pull, and leaves `last_synced_commit_sha` at the old
+commit. The next pull's incremental sync then brings the commit in like any other push:
+it rewrites the committed files and moves the links from GitHub's compare. If step 3
+failed, S3 may already hold the new content for some files (it's what GitHub has), the
+rows and pending changes are untouched, and the committer's drafts stay listed as
+changes after the pull, matching what's now committed; discarding them is safe. If step
+4 failed, step 3 stands and the sync rewrites the same content. Because the links and
+the sync point move together, the links for one commit are applied once, by step 4 or
+by the sync, never both; that matters for a chain or a swap, which moving twice would
+undo.
+
+### Pulling
+
+A pull starts the incremental sync, which reads GitHub's compare from
+`last_synced_commit_sha` to the branch head, writes the changed files into the committed
+files, and moves spec links for `removed` and `renamed` files before it marks the sync
+complete (a failed sync retries all of it). It never touches pending changes: each
+member's drafts stay as they were, shown over the new committed files. A draft of a file
+the pull also changed isn't merged; the draft is the whole file, so committing it writes
+it over the pulled change. A full sync (`initial`) streams the branch's archive into
+storage and then removes committed files the archive no longer has; it can't tell a
+rename from a delete, so it leaves spec links alone.
 
 ### Managed Checkout Location
 

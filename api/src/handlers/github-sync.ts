@@ -9,7 +9,7 @@
 import type { Context } from 'hono';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { decrypt, type EncryptedData } from '@specboard/auth';
-import { applySpecPathChanges, query } from '@specboard/db';
+import { query, recordCommit } from '@specboard/db';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
 import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
@@ -429,14 +429,20 @@ export async function handleGitHubSyncStatus(context: Context): Promise<Response
  * Commit pending changes to GitHub repository.
  * POST /api/projects/:owner/:project/github/commit
  *
- * Uses GitHub GraphQL createCommitOnBranch mutation for atomic commits:
- * 1. Get pending changes with content from storage service
- * 2. Create commit via GraphQL (all-or-nothing, built-in conflict detection)
- * 3. On success, move or drop the spec links of files the commit renamed or deleted
- * 4. Clear pending changes and update last_synced_commit_sha
+ * 1. Read the caller's pending changes from the storage service
+ * 2. Create the commit with GitHub's createCommitOnBranch, expecting the branch to be at
+ *    the project's last synced commit: if anything landed since, GitHub refuses, the
+ *    answer is 409 (pull first), and nothing here changes
+ * 3. Promote the commit into storage: its files become the committed files and the
+ *    pending changes it took are cleared, in one storage transaction
+ * 4. Move spec links for what it renamed and deleted and set last_synced_commit_sha to
+ *    it, in one transaction
  *
- * Spec links change here rather than when the draft was made: until the commit lands
- * the rename or delete is one user's draft, and every other member still has the file.
+ * Steps 3 and 4 run after GitHub has the commit, so a failure there can't undo it. If
+ * either fails the sync point stays at the old commit and the answer is success with a
+ * warning: the next pull's incremental sync brings the commit in like any other, which
+ * rewrites the files and moves the links. A failed step 4 leaves step 3 in place, which
+ * that sync rewrites to the same content.
  */
 export async function handleGitHubCommit(context: Context): Promise<Response> {
 	const userId = apiUserId(context);
@@ -446,6 +452,16 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 	const project = await getProjectWithRepo(projectId);
 	if (!project) {
 		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
+	}
+
+	// Drafts are made against the last synced commit; without one there's nothing to
+	// check the branch against.
+	const expectedHeadOid = project.lastSyncedCommitSha;
+	if (!expectedHeadOid) {
+		return context.json({
+			success: false,
+			error: { stage: 'commit', message: 'The repository hasn\'t finished its first sync yet.' },
+		}, 409);
 	}
 
 	// Get encrypted GitHub token
@@ -534,6 +550,7 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 		token: accessToken,
 		message: commitMessage,
 		changes,
+		expectedHeadOid,
 	});
 
 	if (!result.success) {
@@ -572,51 +589,51 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 		);
 	}
 
-	// Success - the commit is on GitHub, so bring spec links in line with it, then clear
-	// pending changes and update sync SHA
+	const committed = {
+		success: true,
+		sha: result.sha,
+		url: result.url,
+		filesCommitted: result.filesCommitted,
+	};
+	// Either way the sync point is still the old commit, so a pull brings this one in.
+	const unfinished = (warning: string): Response => context.json({ ...committed, warning });
+
 	try {
-		await applySpecPathChanges(projectId, committedSpecPathChanges(pendingChanges));
-
-		await storageClient.deleteAllPendingChanges(projectId, userId);
-
-		await query(
-			`UPDATE projects SET last_synced_commit_sha = $1 WHERE id = $2`,
-			[result.sha, projectId]
-		);
-
-		log({
-			type: 'github',
-			level: 'info',
-			event: 'github_commit_success',
-			projectId,
-			sha: result.sha,
-			filesCommitted: result.filesCommitted,
-		});
-
-		return context.json({
-			success: true,
-			sha: result.sha,
-			url: result.url,
-			filesCommitted: result.filesCommitted,
-		});
+		await storageClient.promoteCommit(projectId, userId, pendingChanges);
 	} catch (err) {
-		// Commit succeeded on GitHub but cleanup failed
-		// Log but still return success since the commit is there
 		log({
 			type: 'github',
 			level: 'error',
-			event: 'github_commit_cleanup_failed',
+			event: 'github_commit_promote_failed',
 			projectId,
 			sha: result.sha,
 			error: err instanceof Error ? err.message : String(err),
 		});
-
-		return context.json({
-			success: true,
-			sha: result.sha,
-			url: result.url,
-			filesCommitted: result.filesCommitted,
-			warning: 'Commit succeeded but cleanup failed. Pending changes may persist.',
-		});
+		return unfinished('Committed to GitHub, but the editor\'s copy didn\'t update. Pull to bring the commit in.');
 	}
+
+	try {
+		await recordCommit(projectId, result.sha!, committedSpecPathChanges(pendingChanges));
+	} catch (err) {
+		log({
+			type: 'github',
+			level: 'error',
+			event: 'github_commit_record_failed',
+			projectId,
+			sha: result.sha,
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return unfinished('Committed to GitHub, but spec links didn\'t move yet. Pull to finish bringing the commit in.');
+	}
+
+	log({
+		type: 'github',
+		level: 'info',
+		event: 'github_commit_success',
+		projectId,
+		sha: result.sha,
+		filesCommitted: result.filesCommitted,
+	});
+
+	return context.json(committed);
 }

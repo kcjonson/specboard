@@ -4,7 +4,9 @@
 
 export interface StorageClient {
 	putFile(projectId: string, path: string, content: string): Promise<void>;
-	deleteFile?(projectId: string, path: string): Promise<void>;
+	deleteFile(projectId: string, path: string): Promise<void>;
+	/** Every committed file's path. */
+	listFiles(projectId: string): Promise<string[]>;
 }
 
 /**
@@ -50,7 +52,7 @@ async function withRetry<T>(
 export function createStorageClient(
 	storageServiceUrl: string,
 	storageApiKey: string
-): StorageClient & { deleteFile: (projectId: string, path: string) => Promise<void> } {
+): StorageClient {
 	return {
 		async putFile(projectId: string, path: string, content: string): Promise<void> {
 			await withRetry(async () => {
@@ -71,6 +73,21 @@ export function createStorageClient(
 					const message = (error as { error?: string })?.error || response.statusText;
 					throw new Error(`${response.status}: ${message || 'Storage service request failed'}`);
 				}
+			});
+		},
+
+		async listFiles(projectId: string): Promise<string[]> {
+			return withRetry(async () => {
+				const response = await fetch(`${storageServiceUrl}/files/${projectId}`, {
+					headers: { 'X-Internal-API-Key': storageApiKey },
+				});
+				if (!response.ok) {
+					const error = await response.json().catch(() => ({}));
+					const message = (error as { error?: string })?.error || response.statusText;
+					throw new Error(`${response.status}: ${message || 'Storage service request failed'}`);
+				}
+				const body = (await response.json()) as { files: Array<{ path: string }> };
+				return body.files.map((file) => file.path);
 			});
 		},
 

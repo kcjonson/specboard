@@ -7,6 +7,7 @@
 import { Readable } from 'stream';
 import unzipper from 'unzipper';
 import { shouldSkipDirectory, shouldSyncFile, stripRootFolder, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
+import type { StorageClient } from './shared/storage-client.ts';
 
 const GITHUB_API_URL = 'https://api.github.com';
 
@@ -15,11 +16,10 @@ export interface StreamResult {
 	skipped: number;
 	errors: string[];
 	commitSha: string | null;
+	/** Paths storage should keep: every file synced, and every one that failed to sync (stale beats missing). */
+	kept: Set<string>;
 }
 
-export interface StorageClient {
-	putFile(projectId: string, path: string, content: string): Promise<void>;
-}
 
 /**
  * Download and stream a GitHub repository ZIP to storage.
@@ -31,13 +31,14 @@ export async function streamGitHubZipToStorage(
 	ref: string,
 	token: string,
 	projectId: string,
-	storageClient: StorageClient
+	storageClient: Pick<StorageClient, 'putFile'>
 ): Promise<StreamResult> {
 	const result: StreamResult = {
 		synced: 0,
 		skipped: 0,
 		errors: [],
 		commitSha: null,
+		kept: new Set(),
 	};
 
 	// Get ZIP URL (GitHub returns 302 redirect to S3-hosted archive)
@@ -79,76 +80,86 @@ export async function streamGitHubZipToStorage(
 	// Convert web ReadableStream to Node.js Readable
 	const nodeStream = Readable.fromWeb(response.body as import('stream/web').ReadableStream);
 
-	// Process the ZIP stream
+	// Process the ZIP stream. The parser closes once it has read the last entry, which
+	// can be before the last uploads finish, so close waits for every entry's handler.
+	const inFlight: Array<Promise<void>> = [];
 	await new Promise<void>((resolve, reject) => {
 		// Handle errors on the source stream
 		nodeStream.on('error', reject);
 
+		const handleEntry = async (entry: unzipper.Entry): Promise<void> => {
+			const zipPath = entry.path;
+			const entryType = entry.type; // 'Directory' or 'File'
+			// Use compressed size as estimate; actual size checked after reading
+			const estimatedSize = entry.vars?.compressedSize ?? 0;
+
+			// Skip directories
+			if (entryType === 'Directory') {
+				entry.autodrain();
+				return;
+			}
+
+			// Strip the root folder from the path
+			const path = stripRootFolder(zipPath);
+
+			// Skip empty paths (the root folder itself)
+			if (!path) {
+				entry.autodrain();
+				return;
+			}
+
+			// Skip files in ignored directories (early check before reading)
+			if (shouldSkipDirectory(path)) {
+				result.skipped++;
+				entry.autodrain();
+				return;
+			}
+
+			// Skip files that look too large based on compressed size estimate
+			if (estimatedSize > MAX_FILE_SIZE_BYTES / 2) {
+				result.skipped++;
+				entry.autodrain();
+				return;
+			}
+
+			try {
+				// Read the file content
+				const chunks: Buffer[] = [];
+				for await (const chunk of entry) {
+					chunks.push(chunk as Buffer);
+				}
+				const buffer = Buffer.concat(chunks);
+
+				// Check if file should be synced (size + binary detection)
+				if (!(await shouldSyncFile(path, buffer))) {
+					result.skipped++;
+					return;
+				}
+
+				const content = buffer.toString('utf-8');
+
+				// Upload to storage service
+				await storageClient.putFile(projectId, path, content);
+				result.synced++;
+				result.kept.add(path);
+			} catch (err) {
+				result.errors.push(
+					`Failed to sync ${path}: ${err instanceof Error ? err.message : String(err)}`
+				);
+				result.skipped++;
+				result.kept.add(path);
+			}
+		};
+
 		nodeStream
 			.pipe(unzipper.Parse())
-			.on('entry', async (entry: unzipper.Entry) => {
-				const zipPath = entry.path;
-				const entryType = entry.type; // 'Directory' or 'File'
-				// Use compressed size as estimate; actual size checked after reading
-				const estimatedSize = entry.vars?.compressedSize ?? 0;
-
-				// Skip directories
-				if (entryType === 'Directory') {
-					entry.autodrain();
-					return;
-				}
-
-				// Strip the root folder from the path
-				const path = stripRootFolder(zipPath);
-
-				// Skip empty paths (the root folder itself)
-				if (!path) {
-					entry.autodrain();
-					return;
-				}
-
-				// Skip files in ignored directories (early check before reading)
-				if (shouldSkipDirectory(path)) {
-					result.skipped++;
-					entry.autodrain();
-					return;
-				}
-
-				// Skip files that look too large based on compressed size estimate
-				if (estimatedSize > MAX_FILE_SIZE_BYTES / 2) {
-					result.skipped++;
-					entry.autodrain();
-					return;
-				}
-
-				try {
-					// Read the file content
-					const chunks: Buffer[] = [];
-					for await (const chunk of entry) {
-						chunks.push(chunk as Buffer);
-					}
-					const buffer = Buffer.concat(chunks);
-
-					// Check if file should be synced (size + binary detection)
-					if (!(await shouldSyncFile(path, buffer))) {
-						result.skipped++;
-						return;
-					}
-
-					const content = buffer.toString('utf-8');
-
-					// Upload to storage service
-					await storageClient.putFile(projectId, path, content);
-					result.synced++;
-				} catch (err) {
-					result.errors.push(
-						`Failed to sync ${path}: ${err instanceof Error ? err.message : String(err)}`
-					);
-					result.skipped++;
-				}
+			.on('entry', (entry: unzipper.Entry) => {
+				inFlight.push(handleEntry(entry));
 			})
 			.on('error', reject)
-			.on('close', resolve);
+			.on('close', () => {
+				Promise.all(inFlight).then(() => resolve(), reject);
+			});
 	});
 
 	return result;

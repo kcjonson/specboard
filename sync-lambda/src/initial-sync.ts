@@ -22,6 +22,7 @@ export interface InitialSyncResult {
 	success: boolean;
 	synced: number;
 	skipped: number;
+	pruned: number;
 	commitSha: string | null;
 	error?: string;
 }
@@ -53,6 +54,13 @@ export async function performInitialSync(
 			storageClient
 		);
 
+		// The archive is the whole branch, so a committed file it no longer has (deleted
+		// or renamed on GitHub since the last sync) goes too.
+		const stale = (await storageClient.listFiles(projectId)).filter((path) => !result.kept.has(path));
+		for (const path of stale) {
+			await storageClient.deleteFile(projectId, path);
+		}
+
 		// If we couldn't get commit SHA from ZIP response, fetch it directly
 		let commitSha = result.commitSha;
 		if (!commitSha) {
@@ -66,6 +74,7 @@ export async function performInitialSync(
 			success: true,
 			synced: result.synced,
 			skipped: result.skipped,
+			pruned: stale.length,
 			commitSha,
 		};
 	} catch (err) {
@@ -78,6 +87,7 @@ export async function performInitialSync(
 			success: false,
 			synced: 0,
 			skipped: 0,
+			pruned: 0,
 			commitSha: null,
 			error: errorMessage,
 		};

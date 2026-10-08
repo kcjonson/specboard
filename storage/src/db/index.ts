@@ -78,3 +78,19 @@ export async function closeDb(): Promise<void> {
 		console.log('Database pool closed');
 	}
 }
+
+/** Run `fn` in one transaction on one pooled connection; any throw rolls it all back. */
+export async function transaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+	const client = await pool.instance.connect();
+	try {
+		await client.query('BEGIN');
+		const result = await fn(client);
+		await client.query('COMMIT');
+		return result;
+	} catch (err) {
+		await client.query('ROLLBACK').catch(() => {});
+		throw err;
+	} finally {
+		client.release();
+	}
+}

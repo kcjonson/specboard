@@ -7,12 +7,13 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
-import { PGlite } from '@electric-sql/pglite';
+import { PGlite, type Transaction } from '@electric-sql/pglite';
 
 const state = vi.hoisted(() => ({ db: undefined as PGlite | undefined }));
 
 vi.mock('./index.ts', () => ({
 	pool: { instance: { query: (text: string, params?: unknown[]) => state.db!.query(text, params) } },
+	transaction: <T>(fn: (client: Transaction) => Promise<T>) => state.db!.transaction(fn),
 }));
 
 import { getPendingChange, listPendingChanges, upsertPendingChange } from './queries.ts';

@@ -6,7 +6,8 @@
 
 import { Model } from './Model';
 import { prop } from './prop';
-import { fetchClient } from '@specboard/fetch';
+import { fetchClient, FetchError } from '@specboard/fetch';
+import { writeFailure } from './write-failure';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -191,8 +192,12 @@ export class GitStatusModel extends Model {
 			this.committing = false;
 			return response.sha ? { sha: response.sha } : null;
 		} catch (err) {
-			const errorMessage = err instanceof Error ? err.message : 'Commit failed';
-			this.commitError = { stage: 'commit', message: errorMessage };
+			// A refused commit (409: the branch moved, pull first) carries its CommitError
+			// in the body; anything else is the server's message or a fallback.
+			const sent = err instanceof FetchError ? (err.data as Partial<CommitResponse> | undefined)?.error : undefined;
+			this.commitError = typeof sent === 'object' && sent !== null
+				? sent
+				: { stage: 'commit', message: writeFailure(err, 'Commit failed', this.projectRef) };
 			this.committing = false;
 			return null;
 		}

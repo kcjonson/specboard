@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({ db: undefined as PGlite | undefined }));
 vi.mock('pg', async () => (await import('@specboard/db/test-support')).pgliteAsPg(() => state.db!));
 
 vi.mock('./shared/storage-client.ts', () => ({
-	createStorageClient: () => ({ putFile: vi.fn(async () => {}), deleteFile: vi.fn(async () => {}) }),
+	createStorageClient: () => ({ putFile: vi.fn(async () => {}), deleteFile: vi.fn(async () => {}), listFiles: vi.fn(async () => []) }),
 }));
 
 import { migratedDb } from '@specboard/db/test-support';

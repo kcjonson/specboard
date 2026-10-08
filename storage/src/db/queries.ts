@@ -2,7 +2,7 @@
  * Database queries for storage service.
  */
 
-import { pool } from './index.ts';
+import { pool, transaction } from './index.ts';
 
 // Size threshold for inline storage vs S3
 const INLINE_THRESHOLD = 100 * 1024; // 100KB
@@ -164,11 +164,6 @@ export async function deleteProjectDocument(projectId: string, path: string): Pr
 	);
 }
 
-export async function deleteAllProjectDocuments(projectId: string): Promise<void> {
-	const db = pool.instance;
-	await db.query(`DELETE FROM project_documents WHERE project_id = $1`, [projectId]);
-}
-
 // ============================================================
 // Pending Changes (uncommitted user edits)
 // ============================================================
@@ -292,12 +287,63 @@ export async function deletePendingChange(
 	);
 }
 
-export async function deleteAllPendingChanges(projectId: string, userId: string): Promise<void> {
-	const db = pool.instance;
-	await db.query(
-		`DELETE FROM pending_changes WHERE project_id = $1 AND user_id = $2`,
-		[projectId, userId]
-	);
+/** A committed file's new metadata; its content is already at its S3 key. */
+export interface PromotedDocument {
+	path: string;
+	s3Key: string;
+	contentHash: string;
+	sizeBytes: number;
+}
+
+/** A pending change the commit took, as it was when the commit read it. */
+export interface CommittedPendingChange {
+	path: string;
+	/** The change's updatedAt as the commit read it (millisecond precision). */
+	updatedAt: string;
+}
+
+/**
+ * Make a commit the project's committed files, in one transaction: upsert what it
+ * wrote, remove what it deleted, and clear the committer's pending changes it took. A
+ * pending change saved again after the commit read it no longer matches its updatedAt
+ * and stays pending. Returns the cleared changes that kept their content in S3.
+ */
+export async function promoteCommit(
+	projectId: string,
+	userId: string,
+	written: PromotedDocument[],
+	deleted: string[],
+	taken: CommittedPendingChange[]
+): Promise<Array<{ path: string; s3Key: string }>> {
+	return transaction(async (client) => {
+		for (const doc of written) {
+			await client.query(
+				`INSERT INTO project_documents (project_id, path, s3_key, content_hash, size_bytes, synced_at)
+				 VALUES ($1, $2, $3, $4, $5, NOW())
+				 ON CONFLICT (project_id, path) DO UPDATE SET
+				   s3_key = EXCLUDED.s3_key,
+				   content_hash = EXCLUDED.content_hash,
+				   size_bytes = EXCLUDED.size_bytes,
+				   synced_at = NOW()`,
+				[projectId, doc.path, doc.s3Key, doc.contentHash, doc.sizeBytes]
+			);
+		}
+		if (deleted.length > 0) {
+			await client.query(
+				'DELETE FROM project_documents WHERE project_id = $1 AND path = ANY($2)',
+				[projectId, deleted]
+			);
+		}
+		const cleared = await client.query<{ path: string; s3_key: string | null }>(
+			`DELETE FROM pending_changes p
+			 USING unnest($3::text[], $4::timestamptz[]) AS c(path, updated_at)
+			 WHERE p.project_id = $1 AND p.user_id = $2 AND p.path = c.path
+			   AND date_trunc('milliseconds', p.updated_at) = c.updated_at
+			 RETURNING p.path, p.s3_key`,
+			[projectId, userId, taken.map((t) => t.path), taken.map((t) => t.updatedAt)]
+		);
+		return cleared.rows.flatMap((row) => (row.s3_key ? [{ path: row.path, s3Key: row.s3_key }] : []));
+	});
 }
 
 /**

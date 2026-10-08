@@ -1,9 +1,11 @@
 /**
- * Spec links follow a file's rename or delete when that change is committed, not when it
- * is drafted (docs/specs/project-storage.md, Pending changes and spec links). On a cloud
- * project a draft is one user's: every other member still has the file, so its links
- * must stay put until the commit lands. A local project writes straight to disk, so its
- * links follow at once.
+ * Committing a cloud project's drafts (docs/specs/project-storage.md, Committing).
+ *
+ * Spec links follow a file's rename or delete when that change is committed, not when
+ * it is drafted: a draft is one user's, every other member still has the file, so its
+ * links stay put until the commit lands. A local project writes straight to disk, so
+ * its links follow at once. A commit GitHub accepts becomes the committed files every
+ * member reads; one GitHub refuses because the branch moved changes nothing.
  *
  * The real handlers and CloudStorageProvider run against migrated Postgres (PGlite) for
  * the links and an in-memory storage service for files and pending changes; only the
@@ -23,12 +25,17 @@ const state = vi.hoisted(() => ({ db: undefined as PGlite | undefined }));
 /**
  * The storage service's contract, in memory: committed files shared by everyone, and
  * pending changes per user. A write that names no rename origin keeps the one the
- * change already has; a deletion has none (storage/src/db/queries.ts).
+ * change already has; a deletion has none (storage/src/db/queries.ts). Promoting a
+ * commit writes its files and clears the pending changes it took, unless one was saved
+ * again since (its updatedAt moved); `failPromote` makes it fail before changing
+ * anything, as a rolled-back transaction does.
  */
 const storage = vi.hoisted(() => {
-	interface Pending { content: string | null; action: Action; renamedFrom: string | null }
+	interface Pending { content: string | null; action: Action; renamedFrom: string | null; updatedAt: string }
 	const committed = new Map<string, string>();
 	const pending = new Map<string, Map<string, Pending>>();
+	let clock = 0;
+	const flags = { failPromote: false };
 	const mine = (userId: string): Map<string, Pending> => {
 		let changes = pending.get(userId);
 		if (!changes) {
@@ -37,8 +44,8 @@ const storage = vi.hoisted(() => {
 		}
 		return changes;
 	};
-	const list = (userId: string): Array<Pending & { path: string; updatedAt: string }> =>
-		[...mine(userId)].map(([path, change]) => ({ path, ...change, updatedAt: 'now' }));
+	const list = (userId: string): Array<Pending & { path: string }> =>
+		[...mine(userId)].map(([path, change]) => ({ path, ...change }));
 	const client = {
 		listFiles: async () => [...committed.keys()].map((path) => ({ path, contentHash: 'h', sizeBytes: 1, syncedAt: 'then' })),
 		getFile: async (_projectId: string, path: string) => {
@@ -49,23 +56,27 @@ const storage = vi.hoisted(() => {
 		listPendingChangesWithContent: async (_projectId: string, userId: string) => list(userId),
 		getPendingChange: async (_projectId: string, userId: string, path: string) => {
 			const change = mine(userId).get(path);
-			return change ? { path, ...change, updatedAt: 'now' } : null;
+			return change ? { path, ...change } : null;
 		},
 		putPendingChange: async (_projectId: string, userId: string, path: string, content: string | null, action: Action, renamedFrom: string | null) => {
 			const kept = renamedFrom ?? mine(userId).get(path)?.renamedFrom ?? null;
-			mine(userId).set(path, { content, action, renamedFrom: action === 'deleted' ? null : kept });
+			const updatedAt = new Date(Date.UTC(2026, 0, 1) + ++clock).toISOString();
+			mine(userId).set(path, { content, action, renamedFrom: action === 'deleted' ? null : kept, updatedAt });
 			return { path, action, isLarge: false };
 		},
 		deletePendingChange: async (_projectId: string, userId: string, path: string) => {
 			mine(userId).delete(path);
 		},
-		deleteAllPendingChanges: async (_projectId: string, userId: string) => {
-			const count = mine(userId).size;
-			mine(userId).clear();
-			return { deleted: true, count };
+		promoteCommit: async (_projectId: string, userId: string, changes: Array<{ path: string; action: Action; content: string | null; updatedAt: string }>) => {
+			if (flags.failPromote) throw new Error('Storage service error: transaction rolled back');
+			for (const change of changes) {
+				if (change.action === 'deleted') committed.delete(change.path);
+				else committed.set(change.path, change.content!);
+				if (mine(userId).get(change.path)?.updatedAt === change.updatedAt) mine(userId).delete(change.path);
+			}
 		},
 	};
-	return { committed, pending, mine, client };
+	return { committed, pending, mine, client, flags };
 });
 
 /** A local project's checkout, in memory. */
@@ -104,9 +115,9 @@ vi.mock('@specboard/auth', async (importOriginal) => ({
 
 import { migratedDb } from '@specboard/db/test-support';
 import { applySpecPathChanges } from '@specboard/db';
-import { committedSpecPathChanges, createGitHubCommit } from '../../services/github-commit.ts';
-import { handleDeleteFile, handleReadFile, handleRenameFile, handleWriteFile } from './file-handlers.ts';
-import { handleCommit, handleRestore } from './git-handlers.ts';
+import { committedSpecPathChanges, createGitHubCommit, STALE_BRANCH_MESSAGE } from '../../services/github-commit.ts';
+import { handleCreateFile, handleDeleteFile, handleReadFile, handleRenameFile, handleWriteFile } from './file-handlers.ts';
+import { handleCommit, handleGetGitStatus, handleRestore } from './git-handlers.ts';
 import { handleListSpecs } from '../specs.ts';
 import type { AppVariables } from '../../project-access.ts';
 
@@ -128,8 +139,8 @@ async function insertUser(db: PGlite, slug: string): Promise<string> {
 
 async function insertProject(db: PGlite, slug: string, key: string, mode: 'cloud' | 'local', repository: object): Promise<ResolvedProject> {
 	const result = await db.query<{ id: string }>(
-		`INSERT INTO projects (name, owner_id, slug, key, storage_mode, repository, root_paths)
-		 VALUES ($1, $2, $1, $3, $4, $5, '["/"]') RETURNING id`,
+		`INSERT INTO projects (name, owner_id, slug, key, storage_mode, repository, root_paths, last_synced_commit_sha)
+		 VALUES ($1, $2, $1, $3, $4, $5, '["/"]', 'base') RETURNING id`,
 		[slug, alice, key, mode, JSON.stringify(repository)]
 	);
 	return { id: result.rows[0]!.id, slug, key, ownerSlug: 'acme' };
@@ -156,7 +167,9 @@ function createApp(): Hono<{ Variables: AppVariables }> {
 		await next();
 	});
 	app.get('/api/projects/:owner/:project/files', handleReadFile);
+	app.post('/api/projects/:owner/:project/files', (context) => handleCreateFile(context, redis));
 	app.put('/api/projects/:owner/:project/files', (context) => handleWriteFile(context, redis));
+	app.get('/api/projects/:owner/:project/git/status', handleGetGitStatus);
 	app.put('/api/projects/:owner/:project/files/rename', (context) => handleRenameFile(context, redis));
 	app.delete('/api/projects/:owner/:project/files', (context) => handleDeleteFile(context, redis));
 	app.post('/api/projects/:owner/:project/git/restore', (context) => handleRestore(context, redis));
@@ -185,6 +198,19 @@ async function specPaths(as: 'alice' | 'erin', project = 'docs'): Promise<string
 async function specLinks(): Promise<string[]> {
 	const response = await call('alice', 'GET', 'items/DOC-1/specs');
 	return ((await response.json()) as Array<{ path: string; type: string }>).map((s) => `${s.path} ${s.type}`).sort();
+}
+
+/** An edit and a delete, for tests that only need some draft to commit. */
+async function draftAnEditAndADelete(): Promise<void> {
+	await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, edited' });
+	await deleteFile('/docs/other.md');
+}
+
+async function syncedSha(): Promise<string | null> {
+	const result = await state.db!.query<{ last_synced_commit_sha: string | null }>(
+		'SELECT last_synced_commit_sha FROM projects WHERE id = $1', [projects.get('docs')!.id]
+	);
+	return result.rows[0]!.last_synced_commit_sha;
 }
 
 const deleteFile = (path: string, project = 'docs'): Promise<Response> =>
@@ -223,11 +249,13 @@ beforeEach(async () => {
 
 	storage.committed.clear();
 	storage.pending.clear();
+	storage.flags.failPromote = false;
 	storage.committed.set('docs/spec.md', '# Spec');
 	storage.committed.set('docs/other.md', '# Other');
 	disk.files = new Set(['/docs/spec.md', '/docs/other.md']);
 
 	const db = state.db!;
+	await db.query("UPDATE projects SET last_synced_commit_sha = 'base'");
 	await db.query('DELETE FROM epic_specs');
 	for (const [itemId, projectId] of [[cloudItemId, projects.get('docs')!.id], [localItemId, projects.get('local')!.id]]) {
 		await db.query(
@@ -310,7 +338,7 @@ describe('committing a cloud draft', () => {
 	it('changes no links when GitHub refuses the commit', async () => {
 		vi.mocked(createGitHubCommit).mockResolvedValue({
 			success: false,
-			error: 'Remote has new changes. Sync before committing.',
+			error: STALE_BRANCH_MESSAGE,
 			conflictDetected: true,
 		});
 		await deleteFile('/docs/other.md');
@@ -365,39 +393,132 @@ describe('committing renames that reuse a path', () => {
 	});
 });
 
-describe('when the links can\'t be updated after GitHub took the commit', () => {
-	it('keeps the pending changes and the sync point, so the changes can be applied again', async () => {
+describe('when the links can\'t be recorded after GitHub took the commit', () => {
+	it('leaves the sync point and the links, so the pull that brings the commit in moves them once', async () => {
 		const db = state.db!;
 		const projectId = projects.get('docs')!.id;
-		await db.query("UPDATE projects SET last_synced_commit_sha = 'base' WHERE id = $1", [projectId]);
 		await db.exec(`
 			CREATE FUNCTION refuse_link_writes() RETURNS trigger LANGUAGE plpgsql AS $$
 			BEGIN RAISE EXCEPTION 'links unavailable'; END $$;
 			CREATE TRIGGER refuse_link_writes BEFORE UPDATE OR DELETE ON epic_specs
 				FOR EACH STATEMENT EXECUTE FUNCTION refuse_link_writes();
 		`);
+		let changes;
 		try {
 			await renameFile('/docs/spec.md', '/docs/moved.md');
 			await deleteFile('/docs/other.md');
+			changes = committedSpecPathChanges(await storage.client.listPendingChanges(projectId, alice));
 
 			const response = await commit();
 
 			expect(response.status).toBe(200);
-			expect(await response.json()).toMatchObject({ success: true, warning: expect.any(String) });
+			expect(await response.json()).toMatchObject({ success: true, sha: 'c0ffee', warning: expect.any(String) });
 		} finally {
 			await db.exec('DROP TRIGGER refuse_link_writes ON epic_specs; DROP FUNCTION refuse_link_writes();');
 		}
 
+		// The files were promoted; links and sync point were not, together.
+		expect([...storage.committed.keys()].sort()).toEqual(['docs/moved.md']);
 		expect(await specPaths('alice')).toEqual(['/docs/other.md', '/docs/spec.md']);
-		expect(storage.mine(alice).size).toBe(3);
-		const synced = await db.query<{ last_synced_commit_sha: string }>('SELECT last_synced_commit_sha FROM projects WHERE id = $1', [projectId]);
-		expect(synced.rows[0]!.last_synced_commit_sha).toBe('base');
+		expect(await syncedSha()).toBe('base');
 
-		const changes = committedSpecPathChanges(await storage.client.listPendingChanges(projectId, alice));
-		await applySpecPathChanges(projectId, changes);
+		// What the next pull's sync applies for the same commit.
 		await applySpecPathChanges(projectId, changes);
 
 		expect(await specPaths('alice')).toEqual(['/docs/moved.md']);
+	});
+});
+
+describe('after a commit', () => {
+	async function draftEverything(): Promise<void> {
+		expect((await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, edited' })).status).toBe(200);
+		expect((await call('alice', 'POST', 'files?path=/docs/new.md')).status).toBe(200);
+		expect((await call('alice', 'PUT', 'files?path=/docs/new.md', { content: '# New' })).status).toBe(200);
+		expect((await deleteFile('/docs/other.md')).status).toBe(200);
+		expect((await renameFile('/docs/spec.md', '/guides/spec.md')).status).toBe(200);
+	}
+
+	async function read(as: 'alice' | 'erin', path: string): Promise<string | number> {
+		const response = await call(as, 'GET', `files?path=${encodeURIComponent(path)}`);
+		return response.status === 200 ? ((await response.json()) as { content: string }).content : response.status;
+	}
+
+	it('shows the committer the committed files, with no drafts left', async () => {
+		await draftEverything();
+
+		expect((await commit()).status).toBe(200);
+
+		expect(storage.mine(alice).size).toBe(0);
+		expect(await read('alice', '/guides/spec.md')).toBe('# Spec, edited');
+		expect(await read('alice', '/docs/new.md')).toBe('# New');
+		expect(await read('alice', '/docs/other.md')).toBe(404);
+		expect(await read('alice', '/docs/spec.md')).toBe(404);
+		const status = await call('alice', 'GET', 'git/status');
+		expect(((await status.json()) as { changedFiles: unknown[] }).changedFiles).toEqual([]);
+		expect(await syncedSha()).toBe('c0ffee');
+	});
+
+	it('shows another member the commit, which they didn\'t see while it was a draft', async () => {
+		await draftEverything();
+		expect(await read('erin', '/docs/spec.md')).toBe('# Spec');
+		expect(await read('erin', '/docs/new.md')).toBe(404);
+
+		await commit();
+
+		expect(await read('erin', '/guides/spec.md')).toBe('# Spec, edited');
+		expect(await read('erin', '/docs/new.md')).toBe('# New');
+		expect(await read('erin', '/docs/other.md')).toBe(404);
+		expect(await read('erin', '/docs/spec.md')).toBe(404);
+	});
+
+	it('keeps a draft saved while the commit was in flight', async () => {
+		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Committed' });
+		vi.mocked(createGitHubCommit).mockImplementation(async () => {
+			await storage.client.putPendingChange('', alice, 'docs/spec.md', '# Saved during the commit', 'modified', null);
+			return { success: true, sha: 'c0ffee', url: 'https://github.com/acme/docs/commit/c0ffee', filesCommitted: 1 };
+		});
+
+		await commit();
+
+		expect(storage.committed.get('docs/spec.md')).toBe('# Committed');
+		expect(await read('alice', '/docs/spec.md')).toBe('# Saved during the commit');
+	});
+});
+
+describe('a commit GitHub refuses because the branch moved', () => {
+	it('answers 409 with the reason, commits against the last sync, and changes nothing', async () => {
+		vi.mocked(createGitHubCommit).mockResolvedValue({ success: false, error: STALE_BRANCH_MESSAGE, conflictDetected: true });
+		await draftAnEditAndADelete();
+
+		const response = await commit();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			success: false,
+			conflictDetected: true,
+			error: { stage: 'commit', message: STALE_BRANCH_MESSAGE },
+		});
+		expect(vi.mocked(createGitHubCommit).mock.calls[0]![0]).toMatchObject({ expectedHeadOid: 'base' });
+		expect(storage.mine(alice).size).toBe(2);
+		expect([...storage.committed.entries()].sort()).toEqual([['docs/other.md', '# Other'], ['docs/spec.md', '# Spec']]);
+		expect(await specPaths('alice')).toEqual(['/docs/other.md', '/docs/spec.md']);
+		expect(await syncedSha()).toBe('base');
+	});
+});
+
+describe('when storage can\'t take the commit after GitHub did', () => {
+	it('answers success with a warning and changes nothing here, so a pull brings it in', async () => {
+		storage.flags.failPromote = true;
+		await draftAnEditAndADelete();
+
+		const response = await commit();
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ success: true, sha: 'c0ffee', warning: expect.stringContaining('Pull') });
+		expect(storage.mine(alice).size).toBe(2);
+		expect([...storage.committed.entries()].sort()).toEqual([['docs/other.md', '# Other'], ['docs/spec.md', '# Spec']]);
+		expect(await specPaths('alice')).toEqual(['/docs/other.md', '/docs/spec.md']);
+		expect(await syncedSha()).toBe('base');
 	});
 });
 
