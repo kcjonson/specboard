@@ -15,8 +15,11 @@ export interface StreamResult {
 	synced: number;
 	skipped: number;
 	errors: string[];
-	commitSha: string | null;
-	/** Paths storage should keep: every file synced, and every one that failed to sync (stale beats missing). */
+	/**
+	 * Every file path in the archive, whether this sync uploaded it or not: a file the
+	 * filter skips or that failed to upload is still on the branch, so pruning must
+	 * leave whatever storage has for it.
+	 */
 	kept: Set<string>;
 }
 
@@ -37,7 +40,6 @@ export async function streamGitHubZipToStorage(
 		synced: 0,
 		skipped: 0,
 		errors: [],
-		commitSha: null,
 		kept: new Set(),
 	};
 
@@ -65,16 +67,6 @@ export async function streamGitHubZipToStorage(
 
 	if (!response.body) {
 		throw new Error('No response body from GitHub');
-	}
-
-	// Extract commit SHA from the redirect URL or Content-Disposition header
-	// GitHub includes the SHA in the archive filename: repo-{sha}.zip
-	const contentDisposition = response.headers.get('content-disposition');
-	if (contentDisposition) {
-		const match = contentDisposition.match(/filename=.*?-([a-f0-9]+)\.zip/i);
-		if (match && match[1]) {
-			result.commitSha = match[1];
-		}
 	}
 
 	// Convert web ReadableStream to Node.js Readable
@@ -107,6 +99,7 @@ export async function streamGitHubZipToStorage(
 				entry.autodrain();
 				return;
 			}
+			result.kept.add(path);
 
 			// Skip files in ignored directories (early check before reading)
 			if (shouldSkipDirectory(path)) {
@@ -141,13 +134,11 @@ export async function streamGitHubZipToStorage(
 				// Upload to storage service
 				await storageClient.putFile(projectId, path, content);
 				result.synced++;
-				result.kept.add(path);
 			} catch (err) {
 				result.errors.push(
 					`Failed to sync ${path}: ${err instanceof Error ? err.message : String(err)}`
 				);
 				result.skipped++;
-				result.kept.add(path);
 			}
 		};
 

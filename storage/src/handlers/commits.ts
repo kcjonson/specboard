@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import crypto from 'crypto';
 
-import { promoteCommit, type PromotedDocument } from '../db/queries.ts';
+import { getPendingChange, getProjectDocument, promoteCommit, type PromotedDocument } from '../db/queries.ts';
 import { fileKey, putFileContent, deleteFileContent, deletePendingContent } from '../services/s3.ts';
 import { validatePath } from './utils.ts';
 
@@ -100,12 +100,16 @@ commitRoutes.post('/:projectId/:userId', async (c) => {
 		changes.map((change) => ({ path: change.path, updatedAt: change.updatedAt }))
 	);
 
-	// The rows are gone, so nothing reads these objects any more; a failure only leaves
-	// an orphan behind.
+	// The rows are gone, so nothing reads these objects any more, unless a write since
+	// the transaction (a sync, another commit, a new draft) brought the path back and
+	// reuses the same key: skip any path with a live row again. A failure only leaves an
+	// orphan behind.
 	for (const path of deleted) {
+		if (await getProjectDocument(projectId, path)) continue;
 		await deleteFileContent(projectId, path).catch((err) => console.warn(`Failed to delete S3 content for ${path}:`, err));
 	}
 	for (const { path } of clearedLarge) {
+		if (await getPendingChange(projectId, userId, path)) continue;
 		await deletePendingContent(projectId, userId, path).catch((err) => console.warn(`Failed to delete pending S3 content for ${path}:`, err));
 	}
 

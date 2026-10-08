@@ -18,7 +18,7 @@ export interface ApiSpec {
 	createdAt: string;
 }
 
-export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+export type SyncStatus = 'pending' | 'syncing' | 'committing' | 'completed' | 'failed';
 
 export interface ApiProject {
 	id: string;

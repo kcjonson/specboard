@@ -109,7 +109,7 @@ export function committedSpecPathChanges(changes: CommittedChange[]): SpecPathCh
 }
 
 /** What the editor shows when the branch moved past the caller's last sync. */
-export const STALE_BRANCH_MESSAGE = 'The branch has commits you haven\'t pulled yet. Pull, then commit again.';
+export const STALE_BRANCH_MESSAGE = 'The branch has commits you haven\'t pulled yet. Pull first, then commit again. If those commits changed files you have drafts of, check those drafts before you commit: a draft replaces the whole file.';
 
 /**
  * Create a commit on GitHub using the GraphQL createCommitOnBranch mutation.

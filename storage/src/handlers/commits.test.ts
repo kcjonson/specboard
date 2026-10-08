@@ -140,6 +140,28 @@ describe('POST /commits/:projectId/:userId', () => {
 		expect(state.s3.get(`${PROJECT}/files/docs/old.md`)).toBe('# Old');
 	});
 
+	it('keeps a deleted file\'s content when its path has a live row again by cleanup time', async () => {
+		// Stands in for a write that brought the path back between the transaction and
+		// the S3 cleanup: the row the commit deletes comes straight back.
+		await state.db!.exec(`
+			CREATE FUNCTION restore_document() RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN
+				INSERT INTO project_documents (project_id, path, s3_key, content_hash, size_bytes)
+				VALUES (OLD.project_id, OLD.path, OLD.s3_key, 'rewritten', OLD.size_bytes);
+				RETURN NULL;
+			END $$;
+			CREATE TRIGGER restore_document AFTER DELETE ON project_documents
+				FOR EACH ROW WHEN (pg_trigger_depth() = 0) EXECUTE FUNCTION restore_document();
+		`);
+		try {
+			expect((await promote({ changes: await theCommit() })).status).toBe(200);
+		} finally {
+			await state.db!.exec('DROP TRIGGER restore_document ON project_documents; DROP FUNCTION restore_document();');
+		}
+
+		expect(state.s3.get(`${PROJECT}/files/docs/old.md`)).toBe('# Old');
+	});
+
 	it.each([
 		['no changes', { changes: [] }],
 		['a path that escapes', { changes: [{ path: '../x.md', action: 'deleted', content: null, updatedAt: '2026-01-01T00:00:00.000Z' }] }],

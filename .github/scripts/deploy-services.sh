@@ -63,9 +63,11 @@ wait_stable() {
   fi
 }
 
-# Storage goes first and must be stable before the services that call it roll out:
-# its migrations only add, so the old api runs fine against it, while a new api
-# talking to an old storage task can send fields that are silently dropped.
+# Storage goes first and must be stable before the services that call it roll out,
+# because a new api talking to an old storage task can send fields that are silently
+# dropped or call routes that don't exist yet. Its schema migrations only add, but a
+# release can still remove a route the old api calls, which then fails until the api
+# rolls out; such releases say so in their notes and go out at a quiet moment.
 # (Only deployed if the service exists and has desired count > 0.)
 STORAGE_STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services storage \
   --region "$AWS_REGION" --query 'services[0].status' --output text 2>/dev/null || echo "MISSING")

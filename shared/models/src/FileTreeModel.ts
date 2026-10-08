@@ -41,7 +41,7 @@ export interface FileEntry {
 /** Nested tree for expanded paths - compact format */
 export type ExpandedTree = { [name: string]: ExpandedTree };
 
-export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+export type SyncStatus = 'pending' | 'syncing' | 'committing' | 'completed' | 'failed';
 
 interface FileTreeResponse {
 	files: FileEntry[];

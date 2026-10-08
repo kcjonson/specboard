@@ -4,7 +4,7 @@ import { Card, StatusGlyph, Icon } from '@specboard/ui';
 import { ProjectKey } from '@shared/planning';
 import styles from './ProjectCard.module.css';
 
-export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+export type SyncStatus = 'pending' | 'syncing' | 'committing' | 'completed' | 'failed';
 
 export interface ItemCounts {
 	ready: number;

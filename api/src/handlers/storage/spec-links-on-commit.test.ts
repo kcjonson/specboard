@@ -115,13 +115,18 @@ vi.mock('@specboard/auth', async (importOriginal) => ({
 
 import { migratedDb } from '@specboard/db/test-support';
 import { applySpecPathChanges } from '@specboard/db';
-import { committedSpecPathChanges, createGitHubCommit, STALE_BRANCH_MESSAGE } from '../../services/github-commit.ts';
+import { comparedSpecPathChanges } from '@specboard/sync-lambda';
+import { createGitHubCommit, STALE_BRANCH_MESSAGE } from '../../services/github-commit.ts';
 import { handleCreateFile, handleDeleteFile, handleReadFile, handleRenameFile, handleWriteFile } from './file-handlers.ts';
 import { handleCommit, handleGetGitStatus, handleRestore } from './git-handlers.ts';
 import { handleListSpecs } from '../specs.ts';
 import type { AppVariables } from '../../project-access.ts';
 
 const redis = {} as Redis;
+
+/** The sync point the drafts were made against, and the commit GitHub answers with. */
+const BASE = 'fedcba9876543210fedcba9876543210fedcba98';
+const COMMIT_SHA = 'c0ffee0000000000000000000000000000000000';
 
 let alice: string;
 let erin: string;
@@ -140,8 +145,8 @@ async function insertUser(db: PGlite, slug: string): Promise<string> {
 async function insertProject(db: PGlite, slug: string, key: string, mode: 'cloud' | 'local', repository: object): Promise<ResolvedProject> {
 	const result = await db.query<{ id: string }>(
 		`INSERT INTO projects (name, owner_id, slug, key, storage_mode, repository, root_paths, last_synced_commit_sha)
-		 VALUES ($1, $2, $1, $3, $4, $5, '["/"]', 'base') RETURNING id`,
-		[slug, alice, key, mode, JSON.stringify(repository)]
+		 VALUES ($1, $2, $1, $3, $4, $5, '["/"]', $6) RETURNING id`,
+		[slug, alice, key, mode, JSON.stringify(repository), BASE]
 	);
 	return { id: result.rows[0]!.id, slug, key, ownerSlug: 'acme' };
 }
@@ -245,7 +250,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	vi.mocked(createGitHubCommit).mockReset();
-	vi.mocked(createGitHubCommit).mockResolvedValue({ success: true, sha: 'c0ffee', url: 'https://github.com/acme/docs/commit/c0ffee', filesCommitted: 1 });
+	vi.mocked(createGitHubCommit).mockResolvedValue({ success: true, sha: COMMIT_SHA, url: 'https://github.com/acme/docs/commit/c0ffee0', filesCommitted: 1 });
 
 	storage.committed.clear();
 	storage.pending.clear();
@@ -255,7 +260,7 @@ beforeEach(async () => {
 	disk.files = new Set(['/docs/spec.md', '/docs/other.md']);
 
 	const db = state.db!;
-	await db.query("UPDATE projects SET last_synced_commit_sha = 'base'");
+	await db.query('UPDATE projects SET last_synced_commit_sha = $1, sync_status = NULL, sync_started_at = NULL', [BASE]);
 	await db.query('DELETE FROM epic_specs');
 	for (const [itemId, projectId] of [[cloudItemId, projects.get('docs')!.id], [localItemId, projects.get('local')!.id]]) {
 		await db.query(
@@ -301,7 +306,7 @@ describe('committing a cloud draft', () => {
 		const response = await commit();
 
 		expect(response.status).toBe(200);
-		expect(await response.json()).toMatchObject({ success: true, sha: 'c0ffee' });
+		expect(await response.json()).toMatchObject({ success: true, sha: COMMIT_SHA });
 		expect(await specPaths('alice')).toEqual(['/docs/other.md']);
 	});
 
@@ -394,38 +399,139 @@ describe('committing renames that reuse a path', () => {
 });
 
 describe('when the links can\'t be recorded after GitHub took the commit', () => {
-	it('leaves the sync point and the links, so the pull that brings the commit in moves them once', async () => {
-		const db = state.db!;
-		const projectId = projects.get('docs')!.id;
-		await db.exec(`
-			CREATE FUNCTION refuse_link_writes() RETURNS trigger LANGUAGE plpgsql AS $$
-			BEGIN RAISE EXCEPTION 'links unavailable'; END $$;
+	async function refuseLinkWrites(when: 'always' | 'once'): Promise<void> {
+		await state.db!.exec(`
+			CREATE SEQUENCE IF NOT EXISTS link_write_attempts;
+			ALTER SEQUENCE link_write_attempts RESTART;
+			CREATE OR REPLACE FUNCTION refuse_link_writes() RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN
+				-- A sequence isn't rolled back with the transaction, so it counts attempts.
+				IF '${when}' = 'always' OR nextval('link_write_attempts') = 1 THEN
+					RAISE EXCEPTION 'links unavailable';
+				END IF;
+				RETURN NULL;
+			END $$;
 			CREATE TRIGGER refuse_link_writes BEFORE UPDATE OR DELETE ON epic_specs
 				FOR EACH STATEMENT EXECUTE FUNCTION refuse_link_writes();
 		`);
-		let changes;
+	}
+
+	async function allowLinkWrites(): Promise<void> {
+		await state.db!.exec('DROP TRIGGER refuse_link_writes ON epic_specs;');
+	}
+
+	it('retries, so a passing failure still lands the links and the sync point', async () => {
+		await refuseLinkWrites('once');
 		try {
 			await renameFile('/docs/spec.md', '/docs/moved.md');
 			await deleteFile('/docs/other.md');
-			changes = committedSpecPathChanges(await storage.client.listPendingChanges(projectId, alice));
+
+			const response = await commit();
+
+			expect(await response.json()).toEqual(expect.not.objectContaining({ warning: expect.anything() }));
+		} finally {
+			await allowLinkWrites();
+		}
+
+		expect(await specPaths('alice')).toEqual(['/docs/moved.md']);
+		expect(await syncedSha()).toBe(COMMIT_SHA);
+	});
+
+	it('leaves links and sync point together when it keeps failing; the pull that recovers can drop links', async () => {
+		await refuseLinkWrites('always');
+		try {
+			await renameFile('/docs/spec.md', '/docs/moved.md');
+			await call('alice', 'PUT', 'files?path=/docs/moved.md', { content: '# Rewritten from scratch' });
+			await deleteFile('/docs/other.md');
 
 			const response = await commit();
 
 			expect(response.status).toBe(200);
-			expect(await response.json()).toMatchObject({ success: true, sha: 'c0ffee', warning: expect.any(String) });
+			expect(await response.json()).toMatchObject({ success: true, sha: COMMIT_SHA, warning: expect.stringContaining('Pull') });
 		} finally {
-			await db.exec('DROP TRIGGER refuse_link_writes ON epic_specs; DROP FUNCTION refuse_link_writes();');
+			await allowLinkWrites();
 		}
 
 		// The files were promoted; links and sync point were not, together.
 		expect([...storage.committed.keys()].sort()).toEqual(['docs/moved.md']);
 		expect(await specPaths('alice')).toEqual(['/docs/other.md', '/docs/spec.md']);
-		expect(await syncedSha()).toBe('base');
+		expect(await syncedSha()).toBe(BASE);
 
-		// What the next pull's sync applies for the same commit.
-		await applySpecPathChanges(projectId, changes);
+		// The next pull reads GitHub's compare for the same commit. GitHub reports a
+		// rename whose content changed this much as a removal and an addition, so the
+		// renamed file's links are dropped rather than moved.
+		const projectId = projects.get('docs')!.id;
+		await applySpecPathChanges(projectId, comparedSpecPathChanges([
+			{ sha: 'b1', filename: 'docs/moved.md', status: 'added' },
+			{ sha: 'b2', filename: 'docs/spec.md', status: 'removed' },
+			{ sha: 'b3', filename: 'docs/other.md', status: 'removed' },
+		]));
 
-		expect(await specPaths('alice')).toEqual(['/docs/moved.md']);
+		expect(await specPaths('alice')).toEqual([]);
+	});
+});
+
+describe('the sync lock', () => {
+	async function lockState(): Promise<{ sync_status: string | null }> {
+		const result = await state.db!.query<{ sync_status: string | null }>('SELECT sync_status FROM projects WHERE id = $1', [projects.get('docs')!.id]);
+		return result.rows[0]!;
+	}
+
+	it('refuses a commit while a sync holds it, and changes nothing', async () => {
+		await state.db!.query("UPDATE projects SET sync_status = 'syncing', sync_started_at = NOW() WHERE id = $1", [projects.get('docs')!.id]);
+		await draftAnEditAndADelete();
+
+		const response = await commit();
+
+		expect(response.status).toBe(409);
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+		expect(storage.mine(alice).size).toBe(2);
+		expect(await lockState()).toEqual({ sync_status: 'syncing' });
+	});
+
+	it('takes over a lock its holder left for longer than any sync runs', async () => {
+		await state.db!.query("UPDATE projects SET sync_status = 'syncing', sync_started_at = NOW() - interval '1 hour' WHERE id = $1", [projects.get('docs')!.id]);
+		await draftAnEditAndADelete();
+
+		expect((await commit()).status).toBe(200);
+		expect(await syncedSha()).toBe(COMMIT_SHA);
+	});
+
+	it('is held while the commit runs and put back as it was afterwards', async () => {
+		await state.db!.query("UPDATE projects SET sync_status = 'completed' WHERE id = $1", [projects.get('docs')!.id]);
+		let during: { sync_status: string | null } | undefined;
+		vi.mocked(createGitHubCommit).mockImplementation(async () => {
+			during = await lockState();
+			return { success: false, error: 'GitHub API error: 502 Bad Gateway' };
+		});
+		await draftAnEditAndADelete();
+
+		expect((await commit()).status).toBe(500);
+
+		expect(during).toEqual({ sync_status: 'committing' });
+		expect(await lockState()).toEqual({ sync_status: 'completed' });
+	});
+
+	it('refuses a pull while a commit holds it', async () => {
+		const { trySetSyncPending } = await import('../github-sync.ts');
+		await state.db!.query("UPDATE projects SET sync_status = 'committing', sync_started_at = NOW() WHERE id = $1", [projects.get('docs')!.id]);
+
+		expect(await trySetSyncPending(projects.get('docs')!.id)).toBe(false);
+		expect(await lockState()).toEqual({ sync_status: 'committing' });
+	});
+});
+
+describe('a sync point stored as an abbreviated SHA', () => {
+	it('answers 409 to pull first instead of sending it to GitHub', async () => {
+		await state.db!.query("UPDATE projects SET last_synced_commit_sha = 'fedcba9' WHERE id = $1", [projects.get('docs')!.id]);
+		await draftAnEditAndADelete();
+
+		const response = await commit();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ conflictDetected: true, error: { message: expect.stringContaining('Pull first') } });
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+		expect(storage.mine(alice).size).toBe(2);
 	});
 });
 
@@ -455,7 +561,7 @@ describe('after a commit', () => {
 		expect(await read('alice', '/docs/spec.md')).toBe(404);
 		const status = await call('alice', 'GET', 'git/status');
 		expect(((await status.json()) as { changedFiles: unknown[] }).changedFiles).toEqual([]);
-		expect(await syncedSha()).toBe('c0ffee');
+		expect(await syncedSha()).toBe(COMMIT_SHA);
 	});
 
 	it('shows another member the commit, which they didn\'t see while it was a draft', async () => {
@@ -475,7 +581,7 @@ describe('after a commit', () => {
 		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Committed' });
 		vi.mocked(createGitHubCommit).mockImplementation(async () => {
 			await storage.client.putPendingChange('', alice, 'docs/spec.md', '# Saved during the commit', 'modified', null);
-			return { success: true, sha: 'c0ffee', url: 'https://github.com/acme/docs/commit/c0ffee', filesCommitted: 1 };
+			return { success: true, sha: COMMIT_SHA, url: 'https://github.com/acme/docs/commit/c0ffee0', filesCommitted: 1 };
 		});
 
 		await commit();
@@ -498,11 +604,11 @@ describe('a commit GitHub refuses because the branch moved', () => {
 			conflictDetected: true,
 			error: { stage: 'commit', message: STALE_BRANCH_MESSAGE },
 		});
-		expect(vi.mocked(createGitHubCommit).mock.calls[0]![0]).toMatchObject({ expectedHeadOid: 'base' });
+		expect(vi.mocked(createGitHubCommit).mock.calls[0]![0]).toMatchObject({ expectedHeadOid: BASE });
 		expect(storage.mine(alice).size).toBe(2);
 		expect([...storage.committed.entries()].sort()).toEqual([['docs/other.md', '# Other'], ['docs/spec.md', '# Spec']]);
 		expect(await specPaths('alice')).toEqual(['/docs/other.md', '/docs/spec.md']);
-		expect(await syncedSha()).toBe('base');
+		expect(await syncedSha()).toBe(BASE);
 	});
 });
 
@@ -514,11 +620,11 @@ describe('when storage can\'t take the commit after GitHub did', () => {
 		const response = await commit();
 
 		expect(response.status).toBe(200);
-		expect(await response.json()).toMatchObject({ success: true, sha: 'c0ffee', warning: expect.stringContaining('Pull') });
+		expect(await response.json()).toMatchObject({ success: true, sha: COMMIT_SHA, warning: expect.stringContaining('Pull') });
 		expect(storage.mine(alice).size).toBe(2);
 		expect([...storage.committed.entries()].sort()).toEqual([['docs/other.md', '# Other'], ['docs/spec.md', '# Spec']]);
 		expect(await specPaths('alice')).toEqual(['/docs/other.md', '/docs/spec.md']);
-		expect(await syncedSha()).toBe('base');
+		expect(await syncedSha()).toBe(BASE);
 	});
 });
 

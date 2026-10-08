@@ -6,12 +6,15 @@ import styles from './CommitErrorBanner.module.css';
 export interface CommitErrorBannerProps {
 	error: CommitError;
 	onRetry: () => void;
+	/** Offered instead of a retry when the branch moved: retrying would only fail again. */
+	onPull: () => void;
 	onDismiss: () => void;
 }
 
 export function CommitErrorBanner({
 	error,
 	onRetry,
+	onPull,
 	onDismiss,
 }: CommitErrorBannerProps): JSX.Element {
 	const getTitle = (): string => {
@@ -41,6 +44,7 @@ export function CommitErrorBanner({
 	};
 
 	const getActionLabel = (): string => {
+		if (error.conflictDetected) return 'Pull';
 		switch (error.stage) {
 			case 'commit':
 				return 'Try Again';
@@ -61,7 +65,7 @@ export function CommitErrorBanner({
 			</div>
 			<div class={styles.actions}>
 				{error.stage !== 'merge' && (
-					<Button onClick={onRetry} class="secondary size-sm">
+					<Button onClick={error.conflictDetected ? onPull : onRetry} class="secondary size-sm">
 						{getActionLabel()}
 					</Button>
 				)}

@@ -34,7 +34,7 @@ describe('GitStatusModel.commit', () => {
 		const gitStatus = model();
 		expect(await gitStatus.commit()).toBeNull();
 
-		expect(gitStatus.commitError).toEqual(reason);
+		expect(gitStatus.commitError).toEqual({ ...reason, conflictDetected: true });
 		expect(gitStatus.committing).toBe(false);
 	});
 
@@ -46,5 +46,54 @@ describe('GitStatusModel.commit', () => {
 
 		expect(gitStatus.commitError).toEqual({ stage: 'commit', message: 'You have view access to this project' });
 		expect(refreshProject).toHaveBeenCalledWith('acme/docs');
+	});
+
+	it('keeps the warning a commit that landed partway came back with', async () => {
+		vi.mocked(fetchClient.post).mockResolvedValue({ success: true, sha: 'c0ffee', warning: 'Committed to GitHub, but the editor\'s copy didn\'t update. Pull to bring the commit in.' });
+		vi.mocked(fetchClient.get).mockResolvedValue({ branch: 'main', ahead: 0, behind: 0, changedFiles: [] });
+
+		const gitStatus = model();
+		await gitStatus.commit();
+
+		expect(gitStatus.commitError).toBeNull();
+		expect(gitStatus.commitWarning).toContain('Pull');
+	});
+});
+
+describe('GitStatusModel.pull', () => {
+	it('waits for a cloud pull\'s sync to finish before refreshing', async () => {
+		vi.useFakeTimers();
+		try {
+			const calls: string[] = [];
+			vi.mocked(fetchClient.post).mockResolvedValue({ success: true, commits: 0, status: 'pending' });
+			const statuses = ['pending', 'syncing', 'completed'];
+			vi.mocked(fetchClient.get).mockImplementation(async (url: string) => {
+				calls.push(url);
+				if (url.endsWith('/sync/status')) return { status: statuses.shift(), error: null };
+				return { branch: 'main', ahead: 0, behind: 0, changedFiles: [] };
+			});
+
+			const pulled = model().pull();
+			await vi.runAllTimersAsync();
+
+			expect(await pulled).toEqual({ success: true, commits: 0 });
+			expect(calls).toEqual([
+				'/api/projects/acme/docs/sync/status',
+				'/api/projects/acme/docs/sync/status',
+				'/api/projects/acme/docs/sync/status',
+				'/api/projects/acme/docs/git/status',
+			]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('reports a sync that failed', async () => {
+		vi.mocked(fetchClient.post).mockResolvedValue({ success: true, commits: 0, status: 'pending' });
+		vi.mocked(fetchClient.get).mockResolvedValue({ status: 'failed', error: 'GitHub rate limit exceeded. Resets at 12:00' });
+
+		const gitStatus = model();
+		expect(await gitStatus.pull()).toEqual({ success: false });
+		expect(gitStatus.pullError).toBe('GitHub rate limit exceeded. Resets at 12:00');
 	});
 });

@@ -16,6 +16,9 @@ import {
 	type IncrementalSyncResult,
 } from './incremental-sync.ts';
 
+/** How a pull moves spec links for the commits it brings in (the API documents and tests its recovery path with it). */
+export { comparedSpecPathChanges } from './incremental-sync.ts';
+
 // Secrets Manager client - reused across invocations
 const secretsClient = new SecretsManagerClient({});
 

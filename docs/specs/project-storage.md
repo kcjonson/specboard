@@ -295,54 +295,89 @@ path in the same transaction because `(item_id, path)` is unique and not deferra
 A local project writes to disk at once, so its rename and delete handlers move or drop
 links on the request itself.
 
+### The sync lock
+
+Pulls, full syncs, and commits all move committed files and the sync point
+(`last_synced_commit_sha`), so they take turns through one lock: `sync_status`. A pull
+or full sync takes it as `pending` (the Lambda moves it to `syncing`), a commit as
+`committing`; `completed` and `failed` mean free. Whoever can't take it gets a `409`.
+`sync_started_at` is the holder's token, at millisecond precision, and every write a
+holder makes at the end checks it, so a holder that lost the lock changes nothing. A
+lock older than 20 minutes is stale and can be taken over: a Lambda stops at 15 minutes
+and a commit request long before, so a lock that old belongs to something that crashed.
+
+The sync point is always a full 40-character SHA. GitHub's commit API rejects anything
+shorter as `expectedHeadOid`, so a sync resolves the branch head to its full SHA first,
+syncs that commit, and stores it. (Older full syncs stored the archive's 7-character
+SHA; a commit against one answers `409` to pull first, and the pull stores the full one.)
+
 ### Committing
 
-A commit (`handleGitHubCommit` in `api/src/handlers/github-sync.ts`) runs in this order:
+A commit (`handleGitHubCommit` in `api/src/handlers/github-sync.ts`) holds the sync lock
+throughout and runs in this order:
 
 1. Read the committer's pending changes. Each is read on its own, so its content,
    action, and `updatedAt` belong together.
 2. Create the commit with GitHub's `createCommitOnBranch`, with `expectedHeadOid` set to
-   the project's `last_synced_commit_sha`, the commit every draft was made against. If
-   anything landed on the branch since (a push from outside, another tool), GitHub
-   refuses, the API answers `409` with `conflictDetected` and a message saying to pull
-   first, and nothing changes: pending changes, files, links, and the sync point stay.
-   The editor's commit banner shows that message.
+   the sync point, the commit every draft was made against. If anything landed on the
+   branch since (a push from outside, another tool), GitHub refuses, the API answers
+   `409` with `conflictDetected`, and nothing changes: pending changes, files, links, and
+   the sync point stay. The editor's commit banner shows the message and offers Pull.
+   Pulling doesn't merge, so a draft of a file the pull changed still replaces it
+   wholesale on the next commit (SPE-254); the message says to check those drafts.
 3. Promote the commit in the storage service (`POST /commits/:projectId/:userId`, same
    internal API key as every other API-to-storage call; the API's route is editor-gated).
    Its added and modified files become the committed files, its deleted and
    renamed-away paths stop being committed files, and the committer's pending changes it
    took are cleared, all in one storage transaction. A pending change saved again while
    the commit was in flight no longer matches the `updatedAt` read in step 1 and stays a
-   draft. File content goes to S3 before the transaction, under each file's own key.
-4. Move spec links (above) and set `last_synced_commit_sha` to the new commit, in one
-   transaction (`recordCommit` in `shared/db/src/services/specs.ts`).
+   draft. File content goes to S3 before the transaction, under each file's own key; S3
+   objects for deleted paths and cleared large drafts are removed after it, unless the
+   path has a live row again by then.
+4. Move spec links (above) and the sync point from the commit's base to the new commit,
+   in one compare-and-set transaction (`recordCommit` in `shared/db/src/services/specs.ts`).
+   It's retried a few times in the request; a try that landed before its reply was lost
+   reads as done.
 
 Every member reads committed files plus their own pending changes, so after step 3 the
 committer sees their commit with no drafts left and every other member sees it too.
 
-Steps 3 and 4 run after GitHub has the commit and can't undo it, so a failure in either
-answers success with a warning to pull, and leaves `last_synced_commit_sha` at the old
-commit. The next pull's incremental sync then brings the commit in like any other push:
-it rewrites the committed files and moves the links from GitHub's compare. If step 3
-failed, S3 may already hold the new content for some files (it's what GitHub has), the
-rows and pending changes are untouched, and the committer's drafts stay listed as
-changes after the pull, matching what's now committed; discarding them is safe. If step
-4 failed, step 3 stands and the sync rewrites the same content. Because the links and
-the sync point move together, the links for one commit are applied once, by step 4 or
-by the sync, never both; that matters for a chain or a swap, which moving twice would
-undo.
+Steps 3 and 4 run after GitHub has the commit and can't undo it, so if either still
+fails the answer is success with a warning, which the editor shows with a Pull action,
+and the sync point stays at the old commit. The next pull brings the commit in like any
+other push. What that recovers:
+
+- If step 3 failed, the rows and pending changes are untouched, but S3 may already hold
+  the commit's content for some files, since it's what GitHub has. Until the pull, every
+  member reads that new content for those files while the listing shows their old size;
+  added files stay invisible and deleted ones stay listed. The committer's drafts stay
+  listed as changes after the pull, matching what's committed; discarding them is safe.
+- If step 4 failed, step 3 stands and the pull rewrites the same content. The pull moves
+  spec links from GitHub's compare, which is lossy: a rename whose content changed
+  enough is reported as a removal and an addition, and that file's links are dropped
+  instead of moved. The links and the sync point move together either way, so a
+  commit's links are applied once, by step 4 or by the pull.
 
 ### Pulling
 
-A pull starts the incremental sync, which reads GitHub's compare from
-`last_synced_commit_sha` to the branch head, writes the changed files into the committed
-files, and moves spec links for `removed` and `renamed` files before it marks the sync
-complete (a failed sync retries all of it). It never touches pending changes: each
-member's drafts stay as they were, shown over the new committed files. A draft of a file
-the pull also changed isn't merged; the draft is the whole file, so committing it writes
-it over the pulled change. A full sync (`initial`) streams the branch's archive into
-storage and then removes committed files the archive no longer has; it can't tell a
-rename from a delete, so it leaves spec links alone.
+A pull takes the sync lock and starts the incremental sync, which resolves the branch
+head to its full SHA, reads GitHub's compare from the sync point to it, writes the
+changed files into the committed files, and then, in one transaction that checks it
+still holds the lock and the sync point is still where it started, moves the sync point
+to that head and moves spec links for `removed` and `renamed` files. A failed sync
+retries all of it. When the compare can't list everything (300 files, or more commits
+than it returns), the sync falls back to a full sync of that head instead. With no new
+commits it still stores the head's full SHA. The editor waits for the sync to finish
+before it refreshes.
+
+A pull never touches pending changes: each member's drafts stay as they were, shown
+over the new committed files. A draft of a file the pull also changed isn't merged; the
+draft is the whole file, so committing it writes it over the pulled change.
+
+A full sync (`initial`, or the fallback above) streams the head commit's archive into
+storage and then removes committed files the archive no longer has; any file in the
+archive stays, including ones the sync filter skips or that failed to upload. It can't
+tell a rename from a delete, so it leaves spec links alone.
 
 ### Managed Checkout Location
 

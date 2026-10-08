@@ -22,6 +22,8 @@ export interface ChangedFile {
 export interface CommitError {
 	stage: 'commit' | 'push' | 'merge';
 	message: string;
+	/** The branch moved since the last pull: the way forward is to pull, not to retry. */
+	conflictDetected?: boolean;
 }
 
 interface GitStatusResponse {
@@ -37,6 +39,9 @@ interface CommitResponse {
 	message?: string;
 	filesCommitted?: number;
 	error?: CommitError;
+	conflictDetected?: boolean;
+	/** The commit landed but something after it didn't; says what to do (pull). */
+	warning?: string;
 }
 
 interface RestoreResponse {
@@ -48,7 +53,18 @@ interface PullResponse {
 	success: boolean;
 	commits?: number;
 	error?: string;
+	/** 'pending' when a cloud pull started a sync that finishes in the background. */
+	status?: string;
 }
+
+interface SyncStatusResponse {
+	status: string | null;
+	error: string | null;
+}
+
+/** How often, and for how long, a pull waits on a background sync. */
+const SYNC_POLL_MS = 1000;
+const SYNC_POLL_LIMIT = 300;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Model
@@ -82,6 +98,9 @@ export class GitStatusModel extends Model {
 	/** Last commit error */
 	@prop accessor commitError!: CommitError | null;
 
+	/** What to do after a commit that landed without everything following it */
+	@prop accessor commitWarning!: string | null;
+
 	/** Last pull error */
 	@prop accessor pullError!: string | null;
 
@@ -99,6 +118,7 @@ export class GitStatusModel extends Model {
 			committing: false,
 			pulling: false,
 			commitError: null,
+			commitWarning: null,
 			pullError: null,
 			error: null,
 		});
@@ -173,6 +193,7 @@ export class GitStatusModel extends Model {
 
 		this.committing = true;
 		this.commitError = null;
+		this.commitWarning = null;
 
 		try {
 			const response = await fetchClient.post<CommitResponse>(
@@ -186,6 +207,8 @@ export class GitStatusModel extends Model {
 				return null;
 			}
 
+			this.commitWarning = response.warning ?? null;
+
 			// Refresh status after successful commit
 			await this.refresh();
 
@@ -194,9 +217,10 @@ export class GitStatusModel extends Model {
 		} catch (err) {
 			// A refused commit (409: the branch moved, pull first) carries its CommitError
 			// in the body; anything else is the server's message or a fallback.
-			const sent = err instanceof FetchError ? (err.data as Partial<CommitResponse> | undefined)?.error : undefined;
+			const data = err instanceof FetchError ? (err.data as Partial<CommitResponse> | undefined) : undefined;
+			const sent = data?.error;
 			this.commitError = typeof sent === 'object' && sent !== null
-				? sent
+				? { ...sent, conflictDetected: data?.conflictDetected === true }
 				: { stage: 'commit', message: writeFailure(err, 'Commit failed', this.projectRef) };
 			this.committing = false;
 			return null;
@@ -244,6 +268,16 @@ export class GitStatusModel extends Model {
 				return { success: false };
 			}
 
+			// A cloud pull only starts the sync; the files aren't there until it's done.
+			if (response.status === 'pending') {
+				const syncError = await this.waitForSync();
+				if (syncError) {
+					this.pullError = syncError;
+					this.pulling = false;
+					return { success: false };
+				}
+			}
+
 			// Refresh status after successful pull
 			await this.refresh();
 
@@ -256,10 +290,22 @@ export class GitStatusModel extends Model {
 		}
 	}
 
+	/** Poll the project's sync until it finishes; its error if it failed, else null. */
+	private async waitForSync(): Promise<string | null> {
+		for (let poll = 0; poll < SYNC_POLL_LIMIT; poll++) {
+			const sync = await fetchClient.get<SyncStatusResponse>(`/api/projects/${this.projectRef}/sync/status`);
+			if (sync.status === 'failed') return sync.error || 'Pull failed';
+			if (sync.status !== 'pending' && sync.status !== 'syncing') return null;
+			await new Promise((resolve) => setTimeout(resolve, SYNC_POLL_MS));
+		}
+		return 'The pull is taking longer than expected. Check back in a few minutes.';
+	}
+
 	/** Clear any errors */
 	clearErrors(): void {
 		this.error = null;
 		this.commitError = null;
+		this.commitWarning = null;
 		this.pullError = null;
 	}
 }

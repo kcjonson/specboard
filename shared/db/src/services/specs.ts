@@ -183,23 +183,46 @@ export async function applySpecPathChanges(projectId: string, changes: SpecPathC
 }
 
 /**
- * Record that a commit made here is now the project's synced commit, and move spec
- * links for what it renamed and deleted, in one transaction. Both or neither: links
- * moved without the sync point would be moved again when a pull brings the same commit
- * in, which for a chain or a swap moves them twice.
+ * Move the project's sync point from `expectedSha` to `commitSha`, a commit made here,
+ * and move spec links for what it renamed and deleted, in one transaction. Both or
+ * neither: links moved without the sync point would be moved again when a pull brings
+ * the same commit in, which for a chain or a swap moves them twice.
+ *
+ * True when the sync point is at `commitSha` afterwards, including when an earlier try
+ * already put it there (so retrying after a lost reply is safe). False, with nothing
+ * changed, when it's somewhere else.
  */
-export async function recordCommit(projectId: string, commitSha: string, changes: SpecPathChanges): Promise<void> {
-	await transaction(async (client) => {
+export async function recordCommit(
+	projectId: string,
+	expectedSha: string,
+	commitSha: string,
+	changes: SpecPathChanges
+): Promise<boolean> {
+	return transaction(async (client) => {
+		const moved = await client.query(
+			'UPDATE projects SET last_synced_commit_sha = $3 WHERE id = $1 AND last_synced_commit_sha = $2 RETURNING id',
+			[projectId, expectedSha, commitSha]
+		);
+		if (moved.rows.length === 0) {
+			const current = await client.query<{ last_synced_commit_sha: string | null }>(
+				'SELECT last_synced_commit_sha FROM projects WHERE id = $1',
+				[projectId]
+			);
+			return current.rows[0]?.last_synced_commit_sha === commitSha;
+		}
 		await moveSpecLinks(client, projectId, changes);
-		await client.query('UPDATE projects SET last_synced_commit_sha = $2 WHERE id = $1', [projectId, commitSha]);
+		return true;
 	});
 }
 
 /**
+ * The link moves of applySpecPathChanges on a caller's transaction, for writes that
+ * have to land together with them (a commit's or a sync's new sync point).
+ *
  * Moves go through a marker path first because (item_id, path) is unique and not
  * deferrable: a swap moved row by row would collide with itself.
  */
-async function moveSpecLinks(client: pg.PoolClient, projectId: string, changes: SpecPathChanges): Promise<void> {
+export async function moveSpecLinks(client: pg.PoolClient, projectId: string, changes: SpecPathChanges): Promise<void> {
 	if (changes.deleted.length > 0) {
 		await client.query(
 			'DELETE FROM epic_specs WHERE project_id = $1 AND path = ANY($2)',
