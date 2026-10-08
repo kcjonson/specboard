@@ -225,6 +225,23 @@ describe('Board keys', () => {
 		remove();
 	});
 
+	it('leaves the letter and number shortcuts to the browser while a modifier is held', async () => {
+		const onCreateItem = vi.fn();
+		const onAssignToMe = vi.fn();
+		const { items } = await renderBoard({ ready: 1 }, { selectedItemKey: 'SB-ready-1', onCreateItem, onAssignToMe });
+		const save = vi.spyOn(items[0]!, 'save');
+
+		for (const modifier of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }]) {
+			for (const key of ['n', 'm', '1', '2', '3']) {
+				expect(fireEvent.keyDown(document, { key, ...modifier })).toBe(true);
+			}
+		}
+
+		expect(onCreateItem).not.toHaveBeenCalled();
+		expect(onAssignToMe).not.toHaveBeenCalled();
+		expect(save).not.toHaveBeenCalled();
+	});
+
 	it('assigns the selected card to me on M, and does nothing with no selection', async () => {
 		const onAssignToMe = vi.fn();
 		const { items, rerender } = await renderBoard({ ready: 2 }, { selectedItemKey: 'SB-ready-2', onAssignToMe });

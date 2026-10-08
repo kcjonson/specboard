@@ -245,3 +245,15 @@ describe('assignee', () => {
 		expect((await readItem(key)).item.assignee).toBeNull();
 	});
 });
+
+describe('create_item with a bad spec link', () => {
+	it('refuses before creating, so a retry can\'t file the item twice', async () => {
+		const result = await callTool('create_item', {
+			project: 'acme/roadmap', title: 'Never filed', type: 'task', specs: [{ path: 'no-slash.md', type: 'product' }],
+		}, owner, undefined);
+
+		expect(result.isError).toBe(true);
+		const listed = JSON.parse(text(await callTool('get_items', { project: 'acme/roadmap', search: 'Never filed' }, viewer, undefined))) as { total: number };
+		expect(listed.total).toBe(0);
+	});
+});

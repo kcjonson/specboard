@@ -354,7 +354,7 @@ avatarUrl }` or `null`.
   removal that comes second unassigns what the write set, and a write that comes second
   finds no member and is refused (400 on REST, an error result on MCP). Anyone else, a
   member of another project included, is refused the same way. MCP `update_item` also
-  checks the slug (`isAssignable`) with its other arguments before it writes anything, so
+  checks the slug (`checkAssignable`) with its other arguments before it writes anything, so
   a refused call leaves no parent move or field write behind.
 - **Leaving takes the assignment with it.** Removing a member, or a member leaving,
   unassigns their open (not done) items in that project, in the transaction that

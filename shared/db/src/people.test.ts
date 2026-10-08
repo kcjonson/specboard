@@ -202,10 +202,21 @@ describe('a departing member', () => {
 		expect(await assigneeOf(roadmap, kept)).toEqual(ALICE);
 	});
 
-	it('names the person in the refusal once their account is off the project', async () => {
+	it('refuses a stranger and a slug with no account in the same words, naming no one', async () => {
 		await insertUser('ned', ['Ned', 'Nobody']);
 		const number = await newItem(roadmap, 'For ned');
-		await expect(updateItem(roadmap, number, { assignee: 'ned' }, actor)).rejects.toThrow('Ned Nobody is not the owner or a member of this project');
+		const refusal = async (slug: string): Promise<string> => {
+			const error = await updateItem(roadmap, number, { assignee: slug }, actor).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(AssigneeNotMemberError);
+			return (error as Error).message;
+		};
+
+		const stranger = await refusal('ned');
+		const nobody = await refusal('no-such-user');
+
+		expect(stranger).not.toContain('Ned');
+		expect(stranger.replace('ned', '<slug>')).toBe(nobody.replace('no-such-user', '<slug>'));
+		expect(stranger).toBe('ned is not the owner or a member of this project');
 	});
 
 	it('is unassigned from their open items when they leave', async () => {

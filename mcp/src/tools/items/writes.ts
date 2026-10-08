@@ -107,6 +107,21 @@ function parseBlockers(raw: unknown[], project: ResolvedProject): BlockerInput[]
 	return inputs;
 }
 
+/**
+ * A refusal for a `specs` argument whose links the service would refuse, checked before
+ * anything is written; undefined when it is absent or every link is valid.
+ */
+function specsError(raw: unknown): ToolResult | undefined {
+	if (!Array.isArray(raw)) return undefined;
+	try {
+		for (const spec of raw as Array<{ path?: unknown; type?: unknown } | null>) validateSpecInput(spec?.path, spec?.type);
+	} catch (error) {
+		if (error instanceof SpecValidationError) return err(error.message);
+		throw error;
+	}
+	return undefined;
+}
+
 /** The optional discovered_from arg as a per-project number, or an error result. */
 function parseDiscoveredFrom(args: Record<string, unknown> | undefined, project: ResolvedProject): number | undefined | ToolResult {
 	if (args?.discovered_from == null) return undefined;
@@ -137,6 +152,10 @@ export async function createItem(
 
 	const discoveredFromNumber = parseDiscoveredFrom(args, project);
 	if (typeof discoveredFromNumber === 'object') return discoveredFromNumber;
+	// Checked before the create: a refusal after it would leave the item behind, and an
+	// agent retrying the call would file it twice.
+	const specsRefusal = specsError(args?.specs);
+	if (specsRefusal) return specsRefusal;
 
 	let item;
 	try {
@@ -155,15 +174,9 @@ export async function createItem(
 	}
 
 	// Optionally attach typed spec links.
-	let specs;
-	if (Array.isArray(args?.specs)) {
-		try {
-			specs = await setSpecsService(project.id, item.number, args.specs as Array<{ path: string; type: SpecType }>);
-		} catch (error) {
-			if (error instanceof SpecValidationError) return err(error.message);
-			throw error;
-		}
-	}
+	const specs = Array.isArray(args?.specs)
+		? await setSpecsService(project.id, item.number, args.specs as Array<{ path: string; type: SpecType }>)
+		: undefined;
 
 	// Optionally record blockers the item is created with. The item already
 	// exists at this point, so a blocker failure must not read as a failed
@@ -271,19 +284,17 @@ async function checkArguments(
 	if (args.checklist !== undefined && !Array.isArray(args.checklist)) {
 		return err('checklist must be an array of entries; use checklist_status to tick individual entries off');
 	}
+	const specsRefusal = specsError(args.specs);
+	if (specsRefusal) return specsRefusal;
 	try {
-		if (Array.isArray(args.specs)) {
-			for (const spec of args.specs as Array<{ path?: unknown; type?: unknown } | null>) validateSpecInput(spec?.path, spec?.type);
-		}
 		if (note) validateNoteText(note);
 		if (Array.isArray(args.checklist)) validateChecklistEntries(args.checklist as ChecklistEntryInput[]);
 		if (statuses != null) for (const value of Object.values(statuses as Record<string, unknown>)) validateChecklistStatus(value);
 		if (typeof fields.assignee === 'string') await checkAssignable(project.id, fields.assignee);
 	} catch (error) {
-		if (
-			error instanceof SpecValidationError || error instanceof NoteValidationError
-			|| error instanceof ChecklistValidationError || error instanceof AssigneeNotMemberError
-		) return err(error.message);
+		if (error instanceof NoteValidationError || error instanceof ChecklistValidationError || error instanceof AssigneeNotMemberError) {
+			return err(error.message);
+		}
 		throw error;
 	}
 	return undefined;

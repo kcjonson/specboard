@@ -23,8 +23,8 @@ export interface AssigneePickerProps {
 	projectRef: string;
 	/** The current assignee's slug, marked in the list; null when nobody is assigned. */
 	current: string | null;
-	/** Called with the chosen person's user slug. */
-	onSelect: (slug: string) => void;
+	/** Called with the chosen person: their user slug, and the name the list showed. */
+	onSelect: (person: { slug: string; name: string }) => void;
 	/** Unassign. Offered only when someone is assigned, so the picker never offers a no-op. */
 	onUnassign?: () => void;
 	onClose: () => void;
@@ -70,7 +70,7 @@ export function AssigneePicker({ projectRef, current, onSelect, onUnassign, onCl
 							type="button"
 							class={styles.row}
 							aria-current={assigned || undefined}
-							onClick={() => onSelect(slug)}
+							onClick={() => onSelect({ slug, name: person.name })}
 						>
 							<Avatar name={person.name} avatarUrl={person.avatarUrl} size="sm" tone="muted" decorative />
 							<span class={styles.name}>{person.name}</span>

@@ -205,27 +205,19 @@ export class DiscoveredFromNotFoundError extends Error {
 }
 
 /**
- * Raised when an assignee slug names nobody who is the project's owner or a member. The
- * message names the person when the slug is a real account (someone just removed, say),
- * else the slug.
+ * Raised when an assignee slug names nobody who is the project's owner or a member. It
+ * echoes the slug and nothing else, the same whether or not an account has that slug:
+ * naming the account, or answering differently, would let anyone who can edit a project
+ * of their own look up who exists.
  */
 export class AssigneeNotMemberError extends Error {
 	readonly slug: string;
 
-	constructor(slug: string, name?: string) {
-		super(`${name ?? slug} is not the owner or a member of this project`);
+	constructor(slug: string) {
+		super(`${slug} is not the owner or a member of this project`);
 		this.name = 'AssigneeNotMemberError';
 		this.slug = slug;
 	}
-}
-
-/** The refusal for a slug that isn't on the project, named for the person when there is one. */
-async function notOnProject(
-	run: (text: string, params: unknown[]) => Promise<{ rows: Array<{ name: string }> }>,
-	slug: string
-): Promise<AssigneeNotMemberError> {
-	const result = await run(`SELECT ${USER_DISPLAY_NAME_SQL} AS name FROM users u WHERE u.slug = $1`, [slug]);
-	return new AssigneeNotMemberError(slug, result.rows[0]?.name);
 }
 
 export interface GetItemsParams {
@@ -922,7 +914,7 @@ export async function checkAssignable(projectId: string, slug: string): Promise<
 			OR EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = $1 AND m.user_id = u.id))`,
 		[projectId, slug]
 	);
-	if (result.rows.length === 0) throw await notOnProject((text, params) => query<{ name: string }>(text, params), slug);
+	if (result.rows.length === 0) throw new AssigneeNotMemberError(slug);
 }
 
 /**
@@ -943,7 +935,7 @@ async function lockAssignee(client: pg.PoolClient, projectId: string, slug: stri
 		[projectId, slug]
 	);
 	const id = found.rows[0]?.id;
-	if (!id) throw await notOnProject((text, params) => client.query<{ name: string }>(text, params), slug);
+	if (!id) throw new AssigneeNotMemberError(slug);
 	return id;
 }
 

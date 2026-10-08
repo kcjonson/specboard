@@ -485,7 +485,7 @@ describe('ItemView assignee', () => {
 		expect(assign).toHaveBeenCalledWith(null);
 	});
 
-	it('shows the server\'s refusal', async () => {
+	it('names a refused person from the picker\'s own list, since the server echoes only the slug', async () => {
 		const item = makeItem('Pick');
 		vi.spyOn(item, 'assign').mockRejectedValue(
 			new FetchError('HTTP 400: Bad Request', 400, undefined, { error: 'vera is not the owner or a member of this project' })
@@ -495,7 +495,20 @@ describe('ItemView assignee', () => {
 		fireEvent.click(getByText('Assign'));
 		fireEvent.click(await findByText('Vera Viewer'));
 
-		expect((await findByRole('alert')).textContent).toBe('vera is not the owner or a member of this project');
+		expect((await findByRole('alert')).textContent).toBe('Vera Viewer is not the owner or a member of this project');
+	});
+
+	it('shows any other refusal in the server\'s words', async () => {
+		const item = makeItem('Pick');
+		vi.spyOn(item, 'assign').mockRejectedValue(
+			new FetchError('HTTP 403: Forbidden', 403, undefined, { error: 'You have view access to this project' })
+		);
+		const { getByText, findByText, findByRole } = render(<ItemView canEdit item={item} />);
+
+		fireEvent.click(getByText('Assign'));
+		fireEvent.click(await findByText('Vera Viewer'));
+
+		expect((await findByRole('alert')).textContent).toBe('You have view access to this project');
 	});
 
 	it('is read-only for someone who can\'t edit', () => {

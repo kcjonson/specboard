@@ -213,3 +213,13 @@ describe('a departing member', () => {
 		expect(await assigneeOf(open)).toBeNull();
 	});
 });
+
+describe('item update validation', () => {
+	it('refuses a bad sub-status or an over-long branch with a 400, and takes null for either', async () => {
+		const key = await createTask('Validated');
+
+		expect((await call('owner', 'PUT', `${ITEMS}/${key}`, { subStatus: 'nah' })).status).toBe(400);
+		expect((await call('owner', 'PUT', `${ITEMS}/${key}`, { branchName: 'b'.repeat(256) })).status).toBe(400);
+		expect((await call('owner', 'PUT', `${ITEMS}/${key}`, { subStatus: null, branchName: null })).status).toBe(200);
+	});
+});

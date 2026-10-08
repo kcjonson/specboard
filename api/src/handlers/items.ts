@@ -29,7 +29,10 @@ import {
 	isValidTitle,
 	isValidType,
 	isValidStatus,
+	isValidSubStatus,
+	isValidBranchName,
 	MAX_TITLE_LENGTH,
+	MAX_BRANCH_NAME_LENGTH,
 	DiscoveredFromNotFoundError,
 	ItemCycleError,
 	type ItemStatus,
@@ -251,6 +254,12 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 	if (body instanceof Response) return body;
 	if (body.status !== undefined && !isValidStatus(body.status)) return context.json({ error: 'Invalid status' }, 400);
 	if (typeof body.title === 'string' && !isValidTitle(body.title)) return context.json({ error: 'Invalid title' }, 400);
+	// Null passes both: the web client restates the whole item, and an unset sub-status or
+	// branch comes back as null.
+	if (body.subStatus != null && !isValidSubStatus(body.subStatus)) return context.json({ error: 'Invalid subStatus' }, 400);
+	if (body.branchName != null && (typeof body.branchName !== 'string' || !isValidBranchName(body.branchName))) {
+		return context.json({ error: `branchName must be at most ${MAX_BRANCH_NAME_LENGTH} characters` }, 400);
+	}
 	const assignee = body.assigneeSlug;
 	if (assignee !== undefined && assignee !== null && (typeof assignee !== 'string' || assignee === '')) {
 		return context.json({ error: 'assigneeSlug must be a member\'s user slug, or null to unassign' }, 400);

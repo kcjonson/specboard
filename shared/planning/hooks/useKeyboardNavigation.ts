@@ -201,6 +201,10 @@ export function useKeyboardNavigation({
 			// click's, left behind when Escape cleared the selection) is nothing to move.
 			const item = focusedKey === undefined || focusedKey === selectedItemKey ? locate(selectedItemKey).item : undefined;
 
+			// A held modifier makes it someone else's shortcut (the browser's Cmd+1, Ctrl+N),
+			// never the board's letter and number keys.
+			const modified = e.metaKey || e.ctrlKey || e.altKey;
+
 			switch (e.key) {
 				case 'ArrowUp':
 					e.preventDefault();
@@ -236,34 +240,35 @@ export function useKeyboardNavigation({
 
 				case 'n':
 				case 'N':
+					if (modified) break;
 					e.preventDefault();
 					onCreateItem();
 					break;
 
 				case 'm':
 				case 'M':
-					if (item) {
+					if (item && !modified) {
 						e.preventDefault();
 						onAssignToMe(item);
 					}
 					break;
 
 				case '1':
-					if (item) {
+					if (item && !modified) {
 						e.preventDefault();
 						moveToStatus(item, 'ready');
 					}
 					break;
 
 				case '2':
-					if (item) {
+					if (item && !modified) {
 						e.preventDefault();
 						moveToStatus(item, 'in_progress');
 					}
 					break;
 
 				case '3':
-					if (item) {
+					if (item && !modified) {
 						e.preventDefault();
 						moveToStatus(item, 'done');
 					}

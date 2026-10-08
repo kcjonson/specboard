@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
+import { FetchError } from '@specboard/fetch';
 import { useModel, type ItemModel, type ItemStatus, type SubStatus, writeFailure } from '@specboard/models';
 import { Avatar, Button, ConfirmDialog, DialogFooter, Select } from '@specboard/ui';
 import { ItemPicker } from '@specboard/pages';
@@ -268,8 +269,9 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 	// Assigning goes through assign(), not save(): the PUT takes a slug, and save()
 	// restates the person view the model holds. The server checks the person is on the
 	// project, so its refusal is the message shown.
-	const handleAssign = (slug: string | null): void => {
+	const handleAssign = (person: { slug: string; name: string } | null): void => {
 		setAssigneePickerOpen(false);
+		const slug = person?.slug ?? null;
 		// Picking whoever already has it changes nothing, so it sends nothing.
 		if (slug === (item.assignee?.slug ?? null)) return;
 		// One at a time, for the reason moves are: each applies the item it gets back.
@@ -277,7 +279,15 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 		assigningRef.current = true;
 		setFieldError(null);
 		item.assign(slug)
-			.catch((err: unknown) => reportFieldError(err, slug ? 'Could not change the assignee.' : 'Could not unassign the item.'))
+			.catch((err: unknown) => {
+				// The server's refusal echoes the slug and names no one; the picker's own list
+				// is where the name comes from (someone removed since the list loaded).
+				if (person && err instanceof FetchError && err.status === 400) {
+					setFieldError(`${person.name} is not the owner or a member of this project`);
+					return;
+				}
+				reportFieldError(err, slug ? 'Could not change the assignee.' : 'Could not unassign the item.');
+			})
 			.finally(() => {
 				assigningRef.current = false;
 			});
