@@ -1,7 +1,7 @@
 /**
- * applySpecPathChanges against real Postgres (PGlite): renames repoint links without
- * breaking the one-link-per-path-per-item rule, deletions drop them, other projects are
- * untouched, and a second run of the same changes (a retried sync) does nothing.
+ * applySpecPathChanges against real Postgres (PGlite): renames repoint links together
+ * (chains and swaps included) without breaking the one-link-per-path-per-item rule,
+ * deletions drop them, and other projects are untouched.
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
@@ -103,7 +103,7 @@ describe('applySpecPathChanges', () => {
 		expect(await linksOf(otherProjectId)).toEqual(['1:/docs/gone.md', '1:/docs/old.md']);
 	});
 
-	it('does nothing the second time the same changes arrive', async () => {
+	it('does nothing the second time a plain rename and delete arrive', async () => {
 		await link(itemOne, projectId, '/docs/old.md');
 		await link(itemTwo, projectId, '/docs/new.md');
 		const changes = { renamed: [{ from: '/docs/old.md', to: '/docs/new.md' }], deleted: ['/docs/gone.md'] };
@@ -112,5 +112,47 @@ describe('applySpecPathChanges', () => {
 		await applySpecPathChanges(projectId, changes);
 
 		expect(await linksOf(projectId)).toEqual(['1:/docs/new.md', '2:/docs/new.md']);
+	});
+
+	it('moves a chain together instead of folding it into its last path', async () => {
+		await link(itemOne, projectId, '/docs/a.md');
+		await link(itemTwo, projectId, '/docs/b.md');
+
+		await applySpecPathChanges(projectId, {
+			renamed: [{ from: '/docs/b.md', to: '/docs/c.md' }, { from: '/docs/a.md', to: '/docs/b.md' }],
+			deleted: [],
+		});
+
+		expect(await linksOf(projectId)).toEqual(['1:/docs/b.md', '2:/docs/c.md']);
+	});
+
+	it('swaps two paths, even for an item that links both', async () => {
+		await link(itemOne, projectId, '/docs/a.md');
+		await link(itemOne, projectId, '/docs/b.md');
+		await link(itemTwo, projectId, '/docs/a.md');
+		await state.db!.query("UPDATE epic_specs SET spec_type = 'technical' WHERE path = '/docs/a.md'");
+
+		await applySpecPathChanges(projectId, {
+			renamed: [{ from: '/docs/a.md', to: '/docs/b.md' }, { from: '/docs/b.md', to: '/docs/a.md' }],
+			deleted: [],
+		});
+
+		expect(await linksOf(projectId)).toEqual(['1:/docs/a.md', '1:/docs/b.md', '2:/docs/b.md']);
+		const types = await state.db!.query<{ path: string; spec_type: string }>(
+			'SELECT path, spec_type FROM epic_specs WHERE item_id = $1 ORDER BY path', [itemOne]
+		);
+		expect(types.rows).toEqual([{ path: '/docs/a.md', spec_type: 'product' }, { path: '/docs/b.md', spec_type: 'technical' }]);
+	});
+
+	it('drops the old links of a deleted path before another file\'s links move onto it', async () => {
+		await link(itemOne, projectId, '/docs/other.md');
+		await link(itemTwo, projectId, '/docs/spec.md');
+
+		await applySpecPathChanges(projectId, {
+			renamed: [{ from: '/docs/spec.md', to: '/docs/other.md' }],
+			deleted: ['/docs/other.md'],
+		});
+
+		expect(await linksOf(projectId)).toEqual(['2:/docs/other.md']);
 	});
 });

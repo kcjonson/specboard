@@ -108,7 +108,7 @@ async function getChangedFiles(
  * rename counts, including ones the file sync skips: a link names a path, not a file
  * the editor shows. GitHub paths have no leading slash; spec paths do.
  */
-export function specPathChangesOf(files: GitHubCompareFile[]): SpecPathChanges {
+export function comparedSpecPathChanges(files: GitHubCompareFile[]): SpecPathChanges {
 	return {
 		renamed: files.flatMap((f) =>
 			f.status === 'renamed' && f.previous_filename
@@ -281,11 +281,10 @@ export async function performIncrementalSync(
 			}
 		});
 
-		// Commits pushed outside Specboard move spec links the way a commit made in the
-		// editor does (that one moved them itself and advanced the sync point past it).
+		// Commits pulled in here move spec links the way a commit made in the editor does.
 		// Before the status update, so a failure leaves the sync at the old commit and the
 		// retry applies them again.
-		await applySpecPathChanges(projectId, specPathChangesOf(files));
+		await applySpecPathChanges(projectId, comparedSpecPathChanges(files));
 
 		// Mark sync as completed
 		await updateSyncStatus(projectId, 'completed', headSha);

@@ -103,7 +103,8 @@ vi.mock('@specboard/auth', async (importOriginal) => ({
 }));
 
 import { migratedDb } from '@specboard/db/test-support';
-import { createGitHubCommit } from '../../services/github-commit.ts';
+import { applySpecPathChanges } from '@specboard/db';
+import { committedSpecPathChanges, createGitHubCommit } from '../../services/github-commit.ts';
 import { handleDeleteFile, handleReadFile, handleRenameFile, handleWriteFile } from './file-handlers.ts';
 import { handleCommit, handleRestore } from './git-handlers.ts';
 import { handleListSpecs } from '../specs.ts';
@@ -178,6 +179,12 @@ async function specPaths(as: 'alice' | 'erin', project = 'docs'): Promise<string
 	const response = await call(as, 'GET', `items/${key}/specs`, undefined, project);
 	expect(response.status).toBe(200);
 	return ((await response.json()) as Array<{ path: string }>).map((s) => s.path).sort();
+}
+
+/** The item's spec links as "path type", for checks where which link went where matters. */
+async function specLinks(): Promise<string[]> {
+	const response = await call('alice', 'GET', 'items/DOC-1/specs');
+	return ((await response.json()) as Array<{ path: string; type: string }>).map((s) => `${s.path} ${s.type}`).sort();
 }
 
 const deleteFile = (path: string, project = 'docs'): Promise<Response> =>
@@ -314,6 +321,83 @@ describe('committing a cloud draft', () => {
 		expect(response.status).toBe(409);
 		expect(await specPaths('alice')).toEqual(['/docs/other.md', '/docs/spec.md']);
 		expect(storage.mine(alice).size).toBe(3);
+	});
+});
+
+describe('committing renames that reuse a path', () => {
+	// beforeEach links /docs/spec.md as product and /docs/other.md as technical.
+
+	it('archives a file and promotes another into its place', async () => {
+		await renameFile('/docs/spec.md', '/docs/archive.md');
+		await renameFile('/docs/other.md', '/docs/spec.md');
+
+		await commit();
+
+		expect(await specLinks()).toEqual(['/docs/archive.md product', '/docs/spec.md technical']);
+	});
+
+	it('drops a deleted file\'s links when another file is renamed onto its path', async () => {
+		await deleteFile('/docs/other.md');
+		await renameFile('/docs/spec.md', '/docs/other.md');
+
+		await commit();
+
+		expect(await specLinks()).toEqual(['/docs/other.md product']);
+	});
+
+	it('swaps two files through a temporary name', async () => {
+		await renameFile('/docs/spec.md', '/docs/tmp.md');
+		await renameFile('/docs/other.md', '/docs/spec.md');
+		await renameFile('/docs/tmp.md', '/docs/other.md');
+
+		await commit();
+
+		expect(await specLinks()).toEqual(['/docs/other.md product', '/docs/spec.md technical']);
+	});
+
+	it('moves a chain of renames together', async () => {
+		await renameFile('/docs/other.md', '/docs/third.md');
+		await renameFile('/docs/spec.md', '/docs/other.md');
+
+		await commit();
+
+		expect(await specLinks()).toEqual(['/docs/other.md product', '/docs/third.md technical']);
+	});
+});
+
+describe('when the links can\'t be updated after GitHub took the commit', () => {
+	it('keeps the pending changes and the sync point, so the changes can be applied again', async () => {
+		const db = state.db!;
+		const projectId = projects.get('docs')!.id;
+		await db.query("UPDATE projects SET last_synced_commit_sha = 'base' WHERE id = $1", [projectId]);
+		await db.exec(`
+			CREATE FUNCTION refuse_link_writes() RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN RAISE EXCEPTION 'links unavailable'; END $$;
+			CREATE TRIGGER refuse_link_writes BEFORE UPDATE OR DELETE ON epic_specs
+				FOR EACH STATEMENT EXECUTE FUNCTION refuse_link_writes();
+		`);
+		try {
+			await renameFile('/docs/spec.md', '/docs/moved.md');
+			await deleteFile('/docs/other.md');
+
+			const response = await commit();
+
+			expect(response.status).toBe(200);
+			expect(await response.json()).toMatchObject({ success: true, warning: expect.any(String) });
+		} finally {
+			await db.exec('DROP TRIGGER refuse_link_writes ON epic_specs; DROP FUNCTION refuse_link_writes();');
+		}
+
+		expect(await specPaths('alice')).toEqual(['/docs/other.md', '/docs/spec.md']);
+		expect(storage.mine(alice).size).toBe(3);
+		const synced = await db.query<{ last_synced_commit_sha: string }>('SELECT last_synced_commit_sha FROM projects WHERE id = $1', [projectId]);
+		expect(synced.rows[0]!.last_synced_commit_sha).toBe('base');
+
+		const changes = committedSpecPathChanges(await storage.client.listPendingChanges(projectId, alice));
+		await applySpecPathChanges(projectId, changes);
+		await applySpecPathChanges(projectId, changes);
+
+		expect(await specPaths('alice')).toEqual(['/docs/moved.md']);
 	});
 });
 

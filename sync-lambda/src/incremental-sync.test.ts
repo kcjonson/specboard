@@ -17,7 +17,7 @@ vi.mock('./shared/storage-client.ts', () => ({
 }));
 
 import { migratedDb } from '@specboard/db/test-support';
-import { performIncrementalSync, specPathChangesOf } from './incremental-sync.ts';
+import { performIncrementalSync, comparedSpecPathChanges } from './incremental-sync.ts';
 
 let projectId: string;
 
@@ -51,9 +51,9 @@ afterAll(async () => {
 	await state.db?.close();
 });
 
-describe('specPathChangesOf', () => {
+describe('comparedSpecPathChanges', () => {
 	it('takes renames and removals from the compare, whatever the file sync skips', () => {
-		expect(specPathChangesOf([
+		expect(comparedSpecPathChanges([
 			{ sha: '1', filename: 'docs/new.md', status: 'renamed', previous_filename: 'docs/old.md' },
 			{ sha: '2', filename: 'node_modules/x/README.md', status: 'removed' },
 			{ sha: '3', filename: 'docs/edited.md', status: 'modified' },

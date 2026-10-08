@@ -17,7 +17,7 @@ import { getGitHubConnection } from '../services/github-token.ts';
 import {
 	createGitHubCommit,
 	generateCommitMessage,
-	specPathChangesOf,
+	committedSpecPathChanges,
 	type PendingChange,
 } from '../services/github-commit.ts';
 import type { SyncEvent } from '@specboard/sync-lambda';
@@ -575,7 +575,7 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 	// Success - the commit is on GitHub, so bring spec links in line with it, then clear
 	// pending changes and update sync SHA
 	try {
-		await applySpecPathChanges(projectId, specPathChangesOf(pendingChanges));
+		await applySpecPathChanges(projectId, committedSpecPathChanges(pendingChanges));
 
 		await storageClient.deleteAllPendingChanges(projectId, userId);
 
