@@ -479,11 +479,20 @@ describe('MapDataModel across projects', () => {
 	/** A project's read, answered from a script, with the cursor of every ask. */
 	interface Scripted {
 		read: MapReadSource;
-		reads: Array<MapRead | Error>;
+		reads: Array<MapRead | Error | Promise<MapRead>>;
 		asked: Array<number | null>;
 	}
 
-	const scripted = (...reads: Array<MapRead | Error>): Scripted => {
+	/** A read that lands when the test says. */
+	function later(): { read: Promise<MapRead>; land: (read: MapRead) => void } {
+		let land!: (read: MapRead) => void;
+		const read = new Promise<MapRead>((resolve) => {
+			land = resolve;
+		});
+		return { read, land };
+	}
+
+	const scripted = (...reads: Array<MapRead | Error | Promise<MapRead>>): Scripted => {
 		const script: Scripted = {
 			reads,
 			asked: [],
@@ -549,7 +558,7 @@ describe('MapDataModel across projects', () => {
 		expect(model.state).toBe('ready');
 		expect(keysOf(model.rows.values())).toEqual(keysOf([...spe.rows, ...pln.rows]));
 		expect(model.layout!.regions.map((region) => region.key)).toEqual([spe.rows[1]!.key]);
-		expect(model.missing.size).toBe(0);
+		expect(model.failures.size).toBe(0);
 		expect(model.retrying).toBe(false);
 	});
 
@@ -581,7 +590,7 @@ describe('MapDataModel across projects', () => {
 		expect(b.asked.at(-1)).toBe(4_000);
 	});
 
-	it('draws the rest when one project\'s read fails, names it, and reads it whole on the next poll', async () => {
+	it('draws the rest when one project\'s first read fails, names it, and lays everything out afresh when it lands', async () => {
 		const { spe, pln } = boards();
 		const a = scripted(wholeRead(spe.rows));
 		const b = scripted(new FetchError('HTTP 500: Internal Server Error', 500));
@@ -589,48 +598,87 @@ describe('MapDataModel across projects', () => {
 
 		expect(model.state).toBe('ready');
 		expect(keysOf(model.rows.values())).toEqual(keysOf(spe.rows));
-		expect([...model.missing]).toEqual([['kim/planner', { error: expect.objectContaining({ status: 500 }), unreadable: false }]]);
+		expect([...model.failures]).toEqual([['kim/planner', { error: expect.objectContaining({ status: 500 }), unreadable: false, held: false }]]);
 		expect(model.retrying).toBe(true);
 
-		// Still failing: the same project is missing for the same reason, so the report doesn't change.
-		const missing = model.missing;
+		// Failing the same way: the report doesn't change, and the other project's read keeps the poll at full speed.
+		const failures = model.failures;
 		a.reads.push(deltaRead([], spe.rows.length));
 		b.reads.push(new FetchError('HTTP 503: Service Unavailable', 503));
-		expect(await poll()).toBe(false);
-		expect(model.missing).toBe(missing);
+		expect(await poll()).toBe(true);
+		expect(model.failures).toBe(failures);
 		await drain();
 
 		a.reads.push(deltaRead([], spe.rows.length));
 		b.reads.push(wholeRead(pln.rows));
 		expect(await poll()).toBe(true);
 		expect(b.asked).toEqual([null, null, null]);
+		// Its rows are nobody's news, and the scale fitted at load never saw them: a cold layout, cut to.
+		expect(worker.inputs.at(-1)!.previous).toBeUndefined();
 		await settle(worker);
 
-		expect(keysOf(model.changes!.added)).toEqual(keysOf(pln.rows));
+		expect(model.changes).toBeNull();
 		expect(keysOf(model.rows.values())).toEqual(keysOf([...spe.rows, ...pln.rows]));
-		expect(model.missing.size).toBe(0);
+		expect(model.failures.size).toBe(0);
+		expect(model.retrying).toBe(false);
+
+		// What changes in it next is news again.
+		const picked = { ...pln.rows[0]!, status: 'in_progress' as const, startedAt: iso(pln.now + 5000), timeAnchor: iso(pln.now + 5000) };
+		a.reads.push(deltaRead([], spe.rows.length));
+		b.reads.push(deltaRead([picked], pln.rows.length));
+		await poll();
+		expect(worker.inputs.at(-1)!.previous).toBeDefined();
+		await settle(worker);
+		expect([...model.changes!.moved]).toEqual([picked.key]);
+	});
+
+	it('keeps drawing a project whose refresh fails, names it as held, and backs off only when no read lands', async () => {
+		const { spe, pln } = boards();
+		const a = scripted(wholeRead(spe.rows));
+		const b = scripted(wholeRead(pln.rows));
+		const { model, poll } = await loaded([['acme/specboard', a], ['kim/planner', b]]);
+		const rows = model.rows;
+
+		a.reads.push(deltaRead([], spe.rows.length));
+		b.reads.push(new FetchError('HTTP 502: Bad Gateway', 502));
+		expect(await poll()).toBe(true);
+		expect(model.retrying).toBe(true);
+		expect(model.failures.get('kim/planner')).toMatchObject({ unreadable: false, held: true });
+		await drain();
+		expect(model.rows).toBe(rows);
+
+		a.reads.push(new Error('Failed to fetch'));
+		b.reads.push(new Error('Failed to fetch'));
+		expect(await poll()).toBe(false);
+		expect(model.failures.get('acme/specboard')).toMatchObject({ unreadable: false, held: true });
+
+		a.reads.push(deltaRead([], spe.rows.length));
+		b.reads.push(deltaRead([], pln.rows.length));
+		expect(await poll()).toBe(true);
+		expect(model.failures.size).toBe(0);
 		expect(model.retrying).toBe(false);
 	});
 
-	it('drops a project the person can no longer read for good: a 403 on the first read, or a 404 on a later one', async () => {
+	it('drops a project the person can no longer read for good, a 403 on the first read or a 404 on a later one, and lays out the rest afresh', async () => {
 		const { spe, pln } = boards();
 		const a = scripted(wholeRead(spe.rows));
 		const b = scripted(wholeRead(pln.rows));
 		const c = scripted(new FetchError('HTTP 403: Forbidden', 403));
 		const { model, worker, poll } = await loaded([['acme/specboard', a], ['kim/planner', b], ['lee/other', c]]);
 
-		expect(model.missing.get('lee/other')).toMatchObject({ unreadable: true });
+		expect(model.failures.get('lee/other')).toEqual({ error: expect.objectContaining({ status: 403 }), unreadable: true, held: false });
 		expect(model.retrying).toBe(false);
 
 		a.reads.push(deltaRead([], spe.rows.length));
 		b.reads.push(new FetchError('HTTP 404: Not Found', 404));
 		expect(await poll()).toBe(true);
+		expect(worker.inputs.at(-1)!.previous).toBeUndefined();
 		await settle(worker);
 
-		expect(keysOf(model.changes!.removed)).toEqual(keysOf(pln.rows));
+		expect(model.changes).toBeNull();
 		expect(keysOf(model.rows.values())).toEqual(keysOf(spe.rows));
-		expect([...model.missing.keys()]).toEqual(['kim/planner', 'lee/other']);
-		expect(model.missing.get('kim/planner')).toMatchObject({ unreadable: true });
+		expect([...model.failures.keys()]).toEqual(['kim/planner', 'lee/other']);
+		expect(model.failures.get('kim/planner')).toMatchObject({ unreadable: true, held: false });
 
 		a.reads.push(deltaRead([], spe.rows.length));
 		await poll();
@@ -647,25 +695,81 @@ describe('MapDataModel across projects', () => {
 
 		expect(model.state).toBe('error');
 		expect(model.error!.message).toBe('HTTP 500: Internal Server Error');
-		expect(model.missing.size).toBe(0);
+		expect(model.failures.size).toBe(0);
 		expect(worker.calls).toBe(0);
 	});
 
-	it('never drops the last project standing: a project\'s own Map holds what it has through a 404 and keeps asking', async () => {
+	it('never drops the last project standing: a project\'s own Map holds what it has through a 404, backs off, and takes the next read as news', async () => {
 		const { spe } = boards();
 		const a = scripted(wholeRead(spe.rows));
-		const { model, poll } = await loaded([['acme/specboard', a]]);
+		const { model, worker, poll } = await loaded([['acme/specboard', a]]);
 		const rows = model.rows;
 
 		a.reads.push(new FetchError('HTTP 404: Not Found', 404));
 		expect(await poll()).toBe(false);
 		expect(model.retrying).toBe(true);
 		expect(model.rows).toBe(rows);
-		expect(model.missing.size).toBe(0);
+		expect(model.failures.get('acme/specboard')).toMatchObject({ unreadable: false, held: true });
 
-		a.reads.push(deltaRead([], spe.rows.length));
+		const picked = { ...spe.rows[2]!, status: 'in_progress' as const, startedAt: iso(spe.now + 5000), timeAnchor: iso(spe.now + 5000) };
+		a.reads.push(deltaRead([picked], spe.rows.length));
 		expect(await poll()).toBe(true);
 		expect(a.asked).toHaveLength(3);
+		expect(worker.inputs.at(-1)!.previous).toBeDefined();
+		await settle(worker);
+		expect([...model.changes!.moved]).toEqual([picked.key]);
+		expect(model.failures.size).toBe(0);
+	});
+
+	it('drops a round that dispose overtook, without asking for the whole read its delta would have needed', async () => {
+		const { spe, pln } = boards();
+		const a = scripted(wholeRead(spe.rows, { cursor: 1_000 }));
+		const b = scripted(wholeRead(pln.rows));
+		const { model, worker, poll } = await loaded([['acme/specboard', a], ['kim/planner', b]]);
+		const delta = later();
+		a.reads.push(delta.read);
+		b.reads.push(deltaRead([], pln.rows.length));
+
+		const round = poll();
+		await drain();
+		model.dispose();
+		// The count is one short: on its own, this delta would be followed by a read of the whole project.
+		delta.land(deltaRead([], spe.rows.length - 1));
+
+		expect(await round).toBe(true);
+		await drain();
+		expect(a.asked).toEqual([null, 1_000]);
+		expect(worker.calls).toBe(1);
+		expect(keysOf(model.rows.values())).toEqual(keysOf([...spe.rows, ...pln.rows]));
+	});
+
+	it('drops a round that a load overtook, and draws what the load read', async () => {
+		const { spe, pln } = boards();
+		const a = scripted(wholeRead(spe.rows, { cursor: 1_000 }));
+		const b = scripted(wholeRead(pln.rows));
+		const { model, worker, poll } = await loaded([['acme/specboard', a], ['kim/planner', b]]);
+		const delta = later();
+		const picked = { ...pln.rows[0]!, status: 'in_progress' as const, startedAt: iso(pln.now + 5000), timeAnchor: iso(pln.now + 5000) };
+		a.reads.push(delta.read);
+		b.reads.push(deltaRead([picked], pln.rows.length));
+
+		const round = poll();
+		await drain();
+		a.reads.push(wholeRead(spe.rows.slice(1)));
+		b.reads.push(wholeRead(pln.rows));
+		const loading = model.load(2);
+		delta.land(deltaRead([], spe.rows.length - 1));
+		expect(await round).toBe(true);
+		await drain();
+		worker.pending.shift()!();
+		await loading;
+
+		// One read each for the first load, the round, and the reload: none for the round's delta that didn't add up.
+		expect(a.asked).toEqual([null, 1_000, null]);
+		expect(keysOf(model.rows.values())).toEqual(keysOf([...spe.rows.slice(1), ...pln.rows]));
+		expect(model.rows.get(picked.key)).toEqual(pln.rows[0]);
+		expect(model.changes).toBeNull();
+		expect(worker.calls).toBe(2);
 	});
 
 	it('says which projects came back past the read cap', async () => {

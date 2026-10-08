@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/preact';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/preact';
 import type { JSX } from 'preact';
 import { encodeMapChanges } from '@specboard/core/map-changes';
 import { encodeMapRead, type MapItemRow, type MapRead } from '@specboard/core/map-read';
@@ -15,10 +15,11 @@ import { FetchError } from '@specboard/fetch';
 import { COMBINED_POLL_INTERVAL, POLL_INTERVAL } from '../hooks/usePolling';
 import { memoryStorage } from '../test-support/memory-storage';
 import { installPointerEvents } from '../test-support/pointer-events';
-import { BoardBuilder, wholeRead } from './layout/board-fixture';
+import { memoryCollapseStore } from './collapse-store.fixture';
+import { BoardBuilder, deltaRead, wholeRead } from './layout/board-fixture';
 import { layoutMap } from './layout/layout';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
-import type { MapProjectFailure } from './map-data-model';
+import { MapDataModel, type MapProjectFailure } from './map-data-model';
 import type { MapProject, MapScope } from './map-projects';
 import { MapView } from './MapView';
 import { traceRegions } from './regions/outline';
@@ -93,29 +94,31 @@ const asked = (): string[] => fetchClient.get.mock.calls.map(([path]) => path as
 
 interface Rendered {
 	opened: Array<[string, string]>;
-	missing: Array<ReadonlyMap<string, MapProjectFailure>>;
+	failures: Array<ReadonlyMap<string, MapProjectFailure>>;
 	container: Element;
 	unmount(): void;
 	rerender(props: { search: string }): void;
 }
 
-function renderMap(scope: MapScope): Rendered {
+/** Renders the Map over the stubbed reads, or over a model the test hands in. */
+function renderMap(scope: MapScope, model?: MapDataModel): Rendered {
 	const opened: Array<[string, string]> = [];
-	const missing: Array<ReadonlyMap<string, MapProjectFailure>> = [];
+	const failures: Array<ReadonlyMap<string, MapProjectFailure>> = [];
 	const view = (search: string): JSX.Element => (
 		<MapView
 			scope={scope}
+			model={model}
 			covered={0}
 			search={search}
 			type={null}
 			onClear={() => {}}
 			onOpenItem={(key, ref) => opened.push([key, ref])}
 			onCloseItem={() => {}}
-			onMissing={(now) => missing.push(now)}
+			onFailures={(now) => failures.push(now)}
 		/>
 	);
 	const rendered = render(view(''));
-	return { opened, missing, container: rendered.container, unmount: rendered.unmount, rerender: ({ search }) => rendered.rerender(view(search)) };
+	return { opened, failures, container: rendered.container, unmount: rendered.unmount, rerender: ({ search }) => rendered.rerender(view(search)) };
 }
 
 const dotKeys = (): string[] => (frames.at(-1)?.dots ?? []).map((dot) => dot.key).sort();
@@ -211,12 +214,39 @@ describe('The combined Map', () => {
 	it('draws the projects it can read when one can\'t be, and tells the page which it dropped', async () => {
 		const { spe } = boards();
 		serve({ 'acme/specboard': wholeRead(spe), 'kim/planner': new FetchError('HTTP 403: Forbidden', 403) });
-		const { missing, container } = renderMap({ projects: PROJECTS });
+		const { failures, container } = renderMap({ projects: PROJECTS });
 
 		await waitFor(() => expect(dotKeys()).toEqual(spe.map((row) => row.key).sort()));
-		await waitFor(() => expect(missing.at(-1)?.get('kim/planner')).toMatchObject({ unreadable: true }));
-		expect([...missing.at(-1)!.keys()]).toEqual(['kim/planner']);
+		await waitFor(() => expect(failures.at(-1)?.get('kim/planner')).toMatchObject({ unreadable: true, held: false }));
+		expect([...failures.at(-1)!.keys()]).toEqual(['kim/planner']);
 		expect(container.querySelector('[role="alert"]')).toBeNull();
+	});
+
+	it('cuts to a fresh layout when a project\'s rows arrive late, and says nothing about them', async () => {
+		const { spe, pln } = boards();
+		let plannerReads = 0;
+		const model = new MapDataModel(
+			[
+				{ ref: 'acme/specboard', read: (since) => Promise.resolve(since === null ? wholeRead(spe) : deltaRead([], spe.length)) },
+				{ ref: 'kim/planner', read: () => (plannerReads++ === 0 ? Promise.reject(new FetchError('HTTP 500: Internal Server Error', 500)) : Promise.resolve(wholeRead(pln))) },
+			],
+			() => worker,
+			memoryCollapseStore(),
+		);
+		const layouts = vi.spyOn(worker, 'layout');
+		const { failures } = renderMap({ projects: PROJECTS }, model);
+		await waitFor(() => expect(dotKeys()).toEqual(spe.map((row) => row.key).sort()));
+		await waitFor(() => expect(failures.at(-1)?.get('kim/planner')).toMatchObject({ unreadable: false, held: false }));
+
+		await act(async () => {
+			await model.refresh();
+		});
+
+		await waitFor(() => expect(dotKeys()).toEqual([...spe, ...pln].map((row) => row.key).sort()));
+		expect(layouts.mock.calls.at(-1)![0].previous).toBeUndefined();
+		expect(failures.at(-1)!.size).toBe(0);
+		await new Promise((resolve) => setTimeout(resolve, 60));
+		expect(document.querySelector('[aria-live]')!.textContent).toBe('');
 	});
 
 	it('names the projects past the read cap', async () => {

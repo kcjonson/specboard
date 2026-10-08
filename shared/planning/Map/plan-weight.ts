@@ -1,4 +1,4 @@
-import { projectKeyOf } from './map-projects';
+import { parseItemKey } from '@specboard/core/identifiers';
 
 /**
  * Weight follows the plan (spec, Status encoding): ready and blocked items draw
@@ -26,15 +26,15 @@ const MIN_TINT = 0.35;
  * weight and aren't listed.
  */
 export function planWeights(planOrder: readonly string[]): Map<string, number> {
-	const sizes = new Map<string, number>();
+	const sizes = new Map<string | undefined, number>();
 	for (const key of planOrder) {
-		const project = projectKeyOf(key);
+		const project = parseItemKey(key)?.projectKey;
 		sizes.set(project, (sizes.get(project) ?? 0) + 1);
 	}
-	const placed = new Map<string, number>();
+	const placed = new Map<string | undefined, number>();
 	const weights = new Map<string, number>();
 	for (const key of planOrder) {
-		const project = projectKeyOf(key);
+		const project = parseItemKey(key)?.projectKey;
 		const index = placed.get(project) ?? 0;
 		placed.set(project, index + 1);
 		const last = sizes.get(project)! - 1;

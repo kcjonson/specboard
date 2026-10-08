@@ -21,11 +21,13 @@ export interface MapProjectSource {
 	read: MapReadSource;
 }
 
-/** A project the Map is drawing without, because its read failed. */
+/** A project whose last read failed. Unless it is unreadable, the next poll asks it again. */
 export interface MapProjectFailure {
 	error: Error;
-	/** It answered 403 or 404: the person can no longer read it, so it has left the Map for good. Any other failure is read again on the next poll. */
+	/** It answered 403 or 404: the person can no longer read it, so it has left the Map for good. */
 	unreadable: boolean;
+	/** The Map still draws what it last read of the project. Neither this nor `unreadable` means the Map has never drawn it. */
+	held: boolean;
 }
 
 /** Changes buffer, and apply at most this often (spec, Live updates and motion). */
@@ -67,7 +69,7 @@ interface ProjectReads {
 	read: MapReadSource;
 	/** The newest read: the last whole one with every delta since folded in. Null until one lands, and once the project is dropped. */
 	latest: MapRead | null;
-	/** Set while the Map draws nothing of the project because its read failed. */
+	/** Why its last read failed; null once one lands. */
 	failure: MapProjectFailure | null;
 }
 
@@ -93,8 +95,8 @@ export class MapDataModel implements Observable {
 	rows: ReadonlyMap<string, MapItemRow> = new Map();
 	/** The projects whose read, as the Map shows it, passed the read cap and came back with finished families folded. */
 	summarized: readonly string[] = [];
-	/** The projects the Map is drawing without, by ref. A new map only when which ones, or which of them are unreadable, changes. */
-	missing: ReadonlyMap<string, MapProjectFailure> = new Map();
+	/** Every project whose last read failed, by ref. A new map only when which projects, or how they failed, changes. */
+	failures: ReadonlyMap<string, MapProjectFailure> = new Map();
 	/** Epoch ms the layout was computed for. */
 	now = 0;
 	/** What the latest pass changed in the data, which the Map moves to; null after a load or a collapse alone, which cut. A pass for time drift alone has an empty set, and glides. */
@@ -120,6 +122,8 @@ export class MapDataModel implements Observable {
 	/** Bumped by every round of reads that lands. The rows shown came from round `applied`; while the two differ, data is waiting for a pass. */
 	private received = 0;
 	private applied = 0;
+	/** The last round a whole project's rows arrived or left in; the pass that applies it lays everything out afresh. */
+	private reshapedAt = 0;
 	private aspect = 2;
 	/** Bumped by every load and by dispose, so a read that lands late is dropped. */
 	private epoch = 0;
@@ -201,9 +205,10 @@ export class MapDataModel implements Observable {
 	/**
 	 * Asks every project what changed since its own last read and buffers it to apply. A
 	 * delta whose signals don't add up (a deletion, a spec link) is followed by a read of
-	 * that whole project, and a project with nothing on the Map yet is read whole.
-	 * Resolves false when a read failed, so the poll can back off; the Map keeps what it
-	 * has and says it is retrying.
+	 * that whole project, and a project with nothing on the Map yet is read whole. When a
+	 * read fails the Map keeps what it has and says it is retrying. Resolves false when no
+	 * read landed, so the poll backs off when the server is in trouble, not when one
+	 * project is.
 	 */
 	async refresh(): Promise<boolean> {
 		if (this.state !== 'ready' || this.fetching) return true;
@@ -213,15 +218,16 @@ export class MapDataModel implements Observable {
 			const projects = this.readable();
 			const reads = await Promise.allSettled(projects.map((project) => this.readSince(project, epoch)));
 			if (epoch !== this.epoch) return true;
-			const { landed, failed } = this.settle(projects, reads);
+			const { landed, failed, reshaped } = this.settle(projects, reads);
 			this.retrying = failed;
 			if (landed) {
 				this.received++;
+				if (reshaped) this.reshapedAt = this.received;
 				this.loadedAt = this.clock();
 				this.schedule();
 			}
 			this.emit();
-			return !failed;
+			return landed;
 		} finally {
 			if (epoch === this.epoch) this.fetching = false;
 		}
@@ -275,32 +281,39 @@ export class MapDataModel implements Observable {
 	 * keeps what it had, and the poll asks again. A 403 or 404 drops the project for good,
 	 * but only in a round where another project's read landed: the last project standing
 	 * holds what it has and keeps being asked, which is what a project's own Map does
-	 * when its read fails.
+	 * when its read fails. `reshaped` says a project's rows arrived (the first of its reads
+	 * to land had any) or left (it was dropped), which a project's own Map never sees.
 	 */
-	private settle(projects: readonly ProjectReads[], reads: readonly PromiseSettledResult<MapRead>[]): { landed: boolean; failed: boolean } {
+	private settle(projects: readonly ProjectReads[], reads: readonly PromiseSettledResult<MapRead>[]): { landed: boolean; failed: boolean; reshaped: boolean } {
 		const landed = reads.some((read) => read.status === 'fulfilled');
 		let failed = false;
+		let reshaped = false;
 		projects.forEach((project, i) => {
 			const read = reads[i]!;
 			if (read.status === 'fulfilled') {
+				if (!project.latest && read.value.items.length > 0) reshaped = true;
 				project.latest = read.value;
 				project.failure = null;
 				return;
 			}
 			const error = read.reason instanceof Error ? read.reason : new Error(String(read.reason));
 			if (landed && isUnreadable(error)) {
+				if (project.latest && project.latest.items.length > 0) reshaped = true;
 				project.latest = null;
-				project.failure = { error, unreadable: true };
+				project.failure = { error, unreadable: true, held: false };
 			} else {
 				failed = true;
-				if (!project.latest) project.failure = { error, unreadable: false };
+				project.failure = { error, unreadable: false, held: project.latest !== null };
 			}
 		});
-		const missing = new Map<string, MapProjectFailure>();
-		for (const project of this.projects) if (project.failure) missing.set(project.ref, project.failure);
-		const same = missing.size === this.missing.size && [...missing].every(([ref, failure]) => this.missing.get(ref)?.unreadable === failure.unreadable);
-		if (!same) this.missing = missing;
-		return { landed, failed };
+		const failures = new Map<string, MapProjectFailure>();
+		for (const project of this.projects) if (project.failure) failures.set(project.ref, project.failure);
+		const same = failures.size === this.failures.size && [...failures].every(([ref, failure]) => {
+			const was = this.failures.get(ref);
+			return was !== undefined && was.unreadable === failure.unreadable && was.held === failure.held;
+		});
+		if (!same) this.failures = failures;
+		return { landed, failed, reshaped };
 	}
 
 	/** Every project's newest rows as one set, and the projects whose read came back summarized. */
@@ -339,6 +352,9 @@ export class MapDataModel implements Observable {
 		const settled = this.layout;
 		const round = this.received;
 		const fresh = round !== this.applied;
+		// A whole project's rows arriving or leaving are nobody's news, and the time scale fitted at load may not
+		// hold them: everything is laid out afresh, and the Map cuts to it.
+		const reshaped = fresh && this.reshapedAt > this.applied;
 		const { rows, summarized } = fresh ? this.union() : { rows: this.rows, summarized: this.summarized };
 		const changes = fresh ? diffRows(this.rows, rows) : NO_UPDATE;
 		const toggled = [...this.unsettled];
@@ -347,7 +363,7 @@ export class MapDataModel implements Observable {
 		// A toggle alone cuts rather than glides, so it doesn't move the clock either: drift waits for data.
 		const now = fresh ? this.clock() : this.now;
 		const moving = [...changes.added, ...changes.moved];
-		const relayout = toggled.length > 0 || moving.length > 0 || changes.removed.size > 0 || this.drifted(rows, now);
+		const relayout = reshaped || toggled.length > 0 || moving.length > 0 || changes.removed.size > 0 || this.drifted(rows, now);
 		if (!relayout && !changesAnything(changes)) {
 			// An idle poll: only the cursors moved. The Map is already showing all of it.
 			this.applied = round;
@@ -357,7 +373,7 @@ export class MapDataModel implements Observable {
 		let layout = settled;
 		if (relayout && rows.size > 0) {
 			this.inFlight = true;
-			const previous: MapLayoutPrevious | undefined = settled
+			const previous: MapLayoutPrevious | undefined = settled && !reshaped
 				? { frame: settled.frame, positions: Object.fromEntries(settled.nodes.map((node) => [node.key, { x: node.x, y: node.y }])), changed: [...new Set([...toggled, ...moving])] }
 				: undefined;
 			try {
@@ -381,7 +397,7 @@ export class MapDataModel implements Observable {
 		this.summarized = summarized;
 		this.layout = layout;
 		if (layout !== settled) this.now = now;
-		this.changes = fresh ? changes : null;
+		this.changes = fresh && !reshaped ? changes : null;
 		this.emit();
 		this.schedule();
 	}

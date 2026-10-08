@@ -1,5 +1,5 @@
+import { parseItemKey } from '@specboard/core/identifiers';
 import type { MapItemRow } from '@specboard/core/map-read';
-import { projectKeyOf } from '../map-projects';
 import {
 	IN_FLIGHT_PARENT_SCALE,
 	IN_FLIGHT_RADIUS,
@@ -350,9 +350,9 @@ function chainsOf(
  * cross projects, and neither does its up next (multi-project-view.md, decision 10).
  */
 function planOf(items: readonly ModelItem[]): { upNext: string[]; planOrder: string[] } {
-	const projects = new Map<string, ModelItem[]>();
+	const projects = new Map<string | undefined, ModelItem[]>();
 	for (const item of items) {
-		const project = projectKeyOf(item.key);
+		const project = parseItemKey(item.key)?.projectKey;
 		const members = projects.get(project);
 		if (members) members.push(item);
 		else projects.set(project, [item]);

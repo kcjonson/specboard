@@ -1,4 +1,4 @@
-import { projectKeyOf } from './map-projects';
+import { parseItemKey } from '@specboard/core/identifiers';
 
 const numbered = new WeakMap<readonly string[], ReadonlyMap<string, number>>();
 
@@ -10,10 +10,10 @@ const numbered = new WeakMap<readonly string[], ReadonlyMap<string, number>>();
 export function upNextNumbers(upNext: readonly string[]): ReadonlyMap<string, number> {
 	const known = numbered.get(upNext);
 	if (known) return known;
-	const counts = new Map<string, number>();
+	const counts = new Map<string | undefined, number>();
 	const numbers = new Map<string, number>();
 	for (const key of upNext) {
-		const project = projectKeyOf(key);
+		const project = parseItemKey(key)?.projectKey;
 		const number = (counts.get(project) ?? 0) + 1;
 		counts.set(project, number);
 		numbers.set(key, number);

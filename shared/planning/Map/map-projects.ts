@@ -1,3 +1,5 @@
+import { parseItemKey } from '@specboard/core/identifiers';
+
 /** A project on the combined Map (multi-project-view.md). */
 export interface MapProject {
 	/** `owner/project`, where its reads go. */
@@ -30,27 +32,30 @@ export interface MapSetup {
 	own: string | null;
 }
 
-/** An item key's prefix: `SPE` for `SPE-12`. */
-export function projectKeyOf(itemKey: string): string {
-	const at = itemKey.lastIndexOf('-');
-	return at < 0 ? '' : itemKey.slice(0, at);
-}
-
 /** What the scope says, as one string: the Map starts over only when this changes, whatever object it came in. */
 export function scopeKey(scope: MapScope): string {
 	return 'projectRef' in scope ? scope.projectRef : scope.projects.map((project) => `${project.key}:${project.ref}`).join(',');
 }
 
+/**
+ * Throws for a combined view with two projects under one prefix: the Map's rows, selection,
+ * and relations all go by item key, so the picker never offers that (decision 5).
+ */
 export function mapSetup(scope: MapScope): MapSetup {
 	if ('projectRef' in scope) {
 		const { projectRef } = scope;
 		return { refs: [projectRef], refOf: () => projectRef, own: projectRef };
 	}
-	const byKey = new Map(scope.projects.map((project) => [project.key, project.ref]));
+	const byKey = new Map<string, string>();
+	for (const { key, ref } of scope.projects) {
+		if (byKey.has(key)) throw new Error(`Two projects on one Map can't share the prefix ${key}`);
+		byKey.set(key, ref);
+	}
 	return {
 		refs: scope.projects.map((project) => project.ref),
 		refOf: (itemKey) => {
-			const ref = byKey.get(projectKeyOf(itemKey));
+			const prefix = parseItemKey(itemKey)?.projectKey;
+			const ref = prefix === undefined ? undefined : byKey.get(prefix);
 			if (ref === undefined) throw new Error(`${itemKey} is from none of the projects on the Map`);
 			return ref;
 		},

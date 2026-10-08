@@ -61,8 +61,12 @@ export interface MapViewProps {
 	type: MapItemType | null;
 	/** The stepping bar's Clear, and Escape with nothing else to close: the page empties the search box and the type filter. */
 	onClear(): void;
-	/** The projects the Map is drawing without, by ref, each time that changes: the combined view names them in its notice. */
-	onMissing?(missing: ReadonlyMap<string, MapProjectFailure>): void;
+	/**
+	 * Every project whose last read failed, by ref, each time that changes: dropped as
+	 * unreadable, held at what the Map last read of it, or never drawn. The combined view
+	 * names them in its notice.
+	 */
+	onFailures?(failures: ReadonlyMap<string, MapProjectFailure>): void;
 	/** Tests hand in a model with a fake source and worker; the page builds its own. */
 	model?: MapDataModel;
 	/** Tests hand in the quick card's activity source; the page asks the notes endpoint. */
@@ -127,7 +131,7 @@ const ANCHOR_PAUSE_MS = 300;
  * the since-last-visit layer. The page loads this module lazily, so Board and Table
  * don't carry it.
  */
-export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, search, type, onClear, onMissing, model: provided, activity: providedActivity, searchSource, changes: providedChanges }: MapViewProps): JSX.Element {
+export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, search, type, onClear, onFailures, model: provided, activity: providedActivity, searchSource, changes: providedChanges }: MapViewProps): JSX.Element {
 	// Built from what the scope says rather than the object it came in, so a container that hands in a new one every render doesn't start the Map over.
 	const setup = useMemo(() => mapSetup(scope), [scopeKey(scope)]);
 	const model = useMemo(
@@ -139,7 +143,7 @@ export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, 
 
 	// The Map's read carries no descriptions, so the board's own search says which items match: every project's, but not one the Map has dropped.
 	const searcher = useMemo(
-		() => new MapSearchModel(searchSource ?? createSearchSource(() => setup.refs.filter((ref) => !model.missing.get(ref)?.unreadable))),
+		() => new MapSearchModel(searchSource ?? createSearchSource(() => setup.refs.filter((ref) => !model.failures.get(ref)?.unreadable))),
 		[searchSource, setup, model],
 	);
 	useModel(searcher);
@@ -214,7 +218,7 @@ export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, 
 
 	// The surface lives as long as the view, so what it calls back into is read from here.
 	const openItem = (key: string): void => onOpenItem(key, setup.refOf(key));
-	const live = useRef({ openItemKey, openItem, onCloseItem, onMissing, model, clear: () => {}, lensActive: false, changesShown: false, closeChanges: () => {} });
+	const live = useRef({ openItemKey, openItem, onCloseItem, onFailures, model, clear: () => {}, lensActive: false, changesShown: false, closeChanges: () => {} });
 	const clearLens = useCallback((): void => {
 		onClear();
 		setPhases(new Set());
@@ -463,8 +467,8 @@ export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, 
 		return () => window.clearInterval(timer);
 	}, [model]);
 
-	const { state, layout, rows, missing } = model;
-	useEffect(() => live.current.onMissing?.(missing), [missing]);
+	const { state, layout, rows, failures } = model;
+	useEffect(() => live.current.onFailures?.(failures), [failures]);
 	const now = Math.max(model.now, ticked);
 	const working = useMemo(() => (layout ? agentsOf(layout, rows, now) : NO_AGENTS), [layout, rows, now]);
 	// Before the layout effect, so a new layout is drawn against the right time the first time.
@@ -515,7 +519,7 @@ export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, 
 	const baseline = changesModel?.baseline ?? null;
 	// A search or filter takes the canvas while it is on and gives it back when it ends; the view stays open behind it.
 	const changesShown = interactive && !changesClosed && waiting.length > 0 && !lensActive;
-	live.current = { openItemKey, openItem, onCloseItem, onMissing, model, clear: clearLens, lensActive, changesShown, closeChanges };
+	live.current = { openItemKey, openItem, onCloseItem, onFailures, model, clear: clearLens, lensActive, changesShown, closeChanges };
 	const changesHighlight = useMemo(
 		() => (layout && waiting.length > 0 ? highlightOf(waiting.map((item) => item.key), layout, waiting.slice(-RECENT_LABELS).map((item) => item.key)) : null),
 		[layout, waiting],
