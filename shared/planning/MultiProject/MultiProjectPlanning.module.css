@@ -138,22 +138,14 @@
 	font-weight: var(--font-medium);
 }
 
-/* Fills the rest of the page; the Table inside owns the scrolling. */
-.viewArea {
-	flex: 1;
-	min-height: 0;
-	display: flex;
-	flex-direction: column;
-}
-
-@media (width < 768px) { /* bp-small: projects on one sideways-scrolling row, filters full width below */
+@media (width < 768px) { /* bp-small: the view toggle and the projects share a row, the projects scrolling sideways; filters full width below */
 	.toolbar {
 		padding: var(--space-2) var(--space-3);
 	}
 
 	/* The padding keeps focus rings clear of the scroller's clipping edge. */
 	.projects {
-		flex: 1 1 100%;
+		flex: 1 1 0;
 		flex-wrap: nowrap;
 		overflow-x: auto;
 		scrollbar-width: none;

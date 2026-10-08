@@ -222,6 +222,29 @@ describe('The combined Map', () => {
 		expect(container.querySelector('[role="alert"]')).toBeNull();
 	});
 
+	it('leaves out a project the page already knows can\'t be read, without asking it', async () => {
+		const { spe, pln } = boards();
+		serve({ 'acme/specboard': wholeRead(spe), 'kim/planner': wholeRead(pln) });
+		const failures: Array<ReadonlyMap<string, MapProjectFailure>> = [];
+		render(
+			<MapView
+				scope={{ projects: PROJECTS }}
+				covered={0}
+				search=""
+				type={null}
+				onClear={() => {}}
+				onOpenItem={() => {}}
+				onCloseItem={() => {}}
+				onFailures={(now) => failures.push(now)}
+				unreadable={['kim/planner']}
+			/>
+		);
+
+		await waitFor(() => expect(dotKeys()).toEqual(spe.map((row) => row.key).sort()));
+		expect(asked()).toEqual(['/api/projects/acme/specboard/map']);
+		expect(failures.at(-1)?.get('kim/planner')).toMatchObject({ unreadable: true, held: false });
+	});
+
 	it('cuts to a fresh layout when a project\'s rows arrive late, and says nothing about them', async () => {
 		const { spe, pln } = boards();
 		let plannerReads = 0;

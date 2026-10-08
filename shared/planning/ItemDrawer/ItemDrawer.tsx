@@ -4,6 +4,7 @@ import { useModel, type ItemModel } from '@specboard/models';
 import { FetchError } from '@specboard/fetch';
 import { ResizablePanel, Icon } from '@specboard/ui';
 import { ItemView } from '../ItemView/ItemView';
+import type { ProjectLabel } from '../ProjectChip/ProjectChip';
 import { TYPE_LABELS } from '../utils/itemType';
 import styles from './ItemDrawer.module.css';
 
@@ -14,9 +15,14 @@ export interface ItemDrawerProps {
 	 * its detail arrives. Any other item is shown only once its own first fetch lands.
 	 */
 	listed: boolean;
-	projectRef: string;
 	/** Whether the caller may change the item (useProjectRole); off renders it read-only. */
 	canEdit: boolean;
+	/**
+	 * The item's project, when the drawer opens over a view of several projects, which only
+	 * reads: the drawer names it and links to the item's own page there, where the person's
+	 * role decides what they can change.
+	 */
+	project?: ProjectLabel;
 	/** Upper bound for the drawer width, so it can't fully crowd out the board. */
 	maxWidth?: number;
 	onClose: () => void;
@@ -41,7 +47,7 @@ function unresolvedMessage(itemKey: string, error: Error | null): string {
  * Board and Table views. The content is the same {@link ItemView} used by the
  * full-screen item route; only the surrounding chrome differs.
  */
-export function ItemDrawer({ item, listed, projectRef, canEdit, maxWidth, onClose, onResize, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
+export function ItemDrawer({ item, listed, canEdit, project, maxWidth, onClose, onResize, onDelete, onOpenItem }: ItemDrawerProps): JSX.Element {
 	useModel(item);
 
 	// An unlisted key has nothing behind it until its fetch lands, and may have
@@ -59,10 +65,11 @@ export function ItemDrawer({ item, listed, projectRef, canEdit, maxWidth, onClos
 
 	// The key doubles as the drawer's identity: it's what you'd paste into a commit or PR.
 	const title = resolved ? `${item.key} · ${TYPE_LABELS[item.type || 'epic']}` : item.key;
+	const itemPage = `/projects/${item.projectRef}/items/${item.key}`;
 
 	const handleOpenInNewWindow = useCallback((): void => {
-		window.open(`/projects/${projectRef}/items/${item.key}`, '_blank', 'noopener,noreferrer');
-	}, [projectRef, item.key]);
+		window.open(itemPage, '_blank', 'noopener,noreferrer');
+	}, [itemPage]);
 
 	// Close on Escape only when focus is within the drawer; stopPropagation keeps
 	// the board's Escape-to-deselect from also firing (so selection is preserved).
@@ -87,7 +94,8 @@ export function ItemDrawer({ item, listed, projectRef, canEdit, maxWidth, onClos
 			label="Resize detail panel"
 			class={styles.drawer}
 		>
-			<div class={styles.inner} onKeyDown={handleKeyDown}>
+			{/* data-item-drawer: the board's keys leave whatever is aimed in here to the drawer. */}
+			<div class={styles.inner} onKeyDown={handleKeyDown} data-item-drawer>
 				<div class={styles.header}>
 					<h2 class={styles.title}>{title}</h2>
 					<div class={styles.headerActions}>
@@ -113,6 +121,15 @@ export function ItemDrawer({ item, listed, projectRef, canEdit, maxWidth, onClos
 						</button>
 					</div>
 				</div>
+				{project && resolved && (
+					<div class={styles.projectBar}>
+						<span>Read-only in this view.</span>
+						<a class={styles.projectLink} href={itemPage} title={project.ref}>
+							Open in {project.name}
+							<Icon name="arrow-right" class="size-sm" />
+						</a>
+					</div>
+				)}
 				<div class={styles.content}>
 					{resolved ? (
 						<ItemView item={item} canEdit={canEdit} onDelete={onDelete} onOpenItem={onOpenItem} />

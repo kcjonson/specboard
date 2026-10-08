@@ -322,6 +322,15 @@ so the board turns read-only to match.
 
 ## Keyboard Shortcuts
 
+The arrows move on from the card focus is on, else from the selected card, and move the
+selection and focus together, so a screen reader says the card they land on and Enter opens
+it. Enter opens a focused card, else the selection; the move keys act on the selection only,
+so a card that merely has focus (a click's, after Escape) moves nowhere, and a moved card
+keeps focus in its new column. A key aimed at a field, a dialog, or the item drawer is
+left to it, and so are the keys that follow a link or press a button (Enter, Space), even with
+a card selected; the arrows, Escape, and the shortcuts still work with a link or a button
+focused.
+
 ### Global
 
 | Shortcut | Action |
@@ -512,6 +521,14 @@ a document load of it (pasted link, reload, new tab) is redirected by the fronte
 service to the standalone page, so following a link to an item never lands on a
 board with a sidebar.
 
+Closing the drawer (its close button, Escape) goes back, undoing the entry its opening
+pushed, while that lands where closing should: the current entry is still the one the
+opening pushed, and nothing but the Map's anchor has changed in it since. Another view
+picked or a Map jump pushes an entry of its own, which Back would undo instead with the
+drawer still open, so then, as with a drawer opened by a navigation from elsewhere, it
+closes in place. Going back returns the Map's camera to where it was when the drawer
+opened. `useDrawerHistory` holds this model for every planning page.
+
 On the Map (`?view=map`) the same drawer overlays the right side of the plot instead of
 narrowing it, and the selected item stays in view
 ([ai-development-overview.md](ai-development-overview.md#navigation-and-interaction)).
@@ -519,8 +536,9 @@ The toolbar's search box and type filter stay on the Map and drive its dimming i
 the board's windows: the board's collection is left alone while the Map is showing, and
 applies the same search and type when the board comes back.
 
-The [multi-project view](multi-project-view.md) opens an item on its standalone page, in
-the item's own project (decision 7 there).
+The [multi-project view](multi-project-view.md) opens the same drawer, read-only, in the item's
+own project, with its item in the address as `&item=<KEY>` under the same history model, and a
+link to the item's standalone page (decision 7 there).
 
 ---
 
@@ -566,8 +584,9 @@ CSS module beside the component, and `index.ts` re-exports the ones consumers mo
 
 ```
 shared/planning/
-├── Planning/            board shell: view toggle, windows, drawer routing (+ prefs.ts, filters.ts)
+├── Planning/            board shell: view toggle, windows, drawer routing (+ prefs.ts, filters.ts, view.ts)
 ├── MultiProject/        several projects in one read-only view: route, selection, merged items
+├── Workspace/           the active view and the item drawer beside it (or over the Map)
 ├── Board/               the columns
 ├── Column/              one status column
 ├── ItemCard/            a card on the board
@@ -587,8 +606,8 @@ shared/planning/
 ├── RichTextEditor/      description / note editor (+ Toolbar, types)
 ├── TypeBadge/           epic / task / bug pill
 ├── ProjectChip/         which project a row comes from, in a view that mixes them
-├── hooks/               useKeyboardNavigation
-├── utils/               actor, itemType, time
+├── hooks/               useKeyboardNavigation, useDrawerHistory, usePolling
+├── utils/               actor, address, itemType, time
 └── index.ts
 ```
 
@@ -596,5 +615,6 @@ State lives in `shared/models/src/planning.ts`, not in the component tree:
 `ItemModel` / `ItemsCollection` for the board itself, and `BlockerModel`,
 `ChecklistEntryModel`, `NoteModel`, `SpecModel` with their collections for the
 item's sections. `ChildModel` is the summary shape a parent carries for each child. The
-Table reads items through `ItemsSource`, which `ItemsCollection` implements for one project
-and the multi-project view's `MergedItems` implements across several.
+Board and Table read items through `ItemsSource`, which `ItemsCollection` implements for one
+project and the multi-project view's `MergedItems` implements across several. Moving a card
+takes one project's `ItemsCollection`, since ranks are per project.

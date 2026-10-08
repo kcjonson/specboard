@@ -252,6 +252,27 @@ export class MapDataModel implements Observable {
 		return this.load(this.aspect);
 	}
 
+	/**
+	 * Leaves a project out for good, as its own 403 or 404 would: another view of the same
+	 * projects found the person can't read it. It's never asked again, a read of it still
+	 * out is ignored when it lands, and what the Map drew of it leaves with the next pass,
+	 * laid out afresh like any project leaving.
+	 */
+	drop(ref: string): void {
+		const project = this.projects.find((candidate) => candidate.ref === ref);
+		if (!project || project.failure?.unreadable) return;
+		const drawn = project.latest !== null && project.latest.items.length > 0;
+		project.latest = null;
+		project.failure = { error: new Error(`${ref} can't be read`), unreadable: true, held: false };
+		this.noteFailures();
+		if (drawn) {
+			this.received++;
+			this.reshapedAt = this.received;
+			this.schedule();
+		}
+		this.emit();
+	}
+
 	dispose(): void {
 		this.epoch++;
 		this.generation++;
@@ -271,8 +292,9 @@ export class MapDataModel implements Observable {
 		const base = project.latest;
 		if (!base) return project.read(null);
 		const read = await project.read(base.cursor);
-		// A load or dispose has overtaken this round: nothing waits for the whole read a failed merge would need.
-		if (epoch !== this.epoch) return base;
+		// A load or dispose has overtaken this round, or the project was dropped while its read was
+		// out: nothing waits for the whole read a failed merge would need.
+		if (epoch !== this.epoch || project.failure?.unreadable) return base;
 		return (read.delta ? mergeRead(base, read) : read) ?? project.read(null);
 	}
 
@@ -289,6 +311,8 @@ export class MapDataModel implements Observable {
 		let failed = false;
 		let reshaped = false;
 		projects.forEach((project, i) => {
+			// Dropped while its read was out (see drop): what it answered no longer counts.
+			if (project.failure?.unreadable) return;
 			const read = reads[i]!;
 			if (read.status === 'fulfilled') {
 				if (!project.latest && read.value.items.length > 0) reshaped = true;
@@ -306,6 +330,12 @@ export class MapDataModel implements Observable {
 				project.failure = { error, unreadable: false, held: project.latest !== null };
 			}
 		});
+		this.noteFailures();
+		return { landed, failed, reshaped };
+	}
+
+	/** Takes `failures` from the projects, as a new map only when which projects, or how they failed, changed. */
+	private noteFailures(): void {
 		const failures = new Map<string, MapProjectFailure>();
 		for (const project of this.projects) if (project.failure) failures.set(project.ref, project.failure);
 		const same = failures.size === this.failures.size && [...failures].every(([ref, failure]) => {
@@ -313,7 +343,6 @@ export class MapDataModel implements Observable {
 			return was !== undefined && was.unreadable === failure.unreadable && was.held === failure.held;
 		});
 		if (!same) this.failures = failures;
-		return { landed, failed, reshaped };
 	}
 
 	/** Every project's newest rows as one set, and the projects whose read came back summarized. */

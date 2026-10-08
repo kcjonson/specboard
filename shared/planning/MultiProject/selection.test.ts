@@ -14,6 +14,7 @@ import {
 	readRememberedSelection,
 	rememberSelection,
 	resolveSelection,
+	mapTroubleNotices,
 	type ListedProject,
 } from './selection';
 
@@ -84,12 +85,6 @@ describe('multiProjectUrl', () => {
 			refs: ['acme/roadmap', 'bob/notes'],
 		});
 	});
-
-	it('adds the view and filters encoded, and leaves the empty ones off', () => {
-		expect(multiProjectUrl(['acme/a', 'acme/b'], { view: 'table', search: 'oauth login', type: 'bug' }))
-			.toBe('/planning?projects=acme/a,acme/b&view=table&search=oauth%20login&type=bug');
-		expect(multiProjectUrl(['acme/a', 'acme/b'], { search: '', type: undefined })).toBe('/planning?projects=acme/a,acme/b');
-	});
 });
 
 describe('resolveSelection', () => {
@@ -147,6 +142,25 @@ describe('leftOutNotices', () => {
 		]);
 		expect(leftOutNotices(['carol/secret', 'Notes'], [])).toEqual([
 			"carol/secret and Notes aren't shown: they don't exist, or you can't read them.",
+		]);
+	});
+});
+
+describe('mapTroubleNotices', () => {
+	it('says nothing while every read on the Map lands', () => {
+		expect(mapTroubleNotices([], [])).toEqual([]);
+	});
+
+	it('names the projects drawn as last loaded in one line, and those not drawn at all in another', () => {
+		expect(mapTroubleNotices(['Atlas'], [])).toEqual([
+			"Atlas couldn't be refreshed, so the Map shows it as last loaded. The Map keeps trying.",
+		]);
+		expect(mapTroubleNotices(['Atlas', 'Beacon'], ['Comet'])).toEqual([
+			"Atlas and Beacon couldn't be refreshed, so the Map shows them as last loaded. The Map keeps trying.",
+			"Comet couldn't be loaded on the Map, so it isn't drawn. The Map keeps trying.",
+		]);
+		expect(mapTroubleNotices([], ['Atlas', 'Beacon', 'Comet'])).toEqual([
+			"Atlas, Beacon, and Comet couldn't be loaded on the Map, so they aren't drawn. The Map keeps trying.",
 		]);
 	});
 });

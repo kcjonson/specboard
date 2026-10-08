@@ -19,6 +19,7 @@ export type IconName =
 	| 'user'
 	| 'bullet'
 	| 'arrow-left'
+	| 'arrow-right'
 	| 'external-link'
 	| 'git-branch'
 	| 'git-commit'
@@ -137,6 +138,12 @@ const icons: Record<IconName, JSX.Element> = {
 		<>
 			<line x1="19" y1="12" x2="5" y2="12" />
 			<polyline points="12 19 5 12 12 5" />
+		</>
+	),
+	'arrow-right': (
+		<>
+			<line x1="5" y1="12" x2="19" y2="12" />
+			<polyline points="12 5 19 12 12 19" />
 		</>
 	),
 	'external-link': (

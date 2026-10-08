@@ -67,6 +67,11 @@ export interface MapViewProps {
 	 * names them in its notice.
 	 */
 	onFailures?(failures: ReadonlyMap<string, MapProjectFailure>): void;
+	/**
+	 * Projects another view of the same projects found the person can't read, by ref: the
+	 * Map leaves them out as its own 403 or 404 would, without asking them first.
+	 */
+	unreadable?: readonly string[];
 	/** Tests hand in a model with a fake source and worker; the page builds its own. */
 	model?: MapDataModel;
 	/** Tests hand in the quick card's activity source; the page asks the notes endpoint. */
@@ -131,7 +136,7 @@ const ANCHOR_PAUSE_MS = 300;
  * the since-last-visit layer. The page loads this module lazily, so Board and Table
  * don't carry it.
  */
-export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, search, type, onClear, onFailures, model: provided, activity: providedActivity, searchSource, changes: providedChanges }: MapViewProps): JSX.Element {
+export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, search, type, onClear, onFailures, unreadable, model: provided, activity: providedActivity, searchSource, changes: providedChanges }: MapViewProps): JSX.Element {
 	// Built from what the scope says rather than the object it came in, so a container that hands in a new one every render doesn't start the Map over.
 	const setup = useMemo(() => mapSetup(scope), [scopeKey(scope)]);
 	const model = useMemo(
@@ -139,6 +144,11 @@ export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, 
 		[provided, setup],
 	);
 	useModel(model);
+	// Before the effect that loads the Map, so a project already known unreadable is never read.
+	const unreadableKey = (unreadable ?? []).join(',');
+	useEffect(() => {
+		for (const ref of unreadable ?? []) model.drop(ref);
+	}, [model, unreadableKey]);
 	const activity = useMemo(() => providedActivity ?? new ActivityCache(createActivitySource(setup.refOf)), [providedActivity, setup]);
 
 	// The Map's read carries no descriptions, so the board's own search says which items match: every project's, but not one the Map has dropped.

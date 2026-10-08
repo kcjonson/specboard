@@ -2,27 +2,25 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
-import { navigate } from '@specboard/router';
-import { useModel, useProjectRole, ItemsCollection, ItemModel, type ItemType, writeFailure } from '@specboard/models';
+import { useModel, useProjectRole, ItemsCollection, type ItemModel, type ItemType, writeFailure } from '@specboard/models';
 import { Page, SplitButton, Text, Select, Button, Icon, Notice, type SplitButtonOption } from '@specboard/ui';
-import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
-import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
+import { Board } from '../Board/Board';
+import { Table } from '../Table/Table';
 import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import type { NewItemData } from '../NewItemForm/NewItemForm';
 import { LoadError } from '../LoadError/LoadError';
-import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
+import { ViewToggle } from '../ViewToggle/ViewToggle';
+import { Workspace } from '../Workspace/Workspace';
+import { useDrawerHistory } from '../hooks/useDrawerHistory';
+import { useDrawerItem } from '../hooks/useDrawerItem';
 import { usePolling } from '../hooks/usePolling';
+import { withQuery } from '../utils/address';
 import { HIGHLIGHT_DURATION } from '../utils/highlight';
 import { CATEGORY_OPTIONS, usePlanningFilters } from './filters';
-import { VIEW_PREF, writePref } from './prefs';
-import { useMapView } from './useMapView';
-import { readView, resolveView, useSmallScreen } from './view';
+import { LazyMap } from './LazyMap';
+import { openingWindow, usePlanningView, usePlanningWindows } from './view';
 import styles from './Planning.module.css';
-
-/** Drawer min width (matches ItemDrawer) and the board's reserved minimum. */
-const DRAWER_MIN_WIDTH = 320;
-const BOARD_MIN_WIDTH = 360;
 
 /**
  * Planning page container — the route entry for both `/projects/:owner/:project/planning`
@@ -65,32 +63,16 @@ export function Planning(props: RouteProps): JSX.Element {
 	// toggles (the route/entry is unchanged, only the ?view= param differs). Its
 	// per-status windows start at the size of whichever view opens first.
 	const items = useMemo(
-		() => new ItemsCollection({
-			projectRef,
-			limit: readView() === 'table' ? TABLE_PAGE_SIZE : BOARD_PAGE_SIZE,
-		}),
+		() => new ItemsCollection({ projectRef, limit: openingWindow() }),
 		[projectRef]
 	);
 	useModel(items);
 
-	// The view the person asked for. The Map asked for on a small screen shows the Board,
-	// without forgetting the request, so widening the window brings the Map back.
-	const [requestedView, setRequestedView] = useState<PlanningView>(() => readView());
-	const small = useSmallScreen();
-	const view = resolveView(requestedView, small);
-
-	// The table shows more per section than the board per column; switching to it
-	// widens the windows that had more. Windows never shrink, so board -> table ->
-	// board leaves the board showing the wider set.
-	useEffect(() => {
-		if (view === 'table') void items.ensureLimit(TABLE_PAGE_SIZE);
-	}, [view, items]);
+	const { view, small, changeView } = usePlanningView();
 
 	// The toolbar's filter state, and the search text once it has settled. Filtering
 	// happens on the server (the views render whatever the collection holds), so the
 	// settled text plus the type go to the collection, which reissues its windows.
-	// The Map takes the same text and type but filters nothing on the server: it dims, and
-	// asks the items list for the matches itself. The board's windows catch up when it returns.
 	const {
 		filters,
 		settledSearch,
@@ -100,16 +82,8 @@ export function Planning(props: RouteProps): JSX.Element {
 		onCategoryChange: handleCategoryChange,
 		clear: handleClearFilters,
 	} = usePlanningFilters();
-	const onMap = view === 'map';
-	useEffect(() => {
-		if (onMap) return;
-		void items.setFilter({ search: settledSearch, type });
-	}, [items, onMap, settledSearch, type]);
+	usePlanningWindows(items, view, { search: settledSearch, type });
 
-	// The board selection — the single source of truth for which card is marked.
-	// Seeded from the route so an in-app navigation to an item URL lands with its
-	// card selected, and kept in step below whenever the route changes under it.
-	const [selectedItemKey, setSelectedItemKey] = useState<string | undefined>(openItemKey);
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
 
@@ -137,20 +111,12 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, []);
 	useEffect(() => () => flashTimers.current.forEach(clearTimeout), []);
 
-	// Read highlight param from URL and flash that item once
+	// Read highlight param from URL and flash that item once, then drop it from the address.
 	useEffect(() => {
-		const params = new URLSearchParams(window.location.search);
-		const highlightId = params.get('highlight');
+		const highlightId = new URLSearchParams(window.location.search).get('highlight');
 		if (highlightId) {
 			flashItems([highlightId]);
-			// Clear only the highlight URL param, preserving other params and hash
-			params.delete('highlight');
-			const search = params.toString();
-			const newUrl =
-				window.location.pathname +
-				(search ? `?${search}` : '') +
-				window.location.hash;
-			window.history.replaceState(window.history.state, '', newUrl);
+			window.history.replaceState(window.history.state, '', withQuery(window.location, { highlight: undefined }));
 		}
 	}, [flashItems]);
 
@@ -166,71 +132,22 @@ export function Planning(props: RouteProps): JSX.Element {
 	// polls are skipped, and a user-driven fetch that succeeds clears $meta.error so they resume.
 	usePolling(() => void items.fetch(), () => items.$meta.error !== null);
 
-	// Keep the active view in sync with the URL on browser back/forward — the
-	// router re-renders this same component on popstate without remounting it,
-	// so `view` would otherwise drift from `?view=`.
-	useEffect(() => {
-		const syncView = (): void => setRequestedView(readView());
-		window.addEventListener('popstate', syncView);
-		return () => window.removeEventListener('popstate', syncView);
-	}, []);
-
-	const handleChangeView = useCallback((next: PlanningView): void => {
-		setRequestedView(next);
-		writePref(VIEW_PREF, next);
-		// The view is always written explicitly so a history entry is never ambiguous.
-		const params = new URLSearchParams(window.location.search);
-		params.set('view', next);
-		// A Map anchor means nothing on the other views.
-		if (next !== 'map') params.delete('focus');
-		const search = params.toString();
-		navigate(window.location.pathname + (search ? `?${search}` : '') + window.location.hash);
-	}, []);
-
-	// Selection follows the route whenever the route moves on its own — a navigation
-	// from elsewhere in the app, or the user hitting Back/Forward across item URLs.
-	useEffect(() => {
-		if (openItemKey) setSelectedItemKey(openItemKey);
-		else openedByPush.current = false;
-	}, [openItemKey]);
-
-	/** Board and item URLs, preserving the query string and hash the user is on. */
-	const boardUrl = useCallback(
-		(): string => `/projects/${projectRef}/planning${window.location.search}${window.location.hash}`,
+	/** The board, or the board with an item's drawer open, keeping the query string and hash the user is on. */
+	const drawerAddress = useCallback(
+		(itemKey: string | undefined): string => itemKey
+			? `/projects/${projectRef}/planning/items/${itemKey}${window.location.search}${window.location.hash}`
+			: `/projects/${projectRef}/planning${window.location.search}${window.location.hash}`,
 		[projectRef]
 	);
-	const itemUrl = useCallback(
-		(itemKey: string): string =>
-			`/projects/${projectRef}/planning/items/${itemKey}${window.location.search}${window.location.hash}`,
-		[projectRef]
-	);
-
-	// Moving the selection (arrow keys, clicking a card). With the drawer open it
-	// follows live, replacing the history entry rather than pushing one per keystroke.
-	// Escape clears the selection and dismisses the drawer with it.
-	const handleSelectItem = useCallback((item: ItemModel | undefined): void => {
-		setSelectedItemKey(item?.key);
-		if (!openItemKey) return;
-		navigate(item ? itemUrl(item.key) : boardUrl(), { replace: true });
-	}, [openItemKey, itemUrl, boardUrl]);
-
-	// History model for the drawer, applied by every path that opens or closes it:
-	//   - opening from the board is a new place        -> push, so Back closes it
-	//   - moving between items while already open      -> replace, so browsing ten
-	//     items doesn't leave ten entries to Back through
-	//   - closing                                      -> undo our own push (below)
-	// Card clicks call onSelect *then* onOpen, so without the replace-when-open rule
-	// the select's navigation would land first and silently swallow the open's push.
-	const openedByPush = useRef(false);
-	const handleOpenItemByKey = useCallback((itemKey: string): void => {
-		setSelectedItemKey(itemKey);
-		if (openItemKey) {
-			navigate(itemUrl(itemKey), { replace: true });
-		} else {
-			openedByPush.current = true;
-			navigate(itemUrl(itemKey));
-		}
-	}, [itemUrl, openItemKey]);
+	// The board's selection is the single source of truth for which card is marked; the
+	// Board's keyboard hook clears it on Escape and dismisses the drawer with it. The Table
+	// mounts no keyboard hook, so Escape there is the drawer history's.
+	const {
+		selectedItemKey,
+		select: handleSelectItem,
+		open: handleOpenItemByKey,
+		close: handleCloseDrawer,
+	} = useDrawerHistory(openItemKey, drawerAddress, view === 'table' && !isNewItemDialogOpen);
 
 	const handleOpenItem = useCallback((item: ItemModel): void => {
 		handleOpenItemByKey(item.key);
@@ -262,42 +179,6 @@ export function Planning(props: RouteProps): JSX.Element {
 		setIsNewItemDialogOpen(false);
 	}, []);
 
-	// Closing undoes our own push where there is one, which leaves the history exactly
-	// as it was before the drawer opened. Replacing instead would strand a duplicate
-	// board entry, making the next Back appear to do nothing; pushing would make Back
-	// reopen the drawer. When the drawer was opened by a navigation from elsewhere in
-	// the app, or restored by Back/Forward, there is nothing of ours to pop, so replace.
-	const handleCloseDrawer = useCallback((): void => {
-		if (openedByPush.current) {
-			openedByPush.current = false;
-			window.history.back();
-			return;
-		}
-		navigate(boardUrl(), { replace: true });
-	}, [boardUrl]);
-
-	// The board mounts useKeyboardNavigation, whose Escape clears the selection and
-	// dismisses the drawer with it. The table mounts no keyboard hook, so Escape is
-	// wired here for that view; the drawer's own handler stops propagation when
-	// focus is inside it, so this only fires with focus out on the table.
-	useEffect(() => {
-		if (view !== 'table') return;
-		const onKeyDown = (e: KeyboardEvent): void => {
-			if (e.key !== 'Escape' || !openItemKey || isNewItemDialogOpen) return;
-			const target = e.target as HTMLElement;
-			if (
-				target.tagName === 'INPUT' ||
-				target.tagName === 'TEXTAREA' ||
-				target.tagName === 'SELECT' ||
-				target.isContentEditable
-			) return;
-			setSelectedItemKey(undefined);
-			handleCloseDrawer();
-		};
-		document.addEventListener('keydown', onKeyDown);
-		return () => document.removeEventListener('keydown', onKeyDown);
-	}, [view, openItemKey, isNewItemDialogOpen, handleCloseDrawer]);
-
 	const handleDeleteItem = useCallback(async (item: ItemModel): Promise<void> => {
 		setWriteError(null);
 		const inCollection = items.find((i) => i.key === item.key);
@@ -312,9 +193,8 @@ export function Planning(props: RouteProps): JSX.Element {
 			// Shown in the item's confirm dialog, which stays open on it.
 			throw new Error(writeFailure(err, 'Could not delete that item.', projectRef), { cause: err });
 		}
-		setSelectedItemKey(undefined);
-		navigate(boardUrl(), { replace: true });
-	}, [items, boardUrl, projectRef]);
+		handleSelectItem(undefined);
+	}, [items, handleSelectItem, projectRef]);
 
 	const createOptions: SplitButtonOption[] = useMemo(() => [
 		{ label: 'Epic', value: 'epic', icon: 'file' as const, onClick: () => handleOpenNewItemDialog('epic') },
@@ -346,45 +226,8 @@ export function Planning(props: RouteProps): JSX.Element {
 		</>
 	);
 
-	// The drawer renders the item named by the route. A top-level item uses the live
-	// collection model, so edits reflect on the board immediately. Anything else — a
-	// child, or an item the collection has dropped — gets a standalone model that
-	// fetches its own detail, and the drawer stays inert until that fetch lands.
-	//
-	// `items` is a stable reference whose *contents* change, so the collection lookup
-	// has to run every render (it is a cheap array scan) rather than inside the memo:
-	// memoizing it meant that when a poll dropped the open item, the cached `undefined`
-	// stood and the drawer silently vanished mid-edit. Waiting for the first fetch also
-	// avoids building a standalone model for an item that is merely still loading.
-	const collectionItem = openItemKey ? items.find((i) => i.key === openItemKey) : undefined;
-	const standaloneKey = openItemKey && !collectionItem && items.$meta.lastFetched !== null
-		? openItemKey
-		: undefined;
-	const standaloneItem = useMemo(
-		() => (standaloneKey ? new ItemModel({ key: standaloneKey, projectRef }) : undefined),
-		[standaloneKey, projectRef]
-	);
-	const openItem = collectionItem ?? standaloneItem;
-
-	// Measure the workspace so the drawer can't widen past leaving the board a
-	// usable minimum. A callback ref keeps the observer bound to whichever node
-	// is current rather than to the one present at mount.
-	const [workspaceWidth, setWorkspaceWidth] = useState(0);
-	const observerRef = useRef<ResizeObserver | null>(null);
-	const workspaceRefCallback = useCallback((node: HTMLDivElement | null): void => {
-		observerRef.current?.disconnect();
-		if (node && typeof ResizeObserver !== 'undefined') {
-			const observer = new ResizeObserver((entries) => {
-				const entry = entries[0];
-				if (entry) setWorkspaceWidth(entry.contentRect.width);
-			});
-			observer.observe(node);
-			observerRef.current = observer;
-		}
-	}, []);
-	// The Map has the drawer overlay it rather than narrow it, and needs to know how much it covers.
-	const [drawerWidth, setDrawerWidth] = useState(0);
-	const drawerMaxWidth = workspaceWidth > 0 ? Math.max(DRAWER_MIN_WIDTH, workspaceWidth - BOARD_MIN_WIDTH) : undefined;
+	// The drawer renders the item named by the route, from the collection or on its own.
+	const { item: openItem, listed } = useDrawerItem(items, openItemKey, projectRef);
 
 	// Loading and load failures render where the board goes, so the toolbar stays
 	// put. While the page is in error every automatic fetch is suppressed, so
@@ -396,19 +239,13 @@ export function Planning(props: RouteProps): JSX.Element {
 		void items.fetch({ force: true });
 	}, [items]);
 
-	// The Map is a lazy chunk with a read of its own, so it sits outside the collection's
-	// loading and error states: a failed board fetch says nothing about the Map.
-	const { MapView, error: mapError, retry: retryMap } = useMapView(view === 'map');
-
-	const renderViewArea = (): JSX.Element => {
+	const renderViewArea = (covered: number): JSX.Element => {
 		if (view === 'map') {
-			if (mapError) return <LoadError error={mapError} onRetry={retryMap} />;
-			if (!MapView) return <div class={styles.loading}>Loading...</div>;
 			return (
-				<MapView
+				<LazyMap
 					scope={{ projectRef }}
 					openItemKey={openItemKey}
-					covered={openItem ? drawerWidth : 0}
+					covered={covered}
 					onOpenItem={handleOpenItemByKey}
 					onCloseItem={handleCloseDrawer}
 					search={settledSearch}
@@ -435,7 +272,6 @@ export function Planning(props: RouteProps): JSX.Element {
 		) : (
 			<Board
 				items={items}
-				projectRef={projectRef}
 				selectedItemKey={selectedItemKey}
 				flashingIds={flashingIds}
 				dialogOpen={isNewItemDialogOpen}
@@ -452,7 +288,7 @@ export function Planning(props: RouteProps): JSX.Element {
 		<Page projectRef={projectRef} activeTab="Planning">
 			<div class={styles.toolbar}>
 				<div class={styles.controls}>
-					<ViewToggle view={view} onChange={handleChangeView} mapAvailable={!small} />
+					<ViewToggle view={view} onChange={changeView} mapAvailable={!small} />
 					<div class={styles.filters}>{renderFilters(false)}</div>
 				</div>
 				<div class={styles.toolbarEnd}>
@@ -485,25 +321,23 @@ export function Planning(props: RouteProps): JSX.Element {
 				</div>
 			)}
 
-			<div class={styles.workspace} ref={workspaceRefCallback}>
-				<div class={styles.viewArea}>{renderViewArea()}</div>
-
-				{openItem && (
-					<div class={view === 'map' ? styles.drawerOverlay : styles.drawerSlot}>
-						<ItemDrawer
-							item={openItem}
-							listed={collectionItem !== undefined}
-							projectRef={projectRef}
-							canEdit={canEdit}
-							maxWidth={drawerMaxWidth}
-							onClose={handleCloseDrawer}
-							onResize={setDrawerWidth}
-							onDelete={handleDeleteItem}
-							onOpenItem={handleOpenItemByKey}
-						/>
-					</div>
-				)}
-			</div>
+			<Workspace
+				overlay={view === 'map'}
+				drawer={openItem ? ({ maxWidth, onResize }) => (
+					<ItemDrawer
+						item={openItem}
+						listed={listed}
+						canEdit={canEdit}
+						maxWidth={maxWidth}
+						onClose={handleCloseDrawer}
+						onResize={onResize}
+						onDelete={handleDeleteItem}
+						onOpenItem={handleOpenItemByKey}
+					/>
+				) : null}
+			>
+				{renderViewArea}
+			</Workspace>
 
 			{isNewItemDialogOpen && canEdit && (
 				<NewItemDialog

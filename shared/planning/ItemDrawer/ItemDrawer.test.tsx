@@ -1,12 +1,13 @@
 /**
  * ItemDrawer before its item resolves: an item the board list doesn't hold must
- * not mount the editor (or its Delete) until its own fetch lands.
+ * not mount the editor (or its Delete) until its own fetch lands. And where its links
+ * go: always to the item in its own project.
  *
  * @vitest-environment jsdom
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, act } from '@testing-library/preact';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, act, fireEvent } from '@testing-library/preact';
 import { FetchError } from '@specboard/fetch';
 import { ItemModel } from '@specboard/models';
 import { ItemDrawer } from './ItemDrawer';
@@ -48,7 +49,7 @@ function unlistedItem(): ItemModel {
 }
 
 function renderDrawer(item: ItemModel, listed: boolean): ReturnType<typeof render> {
-	return render(<ItemDrawer canEdit item={item} listed={listed} projectRef="acme/specboard" onClose={vi.fn()} onDelete={vi.fn()} />);
+	return render(<ItemDrawer canEdit item={item} listed={listed} onClose={vi.fn()} onDelete={vi.fn()} />);
 }
 
 function expectInert(view: ReturnType<typeof render>): void {
@@ -126,5 +127,52 @@ describe('ItemDrawer before the item resolves', () => {
 		expect(view.queryByText('Loading...')).toBeNull();
 		expect(view.getByRole('button', { name: 'Delete Epic' })).toBeTruthy();
 		expect(view.getByTestId('description-editor')).toBeTruthy();
+	});
+});
+
+describe('ItemDrawer links', () => {
+	beforeEach(() => {
+		get.mockReset();
+		get.mockReturnValue(new Promise(() => {}));
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	function listedItem(): ItemModel {
+		return new ItemModel({ key: 'ATL-4', projectRef: 'acme/atlas', title: 'Listed', type: 'task', status: 'ready' });
+	}
+
+	it('opens a new window on the item in its own project', () => {
+		const open = vi.spyOn(window, 'open').mockReturnValue(null);
+		const view = renderDrawer(listedItem(), true);
+
+		fireEvent.click(view.getByRole('button', { name: 'Open in new window' }));
+		expect(open).toHaveBeenCalledWith('/projects/acme/atlas/items/ATL-4', '_blank', 'noopener,noreferrer');
+	});
+
+	it('over several projects, says it only reads and links to the item in its own project', () => {
+		const view = render(
+			<ItemDrawer
+				canEdit={false}
+				item={listedItem()}
+				listed
+				project={{ ref: 'acme/atlas', name: 'Atlas', key: 'ATL' }}
+				onClose={vi.fn()}
+			/>
+		);
+
+		expect(view.getByText('Read-only in this view.')).toBeTruthy();
+		const link = view.getByRole('link', { name: 'Open in Atlas' });
+		expect(link.getAttribute('href')).toBe('/projects/acme/atlas/items/ATL-4');
+		expect(link.getAttribute('title')).toBe('acme/atlas');
+		expect(view.queryByRole('button', { name: /^Delete/ })).toBeNull();
+	});
+
+	it('names no project on a project\'s own board', () => {
+		const view = renderDrawer(listedItem(), true);
+		expect(view.queryByRole('link', { name: /^Open in/ })).toBeNull();
+		expect(view.queryByText('Read-only in this view.')).toBeNull();
 	});
 });
