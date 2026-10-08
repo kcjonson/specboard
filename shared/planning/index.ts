@@ -22,7 +22,9 @@ export {
 	multiProjectUrl,
 	readRememberedSelection,
 	rememberSelection,
+	resolveSelection,
 } from './MultiProject/selection';
+export { ProjectKey } from './ProjectChip/ProjectChip';
 
 // Hooks
 export { useKeyboardNavigation } from './hooks/useKeyboardNavigation';

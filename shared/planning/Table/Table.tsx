@@ -31,8 +31,11 @@ export interface TableProps {
 	flashingIds?: Set<string>;
 	onSelectItem?: (item: ItemModel | undefined) => void;
 	onOpenItem: (item: ItemModel) => void;
-	/** Open a child's detail by key (children are first-class items). */
-	onOpenChild?: (itemKey: string) => void;
+	/**
+	 * Open a child's detail by key (children are first-class items). A child lives in its
+	 * parent's project, which comes along for a view that mixes projects.
+	 */
+	onOpenChild?: (itemKey: string, projectRef: string) => void;
 	/**
 	 * The projects the rows come from, by ref, for a view that mixes them: every row then
 	 * says which it's from in a Project column. A single project's table has no such column.

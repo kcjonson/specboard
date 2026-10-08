@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import { navigate } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
-import { MAX_PROJECTS, MIN_PROJECTS, multiProjectUrl, readRememberedSelection, rememberSelection } from '@shared/planning';
+import {
+	MAX_PROJECTS,
+	MIN_PROJECTS,
+	multiProjectUrl,
+	readRememberedSelection,
+	rememberSelection,
+	resolveSelection,
+} from '@shared/planning';
 import type { Project } from '../ProjectCard/ProjectCard';
 
 /** The projects page's picker for viewing projects together (docs/specs/multi-project-view.md, decision 1). */
@@ -30,19 +37,13 @@ function refOf(project: Project): string {
 }
 
 /**
- * The last set opened together, as far as it still stands among `projects`: refs no
- * longer listed are skipped, as is a later project whose key prefix an earlier one has
- * taken (keys are editable, so two that were apart can collide since).
+ * The last set opened together, as far as it still stands among `projects`, by the same
+ * rules the view applies to its address: refs no longer listed are skipped, and so is a
+ * later project whose key prefix an earlier one has (keys are editable, so two that were
+ * apart can have collided since).
  */
 function remembered(projects: readonly Project[]): string[] {
-	const byRef = new Map(projects.map((project) => [refOf(project), project]));
-	const chosen: Project[] = [];
-	for (const ref of readRememberedSelection()) {
-		if (chosen.length === MAX_PROJECTS) break;
-		const project = byRef.get(ref);
-		if (project && !chosen.some((other) => other.key === project.key)) chosen.push(project);
-	}
-	return chosen.map(refOf);
+	return resolveSelection(readRememberedSelection(), projects).projects.slice(0, MAX_PROJECTS).map((project) => project.ref);
 }
 
 export function useProjectPicker(projects: readonly Project[]): ProjectPicker {
@@ -71,13 +72,16 @@ export function useProjectPicker(projects: readonly Project[]): ProjectPicker {
 		triggerRef.current?.focus();
 	}, [active]);
 
+	// On the window, so an Escape meant for something open on the page (the account menu,
+	// which listens on the document and marks its Escape handled) reaches that first, and
+	// closing it doesn't throw the picks away too.
 	useEffect(() => {
 		if (!active) return;
 		const onKeyDown = (event: KeyboardEvent): void => {
-			if (event.key === 'Escape') cancel();
+			if (event.key === 'Escape' && !event.defaultPrevented) cancel();
 		};
-		document.addEventListener('keydown', onKeyDown);
-		return () => document.removeEventListener('keydown', onKeyDown);
+		window.addEventListener('keydown', onKeyDown);
+		return () => window.removeEventListener('keydown', onKeyDown);
 	}, [active, cancel]);
 
 	const toggle = useCallback((project: Project): void => {

@@ -44,16 +44,6 @@
 	border-color: var(--color-text-muted);
 }
 
-/* The item-key prefix, shown while picking because two projects can't share one in a
-   view. A Badge, set in the mono face item keys use and sized down to the name's line. */
-.header .key {
-	flex-shrink: 0;
-	padding: 0 var(--space-2);
-	font-family: var(--font-mono);
-	font-size: var(--text-xs);
-	line-height: 20px;
-}
-
 .header {
 	display: flex;
 	align-items: center;

@@ -94,15 +94,6 @@
 	text-overflow: ellipsis;
 }
 
-/* A Badge, set in the mono face item keys use and sized to sit inside the chip. */
-.project .projectKey {
-	flex-shrink: 0;
-	padding: 0 var(--space-2);
-	font-family: var(--font-mono);
-	font-size: var(--text-xs);
-	line-height: 20px;
-}
-
 .filters {
 	display: flex;
 	align-items: center;
@@ -124,6 +115,27 @@
 
 .notices:not(:empty) {
 	padding-top: var(--space-3);
+}
+
+/* The reasons on the left, the ways on at the right; the links drop below on a phone. */
+.leftOut {
+	flex-wrap: wrap;
+}
+
+.leftOutText {
+	flex: 1 1 20rem;
+	min-width: 0;
+}
+
+.leftOutText > span {
+	display: block;
+}
+
+.leftOutLinks {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1) var(--space-4);
+	font-weight: var(--font-medium);
 }
 
 /* Fills the rest of the page; the Table inside owns the scrolling. */

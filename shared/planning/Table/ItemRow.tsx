@@ -17,8 +17,8 @@ export interface ItemRowProps {
 	onToggle: (item: ItemModel) => void;
 	onOpen: (item: ItemModel) => void;
 	onSelect?: (item: ItemModel | undefined) => void;
-	/** Open a child's detail by key (children are first-class items). */
-	onOpenChild?: (itemKey: string) => void;
+	/** Open a child's detail by key and the project it lives in, which is this item's. */
+	onOpenChild?: (itemKey: string, projectRef: string) => void;
 	/** The item's project, in a table that mixes projects; its children share it. */
 	project?: ProjectLabel;
 }
@@ -62,6 +62,8 @@ export function ItemRow({
 		onSelect?.(item);
 		onOpen(item);
 	};
+
+	const handleOpenChild = (childKey: string): void => onOpenChild?.(childKey, item.projectRef);
 
 	return (
 		<>
@@ -122,7 +124,7 @@ export function ItemRow({
 
 			{showChildren &&
 				!loadingChildren &&
-				item.children.map((child) => <ChildRow key={child.id} child={child} project={project} onOpen={onOpenChild} />)}
+				item.children.map((child) => <ChildRow key={child.id} child={child} project={project} onOpen={handleOpenChild} />)}
 		</>
 	);
 }

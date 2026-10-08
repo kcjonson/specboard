@@ -15,3 +15,11 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
+
+/* Only what Badge leaves unset, so nothing here depends on which stylesheet loads first.
+   A line-height of 1 brings the small Badge down to 20px, low enough to sit inside a chip. */
+.key {
+	flex-shrink: 0;
+	font-family: var(--font-mono);
+	line-height: 1;
+}

@@ -8,7 +8,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, within } from '@testing-library/preact';
-import { memoryStorage } from '../../planning/test-support/memory-storage';
 import type { Project } from '../ProjectCard/ProjectCard';
 import { ProjectsList } from './ProjectsList';
 
@@ -22,7 +21,16 @@ vi.mock('@specboard/fetch', async (importOriginal) => {
 	};
 });
 
-const REMEMBERED = 'specboard.planning.multiProject';
+// Where the remembered set is kept is the selection module's business (and its test's);
+// here it's only what the picker reads and writes through it.
+const remembered = vi.hoisted(() => ({ refs: [] as string[] }));
+vi.mock('@shared/planning', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@shared/planning')>()),
+	readRememberedSelection: (): string[] => [...remembered.refs],
+	rememberSelection: (refs: readonly string[]): void => {
+		remembered.refs = [...refs];
+	},
+}));
 
 function project(slug: string, key: string, name: string, ownerSlug = 'acme'): Project {
 	return {
@@ -47,17 +55,21 @@ const SPECBOARD = project('specboard', 'SPE', 'Specboard');
 let listed: Project[] = [];
 
 beforeEach(() => {
-	vi.stubGlobal('localStorage', memoryStorage());
+	remembered.refs = [];
 	document.cookie = 'lastProjectRef=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
 	listed = [ROADMAP, NOTES, WEBSITE, SPECBOARD, BOBS_SPECBOARD];
 	get.mockReset();
-	get.mockImplementation(async (url: string) => (url === '/api/projects' ? listed : {}));
+	// A signed-in user, so the header carries the account menu.
+	get.mockImplementation(async (url: string) => {
+		if (url === '/api/projects') return listed;
+		if (url === '/api/users/me') return { id: 'u1', email: 'kevin@example.com', first_name: 'Kevin' };
+		return {};
+	});
 	window.history.replaceState({}, '', '/projects');
 });
 
 afterEach(() => {
 	cleanup();
-	vi.unstubAllGlobals();
 });
 
 async function renderList(): Promise<ReturnType<typeof render>> {
@@ -177,6 +189,24 @@ describe('ProjectsList picker', () => {
 		expect(document.activeElement).toBe(view.getByRole('button', { name: 'View together' }));
 	});
 
+	it('keeps picking when an Escape closes the account menu instead', async () => {
+		const view = await renderList();
+		await startPicking(view);
+		fireEvent.click(card(view, 'Roadmap'));
+
+		fireEvent.click(await view.findByRole('button', { name: 'User menu for Kevin' }));
+		expect(view.getByRole('menu')).toBeTruthy();
+		fireEvent.keyDown(document.activeElement ?? document, { key: 'Escape' });
+
+		expect(view.queryByRole('menu')).toBeNull();
+		expect(view.getByRole('group', { name: 'Choose projects to view together' })).toBeTruthy();
+		expect(card(view, 'Roadmap').getAttribute('aria-checked')).toBe('true');
+
+		// With the menu shut, the next Escape is the picker's.
+		fireEvent.keyDown(document, { key: 'Escape' });
+		expect(view.queryByRole('group', { name: 'Choose projects to view together' })).toBeNull();
+	});
+
 	it('opens the chosen projects together in the order chosen, and remembers them', async () => {
 		const view = await renderList();
 		await startPicking(view);
@@ -186,12 +216,12 @@ describe('ProjectsList picker', () => {
 		fireEvent.click(within(view.getByRole('group', { name: 'Choose projects to view together' })).getByRole('button', { name: 'View 2 projects' }));
 
 		expect(window.location.pathname + window.location.search).toBe('/planning?projects=acme/website,acme/roadmap');
-		expect(globalThis.localStorage.getItem(REMEMBERED)).toBe('acme/website,acme/roadmap');
+		expect(remembered.refs).toEqual(['acme/website', 'acme/roadmap']);
 		expect(document.cookie).not.toContain('lastProjectRef');
 	});
 
 	it('starts from the projects last opened together, skipping any no longer listed', async () => {
-		globalThis.localStorage.setItem(REMEMBERED, 'acme/notes,carol/gone,acme/roadmap');
+		remembered.refs = ['acme/notes', 'carol/gone', 'acme/roadmap'];
 		const view = await renderList();
 		await startPicking(view);
 
@@ -204,15 +234,13 @@ describe('ProjectsList picker', () => {
 		expect(window.location.search).toBe('?projects=acme/notes,acme/roadmap');
 	});
 
-	it('starts with nothing chosen while storage is blocked', async () => {
-		const blocked = memoryStorage();
-		blocked.getItem = () => {
-			throw new Error('SecurityError');
-		};
-		vi.stubGlobal('localStorage', blocked);
+	it('starts from the first of two remembered projects that have come to share a prefix', async () => {
+		remembered.refs = ['bob/specboard', 'acme/roadmap', 'acme/specboard'];
 		const view = await renderList();
 		await startPicking(view);
 
-		expect(view.getByText('0 selected')).toBeTruthy();
+		expect(card(view, "Bob's Specboard").getAttribute('aria-checked')).toBe('true');
+		expect(card(view, 'Roadmap').getAttribute('aria-checked')).toBe('true');
+		expect(card(view, 'Specboard').getAttribute('aria-checked')).toBe('false');
 	});
 });

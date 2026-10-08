@@ -1,4 +1,5 @@
 import type { JSX } from 'preact';
+import { Badge } from '@specboard/ui';
 import styles from './ProjectChip.module.css';
 
 /** What a view that mixes projects needs to say which one an item is from. */
@@ -21,4 +22,14 @@ export function ProjectChip({ project }: ProjectChipProps): JSX.Element {
 			{project.name}
 		</span>
 	);
+}
+
+export interface ProjectKeyProps {
+	/** The project's item-key prefix (`SPE`). */
+	prefix: string;
+}
+
+/** A project's item-key prefix, set in the mono face the keys themselves use. */
+export function ProjectKey({ prefix }: ProjectKeyProps): JSX.Element {
+	return <Badge class={`size-sm ${styles.key}`}>{prefix}</Badge>;
 }

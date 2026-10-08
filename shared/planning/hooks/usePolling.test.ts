@@ -77,6 +77,29 @@ describe('usePolling', () => {
 		expect(poll).toHaveBeenCalledTimes(2);
 	});
 
+	it('waits out the rest of the interval on a refocus that comes sooner, instead of polling again', async () => {
+		const poll = vi.fn<Poll>();
+		renderHook(() => usePolling(poll));
+
+		// Right after the view loaded: the load was the last read.
+		blur();
+		focus();
+		await wait(0);
+		expect(poll).not.toHaveBeenCalled();
+
+		await wait(POLL_INTERVAL);
+		expect(poll).toHaveBeenCalledTimes(1);
+		await wait(3_000);
+		blur();
+		focus();
+		await wait(0);
+		expect(poll).toHaveBeenCalledTimes(1);
+		await wait(POLL_INTERVAL - 3_000 - 1);
+		expect(poll).toHaveBeenCalledTimes(1);
+		await wait(1);
+		expect(poll).toHaveBeenCalledTimes(2);
+	});
+
 	it('does not start in a window that opened without focus', async () => {
 		focused = false;
 		const poll = vi.fn<Poll>();

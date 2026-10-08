@@ -61,6 +61,15 @@ describe('parseSelection', () => {
 		}
 	});
 
+	it('quotes no more than 60 characters of an entry back', () => {
+		const entry = `acme/${'x'.repeat(200)}`;
+		const selection = parseSelection(`bob/notes,${entry}`);
+		expect(selection).toEqual({
+			ok: false,
+			problem: `"${entry.slice(0, 60)}..." isn't a project address. Addresses look like owner/project.`,
+		});
+	});
+
 	it('refuses a project listed twice, however it was written', () => {
 		expect(parseSelection('acme/roadmap,bob/notes,ACME/roadmap')).toEqual({ ok: false, problem: 'acme/roadmap is in the list twice.' });
 	});

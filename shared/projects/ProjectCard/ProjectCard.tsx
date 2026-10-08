@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
-import { Badge, Card, StatusGlyph, Icon } from '@specboard/ui';
+import { Card, StatusGlyph, Icon } from '@specboard/ui';
+import { ProjectKey } from '@shared/planning';
 import styles from './ProjectCard.module.css';
 
 export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
@@ -116,7 +117,8 @@ export function ProjectCard({ project, onClick, onEdit, onRetrySync, selected }:
 				{/* Only the look of a checkbox: the card is the control, so this one is inert. */}
 				{picking && <input type="checkbox" class={styles.pickBox} checked={selected} inert />}
 				<h3 class={styles.name}>{project.name}</h3>
-				{picking && <Badge class={styles.key}>{project.key}</Badge>}
+				{/* Shown while picking, because two projects can't share a prefix in one view. */}
+				{picking && <ProjectKey prefix={project.key} />}
 				{onEdit && (
 					<button
 						type="button"

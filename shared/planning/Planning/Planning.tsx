@@ -14,7 +14,7 @@ import { LoadError } from '../LoadError/LoadError';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
 import { usePolling } from '../hooks/usePolling';
 import { HIGHLIGHT_DURATION } from '../utils/highlight';
-import { CATEGORY_ALL, CATEGORY_OPTIONS, isItemType, useSettledSearch, type PlanningFilters } from './filters';
+import { CATEGORY_OPTIONS, usePlanningFilters } from './filters';
 import { VIEW_PREF, writePref } from './prefs';
 import { useMapView } from './useMapView';
 import { readView, resolveView, useSmallScreen } from './view';
@@ -89,11 +89,17 @@ export function Planning(props: RouteProps): JSX.Element {
 	// The toolbar's filter state, and the search text once it has settled. Filtering
 	// happens on the server (the views render whatever the collection holds), so the
 	// settled text plus the type go to the collection, which reissues its windows.
-	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
-	const settledSearch = useSettledSearch(filters.search);
 	// The Map takes the same text and type but filters nothing on the server: it dims, and
 	// asks the items list for the matches itself. The board's windows catch up when it returns.
-	const type = isItemType(filters.category) ? filters.category : undefined;
+	const {
+		filters,
+		settledSearch,
+		type,
+		active: filtersActive,
+		onSearchInput: handleSearchInput,
+		onCategoryChange: handleCategoryChange,
+		clear: handleClearFilters,
+	} = usePlanningFilters();
 	const onMap = view === 'map';
 	useEffect(() => {
 		if (onMap) return;
@@ -315,22 +321,6 @@ export function Planning(props: RouteProps): JSX.Element {
 		{ label: 'Task', value: 'task', icon: 'checkbox-unchecked' as const, onClick: () => handleOpenNewItemDialog('task') },
 		{ label: 'Bug', value: 'bug', icon: 'bug' as const, onClick: () => handleOpenNewItemDialog('bug') },
 	], [handleOpenNewItemDialog]);
-
-	const handleSearchInput = useCallback((e: Event): void => {
-		const value = (e.target as HTMLInputElement).value;
-		setFilters((prev) => ({ ...prev, search: value }));
-	}, []);
-
-	const handleCategoryChange = useCallback((e: Event): void => {
-		const value = (e.target as HTMLSelectElement).value;
-		setFilters((prev) => ({ ...prev, category: value }));
-	}, []);
-
-	const filtersActive = filters.search.trim() !== '' || filters.category !== CATEGORY_ALL;
-
-	const handleClearFilters = useCallback((): void => {
-		setFilters({ search: '', category: CATEGORY_ALL });
-	}, []);
 
 	// Rendered twice (inline desktop / popover mobile); both copies are controlled
 	// by the same `filters` state so they can never disagree. autoFocus only in the

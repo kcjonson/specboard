@@ -15,6 +15,13 @@ export const MAX_PROJECTS = 10;
 /** The `?projects=` list, checked: the refs in the order given, or what is wrong with it. */
 export type Selection = { ok: true; refs: string[] } | { ok: false; problem: string };
 
+/** The most of a bad entry a problem quotes back; an address can carry anything. */
+const QUOTE_LIMIT = 60;
+
+function quoted(text: string): string {
+	return `"${text.length > QUOTE_LIMIT ? `${text.slice(0, QUOTE_LIMIT)}...` : text}"`;
+}
+
 /**
  * Reads the `projects` query parameter: owner/project refs, comma-separated. Refs are
  * normalized the way parseProjectRef normalizes them, so a hand-typed `Acme/Roadmap` is
@@ -26,7 +33,7 @@ export function parseSelection(param: string | null): Selection {
 		const text = entry.trim();
 		if (text === '') continue;
 		const parsed = parseProjectRef(text);
-		if (!parsed?.owner) return { ok: false, problem: `"${text}" isn't a project address. Addresses look like owner/project.` };
+		if (!parsed?.owner) return { ok: false, problem: `${quoted(text)} isn't a project address. Addresses look like owner/project.` };
 		const ref = formatProjectRef(parsed.owner, parsed.project);
 		if (refs.includes(ref)) return { ok: false, problem: `${ref} is in the list twice.` };
 		refs.push(ref);

@@ -34,13 +34,21 @@ Related: [kanban-ui.md](kanban-ui.md) (the single-project Board and Table),
    (fewer than two projects or more than ten, an entry that isn't `owner/project`, a project
    listed twice) says what's wrong and links back to the projects page.
 3. **Between 2 and 10 projects.** One project is just its own board. The ceiling comes from request
-   volume: the combined view reads each project through the existing per-project endpoints, the
-   Board costs 5 requests per project per poll, and production's per-IP firewall rule allows 2000
-   requests per 5 minutes (about 400 a minute) across the whole app. The picker refuses an
-   eleventh project and says why.
+   volume. The view reads each project through the existing per-project endpoints at five
+   requests a load (one per status window), and production's per-IP firewall rule allows 2000
+   requests per 5 minutes, about 400 a minute, for the whole app. At 10 projects every load is 50
+   requests: opening the view (plus one for the projects list), each poll, each search or type
+   change once it settles, a show-more (on just the projects that have more), and, until
+   SPE-248's drawer keeps an opened item inside the view, each Back from an item, since the item
+   opens on its own page and Back loads the view again. Polling takes about 100 a minute
+   (decision 4), which leaves room for five or six of the others in a minute before the limit.
+   Heavy searching can still reach it: every pause long enough to settle the search is another
+   50. The picker refuses an eleventh project and says why.
 4. **It polls every 30 seconds, not 10.** Same focus rule and back-off as the board, and the same
-   hold while the view is in error. At 10 projects that is about 100 requests a minute for the
-   Board, comfortably inside the firewall budget. An overview can be 30 seconds stale.
+   hold while the view is in error. A refocus polls at once only if the 30 seconds have run out
+   since the last poll, so switching windows adds no polls (the board keeps the same rule at 10
+   seconds). At 10 projects a poll is 50 requests, about 100 a minute. An overview can be 30
+   seconds stale.
 5. **Two projects with the same key prefix can't be viewed together.** Item keys are unique per
    owner only (`idx_projects_owner_key`), so a project shared from someone else can carry the same
    prefix as one of yours. Selection, highlighting, keyboard navigation, the Map's rows and its
@@ -54,16 +62,21 @@ Related: [kanban-ui.md](kanban-ui.md) (the single-project Board and Table),
 7. **Opening an item takes you to it in its own project:** the standalone item page,
    `/projects/:owner/:project/items/:key`, where your role in that project decides what you can
    change. It's a pushed history entry, so Back returns to the combined view as you left it. A
-   child row opens in its parent's project, which its key prefix names. SPE-248 replaces this
+   child row opens in its parent's project, which the Table hands over with it (a key prefix
+   isn't trusted for that: keys can be renamed while the view is open). SPE-248 replaces this
    with a read-only drawer inside the combined view: the item drawer with editing off, which
    SPE-209's read-only mode made possible.
 8. **No new API.** One `ItemsCollection` per project against the existing endpoints and the existing
    authorization (SPE-206), merged on the client. The selection is checked against
    `GET /api/projects` first, and a ref that isn't there is left out with a notice naming it. A
    project the person can no longer read (a 403 or 404 on its items, say after being removed from
-   it) is dropped from the view with the same notice, and the rest still render. Any other failure
-   (a 500, a 429, an expired session) shows where the view goes, with Retry, as on one project's
-   board. A cross-project read endpoint is the scaling path past 10 projects and isn't built.
+   it) is dropped from the view with the same notice, and the rest still render, even if only one
+   is left. The notice links back to "Choose projects", and when a single readable project
+   remains it also offers that project on its own ("Open Atlas on its own", its planning view).
+   If nothing readable is left, the page says so in place of the view, with the same way back.
+   Any other failure (a 500, a 429, an expired session) shows where the view goes, with Retry, as
+   on one project's board. A cross-project read endpoint is the scaling path past 10 projects
+   and isn't built.
 9. **Mixed, not grouped.** Within each Board column and Table section, items are interleaved
    round-robin by their position in their own project: every project's first item, then every
    project's second, and so on, ties broken by selection order. Each project's own order survives,
@@ -93,6 +106,9 @@ Related: [kanban-ui.md](kanban-ui.md) (the single-project Board and Table),
   the counts, and fans out fetch, filter and show-more (a show-more widens only the projects with
   more). It also does the dropping in decision 8, and reports the dropped refs for the notice.
 - `ProjectChip` (`shared/planning/ProjectChip/`) is the row label; Board cards carry the same one.
+  `ProjectKey` beside it is the key-prefix badge the picker cards and the toolbar chips share.
+- `usePlanningFilters` (`shared/planning/Planning/filters.ts`) is the toolbar's search and type,
+  for this view and a project's own planning view alike.
 - `ItemsCollection` takes an `initialFilter`, so a view restored from its address requests
   filtered windows from the first request instead of loading everything and throwing it away.
 

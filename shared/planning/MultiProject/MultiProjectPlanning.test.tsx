@@ -63,10 +63,11 @@ beforeEach(() => {
 	};
 	get.mockImplementation(async (url: string) => {
 		if (url === '/api/projects') return READABLE;
+		// The child's prefix isn't TWO: the project's key was renamed since the list was read.
 		if (url === '/api/projects/acme/two/items/TWO-1') {
 			return {
 				...item('TWO', 1, { type: 'epic' }),
-				children: [{ id: 'id-TWO-7', key: 'TWO-7', number: 7, type: 'task', title: 'Child seven', status: 'ready' }],
+				children: [{ id: 'id-TW2-7', key: 'TW2-7', number: 7, type: 'task', title: 'Child seven', status: 'ready' }],
 			};
 		}
 		return {};
@@ -139,12 +140,23 @@ describe('MultiProjectPlanning projects', () => {
 		expect(links.map((link) => link.getAttribute('title'))).toEqual(['acme/two', 'acme/one']);
 	});
 
-	it('leaves out a project the person cannot read, and names it', async () => {
-		const { findByText, getByRole } = renderAt('/planning?projects=acme/one,carol/secret,acme/two');
+	it('leaves out a project the person cannot read, names it, and offers a way back to choose', async () => {
+		const { findByText, getByRole, queryByRole } = renderAt('/planning?projects=acme/one,carol/secret,acme/two');
 
 		expect(await findByText("carol/secret isn't shown: it doesn't exist, or you can't read it.")).toBeTruthy();
 		expect(within(getByRole('list', { name: 'Projects in this view' })).getAllByRole('link')).toHaveLength(2);
 		expect(await findByText('TWO item 1')).toBeTruthy();
+		expect(getByRole('link', { name: 'Choose projects' }).getAttribute('href')).toBe('/projects');
+		expect(queryByRole('link', { name: /on its own/ })).toBeNull();
+	});
+
+	it('still shows the one readable project left, and offers its own board too', async () => {
+		const { findByText, getByRole } = renderAt('/planning?projects=acme/one,carol/missing');
+
+		expect(await findByText("carol/missing isn't shown: it doesn't exist, or you can't read it.")).toBeTruthy();
+		expect(await findByText('ONE item 1')).toBeTruthy();
+		expect(getByRole('link', { name: 'Choose projects' }).getAttribute('href')).toBe('/projects');
+		expect(getByRole('link', { name: 'Open One on its own' }).getAttribute('href')).toBe('/projects/acme/one/planning');
 	});
 
 	it('drops the later of two projects with the same key prefix, without asking for its items', async () => {
@@ -163,6 +175,7 @@ describe('MultiProjectPlanning projects', () => {
 		expect(await findByText('ONE item 1')).toBeTruthy();
 		const links = within(getByRole('list', { name: 'Projects in this view' })).getAllByRole('link');
 		expect(links.map((link) => link.getAttribute('href'))).toEqual(['/projects/acme/one/planning']);
+		expect(getByRole('link', { name: 'Open One on its own' }).getAttribute('href')).toBe('/projects/acme/one/planning');
 	});
 
 	it('says so when none of the projects can be shown', async () => {
@@ -214,7 +227,7 @@ describe('MultiProjectPlanning table', () => {
 		expect(window.history.length).toBe(before + 1);
 	});
 
-	it('opens a child in its parent\'s project, and shows the parent\'s chip on it', async () => {
+	it('opens a child in its parent\'s project whatever its key says, and shows the parent\'s chip on it', async () => {
 		const { findByRole, findByText } = renderAt('/planning?projects=acme/one,acme/two');
 
 		fireEvent.click(await findByRole('button', { name: 'Expand' }));
@@ -222,7 +235,7 @@ describe('MultiProjectPlanning table', () => {
 		expect(within(child).getByText('Two').getAttribute('title')).toBe('acme/two');
 
 		fireEvent.click(child);
-		expect(window.location.pathname).toBe('/projects/acme/two/items/TWO-7');
+		expect(window.location.pathname).toBe('/projects/acme/two/items/TW2-7');
 	});
 });
 
@@ -241,6 +254,42 @@ describe('MultiProjectPlanning filters', () => {
 		fireEvent.change(container.querySelector('select')!, { target: { value: 'bug' } });
 		await waitFor(() => expect(window.location.search).toBe('?projects=acme/one,acme/two&search=auth&type=bug'));
 		await waitFor(() => expect(requested('acme/two').at(-1)).toContain('search=auth&type=bug'));
+	});
+
+	it('keeps ?view= and the hash when it rewrites the address', async () => {
+		const { container, findByText } = renderAt('/planning?projects=acme/one,acme/two&view=table#top');
+		await findByText('ONE item 1');
+
+		fireEvent.input(container.querySelector('input[type="search"]')!, { target: { value: 'auth' } });
+		await waitFor(() => expect(window.location.search).toBe('?projects=acme/one,acme/two&view=table&search=auth'));
+		expect(window.location.hash).toBe('#top');
+	});
+
+	it('normalizes the address in place, without rebuilding the projects it already has', async () => {
+		const { findByText, rerender } = renderAt('/planning?projects=Acme/One,%20acme/two');
+		await findByText('TWO item 1');
+		expect(window.location.search).toBe('?projects=acme/one,acme/two');
+
+		getResponse.mockClear();
+		rerender(<MultiProjectPlanning />);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(getResponse).not.toHaveBeenCalled();
+		expect(await findByText('TWO item 1')).toBeTruthy();
+	});
+
+	it('follows Back and Forward to the filters the address carries', async () => {
+		const { container, findByText } = renderAt('/planning?projects=acme/one,acme/two');
+		await findByText('ONE item 1');
+
+		window.history.pushState({}, '', '/planning?projects=acme/one,acme/two&search=auth&type=bug');
+		fireEvent(window, new Event('popstate'));
+
+		await waitFor(() => expect((container.querySelector('input[type="search"]') as HTMLInputElement).value).toBe('auth'));
+		expect((container.querySelector('select') as HTMLSelectElement).value).toBe('bug');
+		await waitFor(() => expect(requested('acme/two').at(-1)).toContain('search=auth&type=bug'));
+		// Settled as it arrived: no detour through the type alone, in the requests or the address.
+		expect(requested('acme/two').filter((url) => url.includes('type=bug') && !url.includes('search=auth'))).toEqual([]);
+		expect(window.location.search).toBe('?projects=acme/one,acme/two&search=auth&type=bug');
 	});
 
 	it('opens on the filters its address carries, asking for nothing unfiltered', async () => {
