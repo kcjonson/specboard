@@ -445,13 +445,14 @@ A pull takes the sync lock and starts the incremental sync, which resolves the b
 head to its full SHA, reads GitHub's compare from the sync point to it, writes the
 changed files into the committed files, and then, in one transaction that checks it
 still holds the lock and the sync point is still where it started, moves the sync point
-to that head and moves spec links for `removed` and `renamed` files. A failed sync
-retries all of it. When the compare can't list everything (300 files, or more commits
-than it returns) or the branch was rewritten (a force-push makes it `diverged` or
-`behind`, and it then diffs from the merge base), the sync falls back to a full sync of
-that head instead. With no new
-commits it still stores the head's full SHA. The editor waits for the sync to finish
-before it refreshes.
+to that head and moves spec links for `removed` and `renamed` files. Every file has to
+land: if any write or removal fails, the sync fails without moving the sync point or
+the links, and a retry or the next pull redoes the whole range (writes are idempotent).
+When the compare can't list everything (300 files, or more commits than it returns) or
+the branch was rewritten (a force-push makes it `diverged` or `behind`, and it then
+diffs from the merge base), the sync falls back to a full sync of that head instead.
+With no new commits it still stores the head's full SHA. The editor waits for the sync
+to finish before it refreshes.
 
 A pull never touches pending changes: each member's drafts stay as they were, shown
 over the new committed files. A draft of a file the pull also changed now conflicts,
@@ -459,9 +460,29 @@ and git status flags it (`conflict: true`), so the file tree marks it and the ed
 offers to resolve it before the commit is refused.
 
 A full sync (`initial`, or the fallback above) streams the head commit's archive into
-storage and then removes committed files the archive no longer has; any file in the
-archive stays, including ones the sync filter skips or that failed to upload. It can't
-tell a rename from a delete, so it leaves spec links alone.
+storage, then removes committed files storage didn't take from the archive: files the
+branch no longer has and files in skipped directories. It fails without pruning or
+moving the sync point if any file failed to upload. It can't tell a rename from a
+delete, so it leaves spec links alone.
+
+### Files the editor can't hold
+
+Syncs store text files up to 500 KB. Files in skipped directories (`node_modules`,
+`.git`, build output, and the like) are never stored. A file that's binary or over the
+limit is stored as a row with no content (`project_documents.unavailable_reason`,
+`too_large` or `binary`; storage migration 004) and a `content_hash` of the new version
+(sha1 of its bytes), and any older content stored for it is removed. That happens
+whenever a sync meets such a file, incremental or full, including one a push just made
+too large or binary, so nobody reads or commits over an older copy. A later sync that
+finds the file editable again stores it as usual.
+
+Such a file is listed, but reading it, saving a draft of it, or renaming it answers `409
+FILE_UNAVAILABLE` with a message saying it's binary or too large to edit here; the
+editor shows that message instead of the file, and doesn't retry the save. Deleting it
+is allowed. A commit with a draft (other than a deletion) of a path that has since
+become unavailable answers `409` with `reason: 'unavailable_files'` and the paths, and
+writes nothing; the way on is to discard those drafts and change the files in the
+repository directly.
 
 ### Managed Checkout Location
 

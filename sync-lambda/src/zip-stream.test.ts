@@ -5,6 +5,7 @@
  */
 
 import { crc32 } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { streamGitHubZipToStorage } from './zip-stream.ts';
 
@@ -55,13 +56,15 @@ afterEach(() => {
 });
 
 describe('streamGitHubZipToStorage', () => {
-	it('keeps every file the archive has and waits for every upload', async () => {
+	it('stores what it can, records what it can\'t hold, and waits for every upload', async () => {
+		const big = 'x'.repeat(500 * 1024 + 1);
 		const archive = zip([
 			['acme-docs-1234567/', ''],
 			['acme-docs-1234567/docs/', ''],
 			['acme-docs-1234567/docs/a.md', '# A'],
 			['acme-docs-1234567/docs/b.md', '# B'],
 			['acme-docs-1234567/docs/slow.md', '# Slow'],
+			['acme-docs-1234567/docs/huge.md', big],
 			['acme-docs-1234567/node_modules/x/README.md', '# Skipped dir'],
 			['acme-docs-1234567/img/logo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 1, 2, 3])],
 		]);
@@ -74,20 +77,18 @@ describe('streamGitHubZipToStorage', () => {
 			settled.push(path);
 			if (path === 'docs/b.md') throw new Error('500: storage unavailable');
 		});
+		const markUnavailable = vi.fn(async () => {});
 
 		const head = 'a'.repeat(40);
-		const result = await streamGitHubZipToStorage('acme', 'docs', head, 'token', 'p1', { putFile });
+		const result = await streamGitHubZipToStorage('acme', 'docs', head, 'token', 'p1', { putFile, markUnavailable });
 
 		expect(fetchMock.mock.calls[0]![0]).toContain(`/zipball/${head}`);
 		expect(settled.sort()).toEqual(['docs/a.md', 'docs/b.md', 'docs/slow.md']);
 		expect(result.synced).toBe(2);
 		expect(result.errors).toEqual(['Failed to sync docs/b.md: 500: storage unavailable']);
-		expect([...result.kept].sort()).toEqual([
-			'docs/a.md',
-			'docs/b.md',
-			'docs/slow.md',
-			'img/logo.png',
-			'node_modules/x/README.md',
-		]);
+		expect(markUnavailable).toHaveBeenCalledWith('p1', 'docs/huge.md', 'too_large', createHash('sha1').update(big).digest('hex'), big.length);
+		expect(markUnavailable).toHaveBeenCalledWith('p1', 'img/logo.png', 'binary', expect.stringMatching(/^[0-9a-f]{40}$/), 11);
+		// What storage holds for the archive now: no skipped directory, no failed upload.
+		expect([...result.kept].sort()).toEqual(['docs/a.md', 'docs/huge.md', 'docs/slow.md', 'img/logo.png']);
 	});
 });

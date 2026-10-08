@@ -22,6 +22,7 @@ vi.mock('./shared/storage-client.ts', () => ({
 		putFile: storage.putFile,
 		deleteFile: storage.deleteFile,
 		listFiles: async () => [...storage.files],
+		markUnavailable: vi.fn(async () => {}),
 	}),
 }));
 
@@ -66,6 +67,23 @@ describe('performInitialSync', () => {
 		expect(storage.deleteFile.mock.calls.map((call) => call[1]).sort()).toEqual(['docs/gone.md', 'docs/renamed-away.md']);
 		expect(completeSync).toHaveBeenCalledWith('p1', LOCK, undefined, HEAD, { renamed: [], deleted: [] });
 		expect(vi.mocked(completeSync).mock.calls[0]![3]).toMatch(/^[0-9a-f]{40}$/);
+	});
+
+	it('fails without pruning or moving the sync point when a file didn\'t make it in', async () => {
+		vi.mocked(streamGitHubZipToStorage).mockResolvedValue({
+			synced: 1,
+			skipped: 0,
+			errors: ['Failed to sync docs/gone.md: 500: storage unavailable'],
+			kept: new Set(['docs/kept.md']),
+		});
+
+		const result = await performInitialSync(PARAMS, 'http://storage', 'key');
+
+		expect(result).toMatchObject({ success: false });
+		expect(result.error).toContain('docs/gone.md');
+		expect(storage.deleteFile).not.toHaveBeenCalled();
+		expect(completeSync).not.toHaveBeenCalled();
+		expect(markSyncFailed).toHaveBeenCalled();
 	});
 
 	it('prunes nothing and records the failure when the archive can\'t be read', async () => {

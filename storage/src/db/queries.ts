@@ -11,6 +11,9 @@ const INLINE_THRESHOLD = 100 * 1024; // 100KB
 // Types
 // ============================================================
 
+/** Why a file on the branch has no content here. */
+export type UnavailableReason = 'too_large' | 'binary';
+
 export interface ProjectDocument {
 	id: string;
 	projectId: string;
@@ -19,6 +22,8 @@ export interface ProjectDocument {
 	contentHash: string;
 	sizeBytes: number;
 	syncedAt: Date;
+	/** Set when the file is on the branch but the editor can't hold it; there's no content then. */
+	unavailable: UnavailableReason | null;
 }
 
 export interface PendingChange {
@@ -62,8 +67,9 @@ export async function getProjectDocument(
 		content_hash: string;
 		size_bytes: number;
 		synced_at: Date;
+		unavailable_reason: UnavailableReason | null;
 	}>(
-		`SELECT id, project_id, path, s3_key, content_hash, size_bytes, synced_at
+		`SELECT id, project_id, path, s3_key, content_hash, size_bytes, synced_at, unavailable_reason
 		 FROM project_documents
 		 WHERE project_id = $1 AND path = $2`,
 		[projectId, path]
@@ -80,6 +86,7 @@ export async function getProjectDocument(
 		contentHash: row.content_hash,
 		sizeBytes: row.size_bytes,
 		syncedAt: row.synced_at,
+		unavailable: row.unavailable_reason,
 	};
 }
 
@@ -108,7 +115,7 @@ export async function listProjectDocuments(
 	const total = parseInt(countResult.rows[0]?.count || '0', 10);
 
 	// Build query with optional pagination
-	let query = `SELECT id, project_id, path, s3_key, content_hash, size_bytes, synced_at
+	let query = `SELECT id, project_id, path, s3_key, content_hash, size_bytes, synced_at, unavailable_reason
 		 FROM project_documents
 		 WHERE project_id = $1
 		 ORDER BY path`;
@@ -131,6 +138,7 @@ export async function listProjectDocuments(
 		content_hash: string;
 		size_bytes: number;
 		synced_at: Date;
+		unavailable_reason: UnavailableReason | null;
 	}>(query, params);
 
 	return {
@@ -142,6 +150,7 @@ export async function listProjectDocuments(
 			contentHash: row.content_hash,
 			sizeBytes: row.size_bytes,
 			syncedAt: row.synced_at,
+			unavailable: row.unavailable_reason,
 		})),
 		total,
 	};
@@ -162,8 +171,36 @@ export async function upsertProjectDocument(
 		   s3_key = EXCLUDED.s3_key,
 		   content_hash = EXCLUDED.content_hash,
 		   size_bytes = EXCLUDED.size_bytes,
+		   unavailable_reason = NULL,
 		   synced_at = NOW()`,
 		[projectId, path, s3Key, contentHash, sizeBytes]
+	);
+}
+
+/**
+ * Record that a file on the branch can't be held here: its row says why and carries
+ * the new version's hash, with no content behind it. Whatever older content was stored
+ * for it is the caller's to remove.
+ */
+export async function markDocumentUnavailable(
+	projectId: string,
+	path: string,
+	s3Key: string,
+	reason: UnavailableReason,
+	contentHash: string,
+	sizeBytes: number
+): Promise<void> {
+	const db = pool.instance;
+	await db.query(
+		`INSERT INTO project_documents (project_id, path, s3_key, content_hash, size_bytes, unavailable_reason, synced_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, NOW())
+		 ON CONFLICT (project_id, path) DO UPDATE SET
+		   s3_key = EXCLUDED.s3_key,
+		   content_hash = EXCLUDED.content_hash,
+		   size_bytes = EXCLUDED.size_bytes,
+		   unavailable_reason = EXCLUDED.unavailable_reason,
+		   synced_at = NOW()`,
+		[projectId, path, s3Key, contentHash, sizeBytes, reason]
 	);
 }
 
@@ -403,6 +440,7 @@ export async function promoteCommit(
 				   s3_key = EXCLUDED.s3_key,
 				   content_hash = EXCLUDED.content_hash,
 				   size_bytes = EXCLUDED.size_bytes,
+				   unavailable_reason = NULL,
 				   synced_at = NOW()`,
 				[projectId, doc.path, doc.s3Key, doc.contentHash, doc.sizeBytes]
 			);

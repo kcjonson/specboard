@@ -7,6 +7,11 @@ export interface StorageClient {
 	deleteFile(projectId: string, path: string): Promise<void>;
 	/** Every committed file's path. */
 	listFiles(projectId: string): Promise<string[]>;
+	/**
+	 * Record a file on the branch the editor can't hold (binary, or over the size limit):
+	 * its row keeps a hash of the new version and drops any older content.
+	 */
+	markUnavailable(projectId: string, path: string, reason: 'too_large' | 'binary', contentHash: string, sizeBytes: number): Promise<void>;
 }
 
 /**
@@ -68,6 +73,30 @@ export function createStorageClient(
 					}
 				);
 
+				if (!response.ok) {
+					const error = await response.json().catch(() => ({}));
+					const message = (error as { error?: string })?.error || response.statusText;
+					throw new Error(`${response.status}: ${message || 'Storage service request failed'}`);
+				}
+			});
+		},
+
+		async markUnavailable(
+			projectId: string,
+			path: string,
+			reason: 'too_large' | 'binary',
+			contentHash: string,
+			sizeBytes: number
+		): Promise<void> {
+			await withRetry(async () => {
+				const response = await fetch(`${storageServiceUrl}/files/${projectId}/unavailable`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-Internal-API-Key': storageApiKey,
+					},
+					body: JSON.stringify({ path, reason, contentHash, sizeBytes }),
+				});
 				if (!response.ok) {
 					const error = await response.json().catch(() => ({}));
 					const message = (error as { error?: string })?.error || response.statusText;

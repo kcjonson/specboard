@@ -42,6 +42,11 @@ export async function syncArchive(
 ): Promise<{ synced: number; skipped: number; pruned: number }> {
 	const { projectId, owner, repo, token } = params;
 	const result = await streamGitHubZipToStorage(owner, repo, head, token, projectId, storageClient);
+	// A file that didn't make it in would otherwise be pruned, or left stale, under a
+	// sync point that says it's current: fail, and leave it to a retry.
+	if (result.errors.length > 0) {
+		throw new Error(`Couldn't sync ${result.errors.length} file(s): ${result.errors.slice(0, 3).join('; ')}`);
+	}
 
 	const stale = (await storageClient.listFiles(projectId)).filter((path) => !result.kept.has(path));
 	for (const path of stale) {

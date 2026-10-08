@@ -11,6 +11,8 @@ import {
 	listProjectDocuments,
 	upsertProjectDocument,
 	deleteProjectDocument,
+	markDocumentUnavailable,
+	type UnavailableReason,
 } from '../db/queries.ts';
 import {
 	getFileContent,
@@ -58,9 +60,45 @@ filesRoutes.get('/:projectId', async (c) => {
 			contentHash: f.contentHash,
 			sizeBytes: f.sizeBytes,
 			syncedAt: f.syncedAt.toISOString(),
+			unavailable: f.unavailable,
 		})),
 		total: result.total,
 	});
+});
+
+const UNAVAILABLE_REASONS: UnavailableReason[] = ['too_large', 'binary'];
+
+/**
+ * Record that a file on the branch can't be held here (a sync found it binary or over
+ * its size limit), and drop whatever older content was stored for it.
+ * POST /files/:projectId/unavailable { path, reason, contentHash, sizeBytes }
+ */
+filesRoutes.post('/:projectId/unavailable', async (c) => {
+	const projectId = c.req.param('projectId');
+	const body = await c.req.json<{ path?: unknown; reason?: unknown; contentHash?: unknown; sizeBytes?: unknown }>().catch(() => null);
+
+	const validPath = typeof body?.path === 'string' ? validatePath(body.path) : null;
+	if (!validPath) {
+		return c.json({ error: 'Invalid path' }, 400);
+	}
+	const reason = body?.reason as UnavailableReason;
+	if (!UNAVAILABLE_REASONS.includes(reason)) {
+		return c.json({ error: 'reason must be too_large or binary' }, 400);
+	}
+	if (typeof body?.contentHash !== 'string' || body.contentHash.length === 0) {
+		return c.json({ error: 'contentHash required' }, 400);
+	}
+	if (typeof body?.sizeBytes !== 'number' || !Number.isInteger(body.sizeBytes) || body.sizeBytes < 0) {
+		return c.json({ error: 'sizeBytes must be a non-negative integer' }, 400);
+	}
+
+	auditLog('mark-unavailable', projectId, validPath);
+	await markDocumentUnavailable(projectId, validPath, fileKey(projectId, validPath), reason, body.contentHash, body.sizeBytes);
+
+	// The row no longer points at content, so nothing reads this; a failure only leaves an orphan.
+	await deleteFileContent(projectId, validPath).catch((err) => console.warn(`Failed to delete S3 content for ${validPath}:`, err));
+
+	return c.json({ path: validPath, unavailable: reason });
 });
 
 /**
@@ -86,6 +124,18 @@ filesRoutes.get('/:projectId/:path{.+}', async (c) => {
 	const file = await getProjectDocument(projectId, validPath);
 	if (!file) {
 		return c.json({ error: 'File not found' }, 404);
+	}
+
+	// On the branch, but not something the editor can hold: no content to give.
+	if (file.unavailable) {
+		return c.json({
+			path: file.path,
+			content: null,
+			contentHash: file.contentHash,
+			sizeBytes: file.sizeBytes,
+			syncedAt: file.syncedAt.toISOString(),
+			unavailable: file.unavailable,
+		});
 	}
 
 	// Get content from S3

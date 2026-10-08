@@ -8,6 +8,7 @@
  * can't list everything, and it changes nothing when its lock or base isn't current.
  */
 
+import { createHash } from 'node:crypto';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 import type { PGlite } from '@electric-sql/pglite';
 
@@ -15,9 +16,14 @@ const state = vi.hoisted(() => ({ db: undefined as PGlite | undefined }));
 
 vi.mock('pg', async () => (await import('@specboard/db/test-support')).pgliteAsPg(() => state.db!));
 
-vi.mock('./shared/storage-client.ts', () => ({
-	createStorageClient: () => ({ putFile: vi.fn(async () => {}), deleteFile: vi.fn(async () => {}), listFiles: vi.fn(async () => []) }),
+const storage = vi.hoisted(() => ({
+	putFile: vi.fn(async (_projectId: string, _path: string, _content: string) => {}),
+	deleteFile: vi.fn(async (_projectId: string, _path: string) => {}),
+	listFiles: vi.fn(async (_projectId: string) => [] as string[]),
+	markUnavailable: vi.fn(async (_projectId: string, _path: string, _reason: string, _hash: string, _size: number) => {}),
 }));
+
+vi.mock('./shared/storage-client.ts', () => ({ createStorageClient: () => storage }));
 
 vi.mock('./initial-sync.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./initial-sync.ts')>()),
@@ -39,14 +45,19 @@ function json(body: unknown): Response {
 	return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
-/** GitHub with the branch at HEAD and this compare from the base. */
-function github(compare: { files: unknown[]; total_commits?: number; commits?: unknown[]; status?: string }): void {
+/** GitHub with the branch at HEAD, this compare from the base, and these blobs by sha ("# New" otherwise). */
+function github(
+	compare: { files: unknown[]; total_commits?: number; commits?: unknown[]; status?: string },
+	blobs: Record<string, Buffer> = {}
+): void {
 	vi.stubGlobal('fetch', vi.fn(async (url: string) => {
 		if (url.includes('/git/refs/heads/')) return json({ object: { sha: HEAD } });
 		if (url.includes('/compare/')) {
 			return json({ status: 'ahead', ahead_by: 1, behind_by: 0, total_commits: 1, commits: [{ sha: HEAD }], ...compare });
 		}
-		return json({ content: Buffer.from('# New').toString('base64'), encoding: 'base64', sha: 'b1', size: 5 });
+		const sha = url.split('/git/blobs/')[1]!;
+		const blob = blobs[sha] ?? Buffer.from('# New');
+		return json({ content: blob.toString('base64'), encoding: 'base64', sha, size: blob.length });
 	}));
 }
 
@@ -88,6 +99,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	storage.putFile.mockImplementation(async () => {});
 	const db = state.db!;
 	// The API took the lock as 'pending' before invoking the sync.
 	await db.query(
@@ -197,4 +209,53 @@ describe('performIncrementalSync', () => {
 		expect(await project()).toMatchObject({ last_synced_commit_sha: BASE, sync_status: 'committing' });
 		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
 	});
+
+	it('fails without moving the sync point or links when a file couldn\'t be written', async () => {
+		github({
+			files: [
+				{ sha: 'b1', filename: 'docs/new.md', status: 'renamed', previous_filename: 'docs/old.md' },
+				{ sha: 'b2', filename: 'docs/edited.md', status: 'modified' },
+			],
+		});
+		storage.putFile.mockImplementation(async (_p: string, path: string) => {
+			if (path === 'docs/edited.md') throw new Error('500: storage unavailable');
+		});
+
+		const result = await sync();
+
+		expect(result).toMatchObject({ success: false });
+		expect(result.error).toContain('docs/edited.md');
+		expect(await project()).toMatchObject({ last_synced_commit_sha: BASE, sync_status: 'failed' });
+		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
+	});
+
+	it('records a file a push made too large, instead of keeping the old copy', async () => {
+		const big = Buffer.from('x'.repeat(500 * 1024 + 1));
+		github({ files: [{ sha: 'big', filename: 'docs/kept.md', status: 'modified' }] }, { big });
+
+		expect(await sync()).toMatchObject({ success: true, unavailable: 1, synced: 0 });
+
+		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'too_large', createHash('sha1').update(big).digest('hex'), big.length);
+		expect(storage.putFile).not.toHaveBeenCalled();
+		expect((await project()).last_synced_commit_sha).toBe(HEAD);
+	});
+
+	it('records a file a push made binary', async () => {
+		const binary = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 1, 2, 3]);
+		github({ files: [{ sha: 'bin', filename: 'docs/kept.md', status: 'modified' }] }, { bin: binary });
+
+		expect(await sync()).toMatchObject({ success: true, unavailable: 1 });
+
+		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'binary', expect.stringMatching(/^[0-9a-f]{40}$/), binary.length);
+	});
+
+	it('removes the old path of a file renamed into a skipped directory', async () => {
+		github({ files: [{ sha: 'b1', filename: 'node_modules/old.md', status: 'renamed', previous_filename: 'docs/old.md' }] });
+
+		expect(await sync()).toMatchObject({ success: true, removed: 1, synced: 0 });
+
+		expect(storage.deleteFile).toHaveBeenCalledWith(projectId, 'docs/old.md');
+		expect(storage.putFile).not.toHaveBeenCalled();
+	});
 });
+

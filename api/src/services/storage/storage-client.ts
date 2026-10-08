@@ -6,16 +6,23 @@
 const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://storage.internal:3003';
 const STORAGE_SERVICE_API_KEY = process.env.STORAGE_SERVICE_API_KEY;
 
+/** Why a file on the branch has no content here: binary, or over the sync's size limit. */
+export type UnavailableReason = 'too_large' | 'binary';
+
 interface StorageFile {
 	path: string;
 	contentHash: string;
 	sizeBytes: number;
 	syncedAt: string;
+	/** Set for a file on the branch the editor can't hold; it has no content here. */
+	unavailable?: UnavailableReason | null;
 }
 
-interface StorageFileContent extends StorageFile {
-	content: string;
-}
+/** A committed file: its content, or none when it's one the editor can't hold. */
+type StorageFileContent = StorageFile & (
+	| { content: string; unavailable?: null }
+	| { content: null; unavailable: UnavailableReason }
+);
 
 interface PendingChange {
 	path: string;

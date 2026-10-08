@@ -39,6 +39,8 @@ const storage = vi.hoisted(() => {
 		content === undefined ? null : createHash('sha1').update(content).digest('hex');
 	interface Pending { content: string | null; action: Action; renamedFrom: string | null; updatedAt: string; base: string | null }
 	const committed = new Map<string, string>();
+	// Committed files a sync found binary or too large: a row with no content.
+	const unavailable = new Set<string>();
 	const pending = new Map<string, Map<string, Pending>>();
 	let clock = 0;
 	const flags = { failPromote: false };
@@ -65,10 +67,15 @@ const storage = vi.hoisted(() => {
 			};
 		});
 	const client = {
-		listFiles: async () => [...committed.keys()].map((path) => ({ path, contentHash: 'h', sizeBytes: 1, syncedAt: 'then' })),
+		listFiles: async () => [...committed.keys()].map((path) => ({
+			path, contentHash: 'h', sizeBytes: 1, syncedAt: 'then', unavailable: unavailable.has(path) ? 'binary' : null,
+		})),
 		getFile: async (_projectId: string, path: string) => {
 			const content = committed.get(path);
-			return content === undefined ? null : { path, content, contentHash: hashOf(content) };
+			if (content === undefined) return null;
+			return unavailable.has(path)
+				? { path, content: null, contentHash: 'b'.repeat(40), unavailable: 'binary' }
+				: { path, content, contentHash: hashOf(content) };
 		},
 		listPendingChanges: async (_projectId: string, userId: string) => list(userId),
 		listPendingChangesWithContent: async (_projectId: string, userId: string) => list(userId),
@@ -123,7 +130,7 @@ const storage = vi.hoisted(() => {
 			return { rebased, dropped };
 		},
 	};
-	return { committed, pending, mine, client, flags, hashOf };
+	return { committed, unavailable, pending, mine, client, flags, hashOf };
 });
 
 /** A local project's checkout, in memory. */
@@ -309,6 +316,7 @@ beforeEach(async () => {
 	vi.mocked(createGitHubCommit).mockResolvedValue({ success: true, sha: COMMIT_SHA, url: 'https://github.com/acme/docs/commit/c0ffee0', filesCommitted: 1 });
 
 	storage.committed.clear();
+	storage.unavailable.clear();
 	storage.pending.clear();
 	storage.flags.failPromote = false;
 	storage.committed.set('docs/spec.md', '# Spec');
@@ -937,6 +945,45 @@ describe('a draft someone else\'s commit changed under', () => {
 		const status = (await (await call('erin', 'GET', 'git/status')).json()) as { changedFiles: Array<{ path: string; renameKeepsCommitted?: boolean }> };
 
 		expect(status.changedFiles.find((f) => f.path === '/docs/spec.md')).toMatchObject({ renamedTo: '/docs/d2.md', renameKeepsCommitted: true, conflict: true });
+	});
+});
+
+describe('a file a sync found binary or too large', () => {
+	it('can\'t be opened or saved, and says why', async () => {
+		storage.unavailable.add('docs/spec.md');
+
+		const read = await call('erin', 'GET', 'files?path=/docs/spec.md');
+		const write = await call('erin', 'PUT', 'files?path=/docs/spec.md', { content: '# Mine' });
+
+		expect(read.status).toBe(409);
+		expect(await read.json()).toMatchObject({ code: 'FILE_UNAVAILABLE', error: expect.stringContaining('500 KB') });
+		expect(write.status).toBe(409);
+		expect(storage.mine(erin).size).toBe(0);
+	});
+
+	it('refuses a commit with a draft made before the file became one, and writes nothing', async () => {
+		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, mine' });
+		// A pull brings in a push that made spec.md binary.
+		storage.unavailable.add('docs/spec.md');
+
+		const response = await commit();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			reason: 'unavailable_files',
+			files: [{ path: '/docs/spec.md' }],
+			error: { stage: 'commit', message: expect.stringContaining('/docs/spec.md') },
+		});
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+		expect(storage.mine(alice).size).toBe(1);
+	});
+
+	it('can still be deleted', async () => {
+		storage.unavailable.add('docs/other.md');
+
+		expect((await deleteFile('/docs/other.md')).status).toBe(200);
+		expect((await commit()).status).toBe(200);
+		expect(storage.committed.has('docs/other.md')).toBe(false);
 	});
 });
 

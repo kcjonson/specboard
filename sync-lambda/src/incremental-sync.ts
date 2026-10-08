@@ -4,7 +4,8 @@
  */
 
 import type { SpecPathChanges } from '@specboard/db';
-import { shouldSkipDirectory, shouldSyncFile } from './file-filter.ts';
+import { createHash } from 'crypto';
+import { shouldSkipDirectory, unsyncableReason } from './file-filter.ts';
 import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
 import { SUPERSEDED, syncArchive } from './initial-sync.ts';
 import { getHeadCommitSha } from './zip-stream.ts';
@@ -33,6 +34,8 @@ export interface IncrementalSyncResult {
 	success: boolean;
 	synced: number;
 	removed: number;
+	/** Files now on the branch that the editor can't hold (binary, too large). */
+	unavailable: number;
 	commitSha: string | null;
 	error?: string;
 }
@@ -201,7 +204,7 @@ export async function performIncrementalSync(
 	storageApiKey: string
 ): Promise<IncrementalSyncResult> {
 	const { projectId, owner, repo, branch, token, lastCommitSha, lockToken } = params;
-	const failed = (error: string): IncrementalSyncResult => ({ success: false, synced: 0, removed: 0, commitSha: null, error });
+	const failed = (error: string): IncrementalSyncResult => ({ success: false, synced: 0, removed: 0, unavailable: 0, commitSha: null, error });
 
 	const lock = await markSyncing(projectId, lockToken);
 	if (!lock) return failed(SUPERSEDED);
@@ -213,65 +216,64 @@ export async function performIncrementalSync(
 
 		let synced = 0;
 		let removed = 0;
+		let unavailable = 0;
 		let linkChanges: SpecPathChanges;
 		if (complete) {
-			// Pre-filter files by directory (early skip, no content fetch needed)
-			const notInSkipDir = (f: GitHubCompareFile): boolean => !shouldSkipDirectory(f.filename);
-
-			// Separate files by action
-			const toSync = files.filter(
-				(f) =>
-					(f.status === 'added' || f.status === 'modified') &&
-					notInSkipDir(f)
-			);
-
-			const toRemove = files.filter(
-				(f) => f.status === 'removed' && notInSkipDir(f)
-			);
-
-			// Handle renamed files: remove old, add new
-			const renamed = files.filter(
-				(f) => f.status === 'renamed' && notInSkipDir(f)
-			);
-			for (const file of renamed) {
-				if (file.previous_filename && !shouldSkipDirectory(file.previous_filename)) {
-					toRemove.push({
-						...file,
-						filename: file.previous_filename,
-						status: 'removed',
-					});
+			// Files in ignored directories are never stored. A rename keeps its two sides
+			// apart: the old path goes even when the new one lands in a skipped directory.
+			const toSync: GitHubCompareFile[] = [];
+			const toRemove: string[] = [];
+			for (const file of files) {
+				if (file.status === 'removed') {
+					if (!shouldSkipDirectory(file.filename)) toRemove.push(file.filename);
+					continue;
 				}
-				toSync.push({ ...file, status: 'added' });
+				if (file.status === 'renamed' && file.previous_filename && !shouldSkipDirectory(file.previous_filename)) {
+					toRemove.push(file.previous_filename);
+				}
+				if (!shouldSkipDirectory(file.filename)) toSync.push(file);
 			}
 
-			// Sync added/modified files in batches
-			// Fetch content, check size + binary, then upload if valid
+			// Every file has to land: one that didn't would leave storage behind the sync
+			// point that claims it's current. Failures are gathered, and the sync fails
+			// after the batch without moving that point, so a retry or the next pull
+			// redoes them.
+			const failures: string[] = [];
+			const fail = (path: string, err: unknown): void => {
+				failures.push(`${path}: ${err instanceof Error ? err.message : String(err)}`);
+			};
+
+			// A file now binary or over the size limit keeps a row with the new version's
+			// hash and no content, so nobody reads or commits over the older copy.
 			await processBatches(toSync, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
 				try {
 					const buffer = await fetchBlobBuffer(owner, repo, file.sha, token);
-
-					// Check if file should be synced (size + binary detection)
-					if (!(await shouldSyncFile(file.filename, buffer))) {
+					const reason = await unsyncableReason(file.filename, buffer);
+					if (reason === 'too_large' || reason === 'binary') {
+						const contentHash = createHash('sha1').update(buffer).digest('hex');
+						await storageClient.markUnavailable(projectId, file.filename, reason, contentHash, buffer.length);
+						unavailable++;
 						return;
 					}
-
-					const content = buffer.toString('utf-8');
-					await storageClient.putFile(projectId, file.filename, content);
+					await storageClient.putFile(projectId, file.filename, buffer.toString('utf-8'));
 					synced++;
 				} catch (err) {
-					console.error(`Failed to sync ${file.filename}:`, err);
+					fail(file.filename, err);
 				}
 			});
 
-			// Remove deleted files
-			await processBatches(toRemove, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
+			await processBatches(toRemove, BATCH_SIZE, BATCH_DELAY_MS, async (path) => {
 				try {
-					await storageClient.deleteFile(projectId, file.filename);
+					await storageClient.deleteFile(projectId, path);
 					removed++;
 				} catch (err) {
-					console.error(`Failed to remove ${file.filename}:`, err);
+					fail(path, err);
 				}
 			});
+
+			if (failures.length > 0) {
+				throw new Error(`Couldn't sync ${failures.length} file(s): ${failures.slice(0, 3).join('; ')}`);
+			}
 
 			// Commits pulled in here move spec links the way a commit made in the editor
 			// does, together with the sync point below.
@@ -289,7 +291,7 @@ export async function performIncrementalSync(
 		if (!(await completeSync(projectId, lock, lastCommitSha, headSha, linkChanges))) {
 			return failed(SUPERSEDED);
 		}
-		return { success: true, synced, removed, commitSha: headSha };
+		return { success: true, synced, removed, unavailable, commitSha: headSha };
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
 		await markSyncFailed(projectId, lock, errorMessage);

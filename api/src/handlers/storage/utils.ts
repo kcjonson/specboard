@@ -3,6 +3,7 @@
  */
 
 import path from 'path';
+import type { Context } from 'hono';
 import {
 	type ProjectAccess,
 	type ProjectResponse,
@@ -11,7 +12,7 @@ import {
 	isCloudRepository,
 } from '@specboard/db';
 import { LocalStorageProvider } from '../../services/storage/local-provider.ts';
-import { CloudStorageProvider } from '../../services/storage/cloud-provider.ts';
+import { CloudStorageProvider, FILE_UNAVAILABLE } from '../../services/storage/cloud-provider.ts';
 import type { StorageProvider } from '../../services/storage/types.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,6 +64,20 @@ export function readDraftBase(value: unknown): { ok: true; base: string | null |
 		return { ok: true, base: value };
 	}
 	return { ok: false };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Files the editor can't hold
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** What the editor shows for a file a sync found binary or over its size limit. */
+export const FILE_UNAVAILABLE_MESSAGE =
+	'This file is binary or larger than 500 KB, so it can\'t be opened or edited here. Change it in the repository directly.';
+
+/** The 409 for reading, writing, or renaming such a file, or null when `error` is something else. */
+export function fileUnavailableResponse(context: Context, error: unknown): Response | null {
+	if (!(error instanceof Error) || error.message !== FILE_UNAVAILABLE) return null;
+	return context.json({ error: FILE_UNAVAILABLE_MESSAGE, code: FILE_UNAVAILABLE }, 409);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

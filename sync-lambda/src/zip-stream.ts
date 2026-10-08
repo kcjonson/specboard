@@ -4,9 +4,10 @@
  * Memory-efficient: never loads the entire ZIP into memory.
  */
 
+import { createHash } from 'crypto';
 import { Readable } from 'stream';
 import unzipper from 'unzipper';
-import { shouldSkipDirectory, shouldSyncFile, stripRootFolder, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
+import { shouldSkipDirectory, unsyncableReason, stripRootFolder, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
 import type { StorageClient } from './shared/storage-client.ts';
 
 const GITHUB_API_URL = 'https://api.github.com';
@@ -16,9 +17,10 @@ export interface StreamResult {
 	skipped: number;
 	errors: string[];
 	/**
-	 * Every file path in the archive, whether this sync uploaded it or not: a file the
-	 * filter skips or that failed to upload is still on the branch, so pruning must
-	 * leave whatever storage has for it.
+	 * The paths storage holds for the archive now: every file uploaded, and every one
+	 * recorded as one the editor can't hold (binary, too large). Pruning removes the
+	 * rest; a file in a skipped directory isn't stored at all. Only complete when
+	 * `errors` is empty.
 	 */
 	kept: Set<string>;
 }
@@ -34,7 +36,7 @@ export async function streamGitHubZipToStorage(
 	ref: string,
 	token: string,
 	projectId: string,
-	storageClient: Pick<StorageClient, 'putFile'>
+	storageClient: Pick<StorageClient, 'putFile' | 'markUnavailable'>
 ): Promise<StreamResult> {
 	const result: StreamResult = {
 		synced: 0,
@@ -80,65 +82,53 @@ export async function streamGitHubZipToStorage(
 		nodeStream.on('error', reject);
 
 		const handleEntry = async (entry: unzipper.Entry): Promise<void> => {
-			const zipPath = entry.path;
-			const entryType = entry.type; // 'Directory' or 'File'
-			// Use compressed size as estimate; actual size checked after reading
-			const estimatedSize = entry.vars?.compressedSize ?? 0;
-
 			// Skip directories
-			if (entryType === 'Directory') {
+			if (entry.type === 'Directory') {
 				entry.autodrain();
 				return;
 			}
 
-			// Strip the root folder from the path
-			const path = stripRootFolder(zipPath);
-
-			// Skip empty paths (the root folder itself)
+			// Strip the root folder; an empty path is the root folder itself
+			const path = stripRootFolder(entry.path);
 			if (!path) {
 				entry.autodrain();
 				return;
 			}
-			result.kept.add(path);
 
-			// Skip files in ignored directories (early check before reading)
+			// Files in ignored directories are never stored
 			if (shouldSkipDirectory(path)) {
 				result.skipped++;
 				entry.autodrain();
 				return;
 			}
 
-			// Skip files that look too large based on compressed size estimate
-			if (estimatedSize > MAX_FILE_SIZE_BYTES / 2) {
-				result.skipped++;
-				entry.autodrain();
-				return;
-			}
-
 			try {
-				// Read the file content
+				// Hash every byte, but only keep the bytes of a file small enough to store,
+				// so a huge file costs its hash and nothing more.
+				const hash = createHash('sha1');
 				const chunks: Buffer[] = [];
+				let size = 0;
 				for await (const chunk of entry) {
-					chunks.push(chunk as Buffer);
+					const bytes = chunk as Buffer;
+					hash.update(bytes);
+					size += bytes.length;
+					if (size <= MAX_FILE_SIZE_BYTES) chunks.push(bytes);
 				}
-				const buffer = Buffer.concat(chunks);
+				const contentHash = hash.digest('hex');
 
-				// Check if file should be synced (size + binary detection)
-				if (!(await shouldSyncFile(path, buffer))) {
+				const reason = size > MAX_FILE_SIZE_BYTES ? 'too_large' : await unsyncableReason(path, Buffer.concat(chunks));
+				if (reason === 'too_large' || reason === 'binary') {
+					await storageClient.markUnavailable(projectId, path, reason, contentHash, size);
 					result.skipped++;
-					return;
+				} else {
+					await storageClient.putFile(projectId, path, Buffer.concat(chunks).toString('utf-8'));
+					result.synced++;
 				}
-
-				const content = buffer.toString('utf-8');
-
-				// Upload to storage service
-				await storageClient.putFile(projectId, path, content);
-				result.synced++;
+				result.kept.add(path);
 			} catch (err) {
 				result.errors.push(
 					`Failed to sync ${path}: ${err instanceof Error ? err.message : String(err)}`
 				);
-				result.skipped++;
 			}
 		};
 

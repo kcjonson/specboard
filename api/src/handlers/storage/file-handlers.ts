@@ -19,6 +19,7 @@ import {
 	sortPathsByDepth,
 	getDisplayName,
 	readDraftBase,
+	fileUnavailableResponse,
 } from './utils.ts';
 
 const MAX_EXPANDED_PATHS = 200;
@@ -208,6 +209,8 @@ export async function handleReadFile(context: Context): Promise<Response> {
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
+		const unavailable = fileUnavailableResponse(context, error);
+		if (unavailable) return unavailable;
 		if (message === 'BINARY_FILE') {
 			return context.json({ error: 'Cannot read binary file', code: 'BINARY_FILE' }, 400);
 		}
@@ -376,6 +379,8 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			success: true,
 		});
 	} catch (error) {
+		const unavailable = fileUnavailableResponse(context, error);
+		if (unavailable) return unavailable;
 		console.error('Failed to rename file:', error);
 		return context.json({ error: 'Failed to rename file', code: 'FILE_RENAME_FAILED' }, 500);
 	}
@@ -525,6 +530,8 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 			success: true,
 		});
 	} catch (error) {
+		const unavailable = fileUnavailableResponse(context, error);
+		if (unavailable) return unavailable;
 		console.error('Failed to write file:', error);
 		return context.json({ error: 'Server error' }, 500);
 	}

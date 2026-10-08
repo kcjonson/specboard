@@ -57,30 +57,19 @@ export async function isBinary(buffer: Buffer): Promise<boolean> {
 	return isBinaryFile(buffer);
 }
 
+/** Why a file on the branch isn't stored as content, or null when it is. */
+export type UnsyncableReason = 'directory' | 'too_large' | 'binary';
+
 /**
- * Check if a file should be synced based on path, size, and content.
- * Returns true if the file should be synced.
+ * Whether a file is stored, and if not, why: it's in a skipped directory (never stored
+ * at all), or it's over the size limit or binary (stored as a row with no content, so
+ * nothing reads or commits over an older copy).
  */
-export async function shouldSyncFile(
-	path: string,
-	buffer: Buffer
-): Promise<boolean> {
-	// Skip files in ignored directories
-	if (shouldSkipDirectory(path)) {
-		return false;
-	}
-
-	// Skip files over size limit
-	if (buffer.length > MAX_FILE_SIZE_BYTES) {
-		return false;
-	}
-
-	// Skip binary files
-	if (await isBinaryFile(buffer)) {
-		return false;
-	}
-
-	return true;
+export async function unsyncableReason(path: string, buffer: Buffer): Promise<UnsyncableReason | null> {
+	if (shouldSkipDirectory(path)) return 'directory';
+	if (buffer.length > MAX_FILE_SIZE_BYTES) return 'too_large';
+	if (await isBinaryFile(buffer)) return 'binary';
+	return null;
 }
 
 /**
