@@ -239,7 +239,9 @@ The editor mounts with `readOnly` for someone who can't edit the project (`usePr
 replies or resolving (existing comments still render), no rename, epic create or link, no AI
 edit to apply, and no recovery of a local draft, which stays in local storage until they can
 save it. The file browser drops commit, pull, the pending-changes count, and file and folder
-create, rename and delete. A member of a local project sees a note that its documents are on
+create, rename and delete. Removing a root folder from the project and the settings link are
+the owner's alone, so an editor doesn't see them either, and a file write the server refuses
+shows its reason (and a 403 re-reads the project) like any other refused write. A member of a local project sees a note that its documents are on
 the owner's computer in place of the tree.
 
 An autosave the server refuses with a 403 (the role changed while the page was open) shows the

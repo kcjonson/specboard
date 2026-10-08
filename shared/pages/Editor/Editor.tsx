@@ -714,7 +714,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			});
 			// Show user-friendly error - using alert for simplicity
 			// (File operations typically succeed, so a dedicated UI component isn't warranted)
-			alert(`Failed to rename file: ${error.message}`);
+			alert(writeFailure(err, 'Failed to rename file', projectRef));
 		}
 	}, [projectRef, projectId, documentModel]);
 
@@ -813,7 +813,7 @@ export function Editor(props: RouteProps): JSX.Element {
 						onBeforePull={handleBeforePull}
 						onPullComplete={handlePullComplete}
 						readOnly={!canEdit}
-						canOpenSettings={isOwner}
+						isOwner={isOwner}
 						class={styles.sidebar}
 					/>
 				</ResizablePanel>

@@ -13,6 +13,8 @@ export interface FolderItemProps {
 	isRoot: boolean;
 	/** No add, delete or remove buttons, for someone who can't edit */
 	readOnly?: boolean;
+	/** Whether a root folder can be removed from the project, which only the owner may do */
+	canRemove?: boolean;
 	/** Called when folder is clicked (to toggle expand) */
 	onClick: () => void;
 	/** Called when add file button is clicked */
@@ -29,6 +31,7 @@ export function FolderItem({
 	isExpanded,
 	isRoot,
 	readOnly = false,
+	canRemove = false,
 	onClick,
 	onAddFileClick,
 	onDeleteClick,
@@ -65,7 +68,7 @@ export function FolderItem({
 							<Icon name="trash-2" class="size-xs" />
 						</button>
 					)}
-					{isRoot && (
+					{isRoot && canRemove && (
 						<button
 							class={styles.removeButton}
 							onClick={onRemoveClick}

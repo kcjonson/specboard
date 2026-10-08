@@ -6,18 +6,20 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/preact';
+import { FetchError, fetchClient } from '@specboard/fetch';
 import { FileBrowser } from './FileBrowser';
 
 const post = vi.fn();
+const del = vi.fn();
 
-vi.mock('@specboard/fetch', () => ({
+vi.mock('@specboard/fetch', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@specboard/fetch')>()),
 	fetchClient: {
-		get: vi.fn(),
+		get: vi.fn(() => Promise.resolve({})),
 		post: (...args: unknown[]) => post(...args),
 		put: vi.fn(),
-		delete: vi.fn(),
+		delete: (...args: unknown[]) => del(...args),
 	},
-	FetchError: class extends Error {},
 }));
 
 /** What the API returns for a project that has no repository yet. */
@@ -34,7 +36,7 @@ describe('FileBrowser with no repository', () => {
 	});
 
 	it('points the owner at project settings instead of offering a local folder', async () => {
-		const { findByText, queryByText, getByRole } = render(<FileBrowser projectRef="acme/specboard" canOpenSettings />);
+		const { findByText, queryByText, getByRole } = render(<FileBrowser projectRef="acme/specboard" isOwner />);
 
 		await findByText('No repository connected');
 		expect(queryByText('+ Add Folder')).toBeNull();
@@ -116,12 +118,35 @@ describe('FileBrowser read-only', () => {
 		expect(queryByRole('textbox', { name: 'Rename file' })).toBeNull();
 	});
 
-	it('offers all of them to an editor (the control for the tests above)', async () => {
-		const { findByText, getByRole } = render(<FileBrowser projectRef="acme/specboard" />);
+	it('offers an editor file create and delete, but not removing a folder from the project', async () => {
+		const { findByText, getByRole, queryByRole } = render(<FileBrowser projectRef="acme/specboard" />);
 
 		await findByText('spec.md');
 		expect(getByRole('button', { name: 'New file in folder' })).toBeTruthy();
 		expect(getByRole('button', { name: 'Delete file' })).toBeTruthy();
+		expect(queryByRole('button', { name: 'Remove folder from project' })).toBeNull();
+	});
+
+	it('offers the owner removing a root folder from the project', async () => {
+		const { findByText, getByRole } = render(<FileBrowser projectRef="acme/specboard" isOwner />);
+
+		await findByText('spec.md');
+		expect(getByRole('button', { name: 'Remove folder from project' })).toBeTruthy();
+	});
+
+	it('shows a refused delete in the server\'s words and re-reads the project', async () => {
+		del.mockRejectedValue(new FetchError('HTTP 403: Forbidden', 403, undefined, {
+			error: 'Connect GitHub to edit this project',
+			reason: 'github_not_connected',
+		}));
+		const { findByText, getByRole, queryByText } = render(<FileBrowser projectRef="acme/refused" />);
+
+		await findByText('spec.md');
+		fireEvent.click(getByRole('button', { name: 'Delete file' }));
+
+		expect(await findByText('Connect GitHub to edit this project')).toBeTruthy();
+		expect(queryByText('HTTP 403: Forbidden')).toBeNull();
+		expect(fetchClient.get).toHaveBeenCalledWith('/api/projects/acme/refused');
 	});
 
 	it('hides the sync retry, which only an editor can run', async () => {

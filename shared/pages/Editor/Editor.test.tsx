@@ -105,7 +105,7 @@ describe('Editor for a viewer', () => {
 		expect(seen.editor).toMatchObject({ readOnly: true, onAddComment: undefined, onReply: undefined, onToggleResolved: undefined });
 		expect(seen.header).toMatchObject({ onRename: undefined, onCreateEpic: undefined, onLinkEpic: undefined });
 		expect(seen.header?.onViewEpic).toBeTypeOf('function');
-		expect(seen.files).toMatchObject({ readOnly: true, canOpenSettings: false });
+		expect(seen.files).toMatchObject({ readOnly: true, isOwner: false });
 		expect(seen.chat).toMatchObject({ onApplyEdit: undefined });
 	});
 
