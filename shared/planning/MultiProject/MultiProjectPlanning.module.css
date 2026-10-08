@@ -1,0 +1,184 @@
+.loading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 1;
+	color: var(--color-text-muted);
+	font-size: 16px;
+}
+
+/* A link that can't be shown, or shows nothing: what's wrong, and the way back. */
+.message {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-3);
+	flex: 1;
+	padding: var(--space-6);
+	text-align: center;
+}
+
+.message h2 {
+	margin: 0;
+	font-size: var(--text-lg);
+	font-weight: var(--font-semibold);
+}
+
+.message p {
+	margin: 0;
+	max-width: 32rem;
+	color: var(--color-text-muted);
+}
+
+.back {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	font-size: var(--text-sm);
+}
+
+.toolbar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--space-2) var(--space-4);
+	padding: var(--space-2) var(--space-4);
+	border-bottom: 1px solid var(--color-border);
+	background: var(--color-background);
+}
+
+/* The chosen projects, each a link to its own board; the legend for the key prefixes. */
+.projects {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	flex: 1 1 auto;
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.projects > li {
+	display: flex;
+	min-width: 0;
+}
+
+.project {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	max-width: 16rem;
+	min-width: 0;
+	height: 28px;
+	padding: 0 3px 0 var(--space-3);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-full);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font-size: var(--text-sm);
+	font-weight: var(--font-medium);
+	white-space: nowrap;
+	transition: border-color var(--transition-fast);
+}
+
+/* The border answers the hover, not the fill, which would swallow the key Badge's. */
+.project:hover {
+	border-color: var(--color-text-muted);
+	text-decoration: none;
+}
+
+.projectName {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.filters {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	margin-left: auto;
+}
+
+.filters input[type='search'] {
+	width: 220px;
+}
+
+/* On the Table's own gutter at every width, so a notice lines up with what it's about. */
+.notices {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	padding: 0 var(--space-4);
+}
+
+.notices:not(:empty) {
+	padding-top: var(--space-3);
+}
+
+/* The reasons on the left, the ways on at the right; the links drop below on a phone. */
+.leftOut {
+	flex-wrap: wrap;
+}
+
+.leftOutText {
+	flex: 1 1 20rem;
+	min-width: 0;
+}
+
+.leftOutText > span {
+	display: block;
+}
+
+.leftOutLinks {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1) var(--space-4);
+	font-weight: var(--font-medium);
+}
+
+/* Fills the rest of the page; the Table inside owns the scrolling. */
+.viewArea {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+@media (width < 768px) { /* bp-small: projects on one sideways-scrolling row, filters full width below */
+	.toolbar {
+		padding: var(--space-2) var(--space-3);
+	}
+
+	/* The padding keeps focus rings clear of the scroller's clipping edge. */
+	.projects {
+		flex: 1 1 100%;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		scrollbar-width: none;
+		padding: 3px;
+		margin: -3px;
+	}
+
+	.projects > li {
+		flex-shrink: 0;
+	}
+
+	.project {
+		max-width: 12rem;
+	}
+
+	.filters {
+		flex: 1 1 100%;
+		margin-left: 0;
+	}
+
+	.filters > :first-child {
+		flex: 1;
+	}
+
+	.filters input[type='search'] {
+		width: 100%;
+	}
+}

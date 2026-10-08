@@ -360,6 +360,24 @@ describe('ItemsCollection filters', () => {
 		expect(items.filterActive).toBe(false);
 	});
 
+	it('opens on an initial filter, so the first windows are already filtered', async () => {
+		serve({ ready: 5 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100, initialFilter: { search: ' auth ', type: 'bug' } });
+		await items.fetch();
+
+		expect(fetchClient.getResponse).toHaveBeenCalledTimes(ITEM_STATUSES.length);
+		expect(requestedFor('ready')).toBe('/api/projects/acme/demo/items?status=ready&limit=101&search=auth&type=bug');
+		expect(items.filterActive).toBe(true);
+
+		// The same filter again is no change; a different one replaces it.
+		vi.mocked(fetchClient.getResponse).mockClear();
+		await items.setFilter({ search: 'auth', type: 'bug' });
+		expect(fetchClient.getResponse).not.toHaveBeenCalled();
+		await items.setFilter({});
+		expect(requestedFor('ready')).toBe('/api/projects/acme/demo/items?status=ready&limit=101');
+		expect(items.filterActive).toBe(false);
+	});
+
 	it('puts the search and the type on every window request, url-encoded', async () => {
 		serve({ ready: 5 });
 		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });

@@ -43,6 +43,17 @@
 	color: var(--color-text);
 }
 
+/* A table that mixes projects (the multi-project view) adds a Project track after Title. */
+.withProject .row {
+	--col-project: 144px;
+	grid-template-columns: 44px minmax(240px, 1fr) var(--col-project) var(--col-status) 80px 140px;
+}
+
+.colProject {
+	display: flex;
+	min-width: 0;
+}
+
 .columnHeader {
 	font-size: var(--text-xs);
 	font-weight: var(--font-semibold);
@@ -276,11 +287,15 @@
 }
 
 @media (width < 768px) { /* bp-small: Title + Status only; the rest lives in the item takeover */
-	.row {
+	.row,
+	.withProject .row {
 		grid-template-columns: minmax(0, 1fr) var(--col-status);
 	}
 
+	/* A mixed table's rows still say their project here: the key's prefix, which the
+	   toolbar's project chips are the legend for. */
 	.colType,
+	.colProject,
 	.colTasks,
 	.colAssignee {
 		display: none;

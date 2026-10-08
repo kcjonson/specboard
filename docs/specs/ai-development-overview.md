@@ -71,8 +71,10 @@ them doesn't belong in v1.
 8. **Desktop only in v1.** Below 768 px the view toggle offers Board and Table, and
    `?view=map` opened on a small screen lands on the Board. The small-screen Map is
    SPE-220; [Platforms](#platforms) keeps its requirements.
-9. **One project per map.** A cross-project portfolio asks different questions and
-   is a different view.
+9. **One project per map.** Several projects at once is the
+   [multi-project view](multi-project-view.md), whose combined Map (SPE-249) is the
+   union of each project's map: their disjoint families on one timeline, without the
+   since-last-visit layer.
 10. **Read-only.** Nothing on the Map changes an item in v1. Dragging a dot to pull
     a tangle apart is allowed; it springs back on release and nothing is saved.
     Edits happen in the drawer, under its existing role rules.
@@ -1487,7 +1489,8 @@ Sizes are bundlephobia's min+gzip figures as of 2026-10-02.
   items in place.
 - Saving dot positions a person dragged.
 - The Map below 768 px: SPE-220.
-- A cross-project portfolio.
+- Several projects on one Map: that's the [multi-project view](multi-project-view.md)'s
+  combined Map (SPE-249), the union of each project's map.
 - Due dates, scheduling, Gantt.
 - A dedicated dependency layout (a layered graph of one item's blocker chain).
 - CI and merge state on items, which needs GitHub data the board doesn't hold.

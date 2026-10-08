@@ -93,6 +93,8 @@ export function UserMenu({
 		const handleKeyDown = (e: KeyboardEvent): void => {
 			switch (e.key) {
 				case 'Escape':
+					// Handled: whatever else the page has open that Escape would leave keeps going.
+					e.preventDefault();
 					setIsOpen(false);
 					break;
 				case 'ArrowDown':

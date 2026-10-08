@@ -18,8 +18,9 @@ export type Poll = () => Promise<boolean> | void;
 /**
  * The planning views' background refresh (kanban-ui.md; ai-development-overview.md,
  * decision 12): every 10 s, only while the window has focus, since a backgrounded page
- * shouldn't keep hitting the server. Losing focus stops it; regaining it polls at once,
- * so a refocus after the interval has passed catches up, unless the last poll failed.
+ * shouldn't keep hitting the server. Losing focus stops it. Regaining it polls at once
+ * only if the wait has run out since the last poll, which catches up a page left in the
+ * background; a refocus sooner waits out the rest, so switching windows costs nothing.
  *
  * `skip` is checked on every tick: while it holds (the source is in an error state, a
  * 429 or an expired session), the poll doesn't run, since retrying on a timer is how a
@@ -38,11 +39,13 @@ export function usePolling(poll: Poll, skip: () => boolean = () => false, interv
 		let failures = 0;
 		let running = false;
 		let focused = false;
+		// The view's own first load counts as the last read, so nothing polls before a full wait.
+		let settledAt = Date.now();
 
 		const delay = (): number => Math.min(interval * 2 ** failures, POLL_BACKOFF_MAX);
-		const arm = (): void => {
+		const arm = (wait = delay()): void => {
 			clearTimeout(timer);
-			timer = focused ? setTimeout(tick, delay()) : undefined;
+			timer = focused ? setTimeout(tick, wait) : undefined;
 		};
 		const tick = async (): Promise<void> => {
 			timer = undefined;
@@ -55,14 +58,16 @@ export function usePolling(poll: Poll, skip: () => boolean = () => false, interv
 					else failures = 0;
 				} finally {
 					running = false;
+					settledAt = Date.now();
 				}
 			}
 			arm();
 		};
 		const onFocus = (): void => {
 			focused = true;
-			if (failures === 0) void tick();
-			else arm();
+			const remaining = delay() - (Date.now() - settledAt);
+			if (remaining <= 0) void tick();
+			else arm(remaining);
 		};
 		const onBlur = (): void => {
 			focused = false;

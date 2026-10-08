@@ -4,7 +4,7 @@ import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
 import { navigate } from '@specboard/router';
 import { useModel, useProjectRole, ItemsCollection, ItemModel, type ItemType, writeFailure } from '@specboard/models';
-import { Page, SplitButton, Text, Select, Button, Icon, Notice, type SplitButtonOption, type SelectOption } from '@specboard/ui';
+import { Page, SplitButton, Text, Select, Button, Icon, Notice, type SplitButtonOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
 import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
@@ -14,42 +14,11 @@ import { LoadError } from '../LoadError/LoadError';
 import { ViewToggle, type PlanningView } from '../ViewToggle/ViewToggle';
 import { usePolling } from '../hooks/usePolling';
 import { HIGHLIGHT_DURATION } from '../utils/highlight';
+import { CATEGORY_OPTIONS, usePlanningFilters } from './filters';
 import { VIEW_PREF, writePref } from './prefs';
 import { useMapView } from './useMapView';
 import { readView, resolveView, useSmallScreen } from './view';
 import styles from './Planning.module.css';
-
-/**
- * How long the search box sits still before its text becomes a new query. Each
- * change costs one request per status window, so keystrokes are collapsed; the
- * type Select is a single deliberate choice and applies immediately.
- */
-const SEARCH_DEBOUNCE = 250;
-
-/** Sentinel value meaning "no type filter applied". */
-const CATEGORY_ALL = 'all';
-
-/** Options for the type <Select> in the toolbar. */
-const CATEGORY_OPTIONS: SelectOption[] = [
-	{ value: CATEGORY_ALL, label: 'All types' },
-	{ value: 'epic', label: 'Epic' },
-	{ value: 'task', label: 'Task' },
-	{ value: 'bug', label: 'Bug' },
-];
-
-/** The real item types among CATEGORY_OPTIONS, excluding the CATEGORY_ALL sentinel. */
-const ITEM_TYPES = new Set(CATEGORY_OPTIONS.map((option) => option.value).filter((value) => value !== CATEGORY_ALL));
-
-function isItemType(value: string): value is ItemType {
-	return ITEM_TYPES.has(value);
-}
-
-/** Toolbar filter state. The server does the filtering; this is only what the toolbar shows. */
-interface PlanningFilters {
-	search: string;
-	/** A value from CATEGORY_OPTIONS, or CATEGORY_ALL for no filter. */
-	category: string;
-}
 
 /** Drawer min width (matches ItemDrawer) and the board's reserved minimum. */
 const DRAWER_MIN_WIDTH = 320;
@@ -120,23 +89,17 @@ export function Planning(props: RouteProps): JSX.Element {
 	// The toolbar's filter state, and the search text once it has settled. Filtering
 	// happens on the server (the views render whatever the collection holds), so the
 	// settled text plus the type go to the collection, which reissues its windows.
-	const [filters, setFilters] = useState<PlanningFilters>({ search: '', category: CATEGORY_ALL });
-	const [settledSearch, setSettledSearch] = useState('');
-	useEffect(() => {
-		if (filters.search === settledSearch) return;
-		// Emptying the box (Clear filters, or deleting the text) is one deliberate act,
-		// not a keystroke on the way to another: settle it now, so the results the user
-		// just cleared don't sit there for another quarter second.
-		if (filters.search.trim() === '') {
-			setSettledSearch(filters.search);
-			return;
-		}
-		const timer = setTimeout(() => setSettledSearch(filters.search), SEARCH_DEBOUNCE);
-		return () => clearTimeout(timer);
-	}, [filters.search, settledSearch]);
 	// The Map takes the same text and type but filters nothing on the server: it dims, and
 	// asks the items list for the matches itself. The board's windows catch up when it returns.
-	const type = isItemType(filters.category) ? filters.category : undefined;
+	const {
+		filters,
+		settledSearch,
+		type,
+		active: filtersActive,
+		onSearchInput: handleSearchInput,
+		onCategoryChange: handleCategoryChange,
+		clear: handleClearFilters,
+	} = usePlanningFilters();
 	const onMap = view === 'map';
 	useEffect(() => {
 		if (onMap) return;
@@ -358,22 +321,6 @@ export function Planning(props: RouteProps): JSX.Element {
 		{ label: 'Task', value: 'task', icon: 'checkbox-unchecked' as const, onClick: () => handleOpenNewItemDialog('task') },
 		{ label: 'Bug', value: 'bug', icon: 'bug' as const, onClick: () => handleOpenNewItemDialog('bug') },
 	], [handleOpenNewItemDialog]);
-
-	const handleSearchInput = useCallback((e: Event): void => {
-		const value = (e.target as HTMLInputElement).value;
-		setFilters((prev) => ({ ...prev, search: value }));
-	}, []);
-
-	const handleCategoryChange = useCallback((e: Event): void => {
-		const value = (e.target as HTMLSelectElement).value;
-		setFilters((prev) => ({ ...prev, category: value }));
-	}, []);
-
-	const filtersActive = filters.search.trim() !== '' || filters.category !== CATEGORY_ALL;
-
-	const handleClearFilters = useCallback((): void => {
-		setFilters({ search: '', category: CATEGORY_ALL });
-	}, []);
 
 	// Rendered twice (inline desktop / popover mobile); both copies are controlled
 	// by the same `filters` state so they can never disagree. autoFocus only in the

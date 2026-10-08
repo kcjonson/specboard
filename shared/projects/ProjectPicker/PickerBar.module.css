@@ -1,0 +1,62 @@
+/*
+ * Tinted with the primary color so the grid below reads as being in a different mode,
+ * and pinned to the top of the scrolling page so View stays one click away. Wraps at
+ * phone width: the prompt and status above, the buttons below on the right.
+ */
+.bar {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-3) var(--space-4);
+	margin-bottom: var(--space-6);
+	padding: var(--space-3) var(--space-4);
+	border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+	border-radius: var(--radius-lg);
+	background: var(--color-primary-subtle);
+	box-shadow: var(--shadow-sm);
+}
+
+/* A landing spot for focus, not a control: no ring. */
+.bar:focus {
+	outline: none;
+}
+
+.text {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--space-1) var(--space-3);
+	flex: 1 1 14rem;
+	min-width: 0;
+}
+
+.prompt {
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+}
+
+.status {
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Full-strength text with a warning-colored mark: the warning hue alone is too faint
+   to read on the tinted bar. */
+.refusal {
+	color: var(--color-text);
+}
+
+.alert {
+	margin-right: var(--space-1);
+	color: var(--color-warning);
+}
+
+.actions {
+	display: flex;
+	gap: var(--space-2);
+	margin-left: auto;
+}

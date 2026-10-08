@@ -6,8 +6,11 @@ import { getCookie, setCookie } from '@specboard/core/cookies';
 import { formatProjectRef } from '@specboard/core/identifiers';
 import { fetchClient, fetchErrorText } from '@specboard/fetch';
 import { Button, Page } from '@specboard/ui';
+import { MIN_PROJECTS } from '@shared/planning';
 import { ProjectCard, isCloudRepository, type Project } from '../ProjectCard/ProjectCard';
 import { ProjectDialog, type RepositoryConfig } from '../ProjectDialog/ProjectDialog';
+import { PickerBar } from '../ProjectPicker/PickerBar';
+import { useProjectPicker } from '../ProjectPicker/useProjectPicker';
 import { SyncProgressDialog } from '../SyncProgressDialog/SyncProgressDialog';
 import styles from './ProjectsList.module.css';
 
@@ -24,6 +27,8 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	// Sync progress dialog state: shown after a save that attached a repository. A new
 	// project is opened on dismiss; an existing one leaves the user where they were.
 	const [syncingProject, setSyncingProject] = useState<{ projectRef: string; name: string; isNew: boolean } | null>(null);
+	// "View together": while it picks, a card click toggles the card instead of opening it.
+	const picker = useProjectPicker(projects);
 
 	const fetchProjects = useCallback(async (): Promise<void> => {
 		try {
@@ -217,9 +222,18 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 	return (
 		<Page title="Projects">
 			<main class={styles.main}>
-				<div class={styles.toolbar}>
-					<Button onClick={handleOpenCreateDialog}>+ New Project</Button>
-				</div>
+				{picker.active ? (
+					<PickerBar picker={picker} />
+				) : (
+					<div class={styles.toolbar}>
+						{projects.length >= MIN_PROJECTS && (
+							<button type="button" class="secondary" ref={picker.triggerRef} onClick={picker.start}>
+								View together
+							</button>
+						)}
+						<Button onClick={handleOpenCreateDialog}>+ New Project</Button>
+					</div>
+				)}
 
 				{projects.length === 0 ? (
 					<div class={styles.empty}>
@@ -235,9 +249,10 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 							<ProjectCard
 								key={project.id}
 								project={project}
-								onClick={handleProjectClick}
-								onEdit={handleEditProject}
-								onRetrySync={handleRetrySync}
+								onClick={picker.active ? picker.toggle : handleProjectClick}
+								onEdit={picker.active ? undefined : handleEditProject}
+								onRetrySync={picker.active ? undefined : handleRetrySync}
+								selected={picker.active ? picker.isChosen(project) : undefined}
 							/>
 						))}
 					</div>

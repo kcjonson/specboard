@@ -1,0 +1,25 @@
+/*
+ * An outline rather than a fill, drawn in a translucent muted tone, so the chip
+ * holds its edge on every row state (hover, selected) in both themes.
+ */
+.chip {
+	display: inline-block;
+	max-width: 100%;
+	padding: 0 var(--space-2);
+	border: 1px solid color-mix(in srgb, var(--color-text-muted) 40%, transparent);
+	border-radius: var(--radius-full);
+	font-size: var(--text-xs);
+	line-height: 18px;
+	color: var(--color-text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Only what Badge leaves unset, so nothing here depends on which stylesheet loads first.
+   A line-height of 1 brings the small Badge down to 20px, low enough to sit inside a chip. */
+.key {
+	flex-shrink: 0;
+	font-family: var(--font-mono);
+	line-height: 1;
+}

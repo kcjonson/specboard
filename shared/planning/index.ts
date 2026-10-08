@@ -15,6 +15,16 @@ export type { NewItemFormProps, NewItemData } from './NewItemForm/NewItemForm';
 export { ItemDetail } from './ItemDetail/ItemDetail';
 export { ItemView } from './ItemView/ItemView';
 export { TypeBadge } from './TypeBadge/TypeBadge';
+export { MultiProjectPlanning } from './MultiProject/MultiProjectPlanning';
+export {
+	MIN_PROJECTS,
+	MAX_PROJECTS,
+	multiProjectUrl,
+	readRememberedSelection,
+	rememberSelection,
+	resolveSelection,
+} from './MultiProject/selection';
+export { ProjectKey } from './ProjectChip/ProjectChip';
 
 // Hooks
 export { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
