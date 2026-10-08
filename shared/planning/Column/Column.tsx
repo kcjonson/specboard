@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import type { Status, ItemStatus, ItemModel } from '@specboard/models';
 import { StatusGlyph } from '@specboard/ui';
 import { ItemCard } from '../ItemCard/ItemCard';
+import type { ProjectLabel } from '../ProjectChip/ProjectChip';
 import styles from './Column.module.css';
 
 /** The part of a status the column hasn't loaded, and how to load the next page of it. */
@@ -21,9 +22,10 @@ interface ColumnProps {
 	count: number;
 	/** Present while the server holds more of this status than the column shows. */
 	more?: ColumnMore;
-	projectRef: string;
+	/** The projects the cards come from, by ref, on a board that mixes them. */
+	projects?: ReadonlyMap<string, ProjectLabel>;
 	selectedItemKey?: string;
-	flashingIds: Set<string>;
+	flashingIds?: Set<string>;
 	/** Whether cards can be dropped into this column (the Blocked column is display-only). */
 	droppable?: boolean;
 	/** Whether cards can be picked up at all; off for someone who can't edit the board. */
@@ -32,7 +34,6 @@ interface ColumnProps {
 	onOpenItem?: (item: ItemModel) => void;
 	onDropItem?: (itemId: string, status: Status, index: number) => void;
 	onDragStart?: (e: DragEvent, item: ItemModel) => void;
-	onDragEnd?: (e: DragEvent) => void;
 }
 
 export function Column({
@@ -41,7 +42,7 @@ export function Column({
 	items,
 	count,
 	more,
-	projectRef,
+	projects,
 	selectedItemKey,
 	flashingIds,
 	droppable = true,
@@ -50,7 +51,6 @@ export function Column({
 	onOpenItem,
 	onDropItem,
 	onDragStart,
-	onDragEnd,
 }: ColumnProps): JSX.Element {
 	const [isDragOver, setIsDragOver] = useState(false);
 	const [dropIndex, setDropIndex] = useState<number | null>(null);
@@ -144,17 +144,16 @@ export function Column({
 								)}
 								<ItemCard
 									item={item}
-									projectRef={projectRef}
+									project={projects?.get(item.projectRef)}
 									// A child row a search turned up is ranked among its parent's
 									// children, not among this column's cards, so there is no
 									// position here to drag it into. It still opens and selects.
 									draggable={draggable && !item.parentKey}
 									isSelected={item.key === selectedItemKey}
-									isHighlighted={flashingIds.has(item.key)}
+									isHighlighted={flashingIds?.has(item.key) ?? false}
 									onSelect={onSelectItem}
 									onOpen={onOpenItem}
 									onDragStart={onDragStart}
-									onDragEnd={onDragEnd}
 								/>
 							</div>
 						))

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
+import { navigate } from '@specboard/router';
 import type { PlanningView } from '../ViewToggle/ViewToggle';
-import { VIEW_PREF, readPref } from './prefs';
+import { withQuery } from '../utils/address';
+import { VIEW_PREF, readPref, writePref } from './prefs';
 
 /** Below this width the Map isn't offered (spec decision 8). The same 768px as the CSS breakpoint. */
 export const SMALL_SCREEN_QUERY = '(width < 768px)';
@@ -39,4 +41,39 @@ export function useSmallScreen(): boolean {
 		return () => query.removeEventListener('change', onChange);
 	}, [query]);
 	return small;
+}
+
+export interface PlanningViewState {
+	/** The view on screen. */
+	view: PlanningView;
+	/** Under the small-screen breakpoint, where the toggle leaves the Map out. */
+	small: boolean;
+	changeView: (next: PlanningView) => void;
+}
+
+/**
+ * The active view of a planning page, one project's or several projects' alike. The Map
+ * asked for on a small screen shows the Board without forgetting the request, so widening
+ * the window brings the Map back. The router re-renders a page on Back and Forward without
+ * remounting it, so the view follows `?view=` there too rather than drifting from it.
+ */
+export function usePlanningView(): PlanningViewState {
+	const [requested, setRequested] = useState<PlanningView>(() => readView());
+	const small = useSmallScreen();
+
+	useEffect(() => {
+		const syncView = (): void => setRequested(readView());
+		window.addEventListener('popstate', syncView);
+		return () => window.removeEventListener('popstate', syncView);
+	}, []);
+
+	// The view is always written explicitly so a history entry is never ambiguous, and a
+	// Map anchor means nothing on the other views.
+	const changeView = useCallback((next: PlanningView): void => {
+		setRequested(next);
+		writePref(VIEW_PREF, next);
+		navigate(withQuery(window.location, next === 'map' ? { view: next } : { view: next, focus: undefined }));
+	}, []);
+
+	return { view: resolveView(requested, small), small, changeView };
 }

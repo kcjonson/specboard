@@ -21,7 +21,7 @@ function unreadable(source: ItemsCollection): boolean {
  * Several projects' items read as one (docs/specs/multi-project-view.md, decision 8).
  * Each project keeps its own ItemsCollection, windows and all, against its own
  * endpoints; this answers the views' reads across them, and fans out everything that
- * loads: fetch, setFilter, and loadMore (to the projects that have more).
+ * loads: fetch, setFilter, ensureLimit, and loadMore (to the projects that have more).
  *
  * Within a status the projects are interleaved round-robin by their own order: every
  * project's first item, then every project's second, ties going to the order the
@@ -96,6 +96,15 @@ export class MergedItems implements ItemsSource, Observable {
 		return merged;
 	}
 
+	/** The first loaded item that matches, in the order the projects were chosen. */
+	find(predicate: (item: ItemModel) => boolean): ItemModel | undefined {
+		for (const source of this.live) {
+			const item = source.find(predicate);
+			if (item) return item;
+		}
+		return undefined;
+	}
+
 	loadedFor(status: ItemStatus): number {
 		return this.live.reduce((sum, source) => sum + source.loadedFor(status), 0);
 	}
@@ -111,6 +120,11 @@ export class MergedItems implements ItemsSource, Observable {
 	/** Widens the window of every project with more in this status by `count`, the page each would grow by alone. */
 	async loadMore(status: ItemStatus, count: number): Promise<void> {
 		await Promise.all(this.live.filter((source) => source.hasMore(status)).map((source) => source.loadMore(status, count)));
+	}
+
+	/** Makes every project's windows at least `limit` rows wide, as a view with a larger page size takes over. */
+	async ensureLimit(limit: number): Promise<void> {
+		await Promise.all(this.live.map((source) => source.ensureLimit(limit)));
 	}
 
 	async setFilter(filter: ItemsFilter): Promise<void> {

@@ -147,6 +147,16 @@
 	color: var(--color-text-muted);
 }
 
+/*
+ * With a project chip after the key, the footer often runs past the card's width. It wraps
+ * whole items then, so the update time drops to a line of its own instead of squeezing
+ * onto two.
+ */
+.footerWraps {
+	flex-wrap: wrap;
+	row-gap: 4px;
+}
+
 /* The parent a child hangs under, on the cards a search turns up from inside an
    item. Same muted key treatment as .itemKey, read as a breadcrumb before the title. */
 .parentKey {

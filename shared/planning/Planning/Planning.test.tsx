@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, waitFor, cleanup } from '@testing-library/preact';
+import { render, fireEvent, waitFor, cleanup, act } from '@testing-library/preact';
 import { FetchError } from '@specboard/fetch';
 import { memoryStorage } from '../test-support/memory-storage';
 import { Planning } from './Planning';
@@ -31,7 +31,15 @@ vi.mock('@specboard/fetch', async (importOriginal) => {
 	};
 });
 
-vi.mock('../Board/Board', () => ({ Board: () => <div data-testid="board" />, BOARD_PAGE_SIZE: 20 }));
+// Captured so a test can open items the way a card click does.
+const board: { props?: { onOpenItem: (item: { key: string }) => void } } = {};
+vi.mock('../Board/Board', () => ({
+	Board: (props: { onOpenItem: (item: { key: string }) => void }) => {
+		board.props = props;
+		return <div data-testid="board" />;
+	},
+	BOARD_PAGE_SIZE: 20,
+}));
 vi.mock('../Table/Table', () => ({ Table: () => <div data-testid="table" />, TABLE_PAGE_SIZE: 50 }));
 vi.mock('../Map/MapView', () => ({
 	MapView: ({ openItemKey, covered, search, type, onClear }: { openItemKey?: string; covered: number; search: string; type: string | null; onClear(): void }) => (
@@ -43,9 +51,13 @@ vi.mock('../Map/MapView', () => ({
 vi.mock('../ItemDrawer/ItemDrawer', async () => {
 	const { useEffect } = await import('preact/hooks');
 	return {
-		ItemDrawer: ({ onResize }: { onResize?: (width: number) => void }) => {
+		ItemDrawer: ({ item, onResize, onClose }: { item: { key: string }; onResize?: (width: number) => void; onClose: () => void }) => {
 			useEffect(() => onResize?.(420), [onResize]);
-			return <div data-testid="drawer" />;
+			return (
+				<div data-testid="drawer" data-item={item.key}>
+					<button type="button" onClick={onClose}>Close the drawer</button>
+				</div>
+			);
 		},
 	};
 });
@@ -281,6 +293,44 @@ describe('Planning views', () => {
 		const map = await findByTestId('map');
 		expect(map.getAttribute('data-open')).toBe('');
 		expect(map.getAttribute('data-covered')).toBe('0');
+	});
+});
+
+describe('Planning drawer history', () => {
+	beforeEach(() => {
+		get.mockReset();
+		get.mockResolvedValue({});
+		getResponse.mockReset();
+		succeedEmpty();
+		vi.stubGlobal('localStorage', memoryStorage());
+		// A push, so no entry an earlier test left ahead of this one counts toward the history length.
+		window.history.pushState({}, '', '/projects/acme/specboard/planning?view=board');
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	// Without the router here, each navigation's re-render with the new route is the test's own.
+	it('opens an item as a new history entry, moves between items in place, and closes back to the board', async () => {
+		const { findByTestId, findByRole, rerender } = renderPlanning();
+		await findByTestId('board');
+		const before = window.history.length;
+
+		act(() => board.props!.onOpenItem({ key: 'SPE-5' }));
+		expect(window.location.pathname + window.location.search).toBe('/projects/acme/specboard/planning/items/SPE-5?view=board');
+		expect(window.history.length).toBe(before + 1);
+		rerender(<Planning params={{ owner: 'acme', project: 'specboard', itemKey: 'SPE-5' }} />);
+
+		act(() => board.props!.onOpenItem({ key: 'SPE-6' }));
+		expect(window.location.pathname).toBe('/projects/acme/specboard/planning/items/SPE-6');
+		expect(window.history.length).toBe(before + 1);
+		rerender(<Planning params={{ owner: 'acme', project: 'specboard', itemKey: 'SPE-6' }} />);
+		expect((await findByTestId('drawer')).getAttribute('data-item')).toBe('SPE-6');
+
+		fireEvent.click(await findByRole('button', { name: 'Close the drawer' }));
+		await waitFor(() => expect(window.location.pathname + window.location.search).toBe('/projects/acme/specboard/planning?view=board'));
 	});
 });
 

@@ -31,4 +31,9 @@ describe('map URLs', () => {
 		expect(urlWithFocus({ ...at, search: '?view=map&focus=SPE-1' }, null)).toBe('/projects/acme/specboard/planning?view=map#top');
 		expect(urlWithFocus({ ...at, search: '?focus=SPE-1', hash: '' }, null)).toBe('/projects/acme/specboard/planning');
 	});
+
+	it('leaves the multi-project view\'s list of projects as written', () => {
+		const combined = { pathname: '/planning', search: '?projects=acme/one,acme/two&view=map', hash: '' };
+		expect(urlWithFocus(combined, 'ONE-3')).toBe('/planning?projects=acme/one,acme/two&view=map&focus=ONE-3');
+	});
 });

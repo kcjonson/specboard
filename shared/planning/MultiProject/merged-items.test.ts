@@ -201,6 +201,47 @@ describe('MergedItems loading', () => {
 		expect(requestsFor('acme/a')).toHaveLength(5);
 		expect(requestsFor('acme/b')).toHaveLength(5);
 	});
+
+	it('widens every project\'s windows to a larger page, asking again only where that shows more', async () => {
+		serve({
+			'acme/a': { key: 'A', counts: { ready: 150 } },
+			'acme/b': { key: 'B', counts: { ready: 5 } },
+		});
+		const items = await merged('acme/a', 'acme/b');
+		vi.mocked(fetchClient.getResponse).mockClear();
+
+		await items.ensureLimit(200);
+
+		expect(requestsFor('acme/a')).toContain('/api/projects/acme/a/items?status=ready&limit=201');
+		expect(requestsFor('acme/b')).toEqual([]);
+		expect(items.loadedFor('ready')).toBe(155);
+	});
+});
+
+describe('MergedItems lookup', () => {
+	it('finds a loaded item in whichever project holds it', async () => {
+		serve({
+			'acme/a': { key: 'A', counts: { ready: 2 } },
+			'acme/b': { key: 'B', counts: { ready: 1 } },
+		});
+		const items = await merged('acme/a', 'acme/b');
+
+		expect(items.find((item) => item.key === 'B-1')?.projectRef).toBe('acme/b');
+		expect(items.find((item) => item.key === 'A-2')?.projectRef).toBe('acme/a');
+		expect(items.find((item) => item.key === 'B-9')).toBeUndefined();
+	});
+
+	it('finds nothing in a project it dropped', async () => {
+		serve({
+			'acme/a': { key: 'A', counts: { ready: 1 } },
+			'acme/b': { key: 'B', counts: { ready: 1 } },
+		});
+		const items = await merged('acme/a', 'acme/b');
+		served['acme/b'] = { key: 'B', failWith: 404 };
+		await items.fetch();
+
+		expect(items.find((item) => item.key === 'B-1')).toBeUndefined();
+	});
 });
 
 describe('MergedItems failures', () => {

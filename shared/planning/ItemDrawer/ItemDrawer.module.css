@@ -34,6 +34,33 @@
 	gap: var(--space-2);
 }
 
+/*
+ * Over a view of several projects: why nothing here changes, and the way to the item in
+ * its own project. In the palette of a project's own read-only banner (ProjectBanner).
+ */
+.projectBar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-1) var(--space-3);
+	flex-shrink: 0;
+	padding: var(--space-2) var(--space-4) var(--space-2) var(--space-5);
+	border-bottom: 1px solid var(--color-border);
+	background: var(--color-info-bg);
+	color: var(--color-info);
+	font-size: var(--text-sm);
+	line-height: var(--leading-normal);
+}
+
+.projectLink {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	color: inherit;
+	font-weight: var(--font-medium);
+}
+
 .content {
 	flex: 1;
 	min-height: 0;
@@ -67,6 +94,10 @@
 	.header {
 		padding-top: max(var(--space-3), env(safe-area-inset-top));
 		/* The resize handle is hidden below the breakpoint; no clearance needed. */
+		padding-left: var(--space-4);
+	}
+
+	.projectBar {
 		padding-left: var(--space-4);
 	}
 

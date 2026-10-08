@@ -1,5 +1,6 @@
 /**
- * Board columns — which statuses get one, and where they sit.
+ * Board columns — which statuses get one, and where they sit — and who may move the
+ * cards in them: one project's editors, and nobody on a board over several projects.
  *
  * @vitest-environment jsdom
  */
@@ -7,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/preact';
 import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
+import { MergedItems } from '../MultiProject/merged-items';
 import { Board } from './Board';
 
 const getResponse = vi.fn();
@@ -14,11 +16,12 @@ const getResponse = vi.fn();
 // The windowed list load is the only request a board makes on its own. Anything
 // else is a test wiring mistake, and a throw names it instead of resolving to
 // undefined and failing somewhere less obvious.
-vi.mock('@specboard/fetch', () => {
+vi.mock('@specboard/fetch', async (importOriginal) => {
 	const unexpected = (method: string): ReturnType<typeof vi.fn> => vi.fn((url: unknown) => {
 		throw new Error(`Unexpected ${method} ${String(url)} in a board column test`);
 	});
 	return {
+		...(await importOriginal<typeof import('@specboard/fetch')>()),
 		fetchClient: {
 			getResponse: (...args: unknown[]) => getResponse(...args),
 			get: unexpected('GET'),
@@ -67,7 +70,6 @@ async function renderBoard(
 	const rendered = render(
 		<Board
 			items={items}
-			projectRef="acme/demo"
 			selectedItemKey={props.selectedItemKey}
 			flashingIds={new Set()}
 			dialogOpen={false}
@@ -175,6 +177,68 @@ describe('Board for someone who can\'t edit', () => {
 		expect(onCreateItem).not.toHaveBeenCalled();
 		expect(save).not.toHaveBeenCalled();
 		expect(items[0]!.status).toBe('ready');
+	});
+});
+
+describe('Board over several projects', () => {
+	const PROJECTS = new Map([
+		['acme/one', { ref: 'acme/one', name: 'One', key: 'ONE' }],
+		['acme/two', { ref: 'acme/two', name: 'Two', key: 'TWO' }],
+	]);
+
+	beforeEach(() => {
+		getResponse.mockReset();
+	});
+
+	/** Two projects with two Ready items each, merged the way the multi-project view merges them. */
+	async function renderMerged(onSelectItem = vi.fn()): Promise<{ view: ReturnType<typeof render>; items: MergedItems }> {
+		getResponse.mockImplementation(async (url: string) => {
+			const parsed = new URL(url, 'http://x');
+			const key = parsed.pathname.includes('/acme/one/') ? 'ONE' : 'TWO';
+			const data = parsed.searchParams.get('status') === 'ready'
+				? [1, 2].map((n) => ({ id: `id-${key}-${n}`, key: `${key}-${n}`, status: 'ready', type: 'task', rank: n, title: `${key} ${n}`, updatedAt: 't1' }))
+				: [];
+			return { data, headers: new Headers({ 'X-Total-Count': String(data.length) }) };
+		});
+		const items = new MergedItems(['acme/one', 'acme/two'].map((projectRef) => new ItemsCollection({ projectRef, limit: 100 })));
+		await items.fetch();
+		const view = render(<Board items={items} canEdit={false} projects={PROJECTS} onSelectItem={onSelectItem} onOpenItem={vi.fn()} />);
+		return { view, items };
+	}
+
+	it('mixes the projects in each column, every card naming its project', async () => {
+		const { view } = await renderMerged();
+
+		const column: HTMLElement = view.getByRole('listbox', { name: 'Ready column' });
+		const cards = Array.from(column.querySelectorAll<HTMLElement>('[data-item-card]'));
+		expect(cards.map((card) => card.querySelector('h3')?.textContent)).toEqual(['ONE 1', 'TWO 1', 'ONE 2', 'TWO 2']);
+		expect(cards.map((card) => card.querySelector('[title^="acme/"]')?.textContent)).toEqual(['One', 'Two', 'One', 'Two']);
+	});
+
+	it('names no project on a single project\'s board', async () => {
+		const { container } = await renderBoard({ ready: 2 });
+		expect(container.querySelector('[title="acme/demo"]')).toBeNull();
+	});
+
+	it('offers no drag and no moves, while the arrow keys still step through the cards', async () => {
+		const onSelectItem = vi.fn();
+		const { view, items } = await renderMerged(onSelectItem);
+		const saves = items.byStatus('ready').map((item) => vi.spyOn(item, 'save'));
+
+		for (const card of view.container.querySelectorAll('[data-item-card]')) {
+			expect(card.getAttribute('draggable')).toBe('false');
+		}
+		const dragOver = new Event('dragover', { bubbles: true, cancelable: true });
+		view.getByRole('listbox', { name: 'Done column' }).dispatchEvent(dragOver);
+		expect(dragOver.defaultPrevented).toBe(false);
+
+		fireEvent.keyDown(document, { key: 'ArrowDown' });
+		await waitFor(() => expect(onSelectItem).toHaveBeenCalledTimes(1));
+		expect((onSelectItem.mock.calls[0]?.[0] as ItemModel).key).toBe('ONE-1');
+
+		fireEvent.keyDown(document, { key: 'n' });
+		fireEvent.keyDown(document, { key: '3' });
+		for (const save of saves) expect(save).not.toHaveBeenCalled();
 	});
 });
 

@@ -519,8 +519,9 @@ The toolbar's search box and type filter stay on the Map and drive its dimming i
 the board's windows: the board's collection is left alone while the Map is showing, and
 applies the same search and type when the board comes back.
 
-The [multi-project view](multi-project-view.md) opens an item on its standalone page, in
-the item's own project (decision 7 there).
+The [multi-project view](multi-project-view.md) opens the same drawer, read-only, in the item's
+own project, with its item in the address as `&item=<KEY>` under the same history model, and a
+link to the item's standalone page (decision 7 there).
 
 ---
 
@@ -566,8 +567,9 @@ CSS module beside the component, and `index.ts` re-exports the ones consumers mo
 
 ```
 shared/planning/
-├── Planning/            board shell: view toggle, windows, drawer routing (+ prefs.ts, filters.ts)
+├── Planning/            board shell: view toggle, windows, drawer routing (+ prefs.ts, filters.ts, view.ts)
 ├── MultiProject/        several projects in one read-only view: route, selection, merged items
+├── Workspace/           the active view and the item drawer beside it (or over the Map)
 ├── Board/               the columns
 ├── Column/              one status column
 ├── ItemCard/            a card on the board
@@ -587,8 +589,8 @@ shared/planning/
 ├── RichTextEditor/      description / note editor (+ Toolbar, types)
 ├── TypeBadge/           epic / task / bug pill
 ├── ProjectChip/         which project a row comes from, in a view that mixes them
-├── hooks/               useKeyboardNavigation
-├── utils/               actor, itemType, time
+├── hooks/               useKeyboardNavigation, useDrawerHistory, usePolling
+├── utils/               actor, address, itemType, time
 └── index.ts
 ```
 
@@ -596,5 +598,6 @@ State lives in `shared/models/src/planning.ts`, not in the component tree:
 `ItemModel` / `ItemsCollection` for the board itself, and `BlockerModel`,
 `ChecklistEntryModel`, `NoteModel`, `SpecModel` with their collections for the
 item's sections. `ChildModel` is the summary shape a parent carries for each child. The
-Table reads items through `ItemsSource`, which `ItemsCollection` implements for one project
-and the multi-project view's `MergedItems` implements across several.
+Board and Table read items through `ItemsSource`, which `ItemsCollection` implements for one
+project and the multi-project view's `MergedItems` implements across several. Moving a card
+takes one project's `ItemsCollection`, since ranks are per project.

@@ -2,6 +2,7 @@ import type { JSX } from 'preact';
 import type { ItemModel, SubStatus } from '@specboard/models';
 import { Avatar, Icon } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
+import { ProjectChip, type ProjectLabel } from '../ProjectChip/ProjectChip';
 import { formatTimeAgo } from '../utils/time';
 import styles from './ItemCard.module.css';
 
@@ -15,7 +16,8 @@ const SUB_STATUS_LABELS: Partial<Record<SubStatus, string>> = {
 
 interface ItemCardProps {
 	item: ItemModel;
-	projectRef: string;
+	/** The item's project, on a board that mixes projects. */
+	project?: ProjectLabel;
 	isSelected?: boolean;
 	isHighlighted?: boolean;
 	/** Whether the card can be dragged to rank it. Off for a child row (see Column). */
@@ -23,19 +25,17 @@ interface ItemCardProps {
 	onSelect?: (item: ItemModel) => void;
 	onOpen?: (item: ItemModel) => void;
 	onDragStart?: (e: DragEvent, item: ItemModel) => void;
-	onDragEnd?: (e: DragEvent) => void;
 }
 
 export function ItemCard({
 	item,
-	projectRef,
+	project,
 	isSelected = false,
 	isHighlighted = false,
 	draggable = true,
 	onSelect,
 	onOpen,
 	onDragStart,
-	onDragEnd,
 }: ItemCardProps): JSX.Element {
 	const childStats = item.childStats;
 	const progressPercent = childStats.total > 0 ? (childStats.done / childStats.total) * 100 : 0;
@@ -59,7 +59,7 @@ export function ItemCard({
 
 	const handleOpenInNewWindow = (e: MouseEvent): void => {
 		e.stopPropagation();
-		window.open(`/projects/${projectRef}/items/${item.key}`, '_blank', 'noopener,noreferrer');
+		window.open(`/projects/${item.projectRef}/items/${item.key}`, '_blank', 'noopener,noreferrer');
 	};
 
 	const cardClass = [
@@ -75,7 +75,6 @@ export function ItemCard({
 			onClick={handleClick}
 			onKeyDown={handleKeyDown}
 			onDragStart={draggable ? handleDragStart : undefined}
-			onDragEnd={draggable ? onDragEnd : undefined}
 			draggable={draggable}
 			tabIndex={0}
 			role="option"
@@ -123,8 +122,9 @@ export function ItemCard({
 				</div>
 			)}
 
-			<div class={styles.footer}>
+			<div class={project ? `${styles.footer} ${styles.footerWraps}` : styles.footer}>
 				<span class={styles.itemKey}>{item.key}</span>
+				{project && <ProjectChip project={project} />}
 				{/* Redundant inside the Blocked column, where status alone put the card. */}
 				{item.blocked && item.status !== 'blocked' && (
 					<span class={styles.blockedChip} title="This item is blocked">

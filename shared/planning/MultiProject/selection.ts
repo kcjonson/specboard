@@ -48,25 +48,13 @@ export function parseSelection(param: string | null): Selection {
 	return { ok: true, refs };
 }
 
-/** Everything besides the projects that the view's address can carry. */
-export interface MultiProjectParams {
-	view?: string;
-	search?: string;
-	type?: string;
-}
-
 /**
  * The address the projects open at together. Refs are slugs and a slash, which never
- * need encoding, so they go in as they are and the address stays readable; the rest is
- * encoded, and left off when empty.
+ * need encoding, so they go in as they are and the address stays readable. The view
+ * edits the rest of its address in place (withQuery), which leaves this part as written.
  */
-export function multiProjectUrl(refs: readonly string[], params: MultiProjectParams = {}): string {
-	let url = `/planning?projects=${refs.join(',')}`;
-	for (const name of ['view', 'search', 'type'] as const) {
-		const value = params[name];
-		if (value) url += `&${name}=${encodeURIComponent(value)}`;
-	}
-	return url;
+export function multiProjectUrl(refs: readonly string[]): string {
+	return `/planning?projects=${refs.join(',')}`;
 }
 
 /** A project as GET /api/projects lists it, as far as this view reads it. */
@@ -137,6 +125,26 @@ export function leftOutNotices(unreadable: readonly string[], clashes: readonly 
 	}
 	for (const { project, holder } of clashes) {
 		notices.push(`${project.name} (${project.ref}) isn't shown: its key ${project.key} is already used by ${holder.name}.`);
+	}
+	return notices;
+}
+
+/**
+ * What the view says about projects whose last read on the Map failed for some reason
+ * other than access, which the Map asks again at every poll: one line for those it still
+ * draws as it last read them, and one for those it has never drawn.
+ */
+export function mapTroubleNotices(held: readonly string[], unloaded: readonly string[]): string[] {
+	const notices: string[] = [];
+	if (held.length > 0) {
+		notices.push(held.length === 1
+			? `${held[0]} couldn't be refreshed, so the Map shows it as last loaded. The Map keeps trying.`
+			: `${listOf(held)} couldn't be refreshed, so the Map shows them as last loaded. The Map keeps trying.`);
+	}
+	if (unloaded.length > 0) {
+		notices.push(unloaded.length === 1
+			? `${unloaded[0]} couldn't be loaded on the Map, so it isn't drawn. The Map keeps trying.`
+			: `${listOf(unloaded)} couldn't be loaded on the Map, so they aren't drawn. The Map keeps trying.`);
 	}
 	return notices;
 }
