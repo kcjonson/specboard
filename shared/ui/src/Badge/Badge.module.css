@@ -43,3 +43,8 @@
 	background: var(--color-warning-bg);
 	color: var(--color-warning);
 }
+
+.badge:global(.variant-info-subtle) {
+	background: var(--color-info-bg);
+	color: var(--color-info);
+}

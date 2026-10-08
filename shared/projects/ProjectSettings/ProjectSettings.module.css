@@ -354,6 +354,15 @@
 	padding-left: calc(28px + var(--space-3));
 }
 
+/* A chip that wraps (a long repository name on a phone) reads as a box, not a lozenge. */
+.chips > * {
+	border-radius: var(--radius-md);
+}
+
+.nowrap {
+	white-space: nowrap;
+}
+
 .pending {
 	display: flex;
 	flex-direction: column;
@@ -404,6 +413,17 @@
 
 	.pendingEmail {
 		grid-column: 1 / -1;
+	}
+
+	/* Its own line, starting where the email does. */
+	.pendingRow .rowActions {
+		grid-column: 1 / -1;
+		justify-content: flex-start;
+	}
+
+	/* No select beside it on a phone, so no select padding to line up with. */
+	.ownerRole {
+		padding-left: 0;
 	}
 }
 

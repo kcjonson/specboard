@@ -58,7 +58,7 @@ The one "are you sure?" dialog, built on `Dialog` and `DialogFooter`: a title, a
 
 ### Badge
 
-Variants are `variant-primary`, `-success`, `-warning`, `-error` (solid) and `variant-warning-subtle` (tinted background, colored text) for status chips that sit inside a list, where a solid fill would outweigh the row.
+Variants are `variant-primary`, `-success`, `-warning`, `-error` (solid) and `variant-warning-subtle` / `variant-info-subtle` (tinted background, colored text) for status chips that sit inside a list, where a solid fill would outweigh the row.
 
 ### Notice
 

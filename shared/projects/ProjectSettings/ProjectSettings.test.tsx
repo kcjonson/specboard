@@ -208,7 +208,7 @@ describe('ProjectSettings for the owner', () => {
 		expect(within(rows[0]!).getByText('Owner')).toBeTruthy();
 		expect(queryByRole('combobox', { name: 'Role for Dana Cho' })).toBeNull();
 		expect((getByRole('combobox', { name: 'Role for Alex Rivera' }) as HTMLSelectElement).value).toBe('editor');
-		expect(within(rows[1]!).getByText('No push access to acme/roadmap')).toBeTruthy();
+		expect(rows[1]!.textContent).toContain('No push access to acme/roadmap');
 		expect(within(rows[2]!).getByText('Needs GitHub to edit')).toBeTruthy();
 
 		const pending = getByRole('list', { name: 'Pending invitations' });

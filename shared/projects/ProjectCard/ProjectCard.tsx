@@ -151,7 +151,9 @@ export function ProjectCard({ project, onClick, onOpenSettings, onRetrySync, sel
 				</div>
 			)}
 			{shared && project.effectiveRole !== project.grantedRole && (
-				<p class={styles.viewOnlyNote}>View only until you connect GitHub</p>
+				<div>
+					<Badge class="variant-info-subtle size-sm">View only until you connect GitHub</Badge>
+				</div>
 			)}
 			{project.description && (
 				<p class={styles.description}>
