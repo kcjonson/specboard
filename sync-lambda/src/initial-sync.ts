@@ -14,6 +14,8 @@ export interface InitialSyncParams {
 	repo: string;
 	branch: string;
 	token: string;
+	/** The pending lock the API took for this sync. */
+	lockToken: Date;
 }
 
 export interface InitialSyncResult {
@@ -34,7 +36,7 @@ export const SUPERSEDED = 'Sync was superseded by another sync or a commit';
  * or renamed on GitHub since the last sync).
  */
 export async function syncArchive(
-	params: InitialSyncParams,
+	params: Omit<InitialSyncParams, 'lockToken'>,
 	storageClient: StorageClient,
 	head: string
 ): Promise<{ synced: number; skipped: number; pruned: number }> {
@@ -58,10 +60,10 @@ export async function performInitialSync(
 	storageServiceUrl: string,
 	storageApiKey: string
 ): Promise<InitialSyncResult> {
-	const { projectId, owner, repo, branch, token } = params;
+	const { projectId, owner, repo, branch, token, lockToken } = params;
 	const failed = (error: string): InitialSyncResult => ({ success: false, synced: 0, skipped: 0, pruned: 0, commitSha: null, error });
 
-	const lock = await markSyncing(projectId);
+	const lock = await markSyncing(projectId, lockToken);
 	if (!lock) return failed(SUPERSEDED);
 
 	try {

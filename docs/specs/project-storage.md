@@ -302,9 +302,15 @@ Pulls, full syncs, and commits all move committed files and the sync point
 or full sync takes it as `pending` (the Lambda moves it to `syncing`), a commit as
 `committing`; `completed` and `failed` mean free. Whoever can't take it gets a `409`.
 `sync_started_at` is the holder's token, at millisecond precision, and every write a
-holder makes at the end checks it, so a holder that lost the lock changes nothing. A
-lock older than 20 minutes is stale and can be taken over: a Lambda stops at 15 minutes
-and a commit request long before, so a lock that old belongs to something that crashed.
+holder makes at the end checks it, so a holder that lost the lock changes nothing. The
+API passes the pending token to the Lambda in its event; the Lambda only moves that
+exact lock to `syncing` (a late or repeated invocation finds nothing to take), and if it
+fails before then (configuration, secrets, the GitHub token) it marks that lock failed
+so commits aren't blocked. A lock older than 20 minutes is stale and can be taken over:
+a Lambda stops at 15 minutes and a commit request long before, so a lock that old
+belongs to something that crashed. A commit that took one over leaves the project's
+sync showing failed ("The last sync didn't finish. Pull again.") rather than putting
+the dead holder's state back.
 
 The sync point is always a full 40-character SHA. GitHub's commit API rejects anything
 shorter as `expectedHeadOid`, so a sync resolves the branch head to its full SHA first,
@@ -366,7 +372,9 @@ changed files into the committed files, and then, in one transaction that checks
 still holds the lock and the sync point is still where it started, moves the sync point
 to that head and moves spec links for `removed` and `renamed` files. A failed sync
 retries all of it. When the compare can't list everything (300 files, or more commits
-than it returns), the sync falls back to a full sync of that head instead. With no new
+than it returns) or the branch was rewritten (a force-push makes it `diverged` or
+`behind`, and it then diffs from the merge base), the sync falls back to a full sync of
+that head instead. With no new
 commits it still stores the head's full SHA. The editor waits for the sync to finish
 before it refreshes.
 

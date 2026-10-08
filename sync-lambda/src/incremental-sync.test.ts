@@ -29,6 +29,8 @@ import { comparedSpecPathChanges, performIncrementalSync } from './incremental-s
 import { syncArchive, SUPERSEDED } from './initial-sync.ts';
 
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
+/** The pending lock token the API took and put in the event. */
+const PENDING = new Date('2026-10-08T12:00:00.000Z');
 const BASE = 'fedcba9876543210fedcba9876543210fedcba98';
 
 let projectId: string;
@@ -38,7 +40,7 @@ function json(body: unknown): Response {
 }
 
 /** GitHub with the branch at HEAD and this compare from the base. */
-function github(compare: { files: unknown[]; total_commits?: number; commits?: unknown[] }): void {
+function github(compare: { files: unknown[]; total_commits?: number; commits?: unknown[]; status?: string }): void {
 	vi.stubGlobal('fetch', vi.fn(async (url: string) => {
 		if (url.includes('/git/refs/heads/')) return json({ object: { sha: HEAD } });
 		if (url.includes('/compare/')) {
@@ -60,9 +62,9 @@ async function links(): Promise<string[]> {
 	return result.rows.map((r) => r.path);
 }
 
-function sync(lastCommitSha = BASE): ReturnType<typeof performIncrementalSync> {
+function sync(lastCommitSha = BASE, lockToken = PENDING): ReturnType<typeof performIncrementalSync> {
 	return performIncrementalSync(
-		{ projectId, owner: 'acme', repo: 'docs', branch: 'main', token: 'token', lastCommitSha },
+		{ projectId, owner: 'acme', repo: 'docs', branch: 'main', token: 'token', lastCommitSha, lockToken },
 		'http://storage',
 		'key'
 	);
@@ -89,8 +91,8 @@ beforeEach(async () => {
 	const db = state.db!;
 	// The API took the lock as 'pending' before invoking the sync.
 	await db.query(
-		"UPDATE projects SET last_synced_commit_sha = $2, sync_status = 'pending', sync_started_at = NOW(), sync_error = NULL WHERE id = $1",
-		[projectId, BASE]
+		"UPDATE projects SET last_synced_commit_sha = $2, sync_status = 'pending', sync_started_at = $3, sync_error = NULL WHERE id = $1",
+		[projectId, BASE, PENDING]
 	);
 	await db.query('DELETE FROM epic_specs');
 	await db.query(
@@ -156,6 +158,23 @@ describe('performIncrementalSync', () => {
 		expect(vi.mocked(syncArchive).mock.calls[0]![2]).toBe(HEAD);
 		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
 		expect((await project()).last_synced_commit_sha).toBe(HEAD);
+	});
+
+	it('falls back to a full sync when the branch was rewritten (the compare diverged)', async () => {
+		github({ status: 'diverged', files: [{ sha: 'b2', filename: 'docs/gone.md', status: 'removed' }] });
+
+		expect(await sync()).toMatchObject({ success: true, commitSha: HEAD });
+
+		expect(vi.mocked(syncArchive)).toHaveBeenCalled();
+		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
+	});
+
+	it('does nothing when its pending lock isn\'t the one waiting (a late or repeated invocation)', async () => {
+		github({ files: [{ sha: 'b2', filename: 'docs/gone.md', status: 'removed' }] });
+
+		expect(await sync(BASE, new Date('2026-10-08T11:00:00.000Z'))).toMatchObject({ success: false, error: SUPERSEDED });
+
+		expect(await project()).toMatchObject({ last_synced_commit_sha: BASE, sync_status: 'pending' });
 	});
 
 	it('changes nothing when a commit moved the sync point after the sync was started', async () => {

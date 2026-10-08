@@ -40,7 +40,8 @@ import { performInitialSync, SUPERSEDED } from './initial-sync.ts';
 import { streamGitHubZipToStorage } from './zip-stream.ts';
 import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
 
-const PARAMS = { projectId: 'p1', owner: 'acme', repo: 'docs', branch: 'main', token: 't' };
+const PENDING = new Date('2026-10-08T11:59:00.000Z');
+const PARAMS = { projectId: 'p1', owner: 'acme', repo: 'docs', branch: 'main', token: 't', lockToken: PENDING };
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -60,6 +61,7 @@ describe('performInitialSync', () => {
 		const result = await performInitialSync(PARAMS, 'http://storage', 'key');
 
 		expect(result).toMatchObject({ success: true, pruned: 2, commitSha: HEAD });
+		expect(markSyncing).toHaveBeenCalledWith('p1', PENDING);
 		expect(vi.mocked(streamGitHubZipToStorage).mock.calls[0]![2]).toBe(HEAD);
 		expect(storage.deleteFile.mock.calls.map((call) => call[1]).sort()).toEqual(['docs/gone.md', 'docs/renamed-away.md']);
 		expect(completeSync).toHaveBeenCalledWith('p1', LOCK, undefined, HEAD, { renamed: [], deleted: [] });

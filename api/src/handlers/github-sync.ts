@@ -179,19 +179,23 @@ const SYNC_LOCK_FREE = `(sync_status IS NULL OR sync_status IN ('completed', 'fa
 	OR sync_started_at IS NULL OR sync_started_at < NOW() - interval '20 minutes')`;
 const LOCK_TOKEN = `date_trunc('milliseconds', clock_timestamp())`;
 
+/** What a caller hears when the sync lock is taken. */
+const LOCK_BUSY_MESSAGE = 'A sync or a commit is running. Try again when it finishes.';
+
 /**
  * Take the sync lock for a pull or a first sync (status 'pending'; the Lambda moves it
- * to 'syncing'). False when a sync or a commit holds it.
+ * to 'syncing' with this token, which travels in its event). Null when a sync or a
+ * commit holds it.
  */
-export async function trySetSyncPending(projectId: string): Promise<boolean> {
-	const result = await query(
+export async function trySetSyncPending(projectId: string): Promise<Date | null> {
+	const result = await query<{ token: Date }>(
 		`UPDATE projects
 		 SET sync_status = 'pending', sync_error = NULL, sync_started_at = ${LOCK_TOKEN}
 		 WHERE id = $1 AND ${SYNC_LOCK_FREE}
-		 RETURNING id`,
+		 RETURNING sync_started_at AS token`,
 		[projectId]
 	);
-	return result.rows.length > 0;
+	return result.rows[0]?.token ?? null;
 }
 
 /** A commit's hold on the sync lock: the status to put back, and the token that proves it's still ours. */
@@ -218,12 +222,21 @@ export async function tryStartCommit(projectId: string): Promise<CommitLock | nu
 	return row ? { previous: row.previous, token: row.token } : null;
 }
 
-/** Release a commit's lock, unless it went stale and someone else holds it now. */
+/**
+ * Release a commit's lock, unless it went stale and someone else holds it now. A
+ * finished previous state (none, completed, failed) is put back. A held one means this
+ * commit took the lock over from a holder that died, so it isn't put back (it would
+ * read as freshly held for another 20 minutes); the project shows that sync as failed.
+ */
 export async function finishCommit(projectId: string, lock: CommitLock): Promise<void> {
+	const settled = lock.previous === null || lock.previous === 'completed' || lock.previous === 'failed';
 	await query(
-		`UPDATE projects SET sync_status = $2
+		`UPDATE projects
+		 SET sync_status = $2,
+		     sync_error = CASE WHEN $4::text IS NULL THEN sync_error ELSE $4 END,
+		     sync_completed_at = CASE WHEN $4::text IS NULL THEN sync_completed_at ELSE NOW() END
 		 WHERE id = $1 AND sync_status = 'committing' AND sync_started_at = $3`,
-		[projectId, lock.previous, lock.token]
+		[projectId, settled ? lock.previous : 'failed', lock.token, settled ? null : 'The last sync didn\'t finish. Pull again.']
 	);
 }
 
@@ -259,9 +272,9 @@ export async function startGitHubInitialSync(
 		throw new Error('GitHub not connected');
 	}
 
-	const acquired = await trySetSyncPending(projectId);
-	if (!acquired) {
-		throw new Error('Sync already in progress');
+	const lockToken = await trySetSyncPending(projectId);
+	if (!lockToken) {
+		throw new Error(LOCK_BUSY_MESSAGE);
 	}
 
 	try {
@@ -273,6 +286,7 @@ export async function startGitHubInitialSync(
 			branch: project.branch,
 			encryptedToken,
 			mode: 'initial',
+			lockToken: lockToken.toISOString(),
 		};
 
 		await invokeSyncLambda(payload);
@@ -313,9 +327,9 @@ export async function handleGitHubInitialSync(context: Context): Promise<Respons
 	}
 
 	// Atomically mark sync as pending (prevents race condition)
-	const acquired = await trySetSyncPending(projectId);
-	if (!acquired) {
-		return context.json({ error: 'Sync already in progress' }, 409);
+	const lockToken = await trySetSyncPending(projectId);
+	if (!lockToken) {
+		return context.json({ error: LOCK_BUSY_MESSAGE }, 409);
 	}
 
 	// Invoke Lambda asynchronously
@@ -328,6 +342,7 @@ export async function handleGitHubInitialSync(context: Context): Promise<Respons
 			branch: project.branch,
 			encryptedToken,
 			mode: 'initial',
+			lockToken: lockToken.toISOString(),
 		};
 
 		await invokeSyncLambda(payload);
@@ -391,9 +406,9 @@ export async function handleGitHubSync(context: Context): Promise<Response> {
 	}
 
 	// Atomically mark sync as pending (prevents race condition)
-	const acquired = await trySetSyncPending(projectId);
-	if (!acquired) {
-		return context.json({ success: false, error: 'Sync already in progress' }, 409);
+	const lockToken = await trySetSyncPending(projectId);
+	if (!lockToken) {
+		return context.json({ success: false, error: LOCK_BUSY_MESSAGE }, 409);
 	}
 	// The sync starts from the sync point as it is under the lock: a commit that
 	// finished between the read above and taking the lock has moved it.
@@ -414,6 +429,7 @@ export async function handleGitHubSync(context: Context): Promise<Response> {
 			encryptedToken,
 			mode: 'incremental',
 			lastCommitSha,
+			lockToken: lockToken.toISOString(),
 		};
 
 		await invokeSyncLambda(payload);
@@ -537,7 +553,7 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 	if (!lock) {
 		return context.json({
 			success: false,
-			error: { stage: 'commit', message: 'A sync or another commit is running. Try again when it finishes.' },
+			error: { stage: 'commit', message: LOCK_BUSY_MESSAGE },
 		}, 409);
 	}
 	try {

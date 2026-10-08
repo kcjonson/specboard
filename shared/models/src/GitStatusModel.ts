@@ -284,7 +284,7 @@ export class GitStatusModel extends Model {
 			this.pulling = false;
 			return { success: true, commits: response.commits };
 		} catch (err) {
-			this.pullError = err instanceof Error ? err.message : 'Pull failed';
+			this.pullError = writeFailure(err, 'Pull failed', this.projectRef);
 			this.pulling = false;
 			return { success: false };
 		}

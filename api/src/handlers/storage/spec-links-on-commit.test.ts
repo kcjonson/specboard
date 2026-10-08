@@ -489,12 +489,16 @@ describe('the sync lock', () => {
 		expect(await lockState()).toEqual({ sync_status: 'syncing' });
 	});
 
-	it('takes over a lock its holder left for longer than any sync runs', async () => {
+	it('takes over a lock its holder left for longer than any sync runs, and records that sync as failed', async () => {
 		await state.db!.query("UPDATE projects SET sync_status = 'syncing', sync_started_at = NOW() - interval '1 hour' WHERE id = $1", [projects.get('docs')!.id]);
 		await draftAnEditAndADelete();
 
 		expect((await commit()).status).toBe(200);
 		expect(await syncedSha()).toBe(COMMIT_SHA);
+		const after = await state.db!.query<{ sync_status: string; sync_error: string | null }>(
+			'SELECT sync_status, sync_error FROM projects WHERE id = $1', [projects.get('docs')!.id]
+		);
+		expect(after.rows[0]).toEqual({ sync_status: 'failed', sync_error: 'The last sync didn\'t finish. Pull again.' });
 	});
 
 	it('is held while the commit runs and put back as it was afterwards', async () => {
@@ -516,7 +520,7 @@ describe('the sync lock', () => {
 		const { trySetSyncPending } = await import('../github-sync.ts');
 		await state.db!.query("UPDATE projects SET sync_status = 'committing', sync_started_at = NOW() WHERE id = $1", [projects.get('docs')!.id]);
 
-		expect(await trySetSyncPending(projects.get('docs')!.id)).toBe(false);
+		expect(await trySetSyncPending(projects.get('docs')!.id)).toBeNull();
 		expect(await lockState()).toEqual({ sync_status: 'committing' });
 	});
 });

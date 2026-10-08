@@ -88,6 +88,14 @@ describe('GitStatusModel.pull', () => {
 		}
 	});
 
+	it('shows the server\'s reason when the lock is taken', async () => {
+		vi.mocked(fetchClient.post).mockRejectedValue(new FetchError('HTTP 409: Conflict', 409, undefined, { success: false, error: 'A sync or a commit is running. Try again when it finishes.' }));
+
+		const gitStatus = model();
+		expect(await gitStatus.pull()).toEqual({ success: false });
+		expect(gitStatus.pullError).toBe('A sync or a commit is running. Try again when it finishes.');
+	});
+
 	it('reports a sync that failed', async () => {
 		vi.mocked(fetchClient.post).mockResolvedValue({ success: true, commits: 0, status: 'pending' });
 		vi.mocked(fetchClient.get).mockResolvedValue({ status: 'failed', error: 'GitHub rate limit exceeded. Resets at 12:00' });

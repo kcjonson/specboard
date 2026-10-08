@@ -7,16 +7,33 @@
 
 import { moveSpecLinks, query, transaction, type SpecPathChanges } from '@specboard/db';
 
-/** Move a pending lock to 'syncing'; its token, or null when the lock isn't pending any more. */
-export async function markSyncing(projectId: string): Promise<Date | null> {
+/**
+ * Move the pending lock the API took for this sync (`pendingToken`, from the event) to
+ * 'syncing'; the new token, or null when that lock isn't pending any more (it went stale
+ * and was taken over, or this is a late or repeated invocation).
+ */
+export async function markSyncing(projectId: string, pendingToken: Date): Promise<Date | null> {
 	const result = await query<{ token: Date }>(
 		`UPDATE projects
 		 SET sync_status = 'syncing', sync_started_at = date_trunc('milliseconds', clock_timestamp()), sync_error = NULL
-		 WHERE id = $1 AND sync_status = 'pending'
+		 WHERE id = $1 AND sync_status = 'pending' AND sync_started_at = $2
 		 RETURNING sync_started_at AS token`,
-		[projectId]
+		[projectId, pendingToken]
 	);
 	return result.rows[0]?.token ?? null;
+}
+
+/**
+ * Record a sync that failed before it started syncing (secrets, the token, the event
+ * itself), so its pending lock doesn't block commits until it goes stale.
+ */
+export async function markPendingFailed(projectId: string, pendingToken: Date, error: string): Promise<void> {
+	await query(
+		`UPDATE projects
+		 SET sync_status = 'failed', sync_completed_at = NOW(), sync_error = $3
+		 WHERE id = $1 AND sync_status = 'pending' AND sync_started_at = $2`,
+		[projectId, pendingToken, error]
+	);
 }
 
 /** Record a failed sync, if this sync still holds the lock. */

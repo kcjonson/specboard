@@ -25,6 +25,8 @@ export interface IncrementalSyncParams {
 	branch: string;
 	token: string;
 	lastCommitSha: string;
+	/** The pending lock the API took for this sync. */
+	lockToken: Date;
 }
 
 export interface IncrementalSyncResult {
@@ -97,9 +99,13 @@ async function getChangedFiles(
 
 	const data: GitHubCompareResponse = await response.json();
 	const files = data.files || [];
+	// 'diverged' or 'behind' means the branch was rewritten (a force-push): the compare
+	// then diffs from the merge base, not from the last sync, so its files aren't the
+	// whole story either.
+	const linear = data.status === 'ahead' || data.status === 'identical';
 	return {
 		files,
-		complete: files.length < COMPARE_FILE_LIMIT && data.total_commits <= data.commits.length,
+		complete: linear && files.length < COMPARE_FILE_LIMIT && data.total_commits <= data.commits.length,
 	};
 }
 
@@ -194,10 +200,10 @@ export async function performIncrementalSync(
 	storageServiceUrl: string,
 	storageApiKey: string
 ): Promise<IncrementalSyncResult> {
-	const { projectId, owner, repo, branch, token, lastCommitSha } = params;
+	const { projectId, owner, repo, branch, token, lastCommitSha, lockToken } = params;
 	const failed = (error: string): IncrementalSyncResult => ({ success: false, synced: 0, removed: 0, commitSha: null, error });
 
-	const lock = await markSyncing(projectId);
+	const lock = await markSyncing(projectId, lockToken);
 	if (!lock) return failed(SUPERSEDED);
 
 	try {
