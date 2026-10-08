@@ -5,6 +5,7 @@
  * plus a type (product | technical). Used by both API handlers and MCP tools.
  */
 
+import type pg from 'pg';
 import { formatItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
 import type { ItemSpec, SpecType } from '../types.ts';
@@ -175,42 +176,80 @@ const MOVING = 'moving:';
  * links move to its new path, and a link the item already has at that new path absorbs
  * the moved one. Renames move together, so chains and swaps land where they should.
  * One transaction, so a failure leaves every link as it was.
+ */
+export async function applySpecPathChanges(projectId: string, changes: SpecPathChanges): Promise<void> {
+	if (changes.renamed.length === 0 && changes.deleted.length === 0) return;
+	await transaction((client) => moveSpecLinks(client, projectId, changes));
+}
+
+/**
+ * Move the project's sync point from `expectedSha` to `commitSha`, a commit made here,
+ * and move spec links for what it renamed and deleted, in one transaction. Both or
+ * neither: links moved without the sync point would be moved again when a pull brings
+ * the same commit in, which for a chain or a swap moves them twice.
+ *
+ * True when the sync point is at `commitSha` afterwards, including when an earlier try
+ * already put it there (so retrying after a lost reply is safe). False, with nothing
+ * changed, when it's somewhere else.
+ */
+export async function recordCommit(
+	projectId: string,
+	expectedSha: string,
+	commitSha: string,
+	changes: SpecPathChanges
+): Promise<boolean> {
+	return transaction(async (client) => {
+		const moved = await client.query(
+			'UPDATE projects SET last_synced_commit_sha = $3 WHERE id = $1 AND last_synced_commit_sha = $2 RETURNING id',
+			[projectId, expectedSha, commitSha]
+		);
+		if (moved.rows.length === 0) {
+			const current = await client.query<{ last_synced_commit_sha: string | null }>(
+				'SELECT last_synced_commit_sha FROM projects WHERE id = $1',
+				[projectId]
+			);
+			return current.rows[0]?.last_synced_commit_sha === commitSha;
+		}
+		await moveSpecLinks(client, projectId, changes);
+		return true;
+	});
+}
+
+/**
+ * The link moves of applySpecPathChanges on a caller's transaction, for writes that
+ * have to land together with them (a commit's or a sync's new sync point).
  *
  * Moves go through a marker path first because (item_id, path) is unique and not
  * deferrable: a swap moved row by row would collide with itself.
  */
-export async function applySpecPathChanges(projectId: string, changes: SpecPathChanges): Promise<void> {
-	if (changes.renamed.length === 0 && changes.deleted.length === 0) return;
+export async function moveSpecLinks(client: pg.PoolClient, projectId: string, changes: SpecPathChanges): Promise<void> {
+	if (changes.deleted.length > 0) {
+		await client.query(
+			'DELETE FROM epic_specs WHERE project_id = $1 AND path = ANY($2)',
+			[projectId, changes.deleted]
+		);
+	}
+	if (changes.renamed.length === 0) return;
 
-	await transaction(async (client) => {
-		if (changes.deleted.length > 0) {
-			await client.query(
-				'DELETE FROM epic_specs WHERE project_id = $1 AND path = ANY($2)',
-				[projectId, changes.deleted]
-			);
-		}
-		if (changes.renamed.length === 0) return;
-
-		await client.query(
-			`UPDATE epic_specs s SET path = $4 || m.to_path
-			 FROM unnest($2::text[], $3::text[]) AS m(from_path, to_path)
-			 WHERE s.project_id = $1 AND s.path = m.from_path`,
-			[projectId, changes.renamed.map((r) => r.from), changes.renamed.map((r) => r.to), MOVING]
-		);
-		await client.query(
-			`DELETE FROM epic_specs moved
-			 WHERE moved.project_id = $1 AND starts_with(moved.path, $2)
-			   AND EXISTS (
-				 SELECT 1 FROM epic_specs kept
-				 WHERE kept.project_id = $1 AND kept.item_id = moved.item_id
-				   AND kept.path = substr(moved.path, length($2) + 1)
-			   )`,
-			[projectId, MOVING]
-		);
-		await client.query(
-			`UPDATE epic_specs SET path = substr(path, length($2) + 1)
-			 WHERE project_id = $1 AND starts_with(path, $2)`,
-			[projectId, MOVING]
-		);
-	});
+	await client.query(
+		`UPDATE epic_specs s SET path = $4 || m.to_path
+		 FROM unnest($2::text[], $3::text[]) AS m(from_path, to_path)
+		 WHERE s.project_id = $1 AND s.path = m.from_path`,
+		[projectId, changes.renamed.map((r) => r.from), changes.renamed.map((r) => r.to), MOVING]
+	);
+	await client.query(
+		`DELETE FROM epic_specs moved
+		 WHERE moved.project_id = $1 AND starts_with(moved.path, $2)
+		   AND EXISTS (
+			 SELECT 1 FROM epic_specs kept
+			 WHERE kept.project_id = $1 AND kept.item_id = moved.item_id
+			   AND kept.path = substr(moved.path, length($2) + 1)
+		   )`,
+		[projectId, MOVING]
+	);
+	await client.query(
+		`UPDATE epic_specs SET path = substr(path, length($2) + 1)
+		 WHERE project_id = $1 AND starts_with(path, $2)`,
+		[projectId, MOVING]
+	);
 }

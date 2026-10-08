@@ -123,28 +123,6 @@ export class StorageClient {
 		}
 	}
 
-	/**
-	 * Store file content.
-	 */
-	async putFile(
-		projectId: string,
-		path: string,
-		content: string,
-		contentHash?: string
-	): Promise<{ path: string; contentHash: string; sizeBytes: number }> {
-		return this.request('PUT', `/files/${projectId}/${path}`, {
-			content,
-			contentHash,
-		});
-	}
-
-	/**
-	 * Delete file.
-	 */
-	async deleteFile(projectId: string, path: string): Promise<void> {
-		await this.request('DELETE', `/files/${projectId}/${path}`);
-	}
-
 	// ============================================================
 	// Pending Changes
 	// ============================================================
@@ -208,13 +186,15 @@ export class StorageClient {
 	}
 
 	/**
-	 * Delete all pending changes for a user in a project.
+	 * Make a commit that GitHub accepted the project's committed files: write what it
+	 * added and modified, remove what it deleted, and clear the committer's pending
+	 * changes it took (one storage transaction). A pending change saved again since it
+	 * was read for the commit stays pending.
 	 */
-	async deleteAllPendingChanges(
-		projectId: string,
-		userId: string
-	): Promise<{ deleted: boolean; count: number }> {
-		return this.request('DELETE', `/pending/${projectId}/${userId}`);
+	async promoteCommit(projectId: string, userId: string, changes: PendingChangeContent[]): Promise<void> {
+		await this.request('POST', `/commits/${projectId}/${userId}`, {
+			changes: changes.map((c) => ({ path: c.path, action: c.action, content: c.content, updatedAt: c.updatedAt })),
+		});
 	}
 
 	/**
@@ -232,21 +212,12 @@ export class StorageClient {
 		// Get the list of pending changes
 		const changes = await this.listPendingChanges(projectId, userId);
 
-		// Fetch content for each change in parallel
-		const changesWithContent = await Promise.all(
-			changes.map(async (change) => {
-				const content = await this.getPendingChange(projectId, userId, change.path);
-				return {
-					path: change.path,
-					content: content?.content ?? null,
-					action: change.action,
-					renamedFrom: change.renamedFrom,
-					updatedAt: change.updatedAt,
-				};
-			})
+		// Each change as its own read returns it, so content, action, and updatedAt agree
+		// even if the user saved in between; one discarded since the listing is left out.
+		const reads = await Promise.all(
+			changes.map((change) => this.getPendingChange(projectId, userId, change.path))
 		);
-
-		return changesWithContent;
+		return reads.filter((read): read is PendingChangeContent => read !== null);
 	}
 }
 

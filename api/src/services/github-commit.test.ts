@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
 	createGitHubCommit,
 	generateCommitMessage,
+	STALE_BRANCH_MESSAGE,
 	committedSpecPathChanges,
 	type PendingChange,
 } from './github-commit.ts';
@@ -85,6 +86,7 @@ describe('github-commit', () => {
 			changes: [
 				{ path: 'test.md', content: '# Test', action: 'modified' as const },
 			],
+			expectedHeadOid: 'synced123',
 		};
 
 		it('should return error for empty changes', async () => {
@@ -97,25 +99,7 @@ describe('github-commit', () => {
 			expect(result.error).toBe('No changes to commit');
 		});
 
-		it('should return error when getting branch HEAD fails', async () => {
-			mockFetch.mockResolvedValueOnce({
-				ok: false,
-				json: () => Promise.resolve({ message: 'Not Found' }),
-			});
-
-			const result = await createGitHubCommit(baseParams);
-
-			expect(result.success).toBe(false);
-			expect(result.error).toContain('Failed to get branch HEAD');
-		});
-
 		it('should create commit successfully', async () => {
-			// Mock GET branch HEAD
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
@@ -142,23 +126,17 @@ describe('github-commit', () => {
 			expect(result.filesCommitted).toBe(1);
 
 			// Verify the GraphQL call
-			expect(mockFetch).toHaveBeenCalledTimes(2);
-			const graphqlCall = mockFetch.mock.calls[1] as [string, RequestInit];
+			expect(mockFetch).toHaveBeenCalledTimes(1);
+			const graphqlCall = mockFetch.mock.calls[0] as [string, RequestInit];
 			expect(graphqlCall[0]).toBe('https://api.github.com/graphql');
 			expect(graphqlCall[1].method).toBe('POST');
 
 			const body = JSON.parse(graphqlCall[1].body as string);
-			expect(body.variables.input.expectedHeadOid).toBe('abc123');
+			expect(body.variables.input.expectedHeadOid).toBe('synced123');
 			expect(body.variables.input.message.headline).toBe('Test commit');
 		});
 
 		it('should detect conflict errors', async () => {
-			// Mock GET branch HEAD
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation with conflict error
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
@@ -166,8 +144,8 @@ describe('github-commit', () => {
 					Promise.resolve({
 						errors: [
 							{
-								message:
-									'The expectedHeadOid does not match the current head oid',
+								type: 'STALE_DATA',
+								message: 'Expected branch to point to "synced123" but it did not. Pull and try again.',
 							},
 						],
 					}),
@@ -177,16 +155,10 @@ describe('github-commit', () => {
 
 			expect(result.success).toBe(false);
 			expect(result.conflictDetected).toBe(true);
-			expect(result.error).toBe('Remote has new changes. Sync before committing.');
+			expect(result.error).toBe(STALE_BRANCH_MESSAGE);
 		});
 
 		it('should handle deletions correctly', async () => {
-			// Mock GET branch HEAD
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
@@ -211,7 +183,7 @@ describe('github-commit', () => {
 			expect(result.success).toBe(true);
 
 			// Verify deletions are in the request
-			const graphqlCall = mockFetch.mock.calls[1] as [string, RequestInit];
+			const graphqlCall = mockFetch.mock.calls[0] as [string, RequestInit];
 			const body = JSON.parse(graphqlCall[1].body as string);
 			expect(body.variables.input.fileChanges.deletions).toEqual([
 				{ path: 'deleted.md' },
@@ -219,12 +191,6 @@ describe('github-commit', () => {
 		});
 
 		it('should handle mixed additions and deletions', async () => {
-			// Mock GET branch HEAD
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
@@ -256,7 +222,7 @@ describe('github-commit', () => {
 			expect(result.filesCommitted).toBe(3);
 
 			// Verify the request structure
-			const graphqlCall = mockFetch.mock.calls[1] as [string, RequestInit];
+			const graphqlCall = mockFetch.mock.calls[0] as [string, RequestInit];
 			const body = JSON.parse(graphqlCall[1].body as string);
 
 			expect(body.variables.input.fileChanges.additions).toHaveLength(2);
@@ -264,12 +230,6 @@ describe('github-commit', () => {
 		});
 
 		it('should handle non-conflict GraphQL errors', async () => {
-			// Mock GET branch HEAD
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation with generic error
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
@@ -287,12 +247,6 @@ describe('github-commit', () => {
 		});
 
 		it('should handle unexpected API response', async () => {
-			// Mock GET branch HEAD
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation with empty response
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
@@ -306,12 +260,6 @@ describe('github-commit', () => {
 		});
 
 		it('should handle network error during GraphQL call', async () => {
-			// Mock GET branch HEAD - success
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation - network error
 			mockFetch.mockRejectedValueOnce(new Error('Network connection failed'));
 
@@ -322,12 +270,6 @@ describe('github-commit', () => {
 		});
 
 		it('should handle HTTP error from GraphQL endpoint', async () => {
-			// Mock GET branch HEAD - success
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation - HTTP error
 			mockFetch.mockResolvedValueOnce({
 				ok: false,
@@ -342,12 +284,6 @@ describe('github-commit', () => {
 		});
 
 		it('should handle JSON parsing error from GraphQL response', async () => {
-			// Mock GET branch HEAD - success
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: () => Promise.resolve({ object: { sha: 'abc123' } }),
-			});
-
 			// Mock GraphQL mutation - invalid JSON
 			mockFetch.mockResolvedValueOnce({
 				ok: true,

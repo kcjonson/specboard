@@ -16,6 +16,7 @@ import {
 	getFileContent,
 	putFileContent,
 	deleteFileContent,
+	fileKey,
 } from '../services/s3.ts';
 import { validatePath } from './utils.ts';
 
@@ -130,7 +131,7 @@ filesRoutes.put('/:projectId/:path{.+}', async (c) => {
 	const contentHash =
 		body.contentHash || crypto.createHash('sha1').update(body.content).digest('hex');
 	const sizeBytes = Buffer.byteLength(body.content, 'utf8');
-	const s3Key = `${projectId}/files/${validPath}`;
+	const s3Key = fileKey(projectId, validPath);
 
 	// Store in S3 first
 	await putFileContent(projectId, validPath, body.content);

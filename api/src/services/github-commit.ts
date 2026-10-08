@@ -49,35 +49,6 @@ interface CreateCommitResponse {
 }
 
 /**
- * Get the current HEAD SHA for a branch.
- */
-async function getBranchHeadSha(
-	owner: string,
-	repo: string,
-	branch: string,
-	token: string
-): Promise<string> {
-	const response = await fetch(
-		`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`,
-		{
-			headers: {
-				Authorization: `Bearer ${token}`,
-				Accept: 'application/vnd.github+json',
-				'X-GitHub-Api-Version': '2022-11-28',
-			},
-		}
-	);
-
-	if (!response.ok) {
-		const error = await response.json().catch(() => ({ message: 'Unknown error' }));
-		throw new Error(`Failed to get branch HEAD: ${error.message || response.statusText}`);
-	}
-
-	const data = await response.json() as { object: { sha: string } };
-	return data.object.sha;
-}
-
-/**
  * Generate a commit message from the list of changes.
  */
 export function generateCommitMessage(changes: PendingChange[]): string {
@@ -137,11 +108,16 @@ export function committedSpecPathChanges(changes: CommittedChange[]): SpecPathCh
 	return { renamed, deleted: [...vacated].map((path) => `/${path}`) };
 }
 
+/** What the editor shows when the branch moved past the caller's last sync. */
+export const STALE_BRANCH_MESSAGE = 'The branch has commits you haven\'t pulled yet. Pull first, then commit again. If those commits changed files you have drafts of, check those drafts before you commit: a draft replaces the whole file.';
+
 /**
  * Create a commit on GitHub using the GraphQL createCommitOnBranch mutation.
  *
- * This is atomic - either all files are committed or none are.
- * Conflict detection is built-in via expectedHeadOid.
+ * This is atomic - either all files are committed or none are. `expectedHeadOid` is
+ * the commit the caller's drafts were made against (the project's last sync), so
+ * GitHub refuses the commit when anything landed on the branch since, instead of
+ * writing the drafts over changes nobody here has seen.
  */
 export async function createGitHubCommit(params: {
 	owner: string;
@@ -150,25 +126,15 @@ export async function createGitHubCommit(params: {
 	token: string;
 	message: string;
 	changes: PendingChange[];
+	expectedHeadOid: string;
 }): Promise<CommitResult> {
-	const { owner, repo, branch, token, message, changes } = params;
+	const { owner, repo, branch, token, message, changes, expectedHeadOid } = params;
 
 	if (changes.length === 0) {
 		return { success: false, error: 'No changes to commit' };
 	}
 
-	// 1. Get current HEAD SHA (for conflict detection)
-	let headSha: string;
-	try {
-		headSha = await getBranchHeadSha(owner, repo, branch, token);
-	} catch (err) {
-		return {
-			success: false,
-			error: err instanceof Error ? err.message : 'Failed to get branch HEAD',
-		};
-	}
-
-	// 2. Build file changes for mutation
+	// 1. Build file changes for mutation
 	const additions = changes
 		.filter((c) => c.action !== 'deleted' && c.content !== null)
 		.map((c) => ({
@@ -180,7 +146,7 @@ export async function createGitHubCommit(params: {
 		.filter((c) => c.action === 'deleted')
 		.map((c) => ({ path: c.path }));
 
-	// 3. Execute GraphQL mutation
+	// 2. Execute GraphQL mutation
 	let response: Response;
 	try {
 		response = await fetch('https://api.github.com/graphql', {
@@ -207,7 +173,7 @@ export async function createGitHubCommit(params: {
 							branchName: branch,
 						},
 						message: { headline: message },
-						expectedHeadOid: headSha,
+						expectedHeadOid,
 						fileChanges: {
 							additions: additions.length > 0 ? additions : undefined,
 							deletions: deletions.length > 0 ? deletions : undefined,
@@ -240,20 +206,16 @@ export async function createGitHubCommit(params: {
 		};
 	}
 
-	// 4. Handle errors (including conflicts)
+	// 3. Handle errors. GitHub answers a moved branch with STALE_DATA ("Expected branch
+	// to point to ... but it did not").
 	const firstError = result.errors?.[0];
 	if (firstError) {
-		const errorMessage = firstError.message;
 		const isConflict =
-			errorMessage.includes('expectedHeadOid') ||
-			errorMessage.includes('out of date') ||
-			errorMessage.includes('does not match');
+			firstError.type === 'STALE_DATA' || firstError.message.startsWith('Expected branch to point to');
 
 		return {
 			success: false,
-			error: isConflict
-				? 'Remote has new changes. Sync before committing.'
-				: errorMessage,
+			error: isConflict ? STALE_BRANCH_MESSAGE : firstError.message,
 			conflictDetected: isConflict,
 		};
 	}

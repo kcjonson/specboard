@@ -3,9 +3,11 @@
  * Much faster than full sync when only a few files have changed.
  */
 
-import { applySpecPathChanges, type SpecPathChanges } from '@specboard/db';
+import type { SpecPathChanges } from '@specboard/db';
 import { shouldSkipDirectory, shouldSyncFile } from './file-filter.ts';
-import { updateSyncStatus } from './shared/db-utils.ts';
+import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
+import { SUPERSEDED, syncArchive } from './initial-sync.ts';
+import { getHeadCommitSha } from './zip-stream.ts';
 import { createStorageClient } from './shared/storage-client.ts';
 
 const GITHUB_API_URL = 'https://api.github.com';
@@ -23,6 +25,8 @@ export interface IncrementalSyncParams {
 	branch: string;
 	token: string;
 	lastCommitSha: string;
+	/** The pending lock the API took for this sync. */
+	lockToken: Date;
 }
 
 export interface IncrementalSyncResult {
@@ -56,8 +60,12 @@ interface GitHubBlob {
 	size: number;
 }
 
+/** GitHub's compare lists at most this many files, and its `commits` at most 250. */
+const COMPARE_FILE_LIMIT = 300;
+
 /**
- * Compare two commits and get the list of changed files.
+ * Compare two commits and get the list of changed files, and whether that list is
+ * complete: past GitHub's limits the compare silently leaves files out.
  */
 async function getChangedFiles(
 	owner: string,
@@ -65,7 +73,7 @@ async function getChangedFiles(
 	base: string,
 	head: string,
 	token: string
-): Promise<{ files: GitHubCompareFile[]; headSha: string }> {
+): Promise<{ files: GitHubCompareFile[]; complete: boolean }> {
 	const response = await fetch(
 		`${GITHUB_API_URL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${base}...${head}`,
 		{
@@ -90,16 +98,14 @@ async function getChangedFiles(
 	}
 
 	const data: GitHubCompareResponse = await response.json();
-
-	// Get the latest commit SHA
-	const headSha =
-		data.commits.length > 0
-			? (data.commits[data.commits.length - 1]?.sha ?? base)
-			: base;
-
+	const files = data.files || [];
+	// 'diverged' or 'behind' means the branch was rewritten (a force-push): the compare
+	// then diffs from the merge base, not from the last sync, so its files aren't the
+	// whole story either.
+	const linear = data.status === 'ahead' || data.status === 'identical';
 	return {
-		files: data.files || [],
-		headSha,
+		files,
+		complete: linear && files.length < COMPARE_FILE_LIMIT && data.total_commits <= data.commits.length,
 	};
 }
 
@@ -184,129 +190,109 @@ async function processBatches<T, R>(
 }
 
 /**
- * Perform incremental sync: fetch only changed files since last sync.
+ * Perform incremental sync: fetch only what changed between the last sync and the
+ * branch head, resolved to a full SHA first so the files and the new sync point name
+ * the same commit. When GitHub's compare can't list everything, fall back to a full
+ * sync of that commit.
  */
 export async function performIncrementalSync(
 	params: IncrementalSyncParams,
 	storageServiceUrl: string,
 	storageApiKey: string
 ): Promise<IncrementalSyncResult> {
-	const { projectId, owner, repo, branch, token, lastCommitSha } = params;
+	const { projectId, owner, repo, branch, token, lastCommitSha, lockToken } = params;
+	const failed = (error: string): IncrementalSyncResult => ({ success: false, synced: 0, removed: 0, commitSha: null, error });
+
+	const lock = await markSyncing(projectId, lockToken);
+	if (!lock) return failed(SUPERSEDED);
 
 	try {
-		// Mark sync as in progress
-		await updateSyncStatus(projectId, 'syncing');
-
-		// Get changed files since last sync
-		const { files, headSha } = await getChangedFiles(
-			owner,
-			repo,
-			lastCommitSha,
-			branch,
-			token
-		);
-
-		// If no changes, we're done
-		if (files.length === 0) {
-			await updateSyncStatus(projectId, 'completed', headSha);
-			return {
-				success: true,
-				synced: 0,
-				removed: 0,
-				commitSha: headSha,
-			};
-		}
-
-		// Create storage client
+		const headSha = await getHeadCommitSha(owner, repo, branch, token);
+		const { files, complete } = await getChangedFiles(owner, repo, lastCommitSha, headSha, token);
 		const storageClient = createStorageClient(storageServiceUrl, storageApiKey);
-
-		// Pre-filter files by directory (early skip, no content fetch needed)
-		const notInSkipDir = (f: GitHubCompareFile): boolean => !shouldSkipDirectory(f.filename);
-
-		// Separate files by action
-		const toSync = files.filter(
-			(f) =>
-				(f.status === 'added' || f.status === 'modified') &&
-				notInSkipDir(f)
-		);
-
-		const toRemove = files.filter(
-			(f) => f.status === 'removed' && notInSkipDir(f)
-		);
-
-		// Handle renamed files: remove old, add new
-		const renamed = files.filter(
-			(f) => f.status === 'renamed' && notInSkipDir(f)
-		);
-		for (const file of renamed) {
-			if (file.previous_filename && !shouldSkipDirectory(file.previous_filename)) {
-				toRemove.push({
-					...file,
-					filename: file.previous_filename,
-					status: 'removed',
-				});
-			}
-			toSync.push({ ...file, status: 'added' });
-		}
 
 		let synced = 0;
 		let removed = 0;
+		let linkChanges: SpecPathChanges;
+		if (complete) {
+			// Pre-filter files by directory (early skip, no content fetch needed)
+			const notInSkipDir = (f: GitHubCompareFile): boolean => !shouldSkipDirectory(f.filename);
 
-		// Sync added/modified files in batches
-		// Fetch content, check size + binary, then upload if valid
-		await processBatches(toSync, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
-			try {
-				const buffer = await fetchBlobBuffer(owner, repo, file.sha, token);
+			// Separate files by action
+			const toSync = files.filter(
+				(f) =>
+					(f.status === 'added' || f.status === 'modified') &&
+					notInSkipDir(f)
+			);
 
-				// Check if file should be synced (size + binary detection)
-				if (!(await shouldSyncFile(file.filename, buffer))) {
-					return;
+			const toRemove = files.filter(
+				(f) => f.status === 'removed' && notInSkipDir(f)
+			);
+
+			// Handle renamed files: remove old, add new
+			const renamed = files.filter(
+				(f) => f.status === 'renamed' && notInSkipDir(f)
+			);
+			for (const file of renamed) {
+				if (file.previous_filename && !shouldSkipDirectory(file.previous_filename)) {
+					toRemove.push({
+						...file,
+						filename: file.previous_filename,
+						status: 'removed',
+					});
 				}
-
-				const content = buffer.toString('utf-8');
-				await storageClient.putFile(projectId, file.filename, content);
-				synced++;
-			} catch (err) {
-				console.error(`Failed to sync ${file.filename}:`, err);
+				toSync.push({ ...file, status: 'added' });
 			}
-		});
 
-		// Remove deleted files
-		await processBatches(toRemove, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
-			try {
-				await storageClient.deleteFile(projectId, file.filename);
-				removed++;
-			} catch (err) {
-				console.error(`Failed to remove ${file.filename}:`, err);
-			}
-		});
+			// Sync added/modified files in batches
+			// Fetch content, check size + binary, then upload if valid
+			await processBatches(toSync, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
+				try {
+					const buffer = await fetchBlobBuffer(owner, repo, file.sha, token);
 
-		// Commits pulled in here move spec links the way a commit made in the editor does.
-		// Before the status update, so a failure leaves the sync at the old commit and the
-		// retry applies them again.
-		await applySpecPathChanges(projectId, comparedSpecPathChanges(files));
+					// Check if file should be synced (size + binary detection)
+					if (!(await shouldSyncFile(file.filename, buffer))) {
+						return;
+					}
 
-		// Mark sync as completed
-		await updateSyncStatus(projectId, 'completed', headSha);
+					const content = buffer.toString('utf-8');
+					await storageClient.putFile(projectId, file.filename, content);
+					synced++;
+				} catch (err) {
+					console.error(`Failed to sync ${file.filename}:`, err);
+				}
+			});
 
-		return {
-			success: true,
-			synced,
-			removed,
-			commitSha: headSha,
-		};
+			// Remove deleted files
+			await processBatches(toRemove, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
+				try {
+					await storageClient.deleteFile(projectId, file.filename);
+					removed++;
+				} catch (err) {
+					console.error(`Failed to remove ${file.filename}:`, err);
+				}
+			});
+
+			// Commits pulled in here move spec links the way a commit made in the editor
+			// does, together with the sync point below.
+			linkChanges = comparedSpecPathChanges(files);
+		} else {
+			const result = await syncArchive({ projectId, owner, repo, branch, token }, storageClient, headSha);
+			synced = result.synced;
+			removed = result.pruned;
+			// A full sync can't tell a rename from a delete and an add, so it leaves spec links.
+			linkChanges = { renamed: [], deleted: [] };
+		}
+
+		// With no new commits this still stores the head's full SHA, which heals a short
+		// one an older full sync left behind.
+		if (!(await completeSync(projectId, lock, lastCommitSha, headSha, linkChanges))) {
+			return failed(SUPERSEDED);
+		}
+		return { success: true, synced, removed, commitSha: headSha };
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
-
-		// Mark sync as failed
-		await updateSyncStatus(projectId, 'failed', null, errorMessage);
-
-		return {
-			success: false,
-			synced: 0,
-			removed: 0,
-			commitSha: null,
-			error: errorMessage,
-		};
+		await markSyncFailed(projectId, lock, errorMessage);
+		return failed(errorMessage);
 	}
 }

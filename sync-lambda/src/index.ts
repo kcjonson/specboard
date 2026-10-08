@@ -11,10 +11,14 @@ import {
 } from '@aws-sdk/client-secrets-manager';
 import { decrypt, type EncryptedData } from '@specboard/auth/encryption';
 import { performInitialSync, type InitialSyncResult } from './initial-sync.ts';
+import { markPendingFailed } from './shared/db-utils.ts';
 import {
 	performIncrementalSync,
 	type IncrementalSyncResult,
 } from './incremental-sync.ts';
+
+/** How a pull moves spec links for the commits it brings in (the API documents and tests its recovery path with it). */
+export { comparedSpecPathChanges } from './incremental-sync.ts';
 
 // Secrets Manager client - reused across invocations
 const secretsClient = new SecretsManagerClient({});
@@ -39,6 +43,8 @@ export interface SyncEvent {
 	encryptedToken: string; // Encrypted GitHub token (JSON string of EncryptedData)
 	mode: 'initial' | 'incremental';
 	lastCommitSha?: string; // Required for incremental mode
+	/** The project's sync lock token (sync_started_at, ISO) the API took as 'pending' for this sync. */
+	lockToken: string;
 }
 
 /**
@@ -153,9 +159,11 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 		hasLastCommitSha: !!event.lastCommitSha,
 	});
 
+	const lockToken = new Date(event.lockToken);
+
 	try {
 		// Validate required fields
-		if (!event.projectId || !event.userId || !event.owner || !event.repo || !event.branch) {
+		if (!event.projectId || !event.userId || !event.owner || !event.repo || !event.branch || Number.isNaN(lockToken.getTime())) {
 			throw new Error('Missing required event fields');
 		}
 
@@ -187,6 +195,7 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 					repo: event.repo,
 					branch: event.branch,
 					token,
+					lockToken,
 				},
 				storageServiceUrl,
 				storageApiKey
@@ -210,7 +219,8 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 					repo: event.repo,
 					branch: event.branch,
 					token,
-					lastCommitSha: event.lastCommitSha as string, // Validated at line 141-143
+					lastCommitSha: event.lastCommitSha as string, // Validated above
+					lockToken,
 				},
 				storageServiceUrl,
 				storageApiKey
@@ -242,6 +252,15 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 		const sanitizedError = isRateLimitError
 			? errorMessage
 			: 'Sync failed. Check Lambda logs for details.';
+
+		// Failed before the sync took its lock (the syncs record their own failures after
+		// that): release the pending lock so commits aren't blocked until it goes stale.
+		// Best effort, since what failed may be the database credentials themselves.
+		if (event.projectId && !Number.isNaN(lockToken.getTime())) {
+			await markPendingFailed(event.projectId, lockToken, sanitizedError).catch((markErr) => {
+				console.error('Could not record the failed sync:', markErr instanceof Error ? markErr.message : String(markErr));
+			});
+		}
 
 		return {
 			success: false,

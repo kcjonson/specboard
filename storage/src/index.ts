@@ -11,6 +11,7 @@ import type { Context, Next } from 'hono';
 import { apiKeyAuth } from './middleware/auth.ts';
 import { filesRoutes } from './handlers/files.ts';
 import { pendingRoutes } from './handlers/pending.ts';
+import { commitRoutes } from './handlers/commits.ts';
 import { closeDb } from './db/index.ts';
 import { runMigrations } from './db/migrate.ts';
 
@@ -86,6 +87,7 @@ app.use('*', rateLimitMiddleware);
 // Mount route handlers
 app.route('/files', filesRoutes);
 app.route('/pending', pendingRoutes);
+app.route('/commits', commitRoutes);
 
 // 404 handler
 app.notFound((c) => c.json({ error: 'Not found' }, 404));

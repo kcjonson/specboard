@@ -147,7 +147,7 @@ export function isCloudRepository(repo: RepositoryConfig | Record<string, never>
 	return 'type' in repo && repo.type === 'cloud';
 }
 
-export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+export type SyncStatus = 'pending' | 'syncing' | 'committing' | 'completed' | 'failed';
 
 export interface Project {
 	id: string;

@@ -63,7 +63,7 @@ ensureBucket().catch(console.error);
 /**
  * Build S3 key for a project file.
  */
-function fileKey(projectId: string, path: string): string {
+export function fileKey(projectId: string, path: string): string {
 	return `${projectId}/files/${path}`;
 }
 

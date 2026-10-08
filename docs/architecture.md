@@ -121,16 +121,17 @@ Specboard operates as a cloud workspace that syncs with GitHub:
 ```
 GitHub Repository
     │
-    ├── Initial sync: Lambda downloads ZIP → streams to S3
+    ├── Initial sync: Lambda downloads ZIP → streams to S3, prunes files it no longer has
     ├── Incremental sync: Lambda uses Compare API → updates changed files in S3
     │
     ▼
 S3 (cloud storage) ◄──── User edits in browser (saved as pending changes)
     │
     └── Commit: API uses GraphQL createCommitOnBranch → pushes to GitHub
+                → storage promotes the commit into the committed files
 ```
 
-Conflict detection uses GitHub's `expectedHeadOid` parameter — if the branch has moved since the last sync, the commit is rejected and the user must re-sync first.
+Conflict detection uses GitHub's `expectedHeadOid` parameter, set to the project's last synced commit: if the branch has moved since, the commit is rejected (409) and the user pulls first. The full sequence, including what happens when a step after GitHub fails, is in [project-storage.md](specs/project-storage.md#committing).
 
 ---
 

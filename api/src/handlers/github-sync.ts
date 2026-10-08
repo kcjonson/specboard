@@ -9,7 +9,7 @@
 import type { Context } from 'hono';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { decrypt, type EncryptedData } from '@specboard/auth';
-import { applySpecPathChanges, query } from '@specboard/db';
+import { query, recordCommit } from '@specboard/db';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
 import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
@@ -169,18 +169,75 @@ export async function getProjectWithRepo(projectId: string): Promise<ProjectWith
 }
 
 /**
- * Atomically set sync status to pending if not already syncing.
- * Returns true if status was updated, false if sync already in progress.
+ * The project's sync lock is free when nothing holds it (no status, or the last holder
+ * finished) or when the holder has gone quiet for longer than any sync or commit runs:
+ * a Lambda stops at 15 minutes and a commit request well before, so 20 minutes means it
+ * crashed without releasing. Lock tokens are millisecond timestamps so they survive the
+ * round trip through a JS Date.
  */
-export async function trySetSyncPending(projectId: string): Promise<boolean> {
-	const result = await query(
+const SYNC_LOCK_FREE = `(sync_status IS NULL OR sync_status IN ('completed', 'failed')
+	OR sync_started_at IS NULL OR sync_started_at < NOW() - interval '20 minutes')`;
+const LOCK_TOKEN = `date_trunc('milliseconds', clock_timestamp())`;
+
+/** What a caller hears when the sync lock is taken. */
+const LOCK_BUSY_MESSAGE = 'A sync or a commit is running. Try again when it finishes.';
+
+/**
+ * Take the sync lock for a pull or a first sync (status 'pending'; the Lambda moves it
+ * to 'syncing' with this token, which travels in its event). Null when a sync or a
+ * commit holds it.
+ */
+export async function trySetSyncPending(projectId: string): Promise<Date | null> {
+	const result = await query<{ token: Date }>(
 		`UPDATE projects
-		 SET sync_status = 'pending', sync_error = NULL
-		 WHERE id = $1 AND (sync_status IS NULL OR sync_status NOT IN ('pending', 'syncing'))
-		 RETURNING id`,
+		 SET sync_status = 'pending', sync_error = NULL, sync_started_at = ${LOCK_TOKEN}
+		 WHERE id = $1 AND ${SYNC_LOCK_FREE}
+		 RETURNING sync_started_at AS token`,
 		[projectId]
 	);
-	return result.rows.length > 0;
+	return result.rows[0]?.token ?? null;
+}
+
+/** A commit's hold on the sync lock: the status to put back, and the token that proves it's still ours. */
+export interface CommitLock {
+	previous: string | null;
+	token: Date;
+}
+
+/**
+ * Take the sync lock for a commit (status 'committing'), so a pull can't move files or
+ * the sync point under it. Null when a sync or another commit holds it.
+ */
+export async function tryStartCommit(projectId: string): Promise<CommitLock | null> {
+	const result = await query<{ previous: string | null; token: Date }>(
+		`WITH prev AS (SELECT id AS project_id, sync_status AS previous FROM projects WHERE id = $1 FOR UPDATE)
+		 UPDATE projects
+		 SET sync_status = 'committing', sync_started_at = ${LOCK_TOKEN}
+		 FROM prev
+		 WHERE id = prev.project_id AND ${SYNC_LOCK_FREE}
+		 RETURNING prev.previous, sync_started_at AS token`,
+		[projectId]
+	);
+	const row = result.rows[0];
+	return row ? { previous: row.previous, token: row.token } : null;
+}
+
+/**
+ * Release a commit's lock, unless it went stale and someone else holds it now. A
+ * finished previous state (none, completed, failed) is put back. A held one means this
+ * commit took the lock over from a holder that died, so it isn't put back (it would
+ * read as freshly held for another 20 minutes); the project shows that sync as failed.
+ */
+export async function finishCommit(projectId: string, lock: CommitLock): Promise<void> {
+	const settled = lock.previous === null || lock.previous === 'completed' || lock.previous === 'failed';
+	await query(
+		`UPDATE projects
+		 SET sync_status = $2,
+		     sync_error = CASE WHEN $4::text IS NULL THEN sync_error ELSE $4 END,
+		     sync_completed_at = CASE WHEN $4::text IS NULL THEN sync_completed_at ELSE NOW() END
+		 WHERE id = $1 AND sync_status = 'committing' AND sync_started_at = $3`,
+		[projectId, settled ? lock.previous : 'failed', lock.token, settled ? null : 'The last sync didn\'t finish. Pull again.']
+	);
 }
 
 /**
@@ -215,9 +272,9 @@ export async function startGitHubInitialSync(
 		throw new Error('GitHub not connected');
 	}
 
-	const acquired = await trySetSyncPending(projectId);
-	if (!acquired) {
-		throw new Error('Sync already in progress');
+	const lockToken = await trySetSyncPending(projectId);
+	if (!lockToken) {
+		throw new Error(LOCK_BUSY_MESSAGE);
 	}
 
 	try {
@@ -229,6 +286,7 @@ export async function startGitHubInitialSync(
 			branch: project.branch,
 			encryptedToken,
 			mode: 'initial',
+			lockToken: lockToken.toISOString(),
 		};
 
 		await invokeSyncLambda(payload);
@@ -269,9 +327,9 @@ export async function handleGitHubInitialSync(context: Context): Promise<Respons
 	}
 
 	// Atomically mark sync as pending (prevents race condition)
-	const acquired = await trySetSyncPending(projectId);
-	if (!acquired) {
-		return context.json({ error: 'Sync already in progress' }, 409);
+	const lockToken = await trySetSyncPending(projectId);
+	if (!lockToken) {
+		return context.json({ error: LOCK_BUSY_MESSAGE }, 409);
 	}
 
 	// Invoke Lambda asynchronously
@@ -284,6 +342,7 @@ export async function handleGitHubInitialSync(context: Context): Promise<Respons
 			branch: project.branch,
 			encryptedToken,
 			mode: 'initial',
+			lockToken: lockToken.toISOString(),
 		};
 
 		await invokeSyncLambda(payload);
@@ -347,9 +406,16 @@ export async function handleGitHubSync(context: Context): Promise<Response> {
 	}
 
 	// Atomically mark sync as pending (prevents race condition)
-	const acquired = await trySetSyncPending(projectId);
-	if (!acquired) {
-		return context.json({ success: false, error: 'Sync already in progress' }, 409);
+	const lockToken = await trySetSyncPending(projectId);
+	if (!lockToken) {
+		return context.json({ success: false, error: LOCK_BUSY_MESSAGE }, 409);
+	}
+	// The sync starts from the sync point as it is under the lock: a commit that
+	// finished between the read above and taking the lock has moved it.
+	const lastCommitSha = (await getProjectWithRepo(projectId))?.lastSyncedCommitSha;
+	if (!lastCommitSha) {
+		await query(`UPDATE projects SET sync_status = NULL WHERE id = $1`, [projectId]);
+		return context.json({ success: false, error: 'Initial sync required. Use POST /sync/initial first.' }, 400);
 	}
 
 	// Invoke Lambda asynchronously
@@ -362,7 +428,8 @@ export async function handleGitHubSync(context: Context): Promise<Response> {
 			branch: project.branch,
 			encryptedToken,
 			mode: 'incremental',
-			lastCommitSha: project.lastSyncedCommitSha,
+			lastCommitSha,
+			lockToken: lockToken.toISOString(),
 		};
 
 		await invokeSyncLambda(payload);
@@ -374,7 +441,7 @@ export async function handleGitHubSync(context: Context): Promise<Response> {
 			projectId,
 			owner: project.owner,
 			repo: project.repo,
-			lastCommitSha: project.lastSyncedCommitSha,
+			lastCommitSha,
 		});
 
 		// Return response compatible with PullResponse interface expected by frontend.
@@ -425,26 +492,38 @@ export async function handleGitHubSyncStatus(context: Context): Promise<Response
 	});
 }
 
+/** A full commit SHA; anything shorter can't be GitHub's expectedHeadOid. */
+const FULL_SHA = /^[0-9a-f]{40}$/;
+
+/** How many times to try recording a commit GitHub and storage already have. */
+const RECORD_ATTEMPTS = 3;
+
 /**
  * Commit pending changes to GitHub repository.
  * POST /api/projects/:owner/:project/github/commit
  *
- * Uses GitHub GraphQL createCommitOnBranch mutation for atomic commits:
- * 1. Get pending changes with content from storage service
- * 2. Create commit via GraphQL (all-or-nothing, built-in conflict detection)
- * 3. On success, move or drop the spec links of files the commit renamed or deleted
- * 4. Clear pending changes and update last_synced_commit_sha
+ * Holds the project's sync lock throughout (sync_status 'committing'), so no pull moves
+ * files or the sync point in between:
  *
- * Spec links change here rather than when the draft was made: until the commit lands
- * the rename or delete is one user's draft, and every other member still has the file.
+ * 1. Read the caller's pending changes from the storage service
+ * 2. Create the commit with GitHub's createCommitOnBranch, expecting the branch to be at
+ *    the project's last synced commit: if anything landed since, GitHub refuses, the
+ *    answer is 409 (pull first), and nothing here changes
+ * 3. Promote the commit into storage: its files become the committed files and the
+ *    pending changes it took are cleared, in one storage transaction
+ * 4. Move spec links for what it renamed and deleted and the sync point to it, in one
+ *    compare-and-set transaction, retried a few times
+ *
+ * Steps 3 and 4 run after GitHub has the commit, so a failure there can't undo it. If
+ * either fails the sync point stays at the old commit and the answer is success with a
+ * warning: the next pull brings the commit in like any other push (docs/specs/
+ * project-storage.md, Committing, for what that recovers and what it can't).
  */
 export async function handleGitHubCommit(context: Context): Promise<Response> {
 	const userId = apiUserId(context);
 	const projectId = requireResolvedProject(context).id;
 
-	// Get project with repository info
-	const project = await getProjectWithRepo(projectId);
-	if (!project) {
+	if (!(await getProjectWithRepo(projectId))) {
 		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
 	}
 
@@ -468,6 +547,45 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 			error: err instanceof Error ? err.message : String(err),
 		});
 		return context.json({ error: 'GitHub connection corrupted. Please reconnect.' }, 500);
+	}
+
+	const lock = await tryStartCommit(projectId);
+	if (!lock) {
+		return context.json({
+			success: false,
+			error: { stage: 'commit', message: LOCK_BUSY_MESSAGE },
+		}, 409);
+	}
+	try {
+		return await commitLocked(context, projectId, userId, accessToken);
+	} finally {
+		await finishCommit(projectId, lock);
+	}
+}
+
+/** The commit itself, run while the caller holds the project's sync lock. */
+async function commitLocked(context: Context, projectId: string, userId: string, accessToken: string): Promise<Response> {
+	// Read under the lock, so the sync point can't move between here and step 4.
+	const project = await getProjectWithRepo(projectId);
+	if (!project) {
+		return context.json({ error: 'Project not found or not in cloud mode' }, 404);
+	}
+
+	// Drafts are made against the last synced commit. A missing or abbreviated one (an
+	// older full sync stored the archive's short SHA) can't be checked against; a pull
+	// stores the full SHA.
+	const expectedHeadOid = project.lastSyncedCommitSha;
+	if (!expectedHeadOid || !FULL_SHA.test(expectedHeadOid)) {
+		return context.json({
+			success: false,
+			error: {
+				stage: 'commit',
+				message: expectedHeadOid
+					? 'Pull first, then commit again.'
+					: 'The repository hasn\'t finished its first sync yet.',
+			},
+			conflictDetected: Boolean(expectedHeadOid),
+		}, 409);
 	}
 
 	// Get pending changes with content
@@ -534,6 +652,7 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 		token: accessToken,
 		message: commitMessage,
 		changes,
+		expectedHeadOid,
 	});
 
 	if (!result.success) {
@@ -572,51 +691,64 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 		);
 	}
 
-	// Success - the commit is on GitHub, so bring spec links in line with it, then clear
-	// pending changes and update sync SHA
+	const committed = {
+		success: true,
+		sha: result.sha,
+		url: result.url,
+		filesCommitted: result.filesCommitted,
+	};
+	// Either way the sync point is still the old commit, so a pull brings this one in.
+	const unfinished = (warning: string): Response => context.json({ ...committed, warning });
+
 	try {
-		await applySpecPathChanges(projectId, committedSpecPathChanges(pendingChanges));
-
-		await storageClient.deleteAllPendingChanges(projectId, userId);
-
-		await query(
-			`UPDATE projects SET last_synced_commit_sha = $1 WHERE id = $2`,
-			[result.sha, projectId]
-		);
-
-		log({
-			type: 'github',
-			level: 'info',
-			event: 'github_commit_success',
-			projectId,
-			sha: result.sha,
-			filesCommitted: result.filesCommitted,
-		});
-
-		return context.json({
-			success: true,
-			sha: result.sha,
-			url: result.url,
-			filesCommitted: result.filesCommitted,
-		});
+		await storageClient.promoteCommit(projectId, userId, pendingChanges);
 	} catch (err) {
-		// Commit succeeded on GitHub but cleanup failed
-		// Log but still return success since the commit is there
 		log({
 			type: 'github',
 			level: 'error',
-			event: 'github_commit_cleanup_failed',
+			event: 'github_commit_promote_failed',
 			projectId,
 			sha: result.sha,
 			error: err instanceof Error ? err.message : String(err),
 		});
-
-		return context.json({
-			success: true,
-			sha: result.sha,
-			url: result.url,
-			filesCommitted: result.filesCommitted,
-			warning: 'Commit succeeded but cleanup failed. Pending changes may persist.',
-		});
+		return unfinished('Committed to GitHub, but the editor\'s copy didn\'t update. Pull to bring the commit in.');
 	}
+
+	// Safe to retry: it's a compare-and-set on the sync point, and a try that landed
+	// before its reply was lost reads as recorded.
+	const linkChanges = committedSpecPathChanges(pendingChanges);
+	let recorded = false;
+	for (let attempt = 1; attempt <= RECORD_ATTEMPTS && !recorded; attempt++) {
+		try {
+			if (!(await recordCommit(projectId, expectedHeadOid, result.sha!, linkChanges))) {
+				log({ type: 'github', level: 'error', event: 'github_commit_sync_point_moved', projectId, sha: result.sha });
+				return unfinished('Committed to GitHub, but the sync point moved underneath it. Pull to bring the commit in.');
+			}
+			recorded = true;
+		} catch (err) {
+			log({
+				type: 'github',
+				level: 'error',
+				event: 'github_commit_record_failed',
+				projectId,
+				sha: result.sha,
+				attempt,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+	if (!recorded) {
+		return unfinished('Committed to GitHub, but spec links didn\'t move yet. Pull to finish bringing the commit in.');
+	}
+
+	log({
+		type: 'github',
+		level: 'info',
+		event: 'github_commit_success',
+		projectId,
+		sha: result.sha,
+		filesCommitted: result.filesCommitted,
+	});
+
+	return context.json(committed);
 }

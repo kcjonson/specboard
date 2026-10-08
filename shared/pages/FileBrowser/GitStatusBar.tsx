@@ -66,12 +66,18 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 		gitStatus.clearErrors();
 	};
 
+	// After a refused commit or one that landed only partway, pulling is the way on.
+	const handlePullFromNotice = (): void => {
+		gitStatus.clearErrors();
+		handlePullClick();
+	};
+
 	return (
 		<div class={styles.container}>
 			{/* Error banners */}
 			{gitStatus.pullError && (
-				<Notice variant="error" class={styles.errorNotice}>
-					<span class={styles.errorText}>{gitStatus.pullError}</span>
+				<Notice variant="error" class={styles.notice}>
+					<span class={styles.noticeText}>{gitStatus.pullError}</span>
 					<Button onClick={handleDismiss} class="icon" aria-label="Dismiss error">
 						<Icon name="x" class="size-sm" />
 					</Button>
@@ -81,8 +87,20 @@ export function GitStatusBar({ gitStatus, hasUnsavedChanges, onBeforePull, onPul
 				<CommitErrorBanner
 					error={gitStatus.commitError}
 					onRetry={handleRetry}
+					onPull={handlePullFromNotice}
 					onDismiss={handleDismiss}
 				/>
+			)}
+			{gitStatus.commitWarning && (
+				<Notice variant="warning" class={styles.notice}>
+					<span class={styles.noticeText}>{gitStatus.commitWarning}</span>
+					<Button onClick={handlePullFromNotice} class="secondary size-sm">
+						Pull
+					</Button>
+					<Button onClick={handleDismiss} class="icon" aria-label="Dismiss">
+						<Icon name="x" class="size-sm" />
+					</Button>
+				</Notice>
 			)}
 
 			{/* Main bar */}
