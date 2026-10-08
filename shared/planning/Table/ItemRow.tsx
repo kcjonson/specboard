@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useModel, type ItemModel } from '@specboard/models';
-import { Icon, StatusGlyph, STATUS_LABELS } from '@specboard/ui';
+import { Avatar, Icon, StatusGlyph, STATUS_LABELS } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { ProjectChip, type ProjectLabel } from '../ProjectChip/ProjectChip';
 import { ChildRow } from './ChildRow';
@@ -113,7 +113,14 @@ export function ItemRow({
 					{STATUS_LABELS[item.status]}
 				</span>
 				<span class={styles.colTasks} role="cell">{hasChildren ? `${done}/${total}` : '—'}</span>
-				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>
+				<span class={styles.colAssignee} role="cell">
+					{item.assignee ? (
+						<span class={styles.assignee}>
+							<Avatar name={item.assignee.name} avatarUrl={item.assignee.avatarUrl} size="xs" tone="muted" decorative />
+							<span class={styles.assigneeName}>{item.assignee.name}</span>
+						</span>
+					) : '—'}
+				</span>
 			</div>
 
 			{showChildren && loadingChildren && (

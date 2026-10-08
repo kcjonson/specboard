@@ -22,7 +22,9 @@ import {
 	unblockItem,
 	verifyItemOwnership,
 	itemView,
+	itemViews,
 	getItemKeysBySpecPath,
+	AssigneeNotMemberError,
 	ParentItemNotFoundError,
 	DiscoveredFromNotFoundError,
 	ItemCycleError,
@@ -93,7 +95,7 @@ export async function handleListItems(context: Context): Promise<Response> {
 			limit,
 		});
 		context.header('X-Total-Count', String(total));
-		return context.json(items.map(itemView));
+		return context.json(await itemViews(items));
 	} catch (error) {
 		console.error('Failed to list items:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -117,7 +119,7 @@ export async function handleGetItem(context: Context): Promise<Response> {
 		const { items } = await getItems({ projectId, itemNumber, includeChildren: true, includeWorkers: true });
 		const item = items[0];
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(itemView(item));
+		return context.json(await itemView(item));
 	} catch (error) {
 		console.error('Failed to get item:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -136,7 +138,9 @@ export async function handleGetCurrentWork(context: Context): Promise<Response> 
 			// (status='blocked' is already excluded by the equality filter).
 			getItems({ projectId, status: 'ready', excludeBlocked: true }).then((r) => r.items),
 		]);
-		return context.json({ active: [...inProgress, ...inReview].map(itemView), ready: ready.map(itemView) });
+		const active = [...inProgress, ...inReview];
+		const views = await itemViews([...active, ...ready]);
+		return context.json({ active: views.slice(0, active.length), ready: views.slice(active.length) });
 	} catch (error) {
 		console.error('Failed to get current work:', error);
 		return context.json({ error: 'Database error' }, 500);
@@ -187,7 +191,7 @@ export async function handleCreateItem(context: Context): Promise<Response> {
 			origin: { actor: apiActor(context) },
 			discoveredFromNumber,
 		});
-		return context.json(itemView(item), 201);
+		return context.json(await itemView(item), 201);
 	} catch (error) {
 		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		if (error instanceof DiscoveredFromNotFoundError) return context.json({ error: 'Discovered-from item not found' }, 404);
@@ -220,7 +224,7 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 			children,
 			{ actor: apiActor(context) }
 		);
-		return context.json(created.map(itemView), 201);
+		return context.json(await itemViews(created), 201);
 	} catch (error) {
 		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		console.error('Failed to create child items:', error);
@@ -228,7 +232,13 @@ export async function handleCreateChildren(context: Context): Promise<Response> 
 	}
 }
 
-/** PUT /items/:itemKey — update an item's fields. */
+/**
+ * PUT /items/:itemKey — update an item's fields.
+ *
+ * `assigneeSlug` assigns the owner or a member by user slug, or unassigns with null;
+ * absent leaves the assignee alone. It isn't `assignee` because the web client restates
+ * the whole model on every save, and its `assignee` is the person view it was sent.
+ */
 export async function handleUpdateItem(context: Context): Promise<Response> {
 	const { id: projectId } = project(context);
 	const itemNumber = pathItemNumber(context);
@@ -238,6 +248,10 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 	if (body instanceof Response) return body;
 	if (body.status !== undefined && !isValidStatus(body.status)) return context.json({ error: 'Invalid status' }, 400);
 	if (typeof body.title === 'string' && !isValidTitle(body.title)) return context.json({ error: 'Invalid title' }, 400);
+	const assignee = body.assigneeSlug;
+	if (assignee !== undefined && assignee !== null && (typeof assignee !== 'string' || assignee === '')) {
+		return context.json({ error: 'assigneeSlug must be a member\'s user slug, or null to unassign' }, 400);
+	}
 
 	try {
 		const item = await updateItem(projectId, itemNumber, {
@@ -248,10 +262,12 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 			rank: body.rank as number | undefined,
 			prUrl: body.prUrl as string | undefined,
 			branchName: body.branchName as string | undefined,
+			assignee: assignee as string | null | undefined,
 		}, apiActor(context));
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(itemView(item));
+		return context.json(await itemView(item));
 	} catch (error) {
+		if (error instanceof AssigneeNotMemberError) return context.json({ error: error.message }, 400);
 		console.error('Failed to update item:', error);
 		return context.json({ error: 'Database error' }, 500);
 	}
@@ -285,7 +301,7 @@ export async function handleMoveItem(context: Context): Promise<Response> {
 		}
 		const item = await moveItem(projectId, itemNumber, newParentNumber);
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(itemView(item));
+		return context.json(await itemView(item));
 	} catch (error) {
 		if (error instanceof ParentItemNotFoundError) return context.json({ error: 'Parent item not found' }, 404);
 		if (error instanceof ItemCycleError) return context.json({ error: error.message }, 400);
@@ -323,7 +339,7 @@ async function lifecycle(
 	try {
 		const item = await run(projectId, itemNumber, apiActor(context));
 		if (!item) return context.json({ error: 'Item not found' }, 404);
-		return context.json(itemView(item as Parameters<typeof itemView>[0]));
+		return context.json(await itemView(item as Parameters<typeof itemView>[0]));
 	} catch (error) {
 		console.error('Lifecycle update failed:', error);
 		return context.json({ error: 'Database error' }, 500);

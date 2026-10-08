@@ -45,7 +45,7 @@ function toSummary(row: ItemNote): ItemNoteSummary {
 }
 
 /** Trim and bounds-check entry text. The only place note text is validated. */
-function validateNote(note: string): string {
+export function validateNoteText(note: string): string {
 	const text = note.trim();
 	if (text.length === 0) throw new NoteValidationError('Note text must be a non-empty string');
 	if (text.length > MAX_NOTE_LENGTH) {
@@ -85,7 +85,7 @@ export async function addItemNote(
 	note: string,
 	actor?: Actor
 ): Promise<ItemNoteSummary | null> {
-	const text = validateNote(note);
+	const text = validateNoteText(note);
 	const row = await transaction(async (client) => {
 		const inserted = await client.query<ItemNote>(
 			`INSERT INTO item_notes (item_id, note, actor)

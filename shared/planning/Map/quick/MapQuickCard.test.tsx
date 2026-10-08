@@ -82,9 +82,9 @@ describe('MapQuickCard', () => {
 		expect(container.textContent).toContain('Loading...');
 		expect(source).toHaveBeenCalledWith(item.key);
 
-		await act(async () => resolve([{ id: '2', note: 'Wired the hit index into the surface.', actor: { type: 'agent', client: { name: 'Claude Code' }, deviceName: 'laptop' }, createdAt: new Date().toISOString() }]));
+		await act(async () => resolve([{ id: '2', note: 'Wired the hit index into the surface.', actor: { type: 'agent', person: { slug: 'kev', name: 'Kevin', avatarUrl: null }, client: { name: 'Claude Code' }, deviceName: 'laptop' }, createdAt: new Date().toISOString() }]));
 		await findByText('Wired the hit index into the surface.');
-		expect(container.textContent).toContain('Claude Code on laptop');
+		expect(container.textContent).toContain('Kevin via Claude Code on laptop');
 	});
 
 	it('says so when the log is empty or could not be read', async () => {

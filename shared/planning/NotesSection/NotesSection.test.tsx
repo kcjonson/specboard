@@ -24,7 +24,7 @@ vi.mock('@specboard/fetch', async (importOriginal) => ({
 interface NotePayload {
 	id: string;
 	note: string;
-	actor: { type: string; deviceName?: string; client?: { name: string } } | null;
+	actor: { type: string; person?: { slug: string; name: string; avatarUrl: string | null } | null; deviceName?: string; client?: { name: string } } | null;
 	createdAt: string;
 }
 
@@ -78,12 +78,30 @@ describe('NotesSection', () => {
 		expect(texts).toEqual(['Newest', 'Older', 'Oldest']);
 	});
 
-	it('labels the actor when one is recorded', async () => {
+	it('names the person and the agent they worked through, after their avatar', async () => {
 		const { findByText } = renderSection([
-			note({ actor: { type: 'agent', deviceName: 'studio', client: { name: 'Claude Code' } } }),
+			note({ actor: { type: 'agent', person: { slug: 'kev', name: 'Kevin Jonson', avatarUrl: null }, deviceName: 'studio', client: { name: 'Claude Code' } } }),
 		]);
 
-		expect(await findByText('Claude Code on studio')).toBeTruthy();
+		const label = await findByText('Kevin Jonson via Claude Code on studio');
+		expect(label.textContent).toBe('KJKevin Jonson via Claude Code on studio');
+	});
+
+	it('names a person who did it themselves', async () => {
+		const { findByText } = renderSection([
+			note({ id: 'n2', actor: { type: 'user', person: { slug: 'kev', name: 'Kevin Jonson', avatarUrl: null } } }),
+		]);
+
+		expect(await findByText('Kevin Jonson')).toBeTruthy();
+	});
+
+	it('shows a deleted account as such, with no avatar', async () => {
+		const { findByText } = renderSection([
+			note({ id: 'n3', actor: { type: 'user', person: null } }),
+		]);
+
+		const label = await findByText('Deleted user');
+		expect(label.querySelector('[aria-hidden]')).toBeNull();
 	});
 
 	// Backfilled entries predate actor capture; they get no label rather than a

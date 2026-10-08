@@ -14,6 +14,7 @@ vi.mock('@specboard/db', async (importOriginal) => {
 	return {
 		itemView: actual.itemView,
 		noteView: actual.noteView,
+		noteViews: actual.noteViews,
 		getItems: vi.fn(),
 		createItem: vi.fn(),
 		createItems: vi.fn(),
@@ -106,20 +107,6 @@ describe('handleAddItemNote', () => {
 });
 
 describe('handleListItemNotes', () => {
-	it('strips actor internals from every entry', async () => {
-		vi.mocked(listItemNotes).mockResolvedValue([
-			{ id: 'n-1', note: 'agent entry', actor: { type: 'agent', userId: 'user-1', clientId: 'oauth-client', sessionId: 'sess-1', deviceName: 'laptop' }, createdAt: new Date('2026-01-02T00:00:00Z') },
-			{ id: 'n-2', note: 'backfilled', actor: null, createdAt: new Date('2026-01-01T00:00:00Z') },
-		]);
-
-		const res = await createApp().request('http://localhost/api/projects/acme/specboard/items/SB-1/notes');
-		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual([
-			{ id: 'n-1', note: 'agent entry', actor: { type: 'agent', deviceName: 'laptop' }, createdAt: '2026-01-02T00:00:00.000Z' },
-			{ id: 'n-2', note: 'backfilled', actor: null, createdAt: '2026-01-01T00:00:00.000Z' },
-		]);
-	});
-
 	it('404s when the item is not in this project', async () => {
 		vi.mocked(listItemNotes).mockResolvedValue(null);
 

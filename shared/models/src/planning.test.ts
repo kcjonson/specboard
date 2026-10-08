@@ -628,3 +628,42 @@ describe('ItemModel parent', () => {
 		expect(item.parentKey).toBe('SB-7');
 	});
 });
+
+describe('ItemModel assignee', () => {
+	const ERIN = { slug: 'erin', name: 'Erin Editor', avatarUrl: null };
+
+	function item(): ItemModel {
+		return new ItemModel({ key: 'SB-42', projectRef: 'acme/demo', title: 'Login form', assignee: ERIN });
+	}
+
+	it('assigns by slug through the item PUT, under assigneeSlug, and applies the item it gets back', async () => {
+		const model = item();
+		const alice = { slug: 'acme', name: 'Alice Ames', avatarUrl: null };
+		vi.mocked(fetchClient.put).mockResolvedValue({ key: 'SB-42', assignee: alice });
+
+		await model.assign('acme');
+
+		expect(fetchClient.put).toHaveBeenCalledWith('/api/projects/acme/demo/items/SB-42', { assigneeSlug: 'acme' });
+		expect(model.assignee).toEqual(alice);
+	});
+
+	it('unassigns by sending null', async () => {
+		const model = item();
+		vi.mocked(fetchClient.put).mockResolvedValue({ key: 'SB-42', assignee: null });
+
+		await model.assign(null);
+
+		expect(fetchClient.put).toHaveBeenCalledWith('/api/projects/acme/demo/items/SB-42', { assigneeSlug: null });
+		expect(model.assignee).toBeNull();
+	});
+
+	it('leaves the assignee as the server last had it when the PUT is refused', async () => {
+		const model = item();
+		vi.mocked(fetchClient.put).mockRejectedValue(new Error('HTTP 400: Bad Request'));
+
+		await expect(model.assign('sam')).rejects.toThrow('HTTP 400: Bad Request');
+
+		expect(model.assignee).toEqual(ERIN);
+		expect(model.$meta.error?.message).toBe('HTTP 400: Bad Request');
+	});
+});

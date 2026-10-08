@@ -10,10 +10,7 @@ import type { PGlite } from '@electric-sql/pglite';
 
 const state = vi.hoisted(() => ({ db: undefined as PGlite | undefined }));
 
-vi.mock('../index.ts', () => ({
-	query: (text: string, params?: unknown[]) => state.db!.query(text, params).then((r) => ({ ...r, rowCount: r.affectedRows })),
-	transaction: vi.fn(),
-}));
+vi.mock('pg', async () => (await import('../test-support/pglite-pg.ts')).pgliteAsPg(() => state.db!));
 
 import { migratedDb } from '../test-support/migrated-db.ts';
 import {
@@ -58,6 +55,8 @@ async function addMember(db: PGlite, projectId: string, userId: string, role: 'e
 beforeAll(async () => {
 	const db = await migratedDb();
 	state.db = db;
+	// The pool reads its URL before it is built; pg is PGlite underneath, so any value does.
+	vi.stubEnv('DATABASE_URL', 'postgres://pglite/test');
 	alice = await insertUser(db, 'alice', 'acme', ['Alice', 'Ames']);
 	bob = await insertUser(db, 'bob', 'globex');
 	erin = await insertUser(db, 'erin', 'erin', ['Erin', 'Editor']);
@@ -87,6 +86,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+	vi.unstubAllEnvs();
 	await state.db?.close();
 });
 

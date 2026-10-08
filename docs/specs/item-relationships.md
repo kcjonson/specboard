@@ -24,9 +24,15 @@ Decided once, used everywhere:
    from a client payload. Request-path construction happens in exactly two
    places — the API's `requireProjectAccess`-gated handlers and the MCP server's
    per-call actor — plus the system actors the services stamp on auto-clears and
-   parent-rollup transitions, and the user actor the seed script writes. Browser-facing responses strip actor
-   internals (user id, OAuth client id, MCP session id) down to what the UI
-   renders: type, device name, client info.
+   parent-rollup transitions, and the user actor the seed script writes. Every
+   response, REST and MCP alike, goes through the views in `shared/db/src/views.ts`,
+   which strip actor internals (user id, OAuth client id, MCP session id) down to
+   what the UI renders: type, device name, client info, and for a user or agent
+   actor the `person` it acted as, `{ slug, name, avatarUrl }`. People are looked
+   up once per response (`getPeople`, one query over every actor it carries), never
+   per actor. The actor still stores only the user id, so a name change shows on
+   every past event; once the account is deleted the id names nobody, and `person`
+   is `null` ("Deleted user" in the UI). A system actor has no `person`.
 
 No generic `item_links` table: origin is 1-per-item and immutable (a column, not
 a row), and blockers carry lifecycle (`cleared_at`/`cleared_by`) that would be
@@ -322,9 +328,35 @@ owns. Two Claude Code windows on one machine are two sessions.
   ([ai-development-overview.md](ai-development-overview.md#data)).
 - **Staleness is derived at read time** (`now() - last_seen_at`), never stored.
   The UI dims a worker after 15 minutes without an observed write.
-- `assignee` is untouched and stays a human user FK. `items.branch_name`
+- `assignee` stays a human user FK, apart from worker presence: who is meant to do
+  the item, not who is touching it (see Assignee below). `items.branch_name`
   remains the item-level branch; `item_workers.branch` is the per-session
   snapshot (two sessions in two worktrees can work one item).
+
+## Assignee (`items.assignee`)
+
+The person an item is assigned to: the project's owner or a current member, or nobody.
+The column is a user FK (`ON DELETE SET NULL`), and like actors it never leaves the
+server as an id: item reads join it to `users` and answer `assignee: { slug, name,
+avatarUrl }` or `null`.
+
+- **Written by slug.** REST takes `assigneeSlug` on the item PUT, MCP `update_item`
+  takes `assignee` (null, or `""` on MCP, unassigns). The REST field isn't `assignee`
+  because the web client restates the whole item on every save, and its `assignee` is
+  the person view it was sent; the model's `assign()` is the one writer. Both need
+  editor, like every other item write.
+- **Checked inside the write.** The slug is resolved to the owner or a member in the
+  write's own transaction, and a member's `project_members` row is key-share-locked
+  until it commits. Removing a member deletes that row first, so the two serialize: a
+  removal that comes second unassigns what the write set, and a write that comes second
+  finds no member and is refused (400 on REST, an error result on MCP). Anyone else, a
+  member of another project included, is refused the same way. MCP `update_item` also
+  checks the slug (`isAssignable`) with its other arguments before it writes anything, so
+  a refused call leaves no parent move or field write behind.
+- **Leaving takes the assignment with it.** Removing a member, or a member leaving,
+  unassigns their open (not done) items in that project, in the transaction that
+  deletes the membership. Done items keep their assignee as a record of who did the
+  work, and the person's items in other projects are untouched.
 
 ## Activity log (`item_notes`, migration 027)
 

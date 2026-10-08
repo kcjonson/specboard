@@ -1,6 +1,7 @@
 /**
  * ItemView's header: the title field (a textarea so long titles wrap, but the
- * value stays one line), the Parent field, and the dates.
+ * value stays one line), the Parent field, the assignee and its picker, who created
+ * and is working on the item, and the dates.
  *
  * @vitest-environment jsdom
  */
@@ -273,6 +274,7 @@ describe('ItemView for someone who can\'t edit', () => {
 		expect(container.textContent).toContain('StatusIn Progress');
 		expect(container.textContent).toContain('Sub-StatusPR Open');
 		expect(queryByText('Change')).toBeNull();
+		expect(queryByText('Assign')).toBeNull();
 		expect(queryByText('Delete Task')).toBeNull();
 	});
 
@@ -380,5 +382,112 @@ describe('ItemView delete', () => {
 
 		expect((await findByRole('alert')).textContent).toBe('You have view access to this project');
 		expect(getByRole('dialog')).toBeTruthy();
+	});
+});
+
+const ERIN = { slug: 'erin', name: 'Erin Editor', avatarUrl: null };
+const MEMBERS = [
+	{ slug: 'acme', name: 'Alice Ames', email: 'alice@example.com', avatarUrl: null, role: 'owner', effectiveRole: 'owner' },
+	{ slug: 'erin', name: 'Erin Editor', email: 'erin@example.com', avatarUrl: null, role: 'editor', effectiveRole: 'editor' },
+	{ slug: 'vera', name: 'Vera Viewer', email: 'vera@example.com', avatarUrl: null, role: 'viewer', effectiveRole: 'viewer' },
+];
+
+function assigneeField(container: Element): Element {
+	const label = [...container.querySelectorAll('span')].find((span) => span.textContent === 'Assignee');
+	if (!label?.parentElement) throw new Error('No Assignee field in the rendered ItemView');
+	return label.parentElement;
+}
+
+// jsdom parses <dialog> but implements none of its methods, and the assignee picker is
+// a modal. Restored once, at the end, since Dialog closes itself on unmount, which
+// testing-library's own afterEach runs after any per-test restore would.
+const nativeShowModal = HTMLDialogElement.prototype.showModal;
+const nativeClose = HTMLDialogElement.prototype.close;
+
+afterAll(() => {
+	HTMLDialogElement.prototype.showModal = nativeShowModal;
+	HTMLDialogElement.prototype.close = nativeClose;
+});
+
+describe('ItemView assignee', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		HTMLDialogElement.prototype.showModal = function showModal(): void { this.open = true; };
+		HTMLDialogElement.prototype.close = function close(): void { this.open = false; };
+		vi.mocked(fetchClient.get).mockImplementation(async (url: string) => {
+			if (url === '/api/projects/acme/specboard/members?pushAccess=false') return MEMBERS;
+			throw new Error(`Unexpected GET ${url} in an ItemView test`);
+		});
+	});
+
+	it('shows the assignee by avatar and name, or Unassigned', () => {
+		const assigned = render(<ItemView canEdit item={makeItem('Mine', { assignee: ERIN })} />);
+		expect(assigneeField(assigned.container).textContent).toBe('AssigneeEEErin EditorChange');
+		assigned.unmount();
+
+		const open = render(<ItemView canEdit item={makeItem('Nobody\'s')} />);
+		expect(assigneeField(open.container).textContent).toBe('AssigneeUnassignedAssign');
+	});
+
+	it('picks from the owner and members, by slug', async () => {
+		const item = makeItem('Pick');
+		const assign = vi.spyOn(item, 'assign').mockResolvedValue(undefined);
+		const { getByText, findByText, queryByText } = render(<ItemView canEdit item={item} />);
+
+		fireEvent.click(getByText('Assign'));
+		const row = (await findByText('Erin Editor')).closest('button')!;
+
+		expect(row.textContent).toBe('EEErin EditorEditor');
+		expect(getByText('Alice Ames').closest('button')!.textContent).toContain('Owner');
+		expect(getByText('Vera Viewer')).toBeTruthy();
+		expect(queryByText('Unassign')).toBeNull();
+		fireEvent.click(row);
+
+		expect(assign).toHaveBeenCalledWith('erin');
+		await waitFor(() => expect(queryByText('Vera Viewer')).toBeNull());
+	});
+
+	it('unassigns explicitly, offered only when someone is assigned', async () => {
+		const item = makeItem('Mine', { assignee: ERIN });
+		const assign = vi.spyOn(item, 'assign').mockResolvedValue(undefined);
+		const { getByLabelText, findByText } = render(<ItemView canEdit item={item} />);
+
+		fireEvent.click(getByLabelText('Change assignee'));
+		fireEvent.click(await findByText('Unassign'));
+
+		expect(assign).toHaveBeenCalledWith(null);
+	});
+
+	it('shows the server\'s refusal', async () => {
+		const item = makeItem('Pick');
+		vi.spyOn(item, 'assign').mockRejectedValue(
+			new FetchError('HTTP 400: Bad Request', 400, undefined, { error: 'vera is not the owner or a member of this project' })
+		);
+		const { getByText, findByText, findByRole } = render(<ItemView canEdit item={item} />);
+
+		fireEvent.click(getByText('Assign'));
+		fireEvent.click(await findByText('Vera Viewer'));
+
+		expect((await findByRole('alert')).textContent).toBe('vera is not the owner or a member of this project');
+	});
+
+	it('is read-only for someone who can\'t edit', () => {
+		const { container } = render(<ItemView canEdit={false} item={makeItem('Theirs', { assignee: ERIN })} />);
+
+		expect(assigneeField(container).textContent).toBe('AssigneeEEErin Editor');
+	});
+});
+
+describe('ItemView people', () => {
+	it('names who created it and who is working on it', () => {
+		const kevin = { slug: 'kev', name: 'Kevin Jonson', avatarUrl: null };
+		const item = makeItem('Worked', {
+			origin: { actor: { type: 'user', person: kevin } },
+			workers: [{ id: 'w1', branch: 'feat', startedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), actor: { type: 'agent', person: kevin, client: { name: 'claude-code' }, deviceName: 'laptop' } }],
+		});
+		const { container } = render(<ItemView canEdit item={item} />);
+
+		expect(container.textContent).toContain('Created byKJKevin Jonson');
+		expect(container.textContent).toContain('Working nowKJKevin Jonson via claude-code on laptop · ');
 	});
 });

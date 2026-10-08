@@ -20,6 +20,11 @@ import {
 	blockItem as blockItemService,
 	unblockItem as unblockItemService,
 	addItemNote,
+	isAssignable,
+	validateNoteText,
+	validateSpecInput,
+	validateChecklistEntries,
+	validateChecklistStatus,
 	verifyItemOwnership,
 	setSpecs as setSpecsService,
 	setBlockers as setBlockersService,
@@ -37,6 +42,7 @@ import {
 	ParentItemNotFoundError,
 	DiscoveredFromNotFoundError,
 	ItemCycleError,
+	AssigneeNotMemberError,
 	type ResolvedProject,
 	type ItemType,
 	type ItemStatus,
@@ -217,6 +223,45 @@ export async function createItems(
 	return ok({ created: created.map((t) => ({ key: t.key, title: t.title, status: t.status })), count: created.length });
 }
 
+/**
+ * Everything update_item can refuse without writing, checked before it writes anything,
+ * so a refused call (a parent move alongside it included) changes nothing: spec links,
+ * the note, the checklist and its statuses, and the assignee. What only the write can
+ * know (a blocker item that doesn't exist, a stale checklist entry id, a membership
+ * removed in the meantime) is still refused by the write itself.
+ */
+async function checkArguments(
+	project: ResolvedProject,
+	args: Record<string, unknown>,
+	note: string,
+	fields: UpdateItemInput,
+): Promise<ToolResult | undefined> {
+	const statuses = args.checklist_status;
+	if (statuses != null && (typeof statuses !== 'object' || Array.isArray(statuses))) {
+		return err('checklist_status must be an object mapping entry id to status, e.g. { "<id>": "done" }');
+	}
+	// A non-array `checklist` would otherwise fall through as a no-op and report
+	// success while dropping the write, the same trap checklist_status guards above.
+	if (args.checklist !== undefined && !Array.isArray(args.checklist)) {
+		return err('checklist must be an array of entries; use checklist_status to tick individual entries off');
+	}
+	try {
+		if (Array.isArray(args.specs)) {
+			for (const spec of args.specs as Array<{ path?: unknown; type?: unknown } | null>) validateSpecInput(spec?.path, spec?.type);
+		}
+		if (note) validateNoteText(note);
+		if (Array.isArray(args.checklist)) validateChecklistEntries(args.checklist as ChecklistEntryInput[]);
+		if (statuses != null) for (const value of Object.values(statuses as Record<string, unknown>)) validateChecklistStatus(value);
+	} catch (error) {
+		if (error instanceof SpecValidationError || error instanceof NoteValidationError || error instanceof ChecklistValidationError) return err(error.message);
+		throw error;
+	}
+	if (typeof fields.assignee === 'string' && !(await isAssignable(project.id, fields.assignee))) {
+		return err(new AssigneeNotMemberError(fields.assignee).message);
+	}
+	return undefined;
+}
+
 export async function updateItem(
 	project: ResolvedProject,
 	args: Record<string, unknown> | undefined,
@@ -244,14 +289,18 @@ export async function updateItem(
 		}
 	};
 
+	// Blocker entries are parsed up front with the other arguments (checkArguments, below),
+	// so a malformed one refuses the call before anything is written.
+	const parsedBlockers = Array.isArray(args.blockers) ? parseBlockers(args.blockers, project) : undefined;
+	if (parsedBlockers && !Array.isArray(parsedBlockers)) return parsedBlockers;
+	const blockerInputs: BlockerInput[] | undefined = parsedBlockers;
+
 	// The blockers full-replace applies on EVERY update path — the schema promises
 	// it unconditionally, so the status shortcuts and the move path may not drop it.
 	const applyBlockers = async (): Promise<{ blockers?: BlockerView[] } | ToolResult> => {
-		if (!Array.isArray(args.blockers)) return {};
-		const inputs = parseBlockers(args.blockers, project);
-		if (!Array.isArray(inputs)) return inputs;
+		if (!blockerInputs) return {};
 		try {
-			const blockers = await setBlockersService(project.id, number, inputs, actor);
+			const blockers = await setBlockersService(project.id, number, blockerInputs, actor);
 			return blockers ? { blockers: blockers.map(blockerView) } : {};
 		} catch (error) {
 			if (error instanceof BlockerItemNotFoundError) return err('Blocker item not found');
@@ -272,14 +321,6 @@ export async function updateItem(
 	const applyChecklist = async (): Promise<{ checklist?: ChecklistEntry[] } | ToolResult> => {
 		const statuses = args.checklist_status;
 		const hasStatuses = statuses != null;
-		if (hasStatuses && (typeof statuses !== 'object' || Array.isArray(statuses))) {
-			return err('checklist_status must be an object mapping entry id to status, e.g. { "<id>": "done" }');
-		}
-		// A non-array `checklist` would otherwise fall through as a no-op and report
-		// success while dropping the write, the same trap checklist_status guards above.
-		if (args.checklist !== undefined && !Array.isArray(args.checklist)) {
-			return err('checklist must be an array of entries; use checklist_status to tick individual entries off');
-		}
 		if (!Array.isArray(args.checklist) && !hasStatuses) return {};
 
 		let checklist: ChecklistEntry[] | null = null;
@@ -331,18 +372,36 @@ export async function updateItem(
 	if (args.sub_status !== undefined) fields.subStatus = args.sub_status as SubStatus;
 	if (args.branch_name !== undefined) fields.branchName = args.branch_name as string;
 	if (args.pr_url !== undefined) fields.prUrl = args.pr_url as string;
+	if (args.assignee !== undefined) {
+		if (args.assignee !== null && typeof args.assignee !== 'string') return err('assignee must be a member\'s user slug, or null or "" to unassign');
+		fields.assignee = args.assignee || null;
+	}
 	// The service derives a status from sub_status only when none is given, and a
 	// derived 'done' clears blockers before the shortcut's own transition runs.
 	// Naming the shortcut status here keeps it authoritative.
 	if (fields.subStatus !== undefined && status !== undefined) fields.status = status;
 	const hasFields = Object.keys(fields).length > 0;
+	// What an assignment reads back as, on every path that can carry one.
+	const assigned = (item: { assignee: unknown }): { assignee?: unknown } => (fields.assignee !== undefined ? { assignee: item.assignee } : {});
+
+	// The field write the status shortcuts run before their transition, and the general
+	// update's whole write. An assignee who isn't on the project refuses the call; the
+	// membership is checked inside the write, where a concurrent removal can't slip past.
+	const writeFields = async (data: UpdateItemInput): Promise<Awaited<ReturnType<typeof updateItemService>> | ToolResult> => {
+		try {
+			return await updateItemService(project.id, number, data, actor);
+		} catch (error) {
+			if (error instanceof AssigneeNotMemberError) return err(error.message);
+			throw error;
+		}
+	};
 
 	// A block has to say why: either a log entry or the blocker rows themselves.
-	// Checked before anything is written so a rejected call leaves no half-applied
-	// move behind.
 	if (status === 'blocked' && !note && !(Array.isArray(args.blockers) && args.blockers.length > 0)) {
 		return err('note or a non-empty blockers array is required when blocking an item');
 	}
+	const argumentError = await checkArguments(project, args, note, fields);
+	if (argumentError) return argumentError;
 
 	// Reparent (move under another item) or promote to top-level (parent_key null).
 	// A prelude, not a path of its own: everything else sent alongside the move
@@ -378,7 +437,10 @@ export async function updateItem(
 	// Status-transition shortcuts. Worker episodes are recorded/ended inside the
 	// services (any transition out of in_progress ends them, whichever surface).
 	if (status === 'in_progress') {
-		if (hasFields) await updateItemService(project.id, number, fields, actor);
+		if (hasFields) {
+			const written = await writeFields(fields);
+			if (written && 'content' in written) return written;
+		}
 		const item = await startItemService(project.id, number, actor);
 		if (!item) return err('Item not found');
 		const noteError = await appendNote();
@@ -390,10 +452,13 @@ export async function updateItem(
 		if ('content' in checklist) return checklist;
 		const specs = await applySpecs();
 		if ('content' in specs) return specs;
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item started' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...assigned(item), ...blockers, ...checklist, ...specs }, message: 'Item started' });
 	}
 	if (status === 'done') {
-		if (hasFields) await updateItemService(project.id, number, fields, actor);
+		if (hasFields) {
+			const written = await writeFields(fields);
+			if (written && 'content' in written) return written;
+		}
 		const item = await completeItemService(project.id, number, actor);
 		if (!item) return err('Item not found');
 		const noteError = await appendNote();
@@ -406,12 +471,15 @@ export async function updateItem(
 		// blocking a done item is refused anyway — report that instead of a
 		// confusing validation error when the arg is present.
 		if (Array.isArray(args.blockers) && args.blockers.length > 0) {
-			return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist, ...specs }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
+			return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...assigned(item), ...checklist, ...specs }, warning: 'blockers ignored: a done item cannot be blocked', message: 'Item completed' });
 		}
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...checklist, ...specs }, message: 'Item completed' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...assigned(item), ...checklist, ...specs }, message: 'Item completed' });
 	}
 	if (status === 'blocked') {
-		if (hasFields) await updateItemService(project.id, number, fields, actor);
+		if (hasFields) {
+			const written = await writeFields(fields);
+			if (written && 'content' in written) return written;
+		}
 		const item = await blockItemService(project.id, number, actor);
 		if (!item) return err('Item not found');
 		const noteError = await appendNote();
@@ -422,7 +490,7 @@ export async function updateItem(
 		if ('content' in checklist) return checklist;
 		const specs = await applySpecs();
 		if ('content' in specs) return specs;
-		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...blockers, ...checklist, ...specs }, message: 'Item blocked' });
+		return ok({ updated: { key: item.key, status: item.status, ...movedParent, ...assigned(item), ...blockers, ...checklist, ...specs }, message: 'Item blocked' });
 	}
 	if (status === 'ready' && !hasFields && !note) {
 		const item = await unblockItemService(project.id, number, actor);
@@ -440,8 +508,9 @@ export async function updateItem(
 	const updateData: UpdateItemInput = { ...fields };
 	if (status !== undefined) updateData.status = status;
 
-	const item = await updateItemService(project.id, number, updateData, actor);
+	const item = await writeFields(updateData);
 	if (!item) return err('Item not found');
+	if ('content' in item) return item;
 	const noteError = await appendNote();
 	if (noteError) return noteError;
 
@@ -476,6 +545,7 @@ export async function updateItem(
 			subStatus: item.subStatus,
 			branchName: item.branchName,
 			prUrl: item.prUrl,
+			assignee: item.assignee,
 			...movedParent,
 			blocked: blockers ? blockers.length > 0 || item.status === 'blocked' : item.blocked,
 			...(specs ? { specs } : {}),

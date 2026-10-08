@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { Descendant } from 'slate';
 import { useModel, type ItemModel, type ItemStatus, type SubStatus, writeFailure } from '@specboard/models';
-import { Button, ConfirmDialog, DialogFooter, Select } from '@specboard/ui';
+import { Avatar, Button, ConfirmDialog, DialogFooter, Select } from '@specboard/ui';
 import { ItemPicker } from '@specboard/pages';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { ChildrenSection } from '../ChildrenSection/ChildrenSection';
@@ -10,7 +10,8 @@ import { ChecklistSection } from '../ChecklistSection/ChecklistSection';
 import { SpecsSection } from '../SpecsSection/SpecsSection';
 import { BlockersSection } from '../BlockersSection/BlockersSection';
 import { NotesSection } from '../NotesSection/NotesSection';
-import { actorLabel } from '../utils/actor';
+import { ActorName } from '../ActorName/ActorName';
+import { AssigneePicker } from '../AssigneePicker/AssigneePicker';
 import { TYPE_LABELS } from '../utils/itemType';
 import { RichTextEditor, serializeToText, deserializeFromText } from '../RichTextEditor';
 import { formatDateTime, formatTimeAgo } from '../utils/time';
@@ -119,6 +120,7 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 	const descriptionDirtyRef = useRef(false);
 
 	const [parentPickerOpen, setParentPickerOpen] = useState(false);
+	const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
 	// The last write of a header field the server refused, in its words. Each field
 	// reverts on its own; the message says why.
 	const [fieldError, setFieldError] = useState<string | null>(null);
@@ -261,6 +263,23 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 			});
 	};
 
+	const assigningRef = useRef(false);
+
+	// Assigning goes through assign(), not save(): the PUT takes a slug, and save()
+	// restates the person view the model holds. The server checks the person is on the
+	// project, so its refusal is the message shown.
+	const handleAssign = (slug: string | null): void => {
+		// One at a time, for the reason moves are: each applies the item it gets back.
+		if (assigningRef.current) return;
+		assigningRef.current = true;
+		setAssigneePickerOpen(false);
+		setFieldError(null);
+		item.assign(slug)
+			.catch((err: unknown) => reportFieldError(err, slug ? 'Could not change the assignee.' : 'Could not unassign the item.'))
+			.finally(() => {
+				assigningRef.current = false;
+			});
+	};
 
 	return (
 		<div class={styles.container}>
@@ -352,7 +371,24 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 					)}
 					<div class={styles.field}>
 						<span class={styles.fieldLabel}>Assignee</span>
-						<span class={styles.fieldValue}>{item.assignee || 'Unassigned'}</span>
+						<span class={styles.fieldValue}>
+							{item.assignee ? (
+								<span class={styles.person}>
+									<Avatar name={item.assignee.name} avatarUrl={item.assignee.avatarUrl} size="xs" tone="muted" decorative />
+									{item.assignee.name}
+								</span>
+							) : 'Unassigned'}
+						</span>
+						{canEdit && (
+							<button
+								type="button"
+								class={styles.inlineLink}
+								onClick={() => setAssigneePickerOpen(true)}
+								aria-label={item.assignee ? 'Change assignee' : 'Assign'}
+							>
+								{item.assignee ? 'Change' : 'Assign'}
+							</button>
+						)}
 					</div>
 					{/* A date shows only once it's set. Empty doesn't mean never: items
 					    that moved before the server stamped these have none. */}
@@ -384,7 +420,7 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 						<div class={styles.field}>
 							<span class={styles.fieldLabel}>Created by</span>
 							<span class={styles.fieldValue}>
-								{actorLabel(item.origin.actor)}
+								<ActorName actor={item.origin.actor} />
 								{item.origin.discoveredFrom && (
 									<>
 										{' · discovered from '}
@@ -409,7 +445,7 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 									return (
 										<span key={worker.id} class={stale ? styles.staleWorker : undefined}>
 											{i > 0 && ', '}
-											{actorLabel(worker.actor)} · {formatTimeAgo(worker.lastSeenAt)}
+											<ActorName actor={worker.actor} /> · {formatTimeAgo(worker.lastSeenAt)}
 											{stale && ' (stale)'}
 										</span>
 									);
@@ -433,6 +469,16 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 					clearOption={item.parentKey ? { label: 'No parent', onSelect: () => handleMove(null) } : undefined}
 					onSelect={handleMove}
 					onClose={() => setParentPickerOpen(false)}
+				/>
+			)}
+
+			{assigneePickerOpen && (
+				<AssigneePicker
+					projectRef={item.projectRef}
+					current={item.assignee?.slug ?? null}
+					onSelect={handleAssign}
+					onUnassign={item.assignee ? () => handleAssign(null) : undefined}
+					onClose={() => setAssigneePickerOpen(false)}
 				/>
 			)}
 

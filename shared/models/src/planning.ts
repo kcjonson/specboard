@@ -34,6 +34,13 @@ export type ItemType = 'epic' | 'task' | 'bug';
 /** Spec link type */
 export type SpecType = 'product' | 'technical';
 
+/** A person on a project (an actor's user, an item's assignee), addressed by user slug. */
+export interface Person {
+	slug: string | null;
+	name: string;
+	avatarUrl: string | null;
+}
+
 /**
  * Who or what performed an action (creation provenance, worker episodes).
  * This is the API's SANITIZED view, not the server's full Actor union: the
@@ -42,6 +49,8 @@ export type SpecType = 'product' | 'technical';
  */
 export interface Actor {
 	type: 'user' | 'agent' | 'system';
+	/** Who a user or agent acted as; null once their account is deleted. Absent on a system actor. */
+	person?: Person | null;
 	deviceName?: string;
 	client?: { name: string; version?: string };
 }
@@ -126,7 +135,8 @@ export class ItemModel extends SyncModel {
 	@prop accessor origin!: ItemOrigin | undefined;
 	/** Active agent sessions on this item (detail reads only). Read-only. */
 	@prop accessor workers!: ItemWorker[] | undefined;
-	@prop accessor assignee!: string | undefined;
+	/** The owner or member the item is assigned to. Read-only here: change it with assign(). */
+	@prop accessor assignee!: Person | null | undefined;
 	@prop accessor rank!: number;
 	@prop accessor prUrl!: string | undefined;
 	@prop accessor branchName!: string | undefined;
@@ -207,9 +217,24 @@ export class ItemModel extends SyncModel {
 	 * a move that would close a cycle, which is why nothing is checked here first.
 	 */
 	async move(parentKey: string | null): Promise<void> {
+		await this.write(() => fetchClient.post<Record<string, unknown>>(`${this.buildUrl()}/move`, { parentKey }));
+	}
+
+	/**
+	 * Assign the item to the owner or a member by user slug, or unassign with null.
+	 * save() can't do it: the model's `assignee` is the person the server sent, and the
+	 * PUT takes a slug under its own name, `assigneeSlug`, so a restated save never
+	 * touches the assignee.
+	 */
+	async assign(slug: string | null): Promise<void> {
+		await this.write(() => fetchClient.put<Record<string, unknown>>(this.buildUrl(), { assigneeSlug: slug }));
+	}
+
+	/** Run one write against the item's routes and apply the item it answers with. */
+	private async write(request: () => Promise<Record<string, unknown>>): Promise<void> {
 		this.setMeta({ working: true, error: null });
 		try {
-			const result = await fetchClient.post<Record<string, unknown>>(`${this.buildUrl()}/move`, { parentKey });
+			const result = await request();
 			this.set(result as Partial<ModelData<this>>);
 			this.setMeta({ working: false });
 		} catch (error) {

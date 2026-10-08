@@ -111,6 +111,12 @@
 	text-decoration: underline;
 }
 
+.person {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+}
+
 .staleWorker {
 	color: var(--color-text-muted);
 }

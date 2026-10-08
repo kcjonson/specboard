@@ -234,7 +234,7 @@ describe('getItems', () => {
 		expect(sql).toContain('SELECT DISTINCT item_id FROM item_blockers WHERE project_id = $1 AND cleared_at IS NULL');
 		expect(sql).toContain(`(i.status = 'blocked' OR ob.item_id IS NOT NULL) as blocked`);
 		expect(sql).toContain(`FILTER (WHERE c.status = 'blocked' OR cob.item_id IS NOT NULL) as blocked_count`);
-		expect(sql).toContain('GROUP BY i.id, p.key, parent.number, parent.title, ob.item_id');
+		expect(sql).toContain('GROUP BY i.id, p.key, parent.number, parent.title, u.id, ob.item_id');
 	});
 
 	it('excludeBlocked drops status-blocked and row-blocked items from lists', async () => {

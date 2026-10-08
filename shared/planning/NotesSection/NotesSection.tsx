@@ -3,7 +3,7 @@ import type { JSX } from 'preact';
 import { useModel, NotesCollection, writeFailure } from '@specboard/models';
 import { Button, Text } from '@specboard/ui';
 import { formatTimeAgo } from '../utils/time';
-import { actorLabel } from '../utils/actor';
+import { ActorName } from '../ActorName/ActorName';
 import styles from './NotesSection.module.css';
 
 export interface NotesSectionProps {
@@ -81,7 +81,7 @@ export function NotesSection({ projectRef, itemKey, canEdit }: NotesSectionProps
 				{notes.map((entry) => (
 					<div key={entry.id} class={styles.entry} role="listitem">
 						<div class={styles.meta}>
-							{entry.actor && <span class={styles.actor}>{actorLabel(entry.actor)}</span>}
+							{entry.actor && <ActorName actor={entry.actor} class={styles.actor} />}
 							<span class={styles.time}>{formatTimeAgo(entry.createdAt)}</span>
 						</div>
 						<p class={styles.body}>{entry.note}</p>

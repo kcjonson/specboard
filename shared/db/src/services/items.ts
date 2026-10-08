@@ -13,16 +13,25 @@ import type { Actor, Item, ItemType, ItemStatus, SubStatus, StatusSource, SpecTy
 import { bumpItem, clearBlockersForCompletion, listOpenBlockersByItems, lockProjectBlockers, type BlockerSummary } from './blockers.ts';
 import { listNotesByItems, type ItemNoteSummary } from './notes.ts';
 import { endWorkers, listActiveWorkersByItems, type WorkerSummary } from './workers.ts';
+import { USER_DISPLAY_NAME_SQL, type Person } from './users.ts';
 
 /**
  * An items row joined to its project's key and its parent's number and title, so
- * responses can carry both its own key and its parent's key and title.
+ * responses can carry both its own key and its parent's key and title, and to its
+ * assignee as a person. A create's RETURNING has no assignee columns: nothing is
+ * assigned at creation.
  */
 interface ItemRow extends Item {
 	project_key: string;
 	parent_number: number | null;
 	parent_title: string | null;
+	assignee_slug?: string | null;
+	assignee_name?: string | null;
+	assignee_avatar_url?: string | null;
 }
+
+/** The assignee columns of ItemRow, over the assignee's `users` row aliased `u`. */
+const ASSIGNEE_COLUMNS = `u.slug AS assignee_slug, ${USER_DISPLAY_NAME_SQL} AS assignee_name, u.avatar_url AS assignee_avatar_url`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response types (camelCase for API/MCP responses)
@@ -76,7 +85,8 @@ export interface ItemResponse {
 	blocked: boolean;
 	/** Immutable creation provenance; null predates tracking. */
 	origin: ItemOrigin | null;
-	assignee: string | null;
+	/** Who the item is assigned to: the project's owner or a member, or null. */
+	assignee: Person | null;
 	rank: number;
 	prUrl: string | null;
 	branchName: string | null;
@@ -138,6 +148,8 @@ export interface UpdateItemInput {
 	rank?: number;
 	prUrl?: string;
 	branchName?: string;
+	/** The assignee's user slug, or null to unassign. They must be the owner or a member. */
+	assignee?: string | null;
 }
 
 /**
@@ -178,6 +190,14 @@ export class DiscoveredFromNotFoundError extends Error {
 		super(`No item numbered ${itemNumber} in this project`);
 		this.name = 'DiscoveredFromNotFoundError';
 		this.itemNumber = itemNumber;
+	}
+}
+
+/** Raised when an assignee slug names nobody who is the project's owner or a member. */
+export class AssigneeNotMemberError extends Error {
+	constructor(slug: string) {
+		super(`${slug} is not the owner or a member of this project`);
+		this.name = 'AssigneeNotMemberError';
 	}
 }
 
@@ -258,7 +278,9 @@ function transformItem(item: ItemRow): Omit<ItemResponse, 'childStats' | 'blocke
 		status: item.status,
 		subStatus: item.sub_status,
 		origin: item.origin,
-		assignee: item.assignee,
+		assignee: item.assignee && item.assignee_name
+			? { slug: item.assignee_slug ?? null, name: item.assignee_name, avatarUrl: item.assignee_avatar_url ?? null }
+			: null,
 		rank: item.rank,
 		prUrl: item.pr_url,
 		branchName: item.branch_name,
@@ -358,7 +380,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 		WITH open_blocks AS (
 			SELECT DISTINCT item_id FROM item_blockers WHERE project_id = $1 AND cleared_at IS NULL
 		)
-		SELECT i.*, p.key as project_key, parent.number as parent_number, parent.title as parent_title,
+		SELECT i.*, p.key as project_key, parent.number as parent_number, parent.title as parent_title, ${ASSIGNEE_COLUMNS},
 			(i.status = 'blocked' OR ob.item_id IS NOT NULL) as blocked,
 			COUNT(*) OVER() as total_count,
 			COUNT(c.id) as child_count,
@@ -368,6 +390,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 		FROM items i
 		JOIN projects p ON p.id = i.project_id
 		LEFT JOIN items parent ON parent.id = i.parent_id
+		LEFT JOIN users u ON u.id = i.assignee
 		LEFT JOIN open_blocks ob ON ob.item_id = i.id
 		LEFT JOIN items c ON c.parent_id = i.id
 		LEFT JOIN open_blocks cob ON cob.item_id = c.id
@@ -418,7 +441,7 @@ export async function getItems(params: GetItemsParams): Promise<ItemList> {
 		}
 	}
 
-	sql += ` GROUP BY i.id, p.key, parent.number, parent.title, ob.item_id ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
+	sql += ` GROUP BY i.id, p.key, parent.number, parent.title, u.id, ob.item_id ORDER BY i.rank ASC, i.created_at ASC, i.id ASC`;
 	if (itemNumber === undefined) {
 		sql += ` LIMIT $${paramIndex}`;
 		queryParams.push(limit);
@@ -831,6 +854,43 @@ async function writeDone(
 }
 
 /**
+ * Whether this slug names the project's owner or a current member, for a caller that
+ * checks its arguments before writing anything. Advisory: updateItem checks again under
+ * the membership lock (lockAssignee), which is what a concurrent removal can't get past.
+ */
+export async function isAssignable(projectId: string, slug: string): Promise<boolean> {
+	const result = await query(
+		`SELECT 1 FROM users u WHERE u.slug = $2 AND (
+			u.id = (SELECT owner_id FROM projects WHERE id = $1)
+			OR EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = $1 AND m.user_id = u.id))`,
+		[projectId, slug]
+	);
+	return result.rows.length > 0;
+}
+
+/**
+ * The user id of the project's owner or the member with this slug, read inside the
+ * caller's transaction. A member's row stays key-share-locked until the write commits,
+ * so a removal running alongside waits for the assignment and then unassigns it, and an
+ * assignment that waited on a removal finds no row and is refused. The owner needs no
+ * lock: only deleting the project ends their place on it.
+ */
+async function lockAssignee(client: pg.PoolClient, projectId: string, slug: string): Promise<string> {
+	const owner = await client.query<{ id: string }>(
+		'SELECT p.owner_id AS id FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = $1 AND u.slug = $2',
+		[projectId, slug]
+	);
+	const found = owner.rows[0] ? owner : await client.query<{ id: string }>(
+		`SELECT m.user_id AS id FROM project_members m JOIN users u ON u.id = m.user_id
+		 WHERE m.project_id = $1 AND u.slug = $2 FOR KEY SHARE OF m`,
+		[projectId, slug]
+	);
+	const id = found.rows[0]?.id;
+	if (!id) throw new AssigneeNotMemberError(slug);
+	return id;
+}
+
+/**
  * Update an item. Setting subStatus auto-derives board status at key transitions;
  * a status the caller names wins over the derived one. `actor` is who the transition
  * log records, if the write moves the status or sub-status.
@@ -865,6 +925,10 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 	if (data.rank !== undefined) set('rank', data.rank);
 	if (data.prUrl !== undefined) set('pr_url', data.prUrl);
 	if (data.branchName !== undefined) set('branch_name', data.branchName);
+	// The slug becomes a user id inside the write's transaction (lockAssignee), so the
+	// parameter is reserved here and filled in there.
+	const assigneeIndex = values.length;
+	if (data.assignee !== undefined) set('assignee', null);
 
 	if (updates.length === 0) {
 		return getItemByNumber(projectId, itemNumber);
@@ -874,9 +938,10 @@ export async function updateItem(projectId: string, itemNumber: number, data: Up
 
 	// Reaching done (directly or via subStatus 'complete') auto-clears blockers —
 	// dependents' and the item's own — in the same transaction as the status write.
-	const updated = await transaction((client) => (status === 'done' ? writeDone : writeItem)(
-		client, projectId, itemNumber, updates.join(', '), values, actor
-	));
+	const updated = await transaction(async (client) => {
+		if (typeof data.assignee === 'string') values[assigneeIndex] = await lockAssignee(client, projectId, data.assignee);
+		return (status === 'done' ? writeDone : writeItem)(client, projectId, itemNumber, updates.join(', '), values, actor);
+	});
 	if (!updated) return null;
 	const { id, parent_id: parentId } = updated;
 	// The parent is touched only when the status actually moves, not on every restating PUT.
