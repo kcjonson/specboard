@@ -137,12 +137,15 @@ descendants") renders inline under the field row, in the server's own words.
 
 Reads as the person's avatar and name, or `Unassigned`. `Assign` (or `Change` once
 someone is) opens a modal picker over the project's owner and members, from the member
-list, each with avatar, name and role; it carries an `Unassign` row only when someone is
-assigned. Choosing goes through `ItemModel.assign()`, never a save, and a refusal renders
-under the field row like the parent's. Read-only, the field is text with no control.
+list, each with avatar, name and role ("Editor · needs GitHub" for a granted editor without
+GitHub, as on the settings page); the current assignee's row is tinted and checked, and the
+picker carries an `Unassign` row only when someone is assigned. Choosing goes through
+`ItemModel.assign()`, never a save; choosing the current assignee sends nothing, and a
+refusal (naming the person) renders under the field row like the parent's. Read-only, the
+field is text with no control. On the board, `M` assigns the selected card to you.
 
 Board cards show the assignee's avatar in the corner and the table's Assignee column the
-avatar and name. "Created by", "Working now" and activity-log entries show the person's
+avatar and name, child rows included. "Created by", "Working now" and activity-log entries show the person's
 avatar and name; an agent reads as "Kevin via claude-code on laptop", a deleted account as
 "Deleted user".
 

@@ -390,6 +390,7 @@ const MEMBERS = [
 	{ slug: 'acme', name: 'Alice Ames', email: 'alice@example.com', avatarUrl: null, role: 'owner', effectiveRole: 'owner' },
 	{ slug: 'erin', name: 'Erin Editor', email: 'erin@example.com', avatarUrl: null, role: 'editor', effectiveRole: 'editor' },
 	{ slug: 'vera', name: 'Vera Viewer', email: 'vera@example.com', avatarUrl: null, role: 'viewer', effectiveRole: 'viewer' },
+	{ slug: 'nick', name: 'Nick Nogit', email: 'nick@example.com', avatarUrl: null, role: 'editor', effectiveRole: 'viewer' },
 ];
 
 function assigneeField(container: Element): Element {
@@ -445,6 +446,32 @@ describe('ItemView assignee', () => {
 
 		expect(assign).toHaveBeenCalledWith('erin');
 		await waitFor(() => expect(queryByText('Vera Viewer')).toBeNull());
+	});
+
+	it('marks the current assignee, and sends nothing when they are picked again', async () => {
+		const item = makeItem('Mine', { assignee: ERIN });
+		const assign = vi.spyOn(item, 'assign').mockResolvedValue(undefined);
+		const { getByLabelText, findByText, queryByText } = render(<ItemView canEdit item={item} />);
+
+		fireEvent.click(getByLabelText('Change assignee'));
+		const row = (await findByText('Erin Editor', { selector: 'button span' })).closest('button')!;
+
+		expect(row.getAttribute('aria-current')).toBe('true');
+		expect(row.querySelector('svg')).not.toBeNull();
+		expect(queryByText('Vera Viewer')!.closest('button')!.querySelector('svg')).toBeNull();
+		fireEvent.click(row);
+
+		expect(assign).not.toHaveBeenCalled();
+		await waitFor(() => expect(queryByText('Vera Viewer')).toBeNull());
+	});
+
+	it('says when a granted editor can\'t edit yet, as the settings page does', async () => {
+		const { getByText, findByText } = render(<ItemView canEdit item={makeItem('Pick')} />);
+
+		fireEvent.click(getByText('Assign'));
+
+		expect((await findByText('Nick Nogit')).closest('button')!.textContent).toContain('Editor · needs GitHub');
+		expect(getByText('Erin Editor').closest('button')!.textContent).not.toContain('needs GitHub');
 	});
 
 	it('unassigns explicitly, offered only when someone is assigned', async () => {

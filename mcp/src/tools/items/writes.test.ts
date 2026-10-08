@@ -35,13 +35,21 @@ vi.mock('@specboard/db', async (importOriginal) => ({
 	ParentItemNotFoundError: class extends Error {},
 	DiscoveredFromNotFoundError: class extends Error {},
 	ItemCycleError: class extends Error {},
-	isAssignable: vi.fn(async () => true),
+	checkAssignable: vi.fn(async () => {}),
 }));
 
 /** The real exports the argument checks use. */
 function pick(db: typeof import('@specboard/db')): Partial<typeof import('@specboard/db')> {
-	const { blockerView, validateNoteText, validateSpecInput, validateChecklistEntries, validateChecklistStatus, SpecValidationError, NoteValidationError, ChecklistValidationError, AssigneeNotMemberError } = db;
-	return { blockerView, validateNoteText, validateSpecInput, validateChecklistEntries, validateChecklistStatus, SpecValidationError, NoteValidationError, ChecklistValidationError, AssigneeNotMemberError };
+	const {
+		blockerView, validateNoteText, validateSpecInput, validateChecklistEntries, validateChecklistStatus,
+		isValidStatus, isValidSubStatus, isValidTitle, isValidBranchName, MAX_TITLE_LENGTH, MAX_BRANCH_NAME_LENGTH,
+		SpecValidationError, NoteValidationError, ChecklistValidationError, AssigneeNotMemberError,
+	} = db;
+	return {
+		blockerView, validateNoteText, validateSpecInput, validateChecklistEntries, validateChecklistStatus,
+		isValidStatus, isValidSubStatus, isValidTitle, isValidBranchName, MAX_TITLE_LENGTH, MAX_BRANCH_NAME_LENGTH,
+		SpecValidationError, NoteValidationError, ChecklistValidationError, AssigneeNotMemberError,
+	};
 }
 
 import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, setChecklist, getChecklist, updateChecklistEntry, setSpecs } from '@specboard/db';

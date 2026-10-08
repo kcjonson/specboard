@@ -91,9 +91,10 @@ export class BoardBuilder {
 	}
 
 	/** An episode of a session on an item: it began `onMinutes` ago (an hour and a half by default) and last wrote `minutesAgo` ago. */
-	work(item: MapItemRow, sessionKey: string, deviceName: string, minutesAgo = 5, onMinutes = 90, client = 'claude-code'): void {
+	work(item: MapItemRow, sessionKey: string, deviceName: string, minutesAgo = 5, onMinutes = 90, client = 'claude-code', personName: string | null = null): void {
 		const episode: MapWorkerEpisode = {
 			sessionKey,
+			personName,
 			deviceName,
 			client,
 			branch: `feat/${item.key}`,

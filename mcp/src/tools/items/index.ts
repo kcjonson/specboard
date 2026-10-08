@@ -11,7 +11,7 @@
 
 import type { AgentActor, ProjectRole } from '@specboard/db';
 
-import { resolveToolProject, type ProjectBinding, type ToolResult } from '../project-ref.ts';
+import { resolveToolProject, toolFailure, type ProjectBinding, type ToolResult } from '../project-ref.ts';
 import { epicTools } from './definitions.ts';
 import { getItems } from './reads.ts';
 import { createItem, createItems, updateItem, deleteItem } from './writes.ts';
@@ -64,9 +64,6 @@ export async function handleEpicTool(
 				};
 		}
 	} catch (error) {
-		return {
-			content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
-			isError: true,
-		};
+		return toolFailure(name, error);
 	}
 }

@@ -85,6 +85,7 @@ export class ChildModel extends Model {
 	/** Derived server-side: status is 'blocked' OR an open blocker exists. */
 	@prop accessor blocked!: boolean | undefined;
 	@prop accessor description!: string | undefined;
+	@prop accessor assignee!: Person | null | undefined;
 }
 
 /**

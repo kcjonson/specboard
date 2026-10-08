@@ -13,6 +13,10 @@ vi.mock('@specboard/db', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@specboard/db')>();
 	return {
 		itemView: actual.itemView,
+		isValidTitle: actual.isValidTitle,
+		isValidType: actual.isValidType,
+		isValidStatus: actual.isValidStatus,
+		MAX_TITLE_LENGTH: actual.MAX_TITLE_LENGTH,
 		itemViews: actual.itemViews,
 		getItems: vi.fn(),
 		createItem: vi.fn(),

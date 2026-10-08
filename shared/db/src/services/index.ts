@@ -6,6 +6,7 @@
  */
 
 export * from './items.ts';
+export * from './item-fields.ts';
 export * from './specs.ts';
 export * from './notes.ts';
 export * from './projects.ts';

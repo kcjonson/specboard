@@ -417,7 +417,7 @@ describe('MapDataModel refresh', () => {
 		reads.push(deltaRead([working], b.rows.length));
 		await model.refresh();
 		await settle(worker);
-		const wrote = { ...working, timeAnchor: iso(b.now + 20_000), workers: [{ sessionKey: 's1', deviceName: 'laptop', client: 'claude-code', branch: null, startedAt: iso(b.now), lastWriteAt: iso(b.now + 20_000) }] };
+		const wrote = { ...working, timeAnchor: iso(b.now + 20_000), workers: [{ sessionKey: 's1', personName: null, deviceName: 'laptop', client: 'claude-code', branch: null, startedAt: iso(b.now), lastWriteAt: iso(b.now + 20_000) }] };
 		reads.push(deltaRead([wrote], b.rows.length));
 		clock.now += 2000;
 

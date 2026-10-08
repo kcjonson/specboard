@@ -20,7 +20,13 @@ import {
 	blockItem as blockItemService,
 	unblockItem as unblockItemService,
 	addItemNote,
-	isAssignable,
+	checkAssignable,
+	isValidStatus,
+	isValidSubStatus,
+	isValidTitle,
+	isValidBranchName,
+	MAX_TITLE_LENGTH,
+	MAX_BRANCH_NAME_LENGTH,
 	validateNoteText,
 	validateSpecInput,
 	validateChecklistEntries,
@@ -114,8 +120,9 @@ export async function createItem(
 	args: Record<string, unknown> | undefined,
 	actor: AgentActor,
 ): Promise<ToolResult> {
-	const title = args?.title as string;
+	const title = args?.title;
 	if (!title) return err('title is required');
+	if (typeof title !== 'string' || !isValidTitle(title)) return err(`title must be a string of 1 to ${MAX_TITLE_LENGTH} characters`);
 
 	const type = ((args?.type as string) || 'epic') as ItemType;
 	const validTypes: ItemType[] = ['epic', 'task', 'bug'];
@@ -196,7 +203,10 @@ export async function createItems(
 	actor: AgentActor,
 ): Promise<ToolResult> {
 	const items = args?.items as Array<{ title: string; details?: string }>;
-	if (args?.parent_key == null || !items || items.length === 0) return err('parent_key and items array are required');
+	if (args?.parent_key == null || !Array.isArray(items) || items.length === 0) return err('parent_key and items array are required');
+	if (items.some((it) => typeof it?.title !== 'string' || !isValidTitle(it.title))) {
+		return err(`each item needs a title of 1 to ${MAX_TITLE_LENGTH} characters`);
+	}
 
 	const parentNumber = itemNumberInProject(args.parent_key, project.key);
 	if (parentNumber === null) return badKey(args.parent_key, project, 'parent_key');
@@ -225,8 +235,9 @@ export async function createItems(
 
 /**
  * Everything update_item can refuse without writing, checked before it writes anything,
- * so a refused call (a parent move alongside it included) changes nothing: spec links,
- * the note, the checklist and its statuses, and the assignee. What only the write can
+ * so a refused call (a parent move alongside it included) changes nothing: status and
+ * sub_status, the text fields, spec links, the note, the checklist and its statuses, and
+ * the assignee. What only the write can
  * know (a blocker item that doesn't exist, a stale checklist entry id, a membership
  * removed in the meantime) is still refused by the write itself.
  */
@@ -236,6 +247,21 @@ async function checkArguments(
 	note: string,
 	fields: UpdateItemInput,
 ): Promise<ToolResult | undefined> {
+	if (args.status !== undefined && !isValidStatus(args.status)) {
+		return err('status must be one of: ready, in_progress, blocked, in_review, done');
+	}
+	if (args.sub_status !== undefined && !isValidSubStatus(args.sub_status)) {
+		return err('sub_status must be one of: not_started, scoping, in_development, paused, needs_input, pr_open, complete');
+	}
+	if (args.title !== undefined && (typeof args.title !== 'string' || !isValidTitle(args.title))) {
+		return err(`title must be a string of 1 to ${MAX_TITLE_LENGTH} characters`);
+	}
+	if (args.branch_name !== undefined && (typeof args.branch_name !== 'string' || !isValidBranchName(args.branch_name))) {
+		return err(`branch_name must be a string of at most ${MAX_BRANCH_NAME_LENGTH} characters`);
+	}
+	for (const field of ['description', 'pr_url'] as const) {
+		if (args[field] !== undefined && typeof args[field] !== 'string') return err(`${field} must be a string`);
+	}
 	const statuses = args.checklist_status;
 	if (statuses != null && (typeof statuses !== 'object' || Array.isArray(statuses))) {
 		return err('checklist_status must be an object mapping entry id to status, e.g. { "<id>": "done" }');
@@ -252,12 +278,13 @@ async function checkArguments(
 		if (note) validateNoteText(note);
 		if (Array.isArray(args.checklist)) validateChecklistEntries(args.checklist as ChecklistEntryInput[]);
 		if (statuses != null) for (const value of Object.values(statuses as Record<string, unknown>)) validateChecklistStatus(value);
+		if (typeof fields.assignee === 'string') await checkAssignable(project.id, fields.assignee);
 	} catch (error) {
-		if (error instanceof SpecValidationError || error instanceof NoteValidationError || error instanceof ChecklistValidationError) return err(error.message);
+		if (
+			error instanceof SpecValidationError || error instanceof NoteValidationError
+			|| error instanceof ChecklistValidationError || error instanceof AssigneeNotMemberError
+		) return err(error.message);
 		throw error;
-	}
-	if (typeof fields.assignee === 'string' && !(await isAssignable(project.id, fields.assignee))) {
-		return err(new AssigneeNotMemberError(fields.assignee).message);
 	}
 	return undefined;
 }

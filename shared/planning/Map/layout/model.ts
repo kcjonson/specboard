@@ -10,7 +10,7 @@ import {
 	UP_NEXT_COUNT,
 } from './constants';
 import { stronglyConnected, topologicalOrder, type Edge } from './graph';
-import type { MapPhase } from './types';
+import { computerName, type MapPhase } from './types';
 
 /**
  * The read, resolved into the tree, phases, collapse, chains, and sessions the
@@ -414,7 +414,7 @@ function sessionsOf(items: readonly ModelItem[], now: number): { sessions: Sessi
 			if (!session) {
 				session = {
 					key: episode.sessionKey,
-					device: episode.deviceName ?? '',
+					device: computerName(episode.personName, episode.deviceName),
 					client: episode.client,
 					lastWriteAt,
 					number: 0,

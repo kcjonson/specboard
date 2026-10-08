@@ -32,9 +32,13 @@ vi.mock('@specboard/fetch', async (importOriginal) => {
 });
 
 // Captured so a test can open items the way a card click does.
-const board: { props?: { onOpenItem: (item: { key: string }) => void } } = {};
+interface BoardStubProps {
+	onOpenItem: (item: { key: string }) => void;
+	onAssignToMe: (item: unknown) => void;
+}
+const board: { props?: BoardStubProps } = {};
 vi.mock('../Board/Board', () => ({
-	Board: (props: { onOpenItem: (item: { key: string }) => void }) => {
+	Board: (props: BoardStubProps) => {
 		board.props = props;
 		return <div data-testid="board" />;
 	},
@@ -395,5 +399,52 @@ describe('Planning for someone who can\'t edit', () => {
 		const alert = await findByRole('alert');
 		expect(alert.textContent).toContain('You have view access to this project');
 		expect(queryByTestId('new-item-dialog')).toBeNull();
+	});
+});
+
+describe('Planning assign to me (M)', () => {
+	beforeEach(() => {
+		getResponse.mockReset();
+		succeedEmpty();
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning?view=board');
+	});
+
+	function card(assignee: { slug: string } | null): { key: string; assignee: { slug: string } | null; assign: ReturnType<typeof vi.fn> } {
+		return { key: 'SPE-3', assignee, assign: vi.fn(async () => {}) };
+	}
+
+	it('assigns the card to the signed-in user by slug', async () => {
+		get.mockImplementation(async (url: string) => (url === '/api/users/me' ? { slug: 'kev' } : {}));
+		const { findByTestId } = renderPlanning();
+		await findByTestId('board');
+		const item = card(null);
+
+		board.props!.onAssignToMe(item);
+
+		await waitFor(() => expect(item.assign).toHaveBeenCalledWith('kev'));
+	});
+
+	it('sends nothing when the card is already theirs', async () => {
+		get.mockImplementation(async (url: string) => (url === '/api/users/me' ? { slug: 'kev' } : {}));
+		const { findByTestId } = renderPlanning();
+		await findByTestId('board');
+		const item = card({ slug: 'kev' });
+
+		board.props!.onAssignToMe(item);
+
+		await waitFor(() => expect(get).toHaveBeenCalledWith('/api/users/me'));
+		expect(item.assign).not.toHaveBeenCalled();
+	});
+
+	it('shows the server\'s refusal above the board', async () => {
+		get.mockImplementation(async (url: string) => (url === '/api/users/me' ? { slug: 'kev' } : {}));
+		const { findByTestId, findByRole } = renderPlanning();
+		await findByTestId('board');
+		const item = card(null);
+		item.assign.mockRejectedValue(new FetchError('HTTP 403: Forbidden', 403, undefined, { error: 'You have view access to this project' }));
+
+		board.props!.onAssignToMe(item);
+
+		expect((await findByRole('alert')).textContent).toContain('You have view access to this project');
 	});
 });

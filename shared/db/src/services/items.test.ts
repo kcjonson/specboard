@@ -516,6 +516,11 @@ describe('getItems', () => {
 });
 
 describe('moveItem', () => {
+	// A write answers with the item and its children; the children read finds none here.
+	beforeEach(() => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+	});
+
 	it('re-ranks via an inline subquery in the UPDATE', async () => {
 		mockQuery
 			.mockResolvedValueOnce({ rows: [{ id: 'item-1', parent_id: 'parent-2', previous_parent_id: 'parent-2' }], rowCount: 1 } as never)
@@ -554,7 +559,8 @@ describe('moveItem', () => {
 
 		await moveItem('proj-1', 1, null);
 
-		expect(mockQuery).toHaveBeenCalledTimes(2);
+		// The move, the item read, and its children.
+		expect(mockQuery).toHaveBeenCalledTimes(3);
 		const [sql, params] = mockQuery.mock.calls[0]!;
 		expect(sql).toContain('(SELECT COALESCE(MAX(rank), 0) + 1 FROM items WHERE project_id = $3 AND parent_id IS NULL)');
 		expect(params).toEqual([null, 1, 'proj-1']);
@@ -562,6 +568,11 @@ describe('moveItem', () => {
 });
 
 describe('reaching done', () => {
+	// A write answers with the item and its children; the children read finds none here.
+	beforeEach(() => {
+		mockQuery.mockResolvedValue({ rows: [], rowCount: 0 } as never);
+	});
+
 	const detailRow = {
 		...makeItem({ status: 'done' }),
 		blocked: false,

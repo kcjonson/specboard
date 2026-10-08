@@ -24,7 +24,7 @@ vi.mock('./auth-utils.ts', () => ({
 
 import { query, type User } from '@specboard/db';
 import { getCurrentUser } from './auth-utils.ts';
-import { handleCreateUser, handleUpdateUser } from './users.ts';
+import { handleCreateUser, handleGetUser, handleUpdateUser } from './users.ts';
 
 const redis = {} as Redis;
 const USER_ID = '6d229da7-5266-4027-a5d1-c5e229c104c9';
@@ -61,6 +61,7 @@ function pgError(code: string, constraint: string): Error {
 
 function createApp(): Hono {
 	const app = new Hono();
+	app.get('/api/users/:id', (c) => handleGetUser(c, redis));
 	app.put('/api/users/:id', (c) => handleUpdateUser(c, redis));
 	app.post('/api/users', (c) => handleCreateUser(c, redis));
 	return app;
@@ -86,6 +87,17 @@ function callsWith(fragment: string): Array<[string, unknown[]]> {
 beforeEach(() => {
 	vi.mocked(query).mockReset();
 	vi.mocked(getCurrentUser).mockReset().mockResolvedValue(user());
+});
+
+describe('GET /api/users/me', () => {
+	it('carries the avatar, so the header can show the picture', async () => {
+		vi.mocked(getCurrentUser).mockResolvedValue(user({ avatar_url: 'https://example.com/jane.png' }));
+
+		const res = await createApp().request('http://localhost/api/users/me');
+
+		expect(res.status).toBe(200);
+		expect(await res.json()).toMatchObject({ slug: 'jane-doe', avatar_url: 'https://example.com/jane.png' });
+	});
 });
 
 describe('PUT /api/users/:id user slug', () => {

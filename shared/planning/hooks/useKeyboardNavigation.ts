@@ -70,6 +70,8 @@ interface KeyboardNavigationOptions {
 	onCreateItem: () => void;
 	/** Callback to move item to a status */
 	onMoveItem: (item: ItemModel, status: Status) => void;
+	/** Assign the selected item to whoever is signed in (M). */
+	onAssignToMe: (item: ItemModel) => void;
 }
 
 /**
@@ -88,6 +90,7 @@ export function useKeyboardNavigation({
 	onOpenItem,
 	onCreateItem,
 	onMoveItem,
+	onAssignToMe,
 }: KeyboardNavigationOptions): void {
 	const locate = useCallback((key: string | undefined): Position => {
 		if (!key) return NOWHERE;
@@ -237,6 +240,14 @@ export function useKeyboardNavigation({
 					onCreateItem();
 					break;
 
+				case 'm':
+				case 'M':
+					if (item) {
+						e.preventDefault();
+						onAssignToMe(item);
+					}
+					break;
+
 				case '1':
 					if (item) {
 						e.preventDefault();
@@ -268,6 +279,7 @@ export function useKeyboardNavigation({
 			onSelectItem,
 			onOpenItem,
 			onCreateItem,
+			onAssignToMe,
 			moveToStatus,
 		]
 	);

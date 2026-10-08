@@ -14,12 +14,14 @@ import {
 	ProjectIdentifierTakenError,
 	ProjectHasRepositoryError,
 	ProjectOwnerWithoutSlugError,
+	isValidTitle,
+	MAX_TITLE_LENGTH,
 	type RepositoryConfigInput,
 } from '@specboard/db';
 import { isValidProjectSlug, isValidProjectKey } from '@specboard/core/identifiers';
 import { projectResponseToApi } from '../transform.ts';
 import { apiUserId, loadAuthorizedProject, requireAccess, requireResolvedProject } from '../project-access.ts';
-import { isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
+import { isValidDescription, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
 import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
 import { callerPushAccess } from '../services/push-access.ts';
 import { getGitHubConnection } from '../services/github-token.ts';

@@ -35,6 +35,8 @@ export type MapBlockerLink =
 export interface MapWorkerEpisode {
 	/** Opaque per-session key derived server-side; never the MCP session id. */
 	sessionKey: string;
+	/** The display name of the person whose agent this is; null once their account is deleted. */
+	personName: string | null;
 	deviceName: string | null;
 	client: string | null;
 	branch: string | null;

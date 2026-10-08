@@ -46,6 +46,19 @@ describe('agents at a moment', () => {
 		expect(sessions.find((s) => s.key === 'live-a')).toMatchObject({ node: 'session:live-a', computer: 'computer:laptop', client: 'claude-code' });
 	});
 
+	it('tells two people\'s computers of one name apart, by whose they are', () => {
+		const b = new BoardBuilder();
+		const one = b.add({ status: 'in_progress' });
+		const two = b.add({ status: 'in_progress' });
+		b.work(one, 'kevin-a', 'laptop', 2, 40, 'claude-code', 'Kevin Jonson');
+		b.work(two, 'vera-a', 'laptop', 3, 40, 'claude-code', 'Vera Viewer');
+		const layout = layoutMap({ rows: b.rows, now: b.now, collapse: {}, aspect: 2 });
+
+		const { computers } = agentsOf(layout, new Map(b.rows.map((row) => [row.key, row])), b.now);
+
+		expect(computers.map((c) => deviceLabel(c.device))).toEqual(['Kevin Jonson\'s laptop', 'Vera Viewer\'s laptop']);
+	});
+
 	it('carries what each item\'s episode says: branch, start, and last write', () => {
 		const { b, rows, layout, keys } = board();
 		const session = agentsOf(layout, rows, b.now).sessions.find((s) => s.key === 'live-a')!;

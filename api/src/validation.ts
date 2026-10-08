@@ -2,14 +2,8 @@
  * Validation utilities
  */
 
-import type { ItemStatus, ItemType } from '@specboard/db';
-
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-const VALID_STATUSES: ItemStatus[] = ['ready', 'in_progress', 'blocked', 'in_review', 'done'];
-const VALID_TYPES: ItemType[] = ['epic', 'task', 'bug'];
-
-export const MAX_TITLE_LENGTH = 255;
 export const MAX_DESCRIPTION_LENGTH = 2000;
 
 export function isValidUUID(id: string | undefined): id is string {
@@ -19,18 +13,6 @@ export function isValidUUID(id: string | undefined): id is string {
 export function isValidOptionalUUID(value: string | undefined): boolean {
 	if (value === undefined || value === '') return true;
 	return isValidUUID(value);
-}
-
-export function isValidStatus(status: unknown): status is ItemStatus {
-	return typeof status === 'string' && VALID_STATUSES.includes(status as ItemStatus);
-}
-
-export function isValidType(type: unknown): type is ItemType {
-	return typeof type === 'string' && VALID_TYPES.includes(type as ItemType);
-}
-
-export function isValidTitle(title: string): boolean {
-	return title.length > 0 && title.length <= MAX_TITLE_LENGTH;
 }
 
 export function isValidDescription(description: string): boolean {

@@ -26,6 +26,10 @@ import {
 	getItemKeysBySpecPath,
 	AssigneeNotMemberError,
 	ParentItemNotFoundError,
+	isValidTitle,
+	isValidType,
+	isValidStatus,
+	MAX_TITLE_LENGTH,
 	DiscoveredFromNotFoundError,
 	ItemCycleError,
 	type ItemStatus,
@@ -34,7 +38,6 @@ import {
 	type UserActor,
 } from '@specboard/db';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
-import { isValidTitle, isValidType, isValidStatus, MAX_TITLE_LENGTH } from '../validation.ts';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
 import { jsonObjectBody } from '../request-body.ts';
 

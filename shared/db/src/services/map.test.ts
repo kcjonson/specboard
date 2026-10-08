@@ -272,6 +272,8 @@ describe('worker episodes', () => {
 		const [stored] = await sql<{ started_at: Date; last_seen_at: Date }>('SELECT started_at, last_seen_at FROM item_workers WHERE item_id = $1', [await idOf(one)]);
 		expect(onOne).toEqual({
 			sessionKey: agentSessionKey(AGENT),
+			// The fixture's actor names no account in this database.
+			personName: null,
 			deviceName: 'personal-laptop',
 			client: 'claude-code',
 			branch: 'feat/MP-1-map',
@@ -279,6 +281,19 @@ describe('worker episodes', () => {
 			lastWriteAt: stored!.last_seen_at.toISOString(),
 		});
 		expect(onTwo!.sessionKey).toBe(onOne!.sessionKey);
+	});
+
+	it('names the person whose agent an episode is, and carries no id of theirs', async () => {
+		const n = await item();
+		await sql("UPDATE users SET first_name = 'Mia', last_name = 'Map' WHERE id = $1", [userId]);
+		const theirs: AgentActor = { ...AGENT, userId, sessionId: 'mcp-session-33333333' };
+		await startItem(projectId, n, theirs);
+		await recordWorkerActivity(projectId, n, theirs);
+
+		const episode = (await row(n)).workers.find((w) => w.sessionKey === agentSessionKey(theirs));
+
+		expect(episode).toMatchObject({ personName: 'Mia Map', deviceName: 'personal-laptop' });
+		expect(JSON.stringify(await row(n))).not.toContain(userId);
 	});
 
 	it('tells two sessions on one device apart', async () => {

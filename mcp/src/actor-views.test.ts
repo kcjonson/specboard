@@ -212,10 +212,16 @@ describe('assignee', () => {
 		expect((await readItem(key)).item).toMatchObject({ parentKey: null, assignee: ERIN });
 	});
 
-	it('refuses a call with a bad spec link or checklist before its move, too', async () => {
-		for (const bad of [{ specs: [{ path: 'no-slash.md', type: 'product' }] }, { checklist: [{ text: '' }] }, { checklist_status: { x: 'maybe' } }]) {
+	it('refuses a call with any bad argument before its move, too, in its own words', async () => {
+		const bads = [
+			{ specs: [{ path: 'no-slash.md', type: 'product' }] }, { checklist: [{ text: '' }] }, { checklist_status: { x: 'maybe' } },
+			{ status: 'bogus' }, { sub_status: 'nah' }, { title: 'x'.repeat(300) }, { branch_name: 'b'.repeat(256) },
+		];
+		for (const bad of bads) {
 			const result = await callTool('update_item', { project: 'acme/roadmap', item_key: key, parent_key: 'RM-1', ...bad }, editor, undefined);
-			expect(result.isError).toBe(true);
+			expect(result.isError, JSON.stringify(bad)).toBe(true);
+			// The tool's own words, never the database's.
+			expect(result.content[0]!.text).not.toMatch(/constraint|violates|varchar|character varying/i);
 		}
 		expect((await readItem(key)).item.parentKey).toBeNull();
 	});

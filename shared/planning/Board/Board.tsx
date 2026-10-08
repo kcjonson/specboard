@@ -36,6 +36,8 @@ interface ProjectBoardProps extends BoardCommonProps {
 	/** Whether the caller may change the board (useProjectRole). Off: no drag-and-drop, no move or create keys. */
 	canEdit: boolean;
 	onCreateItem: () => void;
+	/** M on the selected card: assign it to whoever is signed in. Only reached when canEdit. */
+	onAssignToMe: (item: ItemModel) => void;
 	/** A move the server refused. The card is already back where it was. */
 	onWriteError: (err: unknown, fallback: string) => void;
 }
@@ -278,6 +280,7 @@ export function Board(props: BoardProps): JSX.Element {
 		onOpenItem,
 		onCreateItem: props.canEdit ? props.onCreateItem : noop,
 		onMoveItem: moves ? moveItem : noop,
+		onAssignToMe: props.canEdit ? props.onAssignToMe : noop,
 	});
 
 	function handleDragStart(e: DragEvent, item: ItemModel): void {

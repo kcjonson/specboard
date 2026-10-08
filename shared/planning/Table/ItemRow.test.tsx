@@ -7,7 +7,8 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/preact';
-import { ItemModel } from '@specboard/models';
+import { ChildModel, ItemModel } from '@specboard/models';
+import { ChildRow } from './ChildRow';
 import { ItemRow } from './ItemRow';
 import { ItemCard } from '../ItemCard/ItemCard';
 
@@ -37,9 +38,19 @@ describe('the Assignee column', () => {
 	});
 });
 
+describe('a child row', () => {
+	it('shows its own assignee, as its parent\'s row does', () => {
+		const child = new ChildModel({ id: 'c1', key: 'SB-2', number: 2, type: 'task', title: 'Child', status: 'ready', assignee: ERIN });
+		const { container } = render(<ChildRow child={child} />);
+
+		const cells = container.querySelectorAll('[role="cell"]');
+		expect(cells[cells.length - 1]!.textContent).toBe('Erin Editor');
+	});
+});
+
 describe('the board card', () => {
 	it('carries the assignee\'s avatar, labelled with their name', () => {
-		const { getByRole } = render(<ItemCard item={item({ assignee: ERIN })} projectRef="acme/specboard" />);
+		const { getByRole } = render(<ItemCard item={item({ assignee: ERIN })} />);
 
 		expect(getByRole('img', { name: 'Erin Editor' })).toBeTruthy();
 	});

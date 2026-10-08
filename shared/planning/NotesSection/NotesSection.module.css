@@ -46,9 +46,11 @@
 	font-weight: var(--font-medium);
 }
 
+/* ActorName is a flex row with a --space-1 gap, which the dot sits after; together they
+   match the --space-2 gap on the dot's other side. */
 .actor::after {
 	content: '·';
-	margin-left: var(--space-2);
+	margin-left: var(--space-1);
 	font-weight: var(--font-normal);
 }
 

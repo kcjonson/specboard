@@ -14,7 +14,7 @@ vi.mock('@specboard/db', async (importOriginal) => ({
 }));
 
 import { getUserSlug, resolveProjectAccess, type ProjectAccess } from '@specboard/db';
-import { parseProjectBinding, resolveToolProject, type ToolResult } from './project-ref.ts';
+import { parseProjectBinding, resolveToolProject, toolFailure, type ToolResult } from './project-ref.ts';
 
 const USER = 'user-1';
 const ROADMAP: ProjectAccess = {
@@ -144,5 +144,20 @@ describe('resolveToolProject', () => {
 		const text = errorText(await resolveToolProject('acme/roadmap', USER, parseProjectBinding('a/b/c'), 'viewer'));
 		expect(text).toMatch(/X-Specboard-Project: a\/b\/c/);
 		expect(resolveProjectAccess).not.toHaveBeenCalled();
+	});
+});
+
+describe('toolFailure', () => {
+	it('logs what threw and tells the agent nothing of it', () => {
+		const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const cause = new Error('new row for relation "items" violates check constraint "items_status_check"');
+
+		const result = toolFailure('update_item', cause);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]!.text).not.toContain('items_status_check');
+		expect(result.content[0]!.text).toContain('update_item failed');
+		expect(log).toHaveBeenCalledWith('Tool update_item failed:', cause);
+		log.mockRestore();
 	});
 });

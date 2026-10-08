@@ -20,7 +20,7 @@ const READ: MapRead = {
 		row({
 			key: 'SPE-12', parentKey: 'SPE-9', status: 'in_progress', subStatus: 'pr_open', rank: 2.5, blocked: true,
 			startedAt: '2026-09-02T00:00:00.001Z', timeAnchor: '2026-09-05T12:00:00.999Z',
-			workers: [{ sessionKey: 'AbCdEfGhIjKlMnOp', deviceName: 'laptop', client: 'claude-code', branch: 'feat/x', startedAt: '2026-09-05T11:30:00.123Z', lastWriteAt: '2026-09-05T12:00:00.999Z' }],
+			workers: [{ sessionKey: 'AbCdEfGhIjKlMnOp', personName: null, deviceName: 'laptop', client: 'claude-code', branch: 'feat/x', startedAt: '2026-09-05T11:30:00.123Z', lastWriteAt: '2026-09-05T12:00:00.999Z' }],
 			blockers: [{ blockerKey: 'SPE-1', state: 'satisfied', satisfiedAt: '2026-09-03T00:00:00.000Z' }, { blockerKey: 'SPE-3', state: 'open' }],
 			textBlockerCount: 2, discoveredFromKey: 'SPE-1', originActorType: 'agent', prUrl: 'https://github.com/acme/roadmap/pull/7', specCount: 1,
 		}),

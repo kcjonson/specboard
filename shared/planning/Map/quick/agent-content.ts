@@ -1,4 +1,5 @@
 import type { MapItemRow } from '@specboard/core/map-read';
+import { computerName } from '../layout/types';
 import { agentState, agoText, clientLabel, deviceLabel, spanText, type AgentComputer, type AgentSession, type Agents } from '../agents';
 
 /**
@@ -31,7 +32,7 @@ export function itemSessions(row: MapItemRow, working: Agents, now: number): Qui
 			const last = Date.parse(worker.lastWriteAt);
 			const number = numbers.get(worker.sessionKey);
 			const state = agentState(last, now);
-			const place = `${clientLabel(worker.client)} on ${deviceLabel(worker.deviceName ?? '')}`;
+			const place = `${clientLabel(worker.client)} on ${deviceLabel(computerName(worker.personName, worker.deviceName))}`;
 			const times = `${spanText(now - Date.parse(worker.startedAt))} on item, last write ${agoText(now - last)}`;
 			return {
 				title: `${number === undefined ? '' : `Session ${number}, `}${place}${state === 'live' ? '' : ', quiet'}`,

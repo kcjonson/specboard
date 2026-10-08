@@ -3,6 +3,7 @@ import type { ChildModel } from '@specboard/models';
 import { StatusGlyph, STATUS_LABELS } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { ProjectChip, type ProjectLabel } from '../ProjectChip/ProjectChip';
+import { AssigneeLabel } from './AssigneeLabel';
 import styles from './Table.module.css';
 
 export interface ChildRowProps {
@@ -47,7 +48,9 @@ export function ChildRow({ child, project, onOpen }: ChildRowProps): JSX.Element
 				{STATUS_LABELS[child.status]}
 			</span>
 			<span class={styles.colTasks} role="cell" />
-			<span class={styles.colAssignee} role="cell" />
+			<span class={styles.colAssignee} role="cell">
+				<AssigneeLabel person={child.assignee} />
+			</span>
 		</div>
 	);
 }

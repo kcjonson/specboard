@@ -104,6 +104,22 @@ describe('actor views', () => {
 	});
 });
 
+describe('a write\'s answer', () => {
+	it('carries the item\'s children, which a client applying it would otherwise lose', async () => {
+		const parent = await newItem(roadmap, 'Parent');
+		await createItem(roadmap, { title: 'Child one', type: 'task', parentNumber: parent, origin: { actor } });
+		await createItem(roadmap, { title: 'Child two', type: 'task', parentNumber: parent, origin: { actor } });
+		const child = (await getItems({ projectId: roadmap, itemNumber: parent, includeChildren: true })).items[0]!.children[0]!;
+		await updateItem(roadmap, child.number, { assignee: 'acme' }, actor);
+
+		const updated = await updateItem(roadmap, parent, { assignee: 'erin' }, actor);
+
+		expect(updated!.children.map((c) => c.title)).toEqual(['Child one', 'Child two']);
+		expect(updated!.children[0]!.assignee).toEqual(ALICE);
+		expect(updated!.children[1]!.assignee).toBeNull();
+	});
+});
+
 describe('assignee', () => {
 	let number: number;
 
@@ -167,6 +183,29 @@ describe('a departing member', () => {
 		expect(await assigneeOf(roadmap, done)).toMatchObject({ slug: 'sam' });
 		expect(await assigneeOf(roadmap, owners)).toEqual(ALICE);
 		expect(await assigneeOf(elsewhere, other)).toMatchObject({ slug: 'sam' });
+	});
+
+	it('comes off a done item that is reopened after they left, and only then', async () => {
+		const max = await insertUser('max');
+		await addMember(roadmap, max, 'editor');
+		const done = await newItem(roadmap, 'Done by max');
+		const kept = await newItem(roadmap, 'Done by the owner');
+		await updateItem(roadmap, done, { assignee: 'max', status: 'done' }, actor);
+		await updateItem(roadmap, kept, { assignee: 'acme', status: 'done' }, actor);
+		await removeProjectMember(roadmap, 'max');
+		expect(await assigneeOf(roadmap, done)).toMatchObject({ slug: 'max' });
+
+		await updateItem(roadmap, done, { status: 'in_progress' }, actor);
+		await updateItem(roadmap, kept, { status: 'ready' }, actor);
+
+		expect(await assigneeOf(roadmap, done)).toBeNull();
+		expect(await assigneeOf(roadmap, kept)).toEqual(ALICE);
+	});
+
+	it('names the person in the refusal once their account is off the project', async () => {
+		await insertUser('ned', ['Ned', 'Nobody']);
+		const number = await newItem(roadmap, 'For ned');
+		await expect(updateItem(roadmap, number, { assignee: 'ned' }, actor)).rejects.toThrow('Ned Nobody is not the owner or a member of this project');
 	});
 
 	it('is unassigned from their open items when they leave', async () => {

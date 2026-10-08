@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto';
 import { formatItemKey } from '@specboard/core/identifiers';
 import { query, transaction } from '../index.ts';
+import { getPeople, type Person } from './users.ts';
 import type { MapBlockerLink, MapItemRow, MapItemStatus, MapItemSubStatus, MapItemType, MapRead, MapReadMark } from '@specboard/core/map-read';
 
 /**
@@ -260,7 +261,7 @@ const SIGNALS_SQL = `
 
 const iso = (date: Date): string => date.toISOString();
 
-function toRow(row: MapQueryRow): MapItemRow {
+function toRow(row: MapQueryRow, people: ReadonlyMap<string, Person>): MapItemRow {
 	const key = (number: number): string => formatItemKey(row.project_key, number);
 	return {
 		key: key(row.number),
@@ -277,6 +278,7 @@ function toRow(row: MapQueryRow): MapItemRow {
 		timeAnchor: iso(row.time_anchor),
 		workers: row.workers.map((worker) => ({
 			sessionKey: agentSessionKey(worker),
+			personName: people.get(worker.userId)?.name ?? null,
 			deviceName: worker.deviceName,
 			client: worker.client,
 			branch: worker.branch,
@@ -303,7 +305,8 @@ interface SignalsRow {
  * The project for the Map: the whole of it, or with `since` (a cursor from an earlier
  * read) only what changed after it. Past the read cap a delta that found anything answers
  * with the whole read instead, since its rows can't merge into folded families; an idle
- * poll stays empty. No user, client, or session id leaves this function.
+ * poll stays empty. No user, client, or session id leaves this function; an episode carries
+ * the name of the person whose agent it is.
  */
 export async function getProjectMap(projectId: string, since: number | null = null, cap = MAP_READ_CAP): Promise<MapRead> {
 	const [taken] = (await query<{ cursor: string }>(CURSOR_SQL)).rows;
@@ -319,8 +322,11 @@ export async function getProjectMap(projectId: string, since: number | null = nu
 		return { signals: found!, rows: (await client.query<MapQueryRow>(FULL_SQL, [projectId])).rows, delta: false };
 	});
 	const mark: MapReadMark = { cursor, total: signals.total, specs: signals.specs };
-	if (delta) return { items: rows.map(toRow), summarized: false, delta: true, ...mark };
-	return { ...summarizeFinishedFamilies(rows.map(toRow), cap), delta: false, ...mark };
+	// The people behind open episodes, by name, in one lookup for the read.
+	const people = await getPeople(rows.flatMap((row) => row.workers.map((worker) => worker.userId)));
+	const items = rows.map((row) => toRow(row, people));
+	if (delta) return { items, summarized: false, delta: true, ...mark };
+	return { ...summarizeFinishedFamilies(items, cap), delta: false, ...mark };
 }
 
 interface FamilyNode {

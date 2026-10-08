@@ -45,7 +45,15 @@
 }
 
 .row[aria-current='true'] {
-	font-weight: var(--font-medium);
+	background: var(--color-primary-subtle);
+}
+
+/* Always present, so every row's columns line up whether or not it is the assignee. */
+.mark {
+	display: inline-flex;
+	flex-shrink: 0;
+	width: 16px;
+	color: var(--color-primary);
 }
 
 .name {

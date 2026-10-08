@@ -106,7 +106,7 @@ describe('live sessions', () => {
 	it('reads the rule from the episodes the read carries', () => {
 		const b = new BoardBuilder();
 		const item = b.add({ status: 'in_progress' });
-		item.workers.push({ sessionKey: 'k', deviceName: 'laptop', client: null, branch: null, startedAt: iso(b.now - 60 * 60_000), lastWriteAt: iso(b.now - 16 * 60_000) });
+		item.workers.push({ sessionKey: 'k', personName: null, deviceName: 'laptop', client: null, branch: null, startedAt: iso(b.now - 60 * 60_000), lastWriteAt: iso(b.now - 16 * 60_000) });
 		expect(liveSessions(b.rows, b.now).sessions.size).toBe(0);
 		item.workers[0]!.lastWriteAt = iso(b.now - 60_000);
 		expect([...liveSessions(b.rows, b.now).sessions]).toEqual(['k']);

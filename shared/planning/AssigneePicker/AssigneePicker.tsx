@@ -2,15 +2,22 @@ import { useState, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { fetchClient } from '@specboard/fetch';
 import type { Person, ProjectRole } from '@specboard/models';
-import { Avatar, Dialog } from '@specboard/ui';
+import { Avatar, Dialog, Icon } from '@specboard/ui';
 import styles from './AssigneePicker.module.css';
 
 /** The fields the picker renders off a row of GET /api/projects/:owner/:project/members. */
 interface Assignable extends Person {
 	role: ProjectRole;
+	effectiveRole: ProjectRole;
 }
 
 const ROLE_LABELS: Record<ProjectRole, string> = { owner: 'Owner', editor: 'Editor', viewer: 'Viewer' };
+
+/** The granted role, and why it works as less, in the settings page's words. */
+function roleLabel(person: Assignable): string {
+	const granted = ROLE_LABELS[person.role];
+	return person.role === 'editor' && person.effectiveRole === 'viewer' ? `${granted} · needs GitHub` : granted;
+}
 
 export interface AssigneePickerProps {
 	projectRef: string;
@@ -56,17 +63,19 @@ export function AssigneePicker({ projectRef, current, onSelect, onUnassign, onCl
 					// Only an account that hasn't onboarded lacks a slug, and no member is one.
 					const slug = person.slug;
 					if (!slug) return null;
+					const assigned = slug === current;
 					return (
 						<button
 							key={slug}
 							type="button"
 							class={styles.row}
-							aria-current={slug === current || undefined}
+							aria-current={assigned || undefined}
 							onClick={() => onSelect(slug)}
 						>
 							<Avatar name={person.name} avatarUrl={person.avatarUrl} size="sm" tone="muted" decorative />
 							<span class={styles.name}>{person.name}</span>
-							<span class={styles.role}>{ROLE_LABELS[person.role]}</span>
+							<span class={styles.role}>{roleLabel(person)}</span>
+							<span class={styles.mark}>{assigned && <Icon name="check" class="size-sm" />}</span>
 						</button>
 					);
 				})}

@@ -269,10 +269,12 @@ export function ItemView({ item, canEdit, onDelete, onOpenItem }: ItemViewProps)
 	// restates the person view the model holds. The server checks the person is on the
 	// project, so its refusal is the message shown.
 	const handleAssign = (slug: string | null): void => {
+		setAssigneePickerOpen(false);
+		// Picking whoever already has it changes nothing, so it sends nothing.
+		if (slug === (item.assignee?.slug ?? null)) return;
 		// One at a time, for the reason moves are: each applies the item it gets back.
 		if (assigningRef.current) return;
 		assigningRef.current = true;
-		setAssigneePickerOpen(false);
 		setFieldError(null);
 		item.assign(slug)
 			.catch((err: unknown) => reportFieldError(err, slug ? 'Could not change the assignee.' : 'Could not unassign the item.'))

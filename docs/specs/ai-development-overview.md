@@ -1082,8 +1082,8 @@ and nothing moves for more than a second.
    beside the items list and behind the same access check. Every item at any depth,
    carrying only what the Map draws: key, type, title, status, sub-status, blocked,
    parent key, rank, created, started, and completed times, time anchor, open
-   worker episodes (device name, client, branch, the episode's start, last write, and
-   session key),
+   worker episodes (the person's name, device name, client, branch, the episode's
+   start, last write, and session key),
    item-blocker links, text-blocker count, discovered-from key, origin actor type,
    PR URL, and spec count. No descriptions, activity log, or checklist. The row
    shape is `MapItemRow` in `@specboard/core/map-read`, shared by the API and the
@@ -1110,6 +1110,8 @@ and nothing moves for more than a second.
    token, not a credential, so a plain hash of it is already infeasible to reverse;
    a key would add an infra dependency and buy nothing. Stable for the session,
    different for a second session on the same computer, and meaningless outside.
+   The Map tells computers apart by person and device name, so two people's agents
+   on machines both called "laptop" are two computers ("Kevin Jonson's laptop").
 7. **Payload budget.** 2,000 items in one response at roughly 100 KB gzipped. The
    read goes out in columns (`MapReadWire`: one array per field, keys as numbers
    under the project key, times as epoch milliseconds), and `decodeMapRead` turns

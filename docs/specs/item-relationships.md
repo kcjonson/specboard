@@ -25,14 +25,17 @@ Decided once, used everywhere:
    places — the API's `requireProjectAccess`-gated handlers and the MCP server's
    per-call actor — plus the system actors the services stamp on auto-clears and
    parent-rollup transitions, and the user actor the seed script writes. Every
-   response, REST and MCP alike, goes through the views in `shared/db/src/views.ts`,
-   which strip actor internals (user id, OAuth client id, MCP session id) down to
+   item, activity-log, worker and blocker response, REST and MCP alike, goes through
+   the views in `shared/db/src/views.ts`, which strip actor internals (user id, OAuth client id, MCP session id) down to
    what the UI renders: type, device name, client info, and for a user or agent
    actor the `person` it acted as, `{ slug, name, avatarUrl }`. People are looked
    up once per response (`getPeople`, one query over every actor it carries), never
    per actor. The actor still stores only the user id, so a name change shows on
    every past event; once the account is deleted the id names nobody, and `person`
-   is `null` ("Deleted user" in the UI). A system actor has no `person`.
+   is `null` ("Deleted user" in the UI). A system actor has no `person`. The Map's
+   read (`getProjectMap`) builds its own rows and strips ids itself: an episode
+   carries an opaque session key and the person's name (`personName`, from the same
+   `getPeople` lookup), never a user, client or session id.
 
 No generic `item_links` table: origin is 1-per-item and immutable (a column, not
 a row), and blockers carry lifecycle (`cleared_at`/`cleared_by`) that would be
@@ -356,7 +359,14 @@ avatarUrl }` or `null`.
 - **Leaving takes the assignment with it.** Removing a member, or a member leaving,
   unassigns their open (not done) items in that project, in the transaction that
   deletes the membership. Done items keep their assignee as a record of who did the
-  work, and the person's items in other projects are untouched.
+  work, and the person's items in other projects are untouched. Reopening a done item
+  (any write out of done) drops an assignee who has since left, in the same
+  transaction, with the membership row locked as an assignment locks it, so a reopened
+  item is never assigned to someone off the project.
+- **MCP checks before it writes.** `update_item` refuses a bad status, sub-status,
+  title or branch length (`item-fields.ts`, shared with REST), spec link, note,
+  checklist or assignee before any write, and a tool call that throws answers with a
+  fixed message while the error is logged, so no database text reaches an agent.
 
 ## Activity log (`item_notes`, migration 027)
 

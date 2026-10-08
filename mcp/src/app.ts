@@ -26,7 +26,7 @@ import { mcpAuthMiddleware, recordMcpClientInfo, sanitizeMcpClientInfo, type Mcp
 import type { AgentActor } from '@specboard/db';
 
 import { tools, callTool } from './tools/index.ts';
-import { parseProjectBinding, type ProjectBinding } from './tools/project-ref.ts';
+import { parseProjectBinding, toolFailure, type ProjectBinding } from './tools/project-ref.ts';
 
 // Server-level instructions returned at MCP initialize. Reaches every connected client (no plugin
 // required). Claude Code truncates server instructions past 2,048 characters by default
@@ -85,17 +85,7 @@ function createMcpServer(actor: AgentActor, binding: ProjectBinding): Server {
 		try {
 			return await callTool(name, args, actor, binding);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			console.error(`Tool ${name} failed:`, error);
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Error: ${message}`,
-					},
-				],
-				isError: true,
-			};
+			return toolFailure(name, error);
 		}
 	});
 
