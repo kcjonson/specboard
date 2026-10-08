@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
-import { Card, StatusGlyph, Icon } from '@specboard/ui';
+import { Badge, Card, StatusGlyph, Icon } from '@specboard/ui';
 import styles from './ProjectCard.module.css';
 
 export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
@@ -52,9 +52,15 @@ export interface ProjectCardProps {
 	onClick: (project: Project) => void;
 	onEdit?: (project: Project) => void;
 	onRetrySync?: (project: Project) => Promise<void>;
+	/**
+	 * Set while the page is picking projects to view together. The card is then a checkbox
+	 * in this state, and onClick toggles it; the page leaves out its other actions, since a
+	 * checkbox can't hold controls of its own.
+	 */
+	selected?: boolean;
 }
 
-export function ProjectCard({ project, onClick, onEdit, onRetrySync }: ProjectCardProps): JSX.Element {
+export function ProjectCard({ project, onClick, onEdit, onRetrySync, selected }: ProjectCardProps): JSX.Element {
 	const [isRetrying, setIsRetrying] = useState(false);
 
 	function handleClick(): void {
@@ -94,17 +100,23 @@ export function ProjectCard({ project, onClick, onEdit, onRetrySync }: ProjectCa
 	const hasItems = project.itemCount > 0;
 	const isSyncing = syncStatus === 'pending' || syncStatus === 'syncing';
 	const hasSyncError = syncStatus === 'failed';
+	const picking = selected !== undefined;
 
 	return (
 		<Card
-			class={styles.card}
+			class={[styles.card, picking && styles.picking, selected && 'variant-selected'].filter(Boolean).join(' ')}
 			onClick={handleClick}
 			onKeyDown={handleKeyDown}
 			tabIndex={0}
-			role="button"
+			role={picking ? 'checkbox' : 'button'}
+			aria-checked={selected}
+			aria-label={picking ? `${project.name} (${project.key})` : undefined}
 		>
 			<div class={styles.header}>
+				{/* Only the look of a checkbox: the card is the control, so this one is inert. */}
+				{picking && <input type="checkbox" class={styles.pickBox} checked={selected} inert />}
 				<h3 class={styles.name}>{project.name}</h3>
+				{picking && <Badge class={styles.key}>{project.key}</Badge>}
 				{onEdit && (
 					<button
 						type="button"

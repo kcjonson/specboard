@@ -15,7 +15,7 @@ initTelemetry({
 });
 
 // Shared feature components
-import { Planning, ItemDetail } from '@shared/planning';
+import { Planning, ItemDetail, MultiProjectPlanning } from '@shared/planning';
 import { Editor } from '@specboard/pages';
 import { ProjectsList, type Project } from '@shared/projects';
 
@@ -107,6 +107,8 @@ const routes = [
 	{ route: '/projects/:owner/:project/pages', entry: Editor },
 
 	// App routes (not project-scoped)
+	// Several projects' items together, read-only: /planning?projects=<owner/project>,...
+	{ route: '/planning', entry: MultiProjectPlanning },
 	// Onboarding gating is server-side: the frontend service redirects SPA
 	// document loads here while the session's profileComplete flag is false
 	{ route: '/onboarding', entry: Onboarding },

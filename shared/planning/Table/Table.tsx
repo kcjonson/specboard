@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
+import type { ItemModel, ItemsSource, ItemStatus } from '@specboard/models';
 import { Button, Icon, StatusGlyph } from '@specboard/ui';
 import { ItemRow } from './ItemRow';
 import { SHOW_DONE_PREF, readPref, writePref } from '../Planning/prefs';
+import type { ProjectLabel } from '../ProjectChip/ProjectChip';
 import styles from './Table.module.css';
 
 /** Rows a status section starts with, and how many each "show more" adds. */
@@ -23,15 +24,20 @@ const GROUPS: { status: ItemStatus; label: string; whenNonEmpty?: boolean }[] = 
 ];
 
 export interface TableProps {
-	/** Shared collection owned by the Planning container. */
-	items: ItemsCollection;
+	/** Items owned by the container: one project's collection, or several merged. */
+	items: ItemsSource;
 	selectedItemKey?: string;
 	/** Item keys to briefly flash (newly created, or changed by a background refresh). */
-	flashingIds: Set<string>;
-	onSelectItem: (item: ItemModel | undefined) => void;
+	flashingIds?: Set<string>;
+	onSelectItem?: (item: ItemModel | undefined) => void;
 	onOpenItem: (item: ItemModel) => void;
 	/** Open a child's detail by key (children are first-class items). */
 	onOpenChild?: (itemKey: string) => void;
+	/**
+	 * The projects the rows come from, by ref, for a view that mixes them: every row then
+	 * says which it's from in a Project column. A single project's table has no such column.
+	 */
+	projects?: ReadonlyMap<string, ProjectLabel>;
 }
 
 /** Lazily load an epic's tasks the first time it is expanded. */
@@ -59,6 +65,7 @@ export function Table({
 	onSelectItem,
 	onOpenItem,
 	onOpenChild,
+	projects,
 }: TableProps): JSX.Element {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	// The Done section is usually the biggest and the least interesting, so it is
@@ -102,6 +109,7 @@ export function Table({
 	}, [items, items.version]);
 
 	const expandable = !items.filterActive;
+	const columnCount = projects ? 6 : 5;
 
 	const toggleExpand = useCallback((item: ItemModel): void => {
 		const willExpand = !expanded.has(item.id);
@@ -154,10 +162,11 @@ export function Table({
 				</Button>
 			</div>
 
-			<div class={styles.table} role="table">
+			<div class={projects ? `${styles.table} ${styles.withProject}` : styles.table} role="table">
 				<div class={`${styles.row} ${styles.columnHeader}`} role="row">
 					<span class={styles.colType} role="columnheader">Type</span>
 					<span class={styles.colTitle} role="columnheader">Title</span>
+					{projects && <span class={styles.colProject} role="columnheader">Project</span>}
 					<span class={styles.colStatus} role="columnheader">Status</span>
 					<span class={styles.colTasks} role="columnheader">Tasks</span>
 					<span class={styles.colAssignee} role="columnheader">Assignee</span>
@@ -169,7 +178,7 @@ export function Table({
 					return (
 						<div key={status} class={styles.group} role="rowgroup">
 							<div class={styles.groupHeader} role="row">
-								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={5}>
+								<span class={styles.groupHeaderCell} role="columnheader" aria-colspan={columnCount}>
 									<StatusGlyph status={status} decorative />
 									<span class={styles.groupLabel}>{label}</span>
 									<span class={styles.groupCount}>{items.totalFor(status)}</span>
@@ -188,7 +197,8 @@ export function Table({
 										expandable={expandable}
 										expanded={expanded.has(item.id)}
 										selected={item.key === selectedItemKey}
-										flashing={flashingIds.has(item.key)}
+										flashing={flashingIds?.has(item.key) ?? false}
+										project={projects?.get(item.projectRef)}
 										onToggle={toggleExpand}
 										onOpen={onOpenItem}
 										onSelect={onSelectItem}
@@ -199,7 +209,7 @@ export function Table({
 
 							{items.hasMore(status) && (
 								<div class={styles.showMoreRow} role="row">
-									<span class={styles.showMoreCell} role="cell" aria-colspan={5}>
+									<span class={styles.showMoreCell} role="cell" aria-colspan={columnCount}>
 										<button
 											type="button"
 											class="text size-sm"

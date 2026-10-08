@@ -14,6 +14,10 @@ export interface CardProps {
 	tabIndex?: number;
 	/** Role attribute */
 	role?: JSX.HTMLAttributes<HTMLDivElement>['role'];
+	/** State of a card acting as a checkbox (role="checkbox") */
+	'aria-checked'?: boolean;
+	/** Accessible name, when the card's whole text would be too much of one */
+	'aria-label'?: string;
 }
 
 export function Card({
@@ -23,6 +27,8 @@ export function Card({
 	class: className,
 	tabIndex,
 	role,
+	'aria-checked': ariaChecked,
+	'aria-label': ariaLabel,
 }: CardProps): JSX.Element {
 	const classes = [
 		styles.card,
@@ -37,6 +43,8 @@ export function Card({
 			onKeyDown={onKeyDown}
 			tabIndex={tabIndex}
 			role={role}
+			aria-checked={ariaChecked}
+			aria-label={ariaLabel}
 		>
 			{children}
 		</div>

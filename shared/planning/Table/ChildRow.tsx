@@ -2,16 +2,19 @@ import type { JSX } from 'preact';
 import type { ChildModel } from '@specboard/models';
 import { StatusGlyph, STATUS_LABELS } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
+import { ProjectChip, type ProjectLabel } from '../ProjectChip/ProjectChip';
 import styles from './Table.module.css';
 
 export interface ChildRowProps {
 	child: ChildModel;
+	/** The parent's project, in a table that mixes projects. */
+	project?: ProjectLabel;
 	/** Open this child's detail by key (children are first-class items). */
 	onOpen?: (itemKey: string) => void;
 }
 
 /** A child item row, indented one level under its parent. Clickable to open its detail. */
-export function ChildRow({ child, onOpen }: ChildRowProps): JSX.Element {
+export function ChildRow({ child, project, onOpen }: ChildRowProps): JSX.Element {
 	const handleOpen = (): void => onOpen?.(child.key);
 	return (
 		<div
@@ -34,6 +37,11 @@ export function ChildRow({ child, onOpen }: ChildRowProps): JSX.Element {
 					<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
 				)}
 			</span>
+			{project && (
+				<span class={styles.colProject} role="cell">
+					<ProjectChip project={project} />
+				</span>
+			)}
 			<span class={styles.colStatus} role="cell">
 				<StatusGlyph status={child.status} blocked={child.blocked} decorative />
 				{STATUS_LABELS[child.status]}

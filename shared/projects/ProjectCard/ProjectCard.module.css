@@ -18,6 +18,42 @@
 	outline-offset: 2px;
 }
 
+/* Picking: the card toggles rather than opens, so it doesn't lift like a link to somewhere. */
+.card.picking:hover {
+	transform: none;
+}
+
+/* A clicked card stays on the page now, and a mouse-focus ring beside the selected
+   border would make a refused card look chosen; the keyboard keeps its ring. */
+.card.picking:focus:not(:focus-visible) {
+	outline: none;
+}
+
+/* The Card's selected border is 2px to its usual 1px; the extra pixel comes out of the
+   padding, so checking a card doesn't nudge its contents. */
+.card:global(.variant-selected) {
+	padding: calc(var(--space-4) - 1px);
+}
+
+/* The native checkbox's look, from elements.css; the card underneath takes the clicks. */
+.pickBox {
+	pointer-events: none;
+}
+
+.card.picking:hover .pickBox:not(:checked) {
+	border-color: var(--color-text-muted);
+}
+
+/* The item-key prefix, shown while picking because two projects can't share one in a
+   view. A Badge, set in the mono face item keys use and sized down to the name's line. */
+.header .key {
+	flex-shrink: 0;
+	padding: 0 var(--space-2);
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+	line-height: 20px;
+}
+
 .header {
 	display: flex;
 	align-items: center;

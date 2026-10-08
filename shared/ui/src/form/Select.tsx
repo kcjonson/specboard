@@ -28,6 +28,10 @@ export interface SelectProps {
 	name?: string;
 	/** Select id */
 	id?: string;
+	/** Accessible name when no visible `label` is used */
+	ariaLabel?: string;
+	/** Inline usage (toolbars): skips the reserved error line below, as Text's `compact` does. */
+	compact?: boolean;
 }
 
 export function Select({
@@ -41,6 +45,8 @@ export function Select({
 	class: className,
 	name,
 	id,
+	ariaLabel,
+	compact = false,
 }: SelectProps): JSX.Element {
 	const fieldClasses = `${styles.field} ${error ? styles.hasError : ''}`;
 	const errorClasses = `${styles.error} ${error ? styles.errorVisible : ''}`;
@@ -56,6 +62,7 @@ export function Select({
 					disabled={disabled}
 					name={name}
 					id={id}
+					aria-label={ariaLabel}
 				>
 				{placeholder && (
 					<option value="" disabled>
@@ -73,7 +80,7 @@ export function Select({
 				))}
 			</select>
 			</div>
-			<span class={errorClasses}>{error || '\u00A0'}</span>
+			{!compact && <span class={errorClasses}>{error || '\u00A0'}</span>}
 		</div>
 	);
 }

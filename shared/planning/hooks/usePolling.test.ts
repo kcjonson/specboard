@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/preact';
-import { POLL_BACKOFF_MAX, POLL_INTERVAL, usePolling, type Poll } from './usePolling';
+import { COMBINED_POLL_INTERVAL, POLL_BACKOFF_MAX, POLL_INTERVAL, usePolling, type Poll } from './usePolling';
 
 let focused = true;
 
@@ -47,6 +47,18 @@ describe('usePolling', () => {
 		await wait(1);
 		expect(poll).toHaveBeenCalledTimes(1);
 		await wait(2 * POLL_INTERVAL);
+		expect(poll).toHaveBeenCalledTimes(3);
+	});
+
+	it('polls at the interval it is given instead, as the multi-project view does every 30 s', async () => {
+		const poll = vi.fn<Poll>();
+		renderHook(() => usePolling(poll, undefined, COMBINED_POLL_INTERVAL));
+
+		await wait(COMBINED_POLL_INTERVAL - 1);
+		expect(poll).not.toHaveBeenCalled();
+		await wait(1);
+		expect(poll).toHaveBeenCalledTimes(1);
+		await wait(2 * COMBINED_POLL_INTERVAL);
 		expect(poll).toHaveBeenCalledTimes(3);
 	});
 

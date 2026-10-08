@@ -2,6 +2,7 @@ import type { JSX } from 'preact';
 import { useModel, type ItemModel } from '@specboard/models';
 import { Icon, StatusGlyph, STATUS_LABELS } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
+import { ProjectChip, type ProjectLabel } from '../ProjectChip/ProjectChip';
 import { ChildRow } from './ChildRow';
 import styles from './Table.module.css';
 
@@ -15,9 +16,11 @@ export interface ItemRowProps {
 	flashing: boolean;
 	onToggle: (item: ItemModel) => void;
 	onOpen: (item: ItemModel) => void;
-	onSelect: (item: ItemModel | undefined) => void;
+	onSelect?: (item: ItemModel | undefined) => void;
 	/** Open a child's detail by key (children are first-class items). */
 	onOpenChild?: (itemKey: string) => void;
+	/** The item's project, in a table that mixes projects; its children share it. */
+	project?: ProjectLabel;
 }
 
 /**
@@ -39,6 +42,7 @@ export function ItemRow({
 	onOpen,
 	onSelect,
 	onOpenChild,
+	project,
 }: ItemRowProps): JSX.Element {
 	// Subscribe so the row re-renders when fetch() populates children / flips $meta.
 	useModel(item);
@@ -55,7 +59,7 @@ export function ItemRow({
 	};
 
 	const handleOpen = (): void => {
-		onSelect(item);
+		onSelect?.(item);
 		onOpen(item);
 	};
 
@@ -96,6 +100,11 @@ export function ItemRow({
 						<span class={styles.blockedChip} title="This item has open blockers">Blocked</span>
 					)}
 				</span>
+				{project && (
+					<span class={styles.colProject} role="cell">
+						<ProjectChip project={project} />
+					</span>
+				)}
 				<span class={styles.colStatus} role="cell">
 					<StatusGlyph status={item.status} blocked={item.blocked} decorative />
 					{STATUS_LABELS[item.status]}
@@ -113,7 +122,7 @@ export function ItemRow({
 
 			{showChildren &&
 				!loadingChildren &&
-				item.children.map((child) => <ChildRow key={child.id} child={child} onOpen={onOpenChild} />)}
+				item.children.map((child) => <ChildRow key={child.id} child={child} project={project} onOpen={onOpenChild} />)}
 		</>
 	);
 }

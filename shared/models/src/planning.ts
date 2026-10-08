@@ -252,6 +252,23 @@ function normalizeFilter(filter: ItemsFilter | undefined): { search: string; typ
 }
 
 /**
+ * What a planning view reads its items through: one window per status, the counts
+ * behind it, and a way to widen one. An ItemsCollection is one project's; the
+ * multi-project view merges several behind the same reads.
+ */
+export interface ItemsSource {
+	/** Changes whenever the items do, so what is derived from them can be memoized on it. */
+	readonly version: number;
+	/** Whether a search or type filter is narrowing the windows (see ItemsCollection). */
+	readonly filterActive: boolean;
+	byStatus(status: ItemStatus): ItemModel[];
+	loadedFor(status: ItemStatus): number;
+	totalFor(status: ItemStatus): number;
+	hasMore(status: ItemStatus): boolean;
+	loadMore(status: ItemStatus, count: number): Promise<void>;
+}
+
+/**
  * Collection of items - syncs with /api/projects/:projectRef/items
  *
  * Loaded as one bounded window per status (the first `limit` rows by rank, one
@@ -279,7 +296,7 @@ function normalizeFilter(filter: ItemsFilter | undefined): { search: string; typ
  * if (items.hasMore('ready')) await items.loadMore('ready', 100);
  * ```
  */
-export class ItemsCollection extends SyncCollection<ItemModel> {
+export class ItemsCollection extends SyncCollection<ItemModel> implements ItemsSource {
 	static url = '/api/projects/:projectRef/items';
 	static Model = ItemModel;
 
@@ -289,8 +306,14 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	/** Rows each status window starts with. */
 	declare limit: number;
 	/**
-	 * Server-side filter on every window request; `setFilter` is the only way in.
-	 * Deliberately not named `filter`, which is the collection's own array method.
+	 * The filter to open on, for a view restored from its URL, so its first windows are
+	 * requested filtered rather than loaded whole and then thrown away.
+	 */
+	declare initialFilter: ItemsFilter | undefined;
+	/**
+	 * Server-side filter on every window request; `setFilter` is the only way in after
+	 * the first load. Deliberately not named `filter`, which is the collection's own
+	 * array method.
 	 */
 	private declare __filter: ItemsFilter | undefined;
 
@@ -330,6 +353,10 @@ export class ItemsCollection extends SyncCollection<ItemModel> {
 	 * cannot see another client delete or move one, since it never pages that far.
 	 */
 	protected override async load(): Promise<Array<Record<string, unknown>>> {
+		// The first load is the base constructor's, before anything here could be
+		// initialized, so the filter to open on is taken up here. A setFilter always
+		// leaves `__filter` set, so it is never overridden by this.
+		this.__filter ??= this.initialFilter;
 		const generation = this.__generation ?? 0;
 		// A copy, not the live map: a loadMore/ensureLimit landing while these requests
 		// are out widens it, and recording the wider width as served would make the next
