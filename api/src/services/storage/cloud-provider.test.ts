@@ -42,7 +42,7 @@ describe('writeFile', () => {
 		await provider().writeFile('/a.md', 'new');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', 'new', 'modified'
+			'project-1', 'user-1', 'a.md', 'new', 'modified', null
 		);
 	});
 
@@ -52,7 +52,7 @@ describe('writeFile', () => {
 		await provider().writeFile('/a.md', 'new');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', 'new', 'created'
+			'project-1', 'user-1', 'a.md', 'new', 'created', null
 		);
 	});
 
@@ -73,7 +73,7 @@ describe('deleteFile', () => {
 		await provider().deleteFile('/a.md');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', null, 'deleted'
+			'project-1', 'user-1', 'a.md', null, 'deleted', null
 		);
 	});
 
@@ -93,7 +93,7 @@ describe('rename', () => {
 		// a.md deleted). Renaming b.md back to a.md must clear both entries.
 		mockClient.getPendingChange.mockImplementation((_p, _u, path) =>
 			path === 'b.md'
-				? Promise.resolve({ path: 'b.md', content: 'committed', action: 'created', updatedAt: 'now' })
+				? Promise.resolve({ path: 'b.md', content: 'committed', action: 'created', renamedFrom: 'a.md', updatedAt: 'now' })
 				: Promise.resolve(null)
 		);
 		mockClient.getFile.mockImplementation((_p, path) =>
@@ -119,10 +119,60 @@ describe('rename', () => {
 		await provider().rename('/a.md', '/b.md');
 
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'b.md', 'content', 'created'
+			'project-1', 'user-1', 'b.md', 'content', 'created', 'a.md'
 		);
 		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
-			'project-1', 'user-1', 'a.md', null, 'deleted'
+			'project-1', 'user-1', 'a.md', null, 'deleted', null
+		);
+	});
+
+	it('a file renamed twice keeps the path it was committed at', async () => {
+		// a.md was renamed to b.md earlier; renaming b.md on to c.md is still a.md's rename.
+		mockClient.getPendingChange.mockImplementation((_p, _u, path) =>
+			path === 'b.md'
+				? Promise.resolve({ path: 'b.md', content: 'edited', action: 'created', renamedFrom: 'a.md', updatedAt: 'now' })
+				: Promise.resolve(null)
+		);
+
+		await provider().rename('/b.md', '/c.md');
+
+		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
+			'project-1', 'user-1', 'c.md', 'edited', 'created', 'a.md'
+		);
+		expect(mockClient.deletePendingChange).toHaveBeenCalledWith('project-1', 'user-1', 'b.md');
+	});
+
+	it('a file that was never committed has nothing to be renamed from', async () => {
+		mockClient.getPendingChange.mockImplementation((_p, _u, path) =>
+			path === 'new.md'
+				? Promise.resolve({ path: 'new.md', content: 'draft', action: 'created', renamedFrom: null, updatedAt: 'now' })
+				: Promise.resolve(null)
+		);
+
+		await provider().rename('/new.md', '/b.md');
+
+		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
+			'project-1', 'user-1', 'b.md', 'draft', 'created', null
+		);
+		expect(mockClient.deletePendingChange).toHaveBeenCalledWith('project-1', 'user-1', 'new.md');
+	});
+
+	it('an edited file moved back onto its committed path records no rename', async () => {
+		mockClient.getPendingChange.mockImplementation((_p, _u, path) =>
+			path === 'b.md'
+				? Promise.resolve({ path: 'b.md', content: 'edited', action: 'created', renamedFrom: 'a.md', updatedAt: 'now' })
+				: Promise.resolve(null)
+		);
+		mockClient.getFile.mockImplementation((_p, path) =>
+			path === 'a.md'
+				? Promise.resolve({ path: 'a.md', content: 'committed' })
+				: Promise.resolve(null)
+		);
+
+		await provider().rename('/b.md', '/a.md');
+
+		expect(mockClient.putPendingChange).toHaveBeenCalledWith(
+			'project-1', 'user-1', 'a.md', 'edited', 'modified', null
 		);
 	});
 });

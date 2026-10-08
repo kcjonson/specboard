@@ -265,6 +265,50 @@ repository yet.
 A project that already has a repository cannot swap or remove it in v1; the API answers
 `409 REPOSITORY_ALREADY_SET`.
 
+### Pending changes and spec links
+
+A cloud project's edits are pending changes in the storage service, kept per
+`(project, user)` until that user commits them. Each one is `created`, `modified`, or
+`deleted`. A rename is journaled as a deletion of the old path plus a change at the new
+one, and the new side records `renamed_from`: the committed path the file started at.
+Renaming again carries the first origin forward, a later save keeps it, and a file that
+was never committed has none.
+
+Spec links (`epic_specs`) are project-wide, so they follow committed files, never one
+user's draft. A cloud rename or delete leaves every link alone; the editor still shows
+the file to every other member, and discarding the draft (`git/restore`) has nothing to
+undo. When the commit lands on GitHub, `handleGitHubCommit` turns the change set into
+renames and deletions (`committedSpecPathChanges` in `api/src/services/github-commit.ts`)
+and applies them in one transaction (`applySpecPathChanges` in
+`shared/db/src/services/specs.ts`):
+
+- a path is vacated when the commit deletes it or a renamed file lands on it (the
+  pending change there is `modified` with a `renamed_from`)
+- a change renamed from a vacated path takes that path's links; each vacated path goes
+  to one rename at most, and a link the item already has at the new path absorbs the
+  moved one
+- a vacated path no rename took drops its links
+- a rename whose old path was restored before the commit is a copy, so the links stay
+
+All of it is read against the links as they were before the commit, so renames move
+together: a file archived and another promoted into its place, a chain, and a swap
+through a temporary name each land where they should. The moves go through a marker
+path in the same transaction because `(item_id, path)` is unique and not deferrable.
+
+If GitHub refuses the commit, no links change. If GitHub accepts it and the link update
+fails, the handler answers success with a warning and stops there: pending changes stay
+and `last_synced_commit_sha` doesn't move.
+
+Commits pushed outside Specboard move links the same way when a pull brings them in:
+the incremental sync reads `removed` and `renamed` files from GitHub's compare and
+applies them before it marks the sync complete, so a failed sync retries them. Today a
+commit made in Specboard doesn't come back through the sync, since the commit handler
+sets `last_synced_commit_sha` to the new commit without promoting its content into the
+storage service's committed files; that gap is SPE-251.
+
+A local project writes to disk at once, so its rename and delete handlers move or drop
+links on the request itself.
+
 ### Managed Checkout Location
 
 ```

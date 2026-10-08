@@ -4,7 +4,7 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { renameSpecPath, deleteSpecsByPath } from '@specboard/db';
+import { applySpecPathChanges, isLocalRepository } from '@specboard/db';
 import { apiUserId, loadAuthorizedProject, requireAccess } from '../../project-access.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 import type { FileEntry } from '../../services/storage/types.ts';
@@ -335,22 +335,23 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'A file with that name already exists', code: 'FILE_EXISTS' }, 409);
 		}
 
-		// Rename file first
 		await provider.rename(oldPath, newPath);
 
-		// Repoint any spec links to this file
-		// If this fails, rollback the file rename to maintain consistency
-		try {
-			await renameSpecPath(projectId, oldPath, newPath);
-		} catch (dbError) {
-			// Rollback file rename
-			console.error('Epic update failed, rolling back file rename:', dbError);
+		// A local rename is on disk now, so spec links follow it now, and a failure puts
+		// the file back. A cloud rename is the caller's draft until they commit it; the
+		// commit moves the links (handleGitHubCommit).
+		if (isLocalRepository(project.repository)) {
 			try {
-				await provider.rename(newPath, oldPath);
-			} catch (rollbackError) {
-				console.error('Rollback failed:', rollbackError);
+				await applySpecPathChanges(projectId, { renamed: [{ from: oldPath, to: newPath }], deleted: [] });
+			} catch (dbError) {
+				console.error('Spec link update failed, rolling back file rename:', dbError);
+				try {
+					await provider.rename(newPath, oldPath);
+				} catch (rollbackError) {
+					console.error('Rollback failed:', rollbackError);
+				}
+				return context.json({ error: 'Failed to update spec links' }, 500);
 			}
-			return context.json({ error: 'Failed to update epic references' }, 500);
 		}
 
 		// Invalidate convention file cache if a convention file was renamed to/from
@@ -417,11 +418,13 @@ export async function handleDeleteFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'File or folder not found' }, 404);
 		}
 
-		// Delete the file/folder
 		await provider.deleteFile(filePath);
 
-		// Clear any spec links to the deleted file
-		await deleteSpecsByPath(projectId, filePath);
+		// Same split as a rename: a local delete drops the file's spec links now, a cloud
+		// delete is a draft whose commit drops them.
+		if (isLocalRepository(project.repository)) {
+			await applySpecPathChanges(projectId, { renamed: [], deleted: [filePath] });
+		}
 
 		// Invalidate convention file cache if a convention file was deleted
 		if (isConventionFile(filePath)) {

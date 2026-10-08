@@ -237,7 +237,8 @@ back if it's done piecemeal.
   check.
 - **Git operations are unchanged**: commit, pull and sync run on the acting
   user's token, which is why they need an effective editor. Pending changes stay
-  keyed by `(project, user)`.
+  keyed by `(project, user)`, and spec links only follow a rename or delete once it
+  is committed ([project-storage.md](project-storage.md#pending-changes-and-spec-links)).
 
 ---
 

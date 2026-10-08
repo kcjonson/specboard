@@ -156,29 +156,61 @@ export async function getItemKeysBySpecPath(projectId: string, path: string): Pr
 }
 
 /**
- * Repoint spec links from oldPath to newPath when a file is renamed/moved.
- * Drops any source row that would collide with an existing (item_id, newPath)
- * link to respect the unique constraint.
+ * Files renamed or deleted, in spec-link path form (leading "/"). Every path names a
+ * file as it was before the changes: a rename's `from` and the deleted paths don't
+ * overlap, and each `to` appears once. A `to` may be a deleted path (a file deleted,
+ * then another renamed onto its path) or another rename's `from` (a chain or a swap).
  */
-export async function renameSpecPath(projectId: string, oldPath: string, newPath: string): Promise<void> {
-	await transaction(async (client) => {
-		await client.query(
-			`DELETE FROM epic_specs old
-			 WHERE old.project_id = $1 AND old.path = $2
-			   AND EXISTS (
-				 SELECT 1 FROM epic_specs dup
-				 WHERE dup.project_id = $1 AND dup.path = $3 AND dup.item_id = old.item_id
-			   )`,
-			[projectId, oldPath, newPath]
-		);
-		await client.query(
-			'UPDATE epic_specs SET path = $3 WHERE project_id = $1 AND path = $2',
-			[projectId, oldPath, newPath]
-		);
-	});
+export interface SpecPathChanges {
+	renamed: Array<{ from: string; to: string }>;
+	deleted: string[];
 }
 
-/** Remove all spec links to a path when the file is deleted. */
-export async function deleteSpecsByPath(projectId: string, path: string): Promise<void> {
-	await query('DELETE FROM epic_specs WHERE project_id = $1 AND path = $2', [projectId, path]);
+/** A path no spec link can have (they all start with "/"), for links mid-move. */
+const MOVING = 'moving:';
+
+/**
+ * Keep a project's spec links on the files they name after renames and deletions, all
+ * read against the links as they were: a deleted path's links go, a renamed path's
+ * links move to its new path, and a link the item already has at that new path absorbs
+ * the moved one. Renames move together, so chains and swaps land where they should.
+ * One transaction, so a failure leaves every link as it was.
+ *
+ * Moves go through a marker path first because (item_id, path) is unique and not
+ * deferrable: a swap moved row by row would collide with itself.
+ */
+export async function applySpecPathChanges(projectId: string, changes: SpecPathChanges): Promise<void> {
+	if (changes.renamed.length === 0 && changes.deleted.length === 0) return;
+
+	await transaction(async (client) => {
+		if (changes.deleted.length > 0) {
+			await client.query(
+				'DELETE FROM epic_specs WHERE project_id = $1 AND path = ANY($2)',
+				[projectId, changes.deleted]
+			);
+		}
+		if (changes.renamed.length === 0) return;
+
+		await client.query(
+			`UPDATE epic_specs s SET path = $4 || m.to_path
+			 FROM unnest($2::text[], $3::text[]) AS m(from_path, to_path)
+			 WHERE s.project_id = $1 AND s.path = m.from_path`,
+			[projectId, changes.renamed.map((r) => r.from), changes.renamed.map((r) => r.to), MOVING]
+		);
+		await client.query(
+			`DELETE FROM epic_specs moved
+			 WHERE moved.project_id = $1 AND starts_with(moved.path, $2)
+			   AND EXISTS (
+				 SELECT 1 FROM epic_specs kept
+				 WHERE kept.project_id = $1 AND kept.item_id = moved.item_id
+				   AND kept.path = substr(moved.path, length($2) + 1)
+			   )`,
+			[projectId, MOVING]
+		);
+		await client.query(
+			`UPDATE epic_specs SET path = substr(path, length($2) + 1)
+			 WHERE project_id = $1 AND starts_with(path, $2)`,
+			[projectId, MOVING]
+		);
+	});
 }

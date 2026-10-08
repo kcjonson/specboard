@@ -13,6 +13,11 @@ import type {
 	PullResult,
 } from './types.ts';
 
+/** API paths have a leading slash; storage paths don't. */
+function toStoragePath(relativePath: string): string {
+	return relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+}
+
 /**
  * Cloud storage provider implementation.
  *
@@ -145,33 +150,35 @@ export class CloudStorageProvider implements StorageProvider {
 	}
 
 	async readFile(relativePath: string): Promise<string> {
-		// Normalize path: API uses leading slash, storage doesn't
-		const storagePath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
-
-		// Check for pending changes first
-		const pending = await this.client.getPendingChange(
-			this.projectId,
-			this.userId,
-			storagePath
-		);
-
-		if (pending && pending.action !== 'deleted' && pending.content !== null) {
-			return pending.content;
-		}
-
-		// Read from committed files
-		const file = await this.client.getFile(this.projectId, storagePath);
+		const file = await this.readWithOrigin(toStoragePath(relativePath));
 		if (!file) {
 			throw new Error(`File not found: ${relativePath}`);
 		}
-
 		return file.content;
 	}
 
-	async writeFile(relativePath: string, content: string): Promise<void> {
-		// Normalize path: API uses leading slash, storage doesn't
-		const storagePath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+	/**
+	 * The caller's current content for a path, and the committed path it carries the
+	 * identity of: the path itself when committed, where a rename started when the path
+	 * is the new side of one, or null for a file that was never committed.
+	 */
+	private async readWithOrigin(storagePath: string): Promise<{ content: string; origin: string | null } | null> {
+		const pending = await this.client.getPendingChange(this.projectId, this.userId, storagePath);
+		if (pending && pending.action !== 'deleted' && pending.content !== null) {
+			const origin = pending.renamedFrom ?? (pending.action === 'modified' ? storagePath : null);
+			return { content: pending.content, origin };
+		}
 
+		const file = await this.client.getFile(this.projectId, storagePath);
+		return file ? { content: file.content, origin: storagePath } : null;
+	}
+
+	async writeFile(relativePath: string, content: string): Promise<void> {
+		await this.putContent(toStoragePath(relativePath), content, null);
+	}
+
+	/** `renamedFrom` null keeps whatever origin the pending change already records. */
+	private async putContent(storagePath: string, content: string, renamedFrom: string | null): Promise<void> {
 		const committed = await this.client.getFile(this.projectId, storagePath);
 
 		// Writing the committed content back clears the pending change instead of
@@ -186,13 +193,13 @@ export class CloudStorageProvider implements StorageProvider {
 			this.userId,
 			storagePath,
 			content,
-			committed ? 'modified' : 'created'
+			committed ? 'modified' : 'created',
+			renamedFrom
 		);
 	}
 
 	async deleteFile(relativePath: string): Promise<void> {
-		// Normalize path: API uses leading slash, storage doesn't
-		const storagePath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+		const storagePath = toStoragePath(relativePath);
 
 		// A file that was never committed only exists as a pending creation, so
 		// deleting it just discards that — a 'deleted' journal entry would name a
@@ -208,7 +215,8 @@ export class CloudStorageProvider implements StorageProvider {
 			this.userId,
 			storagePath,
 			null,
-			'deleted'
+			'deleted',
+			null
 		);
 	}
 
@@ -218,18 +226,23 @@ export class CloudStorageProvider implements StorageProvider {
 	}
 
 	async rename(oldPath: string, newPath: string): Promise<void> {
-		// writeFile/deleteFile carry the journal semantics: renaming back to a
-		// committed path clears its pending change, and renaming away from a
-		// never-committed path discards the creation rather than recording a
-		// phantom deletion.
-		const content = await this.readFile(oldPath);
-		await this.writeFile(newPath, content);
+		// putContent/deleteFile carry the journal semantics: renaming back to a committed
+		// path clears its pending change, and renaming away from a never-committed path
+		// discards the creation rather than recording a phantom deletion. The new side
+		// records where the file was committed, which is how a commit tells this rename
+		// from an unrelated delete and create and moves the file's spec links with it.
+		const file = await this.readWithOrigin(toStoragePath(oldPath));
+		if (!file) {
+			throw new Error(`File not found: ${oldPath}`);
+		}
+		const to = toStoragePath(newPath);
+		// Moving back onto its own committed path isn't a rename of anything.
+		await this.putContent(to, file.content, file.origin === to ? null : file.origin);
 		await this.deleteFile(oldPath);
 	}
 
 	async exists(relativePath: string): Promise<boolean> {
-		// Normalize path: API uses leading slash, storage doesn't
-		const storagePath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+		const storagePath = toStoragePath(relativePath);
 
 		// Check pending changes first
 		const pending = await this.client.getPendingChange(
@@ -319,8 +332,7 @@ export class CloudStorageProvider implements StorageProvider {
 	}
 
 	async restore(relativePath: string): Promise<void> {
-		// Normalize path: API uses leading slash, storage doesn't
-		const storagePath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+		const storagePath = toStoragePath(relativePath);
 
 		// Remove pending deletion to restore from committed version
 		await this.client.deletePendingChange(this.projectId, this.userId, storagePath);

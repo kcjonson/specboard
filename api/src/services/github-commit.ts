@@ -6,10 +6,19 @@
  * which requires ~30+ calls for a multi-file commit.
  */
 
+import type { SpecPathChanges } from '@specboard/db';
+
 export interface PendingChange {
 	path: string;
 	content: string | null; // null for deletions
 	action: 'modified' | 'created' | 'deleted';
+}
+
+/** A change in a commit, with the committed path it was renamed from, if any. */
+export interface CommittedChange {
+	path: string;
+	action: 'modified' | 'created' | 'deleted';
+	renamedFrom: string | null;
 }
 
 export interface CommitResult {
@@ -101,6 +110,31 @@ export function generateCommitMessage(changes: PendingChange[]): string {
 	}
 
 	return parts.join(', ');
+}
+
+/**
+ * What a commit does to the files spec links point at, as paths before the commit.
+ * A path is vacated when the commit deletes it or a renamed file lands on it (the
+ * pending change there is `modified` with a `renamedFrom`). A change renamed from a
+ * vacated path takes that path's links; a vacated path nothing took drops its links.
+ * A rename whose old path is still there (restored before the commit) is a copy, and
+ * the links stay on the old path. Storage paths have no leading slash; spec paths do.
+ */
+export function committedSpecPathChanges(changes: CommittedChange[]): SpecPathChanges {
+	const vacated = new Set(
+		changes
+			.filter((c) => c.action === 'deleted' || (c.action === 'modified' && c.renamedFrom))
+			.map((c) => c.path)
+	);
+	const renamed: SpecPathChanges['renamed'] = [];
+	for (const change of changes) {
+		const from = change.renamedFrom;
+		if (change.action === 'deleted' || !from || !vacated.has(from)) continue;
+		// Claimed once: a second file renamed from the same path is a copy.
+		vacated.delete(from);
+		renamed.push({ from: `/${from}`, to: `/${change.path}` });
+	}
+	return { renamed, deleted: [...vacated].map((path) => `/${path}`) };
 }
 
 /**

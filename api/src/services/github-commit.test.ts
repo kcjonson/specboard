@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
 	createGitHubCommit,
 	generateCommitMessage,
+	committedSpecPathChanges,
 	type PendingChange,
 } from './github-commit.ts';
 
@@ -357,6 +358,73 @@ describe('github-commit', () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe('Failed to parse GitHub API response');
+		});
+	});
+
+	describe('committedSpecPathChanges', () => {
+		it('reads a deletion paired with a change renamed from it as a rename', () => {
+			expect(committedSpecPathChanges([
+				{ path: 'docs/old.md', action: 'deleted', renamedFrom: null },
+				{ path: 'guides/new.md', action: 'created', renamedFrom: 'docs/old.md' },
+			])).toEqual({ renamed: [{ from: '/docs/old.md', to: '/guides/new.md' }], deleted: [] });
+		});
+
+		it('reads an unpaired deletion as a deletion', () => {
+			expect(committedSpecPathChanges([
+				{ path: 'docs/gone.md', action: 'deleted', renamedFrom: null },
+				{ path: 'docs/new.md', action: 'created', renamedFrom: null },
+				{ path: 'docs/edited.md', action: 'modified', renamedFrom: null },
+			])).toEqual({ renamed: [], deleted: ['/docs/gone.md'] });
+		});
+
+		it('reads a rename whose old path is still there as a copy', () => {
+			expect(committedSpecPathChanges([
+				{ path: 'docs/copy.md', action: 'created', renamedFrom: 'docs/kept.md' },
+			])).toEqual({ renamed: [], deleted: [] });
+		});
+
+		it('gives a deleted path to one rename only', () => {
+			expect(committedSpecPathChanges([
+				{ path: 'docs/a.md', action: 'created', renamedFrom: 'docs/old.md' },
+				{ path: 'docs/b.md', action: 'created', renamedFrom: 'docs/old.md' },
+				{ path: 'docs/old.md', action: 'deleted', renamedFrom: null },
+			])).toEqual({ renamed: [{ from: '/docs/old.md', to: '/docs/a.md' }], deleted: [] });
+		});
+
+		it('drops the links of a committed path a renamed file replaced', () => {
+			// b.md was deleted, then a.md renamed onto it.
+			expect(committedSpecPathChanges([
+				{ path: 'docs/a.md', action: 'deleted', renamedFrom: null },
+				{ path: 'docs/b.md', action: 'modified', renamedFrom: 'docs/a.md' },
+			])).toEqual({ renamed: [{ from: '/docs/a.md', to: '/docs/b.md' }], deleted: ['/docs/b.md'] });
+		});
+
+		it('moves a path that was renamed away and then had another file renamed onto it', () => {
+			// spec.md -> archive.md, then other.md -> spec.md.
+			expect(committedSpecPathChanges([
+				{ path: 'docs/archive.md', action: 'created', renamedFrom: 'docs/spec.md' },
+				{ path: 'docs/other.md', action: 'deleted', renamedFrom: null },
+				{ path: 'docs/spec.md', action: 'modified', renamedFrom: 'docs/other.md' },
+			])).toEqual({
+				renamed: [
+					{ from: '/docs/spec.md', to: '/docs/archive.md' },
+					{ from: '/docs/other.md', to: '/docs/spec.md' },
+				],
+				deleted: [],
+			});
+		});
+
+		it('reads a swap as two renames', () => {
+			expect(committedSpecPathChanges([
+				{ path: 'docs/a.md', action: 'modified', renamedFrom: 'docs/b.md' },
+				{ path: 'docs/b.md', action: 'modified', renamedFrom: 'docs/a.md' },
+			])).toEqual({
+				renamed: [
+					{ from: '/docs/b.md', to: '/docs/a.md' },
+					{ from: '/docs/a.md', to: '/docs/b.md' },
+				],
+				deleted: [],
+			});
 		});
 	});
 });
