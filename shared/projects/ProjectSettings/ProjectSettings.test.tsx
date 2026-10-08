@@ -60,7 +60,7 @@ const PAT: PendingInvitation = {
 
 let projectCount = 0;
 
-const CLOUD_REPOSITORY = { type: 'cloud', remote: { provider: 'github', owner: 'acme', repo: 'roadmap', url: 'https://github.com/acme/roadmap' }, branch: 'main' };
+const CLOUD_REPOSITORY = { type: 'cloud', remote: { provider: 'github', owner: 'acme-corp', repo: 'roadmap', url: 'https://github.com/acme-corp/roadmap' }, branch: 'main' };
 
 /** Serve a fresh project (the page's model is cached per ref) as the given role. */
 function serve(
@@ -208,7 +208,12 @@ describe('ProjectSettings for the owner', () => {
 		expect(within(rows[0]!).getByText('Owner')).toBeTruthy();
 		expect(queryByRole('combobox', { name: 'Role for Dana Cho' })).toBeNull();
 		expect((getByRole('combobox', { name: 'Role for Alex Rivera' }) as HTMLSelectElement).value).toBe('editor');
-		expect(rows[1]!.textContent).toContain('No push access to acme/roadmap');
+		// One inline run inside the chip: Badge is a flex box, and loose text beside a span
+		// would be two flex items, losing the space between them.
+		const chip = rows[1]!.querySelector('.variant-warning-subtle')!;
+		expect(chip.textContent).toBe('No push access to acme-corp/roadmap');
+		expect(chip.childNodes).toHaveLength(1);
+		expect(chip.firstElementChild!.textContent).toBe('No push access to acme-corp/roadmap');
 		expect(within(rows[2]!).getByText('Needs GitHub to edit')).toBeTruthy();
 
 		const pending = getByRole('list', { name: 'Pending invitations' });

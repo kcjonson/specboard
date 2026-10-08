@@ -347,7 +347,8 @@ function MemberRow({ member, isOwner, repositoryName, busy, onRoleChange, onRemo
 					{needsGitHub && <Badge class="variant-warning-subtle size-sm">Needs GitHub to edit</Badge>}
 					{noPushAccess && repositoryName && (
 						<Badge class="variant-warning-subtle size-sm">
-							No push access to <span class={styles.nowrap}>{repositoryName}</span>
+							{/* One inline run: Badge is a flex box, and loose children would be separate items. */}
+							<span>No push access to <span class={styles.nowrap}>{repositoryName}</span></span>
 						</Badge>
 					)}
 				</div>
