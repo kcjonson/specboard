@@ -10,6 +10,7 @@ import {
 	listPendingChanges,
 	upsertPendingChange,
 	deletePendingChange,
+	rebasePendingChanges,
 	shouldStoreInS3,
 } from '../db/queries.ts';
 import {
@@ -53,11 +54,36 @@ pendingRoutes.get('/:projectId/:userId', async (c) => {
 			path: change.path,
 			action: change.action,
 			renamedFrom: change.renamedFrom,
+			conflict: change.conflict,
 			hasContent: change.content !== null || change.s3Key !== null,
 			isLarge: change.s3Key !== null,
 			updatedAt: change.updatedAt.toISOString(),
 		})),
 	});
+});
+
+/**
+ * Keep the user's drafts at these paths over whatever is committed there now: each
+ * draft's base becomes the current committed version (see rebasePendingChanges).
+ * POST /pending/:projectId/:userId/rebase { paths }
+ */
+pendingRoutes.post('/:projectId/:userId/rebase', async (c) => {
+	const projectId = c.req.param('projectId');
+	const userId = c.req.param('userId');
+	const body = await c.req.json<{ paths?: unknown }>().catch(() => null);
+	const raw = body?.paths;
+	if (!Array.isArray(raw) || raw.length === 0) {
+		return c.json({ error: 'paths must be a non-empty array' }, 400);
+	}
+	const paths: string[] = [];
+	for (const path of raw) {
+		const valid = typeof path === 'string' ? validatePath(path) : null;
+		if (!valid) return c.json({ error: 'Invalid path' }, 400);
+		paths.push(valid);
+	}
+
+	auditLog('rebase', projectId, userId, paths.join(','));
+	return c.json(await rebasePendingChanges(projectId, userId, paths));
 });
 
 /**

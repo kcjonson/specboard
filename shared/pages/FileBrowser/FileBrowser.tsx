@@ -616,6 +616,7 @@ export function FileBrowser({
 										renameValue={renameName}
 										renameInputRef={renameInputRef}
 										changeStatus={changeStatus}
+										conflict={gitStatus?.hasConflict(file.path) ?? false}
 										isDeleted={isDeleted}
 										readOnly={readOnly}
 										onClick={() => handleItemClick(file.path, 'file')}

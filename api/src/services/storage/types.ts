@@ -38,6 +38,8 @@ export interface FileChange {
 	path: string;
 	status: 'added' | 'modified' | 'deleted' | 'renamed';
 	oldPath?: string; // For renames
+	/** Cloud drafts: what's committed at this path changed since the draft began. */
+	conflict?: boolean;
 }
 
 export interface Commit {

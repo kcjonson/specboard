@@ -19,3 +19,8 @@
 .renamed {
 	background: var(--color-warning);
 }
+
+/* A draft someone else's commit has changed under */
+.conflict {
+	background: var(--color-error);
+}

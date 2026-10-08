@@ -22,6 +22,8 @@ interface PendingChange {
 	action: 'modified' | 'created' | 'deleted';
 	/** The committed path this change was renamed from, when it is the new side of a rename. */
 	renamedFrom: string | null;
+	/** What's committed at this path changed since the draft began (someone else's commit or a pull). */
+	conflict: boolean;
 	hasContent: boolean;
 	isLarge: boolean;
 	updatedAt: string;
@@ -183,6 +185,18 @@ export class StorageClient {
 	 */
 	async deletePendingChange(projectId: string, userId: string, path: string): Promise<void> {
 		await this.request('DELETE', `/pending/${projectId}/${userId}/${path}`);
+	}
+
+	/**
+	 * Keep the user's drafts at these paths over what's committed there now ("keep
+	 * mine"): each draft's base becomes the current committed version.
+	 */
+	async rebasePendingChanges(
+		projectId: string,
+		userId: string,
+		paths: string[]
+	): Promise<{ rebased: string[]; dropped: string[] }> {
+		return this.request('POST', `/pending/${projectId}/${userId}/rebase`, { paths });
 	}
 
 	/**

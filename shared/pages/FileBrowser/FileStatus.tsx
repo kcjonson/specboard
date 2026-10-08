@@ -9,6 +9,8 @@ export type FileChangeStatus = 'added' | 'modified' | 'deleted' | 'renamed';
 export interface FileStatusProps {
 	/** The type of change */
 	status: FileChangeStatus;
+	/** Someone committed a change to this file since this draft began */
+	conflict?: boolean;
 	/** Additional CSS classes */
 	class?: string;
 }
@@ -26,13 +28,14 @@ export interface FileStatusProps {
  */
 export function FileStatus({
 	status,
+	conflict = false,
 	class: className,
 }: FileStatusProps): JSX.Element {
 	return (
 		<span
-			class={`${styles.dot} ${styles[status]} ${className || ''}`}
-			title={`${status} - uncommitted`}
-			aria-label={`File ${status}`}
+			class={`${styles.dot} ${conflict ? styles.conflict : styles[status]} ${className || ''}`}
+			title={conflict ? `${status} - someone else changed this file since your draft began` : `${status} - uncommitted`}
+			aria-label={conflict ? `File ${status}, conflicts with a newer commit` : `File ${status}`}
 		/>
 	);
 }

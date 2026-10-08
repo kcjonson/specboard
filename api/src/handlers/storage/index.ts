@@ -4,4 +4,4 @@
 
 export { handleAddFolder, handleRemoveFolder } from './folder-handlers.ts';
 export { handleListFiles, handleReadFile, handleWriteFile, handleCreateFile, handleRenameFile, handleDeleteFile } from './file-handlers.ts';
-export { handleGetGitStatus, handleCommit, handleRestore, handlePull } from './git-handlers.ts';
+export { handleGetGitStatus, handleCommit, handleRestore, handlePull, handleKeepMine, handleReadCommittedFile } from './git-handlers.ts';

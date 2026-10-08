@@ -30,8 +30,15 @@ export interface PendingChange {
 	s3Key: string | null;
 	action: 'modified' | 'created' | 'deleted';
 	renamedFrom: string | null;
+	/** The committed file's content_hash at this path when the draft began; null when none was committed. */
+	baseContentHash: string | null;
 	createdAt: Date;
 	updatedAt: Date;
+}
+
+/** A draft as listed: with whether what's committed at its path moved since the draft began. */
+export interface ListedPendingChange extends PendingChange {
+	conflict: boolean;
 }
 
 // ============================================================
@@ -183,10 +190,11 @@ export async function getPendingChange(
 		s3_key: string | null;
 		action: 'modified' | 'created' | 'deleted';
 		renamed_from: string | null;
+		base_content_hash: string | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`SELECT id, project_id, user_id, path, content, s3_key, action, renamed_from, created_at, updated_at
+		`SELECT id, project_id, user_id, path, content, s3_key, action, renamed_from, base_content_hash, created_at, updated_at
 		 FROM pending_changes
 		 WHERE project_id = $1 AND user_id = $2 AND path = $3`,
 		[projectId, userId, path]
@@ -204,15 +212,21 @@ export async function getPendingChange(
 		s3Key: row.s3_key,
 		action: row.action,
 		renamedFrom: row.renamed_from,
+		baseContentHash: row.base_content_hash,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
 }
 
+/**
+ * A user's drafts, each with `conflict`: what's committed at its path now differs from
+ * what was committed when the draft began (a changed file, a file deleted under a draft,
+ * or a file created where the draft creates one).
+ */
 export async function listPendingChanges(
 	projectId: string,
 	userId: string
-): Promise<PendingChange[]> {
+): Promise<ListedPendingChange[]> {
 	const db = pool.instance;
 	const result = await db.query<{
 		id: string;
@@ -223,13 +237,18 @@ export async function listPendingChanges(
 		s3_key: string | null;
 		action: 'modified' | 'created' | 'deleted';
 		renamed_from: string | null;
+		base_content_hash: string | null;
+		conflict: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`SELECT id, project_id, user_id, path, content, s3_key, action, renamed_from, created_at, updated_at
-		 FROM pending_changes
-		 WHERE project_id = $1 AND user_id = $2
-		 ORDER BY path`,
+		`SELECT p.id, p.project_id, p.user_id, p.path, p.content, p.s3_key, p.action, p.renamed_from,
+		        p.base_content_hash, p.base_content_hash IS DISTINCT FROM d.content_hash AS conflict,
+		        p.created_at, p.updated_at
+		 FROM pending_changes p
+		 LEFT JOIN project_documents d ON d.project_id = p.project_id AND d.path = p.path
+		 WHERE p.project_id = $1 AND p.user_id = $2
+		 ORDER BY p.path`,
 		[projectId, userId]
 	);
 
@@ -242,6 +261,8 @@ export async function listPendingChanges(
 		s3Key: row.s3_key,
 		action: row.action,
 		renamedFrom: row.renamed_from,
+		baseContentHash: row.base_content_hash,
+		conflict: row.conflict,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}));
@@ -258,10 +279,12 @@ export async function upsertPendingChange(
 ): Promise<void> {
 	const db = pool.instance;
 	// Saving a renamed file again doesn't name where it came from, so an existing origin
-	// is kept unless the write gives one; a deletion has none.
+	// is kept unless the write gives one; a deletion has none. The base is what was
+	// committed at this path when the draft row was first written, and later saves keep it.
 	await db.query(
-		`INSERT INTO pending_changes (project_id, user_id, path, content, s3_key, action, renamed_from, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $6 = 'deleted' THEN NULL ELSE $7 END, NOW(), NOW())
+		`INSERT INTO pending_changes (project_id, user_id, path, content, s3_key, action, renamed_from, base_content_hash, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $6 = 'deleted' THEN NULL ELSE $7 END,
+		         (SELECT content_hash FROM project_documents WHERE project_id = $1 AND path = $3), NOW(), NOW())
 		 ON CONFLICT (project_id, user_id, path) DO UPDATE SET
 		   content = EXCLUDED.content,
 		   s3_key = EXCLUDED.s3_key,
@@ -342,7 +365,52 @@ export async function promoteCommit(
 			 RETURNING p.path, p.s3_key`,
 			[projectId, userId, taken.map((t) => t.path), taken.map((t) => t.updatedAt)]
 		);
+		// A draft the committer saved again mid-commit was made on top of what they just
+		// committed, so that's its base now, not the version before.
+		await client.query(
+			`UPDATE pending_changes p
+			 SET base_content_hash = (SELECT content_hash FROM project_documents d WHERE d.project_id = p.project_id AND d.path = p.path)
+			 WHERE p.project_id = $1 AND p.user_id = $2 AND p.path = ANY($3)`,
+			[projectId, userId, taken.map((t) => t.path)]
+		);
 		return cleared.rows.flatMap((row) => (row.s3_key ? [{ path: row.path, s3Key: row.s3_key }] : []));
+	});
+}
+
+/**
+ * "Keep mine" for conflicting drafts: make what's committed at each path now the
+ * draft's base, so the commit takes the draft as it is. A draft that writes the file
+ * becomes `created` or `modified` to match whether a file is committed there now; a
+ * deletion of a file that's already gone has nothing left to do and is dropped.
+ */
+export async function rebasePendingChanges(
+	projectId: string,
+	userId: string,
+	paths: string[]
+): Promise<{ rebased: string[]; dropped: string[] }> {
+	return transaction(async (client) => {
+		const dropped = await client.query<{ path: string }>(
+			`DELETE FROM pending_changes p
+			 WHERE p.project_id = $1 AND p.user_id = $2 AND p.path = ANY($3) AND p.action = 'deleted'
+			   AND NOT EXISTS (SELECT 1 FROM project_documents d WHERE d.project_id = p.project_id AND d.path = p.path)
+			 RETURNING p.path`,
+			[projectId, userId, paths]
+		);
+		const rebased = await client.query<{ path: string }>(
+			`UPDATE pending_changes p
+			 SET base_content_hash = d.content_hash,
+			     action = CASE
+			       WHEN p.action = 'deleted' THEN 'deleted'
+			       WHEN d.content_hash IS NULL THEN 'created'
+			       ELSE 'modified'
+			     END
+			 FROM (SELECT unnest($3::text[]) AS path) wanted
+			 LEFT JOIN project_documents d ON d.project_id = $1 AND d.path = wanted.path
+			 WHERE p.project_id = $1 AND p.user_id = $2 AND p.path = wanted.path
+			 RETURNING p.path`,
+			[projectId, userId, paths]
+		);
+		return { rebased: rebased.rows.map((r) => r.path), dropped: dropped.rows.map((r) => r.path) };
 	});
 }
 

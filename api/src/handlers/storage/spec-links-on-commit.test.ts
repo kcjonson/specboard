@@ -28,10 +28,12 @@ const state = vi.hoisted(() => ({ db: undefined as PGlite | undefined }));
  * change already has; a deletion has none (storage/src/db/queries.ts). Promoting a
  * commit writes its files and clears the pending changes it took, unless one was saved
  * again since (its updatedAt moved); `failPromote` makes it fail before changing
- * anything, as a rolled-back transaction does.
+ * anything, as a rolled-back transaction does. A draft's base is what was committed at
+ * its path when its row was first written (here the content itself stands in for the
+ * hash), and a draft conflicts when what's committed there now differs.
  */
 const storage = vi.hoisted(() => {
-	interface Pending { content: string | null; action: Action; renamedFrom: string | null; updatedAt: string }
+	interface Pending { content: string | null; action: Action; renamedFrom: string | null; updatedAt: string; base: string | null }
 	const committed = new Map<string, string>();
 	const pending = new Map<string, Map<string, Pending>>();
 	let clock = 0;
@@ -44,8 +46,8 @@ const storage = vi.hoisted(() => {
 		}
 		return changes;
 	};
-	const list = (userId: string): Array<Pending & { path: string }> =>
-		[...mine(userId)].map(([path, change]) => ({ path, ...change }));
+	const list = (userId: string): Array<Pending & { path: string; conflict: boolean }> =>
+		[...mine(userId)].map(([path, change]) => ({ path, ...change, conflict: change.base !== (committed.get(path) ?? null) }));
 	const client = {
 		listFiles: async () => [...committed.keys()].map((path) => ({ path, contentHash: 'h', sizeBytes: 1, syncedAt: 'then' })),
 		getFile: async (_projectId: string, path: string) => {
@@ -59,9 +61,11 @@ const storage = vi.hoisted(() => {
 			return change ? { path, ...change } : null;
 		},
 		putPendingChange: async (_projectId: string, userId: string, path: string, content: string | null, action: Action, renamedFrom: string | null) => {
-			const kept = renamedFrom ?? mine(userId).get(path)?.renamedFrom ?? null;
+			const existing = mine(userId).get(path);
+			const kept = renamedFrom ?? existing?.renamedFrom ?? null;
 			const updatedAt = new Date(Date.UTC(2026, 0, 1) + ++clock).toISOString();
-			mine(userId).set(path, { content, action, renamedFrom: action === 'deleted' ? null : kept, updatedAt });
+			const base = existing ? existing.base : (committed.get(path) ?? null);
+			mine(userId).set(path, { content, action, renamedFrom: action === 'deleted' ? null : kept, updatedAt, base });
 			return { path, action, isLarge: false };
 		},
 		deletePendingChange: async (_projectId: string, userId: string, path: string) => {
@@ -72,8 +76,28 @@ const storage = vi.hoisted(() => {
 			for (const change of changes) {
 				if (change.action === 'deleted') committed.delete(change.path);
 				else committed.set(change.path, change.content!);
-				if (mine(userId).get(change.path)?.updatedAt === change.updatedAt) mine(userId).delete(change.path);
+				const draft = mine(userId).get(change.path);
+				if (draft?.updatedAt === change.updatedAt) mine(userId).delete(change.path);
+				else if (draft) draft.base = committed.get(change.path) ?? null;
 			}
+		},
+		rebasePendingChanges: async (_projectId: string, userId: string, paths: string[]) => {
+			const rebased: string[] = [];
+			const dropped: string[] = [];
+			for (const path of paths) {
+				const draft = mine(userId).get(path);
+				if (!draft) continue;
+				const now = committed.get(path) ?? null;
+				if (draft.action === 'deleted' && now === null) {
+					mine(userId).delete(path);
+					dropped.push(path);
+					continue;
+				}
+				draft.base = now;
+				if (draft.action !== 'deleted') draft.action = now === null ? 'created' : 'modified';
+				rebased.push(path);
+			}
+			return { rebased, dropped };
 		},
 	};
 	return { committed, pending, mine, client, flags };
@@ -118,7 +142,7 @@ import { applySpecPathChanges } from '@specboard/db';
 import { comparedSpecPathChanges } from '@specboard/sync-lambda';
 import { createGitHubCommit, STALE_BRANCH_MESSAGE } from '../../services/github-commit.ts';
 import { handleCreateFile, handleDeleteFile, handleReadFile, handleRenameFile, handleWriteFile } from './file-handlers.ts';
-import { handleCommit, handleGetGitStatus, handleRestore } from './git-handlers.ts';
+import { handleCommit, handleGetGitStatus, handleKeepMine, handleReadCommittedFile, handleRestore } from './git-handlers.ts';
 import { handleListSpecs } from '../specs.ts';
 import type { AppVariables } from '../../project-access.ts';
 
@@ -178,6 +202,8 @@ function createApp(): Hono<{ Variables: AppVariables }> {
 	app.put('/api/projects/:owner/:project/files/rename', (context) => handleRenameFile(context, redis));
 	app.delete('/api/projects/:owner/:project/files', (context) => handleDeleteFile(context, redis));
 	app.post('/api/projects/:owner/:project/git/restore', (context) => handleRestore(context, redis));
+	app.post('/api/projects/:owner/:project/git/keep-mine', (context) => handleKeepMine(context, redis));
+	app.get('/api/projects/:owner/:project/git/committed', handleReadCommittedFile);
 	app.post('/api/projects/:owner/:project/git/commit', handleCommit);
 	app.get('/api/projects/:owner/:project/items/:itemKey/specs', handleListSpecs);
 	return app;
@@ -218,11 +244,13 @@ async function syncedSha(): Promise<string | null> {
 	return result.rows[0]!.last_synced_commit_sha;
 }
 
+const deleteFileAs = (as: 'alice' | 'erin', path: string): Promise<Response> =>
+	call(as, 'DELETE', `files?path=${encodeURIComponent(path)}`);
 const deleteFile = (path: string, project = 'docs'): Promise<Response> =>
 	call('alice', 'DELETE', `files?path=${encodeURIComponent(path)}`, undefined, project);
 const renameFile = (oldPath: string, newPath: string, project = 'docs'): Promise<Response> =>
 	call('alice', 'PUT', 'files/rename', { oldPath, newPath }, project);
-const commit = (): Promise<Response> => call('alice', 'POST', 'git/commit', {});
+const commit = (as: 'alice' | 'erin' = 'alice'): Promise<Response> => call(as, 'POST', 'git/commit', {});
 
 beforeAll(async () => {
 	const db = await migratedDb();
@@ -233,6 +261,10 @@ beforeAll(async () => {
 	await db.query(
 		"INSERT INTO github_connections (user_id, github_user_id, github_username, access_token, scopes) VALUES ($1, 'acme-gh', 'acme-gh', '{}', '{repo}')",
 		[alice]
+	);
+	await db.query(
+		"INSERT INTO github_connections (user_id, github_user_id, github_username, access_token, scopes) VALUES ($1, 'erin-gh', 'erin-gh', '{}', '{repo}')",
+		[erin]
 	);
 
 	const cloud = await insertProject(db, 'docs', 'DOC', 'cloud', {
@@ -645,3 +677,120 @@ describe('a local project', () => {
 		expect(await specPaths('alice', 'local')).toEqual(['/docs/spec.md']);
 	});
 });
+
+describe('a draft someone else\'s commit changed under', () => {
+	const save = (as: 'alice' | 'erin', path: string, content: string): Promise<Response> =>
+		call(as, 'PUT', `files?path=${encodeURIComponent(path)}`, { content });
+
+	it('refuses the second member\'s commit with the conflicting files, and writes nothing', async () => {
+		await save('erin', '/docs/spec.md', '# Spec, Erin\'s take');
+		await save('alice', '/docs/spec.md', '# Spec, Alice\'s take');
+		expect((await commit('alice')).status).toBe(200);
+		vi.mocked(createGitHubCommit).mockClear();
+
+		const response = await commit('erin');
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			success: false,
+			reason: 'draft_conflicts',
+			conflicts: [{ path: '/docs/spec.md', action: 'modified' }],
+			error: { stage: 'commit' },
+		});
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+		expect(storage.committed.get('docs/spec.md')).toBe('# Spec, Alice\'s take');
+		expect(storage.mine(erin).get('docs/spec.md')).toMatchObject({ content: '# Spec, Erin\'s take' });
+		expect(await syncedSha()).toBe(COMMIT_SHA);
+		const lock = await state.db!.query<{ sync_status: string | null }>('SELECT sync_status FROM projects WHERE id = $1', [projects.get('docs')!.id]);
+		expect(lock.rows[0]!.sync_status).not.toBe('committing');
+	});
+
+	it('commits the draft as it is after "keep mine"', async () => {
+		await save('erin', '/docs/spec.md', '# Spec, Erin\'s take');
+		await save('alice', '/docs/spec.md', '# Spec, Alice\'s take');
+		await commit('alice');
+		const after = 'd'.repeat(40);
+		vi.mocked(createGitHubCommit).mockResolvedValue({ success: true, sha: after, url: 'u', filesCommitted: 1 });
+
+		const kept = await call('erin', 'POST', 'git/keep-mine', { paths: ['/docs/spec.md'] });
+		expect(await kept.json()).toEqual({ rebased: ['/docs/spec.md'], dropped: [] });
+
+		expect((await commit('erin')).status).toBe(200);
+		expect(vi.mocked(createGitHubCommit).mock.calls.at(-1)![0].changes).toEqual([
+			{ path: 'docs/spec.md', content: '# Spec, Erin\'s take', action: 'modified' },
+		]);
+		expect(storage.committed.get('docs/spec.md')).toBe('# Spec, Erin\'s take');
+	});
+
+	it('leaves nothing to commit after discarding the draft', async () => {
+		await save('erin', '/docs/spec.md', '# Spec, Erin\'s take');
+		await save('alice', '/docs/spec.md', '# Spec, Alice\'s take');
+		await commit('alice');
+
+		expect((await call('erin', 'POST', 'git/restore', { path: '/docs/spec.md' })).status).toBe(200);
+
+		expect(storage.mine(erin).size).toBe(0);
+		expect((await call('erin', 'GET', 'files?path=/docs/spec.md')).status).toBe(200);
+		expect(((await (await call('erin', 'GET', 'files?path=/docs/spec.md')).json()) as { content: string }).content).toBe('# Spec, Alice\'s take');
+	});
+
+	it('counts a created file when someone committed one at the same path', async () => {
+		await call('erin', 'POST', 'files?path=/docs/new.md');
+		await call('alice', 'POST', 'files?path=/docs/new.md');
+		await save('alice', '/docs/new.md', '# Alice\'s new page');
+		await commit('alice');
+
+		const response = await commit('erin');
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ conflicts: [{ path: '/docs/new.md', action: 'created' }] });
+	});
+
+	it('counts a deletion of a file someone changed, and "keep mine" still deletes it', async () => {
+		await deleteFileAs('erin', '/docs/other.md');
+		await save('alice', '/docs/other.md', '# Other, revised');
+		await commit('alice');
+
+		const refused = await commit('erin');
+		expect(refused.status).toBe(409);
+		expect(await refused.json()).toMatchObject({ conflicts: [{ path: '/docs/other.md', action: 'deleted' }] });
+
+		await call('erin', 'POST', 'git/keep-mine', { paths: ['/docs/other.md'] });
+		expect((await commit('erin')).status).toBe(200);
+		expect(storage.committed.has('docs/other.md')).toBe(false);
+	});
+
+	it('flags a rename whose source someone changed, through the source path', async () => {
+		await call('erin', 'PUT', 'files/rename', { oldPath: '/docs/spec.md', newPath: '/docs/moved.md' });
+		await save('alice', '/docs/spec.md', '# Spec, Alice\'s take');
+		await commit('alice');
+
+		const response = await commit('erin');
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ conflicts: [{ path: '/docs/spec.md', action: 'deleted' }] });
+	});
+
+	it('shows the conflict in git status once a pull brings the change in', async () => {
+		await save('erin', '/docs/spec.md', '# Spec, Erin\'s take');
+		// What a pull's sync does: rewrite the committed file, leave drafts alone.
+		storage.committed.set('docs/spec.md', '# Spec, pushed from outside');
+
+		const status = await call('erin', 'GET', 'git/status');
+
+		expect(((await status.json()) as { changedFiles: unknown[] }).changedFiles).toEqual([
+			{ path: '/docs/spec.md', status: 'modified', isUntracked: false, conflict: true },
+		]);
+	});
+
+	it('serves the committed version beside the draft for comparing', async () => {
+		await save('erin', '/docs/spec.md', '# Spec, Erin\'s take');
+
+		const committed = await call('erin', 'GET', 'git/committed?path=/docs/spec.md');
+		const gone = await call('erin', 'GET', 'git/committed?path=/docs/never.md');
+
+		expect(await committed.json()).toEqual({ path: '/docs/spec.md', content: '# Spec' });
+		expect(await gone.json()).toEqual({ path: '/docs/never.md', content: null });
+	});
+});
+

@@ -20,6 +20,8 @@ export interface FileItemProps {
 	renameInputRef: RefObject<HTMLInputElement>;
 	/** Git change status */
 	changeStatus?: FileChangeStatus;
+	/** The draft conflicts with a newer commit */
+	conflict?: boolean;
 	/** Whether file is deleted in git */
 	isDeleted: boolean;
 	/** No delete button, for someone who can't edit */
@@ -46,6 +48,7 @@ export function FileItem({
 	renameValue,
 	renameInputRef,
 	changeStatus,
+	conflict = false,
 	isDeleted,
 	readOnly = false,
 	onClick,
@@ -82,7 +85,7 @@ export function FileItem({
 			)}
 			{!isRenaming && (
 				<div class={styles.fileActions}>
-					{changeStatus && <FileStatus status={changeStatus} />}
+					{changeStatus && <FileStatus status={changeStatus} conflict={conflict} />}
 					{!readOnly && (
 						<button
 							class={styles.deleteButton}

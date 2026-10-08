@@ -284,6 +284,7 @@ export class CloudStorageProvider implements StorageProvider {
 			unstaged.push({
 				path: '/' + change.path,
 				status,
+				conflict: change.conflict,
 			});
 		}
 
