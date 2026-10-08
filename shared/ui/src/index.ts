@@ -23,6 +23,10 @@ export type { ButtonProps } from './Button/Button';
 export { Dialog } from './Dialog/Dialog';
 export type { DialogProps } from './Dialog/Dialog';
 
+// ConfirmDialog - the one "are you sure?" dialog, async-aware
+export { ConfirmDialog } from './ConfirmDialog/ConfirmDialog';
+export type { ConfirmDialogProps } from './ConfirmDialog/ConfirmDialog';
+
 // DialogFooter - the one action-row pattern (dialogs, drawers, detail footers)
 export { DialogFooter } from './DialogFooter/DialogFooter';
 export type { DialogFooterProps } from './DialogFooter/DialogFooter';
@@ -43,6 +47,10 @@ export type { CheckboxProps } from './form/Checkbox';
 // Card
 export { Card } from './Card/Card';
 export type { CardProps } from './Card/Card';
+
+// Avatar - a person's picture, or their initials
+export { Avatar } from './Avatar/Avatar';
+export type { AvatarProps, AvatarSize } from './Avatar/Avatar';
 
 // Badge
 export { Badge } from './Badge/Badge';

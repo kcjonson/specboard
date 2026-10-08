@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { FileTreeModel, useModel, writeFailure, type GitStatusModel } from '@specboard/models';
-import { Badge, Button, Icon } from '@specboard/ui';
+import { Badge, Button, ConfirmDialog, Icon } from '@specboard/ui';
 import { fetchClient } from '@specboard/fetch';
 import { getPlatformBridge } from '@specboard/platform';
 import { GitStatusBar } from './GitStatusBar';
-import { ConfirmDialog } from './ConfirmDialog';
 import { FileItem } from './FileItem';
 import { FolderItem } from './FolderItem';
 import styles from './FileBrowser.module.css';
@@ -642,7 +641,7 @@ export function FileBrowser({
 			<ConfirmDialog
 				open={deleteTarget !== null}
 				title={`Delete ${deleteTarget?.type === 'directory' ? 'folder' : 'file'}?`}
-				message={deleteTarget?.path}
+				detail={deleteTarget?.path}
 				warning={deleteTarget?.isUntracked
 					? "This file has never been committed and cannot be recovered."
 					: "This file has uncommitted changes that will be lost."

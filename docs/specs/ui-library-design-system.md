@@ -46,7 +46,15 @@ Below the breakpoint every dialog is a full-screen slide-up takeover, and the he
 
 ### DialogFooter
 
-The one action-row pattern for dialog, drawer, and detail footers. DOM order is secondary first, primary last (desktop reads left to right); below the breakpoint the row stacks full-width via `column-reverse`, putting the primary on top without changing tab order. An optional `start` slot left-aligns destructive/tertiary actions (e.g. ProjectDialog's Delete). Don't hand-roll footer flex rows.
+The one action-row pattern for dialog, drawer, and detail footers. DOM order is secondary first, primary last (desktop reads left to right); below the breakpoint the row stacks full-width via `column-reverse`, putting the primary on top without changing tab order. An optional `start` slot left-aligns destructive/tertiary actions. Don't hand-roll footer flex rows.
+
+### ConfirmDialog
+
+The one "are you sure?" dialog, built on `Dialog` and `DialogFooter`: a title, a `message`, an optional monospace `detail` (a path) and a `warning`. When `onConfirm` returns a promise the dialog holds both buttons (with `busyText` on the confirm) until it settles, and a rejection is shown in the dialog, the server's message for a failed request, rather than closing. The caller closes it by flipping `open`. Use it in place of `window.confirm()`, which freezes the page and can't show a failure.
+
+### Avatar
+
+A person's picture (`avatarUrl`), or their initials when there is none or it fails to load: the first letters of the first and last words of the name. Sizes `xs` 20px, `sm` 24px, `md` 28px, `lg` 36px; tones `primary` and `muted`. It labels itself with the name (`role="img"`) unless `decorative`, for when the name is printed beside it. It is the only place initials are computed.
 
 ### ResizablePanel
 

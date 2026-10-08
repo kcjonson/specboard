@@ -5,6 +5,12 @@
 }
 
 .message {
+	font-size: var(--text-sm);
+	color: var(--color-text);
+	margin: 0;
+}
+
+.detail {
 	font-family: var(--font-mono);
 	font-size: var(--text-sm);
 	color: var(--color-text-muted);
@@ -15,7 +21,8 @@
 	margin: 0;
 }
 
-.warning {
+.warning,
+.error {
 	font-size: var(--text-sm);
 	color: var(--color-error);
 	margin: 0;
