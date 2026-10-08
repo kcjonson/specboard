@@ -11,6 +11,10 @@ export interface FolderItemProps {
 	isExpanded: boolean;
 	/** Whether this is a root folder */
 	isRoot: boolean;
+	/** No add, delete or remove buttons, for someone who can't edit */
+	readOnly?: boolean;
+	/** Whether a root folder can be removed from the project, which only the owner may do */
+	canRemove?: boolean;
 	/** Called when folder is clicked (to toggle expand) */
 	onClick: () => void;
 	/** Called when add file button is clicked */
@@ -26,6 +30,8 @@ export function FolderItem({
 	depth,
 	isExpanded,
 	isRoot,
+	readOnly = false,
+	canRemove = false,
 	onClick,
 	onAddFileClick,
 	onDeleteClick,
@@ -42,36 +48,38 @@ export function FolderItem({
 				<Icon name={isExpanded ? 'folder-open' : 'folder'} class="size-sm" />
 			</span>
 			<span class={styles.fileName}>{name}</span>
-			<div class={styles.folderActions}>
-				<button
-					class={styles.addFileButton}
-					onClick={onAddFileClick}
-					title="New file in folder"
-					aria-label="New file in folder"
-				>
-					<Icon name="plus" class="size-xs" />
-				</button>
-				{!isRoot && (
+			{!readOnly && (
+				<div class={styles.folderActions}>
 					<button
-						class={styles.deleteButton}
-						onClick={onDeleteClick}
-						title="Delete folder"
-						aria-label="Delete folder"
+						class={styles.addFileButton}
+						onClick={onAddFileClick}
+						title="New file in folder"
+						aria-label="New file in folder"
 					>
-						<Icon name="trash-2" class="size-xs" />
+						<Icon name="plus" class="size-xs" />
 					</button>
-				)}
-				{isRoot && (
-					<button
-						class={styles.removeButton}
-						onClick={onRemoveClick}
-						title="Remove folder from project"
-						aria-label="Remove folder from project"
-					>
-						<Icon name="x" class="size-xs" />
-					</button>
-				)}
-			</div>
+					{!isRoot && (
+						<button
+							class={styles.deleteButton}
+							onClick={onDeleteClick}
+							title="Delete folder"
+							aria-label="Delete folder"
+						>
+							<Icon name="trash-2" class="size-xs" />
+						</button>
+					)}
+					{isRoot && canRemove && (
+						<button
+							class={styles.removeButton}
+							onClick={onRemoveClick}
+							title="Remove folder from project"
+							aria-label="Remove folder from project"
+						>
+							<Icon name="x" class="size-xs" />
+						</button>
+					)}
+				</div>
+			)}
 		</div>
 	);
 }

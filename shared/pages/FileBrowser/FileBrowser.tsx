@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { FileTreeModel, useModel, type GitStatusModel } from '@specboard/models';
+import { FileTreeModel, useModel, writeFailure, type GitStatusModel } from '@specboard/models';
 import { Badge, Button, Icon } from '@specboard/ui';
-import { fetchClient, FetchError } from '@specboard/fetch';
+import { fetchClient } from '@specboard/fetch';
 import { getPlatformBridge } from '@specboard/platform';
 import { GitStatusBar } from './GitStatusBar';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -67,6 +67,16 @@ export interface FileBrowserProps {
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes (file tree is already reloaded) */
 	onPullComplete?: () => void | Promise<void>;
+	/**
+	 * Browse only: no create, rename, delete, folder changes, sync retry, commit or pull,
+	 * and no pending-changes count. For someone who can't edit the project.
+	 */
+	readOnly?: boolean;
+	/**
+	 * The caller owns the project: offers what only the owner can do, the settings link
+	 * when there's no repository and removing a root folder from the project.
+	 */
+	isOwner?: boolean;
 	/** Additional CSS class */
 	class?: string;
 }
@@ -86,6 +96,8 @@ export function FileBrowser({
 	hasUnsavedChanges,
 	onBeforePull,
 	onPullComplete,
+	readOnly = false,
+	isOwner = false,
 	class: className,
 }: FileBrowserProps): JSX.Element {
 	// Create model instance once per component
@@ -322,6 +334,7 @@ export function FileBrowser({
 
 	// Handle double-click on file to start rename
 	const handleFileDoubleClick = (path: string, event: Event): void => {
+		if (readOnly) return;
 		event.preventDefault();
 		event.stopPropagation();
 		model.startRename(path);
@@ -339,13 +352,22 @@ export function FileBrowser({
 		await onPullComplete?.();
 	}, [model, onPullComplete]);
 
-	// Handle add folder
+	// Handle add folder. The picker is the desktop shell's, and its failure is its own
+	// message; the add is a write, reported in the server's words.
 	const handleAddFolder = async (): Promise<void> => {
 		if (!showOpenDialog) return;
 
+		let path: string | null;
 		try {
-			const path = await showOpenDialog({ directory: true });
-			if (!path) return;
+			path = await showOpenDialog({ directory: true });
+		} catch (err) {
+			console.error('Failed to add folder:', err);
+			model.error = err instanceof Error ? err.message : 'Failed to add folder';
+			return;
+		}
+		if (!path) return;
+
+		try {
 			await fetchClient.post<ProjectStorage>(
 				`/api/projects/${projectRef}/folders`,
 				{ path }
@@ -354,7 +376,7 @@ export function FileBrowser({
 			model.reload();
 		} catch (err) {
 			console.error('Failed to add folder:', err);
-			model.error = err instanceof Error ? err.message : 'Failed to add folder';
+			model.error = writeFailure(err, 'Failed to add folder', projectRef);
 		}
 	};
 
@@ -368,12 +390,7 @@ export function FileBrowser({
 			await model.reload();
 		} catch (err) {
 			console.error('Failed to retry sync:', err);
-			if (err instanceof FetchError && err.data) {
-				const data = err.data as Record<string, unknown>;
-				model.error = typeof data.error === 'string' ? data.error : err.message;
-			} else {
-				model.error = err instanceof Error ? err.message : 'Failed to retry sync';
-			}
+			model.error = writeFailure(err, 'Failed to retry sync', projectRef);
 		} finally {
 			setRetryingSync(false);
 		}
@@ -403,7 +420,7 @@ export function FileBrowser({
 			model.reload();
 		} catch (err) {
 			console.error('Failed to remove folder:', err);
-			model.error = err instanceof Error ? err.message : 'Failed to remove folder';
+			model.error = writeFailure(err, 'Failed to remove folder', projectRef);
 		}
 	};
 
@@ -420,7 +437,7 @@ export function FileBrowser({
 			onFileDeleted?.(path);
 		} catch (err) {
 			console.error(`Failed to delete ${itemType}:`, err);
-			model.error = err instanceof Error ? err.message : `Failed to delete ${itemType}`;
+			model.error = writeFailure(err, `Failed to delete ${itemType}`, projectRef);
 		}
 	};
 
@@ -502,11 +519,13 @@ export function FileBrowser({
 							{model.syncError && (
 								<div class={styles.syncErrorMessage}>{model.syncError}</div>
 							)}
-							<Button onClick={handleRetrySync} class={styles.addButton} disabled={retryingSync}>
-								{retryingSync ? 'Retrying...' : 'Retry Sync'}
-							</Button>
+							{!readOnly && (
+								<Button onClick={handleRetrySync} class={styles.addButton} disabled={retryingSync}>
+									{retryingSync ? 'Retrying...' : 'Retry Sync'}
+								</Button>
+							)}
 						</>
-					) : showOpenDialog ? (
+					) : showOpenDialog && !readOnly ? (
 						<>
 							<div class={styles.emptyIcon}><Icon name="folder" class="size-2xl" /></div>
 							<div class={styles.emptyTitle}>No folders added</div>
@@ -524,9 +543,11 @@ export function FileBrowser({
 							<div class={styles.emptyHint}>
 								Pages come from a GitHub repository. This project doesn't have one yet.
 							</div>
-							<a href={`/projects?edit=${projectRef}`} class={styles.settingsLink}>
-								Open project settings
-							</a>
+							{isOwner && (
+								<a href={`/projects?edit=${projectRef}`} class={styles.settingsLink}>
+									Open project settings
+								</a>
+							)}
 						</>
 					)}
 					{model.error && <div class={styles.error}>{model.error}</div>}
@@ -543,7 +564,7 @@ export function FileBrowser({
 
 	return (
 		<div class={`${styles.container} ${className || ''}`}>
-			{gitStatus && (
+			{gitStatus && !readOnly && (
 				<GitStatusBar
 					gitStatus={gitStatus}
 					hasUnsavedChanges={hasUnsavedChanges}
@@ -553,7 +574,7 @@ export function FileBrowser({
 			)}
 			<div class={styles.header}>
 				<span>Files</span>
-				{gitStatus && gitStatus.changedCount > 0 && (
+				{gitStatus && !readOnly && gitStatus.changedCount > 0 && (
 					<Badge class="variant-warning size-sm">{gitStatus.changedCount}</Badge>
 				)}
 			</div>
@@ -578,6 +599,8 @@ export function FileBrowser({
 										depth={depth}
 										isExpanded={isExpanded}
 										isRoot={isRoot}
+										readOnly={readOnly}
+										canRemove={isOwner}
 										onClick={() => handleItemClick(file.path, 'directory')}
 										onAddFileClick={(e) => handleNewFileInFolder(file.path, e)}
 										onDeleteClick={(e) => handleDeleteClick(file.path, 'directory', e)}
@@ -595,6 +618,7 @@ export function FileBrowser({
 										renameInputRef={renameInputRef}
 										changeStatus={changeStatus}
 										isDeleted={isDeleted}
+										readOnly={readOnly}
 										onClick={() => handleItemClick(file.path, 'file')}
 										onDoubleClick={(e) => handleFileDoubleClick(file.path, e)}
 										onRenameInput={(e) => setRenameName((e.target as HTMLInputElement).value)}

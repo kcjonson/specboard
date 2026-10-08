@@ -14,6 +14,7 @@ function project(overrides: Partial<ProjectResponse>): ProjectResponse {
 		id: 'proj-1',
 		slug: 'roadmap',
 		ownerSlug: 'acme',
+		ownerName: 'Alice Ames',
 		key: 'RM',
 		name: 'Roadmap',
 		description: null,

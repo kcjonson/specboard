@@ -1,9 +1,10 @@
 import type { JSX, ComponentChildren } from 'preact';
 import { WebHeader, type NavTabLabel } from '../WebHeader/WebHeader';
+import { ProjectBanner } from '../ProjectBanner/ProjectBanner';
 import styles from './Page.module.css';
 
 export interface PageProps {
-	/** Project ref (owner/project) - if provided, shows project name and nav tabs in header */
+	/** Project ref (owner/project) - if provided, shows project name and nav tabs in header, and the caller's read-only banner */
 	projectRef?: string;
 	/** Currently active nav tab */
 	activeTab?: NavTabLabel;
@@ -25,6 +26,7 @@ export function Page({
 	return (
 		<div class={styles.page}>
 			<WebHeader projectRef={projectRef} activeTab={activeTab} title={title} />
+			{projectRef && <ProjectBanner projectRef={projectRef} />}
 			<main class={`${styles.content} ${className || ''}`}>
 				{children}
 			</main>

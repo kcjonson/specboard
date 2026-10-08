@@ -306,6 +306,20 @@ nothing to dismiss it falls through and the drawer closes.
 
 ---
 
+## Read-only board
+
+Someone who can't edit the project (a granted viewer, or an editor who hasn't connected
+GitHub) gets the same board with every write taken away, from the `canEdit` that
+`useProjectRole` returns ([multi-user-collaboration.md](./multi-user-collaboration.md),
+Read-only mode): no drag-and-drop and no move or create shortcuts, no + New, item fields as
+text, the description read-only, checklist boxes disabled, and no add, remove, clear, link or
+delete controls in the item detail. The Map has no writes and is unchanged.
+
+A write the server refuses anyway (the role changed mid-session) is reported in the server's
+words: above the board for a create, move or delete, beside the field or in the section for
+the rest. Moves and field edits are optimistic and revert. A 403 also re-reads the project,
+so the board turns read-only to match.
+
 ## Keyboard Shortcuts
 
 ### Global

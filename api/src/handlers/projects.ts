@@ -21,9 +21,9 @@ import { projectResponseToApi } from '../transform.ts';
 import { apiUserId, loadAuthorizedProject, requireAccess, requireResolvedProject } from '../project-access.ts';
 import { isValidTitle, isValidDescription, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH } from '../validation.ts';
 import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
-
-/** Always part of a ?fields= filtered project response. */
-const IDENTIFIER_FIELDS = new Set(['id', 'slug', 'ownerSlug', 'key']);
+import { callerPushAccess } from '../services/push-access.ts';
+import { getGitHubConnection } from '../services/github-token.ts';
+import type { ApiProjectDetail } from '../types.ts';
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
@@ -116,7 +116,6 @@ export async function handleListProjects(context: Context, redis: Redis): Promis
 
 		const apiProjects = projects.map((project) => ({
 			...projectResponseToApi(project, project),
-			ownerName: project.ownerName,
 			itemCount: project.itemCount,
 			itemCounts: project.itemCounts,
 		}));
@@ -128,14 +127,12 @@ export async function handleListProjects(context: Context, redis: Redis): Promis
 	}
 }
 
-export async function handleGetProject(context: Context): Promise<Response> {
-	// Support fields filter for lightweight queries (e.g., ?fields=name)
-	// Note: the identifiers are always included in filtered responses
-	const fieldsParam = context.req.query('fields');
-	const requestedFields = fieldsParam
-		? fieldsParam.split(',').map((f) => f.trim()).filter((f) => !IDENTIFIER_FIELDS.has(f))
-		: null;
-
+/**
+ * GET /api/projects/:owner/:project, with the caller's role, their GitHub login, and
+ * whether it can push to the project's repository (null when that's unknown or moot;
+ * never waited on, see callerPushAccess).
+ */
+export async function handleGetProject(context: Context, redis: Redis): Promise<Response> {
 	try {
 		const project = await loadAuthorizedProject(context);
 
@@ -143,25 +140,14 @@ export async function handleGetProject(context: Context): Promise<Response> {
 			return context.json({ error: 'Project not found' }, 404);
 		}
 
-		const fullResponse = projectResponseToApi(project, requireAccess(context));
-
-		// If specific fields requested, return only those
-		if (requestedFields) {
-			const filtered: Record<string, unknown> = {
-				id: fullResponse.id,
-				slug: fullResponse.slug,
-				ownerSlug: fullResponse.ownerSlug,
-				key: fullResponse.key,
-			};
-			for (const field of requestedFields) {
-				if (field in fullResponse) {
-					filtered[field] = fullResponse[field as keyof typeof fullResponse];
-				}
-			}
-			return context.json(filtered);
-		}
-
-		return context.json(fullResponse);
+		const userId = apiUserId(context);
+		const github = await getGitHubConnection(userId);
+		const response: ApiProjectDetail = {
+			...projectResponseToApi(project, requireAccess(context)),
+			githubUsername: github?.username ?? null,
+			pushAccess: await callerPushAccess(redis, userId, github?.encryptedToken ?? null, project),
+		};
+		return context.json(response);
 	} catch (error) {
 		console.error('Failed to fetch project:', error);
 		return context.json({ error: 'Database error' }, 500);

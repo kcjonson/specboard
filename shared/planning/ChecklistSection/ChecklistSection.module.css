@@ -44,6 +44,17 @@
 	color: var(--color-text);
 }
 
+/* An entry for someone who can't edit it: the field's metrics, none of its affordances. */
+.readText {
+	flex: 1;
+	min-width: 0;
+	padding: 2px var(--space-1);
+	border: 1px solid transparent;
+	font-size: var(--text-sm);
+	color: var(--color-text);
+	overflow-wrap: break-word;
+}
+
 .text:hover {
 	border-color: var(--color-border);
 }

@@ -11,6 +11,16 @@ import { SyncCollection } from './SyncCollection';
 import { prop } from './prop';
 import type { ModelData } from './types';
 
+/**
+ * Start the GitHub OAuth flow (a full-page redirect). `returnTo` is the same-origin path
+ * to land on once connected; without it, Settings.
+ */
+export function connectGitHub(returnTo?: string): void {
+	window.location.href = returnTo
+		? `/api/auth/github?next=${encodeURIComponent(returnTo)}`
+		: '/api/auth/github';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GitHub Connection Model
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,9 +28,8 @@ import type { ModelData } from './types';
 /**
  * GitHubConnectionModel - manages GitHub OAuth connection status
  *
- * Singleton SyncModel (no :id in URL). Custom methods for OAuth flow:
- * - connect() - redirects to GitHub OAuth
- * - disconnect() - DELETEs via a separate auth endpoint
+ * Singleton SyncModel (no :id in URL). Connecting is a redirect, connectGitHub();
+ * disconnect() DELETEs via a separate auth endpoint.
  *
  * @example
  * ```tsx
@@ -28,7 +37,7 @@ import type { ModelData } from './types';
  * useModel(connection);
  *
  * if (connection.$meta.working) return <Loading />;
- * if (!connection.connected) return <ConnectButton onClick={connection.connect} />;
+ * if (!connection.connected) return <ConnectButton onClick={() => connectGitHub()} />;
  * return <Connected username={connection.username} onDisconnect={connection.disconnect} />;
  * ```
  */
@@ -49,13 +58,6 @@ export class GitHubConnectionModel extends SyncModel {
 		});
 
 		this.fetch().catch(() => {});
-	}
-
-	/**
-	 * Start GitHub OAuth flow (redirects to GitHub)
-	 */
-	connect(): void {
-		window.location.href = '/api/auth/github';
 	}
 
 	/**

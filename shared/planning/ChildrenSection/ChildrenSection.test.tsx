@@ -14,7 +14,8 @@ import { ChildrenSection } from './ChildrenSection';
 const get = vi.fn();
 const post = vi.fn();
 
-vi.mock('@specboard/fetch', () => ({
+vi.mock('@specboard/fetch', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@specboard/fetch')>()),
 	fetchClient: {
 		get: (...args: unknown[]) => get(...args),
 		post: (...args: unknown[]) => post(...args),
@@ -86,7 +87,7 @@ describe('ChildrenSection', () => {
 
 	it('renders no checkbox — a child is an item, not a todo', () => {
 		const item = makeItem('epic', [child(), child({ id: 'c2', key: 'SB-3', status: 'done' })]);
-		const { container, queryAllByRole } = render(<ChildrenSection item={item} />);
+		const { container, queryAllByRole } = render(<ChildrenSection canEdit item={item} />);
 
 		expect(container.querySelectorAll('input[type=checkbox]')).toHaveLength(0);
 		expect(queryAllByRole('checkbox')).toHaveLength(0);
@@ -96,7 +97,7 @@ describe('ChildrenSection', () => {
 		const item = makeItem('epic', [
 			child({ key: 'SB-7', type: 'bug', title: 'Login 500s', status: 'in_progress', blocked: true }),
 		]);
-		const { getByText, getByLabelText } = render(<ChildrenSection item={item} />);
+		const { getByText, getByLabelText } = render(<ChildrenSection canEdit item={item} />);
 
 		expect(getByText('SB-7')).toBeTruthy();
 		expect(getByText('Login 500s')).toBeTruthy();
@@ -109,7 +110,7 @@ describe('ChildrenSection', () => {
 		const item = makeItem('epic', ITEM_STATUSES.map((status, i) =>
 			child({ id: `c${i}`, key: `SB-${i + 2}`, number: i + 2, status })
 		));
-		const { getByText } = render(<ChildrenSection item={item} />);
+		const { getByText } = render(<ChildrenSection canEdit item={item} />);
 
 		for (const status of ITEM_STATUSES) {
 			const glyph = getByText(STATUS_LABELS[status]).querySelector('svg');
@@ -122,7 +123,7 @@ describe('ChildrenSection', () => {
 
 	it('draws the blocked glyph for an unblocked-status child with an open blocker', () => {
 		const item = makeItem('epic', [child({ status: 'ready', blocked: true })]);
-		const { getByText } = render(<ChildrenSection item={item} />);
+		const { getByText } = render(<ChildrenSection canEdit item={item} />);
 
 		const glyph = getByText('Ready').querySelector('svg');
 		expect(glyph?.style.color).toBe(`var(${STATUS_GLYPHS.blocked.token})`);
@@ -135,7 +136,7 @@ describe('ChildrenSection', () => {
 			child({ id: 'c2', key: 'SB-3', status: 'ready' }),
 			child({ id: 'c3', key: 'SB-4', status: 'done' }),
 		]);
-		const { getByText } = render(<ChildrenSection item={item} />);
+		const { getByText } = render(<ChildrenSection canEdit item={item} />);
 
 		expect(getByText('Children (2/3)')).toBeTruthy();
 	});
@@ -143,7 +144,7 @@ describe('ChildrenSection', () => {
 	it('opens a child by key when its row is clicked', () => {
 		const onOpenItem = vi.fn();
 		const item = makeItem('epic', [child({ key: 'SB-9' })]);
-		const { getByText } = render(<ChildrenSection item={item} onOpenItem={onOpenItem} />);
+		const { getByText } = render(<ChildrenSection canEdit item={item} onOpenItem={onOpenItem} />);
 
 		fireEvent.click(getByText('A child'));
 
@@ -152,7 +153,7 @@ describe('ChildrenSection', () => {
 
 	it('caps the list at ten rows and reveals the rest on Show all', () => {
 		const item = makeItem('epic', manyChildren(12));
-		const { getAllByRole, getByText, queryByText } = render(<ChildrenSection item={item} />);
+		const { getAllByRole, getByText, queryByText } = render(<ChildrenSection canEdit item={item} />);
 
 		expect(getAllByRole('listitem')).toHaveLength(10);
 		expect(queryByText('Child 12')).toBeNull();
@@ -165,7 +166,7 @@ describe('ChildrenSection', () => {
 
 	it('collapses to the header alone for a childless task', () => {
 		const item = makeItem('task', []);
-		const { getByText, queryAllByRole, queryByText } = render(<ChildrenSection item={item} />);
+		const { getByText, queryAllByRole, queryByText } = render(<ChildrenSection canEdit item={item} />);
 
 		expect(getByText('Children (0/0)')).toBeTruthy();
 		expect(queryAllByRole('listitem')).toHaveLength(0);
@@ -174,7 +175,7 @@ describe('ChildrenSection', () => {
 
 	it('opens the create dialog under this item, defaulting to a task', () => {
 		const item = makeItem('epic', []);
-		const { getByText, getByTestId } = render(<ChildrenSection item={item} />);
+		const { getByText, getByTestId } = render(<ChildrenSection canEdit item={item} />);
 
 		fireEvent.click(getByText('Task'));
 
@@ -185,7 +186,7 @@ describe('ChildrenSection', () => {
 
 	it('creates the type chosen from the dropdown', () => {
 		const item = makeItem('epic', []);
-		const { getByLabelText, getByText } = render(<ChildrenSection item={item} />);
+		const { getByLabelText, getByText } = render(<ChildrenSection canEdit item={item} />);
 
 		fireEvent.click(getByLabelText('More options'));
 		fireEvent.click(getByText('Bug'));
@@ -198,7 +199,7 @@ describe('ChildrenSection', () => {
 		post.mockResolvedValue({ id: 'c9', key: 'SB-9', number: 9, type: 'task', title: 'Moved work', status: 'ready' });
 		get.mockResolvedValue({ key: 'SB-1', children: [] });
 		const item = makeItem('epic', []);
-		const { getByText } = render(<ChildrenSection item={item} />);
+		const { getByText } = render(<ChildrenSection canEdit item={item} />);
 
 		fireEvent.click(getByText('Task'));
 		// The dialog opens on SB-1 but its parent field is editable, so the payload wins.
@@ -211,7 +212,7 @@ describe('ChildrenSection', () => {
 	it('surfaces a failed create instead of swallowing it', async () => {
 		post.mockRejectedValue(new Error('nope'));
 		const item = makeItem('epic', []);
-		const { getByText, findByText } = render(<ChildrenSection item={item} />);
+		const { getByText, findByText } = render(<ChildrenSection canEdit item={item} />);
 
 		fireEvent.click(getByText('Task'));
 		dialog.props?.onCreate({ title: 'New work', status: 'ready', type: 'task' });
@@ -226,7 +227,7 @@ describe('ChildrenSection', () => {
 		const item = makeItem('epic', [child()]);
 		post.mockResolvedValue({ key: 'SB-9', title: 'New work' });
 		get.mockRejectedValue(new Error('offline'));
-		const { getByText, findByText } = render(<ChildrenSection item={item} />);
+		const { getByText, findByText } = render(<ChildrenSection canEdit item={item} />);
 
 		fireEvent.click(getByText('Task'));
 		dialog.props?.onCreate({ title: 'New work', status: 'ready', type: 'task', parentKey: 'SB-1' });
@@ -240,7 +241,7 @@ describe('ChildrenSection', () => {
 		const item = makeItem('epic', [child()]);
 		post.mockResolvedValue({ key: 'SB-9', title: 'Elsewhere' });
 		get.mockClear();
-		const { getByText } = render(<ChildrenSection item={item} />);
+		const { getByText } = render(<ChildrenSection canEdit item={item} />);
 
 		fireEvent.click(getByText('Task'));
 		dialog.props?.onCreate({ title: 'Elsewhere', status: 'ready', type: 'task', parentKey: 'SB-99' });
@@ -253,7 +254,7 @@ describe('ChildrenSection', () => {
 	// tab stop that does nothing when you land on it.
 	it('leaves rows inert when there is nothing to open them with', () => {
 		const item = makeItem('epic', [child()]);
-		const { container } = render(<ChildrenSection item={item} />);
+		const { container } = render(<ChildrenSection canEdit item={item} />);
 
 		const row = container.querySelector('[role="listitem"]');
 		expect(row).not.toBeNull();
@@ -262,8 +263,31 @@ describe('ChildrenSection', () => {
 
 	it('makes rows focusable when they can open a child', () => {
 		const item = makeItem('epic', [child()]);
-		const { container } = render(<ChildrenSection item={item} onOpenItem={vi.fn()} />);
+		const { container } = render(<ChildrenSection canEdit item={item} onOpenItem={vi.fn()} />);
 
 		expect(container.querySelector('[role="listitem"]')?.getAttribute('tabindex')).toBe('0');
+	});
+});
+
+describe('ChildrenSection for someone who can\'t edit', () => {
+	it('lists the children with no way to add one', () => {
+		const item = makeItem('epic', [child()]);
+		const { getByText, queryByRole } = render(<ChildrenSection canEdit={false} item={item} />);
+
+		expect(getByText('A child')).toBeTruthy();
+		expect(queryByRole('button', { name: /\+ Add/ })).toBeNull();
+		expect(queryByRole('button', { name: 'More options' })).toBeNull();
+	});
+
+	it('offers the add button to an editor (the control for the test above)', () => {
+		const { getByRole } = render(<ChildrenSection canEdit item={makeItem('epic', [child()])} />);
+
+		expect(getByRole('button', { name: /\+ Add/ })).toBeTruthy();
+	});
+
+	it('leaves out the header of a childless task, which only existed to add one', () => {
+		const { container } = render(<ChildrenSection canEdit={false} item={makeItem('task', [])} />);
+
+		expect(container.textContent).toBe('');
 	});
 });

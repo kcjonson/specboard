@@ -6,27 +6,29 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, act } from '@testing-library/preact';
+import { render, fireEvent, act, waitFor } from '@testing-library/preact';
+import { FetchError, fetchClient } from '@specboard/fetch';
 import { ItemModel } from '@specboard/models';
 import { ItemView } from './ItemView';
 
 // Nothing in these tests should reach the network. Throwing beats a silent
 // resolve: a stray call names itself instead of surfacing later as a confusing
 // downstream error.
-vi.mock('@specboard/fetch', () => {
+vi.mock('@specboard/fetch', async (importOriginal) => {
 	const unexpected = (method: string): ReturnType<typeof vi.fn> => vi.fn((url: unknown) => {
-		throw new Error(`Unexpected ${method} ${String(url)} in a title-field test`);
+		throw new Error(`Unexpected ${method} ${String(url)} in an ItemView test`);
 	});
 	return {
+		...(await importOriginal<typeof import('@specboard/fetch')>()),
 		fetchClient: {
 			get: unexpected('GET'),
 			post: unexpected('POST'),
 			put: unexpected('PUT'),
 			delete: unexpected('DELETE'),
 		},
-		FetchError: class extends Error {},
 	};
 });
+
 
 // The sections below the header each fetch and render their own trees; none of
 // them are what these tests are about. The parent picker fetches on open, and
@@ -106,7 +108,7 @@ describe('ItemView title', () => {
 
 	it('collapses newlines pasted into the field', () => {
 		const item = makeItem('Original');
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 		const field = titleField(container);
 
 		fireEvent.input(field, { target: { value: 'Apply planning search\nand type filter' } });
@@ -116,7 +118,7 @@ describe('ItemView title', () => {
 
 	it('saves the collapsed value on blur', () => {
 		const item = makeItem('Original');
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 		const field = titleField(container);
 
 		fireEvent.input(field, { target: { value: 'One\nTwo' } });
@@ -128,14 +130,14 @@ describe('ItemView title', () => {
 
 	it('renders a title that already contains newlines as one line', () => {
 		const item = makeItem('Stored\nwith a break');
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 
 		expect(titleField(container).value).toBe('Stored with a break');
 	});
 
 	it('does not write just because a newline-containing title was focused', () => {
 		const item = makeItem('Stored\nwith a break');
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 
 		fireEvent.blur(titleField(container));
 
@@ -144,7 +146,7 @@ describe('ItemView title', () => {
 
 	it('commits on Enter instead of inserting a line break', () => {
 		const item = makeItem('Original');
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 		const field = titleField(container);
 		const blur = vi.spyOn(field, 'blur');
 
@@ -162,14 +164,14 @@ describe('ItemView description', () => {
 	// onto the wrong item. Empty descriptions make this the ordinary case.
 	it('drops an unsaved draft when switching to an item whose description matches', () => {
 		const first = makeItemWith('SB-1', '');
-		const { rerender } = render(<ItemView item={first} />);
+		const { rerender } = render(<ItemView canEdit item={first} />);
 
 		const pristine = editorProps?.value;
 		// Driving onChange directly is not an event, so it needs its own flush.
 		act(() => editorProps?.onChange([{ type: 'paragraph', children: [{ text: 'unsaved draft' }] }]));
 		expect(editorProps?.value).not.toBe(pristine);
 
-		rerender(<ItemView item={makeItemWith('SB-2', '')} />);
+		rerender(<ItemView canEdit item={makeItemWith('SB-2', '')} />);
 
 		expect(editorProps?.value).not.toBe(pristine);
 		expect(editorProps?.value).toEqual([]);
@@ -184,7 +186,7 @@ describe('ItemView parent', () => {
 	it('reads as key and title, and opens the parent when clicked', () => {
 		const item = makeItem('Child', { parentKey: 'SB-4', parentTitle: 'UI Library & Design System' });
 		const onOpenItem = vi.fn();
-		const { getByText } = render(<ItemView item={item} onOpenItem={onOpenItem} />);
+		const { getByText } = render(<ItemView canEdit item={item} onOpenItem={onOpenItem} />);
 
 		fireEvent.click(getByText('SB-4 · UI Library & Design System'));
 
@@ -193,7 +195,7 @@ describe('ItemView parent', () => {
 
 	it('shows a parentless task as None, so it can still be given one', () => {
 		const item = makeItem('Orphan');
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 
 		expect(container.textContent).toContain('None');
 	});
@@ -206,7 +208,7 @@ describe('ItemView parent', () => {
 		const move = vi.spyOn(item, 'move').mockReturnValue(new Promise<void>((resolve) => {
 			settleMove = resolve;
 		}));
-		const { getByText } = render(<ItemView item={item} onOpenItem={vi.fn()} />);
+		const { getByText } = render(<ItemView canEdit item={item} onOpenItem={vi.fn()} />);
 
 		fireEvent.click(getByText('Change'));
 		picker.props?.onSelect('SB-7');
@@ -219,7 +221,7 @@ describe('ItemView parent', () => {
 
 	it('leaves the field off a top-level epic', () => {
 		const item = makeItem('Epic', { type: 'epic' });
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 
 		expect(container.textContent).not.toContain('Parent');
 	});
@@ -238,7 +240,7 @@ describe('ItemView dates', () => {
 			startedAt: '2026-09-29T14:30:00.000Z',
 			completedAt: '2026-10-01T17:05:00.000Z',
 		});
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 
 		expect(at(container, 'Created')).toBe('2026-09-28T09:00:00.000Z');
 		expect(at(container, 'Started')).toBe('2026-09-29T14:30:00.000Z');
@@ -247,11 +249,90 @@ describe('ItemView dates', () => {
 
 	it('leaves out a date that was never set, rather than claiming it never happened', () => {
 		const item = makeItem('Fresh', { createdAt: '2026-09-28T09:00:00.000Z', startedAt: null, completedAt: null });
-		const { container } = render(<ItemView item={item} />);
+		const { container } = render(<ItemView canEdit item={item} />);
 
 		expect(at(container, 'Created')).toBe('2026-09-28T09:00:00.000Z');
 		expect(container.querySelectorAll('time')).toHaveLength(1);
 		expect(at(container, 'Started')).toBeNull();
 		expect(at(container, 'Completed')).toBeNull();
+	});
+});
+
+describe('ItemView for someone who can\'t edit', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('renders the fields as text and offers no changes', () => {
+		const item = makeItem('Ship it', { parentKey: 'SB-4', status: 'in_progress', subStatus: 'pr_open' });
+		const { container, getByRole, queryByText } = render(<ItemView canEdit={false} item={item} onDelete={vi.fn()} onOpenItem={vi.fn()} />);
+
+		expect(container.querySelector('textarea')).toBeNull();
+		expect(container.querySelector('select')).toBeNull();
+		expect(getByRole('heading', { level: 2 }).textContent).toBe('Ship it');
+		expect(container.textContent).toContain('StatusIn Progress');
+		expect(container.textContent).toContain('Sub-StatusPR Open');
+		expect(queryByText('Change')).toBeNull();
+		expect(queryByText('Delete Task')).toBeNull();
+	});
+
+	it('mounts the description read-only', () => {
+		render(<ItemView canEdit={false} item={makeItem('Ship it')} />);
+
+		expect(editorProps).toMatchObject({ readOnly: true });
+	});
+
+	it('still opens the parent', () => {
+		const onOpenItem = vi.fn();
+		const { getByText } = render(<ItemView canEdit={false} item={makeItem('Child', { parentKey: 'SB-4' })} onOpenItem={onOpenItem} />);
+
+		fireEvent.click(getByText('SB-4'));
+
+		expect(onOpenItem).toHaveBeenCalledWith('SB-4');
+	});
+});
+
+describe('ItemView refused writes', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('reverts the field and shows the server\'s reason', async () => {
+		const item = makeItem('Original');
+		vi.mocked(item.save).mockRejectedValue(
+			new FetchError('HTTP 403: Forbidden', 403, undefined, { error: 'You have view access to this project', reason: 'viewer' })
+		);
+		const { container, findByRole } = render(<ItemView canEdit item={item} />);
+		const field = titleField(container);
+
+		fireEvent.input(field, { target: { value: 'Renamed' } });
+		fireEvent.blur(field);
+
+		expect((await findByRole('alert')).textContent).toBe('You have view access to this project');
+		expect(item.title).toBe('Original');
+		await waitFor(() => expect(titleField(container).value).toBe('Original'));
+	});
+
+	it('re-reads the project after a 403, so the page can turn read-only', async () => {
+		const item = makeItem('Original');
+		vi.mocked(item.save).mockRejectedValue(new FetchError('HTTP 403: Forbidden', 403, undefined, { error: 'Connect GitHub to edit this project' }));
+		const { container, findByRole } = render(<ItemView canEdit item={item} />);
+
+		fireEvent.change(container.querySelector('select#item-status')!, { target: { value: 'done' } });
+
+		await findByRole('alert');
+		expect(fetchClient.get).toHaveBeenCalledWith('/api/projects/acme/specboard');
+		expect(item.status).toBe('ready');
+	});
+
+	it('falls back to its own words for a failure without a message', async () => {
+		const item = makeItem('Original');
+		vi.mocked(item.save).mockRejectedValue(new TypeError('Failed to fetch'));
+		const { container, findByRole } = render(<ItemView canEdit item={item} />);
+
+		fireEvent.change(container.querySelector('select#item-status')!, { target: { value: 'done' } });
+
+		expect((await findByRole('alert')).textContent).toBe('Could not change the status.');
+		expect(fetchClient.get).not.toHaveBeenCalled();
 	});
 });

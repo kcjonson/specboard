@@ -11,18 +11,20 @@ import { memoryStorage } from '../test-support/memory-storage';
 import { Planning } from './Planning';
 
 const getResponse = vi.fn();
+const get = vi.fn();
+const post = vi.fn();
 
-// The header fetches the user and project name through `get`; the collection
-// pages items through `getResponse`. Only the latter is under test, so `get`
-// resolves to nothing and the real FetchError comes along for the status check.
+// The header fetches the user and the project through `get`; the collection pages
+// items through `getResponse`. `get` answers with nothing unless a test serves a
+// project, and the real FetchError comes along for the status check.
 vi.mock('@specboard/fetch', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@specboard/fetch')>();
 	return {
 		...actual,
 		fetchClient: {
-			get: vi.fn(() => Promise.resolve({})),
+			get: (...args: unknown[]) => get(...args),
 			getResponse: (...args: unknown[]) => getResponse(...args),
-			post: vi.fn(),
+			post: (...args: unknown[]) => post(...args),
 			put: vi.fn(),
 			delete: vi.fn(),
 		},
@@ -47,7 +49,14 @@ vi.mock('../ItemDrawer/ItemDrawer', async () => {
 		},
 	};
 });
-vi.mock('../NewItemDialog/NewItemDialog', () => ({ NewItemDialog: () => null }));
+// Captured so a test can submit the create form without rendering a modal.
+const newItemDialog: { props?: { onCreate: (data: { title: string }) => void } } = {};
+vi.mock('../NewItemDialog/NewItemDialog', () => ({
+	NewItemDialog: (props: { onCreate: (data: { title: string }) => void }) => {
+		newItemDialog.props = props;
+		return <div data-testid="new-item-dialog" />;
+	},
+}));
 
 function failWith(error: Error): void {
 	getResponse.mockRejectedValue(error);
@@ -57,12 +66,19 @@ function succeedEmpty(): void {
 	getResponse.mockResolvedValue({ data: [], headers: new Headers() });
 }
 
-function renderPlanning(itemKey?: string): ReturnType<typeof render> {
-	return render(<Planning params={{ owner: 'acme', project: 'specboard', ...(itemKey ? { itemKey } : {}) }} />);
+function renderPlanning(itemKey?: string, project = 'specboard'): ReturnType<typeof render> {
+	return render(<Planning params={{ owner: 'acme', project, ...(itemKey ? { itemKey } : {}) }} />);
+}
+
+/** Answer the project read with the caller's roles; everything else `get` reads is empty. */
+function serveProject(project: string, roles: { grantedRole: string; effectiveRole: string }): void {
+	get.mockImplementation(async (url: string) => (url === `/api/projects/acme/${project}` ? { id: 'p1', name: 'Specboard', ...roles } : {}));
 }
 
 describe('Planning load failures', () => {
 	beforeEach(() => {
+		get.mockReset();
+		get.mockResolvedValue({});
 		getResponse.mockReset();
 		window.history.replaceState({}, '', '/projects/acme/specboard/planning');
 	});
@@ -117,6 +133,11 @@ describe('Planning load failures', () => {
 });
 
 describe('Planning views', () => {
+	beforeEach(() => {
+		get.mockReset();
+		get.mockResolvedValue({});
+	});
+
 	/** Stands in for matchMedia, which jsdom lacks, at one width. */
 	function setWidth(small: boolean): void {
 		window.matchMedia = ((query: string) => ({
@@ -260,5 +281,49 @@ describe('Planning views', () => {
 		const map = await findByTestId('map');
 		expect(map.getAttribute('data-open')).toBe('');
 		expect(map.getAttribute('data-covered')).toBe('0');
+	});
+});
+
+describe('Planning for someone who can\'t edit', () => {
+	beforeEach(() => {
+		get.mockReset();
+		post.mockReset();
+		getResponse.mockReset();
+		succeedEmpty();
+		window.history.replaceState({}, '', '/projects/acme/specboard/planning');
+	});
+
+	it('offers no create button to a viewer', async () => {
+		serveProject('viewing', { grantedRole: 'viewer', effectiveRole: 'viewer' });
+		const { findByTestId, queryByRole } = renderPlanning(undefined, 'viewing');
+
+		await findByTestId('board');
+		await waitFor(() => expect(get).toHaveBeenCalledWith('/api/projects/acme/viewing'));
+		expect(queryByRole('button', { name: /New/ })).toBeNull();
+	});
+
+	it('offers it once an editor\'s role has loaded', async () => {
+		serveProject('editing', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const { findByRole } = renderPlanning(undefined, 'editing');
+
+		expect(await findByRole('button', { name: /New/ })).toBeTruthy();
+	});
+
+	// The QA finding behind this: a refused create closed the dialog and said nothing.
+	it('says why a create was refused instead of closing silently', async () => {
+		serveProject('demoted', { grantedRole: 'editor', effectiveRole: 'editor' });
+		post.mockRejectedValue(new FetchError('HTTP 403: Forbidden', 403, undefined, {
+			error: 'You have view access to this project',
+			reason: 'viewer',
+		}));
+		const { findByRole, findByTestId, queryByTestId } = renderPlanning(undefined, 'demoted');
+
+		fireEvent.click(await findByRole('button', { name: /New/ }));
+		await findByTestId('new-item-dialog');
+		newItemDialog.props!.onCreate({ title: 'Roadmap' });
+
+		const alert = await findByRole('alert');
+		expect(alert.textContent).toContain('You have view access to this project');
+		expect(queryByTestId('new-item-dialog')).toBeNull();
 	});
 });

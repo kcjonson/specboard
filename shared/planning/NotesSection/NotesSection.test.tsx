@@ -11,7 +11,8 @@ import { NotesSection } from './NotesSection';
 const get = vi.fn();
 const post = vi.fn();
 
-vi.mock('@specboard/fetch', () => ({
+vi.mock('@specboard/fetch', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@specboard/fetch')>()),
 	fetchClient: {
 		get: (...args: unknown[]) => get(...args),
 		post: (...args: unknown[]) => post(...args),
@@ -39,7 +40,7 @@ function note(overrides: Partial<NotePayload> = {}): NotePayload {
 
 function renderSection(entries: NotePayload[]): ReturnType<typeof render> {
 	get.mockResolvedValue(entries);
-	return render(<NotesSection projectRef="acme/specboard" itemKey="SB-12" />);
+	return render(<NotesSection canEdit projectRef="acme/specboard" itemKey="SB-12" />);
 }
 
 /** The section under an ancestor that closes on Escape, the way the drawer wraps it. */
@@ -50,7 +51,7 @@ function renderInDrawer(
 	get.mockResolvedValue(entries);
 	return render(
 		<div onKeyDown={onKeyDown}>
-			<NotesSection projectRef="acme/specboard" itemKey="SB-12" />
+			<NotesSection canEdit projectRef="acme/specboard" itemKey="SB-12" />
 		</div>
 	);
 }
@@ -215,7 +216,7 @@ describe('NotesSection', () => {
 	// A log that failed to load is not an empty log.
 	it('shows an error instead of the empty state when the fetch fails', async () => {
 		get.mockRejectedValue(new Error('nope'));
-		const { container, findByText } = render(<NotesSection projectRef="acme/specboard" itemKey="SB-12" />);
+		const { container, findByText } = render(<NotesSection canEdit projectRef="acme/specboard" itemKey="SB-12" />);
 
 		expect(await findByText('Could not load the activity log.')).toBeTruthy();
 		expect(container.textContent).not.toContain('No activity yet');
@@ -232,5 +233,22 @@ describe('NotesSection', () => {
 
 		expect(await findByText('Could not add that note.')).toBeTruthy();
 		expect((container.querySelector('input') as HTMLInputElement).value).toBe('Typed entry');
+	});
+});
+
+describe('NotesSection for someone who can\'t edit', () => {
+	beforeEach(() => {
+		get.mockReset();
+	});
+
+	it('shows the log without the composer', async () => {
+		get.mockResolvedValue([note({ note: 'Started on the parser' })]);
+		const { findByText, queryByRole } = render(
+			<NotesSection canEdit={false} projectRef="acme/specboard" itemKey="SB-12" />
+		);
+
+		await findByText('Started on the parser');
+		expect(queryByRole('textbox', { name: 'Add a note' })).toBeNull();
+		expect(queryByRole('button', { name: '+ Add' })).toBeNull();
 	});
 });

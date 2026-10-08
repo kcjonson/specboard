@@ -48,7 +48,7 @@ function unlistedItem(): ItemModel {
 }
 
 function renderDrawer(item: ItemModel, listed: boolean): ReturnType<typeof render> {
-	return render(<ItemDrawer item={item} listed={listed} projectRef="acme/specboard" onClose={vi.fn()} onDelete={vi.fn()} />);
+	return render(<ItemDrawer canEdit item={item} listed={listed} projectRef="acme/specboard" onClose={vi.fn()} onDelete={vi.fn()} />);
 }
 
 function expectInert(view: ReturnType<typeof render>): void {

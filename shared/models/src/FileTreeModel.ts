@@ -8,6 +8,7 @@
 import { Model } from './Model';
 import { prop } from './prop';
 import { fetchClient } from '@specboard/fetch';
+import { writeFailure } from './write-failure';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -485,9 +486,7 @@ export class FileTreeModel extends Model {
 
 			return fullPath;
 		} catch (err) {
-			// Extract error message from response
-			const error = err as { message?: string };
-			this.error = error.message || 'Failed to create file';
+			this.error = writeFailure(err, 'Failed to create file', this.projectRef);
 			throw err;
 		}
 	}
@@ -558,8 +557,7 @@ export class FileTreeModel extends Model {
 
 			return newPath;
 		} catch (err) {
-			const error = err as { message?: string };
-			this.error = error.message || 'Failed to rename file';
+			this.error = writeFailure(err, 'Failed to rename file', this.projectRef);
 			throw err;
 		}
 	}

@@ -178,16 +178,16 @@ describe('getProjects', () => {
 	});
 });
 
-describe('project responses carry the owner slug', () => {
+describe('project responses carry the owner slug and name', () => {
 	it('getProjects and getProject join it in', async () => {
 		const listed = (await getProjects(alice)).find((p) => p.id === roadmapId);
 		expect(listed).toMatchObject({ slug: 'roadmap', ownerSlug: 'acme' });
-		expect(await getProject(roadmapId)).toMatchObject({ slug: 'roadmap', ownerSlug: 'acme' });
+		expect(await getProject(roadmapId)).toMatchObject({ slug: 'roadmap', ownerSlug: 'acme', ownerName: 'Alice Ames' });
 	});
 
 	it('createProject returns it from the insert', async () => {
 		const created = await createProject(alice, { name: 'Launch Plan' });
-		expect(created).toMatchObject({ slug: 'launch-plan', ownerSlug: 'acme' });
+		expect(created).toMatchObject({ slug: 'launch-plan', ownerSlug: 'acme', ownerName: 'Alice Ames' });
 		expect(await resolveProjectAccess('acme', 'launch-plan', alice)).toMatchObject({ project: { id: created.id } });
 	});
 

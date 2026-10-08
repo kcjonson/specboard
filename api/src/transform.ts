@@ -21,6 +21,7 @@ export function projectResponseToApi(
 		id: project.id,
 		slug: project.slug,
 		ownerSlug: project.ownerSlug,
+		ownerName: project.ownerName,
 		key: project.key,
 		name: project.name,
 		description: project.description ?? undefined,

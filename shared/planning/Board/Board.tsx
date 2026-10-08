@@ -5,6 +5,8 @@ import { Column, type ColumnMore } from '../Column/Column';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
 import styles from './Board.module.css';
 
+function noop(): void {}
+
 /** Cards a column starts with, and how many each "show more" adds. */
 export const BOARD_PAGE_SIZE = 100;
 
@@ -17,9 +19,13 @@ export interface BoardProps {
 	flashingIds: Set<string>;
 	/** Disables keyboard shortcuts while a dialog is open. */
 	dialogOpen: boolean;
+	/** Whether the caller may change the board (useProjectRole). Off: no drag-and-drop, no move or create keys. */
+	canEdit: boolean;
 	onSelectItem: (item: ItemModel | undefined) => void;
 	onOpenItem: (item: ItemModel) => void;
 	onCreateItem: () => void;
+	/** A move the server refused. The card is already back where it was. */
+	onWriteError: (err: unknown, fallback: string) => void;
 }
 
 /**
@@ -32,9 +38,11 @@ export function Board({
 	selectedItemKey,
 	flashingIds,
 	dialogOpen,
+	canEdit,
 	onSelectItem,
 	onOpenItem,
 	onCreateItem,
+	onWriteError,
 }: BoardProps): JSX.Element {
 	// Items grouped by status. The collection holds exactly what the current query
 	// matched, so there is nothing to filter here; a search also matches child items,
@@ -101,16 +109,27 @@ export function Board({
 		return unloaded === undefined ? afterLoaded : Math.max(afterLoaded, unloaded);
 	}, [items]);
 
+	// Moves are optimistic: the card goes where it was put, and goes back if the server
+	// refuses, with the refusal reported.
+	const saveMove = useCallback((item: ItemModel, previous: { status: ItemStatus; rank: number }): void => {
+		item.save().catch((err: unknown) => {
+			item.status = previous.status;
+			item.rank = previous.rank;
+			onWriteError(err, `Could not move ${item.key}.`);
+		});
+	}, [onWriteError]);
+
 	const handleMoveItem = useCallback(
 		(item: ItemModel, status: Status): void => {
 			// Same reason drag is off for it (see below): a child's rank belongs to its
 			// parent's sibling group, and a column rank would shove it to the end of that.
-			if (item.parentKey) return;
+			if (!canEdit || item.parentKey) return;
+			const previous = { status: item.status, rank: item.rank };
 			item.rank = endRank(item, status);
 			item.status = status;
-			item.save();
+			saveMove(item, previous);
 		},
-		[endRank]
+		[canEdit, endRank, saveMove]
 	);
 
 	// Blocked and In Review sit between In Progress and Done, each only while
@@ -139,7 +158,7 @@ export function Board({
 		dialogOpen,
 		onSelectItem,
 		onOpenItem,
-		onCreateItem,
+		onCreateItem: canEdit ? onCreateItem : noop,
 		onMoveItem: handleMoveItem,
 	});
 
@@ -156,7 +175,7 @@ export function Board({
 
 	function handleDropItem(itemId: string, newStatus: Status, dropIndex: number): void {
 		const item = items.find((e) => e.id === itemId);
-		if (!item) return;
+		if (!item || !canEdit) return;
 		// A child row (a search match) has no top-level position to be dropped into;
 		// its card isn't draggable, so this only guards a drop from elsewhere.
 		if (item.parentKey) return;
@@ -182,9 +201,10 @@ export function Board({
 			newRank = 1;
 		}
 
+		const previous = { status: item.status, rank: item.rank };
 		item.status = newStatus;
 		item.rank = newRank;
-		item.save();
+		saveMove(item, previous);
 
 		// If ranks get too close (fractional precision issues), normalize the column.
 		// Not while it has cards past its window: renumbering only the loaded ones
@@ -215,8 +235,9 @@ export function Board({
 			.sort((a, b) => a.rank - b.rank);
 
 		columnItems.forEach((item, index) => {
+			const previous = { status: item.status, rank: item.rank };
 			item.rank = index + 1;
-			item.save();
+			saveMove(item, previous);
 		});
 	}
 
@@ -233,7 +254,8 @@ export function Board({
 					projectRef={projectRef}
 					selectedItemKey={selectedItemKey}
 					flashingIds={flashingIds}
-					droppable={droppable}
+					droppable={droppable && canEdit}
+					draggable={canEdit}
 					onSelectItem={handleColumnSelectItem}
 					onOpenItem={onOpenItem}
 					onDropItem={droppable ? handleDropItem : undefined}

@@ -3,8 +3,8 @@ import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
 import { navigate } from '@specboard/router';
-import { useModel, ItemsCollection, ItemModel, type ItemType } from '@specboard/models';
-import { Page, SplitButton, Text, Select, Button, Icon, type SplitButtonOption, type SelectOption } from '@specboard/ui';
+import { useModel, useProjectRole, ItemsCollection, ItemModel, type ItemType, writeFailure } from '@specboard/models';
+import { Page, SplitButton, Text, Select, Button, Icon, Notice, type SplitButtonOption, type SelectOption } from '@specboard/ui';
 import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
 import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
 import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
@@ -83,6 +83,14 @@ export function Planning(props: RouteProps): JSX.Element {
 	// canonical `SB-345` and open a duplicate, detached model instead of the live
 	// one the board is rendering.
 	const openItemKey = props.params.itemKey?.toUpperCase();
+
+	// Whether to offer writes at all. The server refuses them regardless; a write that
+	// is refused anyway (the role changed mid-session) lands in writeError below.
+	const { canEdit } = useProjectRole(projectRef);
+	const [writeError, setWriteError] = useState<string | null>(null);
+	const reportWriteError = useCallback((err: unknown, fallback: string): void => {
+		setWriteError(writeFailure(err, fallback, projectRef));
+	}, [projectRef]);
 
 	// Collection auto-fetches after projectRef is set. Memoized so it survives view
 	// toggles (the route/entry is unchanged, only the ?view= param differs). Its
@@ -271,13 +279,20 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, []);
 
 	// No rank: the server appends (project-wide max + 1). The collection's length is
-	// only what's loaded, so a rank derived from it would land mid-column.
+	// only what's loaded, so a rank derived from it would land mid-column. The dialog
+	// closes either way, as ChildrenSection's does: it is a native modal in the top
+	// layer, and a refusal shown behind it would go unseen.
 	const handleCreateItem = useCallback(
-		(data: NewItemData): void => {
-			items.add({ ...data, type: data.type || createType });
+		async (data: NewItemData): Promise<void> => {
 			setIsNewItemDialogOpen(false);
+			setWriteError(null);
+			try {
+				await items.add({ ...data, type: data.type || createType });
+			} catch (err) {
+				reportWriteError(err, `Could not create that ${data.type || createType}.`);
+			}
 		},
-		[items, createType]
+		[items, createType, reportWriteError]
 	);
 
 	const handleCloseNewItemDialog = useCallback((): void => {
@@ -320,17 +335,23 @@ export function Planning(props: RouteProps): JSX.Element {
 		return () => document.removeEventListener('keydown', onKeyDown);
 	}, [view, openItemKey, isNewItemDialogOpen, handleCloseDrawer]);
 
-	const handleDeleteItem = useCallback((item: ItemModel): void => {
+	const handleDeleteItem = useCallback(async (item: ItemModel): Promise<void> => {
+		setWriteError(null);
 		const inCollection = items.find((i) => i.key === item.key);
-		if (inCollection) {
-			items.remove(inCollection);
-		} else {
-			// A child opened standalone isn't in the top-level collection — delete it directly.
-			void item.delete();
+		try {
+			if (inCollection) {
+				await items.remove(inCollection);
+			} else {
+				// A child opened standalone isn't in the top-level collection — delete it directly.
+				await item.delete();
+			}
+		} catch (err) {
+			reportWriteError(err, 'Could not delete that item.');
+			return;
 		}
 		setSelectedItemKey(undefined);
 		navigate(boardUrl(), { replace: true });
-	}, [items, boardUrl]);
+	}, [items, boardUrl, reportWriteError]);
 
 	const createOptions: SplitButtonOption[] = useMemo(() => [
 		{ label: 'Epic', value: 'epic', icon: 'file' as const, onClick: () => handleOpenNewItemDialog('epic') },
@@ -471,9 +492,11 @@ export function Planning(props: RouteProps): JSX.Element {
 				selectedItemKey={selectedItemKey}
 				flashingIds={flashingIds}
 				dialogOpen={isNewItemDialogOpen}
+				canEdit={canEdit}
 				onSelectItem={handleSelectItem}
 				onOpenItem={handleOpenItem}
 				onCreateItem={() => handleOpenNewItemDialog('epic')}
+				onWriteError={reportWriteError}
 			/>
 		);
 	};
@@ -486,7 +509,7 @@ export function Planning(props: RouteProps): JSX.Element {
 					<div class={styles.filters}>{renderFilters(false)}</div>
 				</div>
 				<div class={styles.toolbarEnd}>
-					<SplitButton options={createOptions} prefix="+ New" />
+					{canEdit && <SplitButton options={createOptions} prefix="+ New" />}
 					<button
 						type="button"
 						class={`secondary mobile-only ${styles.searchButton} ${filtersActive ? styles.searchActive : ''}`}
@@ -506,6 +529,15 @@ export function Planning(props: RouteProps): JSX.Element {
 				</div>
 			</div>
 
+			{writeError && (
+				<div class={styles.writeError} role="alert">
+					<Notice variant="error">
+						<span class={styles.writeErrorText}>{writeError}</span>
+						<Button class="text size-sm" onClick={() => setWriteError(null)}>Dismiss</Button>
+					</Notice>
+				</div>
+			)}
+
 			<div class={styles.workspace} ref={workspaceRefCallback}>
 				<div class={styles.viewArea}>{renderViewArea()}</div>
 
@@ -515,22 +547,23 @@ export function Planning(props: RouteProps): JSX.Element {
 							item={openItem}
 							listed={collectionItem !== undefined}
 							projectRef={projectRef}
+							canEdit={canEdit}
 							maxWidth={drawerMaxWidth}
 							onClose={handleCloseDrawer}
 							onResize={setDrawerWidth}
-							onDelete={handleDeleteItem}
+							onDelete={(item) => void handleDeleteItem(item)}
 							onOpenItem={handleOpenItemByKey}
 						/>
 					</div>
 				)}
 			</div>
 
-			{isNewItemDialogOpen && (
+			{isNewItemDialogOpen && canEdit && (
 				<NewItemDialog
 					projectRef={projectRef}
 					createType={createType}
 					onClose={handleCloseNewItemDialog}
-					onCreate={handleCreateItem}
+					onCreate={(data) => void handleCreateItem(data)}
 				/>
 			)}
 		</Page>

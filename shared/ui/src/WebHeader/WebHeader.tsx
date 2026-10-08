@@ -1,8 +1,8 @@
-import { useMemo, useState, useEffect } from 'preact/hooks';
+import { useMemo, useEffect } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
 import { getCookie, setCookie } from '@specboard/core/cookies';
-import { fetchClient } from '@specboard/fetch';
-import { useModel, UserModel } from '@specboard/models';
+import { projectModel, projectRoleState, refreshProject, useModel, UserModel } from '@specboard/models';
+import { Badge } from '../Badge/Badge';
 import { UserMenu } from '../UserMenu/UserMenu';
 import { Logo } from '../Logo/Logo';
 import { Icon } from '../Icon/Icon';
@@ -47,41 +47,27 @@ export function WebHeader({
 
 	const isAdmin = user.roles?.includes('admin') ?? false;
 
-	// Get project name from cookie or fetch if needed
-	const [fetchedName, setFetchedName] = useState<string | null>(null);
-
+	// The page's shared project model (see projectModel). The header is mounted once per
+	// page, so it is where that model is re-read on each page view: a role changed since
+	// the last one, or a read that failed, reaches the header and everything else reading
+	// the model. On the page that first creates the model its read is still in flight,
+	// and refreshProject leaves it be.
+	const project = useMemo(() => (projectRef ? projectModel(projectRef) : null), [projectRef]);
+	useModel(project);
 	useEffect(() => {
-		// Check cookie inside effect to ensure consistent behavior
-		const lastProjectRef = getCookie('lastProjectRef');
-		const cachedName = projectRef && lastProjectRef === projectRef ? getCookie('lastProjectName') : null;
-
-		if (!projectRef || cachedName) {
-			setFetchedName(cachedName);
-			return;
-		}
-
-		// Track if effect is still active for cleanup
-		let cancelled = false;
-
-		// Fetch project name and update cookie
-		fetchClient
-			.get<{ id: string; name: string }>(`/api/projects/${projectRef}`, { params: { fields: 'name' } })
-			.then((project) => {
-				if (cancelled) return;
-				setFetchedName(project.name);
-				setCookie('lastProjectRef', projectRef, 30);
-				setCookie('lastProjectName', project.name, 30);
-			})
-			.catch(() => {
-				// Silently fail - header will just be empty
-			});
-
-		return () => {
-			cancelled = true;
-		};
+		if (projectRef) refreshProject(projectRef);
 	}, [projectRef]);
 
-	const projectName = fetchedName;
+	// RootRedirect reopens the last project from these, and the name cookie keeps the
+	// header from flashing blank while a page's project loads.
+	const loadedName = project?.name;
+	useEffect(() => {
+		if (!projectRef || !loadedName) return;
+		setCookie('lastProjectRef', projectRef, 30);
+		setCookie('lastProjectName', loadedName, 30);
+	}, [projectRef, loadedName]);
+	const projectName = loadedName ?? (projectRef && getCookie('lastProjectRef') === projectRef ? getCookie('lastProjectName') : null);
+	const viewOnly = project ? projectRoleState(project).effectiveRole === 'viewer' : false;
 
 	// Router navigation swaps the page under the popover but the popover element
 	// survives the re-render, so close it explicitly when a link is chosen.
@@ -99,6 +85,11 @@ export function WebHeader({
 				{projectRef ? (
 					<>
 						<span class={styles.projectName}>{projectName ?? ''}</span>
+						{viewOnly && (
+							<Badge class="size-sm" title="You can see this project but not change it">
+								View only
+							</Badge>
+						)}
 						<nav class={styles.nav}>
 							{NAV_TABS.map((tab) => (
 								<a

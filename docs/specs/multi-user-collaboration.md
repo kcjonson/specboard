@@ -380,8 +380,8 @@ next to it.
 ### Read-only mode
 
 The server enforces roles. The UI only avoids offering what will be refused.
-One project-scoped signal carries the effective role (`useProjectRole()` →
-`{ role, effectiveRole, reason }`) and components read `canEdit` from it. No
+One project-scoped signal carries the effective role (`useProjectRole(projectRef)` →
+`{ role, effectiveRole, reason, canEdit, isOwner }`) and components read `canEdit` from it. No
 component re-derives the rules.
 
 - **Board**: no drag-and-drop, no create buttons, item fields display as text,
@@ -553,4 +553,37 @@ Phase 3 (invitations, SPE-207) is built:
   function, `safeNextPath` in `@specboard/core/next-path`, in the API and the onboarding
   page; the SSG pages share its inline twin.
 
-Phases 4 to 6 are not built.
+Phase 5 (read-only mode and GitHub gating, SPE-209) is built:
+
+- `useProjectRole(projectRef)` (`shared/models/src/project.ts`) returns
+  `{ role, effectiveRole, reason, canEdit, isOwner }`, read off one `ProjectModel` per project
+  ref that everything on the page shares, so the header, banner and view cost one request.
+  `projectRoleState` is the one place the client reads the roles; `reason` is `viewer`,
+  `github_not_connected`, or `no_push_access` (a warning that leaves `canEdit` alone). Until the
+  project loads, `canEdit` is false. The header re-reads the model on each page view, and a
+  board write refused with a 403 re-reads it too, so a role changed mid-session catches up.
+- Route entries (Planning, the item page, the editor) call the hook and pass `canEdit` down;
+  board and item components take it as a required prop rather than deriving anything. What
+  each surface hides is in [kanban-ui.md](./kanban-ui.md) and
+  [markdown-editor.md](./markdown-editor.md), Read-only.
+- `Page` renders the banner under the header (`shared/ui/src/ProjectBanner`), and `WebHeader`
+  a **View only** badge while the effective role is viewer. Connect GitHub goes through
+  `GET /api/auth/github?next=<this page>` (checked by the same `safeNextPath`), and the OAuth
+  callback lands back there.
+- Refused board writes show the server's message instead of disappearing; the QA case was a
+  viewer's New Epic dialog closing on a silent 403.
+- `pushAccess` (`true`, `false`, `null` for unknown or not applicable) is on the caller's
+  project GET, which never waits on GitHub (cache or null, with the check started for the next
+  page view), and on each row of the member list for the owner. It comes from
+  `GET /repos/{owner}/{repo}` on each person's own token and is cached in Redis for five
+  minutes, failures for one; see [api-database.md](./api-database.md), Projects. The project GET
+  also carries the caller's `githubUsername` for the banner.
+- A failed project read leaves the page read-only (and drops any role it had), and the next
+  page view or the next ask for the model retries it. An editor autosave refused with a 403
+  shows the server's reason, isn't retried, and re-reads the project, like the board's writes.
+  `writeFailure` in `@specboard/models` is the one helper for both.
+- Project responses carry `ownerName`, for the viewer banner's "Ask {owner}". The project GET's
+  `?fields=` filter is gone; the header and editor were its only callers and now share the
+  model.
+
+Phases 4 and 6 are not built.

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { useModel, NotesCollection } from '@specboard/models';
+import { useModel, NotesCollection, writeFailure } from '@specboard/models';
 import { Button, Text } from '@specboard/ui';
 import { formatTimeAgo } from '../utils/time';
 import { actorLabel } from '../utils/actor';
@@ -9,13 +9,15 @@ import styles from './NotesSection.module.css';
 export interface NotesSectionProps {
 	projectRef: string;
 	itemKey: string;
+	/** Whether the caller may add to the log (useProjectRole); off hides the composer. */
+	canEdit: boolean;
 }
 
 /**
  * An item's activity log: append-only entries written here or by an agent
  * through the MCP. Newest first, in the order the server returns them.
  */
-export function NotesSection({ projectRef, itemKey }: NotesSectionProps): JSX.Element {
+export function NotesSection({ projectRef, itemKey, canEdit }: NotesSectionProps): JSX.Element {
 	const notes = useMemo(() => new NotesCollection({ projectRef, itemKey }), [projectRef, itemKey]);
 	useModel(notes);
 
@@ -42,12 +44,12 @@ export function NotesSection({ projectRef, itemKey }: NotesSectionProps): JSX.El
 			// bottom with no error shown. Accepted — the entry did save, and the next
 			// successful fetch reorders it.
 			await notes.fetch({ force: true });
-		} catch {
-			setError('Could not add that note.');
+		} catch (err) {
+			setError(writeFailure(err, 'Could not add that note.', projectRef));
 		} finally {
 			setBusy(false);
 		}
-	}, [notes, draft, busy]);
+	}, [notes, draft, busy, projectRef]);
 
 	const handleKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === 'Enter') {
@@ -93,19 +95,21 @@ export function NotesSection({ projectRef, itemKey }: NotesSectionProps): JSX.El
 		<section class={styles.section}>
 			<h3 class={styles.sectionTitle}>Activity</h3>
 
-			<div class={styles.addRow}>
-				<Text
-					value={draft}
-					onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
-					onKeyDown={handleKeyDown}
-					placeholder="Add a note..."
-					ariaLabel="Add a note"
-					compact
-				/>
-				<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim() || busy}>
-					+ Add
-				</Button>
-			</div>
+			{canEdit && (
+				<div class={styles.addRow}>
+					<Text
+						value={draft}
+						onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+						onKeyDown={handleKeyDown}
+						placeholder="Add a note..."
+						ariaLabel="Add a note"
+						compact
+					/>
+					<Button class="text" onClick={() => void handleAdd()} disabled={!draft.trim() || busy}>
+						+ Add
+					</Button>
+				</div>
+			)}
 
 			{error && <div class={styles.error}>{error}</div>}
 

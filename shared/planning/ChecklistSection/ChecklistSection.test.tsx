@@ -13,7 +13,8 @@ const post = vi.fn();
 const put = vi.fn();
 const del = vi.fn();
 
-vi.mock('@specboard/fetch', () => ({
+vi.mock('@specboard/fetch', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@specboard/fetch')>()),
 	fetchClient: {
 		get: (...args: unknown[]) => get(...args),
 		post: (...args: unknown[]) => post(...args),
@@ -36,7 +37,7 @@ const URL = '/api/projects/acme/specboard/items/SB-12/checklist';
 
 function renderSection(entries: EntryPayload[]): ReturnType<typeof render> {
 	get.mockResolvedValue(entries);
-	return render(<ChecklistSection projectRef="acme/specboard" itemKey="SB-12" />);
+	return render(<ChecklistSection canEdit projectRef="acme/specboard" itemKey="SB-12" />);
 }
 
 /** The section under an ancestor that closes on Escape, the way the drawer wraps it. */
@@ -47,7 +48,7 @@ function renderInDrawer(
 	get.mockResolvedValue(entries);
 	return render(
 		<div onKeyDown={onKeyDown}>
-			<ChecklistSection projectRef="acme/specboard" itemKey="SB-12" />
+			<ChecklistSection canEdit projectRef="acme/specboard" itemKey="SB-12" />
 		</div>
 	);
 }
@@ -333,9 +334,28 @@ describe('ChecklistSection', () => {
 	// A checklist that failed to load is not an empty checklist.
 	it('shows an error instead of the placeholder when the fetch fails', async () => {
 		get.mockRejectedValue(new Error('nope'));
-		const { container, findByText } = render(<ChecklistSection projectRef="acme/specboard" itemKey="SB-12" />);
+		const { container, findByText } = render(<ChecklistSection canEdit projectRef="acme/specboard" itemKey="SB-12" />);
 
 		expect(await findByText('Could not load the checklist.')).toBeTruthy();
 		expect(container.textContent).not.toContain('Nothing on the checklist');
+	});
+});
+
+describe('ChecklistSection for someone who can\'t edit', () => {
+	beforeEach(() => {
+		get.mockReset();
+	});
+
+	it('shows the entries as text with their boxes disabled, and nothing to add or remove', async () => {
+		get.mockResolvedValue([entry(), entry({ id: 'c2', text: 'Ship it', status: 'done' })]);
+		const { container, findByText, queryByText, queryByRole } = render(
+			<ChecklistSection canEdit={false} projectRef="acme/specboard" itemKey="SB-12" />
+		);
+
+		await findByText('Ship it');
+		expect(boxes(container).map((box) => [box.checked, box.disabled])).toEqual([[false, true], [true, true]]);
+		expect(container.querySelector('input[type="text"]')).toBeNull();
+		expect(queryByText('Remove')).toBeNull();
+		expect(queryByRole('textbox', { name: 'Add a checklist item' })).toBeNull();
 	});
 });

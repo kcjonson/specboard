@@ -1,0 +1,26 @@
+/* One line under the header, full width, in the Notice palette. */
+.banner {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	flex-shrink: 0;
+	padding: var(--space-2) var(--space-4);
+	border-bottom: 1px solid currentColor;
+	font-size: var(--text-sm);
+	line-height: var(--leading-normal);
+}
+
+.info {
+	background: var(--color-info-bg);
+	color: var(--color-info);
+}
+
+.warning {
+	background: var(--color-warning-bg);
+	color: var(--color-warning);
+}
+
+.message {
+	flex: 1;
+	min-width: 0;
+}

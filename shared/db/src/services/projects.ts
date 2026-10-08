@@ -37,6 +37,8 @@ export interface ProjectResponse {
 	slug: string;
 	/** The owner's user slug, the other half of the project's address (acme/roadmap). */
 	ownerSlug: string;
+	/** The owner's display name, so a member's view can say whose project it is. */
+	ownerName: string;
 	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
 	key: string;
 	name: string;
@@ -61,8 +63,6 @@ export interface ItemCounts {
 export interface ProjectWithStats extends ProjectResponse {
 	itemCount: number;
 	itemCounts: ItemCounts;
-	/** The owner's display name, so a shared project can say whose it is. */
-	ownerName: string;
 	/** The caller's role as granted: owner for their own projects, else their membership's. */
 	grantedRole: ProjectRole;
 	/** The role access checks use (a granted editor without GitHub works as a viewer). */
@@ -73,22 +73,27 @@ export interface ProjectWithStats extends ProjectResponse {
 // Helper functions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** A projects row plus its owner's slug, which every query that returns a project joins in. */
+/** A projects row plus its owner's slug and name, which every query that returns a project joins in. */
 interface ProjectRow extends Project {
 	owner_slug: string;
+	owner_name: string;
 }
 
 /** Select list and join for reads that return a ProjectResponse. */
-const PROJECT_SELECT = 'SELECT p.*, u.slug AS owner_slug FROM projects p JOIN users u ON u.id = p.owner_id';
+const PROJECT_SELECT = `SELECT p.*, u.slug AS owner_slug, ${USER_DISPLAY_NAME_SQL} AS owner_name
+	FROM projects p JOIN users u ON u.id = p.owner_id`;
 
 /** RETURNING clause for writes that return a ProjectResponse. */
-const PROJECT_RETURNING = 'RETURNING *, (SELECT u.slug FROM users u WHERE u.id = projects.owner_id) AS owner_slug';
+const PROJECT_RETURNING = `RETURNING *,
+	(SELECT u.slug FROM users u WHERE u.id = projects.owner_id) AS owner_slug,
+	(SELECT ${USER_DISPLAY_NAME_SQL} FROM users u WHERE u.id = projects.owner_id) AS owner_name`;
 
 function transformProject(project: ProjectRow): ProjectResponse {
 	return {
 		id: project.id,
 		slug: project.slug,
 		ownerSlug: project.owner_slug,
+		ownerName: project.owner_name,
 		key: project.key,
 		name: project.name,
 		description: project.description,
@@ -218,7 +223,6 @@ interface ProjectQueryRow extends ProjectRow {
 	in_progress_count: string;
 	in_review_count: string;
 	done_count: string;
-	owner_name: string;
 	grantedRole: ProjectRole;
 	effectiveRole: ProjectRole;
 }
@@ -253,7 +257,6 @@ export async function getProjects(userId: string): Promise<ProjectWithStats[]> {
 			in_review: parseInt(row.in_review_count, 10),
 			done: parseInt(row.done_count, 10),
 		},
-		ownerName: row.owner_name,
 		grantedRole: row.grantedRole,
 		effectiveRole: row.effectiveRole,
 	}));

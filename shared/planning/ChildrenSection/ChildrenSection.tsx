@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { useModel, ItemModel, type ChildModel, type ItemType } from '@specboard/models';
+import { useModel, ItemModel, type ChildModel, type ItemType, writeFailure } from '@specboard/models';
 import { SplitButton, StatusGlyph, STATUS_LABELS, type SplitButtonOption } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
@@ -18,6 +18,8 @@ const VISIBLE_LIMIT = 10;
 
 export interface ChildrenSectionProps {
 	item: ItemModel;
+	/** Whether the caller may add children (useProjectRole). */
+	canEdit: boolean;
 	/** Open a child's detail by key; children are first-class items. */
 	onOpenItem?: (itemKey: string) => void;
 }
@@ -28,7 +30,7 @@ export interface ChildrenSectionProps {
  * blockers, and an activity log, and a checkbox writing `status` alone would
  * quietly discard the rest. Loose to-dos belong in the checklist.
  */
-export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX.Element {
+export function ChildrenSection({ item, canEdit, onOpenItem }: ChildrenSectionProps): JSX.Element | null {
 	useModel(item);
 
 	const [createType, setCreateType] = useState<ItemType | undefined>(undefined);
@@ -53,8 +55,8 @@ export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX
 		const child = new ItemModel({ ...data, projectRef: item.projectRef });
 		try {
 			await child.save();
-		} catch {
-			setError(`Could not create that ${TYPE_LABELS[data.type || 'task'].toLowerCase()}.`);
+		} catch (err) {
+			setError(writeFailure(err, `Could not create that ${TYPE_LABELS[data.type || 'task'].toLowerCase()}.`, item.projectRef));
 			return;
 		} finally {
 			// Closed either way. The dialog is a native modal in the top layer, so an
@@ -109,8 +111,10 @@ export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX
 	};
 
 	// A childless task or bug still gets the header, so children can be added where
-	// there are none; an empty-state paragraph on every such item would be noise.
+	// there are none; an empty-state paragraph on every such item would be noise. With
+	// nothing to add, the header alone would be noise too.
 	const bare = stats.total === 0 && item.type !== 'epic';
+	if (bare && !canEdit) return null;
 
 	return (
 		<section class={styles.section}>
@@ -118,7 +122,7 @@ export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX
 				<h3 class={styles.sectionTitle}>
 					Children ({stats.done}/{stats.total})
 				</h3>
-				<SplitButton options={createOptions} prefix="+ Add" />
+				{canEdit && <SplitButton options={createOptions} prefix="+ Add" />}
 			</div>
 
 			{error && <div class={styles.error}>{error}</div>}
@@ -140,7 +144,7 @@ export function ChildrenSection({ item, onOpenItem }: ChildrenSectionProps): JSX
 				</>
 			)}
 
-			{createType && (
+			{createType && canEdit && (
 				<NewItemDialog
 					projectRef={item.projectRef}
 					createType={createType}

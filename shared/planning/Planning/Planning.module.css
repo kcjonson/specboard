@@ -16,6 +16,15 @@
 	flex-wrap: wrap;
 }
 
+/* A write the server refused, between the toolbar and the board. */
+.writeError {
+	padding: var(--space-2) var(--space-4) 0;
+}
+
+.writeErrorText {
+	flex: 1;
+}
+
 /* Horizontal row holding the active view and the optional detail drawer. */
 .workspace {
 	flex: 1;

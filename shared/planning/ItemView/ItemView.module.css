@@ -44,6 +44,17 @@
 	overflow-wrap: break-word;
 }
 
+.titleText {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--color-text);
+	line-height: 1.3;
+	overflow-wrap: break-word;
+}
+
 .titleInput:focus {
 	/* An inset shadow, not a border: everything is border-box, so a border would
 	   shrink the content box below the height fitted from scrollHeight and clip
