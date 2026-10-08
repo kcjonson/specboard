@@ -4,6 +4,7 @@ import { agoText, deviceLabel, type Agents } from '../agents';
 import { SUB_STATUS_LABELS, waitingOn } from '../cards/card-content';
 import type { MapLayout } from '../layout/types';
 import { reasonsText, type NeedsPersonReasons } from '../needs-person';
+import { upNextNumbers } from '../up-next';
 
 /**
  * The accessible tree (spec, Accessibility): the Map as a screen reader meets it. Families
@@ -61,8 +62,8 @@ export function itemName(row: MapItemRow, input: Pick<TreeInput, 'layout' | 'nee
 	if (row.textBlockerCount > 0) parts.push(row.textBlockerCount === 1 ? '1 hold' : `${row.textBlockerCount} holds`);
 	const reasons = input.needs.get(row.key);
 	if (reasons) parts.push(`Needs a person: ${reasonsText(reasons)}`);
-	const upNext = input.layout.upNext.indexOf(row.key);
-	if (upNext >= 0) parts.push(`Up next, number ${upNext + 1}`);
+	const upNext = upNextNumbers(input.layout.upNext).get(row.key);
+	if (upNext !== undefined) parts.push(`Up next, number ${upNext}`);
 	if (input.liveItems.has(row.key)) parts.push('Live agent session');
 	if (family) parts.push(family.open ? `${family.size} items inside` : `Collapsed, ${family.size} items inside`);
 	return parts.join(', ');

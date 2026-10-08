@@ -3,15 +3,15 @@ import { mapCollapsePref, readPref, writePref } from '../Planning/prefs';
 /** A person's explicit choices by item key: true collapsed, false expanded. Anything not named takes the default. */
 export type CollapseChoices = Readonly<Record<string, boolean>>;
 
-/** Where the Map keeps a person's expand and collapse choices (spec, Collapse: per project, on their device). */
+/** Where the Map keeps a person's expand and collapse choices (spec, Collapse: per project, on their device; the combined view's apart from each project's own). */
 export interface CollapseStore {
 	read(): CollapseChoices;
 	write(choices: CollapseChoices): void;
 }
 
-/** Choices in localStorage, per project. A missing, blocked, or garbled entry reads as no choices. */
-export function createCollapseStore(projectRef: string): CollapseStore {
-	const key = mapCollapsePref(projectRef);
+/** Choices in localStorage, per project or set of projects. A missing, blocked, or garbled entry reads as no choices. */
+export function createCollapseStore(projectRefs: readonly string[]): CollapseStore {
+	const key = mapCollapsePref(projectRefs);
 	return {
 		read() {
 			const raw = readPref(key);

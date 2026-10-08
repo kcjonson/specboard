@@ -41,9 +41,12 @@ export class BoardBuilder {
 	private readonly ranks = new Map<string | null, number>();
 
 	readonly now: number;
+	/** The project's key prefix; a combined Map's fixtures give each project its own. */
+	readonly prefix: string;
 
-	constructor(now = NOW) {
+	constructor(now = NOW, prefix = 'MAP') {
 		this.now = now;
+		this.prefix = prefix;
 	}
 
 	add(spec: ItemSpec): MapItemRow {
@@ -56,7 +59,7 @@ export class BoardBuilder {
 		const completedAt = spec.status === 'done' ? (completed ?? this.now - DAY) : undefined;
 		const anchor = completedAt ?? Math.max(createdAt, startedAt ?? -Infinity);
 		const row: MapItemRow = {
-			key: `MAP-${this.nextNumber++}`,
+			key: `${this.prefix}-${this.nextNumber++}`,
 			type: 'task',
 			title: `Item ${this.nextNumber - 1}`,
 			subStatus: null,

@@ -16,6 +16,15 @@ describe('plan weight', () => {
 		expect(planWeights([]).size).toBe(0);
 	});
 
+	it('weighs each project down its own plan on a combined Map, so every project\'s top is at full weight', () => {
+		const weights = planWeights(['PLN-4', 'PLN-1', 'SPE-9', 'SPE-3', 'SPE-12']);
+		expect(weights.get('PLN-4')).toBe(1);
+		expect(weights.get('PLN-1')).toBe(0);
+		expect(weights.get('SPE-9')).toBe(1);
+		expect(weights.get('SPE-3')).toBe(planWeights(['SPE-9', 'SPE-3', 'SPE-12']).get('SPE-3'));
+		expect(weights.get('SPE-12')).toBe(0);
+	});
+
 	it('takes the bottom of the plan to 78% of its size and 60% of its ring, and full weight changes nothing', () => {
 		expect(weightedRadius(5.5, 1)).toBe(5.5);
 		expect(weightedRadius(5.5, 0)).toBeCloseTo(5.5 * 0.78);

@@ -17,9 +17,33 @@ const deferred = <T,>(): { promise: Promise<T>; resolve(value: T): void; reject(
 describe('the search source', () => {
 	it('asks the items list, which matches title, description, and key at every depth, and returns the keys', async () => {
 		get.mockResolvedValue([{ key: 'SPE-3', title: 'x' }, { key: 'SPE-9' }]);
-		const keys = await createSearchSource('acme/specboard')('check list');
+		const keys = await createSearchSource(() => ['acme/specboard'])('check list');
 		expect(get).toHaveBeenCalledWith('/api/projects/acme/specboard/items?search=check+list&limit=5000');
 		expect(keys).toEqual(['SPE-3', 'SPE-9']);
+	});
+
+	it('asks every project on a combined Map, the ones on it at the time of each search, and returns their matches as one list', async () => {
+		get.mockReset();
+		get.mockImplementation((path: string) => Promise.resolve(path.startsWith('/api/projects/acme/specboard/') ? [{ key: 'SPE-3' }] : [{ key: 'PLN-8' }, { key: 'PLN-2' }]));
+		const projects = ['acme/specboard', 'kim/planner'];
+		const search = createSearchSource(() => projects);
+
+		expect(await search('import')).toEqual(['SPE-3', 'PLN-8', 'PLN-2']);
+		expect(get.mock.calls.map(([path]) => path)).toEqual([
+			'/api/projects/acme/specboard/items?search=import&limit=5000',
+			'/api/projects/kim/planner/items?search=import&limit=5000',
+		]);
+
+		projects.pop();
+		get.mockClear();
+		expect(await search('import')).toEqual(['SPE-3']);
+		expect(get).toHaveBeenCalledTimes(1);
+	});
+
+	it('fails as a whole when one project\'s search does, rather than show part of the matches as all of them', async () => {
+		get.mockReset();
+		get.mockResolvedValueOnce([{ key: 'SPE-3' }]).mockRejectedValueOnce(new Error('HTTP 500'));
+		await expect(createSearchSource(() => ['acme/specboard', 'kim/planner'])('import')).rejects.toThrow('HTTP 500');
 	});
 });
 

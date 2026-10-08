@@ -1,13 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BoardBuilder, deltaRead, iso, wholeRead } from './layout/board-fixture';
+import { BoardBuilder, NOW, deltaRead, iso, wholeRead } from './layout/board-fixture';
 import type { MapLayoutWorker } from './layout/layout-worker-client';
 import { layoutMap } from './layout/layout';
 import { traceRegions, type RegionInput } from './regions/outline';
 import type { MapLayoutInput } from './layout/types';
 import type { MapItemRow, MapRead } from '@specboard/core/map-read';
+import { FetchError } from '@specboard/fetch';
 import { memoryCollapseStore } from './collapse-store.fixture';
-import { MapDataModel } from './map-data-model';
+import { MapDataModel, type MapProjectSource, type MapReadSource } from './map-data-model';
 import { buildModel } from './layout/model';
+
+/** A project's own Map reads one project. */
+const own = (read: MapReadSource): MapProjectSource[] => [{ ref: 'acme/map', read }];
 
 function board(count: number): MapRead {
 	const b = new BoardBuilder();
@@ -43,7 +47,7 @@ describe('MapDataModel', () => {
 	it('is loading until the layout has settled, then ready with every dot at once', async () => {
 		const worker = fakeWorker();
 		const read = board(6);
-		const model = new MapDataModel(() => Promise.resolve(read), () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(read)), () => worker, memoryCollapseStore());
 		const changes = vi.fn();
 		model.on('change', changes);
 
@@ -66,7 +70,7 @@ describe('MapDataModel', () => {
 	it('lays out for the plot shape it was asked for', async () => {
 		const worker = fakeWorker();
 		const spy = vi.spyOn(worker, 'layout');
-		const model = new MapDataModel(() => Promise.resolve(board(3)), () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(board(3))), () => worker, memoryCollapseStore());
 		const loading = model.load(3.5);
 		await flush();
 		expect(spy.mock.calls[0]![0]).toMatchObject({ aspect: 3.5, collapse: {} });
@@ -76,7 +80,7 @@ describe('MapDataModel', () => {
 
 	it('is ready and empty for a project with no items, asking the worker for nothing', async () => {
 		const worker = fakeWorker();
-		const model = new MapDataModel(() => Promise.resolve(wholeRead([])), () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(wholeRead([]))), () => worker, memoryCollapseStore());
 		await model.load(2);
 		expect(model.state).toBe('ready');
 		expect(model.isEmpty).toBe(true);
@@ -88,7 +92,7 @@ describe('MapDataModel', () => {
 		const worker = fakeWorker();
 		const create = vi.fn(() => worker);
 		let land!: (read: MapRead) => void;
-		const model = new MapDataModel(() => new Promise<MapRead>((resolve) => (land = resolve)), create, memoryCollapseStore());
+		const model = new MapDataModel(own(() => new Promise<MapRead>((resolve) => (land = resolve))), create, memoryCollapseStore());
 		void model.load(2);
 		expect(create).toHaveBeenCalledTimes(1);
 		expect(worker.calls).toBe(0);
@@ -98,7 +102,7 @@ describe('MapDataModel', () => {
 	it('reports a failed read, and retries with the same shape', async () => {
 		const worker = fakeWorker();
 		const source = vi.fn().mockRejectedValueOnce(new Error('HTTP 500')).mockResolvedValue(board(2));
-		const model = new MapDataModel(source, () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(source), () => worker, memoryCollapseStore());
 		await model.load(2.5);
 		expect(model.state).toBe('error');
 		expect(model.error!.message).toBe('HTTP 500');
@@ -115,7 +119,7 @@ describe('MapDataModel', () => {
 	it('reports a failed layout as an error too', async () => {
 		const worker = fakeWorker();
 		worker.layout = () => Promise.reject(new Error('Map layout worker failed'));
-		const model = new MapDataModel(() => Promise.resolve(board(2)), () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(board(2))), () => worker, memoryCollapseStore());
 		await model.load(2);
 		expect(model.state).toBe('error');
 		expect(model.error!.message).toBe('Map layout worker failed');
@@ -126,7 +130,7 @@ describe('MapDataModel', () => {
 		dead.layout = () => Promise.reject(new Error('Map layout worker failed'));
 		const fresh = fakeWorker();
 		const workers = [dead, fresh];
-		const model = new MapDataModel(() => Promise.resolve(board(2)), () => workers.shift()!, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(board(2))), () => workers.shift()!, memoryCollapseStore());
 		await model.load(2);
 		expect(model.state).toBe('error');
 		expect(dead.terminated).toBe(true);
@@ -141,7 +145,7 @@ describe('MapDataModel', () => {
 	it('drops an answer that a newer load has overtaken', async () => {
 		const worker = fakeWorker();
 		const reads = [board(2), board(5)];
-		const model = new MapDataModel(() => Promise.resolve(reads.shift()!), () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(reads.shift()!)), () => worker, memoryCollapseStore());
 		const first = model.load(2);
 		await flush();
 		const second = model.load(2);
@@ -156,7 +160,7 @@ describe('MapDataModel', () => {
 
 	it('stops the worker and the listeners on dispose, and ignores what is still in flight', async () => {
 		const worker = fakeWorker();
-		const model = new MapDataModel(() => Promise.resolve(board(2)), () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(board(2))), () => worker, memoryCollapseStore());
 		const changes = vi.fn();
 		model.on('change', changes);
 		const loading = model.load(2);
@@ -179,7 +183,7 @@ describe('MapDataModel', () => {
 		b.add({ parentKey: finished.key, status: 'done' });
 		const worker = fakeWorker();
 		const store = memoryCollapseStore({ [open.key]: true });
-		const model = new MapDataModel(() => Promise.resolve(wholeRead(b.rows)), () => worker, store);
+		const model = new MapDataModel(own(() => Promise.resolve(wholeRead(b.rows))), () => worker, store);
 		const loading = model.load(2);
 		await flush();
 		expect(worker.inputs[0]!.collapse).toEqual({ [open.key]: true });
@@ -206,7 +210,7 @@ describe('MapDataModel', () => {
 	it('ignores a collapse before the Map is ready', async () => {
 		const worker = fakeWorker();
 		const store = memoryCollapseStore();
-		const model = new MapDataModel(() => new Promise(() => {}), () => worker, store);
+		const model = new MapDataModel(own(() => new Promise(() => {})), () => worker, store);
 		void model.load(2);
 		await model.setCollapsed('MAP-1', true);
 		expect(store.choices).toEqual({});
@@ -220,7 +224,7 @@ describe('MapDataModel', () => {
 		const two = b.add({ type: 'epic', status: 'in_progress' });
 		b.add({ parentKey: two.key, status: 'ready' });
 		const worker = fakeWorker();
-		const model = new MapDataModel(() => Promise.resolve(wholeRead(b.rows)), () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(wholeRead(b.rows))), () => worker, memoryCollapseStore());
 		const loading = model.load(2);
 		await flush();
 		worker.pending.shift()!();
@@ -274,7 +278,7 @@ describe('MapDataModel refresh', () => {
 			const next = reads.shift()!;
 			return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
 		};
-		const model = new MapDataModel(source, () => worker, memoryCollapseStore(), () => clock.now);
+		const model = new MapDataModel(own(source), () => worker, memoryCollapseStore(), () => clock.now);
 		const loading = model.load(2);
 		await flush();
 		worker.pending.shift()!();
@@ -310,8 +314,11 @@ describe('MapDataModel refresh', () => {
 		expect(model.rows.get(picked.key)).toBe(picked);
 		expect([...model.changes!.moved]).toEqual([picked.key]);
 		expect([...model.changes!.restyled]).toEqual([picked.key]);
-		expect(model.read!.cursor).toBe(b.now + 9000);
 		expect(model.now).toBe(clock.now);
+
+		reads.push(deltaRead([], b.rows.length));
+		await model.refresh();
+		expect(asked.at(-1)).toBe(b.now + 9000);
 	});
 
 	it('moves a parent with a delta that carries only its child, since the parent anchors on its subtree', async () => {
@@ -331,7 +338,7 @@ describe('MapDataModel refresh', () => {
 	});
 
 	it('moves only the cursor on an idle poll: no pass, and no new rows', async () => {
-		const { model, worker, b, reads, clock } = await loaded();
+		const { model, worker, b, reads, asked, clock } = await loaded();
 		const rows = model.rows;
 		reads.push(deltaRead([], b.rows.length, { cursor: b.now + 9000 }));
 		clock.now = b.now + 10_000;
@@ -343,8 +350,11 @@ describe('MapDataModel refresh', () => {
 
 		expect(worker.calls).toBe(1);
 		expect(model.rows).toBe(rows);
-		expect(model.read!.cursor).toBe(b.now + 9000);
 		expect(model.loadedAt).toBe(clock.now);
+
+		reads.push(deltaRead([], b.rows.length));
+		await model.refresh();
+		expect(asked.at(-1)).toBe(b.now + 9000);
 	});
 
 	it('reads the whole project again when the count says something was deleted', async () => {
@@ -460,5 +470,210 @@ describe('MapDataModel refresh', () => {
 		await settle(worker);
 		await toggling;
 		expect(model.changes).toBeNull();
+	});
+});
+
+describe('MapDataModel across projects', () => {
+	const HOUR = 3_600_000;
+
+	/** A project's read, answered from a script, with the cursor of every ask. */
+	interface Scripted {
+		read: MapReadSource;
+		reads: Array<MapRead | Error>;
+		asked: Array<number | null>;
+	}
+
+	const scripted = (...reads: Array<MapRead | Error>): Scripted => {
+		const script: Scripted = {
+			reads,
+			asked: [],
+			read: (since) => {
+				script.asked.push(since);
+				const next = script.reads.shift() ?? new Error('Nothing scripted');
+				return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
+			},
+		};
+		return script;
+	};
+
+	/** Two small projects under their own prefixes: one live, with a family, and one quiet. */
+	function boards(): { spe: BoardBuilder; pln: BoardBuilder } {
+		const spe = new BoardBuilder(undefined, 'SPE');
+		spe.add({ status: 'in_progress', started: spe.now - HOUR });
+		const epic = spe.add({ type: 'epic', status: 'in_progress' });
+		spe.add({ parentKey: epic.key, status: 'ready' });
+		const pln = new BoardBuilder(undefined, 'PLN');
+		pln.add({ status: 'ready' });
+		pln.add({ status: 'done' });
+		return { spe, pln };
+	}
+
+	const keysOf = (rows: Iterable<MapItemRow | string>): string[] => [...rows].map((row) => (typeof row === 'string' ? row : row.key)).sort();
+
+	const drain = async (): Promise<void> => {
+		for (let i = 0; i < 20; i++) await Promise.resolve();
+	};
+
+	/** Loads a Map of these projects, answering the layout when one is asked for, on a clock that a poll's worth of time passes on before every refresh. */
+	async function loaded(projects: Array<[string, Scripted]>): Promise<{ model: MapDataModel; worker: ReturnType<typeof fakeWorker>; poll: () => Promise<boolean> }> {
+		const worker = fakeWorker();
+		const clock = { now: NOW };
+		const model = new MapDataModel(projects.map(([ref, script]) => ({ ref, read: script.read })), () => worker, memoryCollapseStore(), () => clock.now);
+		const loading = model.load(2);
+		await drain();
+		worker.pending.shift()?.();
+		await loading;
+		const poll = (): Promise<boolean> => {
+			clock.now += 30_000;
+			return model.refresh();
+		};
+		return { model, worker, poll };
+	}
+
+	const settle = async (worker: ReturnType<typeof fakeWorker>): Promise<void> => {
+		await drain();
+		worker.pending.shift()!();
+		await drain();
+	};
+
+	it('lays out every project\'s rows together, once every read is in', async () => {
+		const { spe, pln } = boards();
+		const a = scripted(wholeRead(spe.rows));
+		const b = scripted(wholeRead(pln.rows));
+		const { model, worker } = await loaded([['acme/specboard', a], ['kim/planner', b]]);
+
+		expect(a.asked).toEqual([null]);
+		expect(b.asked).toEqual([null]);
+		expect(worker.calls).toBe(1);
+		expect(keysOf(worker.inputs[0]!.rows)).toEqual(keysOf([...spe.rows, ...pln.rows]));
+		expect(model.state).toBe('ready');
+		expect(keysOf(model.rows.values())).toEqual(keysOf([...spe.rows, ...pln.rows]));
+		expect(model.layout!.regions.map((region) => region.key)).toEqual([spe.rows[1]!.key]);
+		expect(model.missing.size).toBe(0);
+		expect(model.retrying).toBe(false);
+	});
+
+	it('asks each project only what changed since its own cursor, and reads again only the one whose delta does not add up', async () => {
+		const { spe, pln } = boards();
+		const a = scripted(wholeRead(spe.rows, { cursor: 1_000 }));
+		const b = scripted(wholeRead(pln.rows, { cursor: 2_000 }));
+		const { model, worker, poll } = await loaded([['acme/specboard', a], ['kim/planner', b]]);
+
+		const gone = spe.rows[0]!.key;
+		const picked = { ...pln.rows[0]!, status: 'in_progress' as const, startedAt: iso(pln.now + 5000), timeAnchor: iso(pln.now + 5000) };
+		a.reads.push(deltaRead([], spe.rows.length - 1), wholeRead(spe.rows.slice(1), { cursor: 3_000 }));
+		b.reads.push(deltaRead([picked], pln.rows.length, { cursor: 4_000 }));
+
+		expect(await poll()).toBe(true);
+		expect(a.asked).toEqual([null, 1_000, null]);
+		expect(b.asked).toEqual([null, 2_000]);
+		await settle(worker);
+
+		expect(model.rows.has(gone)).toBe(false);
+		expect(model.rows.get(picked.key)).toBe(picked);
+		expect([...model.changes!.removed]).toEqual([gone]);
+		expect([...model.changes!.restyled]).toEqual([picked.key]);
+
+		a.reads.push(deltaRead([], spe.rows.length - 1));
+		b.reads.push(deltaRead([], pln.rows.length));
+		await poll();
+		expect(a.asked.at(-1)).toBe(3_000);
+		expect(b.asked.at(-1)).toBe(4_000);
+	});
+
+	it('draws the rest when one project\'s read fails, names it, and reads it whole on the next poll', async () => {
+		const { spe, pln } = boards();
+		const a = scripted(wholeRead(spe.rows));
+		const b = scripted(new FetchError('HTTP 500: Internal Server Error', 500));
+		const { model, worker, poll } = await loaded([['acme/specboard', a], ['kim/planner', b]]);
+
+		expect(model.state).toBe('ready');
+		expect(keysOf(model.rows.values())).toEqual(keysOf(spe.rows));
+		expect([...model.missing]).toEqual([['kim/planner', { error: expect.objectContaining({ status: 500 }), unreadable: false }]]);
+		expect(model.retrying).toBe(true);
+
+		// Still failing: the same project is missing for the same reason, so the report doesn't change.
+		const missing = model.missing;
+		a.reads.push(deltaRead([], spe.rows.length));
+		b.reads.push(new FetchError('HTTP 503: Service Unavailable', 503));
+		expect(await poll()).toBe(false);
+		expect(model.missing).toBe(missing);
+		await drain();
+
+		a.reads.push(deltaRead([], spe.rows.length));
+		b.reads.push(wholeRead(pln.rows));
+		expect(await poll()).toBe(true);
+		expect(b.asked).toEqual([null, null, null]);
+		await settle(worker);
+
+		expect(keysOf(model.changes!.added)).toEqual(keysOf(pln.rows));
+		expect(keysOf(model.rows.values())).toEqual(keysOf([...spe.rows, ...pln.rows]));
+		expect(model.missing.size).toBe(0);
+		expect(model.retrying).toBe(false);
+	});
+
+	it('drops a project the person can no longer read for good: a 403 on the first read, or a 404 on a later one', async () => {
+		const { spe, pln } = boards();
+		const a = scripted(wholeRead(spe.rows));
+		const b = scripted(wholeRead(pln.rows));
+		const c = scripted(new FetchError('HTTP 403: Forbidden', 403));
+		const { model, worker, poll } = await loaded([['acme/specboard', a], ['kim/planner', b], ['lee/other', c]]);
+
+		expect(model.missing.get('lee/other')).toMatchObject({ unreadable: true });
+		expect(model.retrying).toBe(false);
+
+		a.reads.push(deltaRead([], spe.rows.length));
+		b.reads.push(new FetchError('HTTP 404: Not Found', 404));
+		expect(await poll()).toBe(true);
+		await settle(worker);
+
+		expect(keysOf(model.changes!.removed)).toEqual(keysOf(pln.rows));
+		expect(keysOf(model.rows.values())).toEqual(keysOf(spe.rows));
+		expect([...model.missing.keys()]).toEqual(['kim/planner', 'lee/other']);
+		expect(model.missing.get('kim/planner')).toMatchObject({ unreadable: true });
+
+		a.reads.push(deltaRead([], spe.rows.length));
+		await poll();
+		expect(b.asked).toHaveLength(2);
+		expect(c.asked).toHaveLength(1);
+	});
+
+	it('is the error state only when every project\'s read fails, and names the first failure', async () => {
+		const worker = fakeWorker();
+		const a = scripted(new Error('HTTP 500: Internal Server Error'));
+		const b = scripted(new FetchError('HTTP 404: Not Found', 404));
+		const model = new MapDataModel([{ ref: 'acme/specboard', read: a.read }, { ref: 'kim/planner', read: b.read }], () => worker, memoryCollapseStore());
+		await model.load(2);
+
+		expect(model.state).toBe('error');
+		expect(model.error!.message).toBe('HTTP 500: Internal Server Error');
+		expect(model.missing.size).toBe(0);
+		expect(worker.calls).toBe(0);
+	});
+
+	it('never drops the last project standing: a project\'s own Map holds what it has through a 404 and keeps asking', async () => {
+		const { spe } = boards();
+		const a = scripted(wholeRead(spe.rows));
+		const { model, poll } = await loaded([['acme/specboard', a]]);
+		const rows = model.rows;
+
+		a.reads.push(new FetchError('HTTP 404: Not Found', 404));
+		expect(await poll()).toBe(false);
+		expect(model.retrying).toBe(true);
+		expect(model.rows).toBe(rows);
+		expect(model.missing.size).toBe(0);
+
+		a.reads.push(deltaRead([], spe.rows.length));
+		expect(await poll()).toBe(true);
+		expect(a.asked).toHaveLength(3);
+	});
+
+	it('says which projects came back past the read cap', async () => {
+		const { spe, pln } = boards();
+		const a = scripted(wholeRead(spe.rows, { summarized: true }));
+		const b = scripted(wholeRead(pln.rows));
+		const { model } = await loaded([['acme/specboard', a], ['kim/planner', b]]);
+
+		expect(model.summarized).toEqual(['acme/specboard']);
 	});
 });

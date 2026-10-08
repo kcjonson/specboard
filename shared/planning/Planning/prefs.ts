@@ -10,8 +10,8 @@ export const VIEW_PREF = 'specboard.planning.view';
 export const SHOW_DONE_PREF = 'specboard.planning.showDone';
 /** Whether the Map says remote changes aloud to a screen reader: on unless this reads `false`, and per device, not per project. */
 export const MAP_ANNOUNCE_PREF = 'specboard.planning.mapAnnounce';
-/** The Map's expand and collapse choices are per project. */
-export const mapCollapsePref = (projectRef: string): string => `specboard.planning.mapCollapse.${projectRef}`;
+/** The Map's expand and collapse choices are per project, and the combined view's per set of projects, whatever order they were picked in. */
+export const mapCollapsePref = (projectRefs: readonly string[]): string => `specboard.planning.mapCollapse.${[...projectRefs].sort().join(',')}`;
 
 export function readPref(key: string): string | undefined {
 	try {

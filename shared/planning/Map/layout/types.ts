@@ -148,9 +148,9 @@ export interface MapLayout {
 	ticks: MapTick[];
 	quiet: MapQuiet | null;
 	phases: Record<string, MapPhase>;
-	/** The three up-next markers, numbered by position. */
+	/** The up-next markers, three a project, one project after another; `upNextNumbers` numbers each within its own project. */
 	upNext: string[];
-	/** Every next and later item, up next first, then by rank, parent before children. */
+	/** Every next and later item, project by project: its up next first, then by rank, parent before children. */
 	planOrder: string[];
 	/** Every item key to the key of the node that draws it. */
 	representative: Record<string, string>;

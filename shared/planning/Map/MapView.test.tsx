@@ -16,7 +16,7 @@ import { MapView } from './MapView';
 import type { MapItemType, MapRead } from '@specboard/core/map-read';
 import { memoryCollapseStore } from './collapse-store.fixture';
 import { MapChangesModel, type ChangesSource } from './changes/changes-model';
-import { MapDataModel } from './map-data-model';
+import { MapDataModel, type MapProjectSource, type MapReadSource } from './map-data-model';
 import type { MapSearchSource } from './map-search';
 import { ActivityCache } from './quick/activity-cache';
 import { RULER_HEIGHT, type MapFrame, type MapRenderer } from './renderer';
@@ -58,6 +58,9 @@ function board(count: number): MapRead {
 	return wholeRead(b.rows);
 }
 
+/** A project's own Map reads one project. */
+const own = (read: MapReadSource): MapProjectSource[] => [{ ref: 'acme/specboard', read }];
+
 const opened: string[] = [];
 const closed = vi.fn();
 
@@ -78,7 +81,7 @@ type RenderedMap = Omit<ReturnType<typeof render>, 'rerender'> & { model: MapDat
 const cleared = vi.fn();
 
 function renderMap(source: () => Promise<MapRead>, props: MapProps = {}, clock?: () => number): RenderedMap {
-	const model = new MapDataModel(source, () => worker, memoryCollapseStore(), clock);
+	const model = new MapDataModel(own(source), () => worker, memoryCollapseStore(), clock);
 	const activity = new ActivityCache(() => Promise.resolve([]));
 	const advance = vi.fn().mockResolvedValue(undefined);
 	const read = props.changes ?? { baseline: Date.now() - 86_400_000, readAt: Date.now(), changes: [] };
@@ -87,7 +90,7 @@ function renderMap(source: () => Promise<MapRead>, props: MapProps = {}, clock?:
 	const searchSource = props.searchSource ?? (() => Promise.resolve([]));
 	const view = (next: MapProps): JSX.Element => (
 		<MapView
-			projectRef="acme/specboard"
+			scope={{ projectRef: 'acme/specboard' }}
 			model={model}
 			activity={activity}
 			searchSource={searchSource}
@@ -961,10 +964,10 @@ describe('MapView since your last visit', () => {
 
 	it('draws the Map without a changes view when the changes read fails', async () => {
 		const m = marked();
-		const model = new MapDataModel(() => Promise.resolve(m.read), () => worker, memoryCollapseStore());
+		const model = new MapDataModel(own(() => Promise.resolve(m.read)), () => worker, memoryCollapseStore());
 		const failing = new MapChangesModel({ read: () => Promise.reject(new Error('HTTP 500')), advance: vi.fn() });
 		const { container } = render(
-			<MapView projectRef="acme/specboard" model={model} changes={failing} activity={new ActivityCache(() => Promise.resolve([]))} searchSource={() => Promise.resolve([])}
+			<MapView scope={{ projectRef: 'acme/specboard' }} model={model} changes={failing} activity={new ActivityCache(() => Promise.resolve([]))} searchSource={() => Promise.resolve([])}
 				covered={0} search="" type={null} onClear={cleared} onOpenItem={() => {}} onCloseItem={closed} />,
 		);
 
