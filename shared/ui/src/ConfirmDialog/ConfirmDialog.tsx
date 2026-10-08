@@ -60,6 +60,7 @@ export function ConfirmDialog({
 	if (!open) return null;
 
 	async function handleConfirm(): Promise<void> {
+		if (busy) return;
 		setError(null);
 		const result = onConfirm();
 		if (!result) return;
@@ -85,10 +86,10 @@ export function ConfirmDialog({
 				{warning && <p class={styles.warning}>{warning}</p>}
 				{error && <p class={styles.error} role="alert">{error}</p>}
 				<DialogFooter>
-					<Button onClick={handleCancel} class="secondary" disabled={busy}>
+					<Button onClick={handleCancel} class="secondary" busy={busy}>
 						{cancelText}
 					</Button>
-					<Button onClick={handleConfirm} class={confirmVariant} disabled={busy}>
+					<Button onClick={handleConfirm} class={confirmVariant} busy={busy}>
 						{busy && busyText ? busyText : confirmText}
 					</Button>
 				</DialogFooter>

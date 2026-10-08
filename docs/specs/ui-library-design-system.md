@@ -46,11 +46,19 @@ Below the breakpoint every dialog is a full-screen slide-up takeover, and the he
 
 ### DialogFooter
 
-The one action-row pattern for dialog, drawer, and detail footers. DOM order is secondary first, primary last (desktop reads left to right); below the breakpoint the row stacks full-width via `column-reverse`, putting the primary on top without changing tab order. An optional `start` slot left-aligns destructive/tertiary actions. Don't hand-roll footer flex rows.
+The one action-row pattern for dialog, drawer, and detail footers. DOM order is secondary first, primary last (desktop reads left to right); below the breakpoint the row stacks full-width via `column-reverse`, putting the primary on top without changing tab order. Don't hand-roll footer flex rows.
 
 ### ConfirmDialog
 
-The one "are you sure?" dialog, built on `Dialog` and `DialogFooter`: a title, a `message`, an optional monospace `detail` (a path) and a `warning`. When `onConfirm` returns a promise the dialog holds both buttons (with `busyText` on the confirm) until it settles, and a rejection is shown in the dialog, the server's message for a failed request, rather than closing. The caller closes it by flipping `open`. Use it in place of `window.confirm()`, which freezes the page and can't show a failure.
+The one "are you sure?" dialog, built on `Dialog` and `DialogFooter`: a title, a `message`, an optional monospace `detail` (a path) and a `warning`. When `onConfirm` returns a promise the dialog holds both buttons busy (with `busyText` on the confirm) until it settles, and a rejection is shown in the dialog as an alert, the server's message for a failed request, rather than closing. The caller closes it by flipping `open`. It is the one confirm path: item delete, file delete, pull over unsaved changes, and the project settings page's remove, revoke, leave and delete. Don't use `window.confirm()`, which freezes the page and can't show a failure.
+
+### Busy buttons
+
+`Button`'s `busy` marks a click in progress: `aria-busy`, clicks ignored, but the button stays enabled. Disabling the button that has focus drops focus to the page, so a pending action uses `busy` and keeps `disabled` for actions that aren't available at all (an empty form).
+
+### Notice
+
+`announce` makes a notice a live region when it appears, an alert for `error` and a status otherwise. Use it for a notice that answers something the user just did (a save, a refused request); standing notices leave it off.
 
 ### Avatar
 

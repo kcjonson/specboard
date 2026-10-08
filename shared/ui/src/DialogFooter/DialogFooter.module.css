@@ -11,20 +11,14 @@
 	padding-top: var(--space-4);
 }
 
-.start,
 .end {
 	display: flex;
 	align-items: center;
 	gap: var(--space-3);
 }
 
-.footer:has(.start) {
-	justify-content: space-between;
-}
-
 @media (width < 768px) { /* bp-small: stack full-width, primary on top */
 	.footer,
-	.start,
 	.end {
 		flex-direction: column-reverse;
 		align-items: stretch;

@@ -309,12 +309,12 @@ export function Planning(props: RouteProps): JSX.Element {
 				await item.delete();
 			}
 		} catch (err) {
-			reportWriteError(err, 'Could not delete that item.');
-			return;
+			// Shown in the item's confirm dialog, which stays open on it.
+			throw new Error(writeFailure(err, 'Could not delete that item.', projectRef), { cause: err });
 		}
 		setSelectedItemKey(undefined);
 		navigate(boardUrl(), { replace: true });
-	}, [items, boardUrl, reportWriteError]);
+	}, [items, boardUrl, projectRef]);
 
 	const createOptions: SplitButtonOption[] = useMemo(() => [
 		{ label: 'Epic', value: 'epic', icon: 'file' as const, onClick: () => handleOpenNewItemDialog('epic') },
@@ -498,7 +498,7 @@ export function Planning(props: RouteProps): JSX.Element {
 							maxWidth={drawerMaxWidth}
 							onClose={handleCloseDrawer}
 							onResize={setDrawerWidth}
-							onDelete={(item) => void handleDeleteItem(item)}
+							onDelete={handleDeleteItem}
 							onOpenItem={handleOpenItemByKey}
 						/>
 					</div>

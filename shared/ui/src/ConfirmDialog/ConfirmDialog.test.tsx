@@ -42,18 +42,30 @@ describe('ConfirmDialog', () => {
 		expect(queryByRole('dialog')).toBeNull();
 	});
 
-	it('holds both buttons while the confirm is pending', async () => {
+	it('holds both buttons while the confirm is pending, without taking focus off them', async () => {
 		const pending = deferred();
-		const { getByRole } = render(
-			<ConfirmDialog open title="Remove Sam?" confirmText="Remove" busyText="Removing..." onConfirm={() => pending.promise} onCancel={vi.fn()} />
+		const onCancel = vi.fn();
+		const { getByRole, findByRole, rerender } = render(
+			<ConfirmDialog open title="Remove Sam?" confirmText="Remove" busyText="Removing..." onConfirm={vi.fn()} onCancel={onCancel} />
 		);
 
-		fireEvent.click(getByRole('button', { name: 'Remove' }));
+		const onConfirm = vi.fn(() => pending.promise);
+		rerender(<ConfirmDialog open title="Remove Sam?" confirmText="Remove" busyText="Removing..." onConfirm={onConfirm} onCancel={onCancel} />);
+		const confirm = getByRole('button', { name: 'Remove' });
+		confirm.focus();
+		fireEvent.click(confirm);
 
-		await waitFor(() => expect(getByRole('button', { name: 'Removing...' }).hasAttribute('disabled')).toBe(true));
-		expect(getByRole('button', { name: 'Cancel' }).hasAttribute('disabled')).toBe(true);
+		const busy = await findByRole('button', { name: 'Removing...' });
+		expect(busy.getAttribute('aria-busy')).toBe('true');
+		expect(busy.hasAttribute('disabled')).toBe(false);
+		expect(document.activeElement).toBe(busy);
+		fireEvent.click(busy);
+		fireEvent.click(getByRole('button', { name: 'Cancel' }));
+		expect(onConfirm).toHaveBeenCalledOnce();
+		expect(onCancel).not.toHaveBeenCalled();
+
 		pending.resolve();
-		await waitFor(() => expect(getByRole('button', { name: 'Remove' }).hasAttribute('disabled')).toBe(false));
+		await waitFor(() => expect(getByRole('button', { name: 'Remove' }).getAttribute('aria-busy')).toBeNull());
 	});
 
 	it("shows the server's message when the confirm fails, and stays open", async () => {

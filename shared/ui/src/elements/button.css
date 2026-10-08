@@ -29,6 +29,12 @@ button:disabled {
 	cursor: not-allowed;
 }
 
+/* Busy: still enabled so it keeps focus, but looks and acts held. */
+button[aria-busy="true"] {
+	opacity: 0.7;
+	cursor: progress;
+}
+
 /* Button sizes */
 button.size-sm {
 	padding: var(--space-1) var(--space-2);
