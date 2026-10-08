@@ -16,7 +16,7 @@ vi.mock('@specboard/fetch', () => ({
 	},
 }));
 
-import { projectModel, projectRoleState, refreshProject, useProjectRole, type ProjectRole } from './project';
+import { moveProject, projectModel, projectRoleState, refreshProject, useProjectRole, type ProjectRole } from './project';
 
 beforeEach(() => {
 	get.mockReset();
@@ -121,5 +121,21 @@ describe('useProjectRole', () => {
 
 		await waitFor(() => expect(result.current.reason).toBe('viewer'));
 		expect(result.current.canEdit).toBe(false);
+	});
+});
+
+describe('moveProject', () => {
+	it('takes the model to the new ref and leaves nothing under the old one', async () => {
+		get.mockResolvedValue({ id: 'p9', slug: 'old', grantedRole: 'owner', effectiveRole: 'owner', pushAccess: null });
+		const moved = projectModel('acme/old');
+		await waitFor(() => expect(moved.slug).toBe('old'));
+
+		moveProject('acme/old', 'acme/new');
+
+		expect(projectModel('acme/new')).toBe(moved);
+		expect(moved.projectRef).toBe('acme/new');
+		const fresh = projectModel('acme/old');
+		expect(fresh).not.toBe(moved);
+		expect(get).toHaveBeenLastCalledWith('/api/projects/acme/old');
 	});
 });

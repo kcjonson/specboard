@@ -121,8 +121,8 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 
 	/**
 	 * Answer an invitation. One that closed since the list loaded (revoked, expired, or
-	 * answered elsewhere) gets a notice and a fresh list, which carries any invitation that
-	 * replaced it; other failures stay on the card.
+	 * answered elsewhere: 410) or is gone with its project (404) gets a notice and a fresh
+	 * list, which carries any invitation that replaced it; other failures stay on the card.
 	 */
 	async function answerInvitation(invitation: Invitation, action: 'accept' | 'decline'): Promise<void> {
 		setInvitationNotice(null);
@@ -138,8 +138,8 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 			setInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
 		} catch (err) {
 			const fallback = action === 'accept' ? 'Couldn\'t accept the invitation.' : 'Couldn\'t decline the invitation.';
-			if (err instanceof FetchError && err.status === 410) {
-				setInvitationNotice(fetchErrorText(err, 'That invitation is no longer open.'));
+			if (err instanceof FetchError && (err.status === 410 || err.status === 404)) {
+				setInvitationNotice(err.status === 410 ? fetchErrorText(err, 'That invitation is no longer open.') : 'That invitation is no longer open.');
 				await fetchInvitations();
 				return;
 			}
@@ -190,7 +190,7 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 				{(invitations.length > 0 || invitationNotice) && (
 					<section class={styles.section} aria-labelledby="projects-invitations">
 						<h2 id="projects-invitations" class={styles.sectionTitle}>Invitations</h2>
-						{invitationNotice && <Notice variant="warning">{invitationNotice}</Notice>}
+						{invitationNotice && <Notice variant="warning" announce>{invitationNotice}</Notice>}
 						<div class={styles.grid}>
 							{invitations.map((invitation) => (
 								<InvitationCard

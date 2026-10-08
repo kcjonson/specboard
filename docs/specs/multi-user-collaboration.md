@@ -593,9 +593,13 @@ Phase 4 (project settings page and member management, SPE-208) is built:
 
 - `/projects/:owner/:project/settings` (`shared/projects/ProjectSettings`) has General (name,
   description, URL slug, item key), AI (instructions), Repository, Members and Danger zone,
-  one at a time from a side nav, the section kept in the URL hash (`#members`). It reads the
-  page's shared `ProjectModel`, so a save shows in the header at once; a slug change moves the
-  page to the new address. Members and everyone else get only Members, read-only, with
+  one at a time from a side nav of links to `#general`, `#members` and so on, so a section can
+  be linked to. It reads the page's shared `ProjectModel`, so a save shows in the header at
+  once. The forms wait for a read made since the page opened, so a model cached earlier in the
+  session can't seed them with stale values. A slug change moves the model to the new ref
+  (`moveProject`), leaving nothing cached under the old address, and the page follows it.
+  Writes report through `writeFailure`, so a 403 re-reads the role; leaving a project that
+  answers 404 (already removed) goes to `/projects` all the same. Members and everyone else get only Members, read-only, with
   **Leave project**, and the header's gear reaches it for everyone. `ProjectModel` reads the
   `description`, `systemPrompt`, `syncStatus` and `syncError` the project GET already sent.
 - `ProjectDialog` is create-only. Its edit mode, `ProjectsList`'s `?edit=` deep link and the
@@ -612,9 +616,10 @@ Phase 4 (project settings page and member management, SPE-208) is built:
   it shows only when the owner has GitHub connected and the repository is in that list; no
   new API was needed for it.
 - `/projects` shows **Invitations** (from `GET /api/invitations`, Accept opens the project's
-  board, Decline drops the card, an invitation that closed meanwhile reloads the list with a
-  notice), then **Your projects**, then **Shared with you**, whose cards show the owner's
-  avatar and name and the granted role, and offer no settings or retry-sync.
+  board, Decline drops the card, an invitation that closed meanwhile (410) or whose project
+  is gone (404) reloads the list with a notice), then **Your projects**, then **Shared with you**, whose cards show the owner's
+  avatar and name and the granted role (with "View only until you connect GitHub" for a
+  granted editor without it), and offer no settings or retry-sync.
 - `WebHeader` shows `owner / project`, the owner's slug linking to `/projects`, and a settings
   gear after Planning and Pages (a Settings row in the small-screen menu).
 - `Avatar` (`@specboard/ui`) replaced the three `getInitials` copies in `UserMenu`, `ItemCard`

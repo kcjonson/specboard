@@ -1,7 +1,8 @@
 /**
  * GitHub integration models
  *
- * Used by Settings > GitHub Connection and ProjectDialog for repository selection.
+ * Used by Settings > GitHub Connection, RepositoryPicker (project create and project
+ * settings), and the invite dialog's private-repository note.
  * Follows the Model/SyncModel/SyncCollection patterns.
  */
 

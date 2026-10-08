@@ -124,6 +124,19 @@ export function refreshProject(projectRef: string): void {
 	else projectModel(projectRef);
 }
 
+/**
+ * The project moved to a new ref (its slug changed). The page's model goes with it, so
+ * the old ref has nothing cached: a later page view of the old address reads the server
+ * (and 404s, or finds whichever project holds it now) instead of the moved project.
+ */
+export function moveProject(fromRef: string, toRef: string): void {
+	const project = projects.get(fromRef);
+	if (!project || fromRef === toRef) return;
+	projects.delete(fromRef);
+	project.projectRef = toRef;
+	projects.set(toRef, project);
+}
+
 /** The caller's standing, from the fields the server sent. The one place the client reads them. */
 export function projectRoleState(project: Pick<ProjectModel, 'grantedRole' | 'effectiveRole' | 'pushAccess'>): ProjectRoleState {
 	const role = project.grantedRole ?? null;

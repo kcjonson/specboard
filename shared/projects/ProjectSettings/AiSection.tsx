@@ -1,8 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { fetchErrorText } from '@specboard/fetch';
 import { Button, Notice } from '@specboard/ui';
-import type { ProjectModel } from '@specboard/models';
+import { writeFailure, type ProjectModel } from '@specboard/models';
 import { saveProject } from './settings-api';
 import styles from './ProjectSettings.module.css';
 
@@ -27,7 +26,7 @@ export function AiSection({ project, projectRef }: AiSectionProps): JSX.Element 
 			await saveProject(project, projectRef, { system_prompt: systemPrompt.trim() });
 			setStatus({ variant: 'success', text: 'Saved.' });
 		} catch (err) {
-			setStatus({ variant: 'error', text: fetchErrorText(err, 'Failed to save the instructions') });
+			setStatus({ variant: 'error', text: writeFailure(err, 'Failed to save the instructions', projectRef) });
 		} finally {
 			setSaving(false);
 		}
@@ -48,10 +47,10 @@ export function AiSection({ project, projectRef }: AiSectionProps): JSX.Element 
 				<span class={styles.charCount}>{systemPrompt.length.toLocaleString()} / {MAX_PROMPT_LENGTH.toLocaleString()}</span>
 			</label>
 
-			{status && <Notice variant={status.variant}>{status.text}</Notice>}
+			{status && <Notice variant={status.variant} announce>{status.text}</Notice>}
 
 			<div class={styles.formActions}>
-				<Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+				<Button type="submit" busy={saving}>{saving ? 'Saving...' : 'Save'}</Button>
 			</div>
 		</form>
 	);

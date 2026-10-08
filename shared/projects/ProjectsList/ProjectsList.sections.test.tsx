@@ -183,6 +183,25 @@ describe('ProjectsList invitations', () => {
 		await waitFor(() => expect(get.mock.calls.filter(([url]) => url === '/api/invitations')).toHaveLength(2));
 	});
 
+	it('treats an invitation whose project is gone like a closed one', async () => {
+		serve([MINE], [INVITE]);
+		post.mockRejectedValue(new FetchError('HTTP 404', 404, undefined, { error: 'Invitation not found' }));
+		const { findByRole, findByText } = render(<ProjectsList params={{}} />);
+
+		fireEvent.click(await findByRole('button', { name: 'Decline' }));
+
+		expect(await findByText('That invitation is no longer open.')).toBeTruthy();
+		await waitFor(() => expect(get.mock.calls.filter(([url]) => url === '/api/invitations')).toHaveLength(2));
+	});
+
+	it('says why a shared editor project is view only, without a hover', async () => {
+		serve([ATLAS]);
+		const { findByRole } = render(<ProjectsList params={{}} />);
+
+		const atlas = cardFor(await findByRole('region', { name: 'Shared with you' }), 'Atlas');
+		expect(within(atlas).getByText('View only until you connect GitHub')).toBeTruthy();
+	});
+
 	it('keeps the projects when the invitations fail to load', async () => {
 		serve([MINE], new Error('offline'));
 		const { findByRole, findByText } = render(<ProjectsList params={{}} />);

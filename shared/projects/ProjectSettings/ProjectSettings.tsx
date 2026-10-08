@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
@@ -31,9 +31,9 @@ function sectionFromHash(): SectionId | null {
 }
 
 /**
- * /projects/:owner/:project/settings. One section at a time, chosen from the side nav and
- * kept in the URL hash so a link can open a section. The owner gets every section; members
- * get Members, read-only, with Leave project.
+ * /projects/:owner/:project/settings. One section at a time, chosen from the side nav's
+ * links to `#general`, `#members` and so on, so a section can be linked to. The owner gets
+ * every section; members get Members, read-only, with Leave project.
  */
 export function ProjectSettings({ params }: RouteProps): JSX.Element {
 	const projectRef = formatProjectRef(params.owner!, params.project!);
@@ -41,9 +41,24 @@ export function ProjectSettings({ params }: RouteProps): JSX.Element {
 	const { role, isOwner } = projectRoleState(project);
 	const [chosen, setChosen] = useState<SectionId | null>(sectionFromHash);
 
-	if (!role) {
+	useEffect(() => {
+		const follow = (): void => setChosen(sectionFromHash());
+		window.addEventListener('hashchange', follow);
+		return () => window.removeEventListener('hashchange', follow);
+	}, []);
+
+	// The forms start from the project's values, so they wait for a read made since the page
+	// opened: a model cached from earlier in the session can be stale (another tab renamed the
+	// project, or the role changed). A read already in flight counts.
+	const openedAt = useRef(Date.now());
+	useEffect(() => {
+		refreshProject(projectRef);
+	}, [projectRef]);
+	const settled = (project.$meta.lastFetched ?? 0) >= openedAt.current;
+
+	if (!role || !settled) {
 		const error = project.$meta.error;
-		if (error && !project.$meta.working) {
+		if (error && !project.$meta.working && !role) {
 			if (error instanceof FetchError && error.status === 404) return <NotFound />;
 			return (
 				<Page projectRef={projectRef} activeTab="Settings">
@@ -67,25 +82,19 @@ export function ProjectSettings({ params }: RouteProps): JSX.Element {
 		? `${project.repository.remote.owner}/${project.repository.remote.repo}`
 		: null;
 
-	function choose(id: SectionId): void {
-		setChosen(id);
-		window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${id}`);
-	}
-
 	return (
 		<Page projectRef={projectRef} activeTab="Settings">
 			<div class={styles.layout}>
 				<nav class={styles.nav} aria-label="Settings sections">
 					{SECTIONS.filter((section) => available.includes(section.id)).map((section) => (
-						<button
+						<a
 							key={section.id}
-							type="button"
+							href={`#${section.id}`}
 							class={`${styles.navItem} ${section.id === current ? styles.navItemActive : ''}`}
 							aria-current={section.id === current ? 'page' : undefined}
-							onClick={() => choose(section.id)}
 						>
 							{section.label}
-						</button>
+						</a>
 					))}
 				</nav>
 				<section class={styles.panel} aria-labelledby="settings-section-title">

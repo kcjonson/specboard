@@ -19,19 +19,14 @@
 	top: 0;
 }
 
-/* Overrides the element-level button look: these are nav rows, not actions. */
 .navItem {
-	justify-content: flex-start;
-	width: 100%;
+	display: block;
 	padding: var(--space-2) var(--space-3);
-	border: none;
 	border-radius: var(--radius-sm);
-	background: none;
 	color: var(--color-text-muted);
 	font-size: var(--text-sm);
 	font-weight: var(--font-medium);
-	text-align: left;
-	cursor: pointer;
+	text-decoration: none;
 }
 
 .navItem:hover {
@@ -85,7 +80,6 @@
 	}
 
 	.navItem {
-		width: auto;
 		white-space: nowrap;
 	}
 

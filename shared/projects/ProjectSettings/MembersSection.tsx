@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
-import { fetchClient, fetchErrorText } from '@specboard/fetch';
+import { fetchClient, FetchError } from '@specboard/fetch';
+import { writeFailure } from '@specboard/models';
 import { Avatar, Badge, Button, ConfirmDialog, Icon, Notice } from '@specboard/ui';
 import { InviteDialog } from './InviteDialog';
 import { expiryText, ROLE_LABELS, type Member, type MemberRole, type PendingInvitation } from './settings-api';
@@ -30,7 +31,8 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 	const [pending, setPending] = useState<PendingInvitation[]>([]);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [status, setStatus] = useState<{ variant: 'success' | 'error'; text: string } | null>(null);
-	const [busy, setBusy] = useState<string | null>(null);
+	// Rows with a request in flight, by member slug or invitation id.
+	const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
 	const [inviting, setInviting] = useState(false);
 	const [confirming, setConfirming] = useState<Confirmation | null>(null);
 
@@ -44,7 +46,7 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 			setMembers(memberRows);
 			setPending(invitationRows);
 		} catch (err) {
-			setLoadError(fetchErrorText(err, 'Couldn\'t load the members.'));
+			setLoadError(writeFailure(err, 'Couldn\'t load the members.', projectRef));
 		}
 	}, [projectRef, isOwner]);
 
@@ -52,33 +54,46 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 		void load();
 	}, [load]);
 
-	async function handleRoleChange(member: Member, role: MemberRole): Promise<void> {
-		if (!member.slug || role === member.role) return;
-		setBusy(member.slug);
+	/** Run one row's request, at most one at a time per row. */
+	async function forRow(id: string, request: () => Promise<void>): Promise<void> {
+		if (busy.has(id)) return;
+		setBusy((ids) => new Set(ids).add(id));
 		setStatus(null);
 		try {
-			const updated = await fetchClient.put<Member>(`/api/projects/${projectRef}/members/${member.slug}`, { role });
-			// The answer carries no push access; that doesn't change with the role.
-			setMembers((rows) => rows?.map((row) => (row.slug === member.slug ? { ...row, ...updated, pushAccess: row.pushAccess } : row)) ?? null);
-		} catch (err) {
-			setStatus({ variant: 'error', text: fetchErrorText(err, `Couldn't change ${member.name}'s role.`) });
+			await request();
 		} finally {
-			setBusy(null);
+			setBusy((ids) => {
+				const next = new Set(ids);
+				next.delete(id);
+				return next;
+			});
 		}
 	}
 
-	async function handleResend(invitation: PendingInvitation): Promise<void> {
-		setBusy(invitation.id);
-		setStatus(null);
-		try {
-			const resent = await fetchClient.post<PendingInvitation>(`/api/projects/${projectRef}/invitations/${invitation.id}/resend`);
-			setPending((rows) => rows.map((row) => (row.id === invitation.id ? resent : row)));
-			setStatus({ variant: 'success', text: `Sent a new invitation to ${invitation.email}.` });
-		} catch (err) {
-			setStatus({ variant: 'error', text: fetchErrorText(err, `Couldn't resend the invitation to ${invitation.email}.`) });
-		} finally {
-			setBusy(null);
-		}
+	function handleRoleChange(member: Member, role: MemberRole): Promise<void> {
+		const slug = member.slug;
+		if (!slug || role === member.role) return Promise.resolve();
+		return forRow(slug, async () => {
+			try {
+				const updated = await fetchClient.put<Member>(`/api/projects/${projectRef}/members/${slug}`, { role });
+				// The answer carries no push access; that doesn't change with the role.
+				setMembers((rows) => rows?.map((row) => (row.slug === slug ? { ...row, ...updated, pushAccess: row.pushAccess } : row)) ?? null);
+			} catch (err) {
+				setStatus({ variant: 'error', text: writeFailure(err, `Couldn't change ${member.name}'s role.`, projectRef) });
+			}
+		});
+	}
+
+	function handleResend(invitation: PendingInvitation): Promise<void> {
+		return forRow(invitation.id, async () => {
+			try {
+				const resent = await fetchClient.post<PendingInvitation>(`/api/projects/${projectRef}/invitations/${invitation.id}/resend`);
+				setPending((rows) => rows.map((row) => (row.id === invitation.id ? resent : row)));
+				setStatus({ variant: 'success', text: `Sent a new invitation to ${invitation.email}.` });
+			} catch (err) {
+				setStatus({ variant: 'error', text: writeFailure(err, `Couldn't resend the invitation to ${invitation.email}.`, projectRef) });
+			}
+		});
 	}
 
 	function handleInvited(invitation: PendingInvitation): void {
@@ -88,20 +103,33 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 		setStatus({ variant: 'success', text: `Invited ${invitation.email}.` });
 	}
 
+	async function leave(): Promise<void> {
+		try {
+			await fetchClient.delete(`/api/projects/${projectRef}/membership`);
+		} catch (err) {
+			// Already gone: removed by the owner, or the project deleted. Either way, out.
+			if (!(err instanceof FetchError && err.status === 404)) throw err;
+		}
+		navigate('/projects');
+	}
+
 	async function handleConfirm(): Promise<void> {
 		if (!confirming) return;
-		if (confirming.kind === 'remove') {
-			const { member } = confirming;
-			await fetchClient.delete(`/api/projects/${projectRef}/members/${member.slug}`);
-			setMembers((rows) => rows?.filter((row) => row.slug !== member.slug) ?? null);
-		} else if (confirming.kind === 'revoke') {
-			const { invitation } = confirming;
-			await fetchClient.delete(`/api/projects/${projectRef}/invitations/${invitation.id}`);
-			setPending((rows) => rows.filter((row) => row.id !== invitation.id));
-		} else {
-			await fetchClient.delete(`/api/projects/${projectRef}/membership`);
-			navigate('/projects');
-			return;
+		try {
+			if (confirming.kind === 'remove') {
+				const { member } = confirming;
+				await fetchClient.delete(`/api/projects/${projectRef}/members/${member.slug}`);
+				setMembers((rows) => rows?.filter((row) => row.slug !== member.slug) ?? null);
+			} else if (confirming.kind === 'revoke') {
+				const { invitation } = confirming;
+				await fetchClient.delete(`/api/projects/${projectRef}/invitations/${invitation.id}`);
+				setPending((rows) => rows.filter((row) => row.id !== invitation.id));
+			} else {
+				await leave();
+				return;
+			}
+		} catch (err) {
+			throw new Error(writeFailure(err, 'That didn\'t work. Try again.', projectRef), { cause: err });
 		}
 		setConfirming(null);
 	}
@@ -138,11 +166,11 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 			</div>
 
 			{loadError && (
-				<Notice variant="error">
+				<Notice variant="error" announce>
 					{loadError} <button type="button" class={styles.inlineLink} onClick={() => void load()}>Retry</button>
 				</Notice>
 			)}
-			{status && <Notice variant={status.variant}>{status.text}</Notice>}
+			{status && <Notice variant={status.variant} announce>{status.text}</Notice>}
 
 			{members && (
 				<ul class={styles.memberList} aria-label="Members">
@@ -152,7 +180,7 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 							member={member}
 							isOwner={isOwner}
 							repositoryName={repositoryName}
-							busy={busy === member.slug}
+							busy={member.slug !== null && busy.has(member.slug)}
 							onRoleChange={handleRoleChange}
 							onRemove={() => setConfirming({ kind: 'remove', member })}
 						/>
@@ -174,8 +202,8 @@ export function MembersSection({ projectRef, projectName, isOwner, repositoryNam
 									{expiryText(invitation)}
 								</span>
 								<div class={styles.rowActions}>
-									<Button class="secondary size-sm" onClick={() => handleResend(invitation)} disabled={busy === invitation.id}>
-										{busy === invitation.id ? 'Sending...' : 'Resend'}
+									<Button class="secondary size-sm" onClick={() => void handleResend(invitation)} busy={busy.has(invitation.id)}>
+										{busy.has(invitation.id) ? 'Sending...' : 'Resend'}
 									</Button>
 									<Button class="text danger size-sm" onClick={() => setConfirming({ kind: 'revoke', invitation })}>
 										Revoke
@@ -212,7 +240,7 @@ interface MemberRowProps {
 	isOwner: boolean;
 	repositoryName: string | null;
 	busy: boolean;
-	onRoleChange: (member: Member, role: MemberRole) => void;
+	onRoleChange: (member: Member, role: MemberRole) => Promise<void>;
 	onRemove: () => void;
 }
 
@@ -220,9 +248,11 @@ function MemberRow({ member, isOwner, repositoryName, busy, onRoleChange, onRemo
 	const manageable = isOwner && member.role !== 'owner' && member.slug !== null;
 	const needsGitHub = member.role === 'editor' && !member.githubConnected;
 	const noPushAccess = member.pushAccess === false;
+	// The role just picked, shown while it saves; a refused change falls back to the saved one.
+	const [picked, setPicked] = useState<MemberRole | null>(null);
 
 	return (
-		<li class={styles.memberRow}>
+		<li class={styles.memberRow} aria-busy={busy || undefined}>
 			<div class={styles.memberIdentity}>
 				<Avatar name={member.name} avatarUrl={member.avatarUrl} size="md" decorative />
 				<div class={styles.memberText}>
@@ -231,12 +261,18 @@ function MemberRow({ member, isOwner, repositoryName, busy, onRoleChange, onRemo
 				</div>
 			</div>
 			{manageable ? (
+				// Stays enabled while its change saves, so it keeps focus; forRow lets one
+				// change per row run at a time.
 				<select
 					class={styles.roleSelect}
-					value={member.role}
+					value={picked ?? member.role}
 					aria-label={`Role for ${member.name}`}
-					disabled={busy}
-					onChange={(e) => onRoleChange(member, (e.target as HTMLSelectElement).value as MemberRole)}
+					aria-busy={busy || undefined}
+					onChange={(e) => {
+						const role = (e.target as HTMLSelectElement).value as MemberRole;
+						setPicked(role);
+						void onRoleChange(member, role).finally(() => setPicked(null));
+					}}
 				>
 					<option value="editor">Editor</option>
 					<option value="viewer">Viewer</option>

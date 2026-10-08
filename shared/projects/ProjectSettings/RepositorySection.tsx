@@ -1,9 +1,9 @@
 import { useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { navigate } from '@specboard/router';
-import { fetchClient, fetchErrorText } from '@specboard/fetch';
+import { fetchClient } from '@specboard/fetch';
 import { Button, Icon, Notice } from '@specboard/ui';
-import type { ProjectModel } from '@specboard/models';
+import { writeFailure, type ProjectModel } from '@specboard/models';
 import { RepositoryPicker, type RepositoryConfig } from '../RepositoryPicker/RepositoryPicker';
 import { SyncProgressDialog } from '../SyncProgressDialog/SyncProgressDialog';
 import { saveProject } from './settings-api';
@@ -29,27 +29,28 @@ export function RepositorySection({ project, projectRef }: RepositorySectionProp
 	const remote = repository?.type === 'cloud' ? repository.remote : undefined;
 
 	async function handleAttach(): Promise<void> {
-		if (!picked) return;
+		if (!picked || attaching) return;
 		setAttaching(true);
 		setError(null);
 		try {
 			await saveProject(project, projectRef, { repository: picked });
 			setSyncing(true);
 		} catch (err) {
-			setError(fetchErrorText(err, 'Failed to connect the repository'));
+			setError(writeFailure(err, 'Failed to connect the repository', projectRef));
 		} finally {
 			setAttaching(false);
 		}
 	}
 
 	async function handleRetrySync(): Promise<void> {
+		if (retrying) return;
 		setRetrying(true);
 		setError(null);
 		try {
 			await fetchClient.post(`/api/projects/${projectRef}/sync/initial`);
 			setSyncing(true);
 		} catch (err) {
-			setError(fetchErrorText(err, 'Failed to retry the sync'));
+			setError(writeFailure(err, 'Failed to retry the sync', projectRef));
 		} finally {
 			setRetrying(false);
 		}
@@ -93,7 +94,7 @@ export function RepositorySection({ project, projectRef }: RepositorySectionProp
 							<span class={styles.errorDot} />
 							<span class={styles.errorText}>Sync failed</span>
 							{project.syncError && <span class={styles.errorDetail}>{project.syncError}</span>}
-							<Button class="secondary size-sm" onClick={handleRetrySync} disabled={retrying}>
+							<Button class="secondary size-sm" onClick={handleRetrySync} busy={retrying}>
 								{retrying ? 'Retrying...' : 'Retry sync'}
 							</Button>
 						</>
@@ -109,7 +110,7 @@ export function RepositorySection({ project, projectRef }: RepositorySectionProp
 				<p class={styles.hint}>Connect a GitHub repository to store documents. Once connected it can't be changed.</p>
 				<RepositoryPicker onChange={setPicked} disabled={attaching} />
 				<div class={styles.formActions}>
-					<Button onClick={handleAttach} disabled={!picked || attaching}>
+					<Button onClick={handleAttach} disabled={!picked} busy={attaching}>
 						{attaching ? 'Connecting...' : 'Connect repository'}
 					</Button>
 				</div>
@@ -120,7 +121,7 @@ export function RepositorySection({ project, projectRef }: RepositorySectionProp
 	return (
 		<div class={styles.form}>
 			{body}
-			{error && <Notice variant="error">{error}</Notice>}
+			{error && <Notice variant="error" announce>{error}</Notice>}
 			{syncing && (
 				<SyncProgressDialog
 					projectRef={projectRef}

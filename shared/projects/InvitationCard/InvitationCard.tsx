@@ -29,6 +29,7 @@ export function InvitationCard({ invitation, onAccept, onDecline }: InvitationCa
 	const [error, setError] = useState<string | null>(null);
 
 	async function answer(action: 'accept' | 'decline'): Promise<void> {
+		if (busy) return;
 		setBusy(action);
 		setError(null);
 		try {
@@ -50,10 +51,10 @@ export function InvitationCard({ invitation, onAccept, onDecline }: InvitationCa
 			</div>
 			{error && <p class={styles.error} role="alert">{error}</p>}
 			<div class={styles.actions}>
-				<Button class="secondary size-sm" onClick={() => answer('decline')} disabled={busy !== null}>
+				<Button class="secondary size-sm" onClick={() => answer('decline')} busy={busy !== null}>
 					{busy === 'decline' ? 'Declining...' : 'Decline'}
 				</Button>
-				<Button class="size-sm" onClick={() => answer('accept')} disabled={busy !== null}>
+				<Button class="size-sm" onClick={() => answer('accept')} busy={busy !== null}>
 					{busy === 'accept' ? 'Accepting...' : 'Accept'}
 				</Button>
 			</div>

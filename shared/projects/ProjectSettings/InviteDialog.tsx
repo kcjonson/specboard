@@ -36,11 +36,11 @@ export function InviteDialog({ projectRef, projectName, repositoryName, onClose,
 	const [error, setError] = useState<string | null>(null);
 	const isPrivate = useRepositoryIsPrivate(repositoryName);
 
-	const canSend = email.trim().length > 0 && !sending;
+	const hasEmail = email.trim().length > 0;
 
 	async function handleSubmit(e: Event): Promise<void> {
 		e.preventDefault();
-		if (!canSend) return;
+		if (!hasEmail || sending) return;
 		setSending(true);
 		setError(null);
 		try {
@@ -96,7 +96,7 @@ export function InviteDialog({ projectRef, projectName, repositoryName, onClose,
 
 				<DialogFooter>
 					<Button type="button" class="text" onClick={onClose}>Cancel</Button>
-					<Button type="submit" disabled={!canSend}>{sending ? 'Sending...' : 'Send invite'}</Button>
+					<Button type="submit" disabled={!hasEmail} busy={sending}>{sending ? 'Sending...' : 'Send invite'}</Button>
 				</DialogFooter>
 			</form>
 		</Dialog>

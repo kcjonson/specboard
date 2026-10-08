@@ -3,8 +3,9 @@
  * (docs/specs/api-database.md, Project Members and Project Invitations).
  */
 
+import { formatProjectRef } from '@specboard/core/identifiers';
 import { fetchClient } from '@specboard/fetch';
-import type { ModelData, ProjectModel, ProjectRole } from '@specboard/models';
+import { moveProject, type ModelData, type ProjectModel, type ProjectRole } from '@specboard/models';
 
 export type MemberRole = 'editor' | 'viewer';
 
@@ -50,8 +51,12 @@ export function expiryText(invitation: Pick<PendingInvitation, 'state' | 'expire
  * PUT the project and fold the answer into the page's shared model, so the header and
  * every other reader see the change. The server leaves an unset description or prompt
  * out of its answer, so those are cleared explicitly rather than left at the old value.
+ * A new slug moves the model to the new ref. Answers the ref the project is at now.
  */
-export async function saveProject(project: ProjectModel, projectRef: string, body: Record<string, unknown>): Promise<void> {
+export async function saveProject(project: ProjectModel, projectRef: string, body: Record<string, unknown>): Promise<string> {
 	const updated = await fetchClient.put<Partial<ModelData<ProjectModel>>>(`/api/projects/${projectRef}`, body);
 	project.set({ description: undefined, systemPrompt: undefined, ...updated });
+	const savedRef = formatProjectRef(project.ownerSlug, project.slug);
+	moveProject(projectRef, savedRef);
+	return savedRef;
 }
