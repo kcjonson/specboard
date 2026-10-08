@@ -11,6 +11,7 @@ import { advanceMapBaseline, getMapChanges, getProjectMap } from '@specboard/db'
 import { encodeMapRead } from '@specboard/core/map-read';
 import { encodeMapChanges } from '@specboard/core/map-changes';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
+import { jsonObjectBody } from '../request-body.ts';
 
 /** GET /map */
 export async function handleGetMap(context: Context): Promise<Response> {
@@ -48,13 +49,9 @@ export async function handleGetMapChanges(context: Context): Promise<Response> {
 export async function handleMarkMapSeen(context: Context): Promise<Response> {
 	const { id: projectId } = requireResolvedProject(context);
 
-	let body: { readAt?: unknown } | null;
-	try {
-		body = await context.req.json<{ readAt?: unknown } | null>();
-	} catch {
-		return context.json({ error: 'A JSON body with readAt is required' }, 400);
-	}
-	if (typeof body?.readAt !== 'number' || !Number.isFinite(body.readAt) || body.readAt <= 0) {
+	const body = await jsonObjectBody<{ readAt?: unknown }>(context);
+	if (body instanceof Response) return body;
+	if (typeof body.readAt !== 'number' || !Number.isFinite(body.readAt) || body.readAt <= 0) {
 		return context.json({ error: 'readAt must be the read time from the changes read, in epoch milliseconds' }, 400);
 	}
 

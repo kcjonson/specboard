@@ -7,6 +7,7 @@ import type { Context } from 'hono';
 import fs from 'fs/promises';
 import { addFolder, removeFolder } from '@specboard/db';
 import { requireResolvedProject } from '../../project-access.ts';
+import { jsonObjectBody } from '../../request-body.ts';
 import { findRepoRoot, getCurrentBranch, getRelativePath } from '../../services/storage/git-utils.ts';
 
 const CLOUD_PROJECT_RESPONSE = {
@@ -21,14 +22,14 @@ const CLOUD_PROJECT_RESPONSE = {
 export async function handleAddFolder(context: Context): Promise<Response> {
 	const projectId = requireResolvedProject(context).id;
 
+	const body = await jsonObjectBody<{ path?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const { path } = body;
+	if (!path || typeof path !== 'string') {
+		return context.json({ error: 'Path is required' }, 400);
+	}
+
 	try {
-		const body = await context.req.json();
-		const { path } = body;
-
-		if (!path || typeof path !== 'string') {
-			return context.json({ error: 'Path is required' }, 400);
-		}
-
 		// Validate folder exists
 		try {
 			const stats = await fs.stat(path);

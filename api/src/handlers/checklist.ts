@@ -24,16 +24,8 @@ import {
 	type ChecklistStatus,
 } from '@specboard/db';
 import { requireResolvedProject } from '../project-access.ts';
+import { jsonObjectBody } from '../request-body.ts';
 import { pathItemNumber } from './items.ts';
-
-/** The parsed request body, or a 400 Response when it isn't JSON at all. */
-async function jsonBody<T>(context: Context): Promise<T | Response> {
-	try {
-		return await context.req.json<T>();
-	} catch {
-		return context.json({ error: 'Invalid JSON' }, 400);
-	}
-}
 
 /** GET /items/:itemKey/checklist — every entry, in display order. */
 export async function handleListChecklist(context: Context): Promise<Response> {
@@ -57,7 +49,7 @@ export async function handleAddChecklistEntry(context: Context): Promise<Respons
 	const itemNumber = pathItemNumber(context);
 	if (typeof itemNumber !== 'number') return itemNumber;
 
-	const body = await jsonBody<{ text?: unknown }>(context);
+	const body = await jsonObjectBody<{ text?: unknown }>(context);
 	if (body instanceof Response) return body;
 	if (typeof body.text !== 'string') return context.json({ error: 'text is required' }, 400);
 
@@ -81,7 +73,7 @@ export async function handleUpdateChecklistEntry(context: Context): Promise<Resp
 	const entryId = context.req.param('id');
 	if (!entryId) return context.json({ error: 'Invalid checklist entry ID' }, 400);
 
-	const body = await jsonBody<{ text?: unknown; status?: unknown }>(context);
+	const body = await jsonObjectBody<{ text?: unknown; status?: unknown }>(context);
 	if (body instanceof Response) return body;
 
 	// Only fields actually supplied reach the service, so a toggle sending

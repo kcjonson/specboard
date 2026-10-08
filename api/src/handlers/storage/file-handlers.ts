@@ -6,6 +6,7 @@ import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
 import { applySpecPathChanges, isLocalRepository } from '@specboard/db';
 import { apiUserId, loadAuthorizedProject, requireAccess } from '../../project-access.ts';
+import { jsonObjectBody } from '../../request-body.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 import type { FileEntry } from '../../services/storage/types.ts';
 import {
@@ -288,14 +289,14 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 	const userId = apiUserId(context);
 	const access = requireAccess(context);
 
+	const body = await jsonObjectBody<{ oldPath?: string; newPath?: string }>(context);
+	if (body instanceof Response) return body;
+	const { oldPath: rawOldPath, newPath: rawNewPath } = body;
+	if (!rawOldPath || !rawNewPath) {
+		return context.json({ error: 'oldPath and newPath are required' }, 400);
+	}
+
 	try {
-		const body = await context.req.json() as { oldPath?: string; newPath?: string };
-		const { oldPath: rawOldPath, newPath: rawNewPath } = body;
-
-		if (!rawOldPath || !rawNewPath) {
-			return context.json({ error: 'oldPath and newPath are required' }, 400);
-		}
-
 		// Normalize paths
 		const oldPath = normalizePath(rawOldPath);
 		const newPath = normalizePath(rawNewPath);
@@ -461,6 +462,13 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 		return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
 	}
 
+	const body = await jsonObjectBody<{ content?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const { content } = body;
+	if (typeof content !== 'string') {
+		return context.json({ error: 'Content is required' }, 400);
+	}
+
 	try {
 		const project = await loadAuthorizedProject(context);
 		if (!project) {
@@ -471,13 +479,6 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 		// Validate path is within configured root paths
 		if (!isPathWithinRoots(filePath, project.rootPaths)) {
 			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
-		}
-
-		const body = await context.req.json();
-		const { content } = body;
-
-		if (typeof content !== 'string') {
-			return context.json({ error: 'Content is required' }, 400);
 		}
 
 		const provider = getStorageProvider(project, userId, access);

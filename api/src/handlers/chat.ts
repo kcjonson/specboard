@@ -17,6 +17,7 @@ import { isValidProvider, getProvider, isValidModel, type ChatMessage } from '..
 import { composeSystemPrompt } from '../prompts/index.ts';
 import { readRepoConventions } from '../prompts/repo-conventions.ts';
 import { apiUserId, loadAuthorizedProject, requireAccess } from '../project-access.ts';
+import { jsonObjectBody } from '../request-body.ts';
 
 // Constants
 const MAX_MESSAGE_LENGTH = 10000;
@@ -48,20 +49,8 @@ export async function handleChat(
 ): Promise<Response> {
 	const userId = apiUserId(context);
 
-	// Parse request body with runtime validation
-	let body: unknown;
-	try {
-		body = await context.req.json();
-	} catch {
-		return context.json({ error: 'Invalid JSON' }, 400);
-	}
-
-	// Validate request structure
-	if (!body || typeof body !== 'object') {
-		return context.json({ error: 'Invalid request body' }, 400);
-	}
-
-	const req = body as Record<string, unknown>;
+	const req = await jsonObjectBody(context);
+	if (req instanceof Response) return req;
 	const message = typeof req.message === 'string' ? req.message : '';
 	const document_content = typeof req.document_content === 'string' ? req.document_content : undefined;
 	const document_path = typeof req.document_path === 'string' ? req.document_path : undefined;

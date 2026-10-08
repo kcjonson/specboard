@@ -11,6 +11,7 @@ import type { ResolvedProject } from '@specboard/db';
 import { requireResolvedProject } from '../project-access.ts';
 import { apiActor } from './items.ts';
 import { itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
+import { jsonObjectBody } from '../request-body.ts';
 
 /**
  * The :itemKey path segment as a per-project number, or an error Response: a
@@ -50,7 +51,8 @@ export async function handleAddItemNote(context: Context): Promise<Response> {
 	const number = itemNumber(context, project);
 	if (typeof number !== 'number') return number;
 
-	const body = await context.req.json<{ note?: unknown }>();
+	const body = await jsonObjectBody<{ note?: unknown }>(context);
+	if (body instanceof Response) return body;
 	if (typeof body.note !== 'string') return context.json({ error: 'note is required' }, 400);
 
 	try {

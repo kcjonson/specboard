@@ -17,6 +17,7 @@ import { requireResolvedProject } from '../project-access.ts';
 import { formatProjectRef, itemNumberInProject, parseItemKey } from '@specboard/core/identifiers';
 import type { ApiSpec } from '../types.ts';
 import { isValidUUID } from '../validation.ts';
+import { jsonObjectBody } from '../request-body.ts';
 
 function toApi(spec: SpecSummary, itemKey: string, project: ResolvedProject): ApiSpec {
 	return {
@@ -65,7 +66,8 @@ export async function handleAddSpec(context: Context): Promise<Response> {
 	if (resolved instanceof Response) return resolved;
 	const { project, itemKey, itemNumber } = resolved;
 
-	const body = await context.req.json<{ path?: unknown; type?: unknown }>();
+	const body = await jsonObjectBody<{ path?: unknown; type?: unknown }>(context);
+	if (body instanceof Response) return body;
 
 	try {
 		const { path, type } = validateSpecInput(body.path, body.type);

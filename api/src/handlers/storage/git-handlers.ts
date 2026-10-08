@@ -8,6 +8,7 @@ import { getStorageProvider, normalizePath } from './utils.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
 import { isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
 import { apiUserId, loadAuthorizedProject, requireAccess } from '../../project-access.ts';
+import { jsonObjectBody } from '../../request-body.ts';
 import { isConventionFile, invalidateRepoConventions } from '../../prompts/repo-conventions.ts';
 
 /**
@@ -210,6 +211,16 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 	const userId = apiUserId(context);
 	const access = requireAccess(context);
 
+	const body = await jsonObjectBody<{ path?: unknown }>(context);
+	if (body instanceof Response) return body;
+	if (!body.path || typeof body.path !== 'string') {
+		return context.json({ error: 'Path is required', code: 'PATH_REQUIRED' }, 400);
+	}
+	const filePath = normalizePath(body.path);
+	if (!filePath) {
+		return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
+	}
+
 	// Get project and check mode - restore only works for local mode
 	let project;
 	try {
@@ -232,18 +243,6 @@ export async function handleRestore(context: Context, redis: Redis): Promise<Res
 	}
 
 	try {
-		const body = await context.req.json() as { path?: string };
-		const rawPath = body.path;
-
-		if (!rawPath || typeof rawPath !== 'string') {
-			return context.json({ error: 'Path is required', code: 'PATH_REQUIRED' }, 400);
-		}
-
-		const filePath = normalizePath(rawPath);
-		if (!filePath) {
-			return context.json({ error: 'Invalid path', code: 'INVALID_PATH' }, 400);
-		}
-
 		await provider.restore(filePath);
 
 		// Invalidate convention file cache if a convention file was restored

@@ -20,6 +20,7 @@ import {
 import { isValidUserSlug } from '@specboard/core/identifiers';
 import { apiUserId, requireAccess, requireResolvedProject } from '../project-access.ts';
 import { memberPushAccess } from '../services/push-access.ts';
+import { jsonObjectBody } from '../request-body.ts';
 
 const MEMBER_ROLES: ReadonlySet<string> = new Set<MemberRole>(['editor', 'viewer']);
 
@@ -81,13 +82,9 @@ export async function handleUpdateMember(context: Context): Promise<Response> {
 	const slug = memberSlug(context);
 	if (slug instanceof Response) return slug;
 
-	let body: unknown;
-	try {
-		body = await context.req.json();
-	} catch {
-		return context.json({ error: 'Invalid JSON' }, 400);
-	}
-	const role = (body as { role?: unknown } | null)?.role;
+	const body = await jsonObjectBody<{ role?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const { role } = body;
 	if (typeof role !== 'string' || !MEMBER_ROLES.has(role)) {
 		return context.json({ error: 'Role must be editor or viewer' }, 400);
 	}

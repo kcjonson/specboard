@@ -24,6 +24,7 @@ import { startGitHubInitialSync, markSyncStartFailed } from './github-sync.ts';
 import { callerPushAccess } from '../services/push-access.ts';
 import { getGitHubConnection } from '../services/github-token.ts';
 import type { ApiProjectDetail } from '../types.ts';
+import { jsonObjectBody } from '../request-body.ts';
 
 async function getUserId(context: Context, redis: Redis): Promise<string | null> {
 	const sessionId = getCookie(context, SESSION_COOKIE_NAME);
@@ -160,10 +161,11 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 		return context.json({ error: 'Unauthorized' }, 401);
 	}
 
-	try {
-		const body = await context.req.json();
-		const { name, description, repository, system_prompt: createSystemPrompt } = body;
+	const body = await jsonObjectBody<{ name?: unknown; description?: string; repository?: unknown; system_prompt?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const { name, description, repository, system_prompt: createSystemPrompt } = body;
 
+	try {
 		if (!name || typeof name !== 'string') {
 			return context.json({ error: 'Name is required' }, 400);
 		}
@@ -228,10 +230,11 @@ export async function handleCreateProject(context: Context, redis: Redis): Promi
 export async function handleUpdateProject(context: Context): Promise<Response> {
 	const userId = apiUserId(context);
 
-	try {
-		const body = await context.req.json();
-		const { name, description, system_prompt, slug, key, repository } = body;
+	const body = await jsonObjectBody<{ name?: string; description?: string; system_prompt?: unknown; slug?: string; key?: string; repository?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const { name, description, system_prompt, slug, key, repository } = body;
 
+	try {
 		if (slug !== undefined && !isValidProjectSlug(slug)) {
 			return context.json(
 				{ error: 'Slug must be lowercase letters, numbers, and single hyphens' },
