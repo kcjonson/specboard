@@ -9,7 +9,7 @@
 import type { Context } from 'hono';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { decrypt, type EncryptedData } from '@specboard/auth';
-import { query } from '@specboard/db';
+import { applySpecPathChanges, query } from '@specboard/db';
 import { apiUserId, requireResolvedProject } from '../project-access.ts';
 import { log } from '@specboard/core';
 import { getStorageClient } from '../services/storage/storage-client.ts';
@@ -17,6 +17,7 @@ import { getGitHubConnection } from '../services/github-token.ts';
 import {
 	createGitHubCommit,
 	generateCommitMessage,
+	specPathChangesOf,
 	type PendingChange,
 } from '../services/github-commit.ts';
 import type { SyncEvent } from '@specboard/sync-lambda';
@@ -431,8 +432,11 @@ export async function handleGitHubSyncStatus(context: Context): Promise<Response
  * Uses GitHub GraphQL createCommitOnBranch mutation for atomic commits:
  * 1. Get pending changes with content from storage service
  * 2. Create commit via GraphQL (all-or-nothing, built-in conflict detection)
- * 3. Clear pending changes on success
- * 4. Update last_synced_commit_sha
+ * 3. On success, move or drop the spec links of files the commit renamed or deleted
+ * 4. Clear pending changes and update last_synced_commit_sha
+ *
+ * Spec links change here rather than when the draft was made: until the commit lands
+ * the rename or delete is one user's draft, and every other member still has the file.
  */
 export async function handleGitHubCommit(context: Context): Promise<Response> {
 	const userId = apiUserId(context);
@@ -568,8 +572,11 @@ export async function handleGitHubCommit(context: Context): Promise<Response> {
 		);
 	}
 
-	// Success - clear pending changes and update sync SHA
+	// Success - the commit is on GitHub, so bring spec links in line with it, then clear
+	// pending changes and update sync SHA
 	try {
+		await applySpecPathChanges(projectId, specPathChangesOf(pendingChanges));
+
 		await storageClient.deleteAllPendingChanges(projectId, userId);
 
 		await query(

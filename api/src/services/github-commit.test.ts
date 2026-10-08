@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
 	createGitHubCommit,
 	generateCommitMessage,
+	specPathChangesOf,
 	type PendingChange,
 } from './github-commit.ts';
 
@@ -357,6 +358,44 @@ describe('github-commit', () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe('Failed to parse GitHub API response');
+		});
+	});
+
+	describe('specPathChangesOf', () => {
+		it('reads a deletion paired with a change renamed from it as a rename', () => {
+			expect(specPathChangesOf([
+				{ path: 'docs/old.md', action: 'deleted', renamedFrom: null },
+				{ path: 'guides/new.md', action: 'created', renamedFrom: 'docs/old.md' },
+			])).toEqual({ renamed: [{ from: '/docs/old.md', to: '/guides/new.md' }], deleted: [] });
+		});
+
+		it('reads an unpaired deletion as a deletion', () => {
+			expect(specPathChangesOf([
+				{ path: 'docs/gone.md', action: 'deleted', renamedFrom: null },
+				{ path: 'docs/new.md', action: 'created', renamedFrom: null },
+				{ path: 'docs/edited.md', action: 'modified', renamedFrom: null },
+			])).toEqual({ renamed: [], deleted: ['/docs/gone.md'] });
+		});
+
+		it('reads a rename whose old path is still there as a copy', () => {
+			expect(specPathChangesOf([
+				{ path: 'docs/copy.md', action: 'created', renamedFrom: 'docs/kept.md' },
+			])).toEqual({ renamed: [], deleted: [] });
+		});
+
+		it('gives a deleted path to one rename only', () => {
+			expect(specPathChangesOf([
+				{ path: 'docs/a.md', action: 'created', renamedFrom: 'docs/old.md' },
+				{ path: 'docs/b.md', action: 'created', renamedFrom: 'docs/old.md' },
+				{ path: 'docs/old.md', action: 'deleted', renamedFrom: null },
+			])).toEqual({ renamed: [{ from: '/docs/old.md', to: '/docs/a.md' }], deleted: [] });
+		});
+
+		it('counts a rename onto a committed path the commit also replaces', () => {
+			expect(specPathChangesOf([
+				{ path: 'docs/a.md', action: 'deleted', renamedFrom: null },
+				{ path: 'docs/b.md', action: 'modified', renamedFrom: 'docs/a.md' },
+			])).toEqual({ renamed: [{ from: '/docs/a.md', to: '/docs/b.md' }], deleted: [] });
 		});
 	});
 });

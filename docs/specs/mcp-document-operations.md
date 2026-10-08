@@ -86,7 +86,7 @@ Replace the content of an existing markdown document.
 
 ### delete_document
 
-Delete a markdown document. Also removes any epic spec links (`epic_specs`) to the deleted file.
+Delete a markdown document. Spec links (`epic_specs`) to the file are removed when the delete is committed on a cloud project, at once on a local one (see [Pending changes and spec links](project-storage.md#pending-changes-and-spec-links)).
 
 **Input:**
 - `project` (string, optional when the repo is bound via .mcp.json) -- owner/project, e.g. "acme/roadmap"
@@ -98,7 +98,7 @@ Delete a markdown document. Also removes any epic spec links (`epic_specs`) to t
 
 ### move_document
 
-Rename or move a document. Also updates any epic spec links (`epic_specs`) pointing at the old path.
+Rename or move a document. Spec links (`epic_specs`) pointing at the old path move to the new one when the rename is committed on a cloud project, at once on a local one (see [Pending changes and spec links](project-storage.md#pending-changes-and-spec-links)).
 
 **Input:**
 - `project` (string, optional when the repo is bound via .mcp.json) -- owner/project, e.g. "acme/roadmap"

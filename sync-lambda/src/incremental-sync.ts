@@ -3,6 +3,7 @@
  * Much faster than full sync when only a few files have changed.
  */
 
+import { applySpecPathChanges, type SpecPathChanges } from '@specboard/db';
 import { shouldSkipDirectory, shouldSyncFile } from './file-filter.ts';
 import { updateSyncStatus } from './shared/db-utils.ts';
 import { createStorageClient } from './shared/storage-client.ts';
@@ -32,7 +33,7 @@ export interface IncrementalSyncResult {
 	error?: string;
 }
 
-interface GitHubCompareFile {
+export interface GitHubCompareFile {
 	sha: string;
 	filename: string;
 	status: 'added' | 'modified' | 'removed' | 'renamed';
@@ -99,6 +100,22 @@ async function getChangedFiles(
 	return {
 		files: data.files || [],
 		headSha,
+	};
+}
+
+/**
+ * What the compared commits did to the files spec links point at. Every removal and
+ * rename counts, including ones the file sync skips: a link names a path, not a file
+ * the editor shows. GitHub paths have no leading slash; spec paths do.
+ */
+export function specPathChangesOf(files: GitHubCompareFile[]): SpecPathChanges {
+	return {
+		renamed: files.flatMap((f) =>
+			f.status === 'renamed' && f.previous_filename
+				? [{ from: `/${f.previous_filename}`, to: `/${f.filename}` }]
+				: []
+		),
+		deleted: files.filter((f) => f.status === 'removed').map((f) => `/${f.filename}`),
 	};
 }
 
@@ -263,6 +280,12 @@ export async function performIncrementalSync(
 				console.error(`Failed to remove ${file.filename}:`, err);
 			}
 		});
+
+		// Commits pushed outside Specboard move spec links the way a commit made in the
+		// editor does (that one moved them itself and advanced the sync point past it).
+		// Before the status update, so a failure leaves the sync at the old commit and the
+		// retry applies them again.
+		await applySpecPathChanges(projectId, specPathChangesOf(files));
 
 		// Mark sync as completed
 		await updateSyncStatus(projectId, 'completed', headSha);

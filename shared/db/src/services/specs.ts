@@ -156,29 +156,44 @@ export async function getItemKeysBySpecPath(projectId: string, path: string): Pr
 }
 
 /**
- * Repoint spec links from oldPath to newPath when a file is renamed/moved.
- * Drops any source row that would collide with an existing (item_id, newPath)
- * link to respect the unique constraint.
+ * Files renamed or deleted, in spec-link path form (leading "/"). Each `from` and each
+ * deleted path appears once, and no path is both a rename's `to` and deleted.
  */
-export async function renameSpecPath(projectId: string, oldPath: string, newPath: string): Promise<void> {
-	await transaction(async (client) => {
-		await client.query(
-			`DELETE FROM epic_specs old
-			 WHERE old.project_id = $1 AND old.path = $2
-			   AND EXISTS (
-				 SELECT 1 FROM epic_specs dup
-				 WHERE dup.project_id = $1 AND dup.path = $3 AND dup.item_id = old.item_id
-			   )`,
-			[projectId, oldPath, newPath]
-		);
-		await client.query(
-			'UPDATE epic_specs SET path = $3 WHERE project_id = $1 AND path = $2',
-			[projectId, oldPath, newPath]
-		);
-	});
+export interface SpecPathChanges {
+	renamed: Array<{ from: string; to: string }>;
+	deleted: string[];
 }
 
-/** Remove all spec links to a path when the file is deleted. */
-export async function deleteSpecsByPath(projectId: string, path: string): Promise<void> {
-	await query('DELETE FROM epic_specs WHERE project_id = $1 AND path = $2', [projectId, path]);
+/**
+ * Keep a project's spec links on the files they name after renames and deletions:
+ * a rename repoints its links (dropping any that would duplicate a link the item
+ * already has to the new path), a deletion removes them. One transaction, so a
+ * failure leaves every link as it was. Reapplying the same changes is a no-op.
+ */
+export async function applySpecPathChanges(projectId: string, changes: SpecPathChanges): Promise<void> {
+	if (changes.renamed.length === 0 && changes.deleted.length === 0) return;
+
+	await transaction(async (client) => {
+		for (const { from, to } of changes.renamed) {
+			await client.query(
+				`DELETE FROM epic_specs old
+				 WHERE old.project_id = $1 AND old.path = $2
+				   AND EXISTS (
+					 SELECT 1 FROM epic_specs dup
+					 WHERE dup.project_id = $1 AND dup.path = $3 AND dup.item_id = old.item_id
+				   )`,
+				[projectId, from, to]
+			);
+			await client.query(
+				'UPDATE epic_specs SET path = $3 WHERE project_id = $1 AND path = $2',
+				[projectId, from, to]
+			);
+		}
+		if (changes.deleted.length > 0) {
+			await client.query(
+				'DELETE FROM epic_specs WHERE project_id = $1 AND path = ANY($2)',
+				[projectId, changes.deleted]
+			);
+		}
+	});
 }

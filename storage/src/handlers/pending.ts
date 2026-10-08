@@ -53,6 +53,7 @@ pendingRoutes.get('/:projectId/:userId', async (c) => {
 		changes: changes.map((change) => ({
 			path: change.path,
 			action: change.action,
+			renamedFrom: change.renamedFrom,
 			hasContent: change.content !== null || change.s3Key !== null,
 			isLarge: change.s3Key !== null,
 			updatedAt: change.updatedAt.toISOString(),
@@ -95,6 +96,7 @@ pendingRoutes.get('/:projectId/:userId/:path{.+}', async (c) => {
 		path: change.path,
 		content,
 		action: change.action,
+		renamedFrom: change.renamedFrom,
 		updatedAt: change.updatedAt.toISOString(),
 	});
 });
@@ -120,10 +122,19 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 	const body = await c.req.json<{
 		content?: string;
 		action: 'modified' | 'created' | 'deleted';
+		renamedFrom?: string | null;
 	}>();
 
 	if (!body.action || !['modified', 'created', 'deleted'].includes(body.action)) {
 		return c.json({ error: 'Valid action required (modified, created, deleted)' }, 400);
+	}
+
+	let renamedFrom: string | null = null;
+	if (body.renamedFrom !== undefined && body.renamedFrom !== null) {
+		renamedFrom = validatePath(body.renamedFrom);
+		if (!renamedFrom) {
+			return c.json({ error: 'Invalid renamedFrom path' }, 400);
+		}
 	}
 
 	// For delete action, content is not required
@@ -149,7 +160,7 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 
 	// Update database - if this fails after S3 upload, clean up S3
 	try {
-		await upsertPendingChange(projectId, userId, validPath, inlineContent, s3Key, body.action);
+		await upsertPendingChange(projectId, userId, validPath, inlineContent, s3Key, body.action, renamedFrom);
 	} catch (err) {
 		// Clean up S3 content if DB update failed
 		if (s3Key) {

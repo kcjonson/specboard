@@ -29,6 +29,7 @@ export interface PendingChange {
 	content: string | null;
 	s3Key: string | null;
 	action: 'modified' | 'created' | 'deleted';
+	renamedFrom: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -186,10 +187,11 @@ export async function getPendingChange(
 		content: string | null;
 		s3_key: string | null;
 		action: 'modified' | 'created' | 'deleted';
+		renamed_from: string | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`SELECT id, project_id, user_id, path, content, s3_key, action, created_at, updated_at
+		`SELECT id, project_id, user_id, path, content, s3_key, action, renamed_from, created_at, updated_at
 		 FROM pending_changes
 		 WHERE project_id = $1 AND user_id = $2 AND path = $3`,
 		[projectId, userId, path]
@@ -206,6 +208,7 @@ export async function getPendingChange(
 		content: row.content,
 		s3Key: row.s3_key,
 		action: row.action,
+		renamedFrom: row.renamed_from,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -224,10 +227,11 @@ export async function listPendingChanges(
 		content: string | null;
 		s3_key: string | null;
 		action: 'modified' | 'created' | 'deleted';
+		renamed_from: string | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`SELECT id, project_id, user_id, path, content, s3_key, action, created_at, updated_at
+		`SELECT id, project_id, user_id, path, content, s3_key, action, renamed_from, created_at, updated_at
 		 FROM pending_changes
 		 WHERE project_id = $1 AND user_id = $2
 		 ORDER BY path`,
@@ -242,6 +246,7 @@ export async function listPendingChanges(
 		content: row.content,
 		s3Key: row.s3_key,
 		action: row.action,
+		renamedFrom: row.renamed_from,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}));
@@ -253,18 +258,25 @@ export async function upsertPendingChange(
 	path: string,
 	content: string | null,
 	s3Key: string | null,
-	action: 'modified' | 'created' | 'deleted'
+	action: 'modified' | 'created' | 'deleted',
+	renamedFrom: string | null
 ): Promise<void> {
 	const db = pool.instance;
+	// Saving a renamed file again doesn't name where it came from, so an existing origin
+	// is kept unless the write gives one; a deletion has none.
 	await db.query(
-		`INSERT INTO pending_changes (project_id, user_id, path, content, s3_key, action, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+		`INSERT INTO pending_changes (project_id, user_id, path, content, s3_key, action, renamed_from, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $6 = 'deleted' THEN NULL ELSE $7 END, NOW(), NOW())
 		 ON CONFLICT (project_id, user_id, path) DO UPDATE SET
 		   content = EXCLUDED.content,
 		   s3_key = EXCLUDED.s3_key,
 		   action = EXCLUDED.action,
+		   renamed_from = CASE
+		     WHEN EXCLUDED.action = 'deleted' THEN NULL
+		     ELSE COALESCE(EXCLUDED.renamed_from, pending_changes.renamed_from)
+		   END,
 		   updated_at = NOW()`,
-		[projectId, userId, path, content, s3Key, action]
+		[projectId, userId, path, content, s3Key, action, renamedFrom]
 	);
 }
 

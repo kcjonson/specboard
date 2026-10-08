@@ -20,6 +20,8 @@ interface StorageFileContent extends StorageFile {
 interface PendingChange {
 	path: string;
 	action: 'modified' | 'created' | 'deleted';
+	/** The committed path this change was renamed from, when it is the new side of a rename. */
+	renamedFrom: string | null;
 	hasContent: boolean;
 	isLarge: boolean;
 	updatedAt: string;
@@ -29,6 +31,7 @@ export interface PendingChangeContent {
 	path: string;
 	content: string | null;
 	action: 'modified' | 'created' | 'deleted';
+	renamedFrom: string | null;
 	updatedAt: string;
 }
 
@@ -179,18 +182,21 @@ export class StorageClient {
 	}
 
 	/**
-	 * Store pending change.
+	 * Store pending change. `renamedFrom` names the committed path a rename came from;
+	 * null leaves any origin the change already has (a later save of a renamed file).
 	 */
 	async putPendingChange(
 		projectId: string,
 		userId: string,
 		path: string,
 		content: string | null,
-		action: 'modified' | 'created' | 'deleted'
+		action: 'modified' | 'created' | 'deleted',
+		renamedFrom: string | null
 	): Promise<{ path: string; action: string; isLarge: boolean }> {
 		return this.request('PUT', `/pending/${projectId}/${userId}/${path}`, {
 			content,
 			action,
+			renamedFrom,
 		});
 	}
 
@@ -234,6 +240,7 @@ export class StorageClient {
 					path: change.path,
 					content: content?.content ?? null,
 					action: change.action,
+					renamedFrom: change.renamedFrom,
 					updatedAt: change.updatedAt,
 				};
 			})
