@@ -3,6 +3,9 @@ import { useEffect, useRef } from 'preact/hooks';
 /** How often a planning view asks the server for changes while the window has focus (ms). */
 export const POLL_INTERVAL = 10_000;
 
+/** The combined view reads every chosen project at each poll, so it asks less often (multi-project-view.md, decision 4). */
+export const COMBINED_POLL_INTERVAL = 30_000;
+
 /** A failed poll doubles the wait before the next, up to this (ms). */
 export const POLL_BACKOFF_MAX = 160_000;
 

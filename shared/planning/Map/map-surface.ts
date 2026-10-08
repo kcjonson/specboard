@@ -44,6 +44,7 @@ import { RegionOutlines, gridStep } from './regions/region-outlines';
 import { RelationIndex, type Relation } from './relations';
 import { RULER_HEIGHT, type MapRenderer } from './renderer';
 import { edgeLabelAt, edgeLineAt, rulerMarks } from './ruler';
+import { upNextNumbers } from './up-next';
 import { LABEL_RULES, ZoomLevels, type LevelFrame, type ZoomLevel } from './zoom-levels';
 
 const AGENT_KEY = /^(session|computer):/;
@@ -1182,10 +1183,7 @@ function linksPulled(links: readonly DrawLink[], pull: DragOffset): readonly Dra
 const NONE: ReadonlySet<string> = new Set();
 
 /** 1 to 3 for an item that is up next. */
-const upNextOf = (layout: MapLayout | null, key: string): number | null => {
-	const at = layout?.upNext.indexOf(key) ?? -1;
-	return at < 0 ? null : at + 1;
-};
+const upNextOf = (layout: MapLayout | null, key: string): number | null => (layout ? upNextNumbers(layout.upNext).get(key) ?? null : null);
 
 /** A parent's items by phase, for the quick card: a region's rollup, or a folded dot's; null for an item with no family. */
 function progressOf(drawing: DrawList, key: string, dot: DrawDot | undefined): Rollup | null {

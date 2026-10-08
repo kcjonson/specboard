@@ -11,11 +11,16 @@ export type MapSearchSource = (query: string) => Promise<string[]>;
 /** The list's cap: a search past it would have matched more than the Map could draw anyway. */
 const SEARCH_LIMIT = 5000;
 
-export function createSearchSource(projectRef: string): MapSearchSource {
+/**
+ * Asks every project on the Map the way its board would (multi-project-view.md, decision
+ * 12) and answers with their matches as one list. The projects are read at each search,
+ * since one can drop off the Map.
+ */
+export function createSearchSource(projectRefs: () => readonly string[]): MapSearchSource {
 	return async (query) => {
 		const params = new URLSearchParams({ search: query, limit: String(SEARCH_LIMIT) });
-		const rows = await fetchClient.get<Array<{ key: string }>>(`/api/projects/${projectRef}/items?${params.toString()}`);
-		return rows.map((row) => row.key);
+		const lists = await Promise.all(projectRefs().map((ref) => fetchClient.get<Array<{ key: string }>>(`/api/projects/${ref}/items?${params.toString()}`)));
+		return lists.flatMap((rows) => rows.map((row) => row.key));
 	};
 }
 

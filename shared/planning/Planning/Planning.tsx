@@ -459,7 +459,7 @@ export function Planning(props: RouteProps): JSX.Element {
 			if (!MapView) return <div class={styles.loading}>Loading...</div>;
 			return (
 				<MapView
-					projectRef={projectRef}
+					scope={{ projectRef }}
 					openItemKey={openItemKey}
 					covered={openItem ? drawerWidth : 0}
 					onOpenItem={handleOpenItemByKey}

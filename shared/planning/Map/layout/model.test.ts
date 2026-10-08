@@ -138,6 +138,22 @@ describe('buildModel', () => {
 		expect(model.planOrder).toContain(blockedChild.key);
 	});
 
+	it('plans each project on its own on a combined Map: every one has its own up next, in its own agents\' order', () => {
+		const spe = new BoardBuilder(NOW, 'SPE');
+		const epic = spe.add({ type: 'epic', status: 'in_progress' });
+		const child = spe.add({ parentKey: epic.key, status: 'ready' });
+		const speReady = [0, 1, 2].map(() => spe.add({ status: 'ready' }));
+		const pln = new BoardBuilder(NOW, 'PLN');
+		const plnReady = [0, 1, 2, 3].map(() => pln.add({ status: 'ready' }));
+		pln.add({ status: 'in_progress' });
+
+		const model = buildModel([...spe.rows, ...pln.rows], NOW, {});
+
+		// One list across both would have held three items between them.
+		expect(model.upNext).toEqual([...plnReady.slice(0, 3), child, ...speReady.slice(0, 2)].map((row) => row.key));
+		expect(model.planOrder).toEqual([...plnReady, child, ...speReady].map((row) => row.key));
+	});
+
 	it('groups live sessions by computer and numbers them', () => {
 		const b = new BoardBuilder();
 		const one = b.add({ status: 'in_progress' });

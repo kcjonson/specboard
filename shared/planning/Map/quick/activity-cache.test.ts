@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fetchClient } from '@specboard/fetch';
+import { mapSetup } from '../map-projects';
 import { ActivityCache, createActivitySource, type ActivityEntry } from './activity-cache';
 
 const entry = (id: string, note: string): ActivityEntry => ({ id, note, actor: null, createdAt: '2026-10-01T10:00:00.000Z' });
@@ -8,8 +9,20 @@ const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
 describe('the quick card activity source', () => {
 	it('asks for the newest entry only, not the whole log', async () => {
 		const get = vi.spyOn(fetchClient, 'get').mockResolvedValue([]);
-		await createActivitySource('acme/specboard')('SB-1');
+		await createActivitySource(() => 'acme/specboard')('SB-1');
 		expect(get).toHaveBeenCalledWith('/api/projects/acme/specboard/items/SB-1/notes?limit=1');
+		get.mockRestore();
+	});
+
+	it('asks the project the item is from on a combined Map, by its key\'s prefix', async () => {
+		const get = vi.spyOn(fetchClient, 'get').mockResolvedValue([]);
+		const { refOf } = mapSetup({ projects: [{ ref: 'acme/specboard', key: 'SPE', name: 'Specboard' }, { ref: 'kim/planner', key: 'PLN', name: 'Planner' }] });
+		const source = createActivitySource(refOf);
+		await source('PLN-8');
+		await source('SPE-3');
+		expect(get.mock.calls.map(([path]) => path)).toEqual(['/api/projects/kim/planner/items/PLN-8/notes?limit=1', '/api/projects/acme/specboard/items/SPE-3/notes?limit=1']);
+		await expect(source('XYZ-1')).rejects.toThrow('XYZ-1 is from none of the projects on the Map');
+		expect(get).toHaveBeenCalledTimes(2);
 		get.mockRestore();
 	});
 });

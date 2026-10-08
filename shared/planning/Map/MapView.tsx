@@ -4,6 +4,7 @@ import type { MapItemRow, MapItemType } from '@specboard/core/map-read';
 import { navigate } from '@specboard/router';
 import { useModel } from '@specboard/models';
 import { LoadError } from '../LoadError/LoadError';
+import { COMBINED_POLL_INTERVAL, POLL_INTERVAL } from '../hooks/usePolling';
 import { MAP_ANNOUNCE_PREF, readPref, writePref } from '../Planning/prefs';
 import { Announcer, summarizeUpdate } from './access/announce';
 import { MapTree } from './access/MapTree';
@@ -22,11 +23,12 @@ import type { Hit } from './hit-index';
 import { createLayoutWorker } from './layout/layout-worker-client';
 import type { MapPhase, MapPoint } from './layout/types';
 import { createCamera, type ScreenPoint } from './map-camera';
-import { MapDataModel } from './map-data-model';
+import { MapDataModel, type MapProjectFailure } from './map-data-model';
 import { mapFacts } from './map-facts';
 import { NO_LENS, describeFilters, filtersActive, highlightOf, lensOf, type MapFilters } from './map-lens';
 import { MapSearchModel, createSearchSource, type MapSearchSource } from './map-search';
 import { createMapSource } from './map-source';
+import { mapSetup, scopeKey, type MapScope } from './map-projects';
 import { useMapUpdates } from './useMapUpdates';
 import { MapSurface } from './map-surface';
 import { Minimap } from './minimap/Minimap';
@@ -39,16 +41,18 @@ import { readFocus, urlWithFocus } from './map-url';
 import { RULER_HEIGHT, createCanvasRenderer } from './renderer';
 import { SteppingBar } from './stepping/SteppingBar';
 import { SummaryStrip } from './strip/SummaryStrip';
+import { upNextNumbers } from './up-next';
 import styles from './MapView.module.css';
 
 export interface MapViewProps {
-	projectRef: string;
+	/** Whose items: a project's own Map, or the combined view's projects. */
+	scope: MapScope;
 	/** The item the drawer shows (the item URL's key), which the Map keeps selected and in view. */
 	openItemKey?: string;
 	/** How much of the Map's right side the drawer overlays, in px; 0 while it is closed. */
 	covered: number;
-	/** A click, Enter on the focused item, or a second tap asks for an item to open in the drawer. */
-	onOpenItem(key: string): void;
+	/** A click, Enter on the focused item, or a second tap asks for an item to open, with the ref of the project it is in. */
+	onOpenItem(key: string, projectRef: string): void;
 	/** Escape asks the drawer to close. */
 	onCloseItem(): void;
 	/** The toolbar's search text once it has settled; the Map dims what doesn't match it. Empty for no search. */
@@ -57,13 +61,19 @@ export interface MapViewProps {
 	type: MapItemType | null;
 	/** The stepping bar's Clear, and Escape with nothing else to close: the page empties the search box and the type filter. */
 	onClear(): void;
+	/**
+	 * Every project whose last read failed, by ref, each time that changes: dropped as
+	 * unreadable, held at what the Map last read of it, or never drawn. The combined view
+	 * names them in its notice.
+	 */
+	onFailures?(failures: ReadonlyMap<string, MapProjectFailure>): void;
 	/** Tests hand in a model with a fake source and worker; the page builds its own. */
 	model?: MapDataModel;
 	/** Tests hand in the quick card's activity source; the page asks the notes endpoint. */
 	activity?: ActivityCache;
 	/** Tests hand in the search's source; the page asks the items list. */
 	searchSource?: MapSearchSource;
-	/** Tests hand in the last-visit model with a fake source; the page asks the changes read. */
+	/** Tests hand in the last-visit model with a fake source; a project's own Map asks the changes read, and the combined view has none. */
 	changes?: MapChangesModel;
 }
 
@@ -83,6 +93,17 @@ const CLOCK_MS = 60_000;
 const TOUCH_THRESHOLD = 10;
 
 const media = (query: string): MediaQueryList | null => (typeof window.matchMedia === 'function' ? window.matchMedia(query) : null);
+
+const PROJECT_LIST = new Intl.ListFormat('en', { type: 'conjunction' });
+
+/** Which projects are past the read cap: "this project" on its own Map, and by name on the combined view. */
+function readCapNotice(scope: MapScope, refs: readonly string[]): string {
+	if ('projectRef' in scope) return 'This project is past the read cap, so finished families are summarized.';
+	const names = refs.map((ref) => scope.projects.find((project) => project.ref === ref)?.name ?? ref);
+	return names.length === 1
+		? `${names[0]} is past the read cap, so its finished families are summarized.`
+		: `${PROJECT_LIST.format(names)} are past the read cap, so their finished families are summarized.`;
+}
 
 /** A press on the plot, from pointer down to up. */
 interface Press {
@@ -105,28 +126,40 @@ const ANCHOR_PAUSE_MS = 300;
  * show, labels that fade with the zoom level, a ruler of dates along its bottom, and
  * a camera of its own; over it, DOM cards at the near level, the quick card, and a
  * minimap once zoomed in. Hover, focus, and selection light an item's relations; a
- * click opens the drawer the board uses. The page loads this module lazily, so Board
- * and Table don't carry it.
+ * click opens the item, which on a project's own Map is the drawer the board uses. The
+ * combined view (multi-project-view.md) is the same Map over several projects, without
+ * the since-last-visit layer. The page loads this module lazily, so Board and Table
+ * don't carry it.
  */
-export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseItem, search, type, onClear, model: provided, activity: providedActivity, searchSource, changes: providedChanges }: MapViewProps): JSX.Element {
+export function MapView({ scope, openItemKey, covered, onOpenItem, onCloseItem, search, type, onClear, onFailures, model: provided, activity: providedActivity, searchSource, changes: providedChanges }: MapViewProps): JSX.Element {
+	// Built from what the scope says rather than the object it came in, so a container that hands in a new one every render doesn't start the Map over.
+	const setup = useMemo(() => mapSetup(scope), [scopeKey(scope)]);
 	const model = useMemo(
-		() => provided ?? new MapDataModel(createMapSource(projectRef), createLayoutWorker, createCollapseStore(projectRef)),
-		[provided, projectRef],
+		() => provided ?? new MapDataModel(setup.refs.map((ref) => ({ ref, read: createMapSource(ref) })), createLayoutWorker, createCollapseStore(setup.refs)),
+		[provided, setup],
 	);
 	useModel(model);
-	const activity = useMemo(() => providedActivity ?? new ActivityCache(createActivitySource(projectRef)), [providedActivity, projectRef]);
+	const activity = useMemo(() => providedActivity ?? new ActivityCache(createActivitySource(setup.refOf)), [providedActivity, setup]);
 
-	// The Map's read carries no descriptions, so the board's own search says which items match.
-	const searcher = useMemo(() => new MapSearchModel(searchSource ?? createSearchSource(projectRef)), [searchSource, projectRef]);
+	// The Map's read carries no descriptions, so the board's own search says which items match: every project's, but not one the Map has dropped.
+	const searcher = useMemo(
+		() => new MapSearchModel(searchSource ?? createSearchSource(() => setup.refs.filter((ref) => !model.failures.get(ref)?.unreadable))),
+		[searchSource, setup, model],
+	);
 	useModel(searcher);
 	useEffect(() => searcher.setQuery(search), [searcher, search]);
 	useEffect(() => () => searcher.dispose(), [searcher]);
 
-	// Since your last visit: read beside the Map's own read, and the baseline moves forward when the person leaves.
-	const changesModel = useMemo(() => providedChanges ?? new MapChangesModel(createChangesSource(projectRef)), [providedChanges, projectRef]);
+	// Since your last visit, on a project's own Map: read beside the Map's own read, and the baseline moves forward when the person leaves.
+	// The combined view never reads or moves anyone's baseline (multi-project-view.md, decision 10).
+	const changesModel = useMemo(
+		() => (setup.own === null ? null : providedChanges ?? new MapChangesModel(createChangesSource(setup.own))),
+		[providedChanges, setup],
+	);
 	useModel(changesModel);
-	useMapUpdates(model, changesModel);
+	useMapUpdates(model, changesModel, setup.own === null ? COMBINED_POLL_INTERVAL : POLL_INTERVAL);
 	useEffect(() => {
+		if (!changesModel) return;
 		void changesModel.load();
 		// `pagehide` is the one event a closing tab, a reload, and a navigation away all fire; the model sends with keepalive so the request survives it.
 		const leave = (): void => changesModel.leave();
@@ -184,7 +217,8 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	}, [announce]);
 
 	// The surface lives as long as the view, so what it calls back into is read from here.
-	const live = useRef({ openItemKey, onOpenItem, onCloseItem, model, clear: () => {}, lensActive: false, changesShown: false, closeChanges: () => {} });
+	const openItem = (key: string): void => onOpenItem(key, setup.refOf(key));
+	const live = useRef({ openItemKey, openItem, onCloseItem, onFailures, model, clear: () => {}, lensActive: false, changesShown: false, closeChanges: () => {} });
 	const clearLens = useCallback((): void => {
 		onClear();
 		setPhases(new Set());
@@ -247,7 +281,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				onSettle: (key) => {
 					if (key) anchor(key, false);
 				},
-				onOpen: (key) => live.current.onOpenItem(key),
+				onOpen: (key) => live.current.openItem(key),
 				onCollapse: (key, collapse) => void live.current.model.setCollapsed(key, collapse),
 				onOutlineStep: (step) => {
 					live.current.model.outlineStep = step;
@@ -433,7 +467,8 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		return () => window.clearInterval(timer);
 	}, [model]);
 
-	const { state, layout, rows } = model;
+	const { state, layout, rows, failures } = model;
+	useEffect(() => live.current.onFailures?.(failures), [failures]);
 	const now = Math.max(model.now, ticked);
 	const working = useMemo(() => (layout ? agentsOf(layout, rows, now) : NO_AGENTS), [layout, rows, now]);
 	// Before the layout effect, so a new layout is drawn against the right time the first time.
@@ -459,7 +494,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		if (state === 'ready' && layout && facts) {
 			for (const session of working.sessions) if (session.state === 'live') markers.push({ key: session.node, kind: 'live', label: `Session ${session.number} on ${deviceLabel(session.device)}` });
 			for (const key of facts.needs.keys()) markers.push({ key, kind: 'needs-person' });
-			layout.upNext.forEach((key, i) => markers.push({ key, kind: 'up-next', text: String(i + 1) }));
+			for (const [key, number] of upNextNumbers(layout.upNext)) markers.push({ key, kind: 'up-next', text: String(number) });
 		}
 		surfaceRef.current!.setEdgeMarkers(markers);
 	}, [state, layout, facts, working]);
@@ -476,13 +511,15 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const interactive = state === 'ready' && !model.isEmpty;
 
 	// The changes since the person's baseline, as items in the order they happened. A change can name an item the read doesn't carry, which has nowhere to light.
+	const sinceBaseline = changesModel?.changes;
 	const waiting = useMemo(
-		() => (state === 'ready' && layout ? changedItems(changesModel.changes, (key) => rows.has(key) && layout.representative[key] !== undefined) : []),
-		[state, layout, rows, changesModel.changes],
+		() => (state === 'ready' && layout && sinceBaseline ? changedItems(sinceBaseline, (key) => rows.has(key) && layout.representative[key] !== undefined) : []),
+		[state, layout, rows, sinceBaseline],
 	);
+	const baseline = changesModel?.baseline ?? null;
 	// A search or filter takes the canvas while it is on and gives it back when it ends; the view stays open behind it.
 	const changesShown = interactive && !changesClosed && waiting.length > 0 && !lensActive;
-	live.current = { openItemKey, onOpenItem, onCloseItem, model, clear: clearLens, lensActive, changesShown, closeChanges };
+	live.current = { openItemKey, openItem, onCloseItem, onFailures, model, clear: clearLens, lensActive, changesShown, closeChanges };
 	const changesHighlight = useMemo(
 		() => (layout && waiting.length > 0 ? highlightOf(waiting.map((item) => item.key), layout, waiting.slice(-RECENT_LABELS).map((item) => item.key)) : null),
 		[layout, waiting],
@@ -536,7 +573,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 		focusBar.current = false;
 		barRef.current?.querySelector('button')?.focus();
 	}, [changesShown]);
-	const handleMarkSeen = useCallback((): void => changesModel.markSeen(), [changesModel]);
+	const handleMarkSeen = useCallback((): void => changesModel?.markSeen(), [changesModel]);
 	const handleRoster = useCallback((): void => setRosterOpen((open) => !open), []);
 	const handleCloseRoster = useCallback((): void => setRosterOpen(false), []);
 	const roster = useMemo(() => (rosterOpen ? rosterOf(working, rows, now) : []), [rosterOpen, working, rows, now]);
@@ -544,7 +581,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	const handlePick = useCallback((key: string): void => {
 		setRosterOpen(false);
 		surface().focusOn(key);
-		live.current.onOpenItem(key);
+		live.current.openItem(key);
 	}, []);
 
 	// A step in the bar lands on an item: it takes the focus (so its relations light and its card opens) and the camera goes to it.
@@ -568,7 +605,8 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 	}, [barShown]);
 
 	// Past the read cap, finished families come back folded into one row, so the count is of rows, not of items.
-	const summarized = interactive && model.read?.summarized === true;
+	const capped = interactive ? model.summarized : [];
+	const summarized = capped.length > 0;
 
 	const searching = searcher.query !== '';
 	const searchFailed = searching && searcher.state === 'error';
@@ -683,8 +721,8 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 				updatedAt={state === 'ready' ? model.loadedAt : null}
 				retrying={model.retrying}
 				agents={(compact) => <AgentsButton compact={compact} open={rosterOpen} disabled={!interactive} onClick={handleRoster} />}
-				since={interactive && waiting.length > 0 && changesModel.baseline !== null
-					? { date: baselineDate(changesModel.baseline), text: summaryText(waiting), open: changesShown, onOpen: handleOpenChanges }
+				since={interactive && waiting.length > 0 && baseline !== null
+					? { date: baselineDate(baseline), text: summaryText(waiting), open: changesShown, onOpen: handleOpenChanges }
 					: undefined}
 				announce={{ on: announce, onToggle: handleToggleAnnounce }}
 			/>
@@ -725,7 +763,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 						) : (
 							<SteppingBar
 								key="changes"
-								title={barTitle(changesModel.baseline!)}
+								title={barTitle(baseline!)}
 								keys={waiting.map((item) => item.key)}
 								unit={['change', 'changes']}
 								empty="No changes"
@@ -738,7 +776,7 @@ export function MapView({ projectRef, openItemKey, covered, onOpenItem, onCloseI
 						)}
 					</div>
 				)}
-				{summarized && <p class={styles.notice} ref={noticeRef} role="status">This project is past the read cap, so finished families are summarized.</p>}
+				{summarized && <p class={styles.notice} ref={noticeRef} role="status">{readCapNotice(scope, capped)}</p>}
 				<div class={styles.overlay} style={{ bottom: `${RULER_HEIGHT}px` }}>
 					{state === 'loading' && <p class={styles.message} role="status">Loading the map...</p>}
 					{state === 'error' && model.error && <LoadError error={model.error} onRetry={handleRetry} />}

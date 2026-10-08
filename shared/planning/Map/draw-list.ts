@@ -6,6 +6,7 @@ import type { MapLayout, MapNode, MapPhase, MapPoint } from './layout/types';
 import type { LinkKind } from './links';
 import { REASON_ORDER, needsPerson, type NeedsPersonReasons, type NeedsReason } from './needs-person';
 import { planWeights, weightedRadius } from './plan-weight';
+import { upNextNumbers } from './up-next';
 
 /** A subtree's items by phase, the parent itself not counted. */
 export type Rollup = Record<MapPhase, number>;
@@ -123,10 +124,10 @@ export function buildDrawList(layout: MapLayout, rows: ReadonlyMap<string, MapIt
 	const reasons = reasonsByNode(layout, needs);
 	// An up-next item folded into a collapsed family is marked on the family's dot, with the lowest number inside it.
 	const upNext = new Map<string, number>();
-	layout.upNext.forEach((key, i) => {
+	for (const [key, number] of upNextNumbers(layout.upNext)) {
 		const node = layout.representative[key];
-		if (node && !upNext.has(node)) upNext.set(node, i + 1);
-	});
+		if (node && number < (upNext.get(node) ?? Infinity)) upNext.set(node, number);
+	}
 	const rollups = subtreeRollups(rows, layout.phases);
 	const rollupOf = (key: string): Rollup => rollups.get(key) ?? emptyRollup();
 	const collapsed = new Set(layout.collapsed);

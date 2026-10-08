@@ -1,3 +1,5 @@
+import { parseItemKey } from '@specboard/core/identifiers';
+
 /**
  * Weight follows the plan (spec, Status encoding): ready and blocked items draw
  * smaller and lighter the further down the plan order they sit. Weight runs from 1 at
@@ -18,14 +20,27 @@ const MIN_RING = 0.6;
 /** The tint a weight asks for before the contrast floor clamps it: 35% of the color at the bottom of the plan. */
 const MIN_TINT = 0.35;
 
-/** Each planned item's weight, by key. Items not in the plan carry full weight and aren't listed. */
+/**
+ * Each planned item's weight, by key, down its own project's plan: on a combined Map every
+ * project's plan runs from full weight at its own top. Items not in the plan carry full
+ * weight and aren't listed.
+ */
 export function planWeights(planOrder: readonly string[]): Map<string, number> {
+	const sizes = new Map<string | undefined, number>();
+	for (const key of planOrder) {
+		const project = parseItemKey(key)?.projectKey;
+		sizes.set(project, (sizes.get(project) ?? 0) + 1);
+	}
+	const placed = new Map<string | undefined, number>();
 	const weights = new Map<string, number>();
-	const last = planOrder.length - 1;
-	planOrder.forEach((key, index) => {
+	for (const key of planOrder) {
+		const project = parseItemKey(key)?.projectKey;
+		const index = placed.get(project) ?? 0;
+		placed.set(project, index + 1);
+		const last = sizes.get(project)! - 1;
 		const depth = last > 0 ? index / last : 0;
 		weights.set(key, 1 - depth ** FALLOFF_CURVE);
-	});
+	}
 	return weights;
 }
 

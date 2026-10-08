@@ -1,3 +1,4 @@
+import { parseItemKey } from '@specboard/core/identifiers';
 import type { MapItemRow } from '@specboard/core/map-read';
 import {
 	IN_FLIGHT_PARENT_SCALE,
@@ -345,12 +346,34 @@ function chainsOf(
 }
 
 /**
+ * Every project plans on its own, one after another: a combined Map's families never
+ * cross projects, and neither does its up next (multi-project-view.md, decision 10).
+ */
+function planOf(items: readonly ModelItem[]): { upNext: string[]; planOrder: string[] } {
+	const projects = new Map<string | undefined, ModelItem[]>();
+	for (const item of items) {
+		const project = parseItemKey(item.key)?.projectKey;
+		const members = projects.get(project);
+		if (members) members.push(item);
+		else projects.set(project, [item]);
+	}
+	const upNext: string[] = [];
+	const planOrder: string[] = [];
+	for (const members of projects.values()) {
+		const plan = projectPlanOf(members);
+		upNext.push(...plan.upNext);
+		planOrder.push(...plan.planOrder);
+	}
+	return { upNext, planOrder };
+}
+
+/**
  * Up next is `/specboard:whats-next`'s order: the next ready child of each in-flight
  * parent, then the top of the project-wide ready list (top-level, unblocked, by rank,
  * which is what MCP `get_items status=ready` returns). The plan order puts all of
  * that first, then every other next or later item by rank, parent before children.
  */
-function planOf(items: readonly ModelItem[]): { upNext: string[]; planOrder: string[] } {
+function projectPlanOf(items: readonly ModelItem[]): { upNext: string[]; planOrder: string[] } {
 	const walk: ModelItem[] = [];
 	const visit = (item: ModelItem): void => {
 		walk.push(item);

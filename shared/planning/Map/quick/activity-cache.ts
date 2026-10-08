@@ -18,9 +18,12 @@ export type Activity =
 /** Entries newest first; the quick card reads only the first. */
 export type ActivitySource = (itemKey: string) => Promise<ActivityEntry[]>;
 
-/** The item's newest activity entry; the Map's read carries no notes, so the quick card asks for one. */
-export function createActivitySource(projectRef: string): ActivitySource {
-	return (itemKey) => fetchClient.get<ActivityEntry[]>(`/api/projects/${projectRef}/items/${itemKey}/notes?limit=1`);
+/** The item's newest activity entry, from the project it is in; the Map's read carries no notes, so the quick card asks for one. */
+export function createActivitySource(refOf: (itemKey: string) => string): ActivitySource {
+	return async (itemKey) => {
+		const projectRef = refOf(itemKey);
+		return fetchClient.get<ActivityEntry[]>(`/api/projects/${projectRef}/items/${itemKey}/notes?limit=1`);
+	};
 }
 
 const LOADING: Activity = { state: 'loading' };
