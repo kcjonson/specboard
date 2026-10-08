@@ -79,7 +79,7 @@ export interface MapModel {
 	chains: ChainGroup[];
 	/** Items whose chain link replaces their parent link. */
 	chainBlocked: Set<ModelItem>;
-	/** Pairs of indexes into `chains` that pull toward one row apart. */
+	/** Pairs of indexes into `chains`, always under one parent, that pull toward one row apart. */
 	relatedChains: Array<[number, number]>;
 	upNext: string[];
 	planOrder: string[];
@@ -311,10 +311,13 @@ function chainsOf(
 	}
 
 	const pairs = new Set<string>();
+	// Only chains under one parent relate. Chains in different regions are the region bands'
+	// to separate, and a pull between them drags a chain out of its region, which grows the
+	// region, which widens the band, which strengthens the pull: a real board's y reached ±4e8.
 	const relate = (a: ModelItem, b: ModelItem): void => {
 		const ga = groupOf.get(a);
 		const gb = groupOf.get(b);
-		if (ga === undefined || gb === undefined || ga === gb) return;
+		if (ga === undefined || gb === undefined || ga === gb || chains[ga]!.parent !== chains[gb]!.parent) return;
 		pairs.add(ga < gb ? `${ga}:${gb}` : `${gb}:${ga}`);
 	};
 	// Sibling chains stack as rows in key order, each a row from the next: relating every
@@ -325,10 +328,6 @@ function chainsOf(
 		if (previous !== undefined) pairs.add(`${previous}:${i}`);
 		lastUnder.set(chain.parent, i);
 	});
-	for (const item of groupOf.keys()) {
-		if (item.parent) relate(item, item.parent);
-		for (const child of item.children) relate(item, child);
-	}
 	const byKey = new Map(items.map((item) => [item.key, item]));
 	for (const item of items) {
 		const from = item.row.discoveredFromKey ? byKey.get(item.row.discoveredFromKey) : undefined;
