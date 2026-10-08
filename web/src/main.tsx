@@ -17,7 +17,7 @@ initTelemetry({
 // Shared feature components
 import { Planning, ItemDetail, MultiProjectPlanning } from '@shared/planning';
 import { Editor } from '@specboard/pages';
-import { ProjectsList, type Project } from '@shared/projects';
+import { ProjectsList, ProjectSettings, type Project } from '@shared/projects';
 
 // App-specific routes
 import { Onboarding } from './routes/onboarding/Onboarding';
@@ -105,6 +105,7 @@ const routes = [
 	{ route: '/projects/:owner/:project/planning/items/:itemKey', entry: Planning },
 	{ route: '/projects/:owner/:project/items/:itemKey', entry: ItemDetail },
 	{ route: '/projects/:owner/:project/pages', entry: Editor },
+	{ route: '/projects/:owner/:project/settings', entry: ProjectSettings },
 
 	// App routes (not project-scoped)
 	// Several projects' items together, read-only: /planning?projects=<owner/project>,...

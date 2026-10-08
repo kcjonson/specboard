@@ -1,6 +1,7 @@
 import { useMemo, useEffect } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
 import { getCookie, setCookie } from '@specboard/core/cookies';
+import { parseProjectRef } from '@specboard/core/identifiers';
 import { projectModel, projectRoleState, refreshProject, useModel, UserModel } from '@specboard/models';
 import { Badge } from '../Badge/Badge';
 import { UserMenu } from '../UserMenu/UserMenu';
@@ -9,7 +10,7 @@ import { Icon } from '../Icon/Icon';
 import styles from './WebHeader.module.css';
 
 /** Navigation tab labels - use these for activeTab prop */
-export type NavTabLabel = 'Planning' | 'Pages';
+export type NavTabLabel = 'Planning' | 'Pages' | 'Settings';
 
 interface NavTab {
 	label: NavTabLabel;
@@ -20,6 +21,9 @@ const NAV_TABS: NavTab[] = [
 	{ label: 'Planning', path: 'planning' },
 	{ label: 'Pages', path: 'pages' },
 ];
+
+/** Shown as a gear beside the tabs; in the small-screen menu it is one more row. */
+const SETTINGS_TAB: NavTab = { label: 'Settings', path: 'settings' };
 
 export interface WebHeaderProps {
 	/** Project ref (owner/project) - if provided, shows project name and nav tabs */
@@ -67,6 +71,8 @@ export function WebHeader({
 		setCookie('lastProjectName', loadedName, 30);
 	}, [projectRef, loadedName]);
 	const projectName = loadedName ?? (projectRef && getCookie('lastProjectRef') === projectRef ? getCookie('lastProjectName') : null);
+	// The owner half comes straight from the address, so it never waits on the project read.
+	const ownerSlug = projectRef ? parseProjectRef(projectRef)?.owner ?? null : null;
 	const viewOnly = project ? projectRoleState(project).effectiveRole === 'viewer' : false;
 
 	// Router navigation swaps the page under the popover but the popover element
@@ -84,7 +90,15 @@ export function WebHeader({
 				<span class={styles.brandDivider} />
 				{projectRef ? (
 					<>
-						<span class={styles.projectName}>{projectName ?? ''}</span>
+						<span class={styles.projectTitle}>
+							{ownerSlug && (
+								<>
+									<a href="/projects" class={styles.ownerLink} title="All projects">{ownerSlug}</a>
+									<span class={styles.titleSeparator} aria-hidden="true">/</span>
+								</>
+							)}
+							<span class={styles.projectName}>{projectName ?? ''}</span>
+						</span>
 						{viewOnly && (
 							<Badge class="size-sm" title="You can see this project but not change it">
 								View only
@@ -100,6 +114,15 @@ export function WebHeader({
 									{tab.label}
 								</a>
 							))}
+							<a
+								href={`/projects/${projectRef}/${SETTINGS_TAB.path}`}
+								class={`${styles.navTab} ${styles.settingsTab} ${activeTab === SETTINGS_TAB.label ? styles.navTabActive : ''}`}
+								aria-label="Project settings"
+								title="Project settings"
+								aria-current={activeTab === SETTINGS_TAB.label ? 'page' : undefined}
+							>
+								<Icon name="settings" />
+							</a>
 						</nav>
 					</>
 				) : (
@@ -126,9 +149,9 @@ export function WebHeader({
 							<Icon name="menu" />
 						</button>
 						<div popover="auto" id="sb-nav-menu" class={styles.menuPopover} onClick={handleMenuNavClick}>
-							{projectName && <div class={styles.menuProject}>{projectName}</div>}
+							{projectName && <div class={styles.menuProject}>{ownerSlug ? `${ownerSlug} / ${projectName}` : projectName}</div>}
 							<div class={styles.menuDivider} />
-							{NAV_TABS.map((tab) => (
+							{[...NAV_TABS, SETTINGS_TAB].map((tab) => (
 								<a
 									key={tab.label}
 									href={`/projects/${projectRef}/${tab.path}`}
@@ -144,6 +167,7 @@ export function WebHeader({
 				{user.email && (
 					<UserMenu
 						displayName={[user.first_name, user.last_name].filter(Boolean).join(' ') || user.email.split('@')[0] || user.email}
+						avatarUrl={user.avatar_url}
 						email={user.email}
 						isAdmin={isAdmin}
 					/>

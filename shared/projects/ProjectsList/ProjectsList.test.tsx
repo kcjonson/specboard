@@ -37,6 +37,9 @@ function project(slug: string, key: string, name: string, ownerSlug = 'acme'): P
 		id: `id-${ownerSlug}-${slug}`,
 		slug,
 		ownerSlug,
+		ownerName: ownerSlug === 'acme' ? 'Acme' : 'Bob',
+		grantedRole: ownerSlug === 'acme' ? 'owner' : 'editor',
+		effectiveRole: ownerSlug === 'acme' ? 'owner' : 'editor',
 		key,
 		name,
 		itemCount: 0,
@@ -111,7 +114,7 @@ describe('ProjectsList picker', () => {
 		expect(roadmap.getAttribute('aria-checked')).toBe('false');
 		expect(roadmap.getAttribute('aria-label')).toBe('Roadmap (RM)');
 		expect(view.queryByRole('button', { name: '+ New Project' })).toBeNull();
-		expect(view.queryByRole('button', { name: 'Edit project' })).toBeNull();
+		expect(view.queryByRole('button', { name: 'Project settings' })).toBeNull();
 		expect(view.getByText('0 selected')).toBeTruthy();
 		expect(document.activeElement).toBe(view.getByRole('group', { name: 'Choose projects to view together' }));
 	});

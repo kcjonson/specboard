@@ -442,10 +442,12 @@ each one.
    signup, onboarding `next`, accept/decline/revoke/resend.
 4. **Project settings page and member management.** Settings page replacing the
    edit dialog, Members section, invite dialog, projects list grouping and
-   invitation cards, leave project, header `owner / project`.
+   invitation cards, leave project, header `owner / project`, and the `Avatar`
+   component (moved here from phase 6, since this is the first phase that shows
+   other people).
 5. **Read-only mode and GitHub gating.** `useProjectRole`, board and editor
    read-only states, banners, push-access check.
-6. **People.** `Avatar`, named actors, assignee picker and MCP `assignee`.
+6. **People.** Named actors, assignee picker and MCP `assignee`.
 
 ---
 
@@ -587,4 +589,36 @@ Phase 5 (read-only mode and GitHub gating, SPE-209) is built:
   `?fields=` filter is gone; the header and editor were its only callers and now share the
   model.
 
-Phases 4 and 6 are not built.
+Phase 4 (project settings page and member management, SPE-208) is built:
+
+- `/projects/:owner/:project/settings` (`shared/projects/ProjectSettings`) has General (name,
+  description, URL slug, item key), AI (instructions), Repository, Members and Danger zone,
+  one at a time from a side nav, the section kept in the URL hash (`#members`). It reads the
+  page's shared `ProjectModel`, so a save shows in the header at once; a slug change moves the
+  page to the new address. Members and everyone else get only Members, read-only, with
+  **Leave project**, and the header's gear reaches it for everyone. `ProjectModel` reads the
+  `description`, `systemPrompt`, `syncStatus` and `syncError` the project GET already sent.
+- `ProjectDialog` is create-only. Its edit mode, `ProjectsList`'s `?edit=` deep link and the
+  delete confirm inside the dialog are gone; the FileBrowser's "Open project settings" and the
+  owner's card gear go to the page. Create and the Repository section share `RepositoryPicker`.
+- The owner's Members section changes roles with a select, removes after a confirm, and shows
+  **Needs GitHub to edit** (granted editor, no connection) and **No push access to
+  owner/repo** (`pushAccess` false) under the row. Pending invitations show role and "expires
+  in N days" or "expired", with Resend and Revoke. Remove, revoke, leave and delete all go
+  through `ConfirmDialog` (`@specboard/ui`), which shows a refused request's message in place.
+- The invite dialog takes email and role and shows the server's refusals inline (409 owner or
+  member, 429 the hourly budget). The private-repository note reads the owner's own GitHub
+  repository list (`GET /api/github/repos`, the picker's source, cached for five minutes), so
+  it shows only when the owner has GitHub connected and the repository is in that list; no
+  new API was needed for it.
+- `/projects` shows **Invitations** (from `GET /api/invitations`, Accept opens the project's
+  board, Decline drops the card, an invitation that closed meanwhile reloads the list with a
+  notice), then **Your projects**, then **Shared with you**, whose cards show the owner's
+  avatar and name and the granted role, and offer no settings or retry-sync.
+- `WebHeader` shows `owner / project`, the owner's slug linking to `/projects`, and a settings
+  gear after Planning and Pages (a Settings row in the small-screen menu).
+- `Avatar` (`@specboard/ui`) replaced the three `getInitials` copies in `UserMenu`, `ItemCard`
+  and `InlineComment`. Nothing writes `users.avatar_url` yet, so in practice every avatar is
+  initials, and the project list carries no owner avatar URL.
+
+Phase 6 is not built.

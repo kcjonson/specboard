@@ -41,7 +41,7 @@ describe('FileBrowser with no repository', () => {
 		await findByText('No repository connected');
 		expect(queryByText('+ Add Folder')).toBeNull();
 		expect(getByRole('link', { name: 'Open project settings' }).getAttribute('href')).toBe(
-			'/projects?edit=acme/specboard'
+			'/projects/acme/specboard/settings'
 		);
 	});
 

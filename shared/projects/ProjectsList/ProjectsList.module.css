@@ -20,6 +20,20 @@
 	margin-bottom: var(--space-6);
 }
 
+.section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+	margin-bottom: var(--space-8);
+}
+
+.sectionTitle {
+	margin: 0;
+	font-size: var(--text-lg);
+	font-weight: var(--font-semibold);
+	color: var(--color-text);
+}
+
 .grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -56,5 +70,6 @@
 }
 
 .secondaryText {
+	margin: 0;
 	color: var(--color-text-muted);
 }

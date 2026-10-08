@@ -59,7 +59,7 @@
 	flex: 1;
 }
 
-.editButton {
+.settingsButton {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -76,21 +76,42 @@
 	transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
-.card:hover .editButton,
-.card:focus-within .editButton {
+.card:hover .settingsButton,
+.card:focus-within .settingsButton {
 	opacity: 1;
 }
 
-.editButton:hover {
+.settingsButton:hover {
 	background: var(--color-surface-hover);
 	color: var(--color-text);
 }
 
-.editButton:focus,
-.editButton:focus-visible {
+.settingsButton:focus,
+.settingsButton:focus-visible {
 	outline: 2px solid var(--color-primary);
 	outline-offset: 1px;
 	opacity: 1;
+}
+
+.owner {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	min-width: 0;
+	font-size: var(--text-sm);
+	color: var(--color-text-muted);
+}
+
+.ownerName {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.viewOnlyNote {
+	margin: 0;
+	font-size: var(--text-xs);
+	color: var(--color-text-muted);
 }
 
 .description {

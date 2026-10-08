@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
-import { Card, StatusGlyph, Icon } from '@specboard/ui';
+import { Avatar, Badge, Card, StatusGlyph, Icon } from '@specboard/ui';
+import type { ProjectRole } from '@specboard/models';
 import { ProjectKey } from '@shared/planning';
 import styles from './ProjectCard.module.css';
 
@@ -34,6 +35,12 @@ export interface Project {
 	slug: string;
 	/** The owner's user slug; the project's address is ownerSlug/slug (acme/roadmap). */
 	ownerSlug: string;
+	/** The owner's display name. */
+	ownerName: string;
+	/** The caller's role as granted: owner for their own projects, else their membership's. */
+	grantedRole: ProjectRole;
+	/** The role access checks use: a granted editor without GitHub works as a viewer. */
+	effectiveRole: ProjectRole;
 	/** Short uppercase prefix for this project's item keys (e.g. "SB"). */
 	key: string;
 	name: string;
@@ -51,7 +58,8 @@ export interface Project {
 export interface ProjectCardProps {
 	project: Project;
 	onClick: (project: Project) => void;
-	onEdit?: (project: Project) => void;
+	/** Open the project's settings. Owners only; a shared card gets neither this nor retry. */
+	onOpenSettings?: (project: Project) => void;
 	onRetrySync?: (project: Project) => Promise<void>;
 	/**
 	 * Set while the page is picking projects to view together. The card is then a checkbox
@@ -61,7 +69,9 @@ export interface ProjectCardProps {
 	selected?: boolean;
 }
 
-export function ProjectCard({ project, onClick, onEdit, onRetrySync, selected }: ProjectCardProps): JSX.Element {
+const ROLE_LABELS: Record<ProjectRole, string> = { owner: 'Owner', editor: 'Editor', viewer: 'Viewer' };
+
+export function ProjectCard({ project, onClick, onOpenSettings, onRetrySync, selected }: ProjectCardProps): JSX.Element {
 	const [isRetrying, setIsRetrying] = useState(false);
 
 	function handleClick(): void {
@@ -75,12 +85,12 @@ export function ProjectCard({ project, onClick, onEdit, onRetrySync, selected }:
 		}
 	}
 
-	function handleEditClick(event: MouseEvent): void {
+	function handleSettingsClick(event: MouseEvent): void {
 		event.stopPropagation();
-		onEdit?.(project);
+		onOpenSettings?.(project);
 	}
 
-	function handleEditKeyDown(event: KeyboardEvent): void {
+	function handleSettingsKeyDown(event: KeyboardEvent): void {
 		if (event.key === 'Enter' || event.key === ' ') {
 			event.stopPropagation();
 		}
@@ -102,6 +112,7 @@ export function ProjectCard({ project, onClick, onEdit, onRetrySync, selected }:
 	const isSyncing = syncStatus === 'pending' || syncStatus === 'syncing';
 	const hasSyncError = syncStatus === 'failed';
 	const picking = selected !== undefined;
+	const shared = project.grantedRole !== 'owner';
 
 	return (
 		<Card
@@ -119,18 +130,29 @@ export function ProjectCard({ project, onClick, onEdit, onRetrySync, selected }:
 				<h3 class={styles.name}>{project.name}</h3>
 				{/* Shown while picking, because two projects can't share a prefix in one view. */}
 				{picking && <ProjectKey prefix={project.key} />}
-				{onEdit && (
+				{onOpenSettings && (
 					<button
 						type="button"
-						class={styles.editButton}
-						onClick={handleEditClick}
-						onKeyDown={handleEditKeyDown}
-						aria-label="Edit project"
+						class={styles.settingsButton}
+						onClick={handleSettingsClick}
+						onKeyDown={handleSettingsKeyDown}
+						aria-label="Project settings"
+						title="Project settings"
 					>
-						<Icon name="pencil" class="size-sm" />
+						<Icon name="settings" class="size-sm" />
 					</button>
 				)}
 			</div>
+			{shared && (
+				<div class={styles.owner}>
+					<Avatar name={project.ownerName} size="xs" decorative />
+					<span class={styles.ownerName}>{project.ownerName}</span>
+					<Badge class="size-sm">{ROLE_LABELS[project.grantedRole]}</Badge>
+				</div>
+			)}
+			{shared && project.effectiveRole !== project.grantedRole && (
+				<p class={styles.viewOnlyNote}>View only until you connect GitHub</p>
+			)}
 			{project.description && (
 				<p class={styles.description}>
 					{project.description}

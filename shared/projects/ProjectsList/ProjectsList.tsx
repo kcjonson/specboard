@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { navigate } from '@specboard/router';
-import { getCookie, setCookie } from '@specboard/core/cookies';
+import { setCookie } from '@specboard/core/cookies';
 import { formatProjectRef } from '@specboard/core/identifiers';
-import { fetchClient, fetchErrorText } from '@specboard/fetch';
-import { Button, Page } from '@specboard/ui';
+import { fetchClient, fetchErrorText, FetchError } from '@specboard/fetch';
+import { Button, Notice, Page } from '@specboard/ui';
 import { MIN_PROJECTS } from '@shared/planning';
 import { ProjectCard, isCloudRepository, type Project } from '../ProjectCard/ProjectCard';
-import { ProjectDialog, type RepositoryConfig } from '../ProjectDialog/ProjectDialog';
+import { ProjectDialog, type NewProject } from '../ProjectDialog/ProjectDialog';
+import { InvitationCard, type Invitation } from '../InvitationCard/InvitationCard';
 import { PickerBar } from '../ProjectPicker/PickerBar';
 import { useProjectPicker } from '../ProjectPicker/useProjectPicker';
 import { SyncProgressDialog } from '../SyncProgressDialog/SyncProgressDialog';
@@ -18,15 +19,21 @@ function toProjectRef(project: Project): string {
 	return formatProjectRef(project.ownerSlug, project.slug);
 }
 
+function rememberProject(projectRef: string, name: string): void {
+	setCookie('lastProjectRef', projectRef, 30);
+	setCookie('lastProjectName', name, 30);
+}
+
 export function ProjectsList(_props: RouteProps): JSX.Element {
 	const [projects, setProjects] = useState<Project[]>([]);
+	const [invitations, setInvitations] = useState<Invitation[]>([]);
+	// Shown over the invitation cards: a failed list read, or an invite that closed under one.
+	const [invitationNotice, setInvitationNotice] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
-	// Dialog state: null = closed, undefined = create mode, Project = edit mode
-	const [dialogProject, setDialogProject] = useState<Project | null | undefined>(null);
-	// Sync progress dialog state: shown after a save that attached a repository. A new
-	// project is opened on dismiss; an existing one leaves the user where they were.
-	const [syncingProject, setSyncingProject] = useState<{ projectRef: string; name: string; isNew: boolean } | null>(null);
+	const [creating, setCreating] = useState(false);
+	// Shown after creating a project with a repository, then the project opens.
+	const [syncingProject, setSyncingProject] = useState<{ projectRef: string; name: string } | null>(null);
 	// "View together": while it picks, a card click toggles the card instead of opening it.
 	const picker = useProjectPicker(projects);
 
@@ -43,159 +50,100 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		}
 	}, []);
 
-	useEffect(() => {
-		fetchProjects();
-	}, [fetchProjects]);
+	// The invitations are their own read, so a failure there never hides the projects.
+	const fetchInvitations = useCallback(async (): Promise<void> => {
+		try {
+			setInvitations(await fetchClient.get<Invitation[]>('/api/invitations'));
+		} catch (err) {
+			setInvitationNotice(fetchErrorText(err, 'Couldn\'t load your invitations.'));
+		}
+	}, []);
 
-	// A deep link (?edit=<owner/project>) opens that project's settings dialog once the list is
-	// in, then drops the param so a reload or Back doesn't reopen it. A failed load keeps
-	// the param so Retry can still honour it.
 	useEffect(() => {
-		if (loading || error) return;
-		const params = new URLSearchParams(window.location.search);
-		const editRef = params.get('edit');
-		if (!editRef) return;
-		params.delete('edit');
-		const search = params.toString();
-		window.history.replaceState(
-			window.history.state,
-			'',
-			window.location.pathname + (search ? `?${search}` : '') + window.location.hash
-		);
-		const project = projects.find((p) => toProjectRef(p) === editRef);
-		if (project) setDialogProject(project);
-	}, [loading, error, projects]);
+		void fetchProjects();
+		void fetchInvitations();
+	}, [fetchProjects, fetchInvitations]);
 
 	function handleProjectClick(project: Project): void {
 		const projectRef = toProjectRef(project);
-		// Store last project in cookie
-		setCookie('lastProjectRef', projectRef, 30);
-		setCookie('lastProjectName', project.name, 30);
+		rememberProject(projectRef, project.name);
 		navigate(`/projects/${projectRef}/planning`);
 	}
 
-	function handleOpenCreateDialog(): void {
-		setDialogProject(undefined); // undefined = create mode
+	function handleOpenSettings(project: Project): void {
+		navigate(`/projects/${toProjectRef(project)}/settings`);
 	}
 
-	function handleEditProject(project: Project): void {
-		setDialogProject(project);
-	}
-
-	function handleCloseDialog(): void {
-		setDialogProject(null);
-	}
-
-	async function handleSaveProject(data: { name: string; description?: string; systemPrompt?: string; slug?: string; key?: string; repository?: RepositoryConfig }): Promise<void> {
+	async function handleCreateProject(data: NewProject): Promise<void> {
 		try {
-			// Map systemPrompt to system_prompt for API. slug/key are only present when the
-			// user changed them; on create the server derives both from the name.
-			const apiData = {
+			const project = await fetchClient.post<Project>('/api/projects', {
 				name: data.name,
 				description: data.description,
 				system_prompt: data.systemPrompt,
-				...(data.slug !== undefined ? { slug: data.slug } : {}),
-				...(data.key !== undefined ? { key: data.key } : {}),
 				repository: data.repository,
-			};
+			});
+			setCreating(false);
 
-			if (dialogProject === undefined) {
-				// Create mode
-				const project = await fetchClient.post<Project>('/api/projects', apiData);
-				// API create response doesn't include stats — initialize them
-				const projectWithStats = { ...project, itemCount: project.itemCount ?? 0, itemCounts: project.itemCounts ?? { ready: 0, in_progress: 0, in_review: 0, done: 0 } };
-				setProjects((prev) => [projectWithStats, ...prev]);
-				setDialogProject(null);
-
-				if (isCloudRepository(project.repository)) {
-					// Repository configured — show sync progress dialog
-					setSyncingProject({ projectRef: toProjectRef(project), name: project.name, isNew: true });
-				} else {
-					// No repository — navigate immediately
-					handleProjectClick(project);
-				}
-			} else if (dialogProject) {
-				// Edit mode
-				const editedRef = toProjectRef(dialogProject);
-				const updated = await fetchClient.put<Project>(`/api/projects/${editedRef}`, apiData);
-				// Merge rather than replace: the update response carries no item counts.
-				setProjects((prev) =>
-					prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
-				);
-				// Refresh the cookies if this is the current project. Compare against the
-				// address we edited, not the returned one — the slug is user-editable, so
-				// a rename would otherwise never match and leave the cookie pointing at an
-				// address that no longer resolves.
-				if (getCookie('lastProjectRef') === editedRef) {
-					setCookie('lastProjectRef', toProjectRef(updated), 30);
-					setCookie('lastProjectName', updated.name, 30);
-				}
-				setDialogProject(null);
-
-				// Attaching a repository starts the initial clone, so follow it the same way
-				// a create with a repository does.
-				if (data.repository !== undefined) {
-					setSyncingProject({ projectRef: toProjectRef(updated), name: updated.name, isNew: false });
-				}
+			if (isCloudRepository(project.repository)) {
+				setSyncingProject({ projectRef: toProjectRef(project), name: project.name });
+			} else {
+				handleProjectClick(project);
 			}
 		} catch (err) {
-			// Rethrow so the dialog renders the failure inline and keeps the user's edits.
-			// Setting the page-level error here would swap the whole list (and the dialog
-			// with it) for a full-screen retry panel — a taken slug would discard the form.
-			// A taken slug or key comes back as a 409 whose body says which one; FetchError's
-			// own message is just "HTTP 409: Conflict", so prefer the server's wording.
-			throw new Error(fetchErrorText(err, 'Failed to save project'), { cause: err });
-		}
-	}
-
-	async function handleDeleteProject(): Promise<void> {
-		if (!dialogProject) return;
-
-		try {
-			await fetchClient.delete(`/api/projects/${toProjectRef(dialogProject)}`);
-			setProjects((prev) => prev.filter((p) => p.id !== dialogProject.id));
-			setDialogProject(null);
-		} catch (err) {
-			// Rethrow for the same reason handleSaveProject does: the page-level error
-			// swaps the list — and the open confirm dialog with it — for a retry panel.
-			throw new Error(fetchErrorText(err, 'Failed to delete project'), { cause: err });
+			// Rethrow so the dialog shows the failure inline and keeps the user's input.
+			throw new Error(fetchErrorText(err, 'Failed to create project'), { cause: err });
 		}
 	}
 
 	function handleSyncNavigate(destination: 'planning' | 'pages'): void {
 		if (!syncingProject) return;
-		setCookie('lastProjectRef', syncingProject.projectRef, 30);
-		setCookie('lastProjectName', syncingProject.name, 30);
+		rememberProject(syncingProject.projectRef, syncingProject.name);
 		setSyncingProject(null);
 		navigate(`/projects/${syncingProject.projectRef}/${destination}`);
 	}
 
 	function handleSyncDismiss(): void {
-		if (!syncingProject) return;
-		setSyncingProject(null);
-		if (!syncingProject.isNew) {
-			// Refetch so the card picks up the sync status the server set after replying.
-			void fetchProjects();
-			return;
-		}
-		setCookie('lastProjectRef', syncingProject.projectRef, 30);
-		setCookie('lastProjectName', syncingProject.name, 30);
-		navigate(`/projects/${syncingProject.projectRef}/planning`);
+		handleSyncNavigate('planning');
 	}
 
 	async function handleRetrySync(project: Project): Promise<void> {
 		try {
-			// Update local state to show pending
 			setProjects((prev) =>
 				prev.map((p) => (p.id === project.id ? { ...p, syncStatus: 'pending' as const, syncError: null } : p))
 			);
 			await fetchClient.post(`/api/projects/${toProjectRef(project)}/sync/initial`);
-			// Refetch projects to get updated sync status
 			await fetchProjects();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to retry sync');
-			// Refetch to get accurate state
+			setError(fetchErrorText(err, 'Failed to retry sync'));
 			await fetchProjects();
+		}
+	}
+
+	/**
+	 * Answer an invitation. One that closed since the list loaded (revoked, expired, or
+	 * answered elsewhere) gets a notice and a fresh list, which carries any invitation that
+	 * replaced it; other failures stay on the card.
+	 */
+	async function answerInvitation(invitation: Invitation, action: 'accept' | 'decline'): Promise<void> {
+		setInvitationNotice(null);
+		try {
+			const result = await fetchClient.post<{ project: { ref: string; name: string } }>(
+				`/api/invitations/${invitation.id}/${action}`
+			);
+			if (action === 'accept') {
+				rememberProject(result.project.ref, result.project.name);
+				navigate(`/projects/${result.project.ref}/planning`);
+				return;
+			}
+			setInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
+		} catch (err) {
+			const fallback = action === 'accept' ? 'Couldn\'t accept the invitation.' : 'Couldn\'t decline the invitation.';
+			if (err instanceof FetchError && err.status === 410) {
+				setInvitationNotice(fetchErrorText(err, 'That invitation is no longer open.'));
+				await fetchInvitations();
+				return;
+			}
+			throw new Error(fetchErrorText(err, fallback), { cause: err });
 		}
 	}
 
@@ -219,6 +167,10 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 		);
 	}
 
+	const owned = projects.filter((p) => p.grantedRole === 'owner');
+	const shared = projects.filter((p) => p.grantedRole !== 'owner');
+	const nothingHere = projects.length === 0 && invitations.length === 0;
+
 	return (
 		<Page title="Projects">
 			<main class={styles.main}>
@@ -231,43 +183,77 @@ export function ProjectsList(_props: RouteProps): JSX.Element {
 								View together
 							</button>
 						)}
-						<Button onClick={handleOpenCreateDialog}>+ New Project</Button>
+						<Button onClick={() => setCreating(true)}>+ New Project</Button>
 					</div>
 				)}
 
-				{projects.length === 0 ? (
+				{(invitations.length > 0 || invitationNotice) && (
+					<section class={styles.section} aria-labelledby="projects-invitations">
+						<h2 id="projects-invitations" class={styles.sectionTitle}>Invitations</h2>
+						{invitationNotice && <Notice variant="warning">{invitationNotice}</Notice>}
+						<div class={styles.grid}>
+							{invitations.map((invitation) => (
+								<InvitationCard
+									key={invitation.id}
+									invitation={invitation}
+									onAccept={(i) => answerInvitation(i, 'accept')}
+									onDecline={(i) => answerInvitation(i, 'decline')}
+								/>
+							))}
+						</div>
+					</section>
+				)}
+
+				{nothingHere ? (
 					<div class={styles.empty}>
 						<h2>No projects yet</h2>
 						<p class={styles.secondaryText}>
 							Create your first project to get started
 						</p>
-						<Button onClick={handleOpenCreateDialog}>Create Project</Button>
+						<Button onClick={() => setCreating(true)}>Create Project</Button>
 					</div>
 				) : (
-					<div class={styles.grid}>
-						{projects.map((project) => (
-							<ProjectCard
-								key={project.id}
-								project={project}
-								onClick={picker.active ? picker.toggle : handleProjectClick}
-								onEdit={picker.active ? undefined : handleEditProject}
-								onRetrySync={picker.active ? undefined : handleRetrySync}
-								selected={picker.active ? picker.isChosen(project) : undefined}
-							/>
-						))}
-					</div>
+					<>
+						<section class={styles.section} aria-labelledby="projects-yours">
+							<h2 id="projects-yours" class={styles.sectionTitle}>Your projects</h2>
+							{owned.length === 0 ? (
+								<p class={styles.secondaryText}>You don't own any projects yet.</p>
+							) : (
+								<div class={styles.grid}>
+									{owned.map((project) => (
+										<ProjectCard
+											key={project.id}
+											project={project}
+											onClick={picker.active ? picker.toggle : handleProjectClick}
+											onOpenSettings={picker.active ? undefined : handleOpenSettings}
+											onRetrySync={picker.active ? undefined : handleRetrySync}
+											selected={picker.active ? picker.isChosen(project) : undefined}
+										/>
+									))}
+								</div>
+							)}
+						</section>
+
+						{shared.length > 0 && (
+							<section class={styles.section} aria-labelledby="projects-shared">
+								<h2 id="projects-shared" class={styles.sectionTitle}>Shared with you</h2>
+								<div class={styles.grid}>
+									{shared.map((project) => (
+										<ProjectCard
+											key={project.id}
+											project={project}
+											onClick={picker.active ? picker.toggle : handleProjectClick}
+											selected={picker.active ? picker.isChosen(project) : undefined}
+										/>
+									))}
+								</div>
+							</section>
+						)}
+					</>
 				)}
 			</main>
 
-			{/* dialogProject: null=closed, undefined=create mode, Project=edit mode */}
-			{dialogProject !== null && (
-				<ProjectDialog
-					project={dialogProject === undefined ? null : dialogProject}
-					onClose={handleCloseDialog}
-					onSave={handleSaveProject}
-					onDelete={dialogProject ? handleDeleteProject : undefined}
-				/>
-			)}
+			{creating && <ProjectDialog onClose={() => setCreating(false)} onCreate={handleCreateProject} />}
 
 			{syncingProject && (
 				<SyncProgressDialog

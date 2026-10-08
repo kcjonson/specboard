@@ -543,7 +543,7 @@ export function FileBrowser({
 								Pages come from a GitHub repository. This project doesn't have one yet.
 							</div>
 							{isOwner && (
-								<a href={`/projects?edit=${projectRef}`} class={styles.settingsLink}>
+								<a href={`/projects/${projectRef}/settings`} class={styles.settingsLink}>
 									Open project settings
 								</a>
 							)}

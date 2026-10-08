@@ -17,6 +17,8 @@ export type ProjectRole = 'owner' | 'editor' | 'viewer';
 
 export type StorageMode = 'none' | 'local' | 'cloud';
 
+export type ProjectSyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+
 /** The parts of a project's repository the UI reads. A member of a local project gets `{}`. */
 export interface ProjectRepository {
 	type?: 'local' | 'cloud';
@@ -56,6 +58,10 @@ export class ProjectModel extends SyncModel {
 	@prop accessor ownerName!: string;
 	@prop accessor key!: string;
 	@prop accessor name!: string;
+	/** Empty when unset; the server omits it. */
+	@prop accessor description!: string | undefined;
+	/** The project's AI instructions; the server omits them when unset. */
+	@prop accessor systemPrompt!: string | undefined;
 	@prop accessor storageMode!: StorageMode;
 	@prop accessor repository!: ProjectRepository;
 	@prop accessor grantedRole!: ProjectRole | null;
@@ -64,6 +70,9 @@ export class ProjectModel extends SyncModel {
 	@prop accessor githubUsername!: string | null;
 	/** Whether the caller's GitHub account can push to the repository; null when unknown or not applicable. */
 	@prop accessor pushAccess!: boolean | null;
+	/** Progress of the repository's initial clone; null for a project without one. */
+	@prop accessor syncStatus!: ProjectSyncStatus | null;
+	@prop accessor syncError!: string | null;
 
 	/**
 	 * A read that fails takes the role with it. The last answer can't be trusted once the

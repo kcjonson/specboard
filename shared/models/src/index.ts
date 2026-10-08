@@ -53,7 +53,7 @@ export { UserModel } from './user';
 
 // Project model and the caller's role on it
 export { ProjectModel, projectModel, refreshProject, projectRoleState, useProject, useProjectRole } from './project';
-export type { ProjectRole, ProjectRoleReason, ProjectRoleState, ProjectRepository, StorageMode } from './project';
+export type { ProjectRole, ProjectRoleReason, ProjectRoleState, ProjectRepository, ProjectSyncStatus, StorageMode } from './project';
 export { writeFailure } from './write-failure';
 
 // File browser model
