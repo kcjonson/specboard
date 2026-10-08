@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useState } from 'preact/hooks';
+import { useMemo, useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { ItemModel, ItemsCollection, ItemsSource, Status, ItemStatus } from '@specboard/models';
 import { Column, type ColumnMore } from '../Column/Column';
@@ -245,6 +245,29 @@ export function Board(props: BoardProps): JSX.Element {
 	];
 
 	const boardRef = useRef<HTMLDivElement>(null);
+
+	// A move renders the card afresh in its new column, which drops focus to the page, so the
+	// card that had focus takes it back once the board has re-rendered.
+	const refocusKey = useRef<string | null>(null);
+	const keepFocus = useCallback((): void => {
+		const focused = document.activeElement instanceof Element ? document.activeElement.closest('[data-item-card]') : null;
+		refocusKey.current = focused && boardRef.current?.contains(focused) ? focused.getAttribute('data-item-key') : null;
+	}, []);
+	useEffect(() => {
+		const key = refocusKey.current;
+		if (!key) return;
+		refocusKey.current = null;
+		boardRef.current?.querySelector<HTMLElement>(`[data-item-card][data-item-key="${key}"]`)?.focus();
+	});
+	const moveItem = useCallback((item: ItemModel, status: Status): void => {
+		keepFocus();
+		moves?.move(item, status);
+	}, [keepFocus, moves]);
+	const dropItem = useCallback((itemId: string, status: Status, dropIndex: number): void => {
+		keepFocus();
+		moves?.drop(itemId, status, dropIndex);
+	}, [keepFocus, moves]);
+
 	useKeyboardNavigation({
 		itemsByStatus,
 		columns: columns.map((column) => column.status),
@@ -254,7 +277,7 @@ export function Board(props: BoardProps): JSX.Element {
 		onSelectItem,
 		onOpenItem,
 		onCreateItem: props.canEdit ? props.onCreateItem : noop,
-		onMoveItem: moves?.move ?? noop,
+		onMoveItem: moves ? moveItem : noop,
 	});
 
 	function handleDragStart(e: DragEvent, item: ItemModel): void {
@@ -281,7 +304,7 @@ export function Board(props: BoardProps): JSX.Element {
 					draggable={moves !== null}
 					onSelectItem={handleColumnSelectItem}
 					onOpenItem={onOpenItem}
-					onDropItem={droppable ? moves?.drop : undefined}
+					onDropItem={droppable && moves ? dropItem : undefined}
 					onDragStart={handleDragStart}
 				/>
 			))}

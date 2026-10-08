@@ -6,10 +6,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/preact';
+import { render, fireEvent, waitFor, screen } from '@testing-library/preact';
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
-import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
+import { ItemsCollection, useModel, type ItemModel, type ItemStatus } from '@specboard/models';
 import { MergedItems } from '../MultiProject/merged-items';
 import { Board } from './Board';
 
@@ -347,6 +347,75 @@ describe('Board over several projects', () => {
 		fireEvent.keyDown(document, { key: 'n' });
 		fireEvent.keyDown(document, { key: '3' });
 		for (const save of saves) expect(save).not.toHaveBeenCalled();
+	});
+});
+
+describe('Board moves and focus', () => {
+	beforeEach(() => {
+		getResponse.mockReset();
+	});
+
+	/** A project's own board, keeping its selection and re-rendering on changes, as its page does. */
+	function PageBoard({ items, selected: initial }: { items: ItemsCollection; selected?: string }): JSX.Element {
+		useModel(items);
+		const [selected, setSelected] = useState<string | undefined>(initial);
+		return (
+			<Board
+				items={items}
+				canEdit
+				selectedItemKey={selected}
+				onSelectItem={(item) => setSelected(item?.key)}
+				onOpenItem={() => {}}
+				onCreateItem={() => {}}
+				onWriteError={() => {}}
+			/>
+		);
+	}
+
+	async function renderPage(selected?: string): Promise<{ items: ItemsCollection; card: (key: string) => HTMLElement }> {
+		serve({ ready: 2 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
+		await items.fetch();
+		for (const item of items.byStatus('ready')) vi.spyOn(item, 'save').mockResolvedValue(undefined);
+		const { container } = render(<PageBoard items={items} selected={selected} />);
+		return { items, card: (key) => container.querySelector<HTMLElement>(`[data-item-card][data-item-key="${key}"]`)! };
+	}
+
+	it('moves nothing on 1, 2, or 3 once Escape has cleared the selection, though the clicked card keeps focus', async () => {
+		const { items, card } = await renderPage();
+		const first = items.byStatus('ready')[0]!;
+
+		// A click focuses the card, as a browser's does, and selects it.
+		card(first.key).focus();
+		fireEvent.click(card(first.key));
+		fireEvent.keyDown(card(first.key), { key: 'Escape' });
+		fireEvent.keyDown(card(first.key), { key: '3' });
+
+		expect(first.save).not.toHaveBeenCalled();
+		expect(first.status).toBe('ready');
+	});
+
+	it('gives focus back to a card the move keys took to another column', async () => {
+		const { items, card } = await renderPage('SB-ready-1');
+		const moved = items.byStatus('ready')[0]!;
+		card('SB-ready-1').focus();
+
+		fireEvent.keyDown(card('SB-ready-1'), { key: '2' });
+
+		expect(moved.save).toHaveBeenCalled();
+		expect(moved.status).toBe('in_progress');
+		await waitFor(() => expect((document.activeElement as HTMLElement | null)?.getAttribute('data-item-key')).toBe('SB-ready-1'));
+		expect(document.activeElement!.closest('[role="listbox"]')!.getAttribute('aria-label')).toBe('In Progress column');
+	});
+
+	it('gives focus back to a card dropped in another column', async () => {
+		const { card } = await renderPage('SB-ready-1');
+		card('SB-ready-1').focus();
+
+		fireEvent.drop(screen.getByRole('listbox', { name: 'Done column' }), { dataTransfer: { getData: () => 'id-ready-1' } });
+
+		await waitFor(() => expect(document.activeElement!.closest('[role="listbox"]')?.getAttribute('aria-label')).toBe('Done column'));
+		expect((document.activeElement as HTMLElement).getAttribute('data-item-key')).toBe('SB-ready-1');
 	});
 });
 

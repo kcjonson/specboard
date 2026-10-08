@@ -322,9 +322,11 @@ so the board turns read-only to match.
 
 ## Keyboard Shortcuts
 
-The board's keys act on the card focus is on, and on the selected card while focus is
-elsewhere; the arrows move the selection and focus together, so a screen reader says the
-card they land on and Enter opens it. A key aimed at a field, a dialog, or the item drawer is
+The arrows move on from the card focus is on, else from the selected card, and move the
+selection and focus together, so a screen reader says the card they land on and Enter opens
+it. Enter opens a focused card, else the selection; the move keys act on the selection only,
+so a card that merely has focus (a click's, after Escape) moves nowhere, and a moved card
+keeps focus in its new column. A key aimed at a field, a dialog, or the item drawer is
 left to it, and so are the keys that follow a link or press a button (Enter, Space), even with
 a card selected; the arrows, Escape, and the shortcuts still work with a link or a button
 focused.

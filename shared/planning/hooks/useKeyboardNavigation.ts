@@ -73,9 +73,10 @@ interface KeyboardNavigationOptions {
 }
 
 /**
- * The board's keys. They act on the card they're pressed on, and on the selected card
- * while focus is elsewhere. The arrows move the selection and focus together, so a screen
- * reader says the card they land on, its column scrolls to it, and Enter opens it.
+ * The board's keys. The arrows move on from the card focus is on, else from the selected
+ * card, and move the selection and focus together, so a screen reader says the card they
+ * land on, its column scrolls to it, and Enter opens it. Enter (with focus off the cards;
+ * a card opens itself) and the move keys act on the selection.
  */
 export function useKeyboardNavigation({
 	itemsByStatus,
@@ -189,9 +190,13 @@ export function useKeyboardNavigation({
 		(e: KeyboardEvent) => {
 			if (dialogOpen || handledElsewhere(e)) return;
 
-			const key = cardKeyOf(e) ?? selectedItemKey;
+			// The arrows move on from the card focus is on, else from the selection.
+			const focusedKey = cardKeyOf(e);
+			const key = focusedKey ?? selectedItemKey;
 			const from = locate(key);
-			const { item } = from;
+			// Enter and the move keys act on the selection alone: a card that merely has focus (a
+			// click's, left behind when Escape cleared the selection) is nothing to move.
+			const item = focusedKey === undefined || focusedKey === selectedItemKey ? locate(selectedItemKey).item : undefined;
 
 			switch (e.key) {
 				case 'ArrowUp':
