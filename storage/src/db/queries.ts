@@ -321,6 +321,35 @@ export async function upsertPendingChange(
 	);
 }
 
+/**
+ * A hash a writer may name as a draft's base: a committed file's sha1, or the marker
+ * migration 003 gave drafts whose file was already gone.
+ */
+export function isDraftBaseHash(value: unknown): value is string {
+	return typeof value === 'string' && (/^[0-9a-f]{40}$/.test(value) || value === 'missing-before-migration');
+}
+
+/**
+ * Undo a rename in one go: drop the draft at the new path and the deletion at the old
+ * one, so the file is back as committed. Returns the dropped rows that kept content in S3.
+ */
+export async function undoPendingRename(
+	projectId: string,
+	userId: string,
+	oldPath: string,
+	newPath: string
+): Promise<Array<{ path: string; s3Key: string }>> {
+	return transaction(async (client) => {
+		const dropped = await client.query<{ path: string; s3_key: string | null }>(
+			`DELETE FROM pending_changes
+			 WHERE project_id = $1 AND user_id = $2 AND path = ANY($3)
+			 RETURNING path, s3_key`,
+			[projectId, userId, [oldPath, newPath]]
+		);
+		return dropped.rows.flatMap((row) => (row.s3_key ? [{ path: row.path, s3Key: row.s3_key }] : []));
+	});
+}
+
 export async function deletePendingChange(
 	projectId: string,
 	userId: string,

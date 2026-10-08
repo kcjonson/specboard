@@ -123,6 +123,8 @@ export class CloudStorageProvider implements StorageProvider {
 					type: 'file',
 					size: file.sizeBytes,
 					modifiedAt: new Date(file.syncedAt),
+					// A pending creation has no committed version to name.
+					...(file.contentHash ? { contentHash: file.contentHash } : {}),
 				});
 			} else {
 				// This is a subdirectory
@@ -221,7 +223,7 @@ export class CloudStorageProvider implements StorageProvider {
 		);
 	}
 
-	async deleteFile(relativePath: string): Promise<void> {
+	async deleteFile(relativePath: string, baseContentHash?: string | null): Promise<void> {
 		const storagePath = toStoragePath(relativePath);
 
 		// A file that was never committed only exists as a pending creation, so
@@ -240,7 +242,7 @@ export class CloudStorageProvider implements StorageProvider {
 			null,
 			'deleted',
 			null,
-			undefined
+			baseContentHash
 		);
 	}
 
@@ -249,7 +251,7 @@ export class CloudStorageProvider implements StorageProvider {
 		// Files create their parent directories automatically
 	}
 
-	async rename(oldPath: string, newPath: string): Promise<void> {
+	async rename(oldPath: string, newPath: string, sourceBaseContentHash?: string | null): Promise<void> {
 		// putContent/deleteFile carry the journal semantics: renaming back to a committed
 		// path clears its pending change, and renaming away from a never-committed path
 		// discards the creation rather than recording a phantom deletion. The new side
@@ -261,10 +263,12 @@ export class CloudStorageProvider implements StorageProvider {
 		}
 		const to = toStoragePath(newPath);
 		// Moving back onto its own committed path isn't a rename of anything.
-		// The new path starts from what's committed there (normally nothing); the old
-		// path's own draft keeps what the file was made against.
+		// The new path starts from what's committed there (normally nothing). The old
+		// path's deletion carries what the caller last saw of the file, so a rename of a
+		// file someone has changed since conflicts there ("renamed it to ..."); a draft
+		// already at the old path keeps its own base.
 		await this.putContent(to, file.content, file.origin === to ? null : file.origin, undefined);
-		await this.deleteFile(oldPath);
+		await this.deleteFile(oldPath, sourceBaseContentHash);
 	}
 
 	async exists(relativePath: string): Promise<boolean> {

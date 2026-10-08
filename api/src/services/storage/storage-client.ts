@@ -193,6 +193,11 @@ export class StorageClient {
 		await this.request('DELETE', `/pending/${projectId}/${userId}/${path}`);
 	}
 
+	/** Undo the user's rename of oldPath to newPath: both drafts dropped in one storage transaction. */
+	async undoRename(projectId: string, userId: string, oldPath: string, newPath: string): Promise<void> {
+		await this.request('POST', `/pending/${projectId}/${userId}/undo-rename`, { oldPath, newPath });
+	}
+
 	/**
 	 * Keep the user's drafts at these paths over what's committed there now ("keep
 	 * mine"): each draft's base becomes the current committed version.

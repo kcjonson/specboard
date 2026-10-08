@@ -80,6 +80,7 @@ import {
 	handleCommit,
 	handleRestore,
 	handleKeepMine,
+	handleUndoRename,
 	handleReadCommittedFile,
 	handlePull,
 } from './handlers/storage/index.ts';
@@ -514,6 +515,7 @@ export function createApp(redis: Redis): Hono<{ Variables: AppVariables }> {
 	app.post('/api/projects/:owner/:project/git/commit', editor, handleCommit);
 	app.post('/api/projects/:owner/:project/git/restore', editor, (context) => handleRestore(context, redis));
 	app.post('/api/projects/:owner/:project/git/keep-mine', editor, (context) => handleKeepMine(context, redis));
+	app.post('/api/projects/:owner/:project/git/undo-rename', editor, (context) => handleUndoRename(context, redis));
 	app.get('/api/projects/:owner/:project/git/committed', viewer, handleReadCommittedFile);
 	app.post('/api/projects/:owner/:project/git/pull', editor, (context) => handlePull(context, redis));
 

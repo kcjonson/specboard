@@ -16,7 +16,7 @@ vi.mock('./index.ts', () => ({
 	transaction: <T>(fn: (client: Transaction) => Promise<T>) => state.db!.transaction(fn),
 }));
 
-import { getPendingChange, listPendingChanges, promoteCommit, rebasePendingChanges, upsertPendingChange, upsertProjectDocument } from './queries.ts';
+import { getPendingChange, isDraftBaseHash, listPendingChanges, promoteCommit, rebasePendingChanges, undoPendingRename, upsertPendingChange, upsertProjectDocument } from './queries.ts';
 
 const PROJECT = '00000000-0000-0000-0000-000000000001';
 const USER = '00000000-0000-0000-0000-000000000002';
@@ -191,6 +191,29 @@ describe('the base a writer gives', () => {
 		await commitVersion('docs/a.md', 'mine');
 
 		expect(await listed('docs/a.md')).toMatchObject({ conflict: false });
+	});
+});
+
+describe('undoPendingRename', () => {
+	it('drops both sides of the rename together, and only the caller\'s', async () => {
+		await commitVersion('docs/a.md', 'v1');
+		await upsertPendingChange(PROJECT, USER, 'docs/a.md', null, null, 'deleted', null);
+		await upsertPendingChange(PROJECT, USER, 'docs/b.md', '# Doc', null, 'created', 'docs/a.md');
+		await upsertPendingChange(PROJECT, USER, 'docs/c.md', '# Other', null, 'modified', null);
+
+		await undoPendingRename(PROJECT, USER, 'docs/a.md', 'docs/b.md');
+
+		expect((await listPendingChanges(PROJECT, USER)).map((c) => c.path)).toEqual(['docs/c.md']);
+	});
+});
+
+describe('isDraftBaseHash', () => {
+	it('takes a sha1 or the migration marker, nothing else', () => {
+		expect(isDraftBaseHash('a'.repeat(40))).toBe(true);
+		expect(isDraftBaseHash('missing-before-migration')).toBe(true);
+		expect(isDraftBaseHash('A'.repeat(40))).toBe(false);
+		expect(isDraftBaseHash('v1')).toBe(false);
+		expect(isDraftBaseHash(42)).toBe(false);
 	});
 });
 

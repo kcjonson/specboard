@@ -149,6 +149,9 @@ export function Editor(props: RouteProps): JSX.Element {
 	const serverSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const saveRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const saveRetryCount = useRef(0);
+	// Set while a commit runs: a save landing between the commit clearing this file's
+	// draft and the editor taking its new base would be measured against the old one.
+	const holdSavesRef = useRef(false);
 	const [isSaving, setIsSaving] = useState(false);
 	const [saveError, setSaveError] = useState<SaveError | null>(null);
 
@@ -168,7 +171,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	const [isCreatingFile, setIsCreatingFile] = useState(false);
 
 	// Reference to the renameFile function from FileBrowser
-	const renameFileRef = useRef<((path: string, newFilename: string) => Promise<string>) | null>(null);
+	const renameFileRef = useRef<((path: string, newFilename: string, baseContentHash?: string | null) => Promise<string>) | null>(null);
 
 	// Reference to MarkdownEditor for imperative operations (e.g., applying AI edits)
 	const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -314,6 +317,8 @@ export function Editor(props: RouteProps): JSX.Element {
 	const performServerSave = useCallback(async (): Promise<boolean> => {
 		if (!documentModel.filePath) return true;
 		if (!documentModel.isDirty) return true;
+		// The local copy keeps the edit; the commit's end saves it (handleAfterCommit).
+		if (holdSavesRef.current) return false;
 
 		// `pid` is the project's immutable id and keys localStorage ONLY. API paths are
 		// addressed by owner/project ref — sending the UUID here 404s against those routes.
@@ -683,9 +688,10 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [documentModel, loadFileFromServer]);
 
-	// A commit cleared the open file's draft, so what its next save is made against is
-	// the version just committed: take the new base without touching what's on screen.
-	const handleCommitted = useCallback(async () => {
+	// Take the open file's base from the server without touching what's on screen: after
+	// a commit cleared its draft (the base is the version just committed) or a rename
+	// moved it (the base is the new path's).
+	const refreshOpenDocumentBase = useCallback(async () => {
 		const path = documentModel.filePath;
 		if (!path) return;
 		try {
@@ -698,18 +704,49 @@ export function Editor(props: RouteProps): JSX.Element {
 		}
 	}, [documentModel, projectRef]);
 
-	// Resolving a draft conflict on the open file: save what's on screen first, so keep
-	// mine keeps it and discard discards it, then show the result.
-	const handleBeforeResolveDraft = useCallback(async (path: string) => {
+	// Before anything that acts on a file's draft as the server has it (resolving a
+	// conflict, a rename, a delete): if it's the open file, save what's on screen first.
+	const handleBeforeFileChange = useCallback(async (path: string) => {
 		if (path === documentModel.filePath && documentModel.isDirty) {
 			await performServerSave();
 		}
 	}, [documentModel, performServerSave]);
 
+	// What a tree rename or delete of the open file sends as its base.
+	const openDocumentBase = useCallback((path: string): string | null | undefined =>
+		path === documentModel.filePath ? documentModel.baseContentHash : undefined
+	, [documentModel]);
+
+	// A commit takes the drafts as they are on the server: save the open file first and
+	// hold further saves until the commit is done and the new base is in.
+	const handleBeforeCommit = useCallback(async () => {
+		if (documentModel.isDirty && documentModel.filePath) {
+			await performServerSave();
+		}
+		holdSavesRef.current = true;
+	}, [documentModel, performServerSave]);
+
+	const handleAfterCommit = useCallback(async (committed: boolean) => {
+		try {
+			if (committed) await refreshOpenDocumentBase();
+		} finally {
+			holdSavesRef.current = false;
+		}
+		if (documentModel.isDirty) await performServerSave();
+	}, [documentModel, refreshOpenDocumentBase, performServerSave]);
+
 	const handleDraftResolved = useCallback(async (path: string) => {
 		if (path === documentModel.filePath) {
 			if (projectId) clearLocalStorage(projectId, path);
 			await loadFileFromServer(path);
+		}
+	}, [documentModel, projectId, loadFileFromServer]);
+
+	// An undone rename puts the file back at its old path: if the new one was open, open the old.
+	const handleRenameUndone = useCallback(async (oldPath: string, newPath: string) => {
+		if (documentModel.filePath === newPath) {
+			if (projectId) clearLocalStorage(projectId, newPath);
+			await loadFileFromServer(oldPath);
 		}
 	}, [documentModel, projectId, loadFileFromServer]);
 
@@ -723,7 +760,7 @@ export function Editor(props: RouteProps): JSX.Element {
 	}, [documentModel, projectId]);
 
 	// Handle receiving the renameFile function from FileBrowser
-	const handleRenameFileRef = useCallback((renameFile: (path: string, newFilename: string) => Promise<string>) => {
+	const handleRenameFileRef = useCallback((renameFile: (path: string, newFilename: string, baseContentHash?: string | null) => Promise<string>) => {
 		renameFileRef.current = renameFile;
 	}, []);
 
@@ -733,13 +770,18 @@ export function Editor(props: RouteProps): JSX.Element {
 
 		const oldPath = documentModel.filePath;
 		try {
-			const newPath = await renameFileRef.current(oldPath, newFilename);
+			// The rename moves the draft the server has, so save what's on screen first, and
+			// tell it what this document was made against so the old path conflicts if
+			// someone changed it since.
+			await handleBeforeFileChange(oldPath);
+			const newPath = await renameFileRef.current(oldPath, newFilename, documentModel.baseContentHash);
 
 			if (projectId) {
 				migrateLocalStorageContent(projectId, oldPath, newPath);
 				saveSelectedFile(projectId, newPath);
 			}
 			documentModel.updateFilePath(newPath);
+			await refreshOpenDocumentBase();
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
 			captureError(error, {
@@ -752,7 +794,7 @@ export function Editor(props: RouteProps): JSX.Element {
 			// (File operations typically succeed, so a dedicated UI component isn't warranted)
 			alert(writeFailure(err, 'Failed to rename file', projectRef));
 		}
-	}, [projectRef, projectId, documentModel]);
+	}, [projectRef, projectId, documentModel, handleBeforeFileChange, refreshOpenDocumentBase]);
 
 	// Handle applying AI-suggested edits from ChatSidebar
 	const handleApplyEdit = useCallback((newMarkdown: string) => {
@@ -847,9 +889,12 @@ export function Editor(props: RouteProps): JSX.Element {
 						onRenameFileRef={handleRenameFileRef}
 						hasUnsavedChanges={documentModel.isDirty}
 						onBeforePull={handleBeforePull}
-						onCommitted={handleCommitted}
-						onBeforeResolveDraft={handleBeforeResolveDraft}
+						onBeforeCommit={handleBeforeCommit}
+						onAfterCommit={handleAfterCommit}
+						onBeforeFileChange={handleBeforeFileChange}
+						openDocumentBase={openDocumentBase}
 						onDraftResolved={handleDraftResolved}
+						onRenameUndone={handleRenameUndone}
 						onPullComplete={handlePullComplete}
 						readOnly={!canEdit}
 						isOwner={isOwner}

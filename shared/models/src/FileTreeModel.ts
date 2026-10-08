@@ -36,6 +36,8 @@ export interface FileEntry {
 	type: 'file' | 'directory';
 	size?: number;
 	modifiedAt?: string;
+	/** Cloud: the committed version's hash as listed; a tree rename or delete sends it as its base. */
+	contentHash?: string;
 }
 
 /** Nested tree for expanded paths - compact format */
@@ -522,12 +524,17 @@ export class FileTreeModel extends Model {
 		};
 	}
 
+	/** The committed hash the tree listed for a file, if any. */
+	contentHashOf(path: string): string | undefined {
+		return this.files.find((f) => f.path === path)?.contentHash;
+	}
+
 	/**
 	 * Commit the rename with the new filename.
 	 * Renames the file on the server and reloads the tree.
-	 * Returns the new full path.
+	 * Returns the new full path. `baseContentHash` is what the caller last saw of the file.
 	 */
-	async commitRename(newFilename: string): Promise<string> {
+	async commitRename(newFilename: string, baseContentHash?: string | null): Promise<string> {
 		if (!this.pendingRename) {
 			throw new Error('No pending rename');
 		}
@@ -549,7 +556,7 @@ export class FileTreeModel extends Model {
 		try {
 			await fetchClient.put<{ success: boolean }>(
 				`/api/projects/${this.projectRef}/files/rename`,
-				{ oldPath, newPath }
+				baseContentHash === undefined ? { oldPath, newPath } : { oldPath, newPath, baseContentHash }
 			);
 
 			this.pendingRename = null;

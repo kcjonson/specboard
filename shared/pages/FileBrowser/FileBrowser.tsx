@@ -59,19 +59,25 @@ export interface FileBrowserProps {
 	/** Callback to receive the startNewFile function. parentPath is optional - uses first rootPath if not provided */
 	onStartNewFileRef?: (startNewFile: (parentPath?: string) => void) => void;
 	/** Callback to receive the renameFile function. Returns new path on success */
-	onRenameFileRef?: (renameFile: (path: string, newFilename: string) => Promise<string>) => void;
+	onRenameFileRef?: (renameFile: (path: string, newFilename: string, baseContentHash?: string | null) => Promise<string>) => void;
 	/** Whether the editor has unsaved changes */
 	hasUnsavedChanges?: boolean;
 	/** Called before pull starts - use to save dirty content */
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes (file tree is already reloaded) */
 	onPullComplete?: () => void | Promise<void>;
-	/** Called after a commit lands, so an open document takes its new base */
-	onCommitted?: () => void | Promise<void>;
-	/** Called before a draft conflict on this path is kept or discarded (save it first) */
-	onBeforeResolveDraft?: (path: string) => Promise<void>;
+	/** Called before a commit, to save the open document */
+	onBeforeCommit?: () => Promise<void>;
+	/** Called when a commit attempt ends, landed or not */
+	onAfterCommit?: (committed: boolean) => void | Promise<void>;
+	/** Called before this path's draft is renamed, deleted, kept, or discarded (save it first if it's open) */
+	onBeforeFileChange?: (path: string) => Promise<void>;
+	/** What the open document at this path was made against; undefined when it isn't open */
+	openDocumentBase?: (path: string) => string | null | undefined;
 	/** Called after a draft conflict on this path was kept or discarded (file tree is already reloaded) */
 	onDraftResolved?: (path: string) => void | Promise<void>;
+	/** Called after a rename was undone, the file back at oldPath (file tree is already reloaded) */
+	onRenameUndone?: (oldPath: string, newPath: string) => void | Promise<void>;
 	/**
 	 * Browse only: no create, rename, delete, folder changes, sync retry, commit or pull,
 	 * and no pending-changes count. For someone who can't edit the project.
@@ -101,9 +107,12 @@ export function FileBrowser({
 	hasUnsavedChanges,
 	onBeforePull,
 	onPullComplete,
-	onCommitted,
-	onBeforeResolveDraft,
+	onBeforeCommit,
+	onAfterCommit,
+	onBeforeFileChange,
+	openDocumentBase,
 	onDraftResolved,
+	onRenameUndone,
 	readOnly = false,
 	isOwner = false,
 	class: className,
@@ -174,7 +183,7 @@ export function FileBrowser({
 	}, [onStartNewFileRef, handleStartNewFile]);
 
 	// Expose renameFile function to parent
-	const handleRenameFile = useCallback(async (path: string, newFilename: string): Promise<string> => {
+	const handleRenameFile = useCallback(async (path: string, newFilename: string, baseContentHash?: string | null): Promise<string> => {
 		// Get parent directory from path
 		const lastSlash = path.lastIndexOf('/');
 		const parentPath = lastSlash > 0 ? path.slice(0, lastSlash) : '/';
@@ -186,10 +195,12 @@ export function FileBrowser({
 			return path;
 		}
 
-		// Call API directly (simpler than going through model for external calls)
+		// Call API directly (simpler than going through model for external calls). The
+		// caller's base for the source makes its old side conflict if someone changed it.
+		const base = baseContentHash !== undefined ? baseContentHash : model.contentHashOf(path);
 		await fetchClient.put<{ success: boolean }>(
 			`/api/projects/${projectRef}/files/rename`,
-			{ oldPath: path, newPath }
+			base === undefined ? { oldPath: path, newPath } : { oldPath: path, newPath, baseContentHash: base }
 		);
 
 		// Reload tree to show renamed file
@@ -293,7 +304,8 @@ export function FileBrowser({
 
 		const oldPath = model.pendingRename?.path;
 		try {
-			const newPath = await model.commitRename(renameName);
+			if (oldPath) await onBeforeFileChange?.(oldPath);
+			const newPath = await model.commitRename(renameName, oldPath ? baseForPath(oldPath) : undefined);
 			// Notify parent of the rename
 			if (oldPath) {
 				onFileRenamed?.(oldPath, newPath);
@@ -365,6 +377,19 @@ export function FileBrowser({
 		await model.reload();
 		await onDraftResolved?.(path);
 	}, [model, onDraftResolved]);
+
+	const handleRenameUndone = useCallback(async (oldPath: string, newPath: string) => {
+		await model.reload();
+		await onRenameUndone?.(oldPath, newPath);
+	}, [model, onRenameUndone]);
+
+	// What a rename or delete of this path says the caller last saw: the open document's
+	// base, else the hash the tree listed. A file listed before hashes were (or a new one)
+	// has none, and the server takes the path as it's committed now.
+	const baseForPath = useCallback((path: string): string | null | undefined => {
+		const open = openDocumentBase?.(path);
+		return open !== undefined ? open : model.contentHashOf(path);
+	}, [model, openDocumentBase]);
 
 	// Handle add folder. The picker is the desktop shell's, and its failure is its own
 	// message; the add is a write, reported in the server's words.
@@ -443,8 +468,11 @@ export function FileBrowser({
 		const itemType = type === 'directory' ? 'folder' : 'file';
 
 		try {
+			await onBeforeFileChange?.(path);
+			const base = type === 'file' ? baseForPath(path) : undefined;
+			const baseQuery = base === undefined || base === null ? '' : `&baseContentHash=${encodeURIComponent(base)}`;
 			await fetchClient.delete(
-				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}`
+				`/api/projects/${projectRef}/files?path=${encodeURIComponent(path)}${baseQuery}`
 			);
 			model.reload();
 			gitStatus?.refresh();
@@ -584,9 +612,11 @@ export function FileBrowser({
 					hasUnsavedChanges={hasUnsavedChanges}
 					onBeforePull={onBeforePull}
 					onPullComplete={handlePullComplete}
-					onCommitted={onCommitted}
-					onBeforeResolveDraft={onBeforeResolveDraft}
+					onBeforeCommit={onBeforeCommit}
+					onAfterCommit={onAfterCommit}
+					onBeforeResolveDraft={onBeforeFileChange}
 					onDraftResolved={handleDraftResolved}
+					onRenameUndone={handleRenameUndone}
 				/>
 			)}
 			<div class={styles.header}>

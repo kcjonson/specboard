@@ -284,9 +284,17 @@ export class GitStatusModel extends Model {
 		}
 	}
 
-	/** Undo a rename: discard the new path's draft and put the old path back. */
+	/** Undo a rename: the new path's draft and the old path's deletion go together. */
 	async undoRename(oldPath: string, newPath: string): Promise<boolean> {
-		return (await this.restore(newPath)) && (await this.restore(oldPath));
+		if (!this.projectRef) return false;
+		try {
+			await fetchClient.post(`/api/projects/${this.projectRef}/git/undo-rename`, { oldPath, newPath });
+			await this.refresh();
+			return true;
+		} catch (err) {
+			this.error = writeFailure(err, 'Could not undo the rename', this.projectRef);
+			return false;
+		}
 	}
 
 	/** Whether any conflicting draft is at or under this folder */

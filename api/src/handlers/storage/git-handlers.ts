@@ -322,6 +322,45 @@ export async function handleKeepMine(context: Context, redis: Redis): Promise<Re
 }
 
 /**
+ * POST /api/projects/:owner/:project/git/undo-rename { oldPath, newPath }
+ * Undo the caller's rename of a file: the draft at the new path and the deletion at the
+ * old one are dropped together, so the file is back as it's committed. Cloud only.
+ */
+export async function handleUndoRename(context: Context, redis: Redis): Promise<Response> {
+	const userId = apiUserId(context);
+
+	const project = await loadAuthorizedProject(context);
+	if (!project) {
+		return context.json({ error: 'Project not found' }, 404);
+	}
+	if (!isCloudRepository(project.repository)) {
+		return context.json({ error: 'Only cloud projects keep drafts against a committed version', code: 'NOT_CLOUD' }, 400);
+	}
+
+	const body = await jsonObjectBody<{ oldPath?: unknown; newPath?: unknown }>(context);
+	if (body instanceof Response) return body;
+	const oldPath = typeof body.oldPath === 'string' ? normalizePath(body.oldPath) : null;
+	const newPath = typeof body.newPath === 'string' ? normalizePath(body.newPath) : null;
+	if (!oldPath || !newPath || oldPath === newPath) {
+		return context.json({ error: 'oldPath and newPath must be two valid paths', code: 'INVALID_PATH' }, 400);
+	}
+	if (!isPathWithinRoots(oldPath, project.rootPaths) || !isPathWithinRoots(newPath, project.rootPaths)) {
+		return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
+	}
+
+	try {
+		await getStorageClient().undoRename(project.id, userId, oldPath.slice(1), newPath.slice(1));
+		if (isConventionFile(oldPath) || isConventionFile(newPath)) {
+			await invalidateRepoConventions(project.id, userId, redis);
+		}
+		return context.json({ success: true, path: oldPath });
+	} catch (error) {
+		console.error('Undo rename failed:', error);
+		return context.json({ error: 'Failed to undo the rename' }, 500);
+	}
+}
+
+/**
  * GET /api/projects/:owner/:project/git/committed?path=/docs/file.md
  * The committed version of a file, without the caller's draft over it: what a draft
  * conflict is with. Cloud only. `content` is null when nothing is committed at the path.

@@ -380,11 +380,22 @@ the caller already has a draft of, that draft's base. The editor keeps it with t
 document and with its local (crash-recovery) copy, and sends it with every `PUT files`.
 Storage uses it when the draft row is first written; later saves keep the row's base.
 So a file opened before someone else's commit and first saved after it still conflicts,
-and so does a local copy restored long after it was made. A write without a base (an
-agent's, a script's, or an older client's during a deploy) takes what's committed at
-the path at that moment, as does a deletion or a rename from the file tree. After the
-caller's own commit the editor takes the new base for the open file, so its next save
-isn't measured against the version it just replaced.
+and so does a local copy restored long after it was made. Renames and deletes carry a
+base too (`baseContentHash` on `PUT files/rename`, a query parameter on `DELETE files`):
+the open document's base when the file is open, otherwise the hash the file tree listed
+for it. A rename records it on the old path's deletion, so renaming a file someone has
+changed since you saw it (from the header or the tree) conflicts as "You renamed it to
+..."; the new path starts from nothing committed, and the editor takes the new path's
+base after the rename. A write without a base (an agent's, a script's, an older client's
+during a deploy, or a tree entry listed before hashes were) takes what's committed at
+the path at that moment: for a delete that means the path as committed now. A base must
+be a committed file's sha1; anything else is refused.
+
+The editor saves the open file before anything that acts on its draft as the server has
+it (a rename, a delete, resolving a conflict, a commit). During a commit it holds further
+saves (the local copy keeps them) until the commit is done and it has taken the new base
+for the open file, then saves, so an edit made mid-commit isn't measured against the
+version the commit just replaced.
 
 A draft conflicts when what's committed at its path now differs from its base (`IS
 DISTINCT FROM`): an edit of a file someone changed or deleted, a created file where
@@ -412,8 +423,11 @@ git/committed`, beside the draft, read-only), keep, and discard; a rename's row 
 { paths }`, editor-gated) re-bases the drafts on what's committed now, in one storage
 call, so the next commit takes them as they are; a draft that writes the file becomes
 `created` or `modified` to match, and a deletion of a file that's already gone is
-dropped. Discard is restore (for a rename, of both paths) and asks first. When the
-resolved file is open, the editor saves it first and reloads it after.
+dropped. Discard is restore and asks first; for a rename it's Undo my rename (`POST
+git/undo-rename`), which drops both drafts in one storage transaction and, if the new
+path was open, opens the old one. Compare on a rename's row shows the old file as
+committed beside the draft at the new path. When the resolved file is open, the editor
+saves it first and reloads it after. Rows resolve independently.
 
 Drafts that existed before migration 003 got today's committed hash as their base, since
 what they were made against was never recorded. They're treated as current, so a change

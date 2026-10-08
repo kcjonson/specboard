@@ -12,6 +12,8 @@ import {
 	upsertPendingChange,
 	deletePendingChange,
 	rebasePendingChanges,
+	undoPendingRename,
+	isDraftBaseHash,
 	type DraftBase,
 	shouldStoreInS3,
 } from '../db/queries.ts';
@@ -86,6 +88,28 @@ pendingRoutes.post('/:projectId/:userId/rebase', async (c) => {
 
 	auditLog('rebase', projectId, userId, paths.join(','));
 	return c.json(await rebasePendingChanges(projectId, userId, paths));
+});
+
+/**
+ * Undo the user's rename of oldPath to newPath, both drafts in one transaction.
+ * POST /pending/:projectId/:userId/undo-rename { oldPath, newPath }
+ */
+pendingRoutes.post('/:projectId/:userId/undo-rename', async (c) => {
+	const projectId = c.req.param('projectId');
+	const userId = c.req.param('userId');
+	const body = await c.req.json<{ oldPath?: unknown; newPath?: unknown }>().catch(() => null);
+	const oldPath = typeof body?.oldPath === 'string' ? validatePath(body.oldPath) : null;
+	const newPath = typeof body?.newPath === 'string' ? validatePath(body.newPath) : null;
+	if (!oldPath || !newPath || oldPath === newPath) {
+		return c.json({ error: 'oldPath and newPath must be two valid paths' }, 400);
+	}
+
+	auditLog('undo-rename', projectId, userId, `${oldPath} -> ${newPath}`);
+	const largeDropped = await undoPendingRename(projectId, userId, oldPath, newPath);
+	for (const { path } of largeDropped) {
+		await deletePendingContent(projectId, userId, path).catch((err) => console.warn(`Failed to delete pending S3 content for ${path}:`, err));
+	}
+	return c.json({ undone: true });
 });
 
 /**
@@ -171,7 +195,7 @@ pendingRoutes.put('/:projectId/:userId/:path{.+}', async (c) => {
 	const base: DraftBase = 'baseContentHash' in body
 		? { given: true, hash: body.baseContentHash ?? null }
 		: { given: false };
-	if (base.given && base.hash !== null && typeof base.hash !== 'string') {
+	if (base.given && base.hash !== null && !isDraftBaseHash(base.hash)) {
 		return c.json({ error: 'Invalid baseContentHash' }, 400);
 	}
 

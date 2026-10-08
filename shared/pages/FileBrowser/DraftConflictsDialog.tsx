@@ -12,6 +12,8 @@ export interface DraftConflictsDialogProps {
 	onBeforeResolve?: (path: string) => Promise<void>;
 	/** After a draft is kept or discarded, so whatever shows that file reloads it. */
 	onResolved?: (path: string) => void | Promise<void>;
+	/** After a rename is undone: the file is back at oldPath and newPath is gone. */
+	onRenameUndone?: (oldPath: string, newPath: string) => void | Promise<void>;
 }
 
 /** How the row describes what the caller did, and what its two actions are called. */
@@ -54,11 +56,19 @@ function regionId(path: string): string {
  * file: compare the version committed now with the draft, keep the draft (its base
  * becomes the version committed now), or discard it (back to the committed version).
  */
-export function DraftConflictsDialog({ open, gitStatus, onClose, onBeforeResolve, onResolved }: DraftConflictsDialogProps): JSX.Element | null {
+export function DraftConflictsDialog({
+	open,
+	gitStatus,
+	onClose,
+	onBeforeResolve,
+	onResolved,
+	onRenameUndone,
+}: DraftConflictsDialogProps): JSX.Element | null {
 	const [comparing, setComparing] = useState<string | null>(null);
 	const [versions, setVersions] = useState<Versions | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
-	const [busy, setBusy] = useState<string | null>(null);
+	// The rows with a keep or discard in flight; each clears only itself.
+	const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
 	const [confirmDiscard, setConfirmDiscard] = useState<ChangedFile | null>(null);
 	// The row whose position should take focus once a resolution re-renders the list.
 	const [focusAt, setFocusAt] = useState<number | null>(null);
@@ -78,7 +88,8 @@ export function DraftConflictsDialog({ open, gitStatus, onClose, onBeforeResolve
 
 	if (!open) return null;
 
-	const toggleCompare = async (path: string): Promise<void> => {
+	const toggleCompare = async (file: ChangedFile): Promise<void> => {
+		const path = file.path;
 		if (comparing === path) {
 			setComparing(null);
 			return;
@@ -88,7 +99,12 @@ export function DraftConflictsDialog({ open, gitStatus, onClose, onBeforeResolve
 		setVersions(null);
 		setLoadError(null);
 		try {
-			const [committed, draft] = await Promise.all([gitStatus.readCommitted(path), gitStatus.readDraft(path)]);
+			// A rename's draft lives at the new path: compare the old file as committed
+			// now with what the caller has there.
+			const [committed, draft] = await Promise.all([
+				gitStatus.readCommitted(path),
+				gitStatus.readDraft(file.renamedTo ?? path),
+			]);
 			// A slower answer for a row since closed or replaced shows nowhere.
 			if (request === compareRequest.current) setVersions({ path, committed, draft });
 		} catch {
@@ -98,21 +114,29 @@ export function DraftConflictsDialog({ open, gitStatus, onClose, onBeforeResolve
 
 	const resolve = async (file: ChangedFile, action: 'keep' | 'discard'): Promise<void> => {
 		const index = conflicts.findIndex((f) => f.path === file.path);
-		setBusy(file.path);
-		await onBeforeResolve?.(file.path);
+		const undoingRename = action === 'discard' && file.status === 'deleted' && file.renamedTo !== undefined;
+		setBusy((rows) => new Set(rows).add(file.path));
 		let done: boolean;
-		if (action === 'keep') {
-			done = await gitStatus.keepMine([file.path]);
-		} else if (file.status === 'deleted' && file.renamedTo) {
-			done = await gitStatus.undoRename(file.path, file.renamedTo);
-		} else {
-			done = await gitStatus.restore(file.path);
+		try {
+			await onBeforeResolve?.(undoingRename ? file.renamedTo! : file.path);
+			if (action === 'keep') {
+				done = await gitStatus.keepMine([file.path]);
+			} else if (undoingRename) {
+				done = await gitStatus.undoRename(file.path, file.renamedTo!);
+			} else {
+				done = await gitStatus.restore(file.path);
+			}
+		} finally {
+			setBusy((rows) => {
+				const next = new Set(rows);
+				next.delete(file.path);
+				return next;
+			});
 		}
-		setBusy(null);
 		if (done) {
 			if (comparing === file.path) setComparing(null);
-			await onResolved?.(file.path);
-			if (file.renamedTo && action === 'discard') await onResolved?.(file.renamedTo);
+			if (undoingRename) await onRenameUndone?.(file.path, file.renamedTo!);
+			else await onResolved?.(file.path);
 			setFocusAt(index);
 		}
 	};
@@ -139,7 +163,7 @@ export function DraftConflictsDialog({ open, gitStatus, onClose, onBeforeResolve
 						{conflicts.map((file) => {
 							const copy = describe(file);
 							const isComparing = comparing === file.path;
-							const rowBusy = busy === file.path;
+							const rowBusy = busy.has(file.path);
 							return (
 								<li key={file.path} class={styles.item}>
 									<div class={styles.row}>
@@ -151,7 +175,7 @@ export function DraftConflictsDialog({ open, gitStatus, onClose, onBeforeResolve
 												aria-label={`Compare versions of ${file.path}`}
 												aria-expanded={isComparing}
 												aria-controls={regionId(file.path)}
-												onClick={() => toggleCompare(file.path)}
+												onClick={() => toggleCompare(file)}
 											>
 												{isComparing ? 'Hide' : 'Compare'}
 											</Button>
@@ -184,10 +208,10 @@ export function DraftConflictsDialog({ open, gitStatus, onClose, onBeforeResolve
 														? <p class={styles.muted}>Deleted from the repository.</p>
 														: <pre class={styles.content}>{versions.committed}</pre>}
 												</section>
-												<section class={styles.side} aria-label={`Your draft: ${file.path}`}>
-													<h4 class={styles.sideTitle}>Your draft</h4>
+												<section class={styles.side} aria-label={`Your draft: ${file.renamedTo ?? file.path}`}>
+													<h4 class={styles.sideTitle}>{file.renamedTo ? `Your draft at ${file.renamedTo}` : 'Your draft'}</h4>
 													{versions.draft === null
-														? <p class={styles.muted}>{file.renamedTo ? `You renamed it to ${file.renamedTo}.` : 'You deleted this file.'}</p>
+														? <p class={styles.muted}>You deleted this file.</p>
 														: <pre class={styles.content}>{versions.draft}</pre>}
 												</section>
 											</>

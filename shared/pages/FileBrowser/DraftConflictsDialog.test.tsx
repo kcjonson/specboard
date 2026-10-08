@@ -109,17 +109,44 @@ describe('DraftConflictsDialog', () => {
 	it('asks before discarding, undoes a rename, and puts focus on Close when none are left', async () => {
 		const model = gitStatus();
 		model.files = model.files.slice(1);
-		const onResolved = vi.fn();
-		const { getByRole, findByRole } = render(<DraftConflictsDialog open gitStatus={model} onClose={vi.fn()} onResolved={onResolved} />);
+		const onRenameUndone = vi.fn();
+		const { getByRole, findByRole } = render(<DraftConflictsDialog open gitStatus={model} onClose={vi.fn()} onRenameUndone={onRenameUndone} />);
 
 		fireEvent.click(getByRole('button', { name: 'Undo my rename: /docs/old.md' }));
 		expect(model.undoRename).not.toHaveBeenCalled();
 		fireEvent.click(await findByRole('button', { name: 'Undo my rename' }));
 
 		await waitFor(() => expect(model.undoRename).toHaveBeenCalledWith('/docs/old.md', '/docs/new.md'));
-		await waitFor(() => expect(onResolved).toHaveBeenCalledWith('/docs/new.md'));
+		await waitFor(() => expect(onRenameUndone).toHaveBeenCalledWith('/docs/old.md', '/docs/new.md'));
 		// The footer's Close (the header's X is also named Close).
 		await waitFor(() => expect(document.activeElement?.textContent).toBe('Close'));
+	});
+
+	it('compares a rename\'s source as committed with the draft at its new path', async () => {
+		const model = gitStatus();
+		const { getByRole, getByText } = render(<DraftConflictsDialog open gitStatus={model} onClose={vi.fn()} />);
+
+		fireEvent.click(getByRole('button', { name: 'Compare versions of /docs/old.md' }));
+
+		await waitFor(() => expect(getByText('# Theirs /docs/old.md')).toBeTruthy());
+		expect(getByText('# Mine /docs/new.md')).toBeTruthy();
+		expect(getByText('Your draft at /docs/new.md')).toBeTruthy();
+	});
+
+	it('lets two rows resolve at once, each clearing only its own busy state', async () => {
+		const model = gitStatus();
+		let finishFirst: (value: boolean) => void = () => {};
+		vi.mocked(model.keepMine).mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }));
+		vi.mocked(model.keepMine).mockImplementationOnce(() => new Promise(() => {}));
+		const { getByRole } = render(<DraftConflictsDialog open gitStatus={model} onClose={vi.fn()} />);
+
+		fireEvent.click(getByRole('button', { name: 'Keep mine: /docs/spec.md' }));
+		fireEvent.click(getByRole('button', { name: 'Keep my rename: /docs/old.md' }));
+		await waitFor(() => expect(getByRole('button', { name: 'Keep my rename: /docs/old.md' }).getAttribute('aria-busy')).toBe('true'));
+		finishFirst(false);
+
+		await waitFor(() => expect(getByRole('button', { name: 'Keep mine: /docs/spec.md' }).getAttribute('aria-busy')).toBeNull());
+		expect(getByRole('button', { name: 'Keep my rename: /docs/old.md' }).getAttribute('aria-busy')).toBe('true');
 	});
 
 	it('marks only the row being resolved as busy', async () => {

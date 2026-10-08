@@ -15,12 +15,16 @@ export interface GitStatusBarProps {
 	onBeforePull?: () => Promise<void>;
 	/** Called after a successful pull completes */
 	onPullComplete?: () => void | Promise<void>;
-	/** Called after a commit lands */
-	onCommitted?: () => void | Promise<void>;
+	/** Called before a commit, to save the open document */
+	onBeforeCommit?: () => Promise<void>;
+	/** Called when a commit attempt ends, landed or not */
+	onAfterCommit?: (committed: boolean) => void | Promise<void>;
 	/** Called before a draft conflict on this path is kept or discarded */
 	onBeforeResolveDraft?: (path: string) => Promise<void>;
 	/** Called after a draft conflict on this path was kept or discarded */
 	onDraftResolved?: (path: string) => void | Promise<void>;
+	/** Called after a rename was undone, the file back at oldPath */
+	onRenameUndone?: (oldPath: string, newPath: string) => void | Promise<void>;
 }
 
 export function GitStatusBar({
@@ -28,9 +32,11 @@ export function GitStatusBar({
 	hasUnsavedChanges,
 	onBeforePull,
 	onPullComplete,
-	onCommitted,
+	onBeforeCommit,
+	onAfterCommit,
 	onBeforeResolveDraft,
 	onDraftResolved,
+	onRenameUndone,
 }: GitStatusBarProps): JSX.Element {
 	const [showCommitDialog, setShowCommitDialog] = useState(false);
 	const [showPullConfirm, setShowPullConfirm] = useState(false);
@@ -64,8 +70,13 @@ export function GitStatusBar({
 	const handleCommit = async (message?: string): Promise<void> => {
 		// Store the message for potential retry
 		lastCommitMessageRef.current = message || '';
-		const committed = await gitStatus.commit(message);
-		if (committed) await onCommitted?.();
+		await onBeforeCommit?.();
+		let committed = false;
+		try {
+			committed = (await gitStatus.commit(message)) !== null;
+		} finally {
+			await onAfterCommit?.(committed);
+		}
 
 		// Refused over drafts someone else's commit has changed under: those get resolved
 		// first, in their own dialog; the message is kept for the commit after.
@@ -200,6 +211,7 @@ export function GitStatusBar({
 				onClose={() => setShowConflicts(false)}
 				onBeforeResolve={onBeforeResolveDraft}
 				onResolved={onDraftResolved}
+				onRenameUndone={onRenameUndone}
 			/>
 
 			{/* Pull confirmation when there are unsaved changes */}

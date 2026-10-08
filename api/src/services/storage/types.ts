@@ -16,6 +16,8 @@ export interface FileEntry {
 	type: 'file' | 'directory';
 	size?: number;
 	modifiedAt?: Date;
+	/** Cloud: the committed version's hash, which a tree delete or rename sends as its base. */
+	contentHash?: string;
 }
 
 export interface ListDirectoryOptions {
@@ -88,9 +90,11 @@ export interface StorageProvider {
 	 * script), which takes what's committed at the path now.
 	 */
 	writeFile(relativePath: string, content: string, baseContentHash?: string | null): Promise<void>;
-	deleteFile(relativePath: string): Promise<void>;
+	/** `baseContentHash`: what the caller last saw of the file, as for writeFile. */
+	deleteFile(relativePath: string, baseContentHash?: string | null): Promise<void>;
 	createDirectory(relativePath: string): Promise<void>;
-	rename(oldPath: string, newPath: string): Promise<void>;
+	/** `sourceBaseContentHash`: what the caller last saw of the file being renamed. */
+	rename(oldPath: string, newPath: string, sourceBaseContentHash?: string | null): Promise<void>;
 	exists(relativePath: string): Promise<boolean>;
 
 	// Git operations

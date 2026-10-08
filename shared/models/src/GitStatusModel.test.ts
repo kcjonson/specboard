@@ -93,13 +93,15 @@ describe('draft conflicts', () => {
 		expect(fetchClient.get).toHaveBeenCalledWith('/api/projects/acme/docs/git/status');
 	});
 
-	it('undoes a rename by discarding the new path and restoring the old one', async () => {
+	it('undoes a rename in one request', async () => {
 		vi.mocked(fetchClient.post).mockResolvedValue({ success: true });
 		vi.mocked(fetchClient.get).mockResolvedValue({ branch: 'main', ahead: 0, behind: 0, changedFiles: [] });
 
 		expect(await model().undoRename('/docs/spec.md', '/docs/moved.md')).toBe(true);
 
-		expect(vi.mocked(fetchClient.post).mock.calls.map((call) => call[1])).toEqual([{ path: '/docs/moved.md' }, { path: '/docs/spec.md' }]);
+		expect(vi.mocked(fetchClient.post).mock.calls).toEqual([
+			['/api/projects/acme/docs/git/undo-rename', { oldPath: '/docs/spec.md', newPath: '/docs/moved.md' }],
+		]);
 	});
 
 	it('knows which folders hold a conflicting draft', () => {

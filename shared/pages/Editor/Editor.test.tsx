@@ -220,5 +220,55 @@ describe('Editor and the version a draft is made against', () => {
 		const { loadFromLocalStorage } = await import('@specboard/models');
 		expect(loadFromLocalStorage('id-docs', FILE)?.baseContentHash).toBe('v0');
 	});
+
+	it('saves before a header rename and sends the base the file was opened with', async () => {
+		const BASE = 'a'.repeat(40);
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		get.mockImplementation(async (url: string) =>
+			url.startsWith('/api/projects/acme/docs/files') ? { content: '# Spec\n\nBody', baseContentHash: BASE } : files(url)
+		);
+		const order: string[] = [];
+		put.mockImplementation(async () => { order.push('save'); return {}; });
+		const renameFile = vi.fn(async (_path: string, name: string) => { order.push('rename'); return `/docs/${name}`; });
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+		act(() => (seen.files!.onRenameFileRef as (fn: typeof renameFile) => void)(renameFile));
+
+		const model = seen.editor!.model as DocumentModel;
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'An edit' }] }] }));
+		await act(async () => {
+			await (seen.header!.onRename as (name: string) => Promise<void>)('renamed.md');
+		});
+
+		expect(order).toEqual(['save', 'rename']);
+		expect(renameFile).toHaveBeenCalledWith(FILE, 'renamed.md', BASE);
+	});
+
+	it('saves before a commit and holds saves until the commit is done', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		put.mockResolvedValue({});
+		const { findByTestId } = renderEditor('docs');
+		await findByTestId('markdown-editor');
+		const model = seen.editor!.model as DocumentModel;
+
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'Before' }] }] }));
+		await act(async () => {
+			await (seen.files!.onBeforeCommit as () => Promise<void>)();
+		});
+		expect(put).toHaveBeenCalledTimes(1);
+
+		// An edit while the commit runs isn't saved until it's over.
+		act(() => model.set({ content: [{ type: 'paragraph', children: [{ text: 'During' }] }] }));
+		await act(async () => {
+			await (seen.files!.onBeforeFileChange as (path: string) => Promise<void>)(FILE);
+		});
+		expect(put).toHaveBeenCalledTimes(1);
+
+		await act(async () => {
+			await (seen.files!.onAfterCommit as (committed: boolean) => Promise<void>)(true);
+		});
+		expect(put).toHaveBeenCalledTimes(2);
+	});
 });
 
