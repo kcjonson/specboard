@@ -292,8 +292,9 @@ export class MapDataModel implements Observable {
 		const base = project.latest;
 		if (!base) return project.read(null);
 		const read = await project.read(base.cursor);
-		// A load or dispose has overtaken this round: nothing waits for the whole read a failed merge would need.
-		if (epoch !== this.epoch) return base;
+		// A load or dispose has overtaken this round, or the project was dropped while its read was
+		// out: nothing waits for the whole read a failed merge would need.
+		if (epoch !== this.epoch || project.failure?.unreadable) return base;
 		return (read.delta ? mergeRead(base, read) : read) ?? project.read(null);
 	}
 

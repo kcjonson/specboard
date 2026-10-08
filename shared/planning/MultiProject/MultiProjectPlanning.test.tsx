@@ -562,6 +562,26 @@ describe('MultiProjectPlanning keys', () => {
 		expect(window.location.pathname).toBe('/projects/acme/two/planning');
 	});
 
+	it('moves the open drawer with the arrows, and Enter keeps it on the card they landed on', async () => {
+		const view = renderAt('/planning?projects=acme/one,acme/two');
+		await view.findByText('ONE item 1');
+		const first = card(view, 'ONE item 1');
+		// A click focuses the card, as a browser's does, then selects and opens it.
+		first.focus();
+		fireEvent.click(first);
+		await findDrawer(view, 'ONE-1 · Task');
+		await afterEffects();
+
+		fireEvent.keyDown(first, { key: 'ArrowDown' });
+		await findDrawer(view, 'TWO-1 · Epic');
+		expect(document.activeElement).toBe(card(view, 'TWO item 1'));
+
+		fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
+		await afterEffects();
+		expect(window.location.search).toBe('?projects=acme/one,acme/two&item=TWO-1');
+		expect(view.getByRole('heading', { name: 'TWO-1 · Epic' })).toBeTruthy();
+	});
+
 	it('opens a focused card on Enter, as one new history entry', async () => {
 		const view = renderAt('/planning?projects=acme/one,acme/two');
 		await view.findByText('TWO item 1');

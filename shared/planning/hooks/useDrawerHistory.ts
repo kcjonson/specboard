@@ -90,10 +90,13 @@ export function useDrawerHistory(
 		else opening.current = null;
 	}, [openItemKey]);
 
-	// The router writes a fresh state with every navigation, so a replace of our own puts the mark back.
+	// The router writes a fresh state with every navigation, so a replace of our own puts the
+	// mark back, on the entry our opening pushed and on no other: after a view picked or a Map
+	// jump, the entry being replaced is that push's, and Back from it would reopen the drawer.
 	const moveTo = useCallback((itemKey: string): void => {
+		const mark = opening.current !== null && markOfEntry() === opening.current.mark ? opening.current.mark : null;
 		navigate(addressFor(itemKey), { replace: true });
-		if (opening.current) window.history.replaceState(stateWith(opening.current.mark), '');
+		if (mark !== null) window.history.replaceState(stateWith(mark), '');
 	}, [addressFor]);
 
 	// Closing undoes our own push where Back lands where closing should, which leaves the

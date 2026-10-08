@@ -7,6 +7,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/preact';
+import type { JSX } from 'preact';
+import { useState } from 'preact/hooks';
 import { ItemsCollection, type ItemModel, type ItemStatus } from '@specboard/models';
 import { MergedItems } from '../MultiProject/merged-items';
 import { Board } from './Board';
@@ -197,7 +199,7 @@ describe('Board keys', () => {
 		return { link, button, drawer, remove: () => [link, button, drawer].forEach((element) => element.remove()) };
 	}
 
-	it('leaves a key aimed at a link, a control, or the drawer to it, a card selected or not', async () => {
+	it('leaves the keys that follow a link or press a button to it, and every key aimed into the drawer', async () => {
 		const onOpenItem = vi.fn();
 		const onSelectItem = vi.fn();
 		await renderBoard({ ready: 2 }, { selectedItemKey: 'SB-ready-1', onOpenItem, onSelectItem });
@@ -206,29 +208,73 @@ describe('Board keys', () => {
 		// fireEvent answers false when a listener cancelled the key, which would stop Enter following the link.
 		expect(fireEvent.keyDown(link, { key: 'Enter' })).toBe(true);
 		expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
-		expect(fireEvent.keyDown(button, { key: 'ArrowDown' })).toBe(true);
+		expect(fireEvent.keyDown(button, { key: ' ' })).toBe(true);
 		expect(fireEvent.keyDown(drawer, { key: 'ArrowDown' })).toBe(true);
+		expect(fireEvent.keyDown(drawer, { key: 'Escape' })).toBe(true);
 		expect(onOpenItem).not.toHaveBeenCalled();
 		expect(onSelectItem).not.toHaveBeenCalled();
 
-		// Aimed at the board, the same keys are the board's.
-		fireEvent.keyDown(document.body, { key: 'ArrowDown' });
-		await waitFor(() => expect(onSelectItem).toHaveBeenCalledTimes(1));
+		// Aimed at the board, Enter is the board's.
 		fireEvent.keyDown(document.body, { key: 'Enter' });
 		expect(onOpenItem).toHaveBeenCalledTimes(1);
 		remove();
 	});
 
-	it('opens the card Enter is pressed on, once, whichever card is selected', async () => {
+	it('takes its other keys from a focused link or button: the arrows, Escape, the shortcuts', async () => {
+		const onSelectItem = vi.fn();
+		const onCreateItem = vi.fn();
+		await renderBoard({ ready: 2 }, { selectedItemKey: 'SB-ready-1', onSelectItem, onCreateItem });
+		const { link, button, remove } = elsewhere();
+
+		expect(fireEvent.keyDown(button, { key: 'ArrowDown' })).toBe(false);
+		expect((onSelectItem.mock.calls.at(-1)?.[0] as ItemModel).key).toBe('SB-ready-2');
+		fireEvent.keyDown(link, { key: 'Escape' });
+		expect(onSelectItem).toHaveBeenLastCalledWith(undefined);
+		fireEvent.keyDown(button, { key: 'n' });
+		expect(onCreateItem).toHaveBeenCalledTimes(1);
+		remove();
+	});
+
+	/** A board whose selection is its own to keep, as a page's is. */
+	function SelectingBoard({ items, selected: initial, onOpenItem }: { items: ItemsCollection; selected?: string; onOpenItem: (item: ItemModel) => void }): JSX.Element {
+		const [selected, setSelected] = useState<string | undefined>(initial);
+		return <Board items={items} canEdit={false} selectedItemKey={selected} onSelectItem={(item) => setSelected(item?.key)} onOpenItem={onOpenItem} />;
+	}
+
+	async function renderSelecting(selected?: string): Promise<{ cards: HTMLElement[]; onOpenItem: ReturnType<typeof vi.fn> }> {
+		serve({ ready: 3 });
+		const items = new ItemsCollection({ projectRef: 'acme/demo', limit: 100 });
+		await items.fetch();
 		const onOpenItem = vi.fn();
-		const { container } = await renderBoard({ ready: 2 }, { selectedItemKey: 'SB-ready-1', onOpenItem });
-		const board: HTMLElement = container;
-		const cards = board.querySelectorAll<HTMLElement>('[data-item-card]');
+		const { container } = render(<SelectingBoard items={items} selected={selected} onOpenItem={onOpenItem} />);
+		return { cards: Array.from(container.querySelectorAll<HTMLElement>('[data-item-card]')), onOpenItem };
+	}
+
+	it('moves focus with the selection, so Enter opens the card the arrows landed on', async () => {
+		const { cards, onOpenItem } = await renderSelecting();
+
+		// A click selects a card and, as in a browser, focuses it; it opens it too.
+		cards[0]!.focus();
+		fireEvent.click(cards[0]!);
+		onOpenItem.mockClear();
+
+		fireEvent.keyDown(cards[0]!, { key: 'ArrowDown' });
+		expect(document.activeElement).toBe(cards[1]);
+		await waitFor(() => expect(cards[1]!.getAttribute('aria-selected')).toBe('true'));
 
 		fireEvent.keyDown(cards[1]!, { key: 'Enter' });
-
 		expect(onOpenItem).toHaveBeenCalledTimes(1);
 		expect((onOpenItem.mock.calls[0]?.[0] as ItemModel).key).toBe('SB-ready-2');
+	});
+
+	it('acts on the card focus is on, so the arrows move on from a card reached with Tab', async () => {
+		const { cards } = await renderSelecting('SB-ready-1');
+
+		cards[2]!.focus();
+		fireEvent.keyDown(cards[2]!, { key: 'ArrowUp' });
+
+		expect(document.activeElement).toBe(cards[1]);
+		await waitFor(() => expect(cards[1]!.getAttribute('aria-selected')).toBe('true'));
 	});
 
 	it('leaves Enter on a card\'s own new-window button to the button', async () => {

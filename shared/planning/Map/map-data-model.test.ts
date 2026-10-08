@@ -707,9 +707,11 @@ describe('MapDataModel across projects', () => {
 		expect(model.changes).toBeNull();
 		expect(keysOf(model.rows.values())).toEqual(keysOf(spe.rows));
 
-		out.land(wholeRead(pln.rows));
+		// A delta that doesn't add up would be followed by a whole read, but not of a project dropped meanwhile.
+		out.land(deltaRead([], pln.rows.length - 1));
 		await polled;
 		await drain();
+		expect(b.asked).toHaveLength(2);
 		expect(keysOf(model.rows.values())).toEqual(keysOf(spe.rows));
 		expect(model.failures.get('kim/planner')).toMatchObject({ unreadable: true });
 

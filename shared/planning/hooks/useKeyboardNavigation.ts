@@ -3,15 +3,8 @@ import type { ItemModel, Status, ItemStatus } from '@specboard/models';
 
 const DEFAULT_COLUMNS: ItemStatus[] = ['ready', 'in_progress', 'done'];
 
-/**
- * Where a key is aimed at something that has keys of its own, the board leaves it alone:
- * a link or a control (Enter activates it, and arrows change a dropdown, which a board
- * shortcut would cancel), anything being typed in, a dialog, and the item drawer, the
- * drawer's own fields and links included.
- */
+/** Where every key is someone else's: anything typed in, a dialog, and the item drawer, its own links included. */
 const KEYS_OF_THEIR_OWN = [
-	'a[href]',
-	'button',
 	'input',
 	'select',
 	'textarea',
@@ -21,13 +14,37 @@ const KEYS_OF_THEIR_OWN = [
 	'[data-item-drawer]',
 ].join(', ');
 
+/** The keys a link or a button answers itself: they follow it or press it. */
+const ACTIVATION_KEYS = new Set(['Enter', ' ']);
+
+/**
+ * Whether a key belongs to what it's aimed at rather than to the board. A field, a dialog,
+ * or the drawer keeps every key. A link or a button keeps only the keys that activate it,
+ * so the board's arrows, Escape, and shortcuts still work with one focused (the view toggle
+ * after a click, a card's new-window button, Show more). A card opens itself on Enter.
+ */
 function handledElsewhere(e: KeyboardEvent): boolean {
 	const target = e.target instanceof Element ? e.target : null;
 	if (!target) return false;
 	if (target.closest(KEYS_OF_THEIR_OWN) !== null) return true;
-	// A card opens itself on Enter, so the board's Enter is for a selection with focus elsewhere.
+	if (ACTIVATION_KEYS.has(e.key) && target.closest('a[href], button') !== null) return true;
 	return e.key === 'Enter' && target.closest('[data-item-card]') !== null;
 }
+
+/** The key of the card a key was pressed on, when it was pressed on one (or on something inside one). */
+function cardKeyOf(e: KeyboardEvent): string | undefined {
+	const card = e.target instanceof Element ? e.target.closest('[data-item-card]') : null;
+	return card?.getAttribute('data-item-key') ?? undefined;
+}
+
+/** Where a card is on the board: its column and its place in it. */
+interface Position {
+	item: ItemModel | undefined;
+	status: ItemStatus | undefined;
+	index: number;
+}
+
+const NOWHERE: Position = { item: undefined, status: undefined, index: -1 };
 
 interface KeyboardNavigationOptions {
 	/** All items grouped by status */
@@ -43,6 +60,8 @@ interface KeyboardNavigationOptions {
 	selectedItemKey: string | undefined;
 	/** Whether a dialog is open (disables shortcuts) */
 	dialogOpen: boolean;
+	/** The board's element, whose card the arrows land on takes focus. */
+	board: { readonly current: HTMLElement | null };
 	/** Callback when selection changes */
 	onSelectItem: (item: ItemModel | undefined) => void;
 	/** Callback to open an item */
@@ -53,92 +72,91 @@ interface KeyboardNavigationOptions {
 	onMoveItem: (item: ItemModel, status: Status) => void;
 }
 
+/**
+ * The board's keys. They act on the card they're pressed on, and on the selected card
+ * while focus is elsewhere. The arrows move the selection and focus together, so a screen
+ * reader says the card they land on, its column scrolls to it, and Enter opens it.
+ */
 export function useKeyboardNavigation({
 	itemsByStatus,
 	columns = DEFAULT_COLUMNS,
 	selectedItemKey,
 	dialogOpen,
+	board,
 	onSelectItem,
 	onOpenItem,
 	onCreateItem,
 	onMoveItem,
 }: KeyboardNavigationOptions): void {
-	// Find the selected item and its position
-	const findSelectedItem = useCallback((): {
-		item: ItemModel | undefined;
-		status: ItemStatus | undefined;
-		index: number;
-	} => {
-		if (!selectedItemKey) {
-			return { item: undefined, status: undefined, index: -1 };
-		}
-
+	const locate = useCallback((key: string | undefined): Position => {
+		if (!key) return NOWHERE;
 		for (const status of columns) {
 			const items = itemsByStatus[status] ?? [];
-			const index = items.findIndex((e) => e.key === selectedItemKey);
+			const index = items.findIndex((e) => e.key === key);
 			if (index !== -1) {
 				return { item: items[index], status, index };
 			}
 		}
+		return NOWHERE;
+	}, [itemsByStatus, columns]);
 
-		return { item: undefined, status: undefined, index: -1 };
-	}, [selectedItemKey, itemsByStatus, columns]);
+	const land = useCallback((item: ItemModel | undefined): void => {
+		if (!item) return;
+		onSelectItem(item);
+		board.current?.querySelector<HTMLElement>(`[data-item-card][data-item-key="${item.key}"]`)?.focus();
+	}, [board, onSelectItem]);
 
 	// Navigate up/down within a column
 	const navigateVertical = useCallback(
-		(direction: 'up' | 'down') => {
-			const { status, index } = findSelectedItem();
-
-			if (!status) {
+		(direction: 'up' | 'down', from: Position, fromKey: string | undefined) => {
+			if (!from.status) {
 				// A selection that isn't on the board (a child item, open in the drawer)
 				// is not something arrow keys can step through — leave it alone rather
 				// than treating it as "nothing selected" and jumping to the first card,
 				// which would yank the drawer to an unrelated item.
-				if (selectedItemKey) return;
+				if (fromKey) return;
 
 				// No selection, select first item in first non-empty column
 				for (const s of columns) {
 					const items = itemsByStatus[s] ?? [];
 					if (items.length > 0) {
-						onSelectItem(items[0]);
+						land(items[0]);
 						return;
 					}
 				}
 				return;
 			}
 
-			const items = itemsByStatus[status] ?? [];
-			const newIndex = direction === 'up' ? index - 1 : index + 1;
+			const items = itemsByStatus[from.status] ?? [];
+			const newIndex = direction === 'up' ? from.index - 1 : from.index + 1;
 
 			if (newIndex >= 0 && newIndex < items.length) {
-				onSelectItem(items[newIndex]);
+				land(items[newIndex]);
 			}
 		},
-		[findSelectedItem, selectedItemKey, itemsByStatus, columns, onSelectItem]
+		[itemsByStatus, columns, land]
 	);
 
 	// Navigate left/right between columns
 	const navigateHorizontal = useCallback(
-		(direction: 'left' | 'right') => {
-			const { status, index } = findSelectedItem();
-
-			if (!status) {
+		(direction: 'left' | 'right', from: Position, fromKey: string | undefined) => {
+			if (!from.status) {
 				// Same as navigateVertical: an off-board selection isn't steppable.
-				if (selectedItemKey) return;
+				if (fromKey) return;
 
 				// No selection, select first item in first/last non-empty column
 				const statuses = direction === 'left' ? [...columns].reverse() : columns;
 				for (const s of statuses) {
 					const items = itemsByStatus[s] ?? [];
 					if (items.length > 0) {
-						onSelectItem(items[0]);
+						land(items[0]);
 						return;
 					}
 				}
 				return;
 			}
 
-			const currentStatusIndex = columns.indexOf(status);
+			const currentStatusIndex = columns.indexOf(from.status);
 			const newStatusIndex =
 				direction === 'left' ? currentStatusIndex - 1 : currentStatusIndex + 1;
 
@@ -148,51 +166,52 @@ export function useKeyboardNavigation({
 					const newColumnItems = itemsByStatus[newStatus] ?? [];
 					if (newColumnItems.length > 0) {
 						// Try to maintain similar position, or go to last item
-						const newIndex = Math.min(index, newColumnItems.length - 1);
-						onSelectItem(newColumnItems[newIndex]);
+						const newIndex = Math.min(from.index, newColumnItems.length - 1);
+						land(newColumnItems[newIndex]);
 					}
 				}
 			}
 		},
-		[findSelectedItem, selectedItemKey, itemsByStatus, columns, onSelectItem]
+		[itemsByStatus, columns, land]
 	);
 
-	// Move selected item to a status
+	// Move an item to a status
 	const moveToStatus = useCallback(
-		(targetStatus: Status) => {
-			const { item } = findSelectedItem();
+		(item: ItemModel | undefined, targetStatus: Status) => {
 			if (item && item.status !== targetStatus) {
 				onMoveItem(item, targetStatus);
 			}
 		},
-		[findSelectedItem, onMoveItem]
+		[onMoveItem]
 	);
 
 	const handleKeyDown = useCallback(
 		(e: KeyboardEvent) => {
 			if (dialogOpen || handledElsewhere(e)) return;
 
-			const { item } = findSelectedItem();
+			const key = cardKeyOf(e) ?? selectedItemKey;
+			const from = locate(key);
+			const { item } = from;
 
 			switch (e.key) {
 				case 'ArrowUp':
 					e.preventDefault();
-					navigateVertical('up');
+					navigateVertical('up', from, key);
 					break;
 
 				case 'ArrowDown':
 					e.preventDefault();
-					navigateVertical('down');
+					navigateVertical('down', from, key);
 					break;
 
 				case 'ArrowLeft':
 					e.preventDefault();
-					navigateHorizontal('left');
+					navigateHorizontal('left', from, key);
 					break;
 
 				case 'ArrowRight':
 					e.preventDefault();
-					navigateHorizontal('right');
+					navigateHorizontal('right', from, key);
 					break;
 
 				case 'Enter':
@@ -216,28 +235,29 @@ export function useKeyboardNavigation({
 				case '1':
 					if (item) {
 						e.preventDefault();
-						moveToStatus('ready');
+						moveToStatus(item, 'ready');
 					}
 					break;
 
 				case '2':
 					if (item) {
 						e.preventDefault();
-						moveToStatus('in_progress');
+						moveToStatus(item, 'in_progress');
 					}
 					break;
 
 				case '3':
 					if (item) {
 						e.preventDefault();
-						moveToStatus('done');
+						moveToStatus(item, 'done');
 					}
 					break;
 			}
 		},
 		[
 			dialogOpen,
-			findSelectedItem,
+			selectedItemKey,
+			locate,
 			navigateVertical,
 			navigateHorizontal,
 			onSelectItem,

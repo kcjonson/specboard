@@ -322,9 +322,12 @@ so the board turns read-only to match.
 
 ## Keyboard Shortcuts
 
-The board's keys apply with focus on the board or nowhere. A key aimed at a link, a button,
-a field, a dialog, or the item drawer is left to it, so Enter follows a link or presses a
-button even with a card selected, and Enter on a focused card opens that card.
+The board's keys act on the card focus is on, and on the selected card while focus is
+elsewhere; the arrows move the selection and focus together, so a screen reader says the
+card they land on and Enter opens it. A key aimed at a field, a dialog, or the item drawer is
+left to it, and so are the keys that follow a link or press a button (Enter, Space), even with
+a card selected; the arrows, Escape, and the shortcuts still work with a link or a button
+focused.
 
 ### Global
 

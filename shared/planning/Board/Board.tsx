@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from 'preact/hooks';
+import { useMemo, useCallback, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
 import type { ItemModel, ItemsCollection, ItemsSource, Status, ItemStatus } from '@specboard/models';
 import { Column, type ColumnMore } from '../Column/Column';
@@ -244,11 +244,13 @@ export function Board(props: BoardProps): JSX.Element {
 		{ status: 'done', title: 'Done', items: itemsByStatus.done, droppable: true },
 	];
 
+	const boardRef = useRef<HTMLDivElement>(null);
 	useKeyboardNavigation({
 		itemsByStatus,
 		columns: columns.map((column) => column.status),
 		selectedItemKey,
 		dialogOpen,
+		board: boardRef,
 		onSelectItem,
 		onOpenItem,
 		onCreateItem: props.canEdit ? props.onCreateItem : noop,
@@ -263,7 +265,7 @@ export function Board(props: BoardProps): JSX.Element {
 	}
 
 	return (
-		<div class={styles.board}>
+		<div class={styles.board} ref={boardRef}>
 			{columns.map(({ status, title, items: columnItems, droppable }) => (
 				<Column
 					key={status}

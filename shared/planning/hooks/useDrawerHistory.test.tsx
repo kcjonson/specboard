@@ -94,6 +94,44 @@ describe('useDrawerHistory', () => {
 		expect(window.history.length).toBe(length);
 	});
 
+	it('closes in place after a Map jump and a move to another item, where Back would reopen the first', () => {
+		const { result, rerender } = mountAt('/board?view=map&focus=A-9');
+		const back = vi.spyOn(window.history, 'back');
+		act(() => result.current.open('A-1'));
+		rerender();
+
+		// A jump is an entry of its own; another dot opened from there replaces it.
+		act(() => navigate('/board?view=map&focus=A-7&item=A-1'));
+		rerender();
+		act(() => result.current.open('A-2'));
+		rerender();
+		expect(window.location.search).toBe('?view=map&focus=A-7&item=A-2');
+
+		act(() => result.current.close());
+		rerender();
+		expect(back).not.toHaveBeenCalled();
+		expect(window.location.search).toBe('?view=map&focus=A-7');
+	});
+
+	it('closes in place after views picked and back on the first, then a step to another item', () => {
+		const { result, rerender } = mountAt('/board?view=board');
+		const back = vi.spyOn(window.history, 'back');
+		act(() => result.current.open('A-1'));
+		rerender();
+
+		act(() => navigate('/board?view=table&item=A-1'));
+		act(() => navigate('/board?view=board&item=A-1'));
+		rerender();
+		// An arrow key moves the open drawer, replacing the entry the last pick pushed.
+		act(() => result.current.select(itemFor('A-2')));
+		rerender();
+
+		act(() => result.current.close());
+		rerender();
+		expect(back).not.toHaveBeenCalled();
+		expect(window.location.search).toBe('?view=board');
+	});
+
 	it('goes back after only the Map\'s anchor moved in place, which lands where the drawer opened', async () => {
 		const { result, rerender } = mountAt('/board?view=map&focus=A-9');
 		const back = vi.spyOn(window.history, 'back');

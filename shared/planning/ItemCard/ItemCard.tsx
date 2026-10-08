@@ -73,6 +73,7 @@ export function ItemCard({
 		<div
 			class={cardClass}
 			data-item-card
+			data-item-key={item.key}
 			onClick={handleClick}
 			onKeyDown={handleKeyDown}
 			onDragStart={draggable ? handleDragStart : undefined}
