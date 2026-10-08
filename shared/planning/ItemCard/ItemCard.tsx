@@ -101,7 +101,7 @@ export function ItemCard({
 					>
 						<Icon name="external-link" />
 					</button>
-					{item.assignee && <Avatar name={item.assignee} size="sm" tone="muted" />}
+					{item.assignee && <Avatar name={item.assignee.name} avatarUrl={item.assignee.avatarUrl} size="sm" tone="muted" />}
 				</div>
 			</div>
 

@@ -43,7 +43,7 @@ function movesLayout(before: MapItemRow, after: MapItemRow): boolean {
 		|| before.discoveredFromKey !== after.discoveredFromKey
 		|| before.summarizedDescendants !== after.summarizedDescendants
 		|| !sameList(before.blockers, after.blockers, (x, y) => x.blockerKey === y.blockerKey && x.state === y.state)
-		|| !sameList(before.workers, after.workers, (x, y) => x.sessionKey === y.sessionKey && x.deviceName === y.deviceName);
+		|| !sameList(before.workers, after.workers, (x, y) => x.sessionKey === y.sessionKey && x.deviceName === y.deviceName && x.personName === y.personName);
 }
 
 /** An agent wrote since `before`: a session the item didn't have, or one whose last write moved. */

@@ -29,7 +29,7 @@ export type { ModelConstructor } from './Collection';
 
 // Planning models
 export { ChildModel, ItemModel, ItemsCollection, ITEM_STATUSES, SpecModel, SpecsCollection, BlockerModel, BlockersCollection, ChecklistEntryModel, ChecklistCollection, NoteModel, NotesCollection } from './planning';
-export type { Status, ItemStatus, SubStatus, ItemType, SpecType, ChildStats, ItemsFilter, ItemsSource, Actor, ItemOrigin, ItemWorker } from './planning';
+export type { Status, ItemStatus, SubStatus, ItemType, SpecType, ChildStats, ItemsFilter, ItemsSource, Person, Actor, ItemOrigin, ItemWorker } from './planning';
 
 // Document models
 export { DocumentModel, EMPTY_DOCUMENT } from './DocumentModel';

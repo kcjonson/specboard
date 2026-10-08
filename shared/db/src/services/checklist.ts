@@ -58,7 +58,7 @@ export async function setChecklist(
 	itemNumber: number,
 	entries: ChecklistEntryInput[]
 ): Promise<ChecklistEntry[] | null> {
-	const validated = validateEntries(entries);
+	const validated = validateChecklistEntries(entries);
 	const result = await query<{ checklist: ChecklistEntry[] }>(
 		`UPDATE items SET checklist = $3::jsonb
 		 WHERE number = $1 AND project_id = $2
@@ -113,7 +113,7 @@ export async function updateChecklistEntry(
 ): Promise<ChecklistEntry | null> {
 	const patch: Partial<ChecklistEntry> = {};
 	if (changes.text !== undefined) patch.text = validateText(changes.text);
-	if (changes.status !== undefined) patch.status = validateStatus(changes.status);
+	if (changes.status !== undefined) patch.status = validateChecklistStatus(changes.status);
 
 	const result = await query<{ entry: ChecklistEntry }>(
 		`UPDATE items
@@ -165,14 +165,16 @@ function validateText(text: unknown): string {
 	return trimmed;
 }
 
-function validateStatus(status: unknown): ChecklistStatus {
+/** A checklist status, or a ChecklistValidationError. */
+export function validateChecklistStatus(status: unknown): ChecklistStatus {
 	if (!CHECKLIST_STATUSES.includes(status as ChecklistStatus)) {
 		throw new ChecklistValidationError(`Checklist status must be one of: ${CHECKLIST_STATUSES.join(', ')}`);
 	}
 	return status as ChecklistStatus;
 }
 
-function validateEntries(entries: ChecklistEntryInput[]): ChecklistEntry[] {
+/** A whole checklist as setChecklist stores it, ids minted where missing, or a ChecklistValidationError. */
+export function validateChecklistEntries(entries: ChecklistEntryInput[]): ChecklistEntry[] {
 	if (!Array.isArray(entries)) {
 		throw new ChecklistValidationError('A checklist must be an array of entries');
 	}
@@ -199,7 +201,7 @@ function validateEntries(entries: ChecklistEntryInput[]): ChecklistEntry[] {
 		return {
 			id,
 			text: validateText(entry.text),
-			status: entry.status === undefined ? ('todo' as ChecklistStatus) : validateStatus(entry.status),
+			status: entry.status === undefined ? ('todo' as ChecklistStatus) : validateChecklistStatus(entry.status),
 		};
 	});
 }

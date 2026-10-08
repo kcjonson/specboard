@@ -166,7 +166,7 @@ export const epicTools: Tool[] = [
 	{
 		name: 'update_item',
 		description:
-			'Update an item: title, description, status, sub_status, specs, blockers, checklist, checklist_status, branch_name, pr_url, note. note appends an entry to the item\'s activity log, never overwrites. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). blockers replaces the item\'s open blockers (item refs auto-clear when the blocking item completes; text clears only when removed). checklist replaces the item\'s scratch todos, which are not child items; checklist_status ticks individual entries off by id as you work.',
+			'Update an item: title, description, status, sub_status, assignee, specs, blockers, checklist, checklist_status, branch_name, pr_url, note. note appends an entry to the item\'s activity log, never overwrites. Set parent_key to move it under another item, or parent_key null to promote it to top-level. Setting sub_status auto-updates board status (scoping/in_development/pr_open→in_progress, complete→done). blockers replaces the item\'s open blockers (item refs auto-clear when the blocking item completes; text clears only when removed). checklist replaces the item\'s scratch todos, which are not child items; checklist_status ticks individual entries off by id as you work.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -224,6 +224,10 @@ export const epicTools: Tool[] = [
 				pr_url: {
 					type: 'string',
 					description: 'Pull request URL',
+				},
+				assignee: {
+					type: 'string',
+					description: 'Assign the item to a person by user slug: the project\'s owner (the owner half of owner/project) or a member (the `slug` on a person in an item\'s origin, workers, activity log or assignee). null or "" unassigns. Someone who isn\'t on the project is refused.',
 				},
 				note: {
 					type: 'string',

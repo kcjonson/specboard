@@ -174,6 +174,14 @@ describe('listing members', () => {
 		expect(memberPushAccess).not.toHaveBeenCalled();
 	});
 
+	it('skips push access for the owner on ?pushAccess=false, asking GitHub nothing', async () => {
+		const response = await call('owner', 'GET', 'members?pushAccess=false');
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).map((member: { slug: string; pushAccess: unknown }) => [member.slug, member.pushAccess])).toEqual([['acme', null], ['vera', null], ['sam', null]]);
+		expect(memberPushAccess).not.toHaveBeenCalled();
+	});
+
 	it('still lists the members when the push-access check fails', async () => {
 		vi.mocked(memberPushAccess).mockRejectedValue(new Error('Redis is down'));
 

@@ -26,6 +26,7 @@ interface UserApiResponse {
 	email: string;
 	first_name: string | null;
 	last_name: string | null;
+	avatar_url: string | null;
 	email_verified: boolean;
 	roles: string[];
 	is_active: boolean;
@@ -48,6 +49,7 @@ function userToApiResponse(user: User, includeAdminFields = false): UserApiRespo
 		email: user.email,
 		first_name: user.first_name,
 		last_name: user.last_name,
+		avatar_url: user.avatar_url,
 		email_verified: user.email_verified,
 		roles: user.roles,
 		is_active: user.is_active,

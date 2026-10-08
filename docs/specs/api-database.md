@@ -479,7 +479,8 @@ Members are addressed by user slug, and the member view carries no user id:
 granted role (`owner` for the owner). For the owner, the list adds `pushAccess` per person, on
 each person's own stored token, so they can see who will have commits refused; it waits at most
 a second per uncached person, and a failure leaves the rows `null` rather than failing the list.
-Every other caller gets `null` on every row (their own is on the project GET). The owner isn't a membership, so naming the owner's slug
+Every other caller gets `null` on every row (their own is on the project GET), and so does the
+owner with `?pushAccess=false`, which the assignee picker sends since it only needs the people. The owner isn't a membership, so naming the owner's slug
 in a member route is a 409 `PROJECT_OWNER`, and so is the owner leaving.
 
 | Method | Path | Description |
@@ -489,7 +490,17 @@ in a member route is a 409 `PROJECT_OWNER`, and so is the owner leaving.
 | DELETE | /api/projects/:owner/:project/members/:member | Remove a member (owner) |
 | DELETE | /api/projects/:owner/:project/membership | Leave the project: the caller's own membership (viewer) |
 
-People join a project by accepting an invitation.
+People join a project by accepting an invitation. Removing a member, or a member leaving,
+unassigns their open items in the project in the same transaction.
+
+### Item assignee
+
+Item responses carry `assignee` as `{ slug, name, avatarUrl }` or `null`, and actors (item
+`origin`, `workers`, activity-log entries) carry the `person` they acted as in the same shape,
+`null` for a deleted account; no user id is in either. `PUT /api/projects/:owner/:project/items/:itemKey`
+assigns with `{ "assigneeSlug": "<user slug>" }` and unassigns with `{ "assigneeSlug": null }`;
+the slug must name the owner or a current member, else 400. Rules are in
+[item-relationships.md](./item-relationships.md), Assignee.
 
 ### Project Invitations
 

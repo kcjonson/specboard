@@ -60,6 +60,7 @@ interface BoardTestProps {
 	onOpenItem?: (item: ItemModel) => void;
 	canEdit?: boolean;
 	onCreateItem?: () => void;
+	onAssignToMe?: (item: ItemModel) => void;
 	onWriteError?: (err: unknown, fallback: string) => void;
 }
 
@@ -80,6 +81,7 @@ async function renderBoard(
 			onSelectItem={props.onSelectItem ?? vi.fn()}
 			onOpenItem={props.onOpenItem ?? vi.fn()}
 			onCreateItem={props.onCreateItem ?? vi.fn()}
+			onAssignToMe={props.onAssignToMe ?? vi.fn()}
 			onWriteError={props.onWriteError ?? vi.fn()}
 		/>
 	);
@@ -169,15 +171,18 @@ describe('Board for someone who can\'t edit', () => {
 		expect(dragOver.defaultPrevented).toBe(false);
 	});
 
-	it('ignores the create and move shortcuts', async () => {
+	it('ignores the create, move and assign shortcuts', async () => {
 		const onCreateItem = vi.fn();
-		const { items } = await renderBoard({ ready: 1 }, { canEdit: false, selectedItemKey: 'SB-ready-1', onCreateItem });
+		const onAssignToMe = vi.fn();
+		const { items } = await renderBoard({ ready: 1 }, { canEdit: false, selectedItemKey: 'SB-ready-1', onCreateItem, onAssignToMe });
 		const save = vi.spyOn(items[0]!, 'save');
 
 		fireEvent.keyDown(document, { key: 'n' });
 		fireEvent.keyDown(document, { key: '2' });
+		fireEvent.keyDown(document, { key: 'm' });
 
 		expect(onCreateItem).not.toHaveBeenCalled();
+		expect(onAssignToMe).not.toHaveBeenCalled();
 		expect(save).not.toHaveBeenCalled();
 		expect(items[0]!.status).toBe('ready');
 	});
@@ -218,6 +223,37 @@ describe('Board keys', () => {
 		fireEvent.keyDown(document.body, { key: 'Enter' });
 		expect(onOpenItem).toHaveBeenCalledTimes(1);
 		remove();
+	});
+
+	it('leaves the letter and number shortcuts to the browser while a modifier is held', async () => {
+		const onCreateItem = vi.fn();
+		const onAssignToMe = vi.fn();
+		const { items } = await renderBoard({ ready: 1 }, { selectedItemKey: 'SB-ready-1', onCreateItem, onAssignToMe });
+		const save = vi.spyOn(items[0]!, 'save');
+
+		for (const modifier of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }]) {
+			for (const key of ['n', 'm', '1', '2', '3']) {
+				expect(fireEvent.keyDown(document, { key, ...modifier })).toBe(true);
+			}
+		}
+
+		expect(onCreateItem).not.toHaveBeenCalled();
+		expect(onAssignToMe).not.toHaveBeenCalled();
+		expect(save).not.toHaveBeenCalled();
+	});
+
+	it('assigns the selected card to me on M, and does nothing with no selection', async () => {
+		const onAssignToMe = vi.fn();
+		const { items, rerender } = await renderBoard({ ready: 2 }, { selectedItemKey: 'SB-ready-2', onAssignToMe });
+
+		fireEvent.keyDown(document, { key: 'M' });
+		expect(onAssignToMe).toHaveBeenCalledWith(items.find((item: ItemModel) => item.key === 'SB-ready-2'));
+
+		rerender(
+			<Board items={items} canEdit flashingIds={new Set()} onSelectItem={vi.fn()} onOpenItem={vi.fn()} onCreateItem={vi.fn()} onAssignToMe={onAssignToMe} onWriteError={vi.fn()} />
+		);
+		fireEvent.keyDown(document, { key: 'm' });
+		expect(onAssignToMe).toHaveBeenCalledTimes(1);
 	});
 
 	it('takes its other keys from a focused link or button: the arrows, Escape, the shortcuts', async () => {
@@ -367,6 +403,7 @@ describe('Board moves and focus', () => {
 				onSelectItem={(item) => setSelected(item?.key)}
 				onOpenItem={() => {}}
 				onCreateItem={() => {}}
+				onAssignToMe={() => {}}
 				onWriteError={() => {}}
 			/>
 		);

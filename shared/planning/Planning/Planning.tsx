@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
+import { fetchClient } from '@specboard/fetch';
 import { useModel, useProjectRole, ItemsCollection, type ItemModel, type ItemType, writeFailure } from '@specboard/models';
 import { Page, SplitButton, Text, Select, Button, Icon, Notice, type SplitButtonOption } from '@specboard/ui';
 import { Board } from '../Board/Board';
@@ -58,6 +59,20 @@ export function Planning(props: RouteProps): JSX.Element {
 	const reportWriteError = useCallback((err: unknown, fallback: string): void => {
 		setWriteError(writeFailure(err, fallback, projectRef));
 	}, [projectRef]);
+
+	// M on a selected card. Who "me" is is read when the key is pressed rather than held:
+	// it is rare, and the slug is the one thing it needs. Already mine is nothing to send.
+	const assignToMe = useCallback((item: ItemModel): void => {
+		void (async (): Promise<void> => {
+			try {
+				const me = await fetchClient.get<{ slug: string | null }>('/api/users/me');
+				if (!me.slug || item.assignee?.slug === me.slug) return;
+				await item.assign(me.slug);
+			} catch (err) {
+				reportWriteError(err, `Could not assign ${item.key} to you.`);
+			}
+		})();
+	}, [reportWriteError]);
 
 	// Collection auto-fetches after projectRef is set. Memoized so it survives view
 	// toggles (the route/entry is unchanged, only the ?view= param differs). Its
@@ -279,6 +294,7 @@ export function Planning(props: RouteProps): JSX.Element {
 				onSelectItem={handleSelectItem}
 				onOpenItem={handleOpenItem}
 				onCreateItem={() => handleOpenNewItemDialog('epic')}
+				onAssignToMe={assignToMe}
 				onWriteError={reportWriteError}
 			/>
 		);

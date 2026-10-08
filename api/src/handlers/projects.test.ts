@@ -16,6 +16,8 @@ vi.mock('@specboard/db', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@specboard/db')>();
 	return {
 		isLocalRepository: actual.isLocalRepository,
+		isValidTitle: actual.isValidTitle,
+		MAX_TITLE_LENGTH: actual.MAX_TITLE_LENGTH,
 		getProjects: vi.fn(),
 		getProject: vi.fn(),
 		createProject: vi.fn(),

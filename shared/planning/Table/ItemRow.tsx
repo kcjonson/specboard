@@ -3,6 +3,7 @@ import { useModel, type ItemModel } from '@specboard/models';
 import { Icon, StatusGlyph, STATUS_LABELS } from '@specboard/ui';
 import { TypeBadge } from '../TypeBadge/TypeBadge';
 import { ProjectChip, type ProjectLabel } from '../ProjectChip/ProjectChip';
+import { AssigneeLabel } from './AssigneeLabel';
 import { ChildRow } from './ChildRow';
 import styles from './Table.module.css';
 
@@ -113,7 +114,9 @@ export function ItemRow({
 					{STATUS_LABELS[item.status]}
 				</span>
 				<span class={styles.colTasks} role="cell">{hasChildren ? `${done}/${total}` : '—'}</span>
-				<span class={styles.colAssignee} role="cell">{item.assignee || '—'}</span>
+				<span class={styles.colAssignee} role="cell">
+					<AssigneeLabel person={item.assignee} />
+				</span>
 			</div>
 
 			{showChildren && loadingChildren && (

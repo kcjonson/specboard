@@ -22,6 +22,16 @@ import { formatProjectRef, parseProjectRef, type ProjectRef } from '@specboard/c
 export type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
 
 /**
+ * The answer to a tool call that threw. The error is logged, never sent: a database or
+ * driver message (a constraint name, a column, a query fragment) is server internals, and
+ * every refusal an agent can act on is already a result of its own.
+ */
+export function toolFailure(name: string, cause: unknown): ToolResult {
+	console.error(`Tool ${name} failed:`, cause);
+	return { content: [{ type: 'text', text: `${name} failed on the server; nothing it reported can be shown. Check the arguments against the tool's schema, or try again.` }], isError: true };
+}
+
+/**
  * The repo binding from the X-Specboard-Project header: absent, a parsed ref, or
  * present but unparseable (reported on every tool call rather than ignored, since
  * ignoring it would silently unscope a repo that meant to be scoped).

@@ -14,6 +14,7 @@ import {
 	bindingUnavailableResult,
 	expandProjectRef,
 	invalidBindingResult,
+	toolFailure,
 	type ProjectBinding,
 	type ToolResult,
 } from './project-ref.ts';
@@ -51,10 +52,7 @@ export async function handleProjectTool(
 				};
 		}
 	} catch (error) {
-		return {
-			content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
-			isError: true,
-		};
+		return toolFailure(name, error);
 	}
 }
 

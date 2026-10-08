@@ -77,6 +77,14 @@ export const sessionNodeKey = (sessionKey: string): string => `session:${session
 export const computerNodeKey = (device: string): string => `computer:${device}`;
 
 /**
+ * The computer an episode ran on, as the Map tells computers apart: whose it is and the
+ * device name they gave it, so two people's "laptop" are two computers. An episode whose
+ * person was deleted is its device name alone.
+ */
+export const computerName = (personName: string | null, deviceName: string | null): string =>
+	personName ? `${personName}'s ${deviceName || 'computer'}` : deviceName ?? '';
+
+/**
  * One placed node. Items are keyed by item key, sessions as `session:<session key>`,
  * and computers as `computer:<device name>`.
  */

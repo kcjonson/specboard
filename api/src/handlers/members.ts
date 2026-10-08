@@ -44,7 +44,7 @@ function memberSlug(context: Context): string | Response {
  * fails the list: any error leaves every row null.
  */
 async function pushAccessForOwner(context: Context, redis: Redis, projectId: string): Promise<Map<string, boolean | null>> {
-	if (requireAccess(context).grantedRole !== 'owner') return new Map();
+	if (requireAccess(context).grantedRole !== 'owner' || context.req.query('pushAccess') === 'false') return new Map();
 	try {
 		const project = await getProject(projectId);
 		return project ? await memberPushAccess(redis, project) : new Map();
@@ -58,7 +58,9 @@ async function pushAccessForOwner(context: Context, redis: Redis, projectId: str
  * GET /api/projects/:owner/:project/members. For the owner, each member carries
  * `pushAccess`, whether their own GitHub account can push to the project's repository
  * (null when unknown, or when there is no repository or no connection), so the owner can
- * see who will be refused. Every other caller gets null on every row.
+ * see who will be refused. Every other caller gets null on every row, and so does the owner
+ * with `?pushAccess=false`: the check can wait up to a second per uncached member on GitHub,
+ * and a list that only needs the people (the assignee picker) shouldn't.
  */
 export async function handleListMembers(context: Context, redis: Redis): Promise<Response> {
 	const projectId = requireResolvedProject(context).id;

@@ -133,6 +133,23 @@ server owns the cycle check and re-ranks the item to the bottom of its new
 sibling group. A refusal ("Cannot move an item under itself or one of its
 descendants") renders inline under the field row, in the server's own words.
 
+### Assignee field (in the item detail)
+
+Reads as the person's avatar and name, or `Unassigned`. `Assign` (or `Change` once
+someone is) opens a modal picker over the project's owner and members, from the member
+list, each with avatar, name and role ("Editor · needs GitHub" for a granted editor without
+GitHub, as on the settings page); the current assignee's row is tinted and checked, and the
+picker carries an `Unassign` row only when someone is assigned. Choosing goes through
+`ItemModel.assign()`, never a save; choosing the current assignee sends nothing, and a
+refusal renders under the field row like the parent's, naming the person from the picker's
+own list (the server's refusal echoes the slug only, so it can't be used to look anyone up).
+Read-only, the field is text with no control. On the board, `M` assigns the selected card to you.
+
+Board cards show the assignee's avatar in the corner and the table's Assignee column the
+avatar and name, child rows included. "Created by", "Working now" and activity-log entries show the person's
+avatar and name; an agent reads as "Kevin via claude-code on laptop", a deleted account as
+"Deleted user".
+
 ### Item picker
 
 One modal list of the project's items, used both here and by the documentation

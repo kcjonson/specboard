@@ -403,14 +403,14 @@ Single-user assumptions surface as soon as there are two users:
 - **`Avatar` component in `@specboard/ui`.** It uses `avatar_url` when set and falls
   back to initials. It replaces the three copies of `getInitials` (`UserMenu`,
   `ItemCard`, `InlineComment`).
-- **Actor names.** "Created by", "Working now" and the activity log print
-  "User" today, because `actorView` (`shared/db/src/views.ts`) strips everything but
-  type, device and client. Actor views gain the user's display name and avatar,
-  resolved server-side. User ids stay stripped, per `item-relationships.md`.
-- **Assignee picker.** `items.assignee` already exists and nothing writes it.
-  The item view gets a picker over the project's members (owner + members), and
-  MCP `update_item` gains `assignee`. Unassigning is explicit. Removing a member
-  unassigns their open items.
+- **Actor names.** "Created by", "Working now" and the activity log name the person,
+  where a single-user build printed "User" because the actor views
+  (`shared/db/src/views.ts`) kept only type, device and client. Actor views carry the
+  user's display name, slug and avatar, resolved server-side. User ids stay stripped, per
+  `item-relationships.md`.
+- **Assignee picker.** `items.assignee` is written by member slug. The item view has a
+  picker over the project's members (owner + members), and MCP `update_item` takes
+  `assignee`. Unassigning is explicit. Removing a member unassigns their open items.
 - **Document comments** keep their author as a name/email string in the markdown
   footer. That stays portable outside Specboard and needs no change.
 
@@ -631,4 +631,26 @@ Phase 4 (project settings page and member management, SPE-208) is built:
   and `InlineComment`. Nothing writes `users.avatar_url` yet, so in practice every avatar is
   initials, and the project list carries no owner avatar URL.
 
-Phase 6 is not built.
+Phase 6 (people: named actors and the assignee, SPE-210) is built:
+
+- Actor views carry `person: { slug, name, avatarUrl }` for a user or agent actor, looked up
+  once per response over every actor in it (`getPeople` in `shared/db/src/services/users.ts`,
+  used by `itemViews` and `noteViews`), on REST and MCP alike. User ids stay stripped. A deleted
+  account's actors read `person: null`, "Deleted user" in the UI. Blocker views still carry no
+  actor; nothing renders who set a blocker.
+- `ActorName` (`shared/planning`) renders "Created by", "Working now" and activity-log authors
+  as avatar and name, an agent as "Kevin via claude-code on laptop". The Map's quick card uses
+  the same label as text.
+- The assignee is read as a person and written by slug: `assigneeSlug` on the item PUT,
+  `assignee` on MCP `update_item`. The rules (owner or current member, checked under the
+  membership row's lock, open items unassigned when a member is removed or leaves) are in
+  [item-relationships.md](./item-relationships.md), Assignee. No new routes or tools: both
+  writes are item updates at editor, already in the role matrix. MCP has no member-list tool,
+  so an agent learns slugs from the `owner/project` ref and from the people on items.
+- The item view's Assignee field opens `AssigneePicker` over `GET .../members?pushAccess=false`
+  (the people without the owner's per-member GitHub check); board cards and
+  the table's Assignee column show the assignee's avatar ([kanban-ui.md](./kanban-ui.md)).
+- Account deletion (SPE-63) has no UI yet, so the shared-projects listing before its confirm
+  isn't built; an endpoint with no caller would be dead code. When SPE-63 builds the confirm,
+  `getProjects` already returns the owner's projects, and the member count is one aggregate
+  over `project_members`.

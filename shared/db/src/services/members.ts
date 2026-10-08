@@ -6,7 +6,8 @@
  * here. Members are addressed by user slug, so no user id leaves this module.
  */
 
-import { query } from '../index.ts';
+import type pg from 'pg';
+import { query, transaction } from '../index.ts';
 import { effectiveRoleSql, type MemberRole, type ProjectRole } from './projects.ts';
 import { USER_DISPLAY_NAME_SQL } from './users.ts';
 
@@ -89,18 +90,40 @@ export async function setProjectMemberRole(
 	return row ? toMember(row) : null;
 }
 
-/** Remove a member by slug. False when no member of the project has that slug. */
-export async function removeProjectMember(projectId: string, memberSlug: string): Promise<boolean> {
-	const result = await query(
-		`DELETE FROM project_members m
-		 USING users u
-		 WHERE u.id = m.user_id AND m.project_id = $1 AND u.slug = $2`,
-		[projectId, memberSlug]
+/**
+ * Unassign someone who just left the project from its open items, in the transaction
+ * that deleted their membership. Done items keep their assignee, a record of who did
+ * the work. An assignment racing the removal is ordered by the membership row's lock
+ * (see lockAssignee in items.ts), so none survives it.
+ */
+async function unassignOpenItems(client: pg.PoolClient, projectId: string, userId: string): Promise<void> {
+	await client.query(
+		"UPDATE items SET assignee = NULL WHERE project_id = $1 AND assignee = $2 AND status <> 'done'",
+		[projectId, userId]
 	);
-	return (result.rowCount ?? 0) > 0;
 }
 
-/** Remove the caller's own membership. Leaving twice is not an error. */
+/** Remove a member by slug, unassigning their open items. False when no member of the project has that slug. */
+export async function removeProjectMember(projectId: string, memberSlug: string): Promise<boolean> {
+	return transaction(async (client) => {
+		const result = await client.query<{ user_id: string }>(
+			`DELETE FROM project_members m
+			 USING users u
+			 WHERE u.id = m.user_id AND m.project_id = $1 AND u.slug = $2
+			 RETURNING m.user_id`,
+			[projectId, memberSlug]
+		);
+		const userId = result.rows[0]?.user_id;
+		if (!userId) return false;
+		await unassignOpenItems(client, projectId, userId);
+		return true;
+	});
+}
+
+/** Remove the caller's own membership, unassigning their open items. Leaving twice is not an error. */
 export async function leaveProject(projectId: string, userId: string): Promise<void> {
-	await query('DELETE FROM project_members WHERE project_id = $1 AND user_id = $2', [projectId, userId]);
+	await transaction(async (client) => {
+		const result = await client.query('DELETE FROM project_members WHERE project_id = $1 AND user_id = $2', [projectId, userId]);
+		if ((result.rowCount ?? 0) > 0) await unassignOpenItems(client, projectId, userId);
+	});
 }

@@ -6,8 +6,10 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// The argument checks run for real (validators and their errors), since update_item
+// refuses a bad argument before anything is written.
 vi.mock('@specboard/db', async (importOriginal) => ({
-	blockerView: (await importOriginal<typeof import('@specboard/db')>()).blockerView,
+	...pick(await importOriginal<typeof import('@specboard/db')>()),
 	createItem: vi.fn(),
 	createItems: vi.fn(),
 	updateItem: vi.fn(async () => ({ key: 'SB-1', title: 'T', status: 'ready', subStatus: null, branchName: null, prUrl: null, blocked: false })),
@@ -26,19 +28,31 @@ vi.mock('@specboard/db', async (importOriginal) => ({
 	getChecklist: vi.fn(async () => [{ id: 'c-1', text: 'draft the migration', status: 'done' }]),
 	updateChecklistEntry: vi.fn(async () => ({ id: 'c-1', text: 'draft the migration', status: 'done' })),
 	recordWorkerActivity: vi.fn(),
-	SpecValidationError: class extends Error {},
-	NoteValidationError: class extends Error {},
 	BlockerValidationError: class extends Error {},
 	BlockerConflictError: class extends Error {},
 	BlockerTargetError: class extends Error {},
 	BlockerItemNotFoundError: class extends Error {},
-	ChecklistValidationError: class extends Error {},
 	ParentItemNotFoundError: class extends Error {},
 	DiscoveredFromNotFoundError: class extends Error {},
 	ItemCycleError: class extends Error {},
+	checkAssignable: vi.fn(async () => {}),
 }));
 
-import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, setChecklist, getChecklist, updateChecklistEntry, setSpecs, NoteValidationError } from '@specboard/db';
+/** The real exports the argument checks use. */
+function pick(db: typeof import('@specboard/db')): Partial<typeof import('@specboard/db')> {
+	const {
+		blockerView, validateNoteText, validateSpecInput, validateChecklistEntries, validateChecklistStatus,
+		isValidStatus, isValidSubStatus, isValidTitle, isValidBranchName, MAX_TITLE_LENGTH, MAX_BRANCH_NAME_LENGTH,
+		SpecValidationError, NoteValidationError, ChecklistValidationError, AssigneeNotMemberError,
+	} = db;
+	return {
+		blockerView, validateNoteText, validateSpecInput, validateChecklistEntries, validateChecklistStatus,
+		isValidStatus, isValidSubStatus, isValidTitle, isValidBranchName, MAX_TITLE_LENGTH, MAX_BRANCH_NAME_LENGTH,
+		SpecValidationError, NoteValidationError, ChecklistValidationError, AssigneeNotMemberError,
+	};
+}
+
+import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, setChecklist, getChecklist, updateChecklistEntry, setSpecs } from '@specboard/db';
 import type { AgentActor } from '@specboard/db';
 import { updateItem } from './writes.ts';
 
@@ -196,13 +210,14 @@ describe('update_item note handling', () => {
 		expect(mockAddNote).not.toHaveBeenCalled();
 	});
 
-	it('reports an over-long note as an error, using the service message', async () => {
-		mockAddNote.mockRejectedValueOnce(new NoteValidationError('Note text must be at most 10000 characters'));
-
-		const result = await updateItem(PROJECT, { item_key: 'SB-1', title: 'T', note: 'x'.repeat(10001) }, ACTOR);
+	it('refuses an over-long note before writing anything, in the service\'s words', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', title: 'T', parent_key: 'SB-9', note: 'x'.repeat(10001) }, ACTOR);
 
 		expect(result.isError).toBe(true);
 		expect(result.content[0]!.text).toBe('Note text must be at most 10000 characters');
+		expect(moveItem).not.toHaveBeenCalled();
+		expect(mockUpdate).not.toHaveBeenCalled();
+		expect(mockAddNote).not.toHaveBeenCalled();
 	});
 });
 
