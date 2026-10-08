@@ -264,21 +264,23 @@ The email template goes next to the others in `shared/email/src/templates.ts`:
 ### Accepting
 
 `/invite` is an SSG page (`ssg/src/pages/invite.tsx`) built on the
-`magic-link.tsx` pattern: an inline script reads `?token=` and POSTs it, so
-link-prefetching mail scanners don't consume it. It has to be added to the public
+`magic-link.tsx` pattern: an inline script reads `?token=` and looks the invite up
+with a side-effect-free GET; accepting is a POST from a click, so link-prefetching mail
+scanners don't consume it. The token only finds the invitation: the page's later hops
+and answers go by the invitation's id. It has to be added to the public
 path list in `frontend/src/index.ts` (`excludePaths`).
 
 The invitation binds to the email address. Accepting requires being signed in
-as an account that holds that address among its `user_emails`. A forwarded link
-can't be accepted by someone else.
+as an account whose email is that address, verified. (An account has one address,
+`users.email`; the `user_emails` table this once named was dropped in migration
+003.) A forwarded link can't be accepted by someone else.
 
 | Visitor | What they see |
 |---|---|
 | Signed in, email matches | Invite card with **Accept** and **Decline**. Accept → `/projects/:owner/:project/planning`. |
 | Signed in as a different account | "This invite was sent to k•••@example.com. You're signed in as other@example.com." **Switch account** (logs out, returns here). |
-| Signed out, has an account | Invite card, then **Sign in to accept**, going to `/login?next=/invite?token=...` (login already honors `next`). |
-| Signed out, no account | Invite card, then **Create account**. Signup uses the invite token in place of the early-access invite key, with the email pre-filled and locked. The magic link carries the invite as its `next` path. |
-| Expired / revoked / already used | Says which, and "Ask {inviter} to send a new invite." |
+| Signed out | Invite card, then **Sign in to accept** and **Create account** side by side. The page can't say which applies without telling anyone holding the link whether the address has an account. Sign in goes to `/login?next=/invite?id=...`; Create account to signup with the invite token in place of the early-access key, the address shown masked and locked. Either way the magic link's stored `next` is `/invite?id=<invitation id>`, never the token. |
+| Expired / revoked / already used | Says which, and "Ask {inviter} to send a new invite." Its own recipient, signed in, instead gets a link to the project for an invite they accepted, and is sent on to the open invite that replaced a revoked, expired or declined one. An Accept or Decline that finds the invite closed reads it again, so a stale card follows it the same way. |
 
 Two existing flows need fixing for the no-account path:
 
@@ -510,4 +512,45 @@ Phase 2 (membership and the authorization boundary, SPE-206) is built:
   tests reach PGlite through `@specboard/db/test-support` (`pgliteAsPg` stands in for
   `pg`).
 
-Phases 3 to 6 are not built.
+Phase 3 (invitations, SPE-207) is built:
+
+- `036_project_invitations.sql`: the Data Model's table and one-open-invitation index,
+  plus a partial index on `email` for "invitations addressed to me".
+- The service is `shared/db/src/services/invitations.ts`. Tokens come from
+  `generateToken`, only `hashToken`'s digest is stored, and an invitation expires 7 days
+  after sending or its last resend. Invites to one project take turns on the project row
+  (`FOR NO KEY UPDATE`), so concurrent invites of one address leave exactly one open
+  (checked against real Postgres; PGlite is one connection).
+- Routes are in [api-database.md](./api-database.md), Project Invitations. The owner's four
+  (invite, pending list, resend, revoke) are owner-only and in the role matrix; the
+  pending list is the one owner-only read, since it carries invitees' addresses. The
+  invitee's routes (`/api/invite` by token, `/api/invitations` by id) aren't project
+  routes and check the address binding instead.
+- Invites are limited per inviting owner, 30 emails an hour across invite and resend.
+- Accepting as an existing member stamps the invitation accepted and keeps the member's
+  role; it never changes a role. Accepting as the owner, or from an account that hasn't
+  onboarded (no slug), is refused and leaves the invitation open.
+- The emailed token only finds an invitation. Reading and answering go by its id for the
+  signed-in recipient, and every sign-in, signup and onboarding hop comes back as
+  `/invite?id=...`, so the raw token is stored nowhere (only its hash, in the table).
+  Signup from an invitation shows the address masked, and a typed sign-in code is sent
+  with the invitation's id, which names the address server-side and survives a resend. Token-bearing pages
+  are served with `Referrer-Policy: no-referrer`.
+- Accepting share-locks the project row before the invitation, so it serializes against
+  inviting the same address; on real Postgres, 60 accept/re-invite races left no member
+  with an open invitation, against 58 of 60 without the lock.
+- The /invite page (`ssg/src/pages/invite.tsx`) shows all five states. A signed-out
+  visitor gets Sign in and Create account side by side, since saying which one applies
+  would tell anyone holding the link whether the address has an account; signup sends
+  an existing address a sign-in link back to the invite anyway. A signed-in invitee who
+  hasn't onboarded is sent to `/onboarding?next=/invite?id=...`. The lookup tells a
+  signed-in visitor `addressedToYou`, so the page can show the Switch account state
+  without unmasking the address. The recipient of a closed invite gets a link to the
+  project they joined, or, for a revoked, expired or declined one, is sent on to the
+  open invite that replaced it.
+- Signup takes `invite_token` in place of an invite key ([authentication.md](./authentication.md),
+  User Registration), and onboarding honors `?next=`. `next` is validated by one
+  function, `safeNextPath` in `@specboard/core/next-path`, in the API and the onboarding
+  page; the SSG pages share its inline twin.
+
+Phases 4 to 6 are not built.

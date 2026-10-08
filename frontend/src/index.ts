@@ -13,6 +13,7 @@ import { authMiddleware, getSession, requireAdminPath, SESSION_COOKIE_NAME, type
 import { reportError, captureException, installErrorHandlers, logRequest } from '@specboard/core';
 import { sessionIsAdmin } from './admin-check.ts';
 import { pages, spaIndex, type CachedPage } from './static-pages.ts';
+import { noReferrerOnTokenPages } from './referrer-policy.ts';
 
 // Vite dev server URL for hot reloading (set in docker-compose for dev mode)
 const VITE_DEV_SERVER = process.env.VITE_DEV_SERVER;
@@ -136,6 +137,9 @@ app.use('*', async (c, next) => {
 	c.header('Content-Security-Policy', "frame-ancestors 'self'");
 });
 
+// Pages with a token or an invitation in their URL never send it on as a Referer.
+app.use('*', noReferrerOnTokenPages());
+
 // Health check (no auth required)
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
@@ -151,6 +155,10 @@ app.get('/verify-email/confirm', (c) => servePage(c, pages.verifyEmailConfirm));
 
 // Magic link landing page (no auth required)
 app.get('/magic-link', (c) => servePage(c, pages.magicLink));
+
+// Project invite landing page (no auth required). Served signed in or out, and ahead of
+// the onboarding redirect: the page itself sends a not-yet-onboarded invitee there.
+app.get('/invite', (c) => servePage(c, pages.invite));
 
 // Password reset pages (no auth required)
 app.get('/forgot-password', (c) => servePage(c, pages.forgotPassword));
@@ -504,7 +512,7 @@ function hiddenRouteResponse(): Response {
 app.use(
 	'*',
 	authMiddleware(redis, {
-		excludePaths: ['/health', '/login', '/signup', '/home', '/privacy', '/setup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
+		excludePaths: ['/health', '/login', '/signup', '/invite', '/home', '/privacy', '/setup', '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/me'],
 		onUnauthenticated: hiddenRouteResponse,
 	})
 );
@@ -581,7 +589,8 @@ app.onError((error, c) => {
 		message: error.message,
 		stack: error.stack,
 		timestamp: Date.now(),
-		url: c.req.url,
+		// Origin and path only: a query string can carry a token, and this goes off-host.
+		url: new URL(c.req.url).origin + c.req.path,
 		userAgent: c.req.header('user-agent'),
 		userId: user?.id,
 		source: 'frontend',

@@ -18,6 +18,7 @@ import { HomeContent, homeScript } from './pages/home.js';
 import { VerifyEmailContent, verifyEmailScript } from './pages/verify-email.js';
 import { VerifyEmailConfirmContent, verifyEmailConfirmScript } from './pages/verify-email-confirm.js';
 import { MagicLinkContent, magicLinkScript } from './pages/magic-link.js';
+import { InviteContent, inviteScript } from './pages/invite.js';
 import { ForgotPasswordContent, forgotPasswordScript } from './pages/forgot-password.js';
 import { ResetPasswordContent, resetPasswordScript } from './pages/reset-password.js';
 import { PrivacyContent } from './pages/privacy.js';
@@ -87,6 +88,7 @@ function build(): void {
 	const notFoundCss = getCssPath(manifest, '../ssg/src/styles/not-found.css');
 	const homeCss = getCssPath(manifest, '../ssg/src/styles/home.css');
 	const authCss = getCssPath(manifest, '../ssg/src/styles/auth.css');
+	const inviteCss = getCssPath(manifest, '../ssg/src/styles/invite.css');
 	const privacyCss = getCssPath(manifest, '../ssg/src/styles/privacy.css');
 	const setupCss = getCssPath(manifest, '../ssg/src/styles/setup.css');
 
@@ -159,6 +161,14 @@ function build(): void {
 		cssFiles: [commonCss, authCss],
 		body: render(MagicLinkContent()),
 		scripts: magicLinkScript,
+	}));
+
+	// Render project invite landing page (looks up the token from the invite email)
+	writePage('invite.html', renderDocument({
+		title: 'Project Invite - Specboard',
+		cssFiles: [commonCss, authCss, inviteCss],
+		body: render(InviteContent()),
+		scripts: inviteScript,
 	}));
 
 	// Render forgot password page

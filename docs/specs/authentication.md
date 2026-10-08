@@ -203,7 +203,7 @@ Sessions are auth-only. User details (username, first_name, last_name, avatar, e
 
 ### 1. User Registration (email-only)
 
-**Invite Key Requirement**: Signup currently requires a valid invite key for early access control. See [Invite Keys Setup](#invite-keys-setup) for configuration.
+**Invite Key Requirement**: Signup currently requires a valid invite key for early access control, or a project invitation in its place (below). See [Invite Keys Setup](#invite-keys-setup) for configuration.
 
 Signup collects only an email address and invite key. The account is created
 immediately with no username, names, or password (those columns are nullable);
@@ -240,6 +240,22 @@ Browser                        API                      PostgreSQL
    │ the magic link flow (§3)   │                            │
 ```
 
+**Signing up from a project invitation**: the /invite page's Create account
+goes to `/signup?invite=<token>`. The signup page looks the invitation up, shows
+the invited address masked and locked, hides the invite key, and posts
+`{ invite_token }`. An open invitation's token satisfies the gate in place of an
+`INVITE_KEYS` key, and the account is always for the invited address: an `email`
+in the body must equal it (403 otherwise), and the page sends none. An expired,
+revoked, used, or unknown token is a 403. The new account's `signup_metadata`
+records `project_invitation_id` instead of `invite_key`. The magic link's
+`next_path` is `/invite?id=<invitation id>`, for a new account and an existing one
+alike, so the invitee comes back to the invitation once signed in; the raw token
+is never stored. Whoever holds the token may not own the address, so the response
+shows it masked, and the code form sends `{ invitation_id, code }` to
+`/api/auth/magic-link/verify`, which looks the address up from the invitation. By
+id rather than token: an owner resending the invite mid-signup rotates the token,
+and the code still has to work.
+
 **Onboarding**: the first magic-link login creates a session with
 `profile_complete: false` (username still NULL). The frontend service
 redirects every SPA document load to `/onboarding` while that session flag is
@@ -253,6 +269,27 @@ when the account has no password row) — and, later, passkey setup. Claiming
 the username flips the session flag via `updateSession`; other live sessions
 self-heal on their next visit to `/onboarding`. `GET /api/auth/me` exposes
 `has_password`, `passkey_count`, and `profile_complete` for the UI.
+
+Onboarding honors `?next=`: once the account is set up it leaves with a full page
+load to that path, or to `/` without one. The /invite page sends an invitee who
+hasn't onboarded to `/onboarding?next=/invite?id=...`, since accepting needs
+the user slug onboarding claims. The server's own onboarding redirect carries no
+`next`.
+
+**`next` validation**: every `next` is a same-origin relative path or nothing.
+Server-side, and in the onboarding page, that is `safeNextPath` in
+`@specboard/core/next-path` (must start with `/`, not `//`, no backslash or control
+characters, at most 2048 characters). The SSG pages' inline scripts (login,
+signup, magic link) share its browser-side twin, `safeNext`
+(`ssg/src/scripts/safe-next.ts`), which also falls back to `/`.
+
+**Error reports** from the API and the frontend server carry the request's origin
+and path, never its query string, which can hold a token.
+
+**Referrer-Policy**: pages whose URL carries an emailed token or an invitation
+(`/magic-link`, `/reset-password`, `/verify-email/confirm`, `/invite`, `/signup`,
+`/onboarding`) are served with `Referrer-Policy: no-referrer`
+(`frontend/src/referrer-policy.ts`), so the URL never leaves as a Referer.
 
 ### 2. User Login (Username or Email)
 
@@ -313,7 +350,8 @@ Browser                        API                      PostgreSQL
    │                            │                            │
    │ POST /api/auth/magic-link/ │                            │
    │ verify {token} OR          │                            │
-   │ {email, code}              │                            │
+   │ {email, code} OR           │                            │
+   │ {invitation_id, code}      │                            │
    │───────────────────────────►│                            │
    │                            │ Lookup by hash; for codes, │
    │                            │ count attempt BEFORE       │
@@ -1065,7 +1103,7 @@ services:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /api/auth/signup | None | Create account |
+| POST | /api/auth/signup | None | Create account (invite key, or a project invitation token) |
 | POST | /api/auth/login | None | Login, create session |
 | POST | /api/auth/logout | Session | Logout, destroy session |
 | GET | /api/auth/me | Session | Get current user |
@@ -1122,6 +1160,7 @@ Signup is gated behind invite keys for early access control. Valid keys are stor
 - Invalid or missing keys return `403 Forbidden`
 - If no keys are configured, all signups are rejected
 - Keys are reusable (not consumed on use)
+- A project invitation's token passes the gate in place of a key, for the invited address only (see [User Registration](#1-user-registration-email-only))
 
 ### Adding/Removing Keys
 

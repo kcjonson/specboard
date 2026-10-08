@@ -20,10 +20,11 @@ import {
 	MAGIC_LINK_EXPIRY_MS,
 	RATE_LIMIT_CONFIGS,
 } from '@specboard/auth';
-import { query, type User } from '@specboard/db';
+import { getInvitationAddress, query, type User } from '@specboard/db';
 import { sendEmail, getMagicLinkEmailContent } from '@specboard/email';
+import { safeNextPath } from '@specboard/core/next-path';
 
-import { isValidEmail } from '../../validation.ts';
+import { isValidEmail, isValidUUID } from '../../validation.ts';
 import { logAuthEvent, establishSession, isCrossOriginRequest, APP_URL } from './utils.ts';
 
 const MAX_CODE_ATTEMPTS = 5;
@@ -40,20 +41,6 @@ interface MagicLinkTokenRow {
 	code_attempts: number;
 	next_path: string | null;
 	expires_at: Date;
-}
-
-/**
- * Validate a client-supplied post-login path. Same-origin relative paths only.
- */
-function sanitizeNextPath(next: unknown): string | null {
-	if (typeof next !== 'string') return null;
-	if (!next.startsWith('/') || next.startsWith('//') || next.length > 2048) return null;
-	// Backslashes normalize to '//' in the browser (off-site redirect); control
-	// chars (esp. NUL) would also make the row INSERT throw and get masked as a
-	// fake "code sent". Drop the path rather than fail the whole request.
-	// eslint-disable-next-line no-control-regex
-	if (/[\x00-\x1f\\]/.test(next)) return null;
-	return next;
 }
 
 /**
@@ -152,7 +139,7 @@ export async function handleMagicLinkRequest(
 			return context.json(successResponse);
 		}
 
-		await issueMagicLink(user, sanitizeNextPath(body.next));
+		await issueMagicLink(user, safeNextPath(body.next));
 		logAuthEvent('magic_link_requested', { userId: user.id });
 
 		return context.json(successResponse);
@@ -165,14 +152,26 @@ export async function handleMagicLinkRequest(
 interface MagicLinkVerifyBody {
 	token?: string;
 	email?: string;
+	/**
+	 * In place of email, for a code from a signup a project invitation opened: the page
+	 * only knows the invited address masked, so the invitation names it. By id, which
+	 * survives the owner resending the invite mid-signup; the token doesn't.
+	 */
+	invitation_id?: string;
 	code?: string;
+}
+
+/** The address a typed code is for: the one in the body, or the invitation's. Null when neither names one. */
+async function codeEmail(body: MagicLinkVerifyBody): Promise<string | null> {
+	if (typeof body.email === 'string') return body.email.trim();
+	return isValidUUID(body.invitation_id) ? getInvitationAddress(body.invitation_id) : null;
 }
 
 const GENERIC_FAILURE = 'That code or link is invalid or has expired.';
 
 /**
- * Handle magic link consumption: either {token} from the emailed link or
- * {email, code} typed into the login page. All failure modes return the same
+ * Handle magic link consumption: either {token} from the emailed link, or a code
+ * typed into the login or signup page with {email, code} or {invitation_id, code}. All failure modes return the same
  * message so responses don't distinguish invalid, expired, or consumed.
  */
 export async function handleMagicLinkVerify(
@@ -196,9 +195,9 @@ export async function handleMagicLinkVerify(
 	}
 
 	const hasToken = typeof body.token === 'string' && body.token.length > 0;
-	const hasCode = typeof body.email === 'string' && typeof body.code === 'string';
+	const hasCode = typeof body.code === 'string' && (typeof body.email === 'string' || typeof body.invitation_id === 'string');
 	if (!hasToken && !hasCode) {
-		return context.json({ error: 'A token, or an email and code, is required' }, 400);
+		return context.json({ error: 'A token, or an email or invitation and a code, is required' }, 400);
 	}
 
 	const fail = (reason: string): Response => {
@@ -229,12 +228,15 @@ export async function handleMagicLinkVerify(
 				return fail('malformed_code');
 			}
 
-			const result = await query<MagicLinkTokenRow>(
-				`SELECT t.* FROM magic_link_tokens t
-				 JOIN users u ON u.id = t.user_id
-				 WHERE LOWER(u.email) = LOWER($1)`,
-				[(body.email as string).trim()]
-			);
+			const email = await codeEmail(body);
+			const result = email
+				? await query<MagicLinkTokenRow>(
+					`SELECT t.* FROM magic_link_tokens t
+					 JOIN users u ON u.id = t.user_id
+					 WHERE LOWER(u.email) = LOWER($1)`,
+					[email]
+				)
+				: { rows: [] };
 			row = result.rows[0];
 			if (!row) {
 				verifyToken(normalized, DUMMY_CODE_HASH);

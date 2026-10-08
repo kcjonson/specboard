@@ -1,5 +1,5 @@
 /**
- * Email templates for authentication and waitlist flows
+ * Email templates for authentication, project invitation, and waitlist flows
  *
  * Branding follows docs/brand.md. Email clients strip external CSS, SVG, and
  * webfonts, so the header lockup is a hosted PNG with styled alt text as the
@@ -74,6 +74,21 @@ ${inner}
   </div>
 </body>
 </html>`;
+}
+
+/** Escape text from user input (names, project names) for the HTML body. */
+function escapeHtml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+/** One line for a subject header: user input can't carry a line break into it. */
+function singleLine(text: string): string {
+	return text.replace(/\s+/g, ' ').trim();
 }
 
 function emailButton(url: string, label: string): string {
@@ -163,6 +178,51 @@ ${emailButton(loginUrl, 'Sign In')}
   <p class="sb-muted" style="color: #666; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
 
 ${emailLinkFallback(loginUrl)}`);
+
+	return { subject, textBody, htmlBody };
+}
+
+export interface ProjectInvitationEmail {
+	inviterName: string;
+	projectName: string;
+	role: 'editor' | 'viewer';
+	inviteUrl: string;
+	expiresInDays: number;
+}
+
+/**
+ * Project invitation: "{inviter} invited you to {project} on Specboard as an {role}".
+ * Goes to addresses with and without an account alike; the /invite page sorts out
+ * signing in or signing up.
+ */
+export function getProjectInvitationEmailContent(invite: ProjectInvitationEmail): EmailContent {
+	const inviter = singleLine(invite.inviterName);
+	const project = singleLine(invite.projectName);
+	const asRole = invite.role === 'editor' ? 'as an editor' : 'as a viewer';
+	const subject = `${inviter} invited you to ${project} on Specboard`;
+	const expiry = `This invite expires in ${invite.expiresInDays} days.`;
+
+	const textBody = `${inviter} invited you to ${project} on Specboard ${asRole}.
+
+Open the invite to accept it:
+
+${invite.inviteUrl}
+
+${expiry} If you weren't expecting it, you can ignore this email.
+
+- The Specboard Team`;
+
+	const htmlBody = emailShell(`  <h1 class="sb-h1" style="color: #111; font-size: 24px; margin-bottom: 24px;">You're invited to ${escapeHtml(project)}</h1>
+
+  <p>${escapeHtml(inviter)} invited you to <strong>${escapeHtml(project)}</strong> on Specboard ${asRole}.</p>
+
+${emailButton(invite.inviteUrl, 'View Invite')}
+
+  <p class="sb-muted" style="color: #666; font-size: 14px;">${expiry}</p>
+
+  <p class="sb-muted" style="color: #666; font-size: 14px;">If you weren't expecting it, you can ignore this email.</p>
+
+${emailLinkFallback(invite.inviteUrl)}`);
 
 	return { subject, textBody, htmlBody };
 }

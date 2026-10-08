@@ -5,6 +5,7 @@
  */
 import type { JSX } from 'preact';
 import { BrandLogo } from '../components/logo';
+import { safeNextScript } from '../scripts/safe-next';
 
 export function MagicLinkContent(): JSX.Element {
 	return (
@@ -49,28 +50,12 @@ export const magicLinkScript = `(function() {
 	var errorEl = document.getElementById('error');
 	var errorMsgEl = document.getElementById('error-message');
 
-	function validateNext(next) {
-		if (typeof next !== 'string' || !next) return '/';
-		try {
-			var url = new URL(next, window.location.origin);
-			if (url.origin !== window.location.origin) {
-				return '/';
-			}
-			// Scheme-relative pathname ('//host') passes the origin check but
-			// navigates off-site; reject it.
-			if (url.pathname.indexOf('//') === 0) {
-				return '/';
-			}
-			return url.pathname + url.search + url.hash;
-		} catch (e) {
-			return '/';
-		}
-	}
+	${safeNextScript}
 
 	function showSuccess(next) {
 		loadingEl.classList.add('hidden');
 		successEl.classList.remove('hidden');
-		window.location.replace(validateNext(next));
+		window.location.replace(safeNext(next));
 	}
 
 	function showError(message) {

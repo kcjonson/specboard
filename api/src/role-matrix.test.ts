@@ -56,6 +56,7 @@ vi.mock('@specboard/core', async (importOriginal) => ({
 
 vi.mock('./handlers/projects.ts', async (importOriginal) => stubHandlers(await importOriginal()));
 vi.mock('./handlers/members.ts', async (importOriginal) => stubHandlers(await importOriginal()));
+vi.mock('./handlers/invitations.ts', async (importOriginal) => stubHandlers(await importOriginal()));
 vi.mock('./handlers/storage/file-handlers.ts', async (importOriginal) => stubHandlers(await importOriginal()));
 vi.mock('./handlers/storage/git-handlers.ts', async (importOriginal) => stubHandlers(await importOriginal()));
 vi.mock('./handlers/storage/folder-handlers.ts', async (importOriginal) => stubHandlers(await importOriginal()));
@@ -94,7 +95,7 @@ const EXPECTED: Record<Persona, Record<ProjectRole, Outcome>> = {
 
 const PERSONAS = Object.keys(EXPECTED) as Persona[];
 
-/** The routes the spec makes owner-only: settings, repository, folders, delete, members. */
+/** The routes the spec makes owner-only: settings, repository, folders, delete, members, invitations. */
 const OWNER_ONLY = new Set([
 	`PUT ${PROJECT_PREFIX}`,
 	`DELETE ${PROJECT_PREFIX}`,
@@ -102,6 +103,15 @@ const OWNER_ONLY = new Set([
 	`DELETE ${PROJECT_PREFIX}/folders`,
 	`PUT ${PROJECT_PREFIX}/members/:member`,
 	`DELETE ${PROJECT_PREFIX}/members/:member`,
+	`POST ${PROJECT_PREFIX}/invitations`,
+	`GET ${PROJECT_PREFIX}/invitations`,
+	`POST ${PROJECT_PREFIX}/invitations/:invitation/resend`,
+	`DELETE ${PROJECT_PREFIX}/invitations/:invitation`,
+]);
+
+/** Reads only the owner may make: pending invitations carry invitees' email addresses. */
+const OWNER_READS = new Set([
+	`GET ${PROJECT_PREFIX}/invitations`,
 ]);
 
 /**
@@ -135,7 +145,14 @@ function projectRoutes(app: Hono): ProjectRoute[] {
 	return [...byRoute.values()];
 }
 
-const PARAMS: Record<string, string> = { owner: 'acme', project: 'roadmap', itemKey: 'RM-1', member: 'vera', id: '1' };
+const PARAMS: Record<string, string> = {
+	owner: 'acme',
+	project: 'roadmap',
+	itemKey: 'RM-1',
+	member: 'vera',
+	id: '1',
+	invitation: '6f1c0b5e-2a4d-4e8f-9b3a-1c2d3e4f5a6b',
+};
 
 function concretePath(path: string): string {
 	return path.replace(/:(\w+)(\{[^}]*\})?/g, (_match, name: string) => PARAMS[name] ?? 'x');
@@ -224,8 +241,9 @@ describe('the project route table', () => {
 		expect(undeclared).toEqual([]);
 	});
 
-	it('keeps reads at viewer', () => {
-		const raised = projectRoutes(app).filter((route) => route.method === 'GET' && route.minRole !== 'viewer');
+	it('keeps reads at viewer but the listed owner ones', () => {
+		const raised = projectRoutes(app).filter((route) =>
+			route.method === 'GET' && route.minRole !== (OWNER_READS.has(route.label) ? 'owner' : 'viewer'));
 		expect(raised.map((route) => `${route.label}: ${route.minRole}`)).toEqual([]);
 	});
 

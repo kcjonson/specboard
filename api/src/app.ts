@@ -111,6 +111,19 @@ import {
 	handleRemoveMember,
 	handleLeaveProject,
 } from './handlers/members.ts';
+import {
+	handleCreateInvitation,
+	handleListInvitations,
+	handleResendInvitation,
+	handleRevokeInvitation,
+} from './handlers/invitations.ts';
+import {
+	handleLookupInvite,
+	handleListMyInvitations,
+	handleGetMyInvitation,
+	handleAcceptMyInvitation,
+	handleDeclineMyInvitation,
+} from './handlers/invite.ts';
 
 // Allowed origins for CORS
 // In production, this restricts which domains can make cross-origin requests
@@ -283,7 +296,8 @@ export function createApp(redis: Redis): Hono<{ Variables: AppVariables }> {
 			message: error.message,
 			stack: error.stack,
 			timestamp: Date.now(),
-			url: context.req.url,
+			// Origin and path only: a query string can carry a token, and this goes off-host.
+			url: new URL(context.req.url).origin + context.req.path,
 			userAgent: context.req.header('user-agent'),
 			userId,
 			source: 'api',
@@ -460,6 +474,21 @@ export function createApp(redis: Redis): Hono<{ Variables: AppVariables }> {
 	app.put('/api/projects/:owner/:project/members/:member', owner, handleUpdateMember);
 	app.delete('/api/projects/:owner/:project/members/:member', owner, handleRemoveMember);
 	app.delete('/api/projects/:owner/:project/membership', viewer, handleLeaveProject);
+
+	// Invitations, the owner's side. The pending list carries invitees' addresses, so it is owner-only too.
+	app.post('/api/projects/:owner/:project/invitations', owner, (context) => handleCreateInvitation(context, redis));
+	app.get('/api/projects/:owner/:project/invitations', owner, handleListInvitations);
+	app.post('/api/projects/:owner/:project/invitations/:invitation/resend', owner, (context) => handleResendInvitation(context, redis));
+	app.delete('/api/projects/:owner/:project/invitations/:invitation', owner, handleRevokeInvitation);
+
+	// Invitations, the invitee's side: not project routes, since the caller isn't a member yet.
+	// The emailed token only finds an invitation; reading and answering one goes by id, for
+	// a signed-in account the invitation is addressed to.
+	app.get('/api/invite', (context) => handleLookupInvite(context, redis));
+	app.get('/api/invitations', (context) => handleListMyInvitations(context, redis));
+	app.get('/api/invitations/:id', (context) => handleGetMyInvitation(context, redis));
+	app.post('/api/invitations/:id/accept', (context) => handleAcceptMyInvitation(context, redis));
+	app.post('/api/invitations/:id/decline', (context) => handleDeclineMyInvitation(context, redis));
 
 	// Local folders. Adding one stats an arbitrary path on the API host and runs git there, so
 	// the route only exists where a repository is mounted (dev compose). Removing one is a

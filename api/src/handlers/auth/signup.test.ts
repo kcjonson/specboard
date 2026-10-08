@@ -9,6 +9,7 @@ import type pg from 'pg';
 
 vi.mock('@specboard/db', () => ({
 	query: vi.fn(),
+	getInvitationByTokenHash: vi.fn(),
 }));
 
 vi.mock('@specboard/auth', async () => {
@@ -47,7 +48,8 @@ vi.mock('@specboard/email', () => ({
 	})),
 }));
 
-import { query } from '@specboard/db';
+import { createHash } from 'node:crypto';
+import { getInvitationByTokenHash, query, type InvitationDetails } from '@specboard/db';
 import { checkRateLimitKey } from '@specboard/auth';
 import { sendEmail } from '@specboard/email';
 import { handleSignup } from './signup.ts';
@@ -230,5 +232,99 @@ describe('handleSignup (email-only)', () => {
 		vi.mocked(query).mockRejectedValue(new Error('connection refused'));
 		const res = await postSignup(createApp(), validBody);
 		expect(res.status).toBe(500);
+	});
+});
+
+describe('handleSignup with a project invitation token', () => {
+	const INVITE_TOKEN = 'b2'.repeat(32);
+	const INVITATION: InvitationDetails = {
+		id: 'invitation-uuid',
+		email: 'new@example.com',
+		role: 'editor',
+		state: 'open',
+		projectName: 'Roadmap',
+		projectSlug: 'roadmap',
+		ownerSlug: 'acme',
+		ownerName: 'Acme',
+		inviterName: 'Acme',
+		createdAt: new Date(),
+		expiresAt: new Date(Date.now() + 86_400_000),
+	};
+
+	function magicLinkNextPath(): unknown {
+		const upsert = vi.mocked(query).mock.calls.find((call) => (call[0] as string).includes('INSERT INTO magic_link_tokens'));
+		return upsert?.[1]?.[3];
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// No early-access keys at all: the invitation alone has to open the gate.
+		process.env.INVITE_KEYS = '';
+		vi.mocked(checkRateLimitKey).mockResolvedValue(true);
+		vi.mocked(getInvitationByTokenHash).mockResolvedValue({ invitation: INVITATION, addressedToViewer: null });
+	});
+
+	it('opens an account for the invited address, sending the magic link back to the invite by id', async () => {
+		mockNewUserQueries();
+		const res = await postSignup(createApp(), { invite_token: INVITE_TOKEN });
+
+		expect(res.status).toBe(201);
+		// Masked: whoever holds the token may not own the address.
+		expect(await res.json()).toMatchObject({ email: 'n\u2022\u2022\u2022@example.com' });
+		expect(getInvitationByTokenHash).toHaveBeenCalledWith(createHash('sha256').update(INVITE_TOKEN).digest('hex'), null);
+		const insert = vi.mocked(query).mock.calls.find((call) => (call[0] as string).includes('INSERT INTO users'));
+		expect(insert?.[1]?.[0]).toBe('new@example.com');
+		expect(JSON.parse(String(insert?.[1]?.[1]))).toEqual({ project_invitation_id: 'invitation-uuid' });
+		expect(magicLinkNextPath()).toBe('/invite?id=invitation-uuid');
+	});
+
+	it('accepts the invited address in the body, in any case', async () => {
+		mockNewUserQueries();
+		const res = await postSignup(createApp(), { email: 'New@Example.com', invite_token: INVITE_TOKEN });
+		expect(res.status).toBe(201);
+	});
+
+	it('refuses any other address', async () => {
+		const res = await postSignup(createApp(), { email: 'someone-else@example.com', invite_token: INVITE_TOKEN });
+
+		expect(res.status).toBe(403);
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it.each(['expired', 'revoked', 'accepted', 'declined'] as const)('refuses an invitation that is %s', async (state) => {
+		vi.mocked(getInvitationByTokenHash).mockResolvedValue({ invitation: { ...INVITATION, state }, addressedToViewer: null });
+		const res = await postSignup(createApp(), { invite_token: INVITE_TOKEN });
+
+		expect(res.status).toBe(403);
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it('refuses an unknown or malformed token', async () => {
+		vi.mocked(getInvitationByTokenHash).mockResolvedValue(null);
+		expect((await postSignup(createApp(), { invite_token: INVITE_TOKEN })).status).toBe(403);
+		expect((await postSignup(createApp(), { invite_token: 'not-a-token' })).status).toBe(403);
+		expect((await postSignup(createApp(), { invite_token: 42 })).status).toBe(403);
+		expect(query).not.toHaveBeenCalled();
+	});
+
+	it('sends an existing account a sign-in link back to the invite, with the same response', async () => {
+		vi.mocked(query).mockImplementation(async (sql): Promise<pg.QueryResult> => {
+			if ((sql as string).includes('SELECT * FROM users WHERE LOWER(email)')) {
+				return mockQueryResult([{ ...mockNewUser, username: 'existing', email_verified: true }]);
+			}
+			return mockQueryResult([], 1);
+		});
+
+		const res = await postSignup(createApp(), { invite_token: INVITE_TOKEN });
+
+		expect(res.status).toBe(201);
+		expect(magicLinkNextPath()).toBe('/invite?id=invitation-uuid');
+		expect(sendEmail).toHaveBeenCalledOnce();
+	});
+
+	it('still requires an early-access key without a token', async () => {
+		const res = await postSignup(createApp(), { email: 'new@example.com' });
+		expect(res.status).toBe(400);
+		expect(getInvitationByTokenHash).not.toHaveBeenCalled();
 	});
 });

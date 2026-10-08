@@ -3,6 +3,7 @@
  */
 import type { JSX } from 'preact';
 import { BrandLogo } from '../components/logo';
+import { safeNextScript } from '../scripts/safe-next';
 
 export function LoginContent(): JSX.Element {
 	return (
@@ -138,26 +139,10 @@ export const loginScript = `(function() {
 		}
 	});
 
-	function getReturnUrl() {
-		var params = new URLSearchParams(window.location.search);
-		var next = params.get('next');
-		if (!next) return '/';
+	${safeNextScript}
 
-		try {
-			var url = new URL(next, window.location.origin);
-			if (url.origin !== window.location.origin) {
-				return '/';
-			}
-			// A scheme-relative pathname ('//host' or '/\\host', which URL
-			// normalizes to '//host') passes the origin check but navigates
-			// off-site when assigned to location.href.
-			if (url.pathname.indexOf('//') === 0) {
-				return '/';
-			}
-			return url.pathname + url.search + url.hash;
-		} catch (e) {
-			return '/';
-		}
+	function getReturnUrl() {
+		return safeNext(new URLSearchParams(window.location.search).get('next'));
 	}
 
 	function isEmail(value) {

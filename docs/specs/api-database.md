@@ -147,6 +147,29 @@ CREATE TABLE project_members (
 );
 CREATE INDEX idx_project_members_user ON project_members(user_id);
 
+-- Invitations into a project by email. Only the token's SHA-256 is stored. Rows are
+-- tombstoned by accepted_at, declined_at or revoked_at, never deleted; an open row past
+-- expires_at (7 days from sending or the last resend) is expired.
+CREATE TABLE project_invitations (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+	email VARCHAR(255) NOT NULL,          -- lowercased
+	role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
+	token_hash VARCHAR(64) NOT NULL UNIQUE,
+	invited_by UUID REFERENCES users(id) ON DELETE SET NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	expires_at TIMESTAMPTZ NOT NULL,
+	accepted_at TIMESTAMPTZ,
+	declined_at TIMESTAMPTZ,
+	revoked_at TIMESTAMPTZ
+);
+-- At most one open invitation per address per project
+CREATE UNIQUE INDEX idx_project_invitations_open
+	ON project_invitations(project_id, email)
+	WHERE accepted_at IS NULL AND declined_at IS NULL AND revoked_at IS NULL;
+CREATE INDEX idx_project_invitations_email ON project_invitations(email)
+	WHERE accepted_at IS NULL AND declined_at IS NULL AND revoked_at IS NULL;
+
 -- Repositories (GitHub repos the user has connected - legacy, see projects)
 CREATE TABLE repositories (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -451,7 +474,61 @@ in a member route is a 409 `PROJECT_OWNER`, and so is the owner leaving.
 | DELETE | /api/projects/:owner/:project/members/:member | Remove a member (owner) |
 | DELETE | /api/projects/:owner/:project/membership | Leave the project: the caller's own membership (viewer) |
 
-Adding members is phase 3 (invitations).
+People join a project by accepting an invitation.
+
+### Project Invitations
+
+The owner's side lives under the project and is owner-only, the pending list included,
+since it carries invitees' addresses. An invitation is
+`{ id, email, role, invitedBy, createdAt, expiresAt, state }`, where `state` is `open` or
+`expired` and `invitedBy` is the sender's display name.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/projects/:owner/:project/invitations | Invite `{ "email", "role": "editor" \| "viewer" }`; 201 with the invitation (owner) |
+| GET | /api/projects/:owner/:project/invitations | Pending invitations, open or expired, oldest first (owner) |
+| POST | /api/projects/:owner/:project/invitations/:invitation/resend | New token, expiry restarts at 7 days; the old link stops working (owner) |
+| DELETE | /api/projects/:owner/:project/invitations/:invitation | Revoke; the row stays, stamped (owner) |
+
+- Inviting answers the same whether or not the address has an account. The owner's own
+  address is a 409 `PROJECT_OWNER`, a member's a 409 `ALREADY_MEMBER`.
+- Inviting an address with an open invitation revokes it and sends a new one. Invites to one
+  project take turns on the project row, so a double click leaves exactly one open.
+- Sending and resending share one budget per inviting owner, across their projects:
+  `projectInvite`, 30 an hour (429 past it).
+- The email ("{inviter} invited you to {project} on Specboard as an editor") links to
+  `/invite?token=...`. It goes through the same `sendEmail` path as the magic link.
+
+The invitee's side is not under a project, since the caller isn't a member yet, so it has no
+`requireProjectAccess` gate. The emailed token only finds an invitation. Reading and answering
+one goes by its id, and needs a session whose account's verified email is the invited address.
+So the raw token never travels past the first page load: the /invite page's sign-in, signup and
+onboarding hops come back as `/invite?id=...`, and only the token's hash is stored anywhere.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/invite?token=... | What the /invite page shows: `{ id, state, role, projectName, ownerName, inviterName, email, addressedToYou }`. `email` is masked (`k•••@example.com`); `addressedToYou` is null signed out. No side effects |
+| GET | /api/invitations | The signed-in user's open, unexpired invitations: `{ id, role, project: { ref, name }, ownerName, inviterName, createdAt, expiresAt }` |
+| GET | /api/invitations/:id | One invitation addressed to the signed-in user, in any state, shaped like the token lookup |
+| POST | /api/invitations/:id/accept | Answers `{ project: { ref, name }, role, alreadyMember }` |
+| POST | /api/invitations/:id/decline | |
+
+When the invitation is the caller's (`addressedToYou: true`), both reads add `project: { ref, name }`,
+so an accepted invite can link to the project, and for a revoked, expired or declined one
+`openInvitationId`: the newest open invitation to the same address and project, if the owner
+invited them again, else null.
+
+Refusals: no session 401 (a session-less POST is refused by CSRF with 403 first); unknown,
+malformed or someone else's id 404, the same answer, so an id says nothing about other people's
+invitations; expired, revoked, accepted or declined 410 `INVITATION_CLOSED` with `state`; the
+owner accepting 409 `PROJECT_OWNER` (the owner never gets a membership); an account without a
+slug accepting 409 `ONBOARDING_REQUIRED` (members are addressed by slug).
+Accepting as someone who is already a member stamps the invitation accepted and keeps the
+role they have, `alreadyMember: true`; changing a role is the owner's call in the member list.
+Accepting adds the membership (`added_by` is the inviter) and stamps the invitation in one
+transaction. It share-locks the project row first, the row inviting takes, so a re-invite of
+the same address either waits and refuses them as a member or revokes the invite before they
+can accept it; never a member left with an open invitation.
 
 ### Project Storage (see [project-storage.md](./project-storage.md))
 
@@ -745,6 +822,7 @@ Improve selected text.
 | Search | 20/minute |
 | AI | 10/minute |
 | `GET /api/projects/:owner/:project/items` | 600/minute |
+| Project invitation emails (invite and resend), per inviting owner | 30/hour |
 
 The items list gets its own budget because the planning board doesn't fetch it
 once per view: it fetches one window per status column, so a single poll (every

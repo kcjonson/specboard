@@ -461,6 +461,17 @@ export const RATE_LIMIT_CONFIGS = {
 		message: 'Too many signup requests, please try again in an hour',
 	} satisfies RateLimitConfig,
 
+	/**
+	 * Project invitation emails, sent and resent: 30 per hour per inviting owner, across
+	 * all their projects. Enforced in-handler via checkRateLimitKey, keyed on the user, so
+	 * an owner can't turn invites into a mail relay by spreading them over IPs or projects.
+	 */
+	projectInvite: {
+		maxRequests: 30,
+		windowSeconds: 60 * 60,
+		message: 'Too many invitations sent, please try again in an hour',
+	} satisfies RateLimitConfig,
+
 	/** General API: 100 requests per minute */
 	api: {
 		maxRequests: 100,
