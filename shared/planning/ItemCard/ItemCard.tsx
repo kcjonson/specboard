@@ -47,8 +47,9 @@ export function ItemCard({
 		onOpen?.(item);
 	};
 
+	// The card's own Enter, not one bubbling from its new-window button or PR link, which Enter activates.
 	const handleKeyDown = (e: KeyboardEvent): void => {
-		if (e.key === 'Enter') {
+		if (e.key === 'Enter' && e.target === e.currentTarget) {
 			onOpen?.(item);
 		}
 	};

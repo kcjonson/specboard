@@ -30,38 +30,55 @@ function unreadable(source: ItemsCollection): boolean {
  * work near the top.
  *
  * A project whose load is refused with a 403 or 404 is dropped: it stops counting toward
- * anything here, is never asked again, and `dropped` names it so the view can say so.
- * Any other failure is an error of the whole, as it would be on one project's board.
+ * anything here, is never asked again, and `dropped` names it so the view can say so. So
+ * is one another view of the same projects found the person can't read (`drop`). Any
+ * other failure is an error of the whole, as it would be on one project's board.
  */
 export class MergedItems implements ItemsSource, Observable {
 	private readonly sources: readonly ItemsCollection[];
+	/** Refs another view found the person can't read. */
+	private readonly refused = new Set<string>();
+	private readonly listeners = new Set<ChangeCallback>();
 
 	/** `sources` in the order the projects were chosen. */
 	constructor(sources: readonly ItemsCollection[]) {
 		this.sources = sources;
 	}
 
-	/** The projects still in the view. */
-	private get live(): ItemsCollection[] {
-		return this.sources.filter((source) => !unreadable(source));
+	private isDropped(source: ItemsCollection): boolean {
+		return this.refused.has(source.projectRef) || unreadable(source);
 	}
 
-	/** Refs of the projects dropped for answering 403 or 404, in the order chosen. */
+	/** The projects still in the view. */
+	private get live(): ItemsCollection[] {
+		return this.sources.filter((source) => !this.isDropped(source));
+	}
+
+	/** Refs of the projects dropped, for answering 403 or 404 here or elsewhere, in the order chosen. */
 	get dropped(): string[] {
-		return this.sources.filter(unreadable).map((source) => source.projectRef);
+		return this.sources.filter((source) => this.isDropped(source)).map((source) => source.projectRef);
+	}
+
+	/** Leaves a project out for good, as its own 403 or 404 would: another view found the person can't read it. */
+	drop(projectRef: string): void {
+		if (this.refused.has(projectRef) || !this.sources.some((source) => source.projectRef === projectRef)) return;
+		this.refused.add(projectRef);
+		for (const listener of [...this.listeners]) listener();
 	}
 
 	on(event: 'change', callback: ChangeCallback): void {
+		this.listeners.add(callback);
 		for (const source of this.sources) source.on(event, callback);
 	}
 
 	off(event: 'change', callback: ChangeCallback): void {
+		this.listeners.delete(callback);
 		for (const source of this.sources) source.off(event, callback);
 	}
 
-	/** Each project's own counter only rises, so their sum moves whenever any project changes. */
+	/** Each project's own counter only rises, and so do the drops, so the sum moves whenever any of it changes. */
 	get version(): number {
-		return this.sources.reduce((sum, source) => sum + source.version, 0);
+		return this.sources.reduce((sum, source) => sum + source.version, this.refused.size);
 	}
 
 	/**

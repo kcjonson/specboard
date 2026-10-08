@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { navigate } from '@specboard/router';
+import type { ItemsFilter } from '@specboard/models';
+import { BOARD_PAGE_SIZE } from '../Board/Board';
+import { TABLE_PAGE_SIZE } from '../Table/Table';
 import type { PlanningView } from '../ViewToggle/ViewToggle';
 import { withQuery } from '../utils/address';
 import { VIEW_PREF, readPref, writePref } from './prefs';
 
 /** Below this width the Map isn't offered (spec decision 8). The same 768px as the CSS breakpoint. */
-export const SMALL_SCREEN_QUERY = '(width < 768px)';
+const SMALL_SCREEN_QUERY = '(width < 768px)';
 
 const VIEWS: readonly string[] = ['board', 'table', 'map'];
 
@@ -31,7 +34,7 @@ export function resolveView(requested: PlanningView, small: boolean): PlanningVi
 }
 
 /** Whether the window is under the small-screen breakpoint, following it as the window resizes. */
-export function useSmallScreen(): boolean {
+function useSmallScreen(): boolean {
 	const [query] = useState(() => (typeof window.matchMedia === 'function' ? window.matchMedia(SMALL_SCREEN_QUERY) : null));
 	const [small, setSmall] = useState(query?.matches ?? false);
 	useEffect(() => {
@@ -76,4 +79,34 @@ export function usePlanningView(): PlanningViewState {
 	}, []);
 
 	return { view: resolveView(requested, small), small, changeView };
+}
+
+/** What a planning page's windows are asked through: one project's collection, or several merged. */
+interface PlanningWindows {
+	ensureLimit(limit: number): Promise<void>;
+	setFilter(filter: ItemsFilter): Promise<void>;
+}
+
+/** The rows each status window opens with: the page of whichever view shows first. */
+export function openingWindow(): number {
+	return readView() === 'table' ? TABLE_PAGE_SIZE : BOARD_PAGE_SIZE;
+}
+
+/**
+ * Keeps the windows fit for the view on screen. The Table shows more per section than the
+ * Board per column, so switching to it widens the windows that had more; windows never
+ * shrink, so board -> table -> board leaves the Board showing the wider set. The toolbar's
+ * filters narrow the windows on the server, except while the Map shows: it dims by them
+ * and asks the items list for the matches itself, and the windows catch up when the Board
+ * or Table comes back.
+ */
+export function usePlanningWindows(items: PlanningWindows, view: PlanningView, filter: ItemsFilter): void {
+	useEffect(() => {
+		if (view === 'table') void items.ensureLimit(TABLE_PAGE_SIZE);
+	}, [view, items]);
+
+	const { search, type } = filter;
+	useEffect(() => {
+		if (view !== 'map') void items.setFilter({ search, type });
+	}, [items, view, search, type]);
 }

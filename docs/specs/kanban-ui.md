@@ -322,6 +322,10 @@ so the board turns read-only to match.
 
 ## Keyboard Shortcuts
 
+The board's keys apply with focus on the board or nowhere. A key aimed at a link, a button,
+a field, a dialog, or the item drawer is left to it, so Enter follows a link or presses a
+button even with a card selected, and Enter on a focused card opens that card.
+
 ### Global
 
 | Shortcut | Action |
@@ -511,6 +515,14 @@ between cards replaces rather than piles up entries. The drawer URL is in-app on
 a document load of it (pasted link, reload, new tab) is redirected by the frontend
 service to the standalone page, so following a link to an item never lands on a
 board with a sidebar.
+
+Closing the drawer (its close button, Escape) goes back, undoing the entry its opening
+pushed, while that lands where closing should: the current entry is still the one the
+opening pushed, and nothing but the Map's anchor has changed in it since. Another view
+picked or a Map jump pushes an entry of its own, which Back would undo instead with the
+drawer still open, so then, as with a drawer opened by a navigation from elsewhere, it
+closes in place. Going back returns the Map's camera to where it was when the drawer
+opened. `useDrawerHistory` holds this model for every planning page.
 
 On the Map (`?view=map`) the same drawer overlays the right side of the plot instead of
 narrowing it, and the selected item stays in view

@@ -310,10 +310,12 @@ describe('Planning drawer history', () => {
 	afterEach(() => {
 		cleanup();
 		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
 	});
 
 	// Without the router here, each navigation's re-render with the new route is the test's own.
 	it('opens an item as a new history entry, moves between items in place, and closes back to the board', async () => {
+		const back = vi.spyOn(window.history, 'back');
 		const { findByTestId, findByRole, rerender } = renderPlanning();
 		await findByTestId('board');
 		const before = window.history.length;
@@ -330,7 +332,25 @@ describe('Planning drawer history', () => {
 		expect((await findByTestId('drawer')).getAttribute('data-item')).toBe('SPE-6');
 
 		fireEvent.click(await findByRole('button', { name: 'Close the drawer' }));
+		expect(back).toHaveBeenCalledTimes(1);
 		await waitFor(() => expect(window.location.pathname + window.location.search).toBe('/projects/acme/specboard/planning?view=board'));
+	});
+
+	it('closes in place after another view is picked with the drawer open, staying on that view', async () => {
+		const back = vi.spyOn(window.history, 'back');
+		const { findByTestId, findByRole, rerender } = renderPlanning();
+		await findByTestId('board');
+
+		act(() => board.props!.onOpenItem({ key: 'SPE-5' }));
+		rerender(<Planning params={{ owner: 'acme', project: 'specboard', itemKey: 'SPE-5' }} />);
+		fireEvent.click(await findByRole('button', { name: 'Table' }));
+		expect(window.location.pathname + window.location.search).toBe('/projects/acme/specboard/planning/items/SPE-5?view=table');
+		const length = window.history.length;
+
+		fireEvent.click(await findByRole('button', { name: 'Close the drawer' }));
+		expect(back).not.toHaveBeenCalled();
+		expect(window.location.pathname + window.location.search).toBe('/projects/acme/specboard/planning?view=table');
+		expect(window.history.length).toBe(length);
 	});
 });
 

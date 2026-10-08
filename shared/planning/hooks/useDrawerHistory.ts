@@ -1,16 +1,50 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { navigate } from '@specboard/router';
 import type { ItemModel } from '@specboard/models';
+import { withQuery } from '../utils/address';
 
 export interface DrawerHistory {
 	/** The card or row marked as selected; the arrow keys move it, and the open item is it. */
 	selectedItemKey: string | undefined;
-	/** Moves the selection. With the drawer open it follows live, replacing the history entry rather than pushing one per keystroke. */
+	/**
+	 * Moves the selection. With the drawer open it follows live, replacing the history entry
+	 * rather than pushing one per keystroke, and clearing it (Escape) closes the drawer.
+	 */
 	select: (item: ItemModel | undefined) => void;
 	/** Opens an item in the drawer, or moves the open drawer to it. */
 	open: (itemKey: string) => void;
 	/** Closes the drawer, keeping the selection. */
 	close: () => void;
+}
+
+/** The key in `history.state` that marks the entry the drawer's opening pushed. */
+const MARK = 'specboard.drawer';
+
+/** Unique within this page load, and against marks a reload left in the history. */
+const LOAD = Date.now().toString(36);
+let opens = 0;
+
+/** What closing needs to know about the drawer's opening. */
+interface Opening {
+	/** The view's address before the drawer opened, which Back from our entry returns to. */
+	from: string;
+	/** Carried in `history.state` by the entry our push made, and by no entry pushed since. */
+	mark: string;
+}
+
+function stateWith(mark: string): Record<string, unknown> {
+	const state: unknown = window.history.state;
+	return { ...(typeof state === 'object' && state !== null ? state : {}), [MARK]: mark };
+}
+
+function markOfEntry(): unknown {
+	const state: unknown = window.history.state;
+	return typeof state === 'object' && state !== null ? (state as Record<string, unknown>)[MARK] : undefined;
+}
+
+/** An address without the Map's anchor, which follows the camera as the person pans and so is never a place of its own. */
+function withoutAnchor(address: string): string {
+	return withQuery(new URL(address, window.location.origin), { focus: undefined });
 }
 
 function inField(target: EventTarget | null): boolean {
@@ -48,60 +82,69 @@ export function useDrawerHistory(
 	// Seeded from the address so a page that opens on an item lands with it selected, and
 	// kept in step below whenever the address moves on its own.
 	const [selectedItemKey, setSelectedItemKey] = useState<string | undefined>(openItemKey);
-	// The address the drawer was opened from, where Back from the entry our push made lands.
-	const openedFrom = useRef<string | null>(null);
+	const opening = useRef<Opening | null>(null);
 
 	// A navigation from elsewhere, or Back and Forward across item addresses.
 	useEffect(() => {
 		if (openItemKey) setSelectedItemKey(openItemKey);
-		else openedFrom.current = null;
+		else opening.current = null;
 	}, [openItemKey]);
 
-	const select = useCallback((item: ItemModel | undefined): void => {
-		setSelectedItemKey(item?.key);
-		if (!openItemKey) return;
-		navigate(addressFor(item?.key), { replace: true });
-	}, [openItemKey, addressFor]);
+	// The router writes a fresh state with every navigation, so a replace of our own puts the mark back.
+	const moveTo = useCallback((itemKey: string): void => {
+		navigate(addressFor(itemKey), { replace: true });
+		if (opening.current) window.history.replaceState(stateWith(opening.current.mark), '');
+	}, [addressFor]);
 
-	const open = useCallback((itemKey: string): void => {
-		setSelectedItemKey(itemKey);
-		if (openItemKey) {
-			navigate(addressFor(itemKey), { replace: true });
-		} else {
-			openedFrom.current = window.location.pathname + window.location.search + window.location.hash;
-			navigate(addressFor(itemKey));
-		}
-	}, [openItemKey, addressFor]);
-
-	// Closing undoes our own push where there is one, which leaves the history exactly as
-	// it was before the drawer opened. Replacing instead would strand a duplicate entry for
-	// the view, making the next Back appear to do nothing; pushing would make Back reopen
-	// the drawer. Back is only right while it lands where closing should, though: a view
-	// picked, a Map anchor moved, or a filter changed since the drawer opened has moved the
-	// address on, and Back would undo that and leave the drawer open. Then, and when the
-	// drawer was opened by a navigation from elsewhere, a reload, or Back and Forward, it
-	// closes in place.
+	// Closing undoes our own push where Back lands where closing should, which leaves the
+	// history exactly as it was before the drawer opened. That's while the entry is still the
+	// one our push made: a view picked or a Map jump since pushes an entry of its own, and Back
+	// would undo that instead, drawer open. And while nothing has changed in place since but
+	// the Map's anchor, which Back returns to where the drawer opened: a filter changed with
+	// the drawer open is the person's, and Back would take it away. Anything else closes in
+	// place, as does a drawer opened by a link, a reload, or Back and Forward, where there is
+	// nothing of ours to pop. Replacing where Back is right would strand a second entry for
+	// the view, making the next Back appear to do nothing.
 	const close = useCallback((): void => {
 		const closed = addressFor(undefined);
-		const from = openedFrom.current;
-		openedFrom.current = null;
-		if (from === closed) {
+		const was = opening.current;
+		opening.current = null;
+		if (was && markOfEntry() === was.mark && withoutAnchor(closed) === withoutAnchor(was.from)) {
 			window.history.back();
 			return;
 		}
 		navigate(closed, { replace: true });
 	}, [addressFor]);
 
+	const select = useCallback((item: ItemModel | undefined): void => {
+		setSelectedItemKey(item?.key);
+		if (!openItemKey) return;
+		if (item) moveTo(item.key);
+		else close();
+	}, [openItemKey, moveTo, close]);
+
+	const open = useCallback((itemKey: string): void => {
+		setSelectedItemKey(itemKey);
+		if (openItemKey) {
+			moveTo(itemKey);
+			return;
+		}
+		const from = addressFor(undefined);
+		navigate(addressFor(itemKey));
+		const mark = `${LOAD}-${++opens}`;
+		window.history.replaceState(stateWith(mark), '');
+		opening.current = { from, mark };
+	}, [openItemKey, addressFor, moveTo]);
+
 	useEffect(() => {
 		if (!closeOnEscape || !openItemKey) return;
 		const onKeyDown = (e: KeyboardEvent): void => {
 			if (e.key !== 'Escape' || inField(e.target)) return;
-			setSelectedItemKey(undefined);
-			close();
+			select(undefined);
 		};
 		document.addEventListener('keydown', onKeyDown);
 		return () => document.removeEventListener('keydown', onKeyDown);
-	}, [closeOnEscape, openItemKey, close]);
+	}, [closeOnEscape, openItemKey, select]);
 
 	return { selectedItemKey, select, open, close };
 }

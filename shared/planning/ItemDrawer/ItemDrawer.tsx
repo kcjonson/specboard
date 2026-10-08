@@ -94,7 +94,8 @@ export function ItemDrawer({ item, listed, canEdit, project, maxWidth, onClose, 
 			label="Resize detail panel"
 			class={styles.drawer}
 		>
-			<div class={styles.inner} onKeyDown={handleKeyDown}>
+			{/* data-item-drawer: the board's keys leave whatever is aimed in here to the drawer. */}
+			<div class={styles.inner} onKeyDown={handleKeyDown} data-item-drawer>
 				<div class={styles.header}>
 					<h2 class={styles.title}>{title}</h2>
 					<div class={styles.headerActions}>

@@ -686,6 +686,43 @@ describe('MapDataModel across projects', () => {
 		expect(c.asked).toHaveLength(1);
 	});
 
+	it('drops a project another view found it can\'t read: its rows leave in a fresh layout, it\'s never asked again, and a read of it still out is ignored', async () => {
+		const { spe, pln } = boards();
+		const out = later();
+		const a = scripted(wholeRead(spe.rows));
+		const b = scripted(wholeRead(pln.rows));
+		const { model, worker, poll } = await loaded([['acme/specboard', a], ['kim/planner', b]]);
+		expect(keysOf(model.rows.values())).toEqual(keysOf([...spe.rows, ...pln.rows]));
+
+		// The planner's next read goes out, and the page learns it can't be read before it lands.
+		a.reads.push(deltaRead([], spe.rows.length));
+		b.reads.push(out.read);
+		const polled = poll();
+		await drain();
+		model.drop('kim/planner');
+		expect(model.failures.get('kim/planner')).toMatchObject({ unreadable: true, held: false });
+		await settle(worker);
+
+		expect(worker.inputs.at(-1)!.previous).toBeUndefined();
+		expect(model.changes).toBeNull();
+		expect(keysOf(model.rows.values())).toEqual(keysOf(spe.rows));
+
+		out.land(wholeRead(pln.rows));
+		await polled;
+		await drain();
+		expect(keysOf(model.rows.values())).toEqual(keysOf(spe.rows));
+		expect(model.failures.get('kim/planner')).toMatchObject({ unreadable: true });
+
+		a.reads.push(deltaRead([], spe.rows.length));
+		await poll();
+		expect(b.asked).toHaveLength(2);
+
+		const failures = model.failures;
+		model.drop('kim/planner');
+		model.drop('nobody/here');
+		expect(model.failures).toBe(failures);
+	});
+
 	it('is the error state only when every project\'s read fails, and names the first failure', async () => {
 		const worker = fakeWorker();
 		const a = scripted(new Error('HTTP 500: Internal Server Error'));

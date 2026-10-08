@@ -2,20 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact';
 import { formatItemKey, parseItemKey } from '@specboard/core/identifiers';
 import { fetchClient } from '@specboard/fetch';
-import { ItemModel, ItemsCollection, useModel } from '@specboard/models';
+import { ItemsCollection, useModel, type ItemModel } from '@specboard/models';
 import { Icon, Notice, Page, Select, Text } from '@specboard/ui';
-import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
+import { Board } from '../Board/Board';
 import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { LoadError } from '../LoadError/LoadError';
 import type { MapProjectFailure } from '../Map/map-data-model';
-import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
+import { Table } from '../Table/Table';
 import { ViewToggle } from '../ViewToggle/ViewToggle';
 import { Workspace } from '../Workspace/Workspace';
 import { useDrawerHistory } from '../hooks/useDrawerHistory';
+import { useDrawerItem } from '../hooks/useDrawerItem';
 import { COMBINED_POLL_INTERVAL, usePolling } from '../hooks/usePolling';
 import { CATEGORY_OPTIONS, isItemType, usePlanningFilters, type PlanningFiltersInit } from '../Planning/filters';
-import { useMapView } from '../Planning/useMapView';
-import { readView, usePlanningView } from '../Planning/view';
+import { LazyMap } from '../Planning/LazyMap';
+import { openingWindow, usePlanningView, usePlanningWindows } from '../Planning/view';
 import { ProjectKey, type ProjectLabel } from '../ProjectChip/ProjectChip';
 import { withQuery } from '../utils/address';
 import { MergedItems } from './merged-items';
@@ -136,24 +137,14 @@ function CombinedView({ refs, resolved }: CombinedViewProps): JSX.Element {
 	const items = useMemo(
 		() => new MergedItems(projects.map((project) => new ItemsCollection({
 			projectRef: project.ref,
-			limit: readView() === 'table' ? TABLE_PAGE_SIZE : BOARD_PAGE_SIZE,
+			limit: openingWindow(),
 			initialFilter: addressFilters,
 		}))),
 		[projectsKey, addressFilters]
 	);
 	useModel(items);
+	usePlanningWindows(items, view, { search: settledSearch, type });
 
-	// The Table shows more per section than the Board per column; switching to it widens
-	// the windows that had more, and they never shrink back.
-	useEffect(() => {
-		if (view === 'table') void items.ensureLimit(TABLE_PAGE_SIZE);
-	}, [view, items]);
-
-	// The Map dims by the same search and type rather than narrowing the windows, which
-	// catch up when the Board or Table comes back.
-	useEffect(() => {
-		if (!onMap) void items.setFilter({ search: settledSearch, type });
-	}, [items, onMap, settledSearch, type]);
 	// Replaced rather than pushed: a filter refines this place, it isn't a new one. The refs go
 	// back as parsed, so an address typed by hand settles into its canonical form.
 	useEffect(() => {
@@ -176,19 +167,24 @@ function CombinedView({ refs, resolved }: CombinedViewProps): JSX.Element {
 	usePolling(() => void items.fetch(), () => items.$meta.error !== null, COMBINED_POLL_INTERVAL);
 
 	// The Map reads each project itself, so it reports the projects whose reads are failing.
-	const { MapView, error: mapError, retry: retryMap } = useMapView(onMap);
 	const mapScope = useMemo(() => ({ projects }), [projects]);
 	const [mapFailures, setMapFailures] = useState(NO_FAILURES);
+	// A project the Map finds it can't read leaves the lists too, cards and rows with it, as
+	// one the lists find leaves the Map (its `unreadable`): dropped everywhere, whichever
+	// view found out first.
+	const handleMapFailures = useCallback((failures: ReadonlyMap<string, MapProjectFailure>): void => {
+		setMapFailures(failures);
+		for (const [ref, failure] of failures) if (failure.unreadable) items.drop(ref);
+	}, [items]);
 
-	// Every project in trouble is named once. One the lists or the Map can no longer read
-	// leaves the view, whichever found out first; while the Map shows, the notice also says
-	// which projects it is still trying to read, drawn as last loaded or not drawn at all.
-	const unreadable = new Set(items.dropped);
-	for (const [ref, failure] of mapFailures) if (failure.unreadable) unreadable.add(ref);
-	const shown = projects.filter((project) => !unreadable.has(project.ref));
+	// Every project in trouble is named once: the ones that left the view in one line, and
+	// while the Map shows, the ones it is still trying to read, drawn as last loaded or not
+	// drawn at all.
+	const unreadable = items.dropped;
+	const shown = projects.filter((project) => !unreadable.includes(project.ref));
 	const lone = shown.length === 1 ? shown[0] : undefined;
 	const leftOut = leftOutNotices(
-		[...resolved.missing, ...projects.filter((project) => unreadable.has(project.ref)).map((project) => project.name)],
+		[...resolved.missing, ...projects.filter((project) => unreadable.includes(project.ref)).map((project) => project.name)],
 		resolved.clashes
 	);
 	const troubled = (held: boolean): string[] => shown
@@ -225,21 +221,7 @@ function CombinedView({ refs, resolved }: CombinedViewProps): JSX.Element {
 		if (openRef) openItem(itemKey, openRef);
 	}, [openItem, openRef]);
 
-	// A listed item uses its project's live model; anything else (a child, or an item past
-	// the loaded windows) gets a standalone one in its project once the lists have loaded,
-	// so nothing is built for an item that is merely still loading.
-	const collectionItem = openProject
-		? items.find((item) => item.key === openItemKey && item.projectRef === openProject.ref)
-		: undefined;
-	const standaloneKey = openItemKey && !collectionItem && items.$meta.lastFetched !== null ? openItemKey : undefined;
-	const standaloneRef = standaloneKey ? openProject?.ref : undefined;
-	const standaloneItem = useMemo(
-		() => (standaloneKey && standaloneRef ? new ItemModel({ key: standaloneKey, projectRef: standaloneRef }) : undefined),
-		[standaloneKey, standaloneRef]
-	);
-	const drawerItem = collectionItem ?? standaloneItem;
-	// The Map has the drawer overlay it rather than narrow it, and needs to know how much it covers.
-	const [drawerWidth, setDrawerWidth] = useState(0);
+	const { item: drawerItem, listed } = useDrawerItem(items, openItemKey, openProject?.ref);
 
 	const handleRetry = useCallback((): void => {
 		void items.fetch({ force: true });
@@ -250,22 +232,20 @@ function CombinedView({ refs, resolved }: CombinedViewProps): JSX.Element {
 		return <Unavailable title="None of these projects can be shown" detail={leftOut.join(' ')} />;
 	}
 
-	const renderViewArea = (): JSX.Element => {
-		// The Map is a lazy chunk with reads of its own, so the lists' loading and errors say nothing about it.
+	const renderViewArea = (covered: number): JSX.Element => {
 		if (onMap) {
-			if (mapError) return <LoadError error={mapError} onRetry={retryMap} />;
-			if (!MapView) return <div class={styles.loading}>Loading...</div>;
 			return (
-				<MapView
+				<LazyMap
 					scope={mapScope}
 					openItemKey={openItemKey}
-					covered={drawerItem ? drawerWidth : 0}
+					covered={covered}
 					onOpenItem={openItem}
 					onCloseItem={drawer.close}
 					search={settledSearch}
 					type={type ?? null}
 					onClear={clear}
-					onFailures={setMapFailures}
+					onFailures={handleMapFailures}
+					unreadable={unreadable}
 				/>
 			);
 		}
@@ -344,20 +324,20 @@ function CombinedView({ refs, resolved }: CombinedViewProps): JSX.Element {
 
 			<Workspace
 				overlay={onMap}
-				drawer={drawerItem && openProject ? (maxWidth) => (
+				drawer={drawerItem && openProject ? ({ maxWidth, onResize }) => (
 					<ItemDrawer
 						item={drawerItem}
-						listed={collectionItem !== undefined}
+						listed={listed}
 						canEdit={false}
 						project={openProject}
 						maxWidth={maxWidth}
 						onClose={drawer.close}
-						onResize={setDrawerWidth}
+						onResize={onResize}
 						onOpenItem={handleOpenRelated}
 					/>
 				) : null}
 			>
-				{renderViewArea()}
+				{renderViewArea}
 			</Workspace>
 		</>
 	);

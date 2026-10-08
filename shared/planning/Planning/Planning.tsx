@@ -2,10 +2,10 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'preact/hooks'
 import type { JSX } from 'preact';
 import type { RouteProps } from '@specboard/router';
 import { formatProjectRef } from '@specboard/core/identifiers';
-import { useModel, useProjectRole, ItemsCollection, ItemModel, type ItemType, writeFailure } from '@specboard/models';
+import { useModel, useProjectRole, ItemsCollection, type ItemModel, type ItemType, writeFailure } from '@specboard/models';
 import { Page, SplitButton, Text, Select, Button, Icon, Notice, type SplitButtonOption } from '@specboard/ui';
-import { Board, BOARD_PAGE_SIZE } from '../Board/Board';
-import { Table, TABLE_PAGE_SIZE } from '../Table/Table';
+import { Board } from '../Board/Board';
+import { Table } from '../Table/Table';
 import { ItemDrawer } from '../ItemDrawer/ItemDrawer';
 import { NewItemDialog } from '../NewItemDialog/NewItemDialog';
 import type { NewItemData } from '../NewItemForm/NewItemForm';
@@ -13,11 +13,13 @@ import { LoadError } from '../LoadError/LoadError';
 import { ViewToggle } from '../ViewToggle/ViewToggle';
 import { Workspace } from '../Workspace/Workspace';
 import { useDrawerHistory } from '../hooks/useDrawerHistory';
+import { useDrawerItem } from '../hooks/useDrawerItem';
 import { usePolling } from '../hooks/usePolling';
+import { withQuery } from '../utils/address';
 import { HIGHLIGHT_DURATION } from '../utils/highlight';
 import { CATEGORY_OPTIONS, usePlanningFilters } from './filters';
-import { useMapView } from './useMapView';
-import { readView, usePlanningView } from './view';
+import { LazyMap } from './LazyMap';
+import { openingWindow, usePlanningView, usePlanningWindows } from './view';
 import styles from './Planning.module.css';
 
 /**
@@ -61,28 +63,16 @@ export function Planning(props: RouteProps): JSX.Element {
 	// toggles (the route/entry is unchanged, only the ?view= param differs). Its
 	// per-status windows start at the size of whichever view opens first.
 	const items = useMemo(
-		() => new ItemsCollection({
-			projectRef,
-			limit: readView() === 'table' ? TABLE_PAGE_SIZE : BOARD_PAGE_SIZE,
-		}),
+		() => new ItemsCollection({ projectRef, limit: openingWindow() }),
 		[projectRef]
 	);
 	useModel(items);
 
 	const { view, small, changeView } = usePlanningView();
 
-	// The table shows more per section than the board per column; switching to it
-	// widens the windows that had more. Windows never shrink, so board -> table ->
-	// board leaves the board showing the wider set.
-	useEffect(() => {
-		if (view === 'table') void items.ensureLimit(TABLE_PAGE_SIZE);
-	}, [view, items]);
-
 	// The toolbar's filter state, and the search text once it has settled. Filtering
 	// happens on the server (the views render whatever the collection holds), so the
 	// settled text plus the type go to the collection, which reissues its windows.
-	// The Map takes the same text and type but filters nothing on the server: it dims, and
-	// asks the items list for the matches itself. The board's windows catch up when it returns.
 	const {
 		filters,
 		settledSearch,
@@ -92,11 +82,7 @@ export function Planning(props: RouteProps): JSX.Element {
 		onCategoryChange: handleCategoryChange,
 		clear: handleClearFilters,
 	} = usePlanningFilters();
-	const onMap = view === 'map';
-	useEffect(() => {
-		if (onMap) return;
-		void items.setFilter({ search: settledSearch, type });
-	}, [items, onMap, settledSearch, type]);
+	usePlanningWindows(items, view, { search: settledSearch, type });
 
 	const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
 	const [createType, setCreateType] = useState<ItemType>('epic');
@@ -125,20 +111,12 @@ export function Planning(props: RouteProps): JSX.Element {
 	}, []);
 	useEffect(() => () => flashTimers.current.forEach(clearTimeout), []);
 
-	// Read highlight param from URL and flash that item once
+	// Read highlight param from URL and flash that item once, then drop it from the address.
 	useEffect(() => {
-		const params = new URLSearchParams(window.location.search);
-		const highlightId = params.get('highlight');
+		const highlightId = new URLSearchParams(window.location.search).get('highlight');
 		if (highlightId) {
 			flashItems([highlightId]);
-			// Clear only the highlight URL param, preserving other params and hash
-			params.delete('highlight');
-			const search = params.toString();
-			const newUrl =
-				window.location.pathname +
-				(search ? `?${search}` : '') +
-				window.location.hash;
-			window.history.replaceState(window.history.state, '', newUrl);
+			window.history.replaceState(window.history.state, '', withQuery(window.location, { highlight: undefined }));
 		}
 	}, [flashItems]);
 
@@ -248,28 +226,8 @@ export function Planning(props: RouteProps): JSX.Element {
 		</>
 	);
 
-	// The drawer renders the item named by the route. A top-level item uses the live
-	// collection model, so edits reflect on the board immediately. Anything else — a
-	// child, or an item the collection has dropped — gets a standalone model that
-	// fetches its own detail, and the drawer stays inert until that fetch lands.
-	//
-	// `items` is a stable reference whose *contents* change, so the collection lookup
-	// has to run every render (it is a cheap array scan) rather than inside the memo:
-	// memoizing it meant that when a poll dropped the open item, the cached `undefined`
-	// stood and the drawer silently vanished mid-edit. Waiting for the first fetch also
-	// avoids building a standalone model for an item that is merely still loading.
-	const collectionItem = openItemKey ? items.find((i) => i.key === openItemKey) : undefined;
-	const standaloneKey = openItemKey && !collectionItem && items.$meta.lastFetched !== null
-		? openItemKey
-		: undefined;
-	const standaloneItem = useMemo(
-		() => (standaloneKey ? new ItemModel({ key: standaloneKey, projectRef }) : undefined),
-		[standaloneKey, projectRef]
-	);
-	const openItem = collectionItem ?? standaloneItem;
-
-	// The Map has the drawer overlay it rather than narrow it, and needs to know how much it covers.
-	const [drawerWidth, setDrawerWidth] = useState(0);
+	// The drawer renders the item named by the route, from the collection or on its own.
+	const { item: openItem, listed } = useDrawerItem(items, openItemKey, projectRef);
 
 	// Loading and load failures render where the board goes, so the toolbar stays
 	// put. While the page is in error every automatic fetch is suppressed, so
@@ -281,19 +239,13 @@ export function Planning(props: RouteProps): JSX.Element {
 		void items.fetch({ force: true });
 	}, [items]);
 
-	// The Map is a lazy chunk with a read of its own, so it sits outside the collection's
-	// loading and error states: a failed board fetch says nothing about the Map.
-	const { MapView, error: mapError, retry: retryMap } = useMapView(view === 'map');
-
-	const renderViewArea = (): JSX.Element => {
+	const renderViewArea = (covered: number): JSX.Element => {
 		if (view === 'map') {
-			if (mapError) return <LoadError error={mapError} onRetry={retryMap} />;
-			if (!MapView) return <div class={styles.loading}>Loading...</div>;
 			return (
-				<MapView
+				<LazyMap
 					scope={{ projectRef }}
 					openItemKey={openItemKey}
-					covered={openItem ? drawerWidth : 0}
+					covered={covered}
 					onOpenItem={handleOpenItemByKey}
 					onCloseItem={handleCloseDrawer}
 					search={settledSearch}
@@ -371,20 +323,20 @@ export function Planning(props: RouteProps): JSX.Element {
 
 			<Workspace
 				overlay={view === 'map'}
-				drawer={openItem ? (maxWidth) => (
+				drawer={openItem ? ({ maxWidth, onResize }) => (
 					<ItemDrawer
 						item={openItem}
-						listed={collectionItem !== undefined}
+						listed={listed}
 						canEdit={canEdit}
 						maxWidth={maxWidth}
 						onClose={handleCloseDrawer}
-						onResize={setDrawerWidth}
+						onResize={onResize}
 						onDelete={handleDeleteItem}
 						onOpenItem={handleOpenItemByKey}
 					/>
 				) : null}
 			>
-				{renderViewArea()}
+				{renderViewArea}
 			</Workspace>
 
 			{isNewItemDialogOpen && canEdit && (

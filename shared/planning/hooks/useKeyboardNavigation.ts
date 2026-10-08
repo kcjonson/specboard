@@ -3,6 +3,32 @@ import type { ItemModel, Status, ItemStatus } from '@specboard/models';
 
 const DEFAULT_COLUMNS: ItemStatus[] = ['ready', 'in_progress', 'done'];
 
+/**
+ * Where a key is aimed at something that has keys of its own, the board leaves it alone:
+ * a link or a control (Enter activates it, and arrows change a dropdown, which a board
+ * shortcut would cancel), anything being typed in, a dialog, and the item drawer, the
+ * drawer's own fields and links included.
+ */
+const KEYS_OF_THEIR_OWN = [
+	'a[href]',
+	'button',
+	'input',
+	'select',
+	'textarea',
+	'[contenteditable]:not([contenteditable="false"])',
+	'dialog',
+	'[role="dialog"]',
+	'[data-item-drawer]',
+].join(', ');
+
+function handledElsewhere(e: KeyboardEvent): boolean {
+	const target = e.target instanceof Element ? e.target : null;
+	if (!target) return false;
+	if (target.closest(KEYS_OF_THEIR_OWN) !== null) return true;
+	// A card opens itself on Enter, so the board's Enter is for a selection with focus elsewhere.
+	return e.key === 'Enter' && target.closest('[data-item-card]') !== null;
+}
+
 interface KeyboardNavigationOptions {
 	/** All items grouped by status */
 	itemsByStatus: Partial<Record<ItemStatus, ItemModel[]>>;
@@ -144,19 +170,7 @@ export function useKeyboardNavigation({
 
 	const handleKeyDown = useCallback(
 		(e: KeyboardEvent) => {
-			// Don't handle if dialog is open or if typing in an input
-			if (dialogOpen) return;
-
-			const target = e.target as HTMLElement;
-			// SELECT included: arrow keys change a focused dropdown's value, and the
-			// drawer's Status/Sub-Status controls are dropdowns sitting inside the board.
-			const isInput =
-				target.tagName === 'INPUT' ||
-				target.tagName === 'TEXTAREA' ||
-				target.tagName === 'SELECT' ||
-				target.isContentEditable;
-
-			if (isInput) return;
+			if (dialogOpen || handledElsewhere(e)) return;
 
 			const { item } = findSelectedItem();
 

@@ -484,15 +484,34 @@ describe('MultiProjectPlanning Map', () => {
 		expect(view.getByText(leftOut)).toBeTruthy();
 	});
 
-	it('leaves out a project only the Map has found it cannot read', async () => {
+	it('leaves out a project only the Map has found it cannot read, from the lists too, at once', async () => {
 		const view = renderAt('/planning?projects=acme/one,acme/two&view=map');
 		await view.findByTestId('map');
+		await waitFor(() => expect(requested('acme/two')).toHaveLength(5));
 
 		act(() => mapProps!.onFailures!(new Map([['acme/two', { error: new FetchError('HTTP 404', 404), unreadable: true, held: false }]])));
 
 		expect(await view.findByText("Two isn't shown: it doesn't exist, or you can't read it.")).toBeTruthy();
 		const links = within(view.getByRole('list', { name: 'Projects in this view' })).getAllByRole('link');
 		expect(links.map((link) => link.getAttribute('href'))).toEqual(['/projects/acme/one/planning']);
+
+		// Its cards are gone without waiting for the lists' own read to fail, and it isn't asked again.
+		fireEvent.click(view.getByRole('button', { name: 'Board' }));
+		expect(await view.findByText('ONE item 1')).toBeTruthy();
+		expect(view.queryByText('TWO item 1')).toBeNull();
+		getResponse.mockClear();
+		void vi.mocked(usePolling).mock.calls.at(-1)![0]();
+		await waitFor(() => expect(requested('acme/one')).toHaveLength(5));
+		expect(requested('acme/two')).toEqual([]);
+	});
+
+	it('leaves out of the Map a project the lists found they cannot read', async () => {
+		served['acme/two'] = 403;
+		const view = renderAt('/planning?projects=acme/one,acme/two&view=map');
+		await view.findByText("Two isn't shown: it doesn't exist, or you can't read it.");
+
+		await waitFor(() => expect(mapProps!.unreadable).toEqual(['acme/two']));
+		expect(view.getByTestId('map').getAttribute('data-projects')).toBe('acme/one,acme/two');
 	});
 
 	it('says which projects the Map is still trying to read, drawn as last loaded or not at all, while it shows', async () => {
@@ -513,6 +532,59 @@ describe('MultiProjectPlanning Map', () => {
 		fireEvent.click(view.getByRole('button', { name: 'Board' }));
 		await view.findByRole('listbox', { name: 'Ready column' });
 		expect(view.queryByText(/The Map keeps trying/)).toBeNull();
+	});
+});
+
+/** Enter as a browser takes it on a link or a button: activated, unless a listener cancelled the key. */
+function pressEnter(element: HTMLElement): void {
+	if (fireEvent.keyDown(element, { key: 'Enter' })) fireEvent.click(element);
+}
+
+describe('MultiProjectPlanning keys', () => {
+	it('follows the drawer\'s link to the item on Enter, with a card selected on the Board', async () => {
+		const view = renderAt('/planning?projects=acme/one,acme/two');
+		fireEvent.click(await view.findByText('TWO item 1'));
+		const drawer = await findDrawer(view, 'TWO-1 · Epic');
+		await afterEffects();
+
+		pressEnter(within(drawer).getByRole('link', { name: 'Open in Two' }));
+		expect(await view.findByText('Item page for TWO-1 in acme/two')).toBeTruthy();
+	});
+
+	it('leaves Enter on a toolbar link to the link, with a card selected', async () => {
+		const view = renderAt('/planning?projects=acme/one,acme/two');
+		await view.findByText('TWO item 1');
+		await afterEffects();
+		fireEvent.keyDown(document, { key: 'ArrowDown' });
+		await waitFor(() => expect(card(view, 'ONE item 1').getAttribute('aria-selected')).toBe('true'));
+
+		pressEnter(within(view.getByRole('list', { name: 'Projects in this view' })).getAllByRole('link')[1]!);
+		expect(window.location.pathname).toBe('/projects/acme/two/planning');
+	});
+
+	it('opens a focused card on Enter, as one new history entry', async () => {
+		const view = renderAt('/planning?projects=acme/one,acme/two');
+		await view.findByText('TWO item 1');
+		await afterEffects();
+		const before = window.history.length;
+
+		fireEvent.keyDown(card(view, 'ONE item 2'), { key: 'Enter' });
+		await findDrawer(view, 'ONE-2 · Task');
+		expect(window.location.search).toBe('?projects=acme/one,acme/two&item=ONE-2');
+		expect(window.history.length).toBe(before + 1);
+	});
+
+	it('closes the drawer on Escape from the Board, going back the way its close button does', async () => {
+		const back = vi.spyOn(window.history, 'back');
+		const view = renderAt('/planning?projects=acme/one,acme/two');
+		fireEvent.click(await view.findByText('TWO item 1'));
+		await findDrawer(view, 'TWO-1 · Epic');
+		await afterEffects();
+
+		fireEvent.keyDown(document, { key: 'Escape' });
+		expect(back).toHaveBeenCalledTimes(1);
+		await waitFor(() => expect(window.location.search).toBe('?projects=acme/one,acme/two'));
+		expect(view.queryByRole('heading', { name: 'TWO-1 · Epic' })).toBeNull();
 	});
 });
 

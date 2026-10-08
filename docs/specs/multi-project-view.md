@@ -75,23 +75,28 @@ Related: [kanban-ui.md](kanban-ui.md) (the single-project Board and Table),
    came from. A card or a row hands that project over with the item, and a child row its
    parent's, since a key prefix isn't trusted for it while the view is open (a project's key can
    be renamed under it); a Map dot's comes from its prefix, as everything on the Map does. The
-   open item is in the address as `&item=<KEY>`, as a project's drawer is in its `/items/:key`:
-   opening pushes a history entry, moving to another item while the drawer is open replaces it,
-   and closing (the close button, or Escape) goes back, so Back from an open item returns to the
-   view as it was. When the address has moved on since the drawer opened (another view picked, a
-   filter changed, the Map's anchor moved), Back would undo that instead, so closing then leaves
-   the view where it is. A reload, or a link someone sent, with `&item=` reopens it; there the
-   key alone names the project, by its prefix against the projects list just read (see 5). The
-   drawer says it only reads here and links to the item's own page,
-   `/projects/:owner/:project/items/:key`, where the person's role in that project decides what
-   they can change; Back from that page returns to the view with the drawer open.
+   open item is in the address as `&item=<KEY>`, as a project's drawer is in its `/items/:key`,
+   under the same history model (kanban-ui.md, Item URLs): opening pushes a history entry,
+   moving to another item while the drawer is open replaces it, and closing (the close button,
+   or Escape from the drawer, the Board, or the Table) goes back, so Back from an open item
+   returns to the view as it was. Closing goes back only while the entry is still the one the
+   opening pushed and nothing but the Map's anchor has changed in it: after another view is
+   picked or a Map jump, Back would undo that instead, and a filter changed with the drawer
+   open is the person's, so then closing leaves the view where it is. Going back returns the
+   Map's camera to where it was when the drawer opened. A reload, or a link someone sent, with
+   `&item=` reopens it; there the key alone names the project, by its prefix against the
+   projects list just read (see 5). The drawer says it only reads here and links to the item's
+   own page, `/projects/:owner/:project/items/:key`, where the person's role in that project
+   decides what they can change; Enter follows that link like any other, a card selected or
+   not, and Back from the page returns to the view with the drawer open.
 8. **No new API.** One `ItemsCollection` per project against the existing endpoints and the existing
    authorization (SPE-206), merged on the client. The selection is checked against
    `GET /api/projects` first, and a ref that isn't there is left out with a notice naming it. A
    project the person can no longer read (a 403 or 404 on its items, say after being removed from
    it) is dropped from the view with the same notice, and the rest still render, even if only one
-   is left; the Map finds the same thing on its own reads, and a project either one finds is
-   named once. The notice links back to "Choose projects", and when a single readable project
+   is left. The Map finds the same thing on its own reads, and whichever finds it first, the
+   project leaves every view at once (the lists' cards and rows, the Map's dots, the toolbar)
+   and is named once. The notice links back to "Choose projects", and when a single readable project
    remains it also offers that project on its own ("Open Atlas on its own", its planning view).
    If nothing readable is left, the page says so in place of the view, with the same way back.
    Any other failure (a 500, a 429, an expired session) shows where the view goes, with Retry, as
@@ -133,11 +138,15 @@ Related: [kanban-ui.md](kanban-ui.md) (the single-project Board and Table),
 - The Board takes moves only over one project's `ItemsCollection`, since a move ranks a card among
   its own project's cards; over anything else it's read-only by type, with `canEdit={false}`.
 - The Map takes `scope={{ projects }}` and reports, through `onFailures`, every project whose read
-  failed and how; the container folds that into the notice with what the lists dropped.
+  failed and how; the container folds that into the notice. A project either side finds it
+  can't read goes to the other: `MergedItems.drop`, and the Map's `unreadable` prop
+  (`MapDataModel.drop`), which leaves it out as its own 403 would.
 - What the view shares with a project's planning page lives in one place each: the view's state
-  and its `?view=` rules (`usePlanningView`, `Planning/view.ts`), the drawer's history model
-  (`useDrawerHistory`), the row the view and the drawer share (`Workspace`), and the in-place
-  address edits (`withQuery`, `utils/address.ts`), which the Map's `focus=` anchor uses too.
+  and its `?view=` rules (`usePlanningView`, `Planning/view.ts`), the windows each view needs
+  (`usePlanningWindows`, beside it), the drawer's history model (`useDrawerHistory`) and the
+  model it shows (`useDrawerItem`), the row the view and the drawer share and the width the
+  drawer covers (`Workspace`), the lazily loaded Map (`LazyMap`), and the in-place address
+  edits (`withQuery`, `utils/address.ts`), which the Map's `focus=` anchor uses too.
 - `ItemDrawer` takes a `project` label, which turns on its read-only note and the link to the
   item's own page; it builds every link from the item's own `projectRef`.
 - `ProjectChip` (`shared/planning/ProjectChip/`) is the row label; Board cards carry the same one.

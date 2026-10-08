@@ -73,7 +73,8 @@ export function ItemRow({
 				tabIndex={0}
 				onClick={handleOpen}
 				onKeyDown={(e) => {
-					if (e.key === 'Enter') handleOpen();
+					// The row's own Enter, not one bubbling from its expand button, which Enter presses.
+					if (e.key === 'Enter' && e.target === e.currentTarget) handleOpen();
 				}}
 			>
 				<span class={styles.colType} role="cell">

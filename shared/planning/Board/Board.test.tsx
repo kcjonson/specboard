@@ -55,6 +55,7 @@ function serve(counts: Partial<Record<ItemStatus, number>>): void {
 interface BoardTestProps {
 	selectedItemKey?: string;
 	onSelectItem?: (item: ItemModel | undefined) => void;
+	onOpenItem?: (item: ItemModel) => void;
 	canEdit?: boolean;
 	onCreateItem?: () => void;
 	onWriteError?: (err: unknown, fallback: string) => void;
@@ -75,7 +76,7 @@ async function renderBoard(
 			dialogOpen={false}
 			canEdit={props.canEdit ?? true}
 			onSelectItem={props.onSelectItem ?? vi.fn()}
-			onOpenItem={vi.fn()}
+			onOpenItem={props.onOpenItem ?? vi.fn()}
 			onCreateItem={props.onCreateItem ?? vi.fn()}
 			onWriteError={props.onWriteError ?? vi.fn()}
 		/>
@@ -177,6 +178,67 @@ describe('Board for someone who can\'t edit', () => {
 		expect(onCreateItem).not.toHaveBeenCalled();
 		expect(save).not.toHaveBeenCalled();
 		expect(items[0]!.status).toBe('ready');
+	});
+});
+
+describe('Board keys', () => {
+	beforeEach(() => {
+		getResponse.mockReset();
+	});
+
+	/** A link and a control beside the board, as a page's toolbar and drawer have. */
+	function elsewhere(): { link: HTMLElement; button: HTMLElement; drawer: HTMLElement; remove(): void } {
+		const link = document.body.appendChild(document.createElement('a'));
+		link.setAttribute('href', '/elsewhere');
+		const button = document.body.appendChild(document.createElement('button'));
+		const drawer = document.body.appendChild(document.createElement('div'));
+		drawer.setAttribute('data-item-drawer', '');
+		drawer.tabIndex = 0;
+		return { link, button, drawer, remove: () => [link, button, drawer].forEach((element) => element.remove()) };
+	}
+
+	it('leaves a key aimed at a link, a control, or the drawer to it, a card selected or not', async () => {
+		const onOpenItem = vi.fn();
+		const onSelectItem = vi.fn();
+		await renderBoard({ ready: 2 }, { selectedItemKey: 'SB-ready-1', onOpenItem, onSelectItem });
+		const { link, button, drawer, remove } = elsewhere();
+
+		// fireEvent answers false when a listener cancelled the key, which would stop Enter following the link.
+		expect(fireEvent.keyDown(link, { key: 'Enter' })).toBe(true);
+		expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
+		expect(fireEvent.keyDown(button, { key: 'ArrowDown' })).toBe(true);
+		expect(fireEvent.keyDown(drawer, { key: 'ArrowDown' })).toBe(true);
+		expect(onOpenItem).not.toHaveBeenCalled();
+		expect(onSelectItem).not.toHaveBeenCalled();
+
+		// Aimed at the board, the same keys are the board's.
+		fireEvent.keyDown(document.body, { key: 'ArrowDown' });
+		await waitFor(() => expect(onSelectItem).toHaveBeenCalledTimes(1));
+		fireEvent.keyDown(document.body, { key: 'Enter' });
+		expect(onOpenItem).toHaveBeenCalledTimes(1);
+		remove();
+	});
+
+	it('opens the card Enter is pressed on, once, whichever card is selected', async () => {
+		const onOpenItem = vi.fn();
+		const { container } = await renderBoard({ ready: 2 }, { selectedItemKey: 'SB-ready-1', onOpenItem });
+		const board: HTMLElement = container;
+		const cards = board.querySelectorAll<HTMLElement>('[data-item-card]');
+
+		fireEvent.keyDown(cards[1]!, { key: 'Enter' });
+
+		expect(onOpenItem).toHaveBeenCalledTimes(1);
+		expect((onOpenItem.mock.calls[0]?.[0] as ItemModel).key).toBe('SB-ready-2');
+	});
+
+	it('leaves Enter on a card\'s own new-window button to the button', async () => {
+		const onOpenItem = vi.fn();
+		const { container } = await renderBoard({ ready: 1 }, { selectedItemKey: 'SB-ready-1', onOpenItem });
+		const board: HTMLElement = container;
+		const button = board.querySelector<HTMLElement>('[data-item-card] button[aria-label="Open in new window"]')!;
+
+		expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
+		expect(onOpenItem).not.toHaveBeenCalled();
 	});
 });
 
