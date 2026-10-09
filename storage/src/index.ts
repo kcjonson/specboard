@@ -9,6 +9,7 @@ import { serve, type ServerType } from '@hono/node-server';
 import type { Context, Next } from 'hono';
 
 import { apiKeyAuth } from './middleware/auth.ts';
+import { createRateLimit } from './middleware/rate-limit.ts';
 import { filesRoutes } from './handlers/files.ts';
 import { pendingRoutes } from './handlers/pending.ts';
 import { commitRoutes } from './handlers/commits.ts';
@@ -17,20 +18,6 @@ import { runMigrations } from './db/migrate.ts';
 
 // Request size limit: 50MB max
 const MAX_CONTENT_LENGTH = 50 * 1024 * 1024;
-
-// Rate limiting: 1000 requests per minute per API key
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 1000;
-
-// In-memory rate limit store
-// TODO: Move to Redis for multi-instance deployments. Current in-memory approach
-// means each ECS task has its own rate limit counter. For production scale,
-// use Redis INCR with EXPIRE for shared, atomic rate limiting.
-interface RateLimitEntry {
-	count: number;
-	resetAt: number;
-}
-const rateLimitStore = new Map<string, RateLimitEntry>();
 
 /**
  * Middleware to enforce request size limit based on Content-Length header.
@@ -46,29 +33,6 @@ async function requestSizeLimitMiddleware(c: Context, next: Next): Promise<Respo
 	await next();
 }
 
-/**
- * Middleware to apply per-API-key rate limiting.
- */
-async function rateLimitMiddleware(c: Context, next: Next): Promise<Response | void> {
-	const apiKey = c.req.header('x-internal-api-key') || 'anonymous';
-	const now = Date.now();
-
-	const existing = rateLimitStore.get(apiKey);
-	if (!existing || now > existing.resetAt) {
-		rateLimitStore.set(apiKey, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-		await next();
-		return;
-	}
-
-	if (existing.count >= RATE_LIMIT_MAX_REQUESTS) {
-		const retryAfter = Math.ceil((existing.resetAt - now) / 1000);
-		c.header('Retry-After', String(Math.max(retryAfter, 1)));
-		return c.json({ error: 'Too many requests' }, 429);
-	}
-
-	existing.count++;
-	await next();
-}
 
 const app = new Hono();
 
@@ -82,7 +46,7 @@ app.use('*', requestSizeLimitMiddleware);
 app.use('*', apiKeyAuth);
 
 // Rate limiting (after auth so we can rate limit per API key)
-app.use('*', rateLimitMiddleware);
+app.use('*', createRateLimit());
 
 // Mount route handlers
 app.route('/files', filesRoutes);

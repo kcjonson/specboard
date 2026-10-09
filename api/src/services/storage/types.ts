@@ -46,6 +46,8 @@ export interface FileChange {
 	renamedTo?: string;
 	/** Cloud drafts, with renamedTo: the file at its new path is exactly what's committed at the old one now. */
 	renameKeepsCommitted?: boolean;
+	/** Cloud drafts: this writes over a committed file the editor can't hold; only discarding resolves it. */
+	overUnavailable?: boolean;
 }
 
 export interface Commit {

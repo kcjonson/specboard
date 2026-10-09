@@ -1,6 +1,6 @@
 /**
  * Incremental sync against real @specboard/db on migrated Postgres (PGlite); GitHub's
- * ref, compare, and blob endpoints are stubbed, and so is the storage service.
+ * ref, compare, and contents endpoints are stubbed, and so is the storage service.
  *
  * The sync point it stores is the branch head as a full SHA (the only form GitHub's
  * commit API takes back), it moves spec links for what the pulled commits renamed and
@@ -15,9 +15,14 @@ const state = vi.hoisted(() => ({ db: undefined as PGlite | undefined }));
 
 vi.mock('pg', async () => (await import('@specboard/db/test-support')).pgliteAsPg(() => state.db!));
 
-vi.mock('./shared/storage-client.ts', () => ({
-	createStorageClient: () => ({ putFile: vi.fn(async () => {}), deleteFile: vi.fn(async () => {}), listFiles: vi.fn(async () => []) }),
+const storage = vi.hoisted(() => ({
+	putFile: vi.fn(async (_projectId: string, _path: string, _content: string) => {}),
+	deleteFile: vi.fn(async (_projectId: string, _path: string) => {}),
+	listFiles: vi.fn(async (_projectId: string) => [] as string[]),
+	markUnavailable: vi.fn(async (_projectId: string, _path: string, _reason: string, _hash: string, _size: number) => {}),
 }));
+
+vi.mock('./shared/storage-client.ts', () => ({ createStorageClient: () => storage }));
 
 vi.mock('./initial-sync.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./initial-sync.ts')>()),
@@ -27,6 +32,9 @@ vi.mock('./initial-sync.ts', async (importOriginal) => ({
 import { migratedDb } from '@specboard/db/test-support';
 import { comparedSpecPathChanges, performIncrementalSync } from './incremental-sync.ts';
 import { syncArchive, SUPERSEDED } from './initial-sync.ts';
+import { MAX_FILE_SIZE_BYTES } from './file-filter.ts';
+import { gitBlobSha } from './tree.ts';
+import { OUT_OF_TIME_MESSAGE, SyncOutOfTimeError, type TimeBudget } from './time-budget.ts';
 
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
 /** The pending lock token the API took and put in the event. */
@@ -39,15 +47,57 @@ function json(body: unknown): Response {
 	return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
-/** GitHub with the branch at HEAD and this compare from the base. */
-function github(compare: { files: unknown[]; total_commits?: number; commits?: unknown[]; status?: string }): void {
-	vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+interface CompareFile { sha: string; filename: string; status: string; previous_filename?: string }
+
+/**
+ * GitHub with the branch at HEAD and this compare from the base. The head has every file
+ * the compare names (except removed ones and sha "missing"), served by the contents API
+ * with these blobs by sha ("# New" otherwise), unless `entries` says otherwise (a listed
+ * size, or a submodule). Anything else, a tree listing included, is an error.
+ */
+function github(
+	compare: { files: CompareFile[]; total_commits?: number; commits?: unknown[]; status?: string },
+	blobs: Record<string, Buffer> = {},
+	entries: Record<string, { size?: number; submodule?: boolean; symlinkTo?: string; symlinkToFile?: { link: string; targetText: string } }> = {}
+): ReturnType<typeof vi.fn> {
+	const fetchMock = vi.fn(async (url: string) => {
 		if (url.includes('/git/refs/heads/')) return json({ object: { sha: HEAD } });
 		if (url.includes('/compare/')) {
 			return json({ status: 'ahead', ahead_by: 1, behind_by: 0, total_commits: 1, commits: [{ sha: HEAD }], ...compare });
 		}
-		return json({ content: Buffer.from('# New').toString('base64'), encoding: 'base64', sha: 'b1', size: 5 });
-	}));
+		if (url.includes('/contents/')) {
+			const path = decodeURIComponent(new URL(url).pathname.split('/contents/')[1]!);
+			const file = compare.files.find((f) => f.filename === path && f.status !== 'removed');
+			if (!file || file.sha === 'missing') return new Response('{}', { status: 404 });
+			if (entries[path]?.submodule) return json({ type: 'submodule', sha: file.sha, size: 0 });
+			const target = entries[path]?.symlinkTo;
+			if (target) return json({ type: 'symlink', sha: file.sha, size: target.length, target });
+			const symlinked = entries[path]?.symlinkToFile;
+			if (symlinked) {
+				// What GitHub does for a symlink to a regular file: the link's own sha, the target's text and size.
+				const text = Buffer.from(symlinked.targetText);
+				return json({ type: 'file', sha: gitBlobSha(Buffer.from(symlinked.link)), size: text.length, content: text.toString('base64'), encoding: 'base64' });
+			}
+			const blob = blobs[file.sha] ?? Buffer.from('# New');
+			const size = entries[path]?.size ?? blob.length;
+			// Over 1 MB GitHub sends no content; anything the test lists as that large is treated the same.
+			return size > MAX_FILE_SIZE_BYTES
+				? json({ type: 'file', sha: file.sha, size, content: '', encoding: 'none' })
+				: json({ type: 'file', sha: file.sha, size, content: blob.toString('base64'), encoding: 'base64' });
+		}
+		if (url.includes('/git/blobs/')) {
+			const sha = url.split('/git/blobs/')[1]!;
+			const file = compare.files.find((f) => f.sha === sha || entries[f.filename]?.symlinkToFile && gitBlobSha(Buffer.from(entries[f.filename]!.symlinkToFile!.link)) === sha);
+			if (!file) return new Response('{}', { status: 404 });
+			const symlinked = entries[file.filename]?.symlinkToFile;
+			if (symlinked) return new Response(symlinked.link);
+			const size = entries[file.filename]?.size;
+			return new Response(new Uint8Array(size && size > MAX_FILE_SIZE_BYTES ? Buffer.alloc(size, 'a') : (blobs[sha] ?? Buffer.from('# New'))));
+		}
+		throw new Error(`unexpected GitHub request: ${url}`);
+	});
+	vi.stubGlobal('fetch', fetchMock);
+	return fetchMock;
 }
 
 async function project(): Promise<{ last_synced_commit_sha: string; sync_status: string; sync_error: string | null }> {
@@ -62,9 +112,9 @@ async function links(): Promise<string[]> {
 	return result.rows.map((r) => r.path);
 }
 
-function sync(lastCommitSha = BASE, lockToken = PENDING): ReturnType<typeof performIncrementalSync> {
+function sync(lastCommitSha = BASE, lockToken = PENDING, budget?: TimeBudget): ReturnType<typeof performIncrementalSync> {
 	return performIncrementalSync(
-		{ projectId, owner: 'acme', repo: 'docs', branch: 'main', token: 'token', lastCommitSha, lockToken },
+		{ projectId, owner: 'acme', repo: 'docs', branch: 'main', token: 'token', lastCommitSha, lockToken, budget },
 		'http://storage',
 		'key'
 	);
@@ -88,6 +138,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	storage.putFile.mockImplementation(async () => {});
 	const db = state.db!;
 	// The API took the lock as 'pending' before invoking the sync.
 	await db.query(
@@ -197,4 +248,142 @@ describe('performIncrementalSync', () => {
 		expect(await project()).toMatchObject({ last_synced_commit_sha: BASE, sync_status: 'committing' });
 		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
 	});
+
+	it('fails without moving the sync point or links when a file couldn\'t be written', async () => {
+		github({
+			files: [
+				{ sha: 'b1', filename: 'docs/new.md', status: 'renamed', previous_filename: 'docs/old.md' },
+				{ sha: 'b2', filename: 'docs/edited.md', status: 'modified' },
+			],
+		});
+		storage.putFile.mockImplementation(async (_p: string, path: string) => {
+			if (path === 'docs/edited.md') throw new Error('500: storage unavailable');
+		});
+
+		const result = await sync();
+
+		expect(result).toMatchObject({ success: false });
+		expect(result.error).toContain('docs/edited.md');
+		expect(await project()).toMatchObject({ last_synced_commit_sha: BASE, sync_status: 'failed' });
+		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
+	});
+
+	it('records a file a push made too large from its listed size', async () => {
+		github({ files: [{ sha: 'b'.repeat(40), filename: 'docs/kept.md', status: 'modified' }] }, {}, { 'docs/kept.md': { size: 600_000 } });
+
+		expect(await sync()).toMatchObject({ success: true, unavailable: 1, synced: 0 });
+
+		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'too_large', 'b'.repeat(40), 600_000);
+		expect(storage.putFile).not.toHaveBeenCalled();
+		expect((await project()).last_synced_commit_sha).toBe(HEAD);
+	});
+
+	it('looks up only the paths the compare names, never the whole tree, so a repository too big to list still syncs', async () => {
+		const fetchMock = github({
+			files: [
+				{ sha: 'b1', filename: 'docs/C# notes?/100% done.md', status: 'added' },
+				{ sha: 'b2', filename: 'docs/gone.md', status: 'removed' },
+			],
+		});
+
+		expect(await sync()).toMatchObject({ success: true, synced: 1, commitSha: HEAD });
+
+		const urls = fetchMock.mock.calls.map(([url]) => String(url));
+		expect(urls.some((url) => url.includes('/git/trees/'))).toBe(false);
+		expect(urls.filter((url) => url.includes('/contents/'))).toEqual([
+			`https://api.github.com/repos/acme/docs/contents/docs/C%23%20notes%3F/100%25%20done.md?ref=${HEAD}`,
+		]);
+		expect(storage.putFile).toHaveBeenCalledWith(projectId, 'docs/C# notes?/100% done.md', '# New');
+	});
+
+	it('stops with a clear message, and the sync point where it was, when it runs out of time', async () => {
+		github({ files: [{ sha: 'b1', filename: 'docs/new.md', status: 'renamed', previous_filename: 'docs/old.md' }] });
+		const outOfTime: TimeBudget = {
+			check(): void {
+				throw new SyncOutOfTimeError();
+			},
+		};
+
+		expect(await sync(BASE, PENDING, outOfTime)).toMatchObject({ success: false, error: OUT_OF_TIME_MESSAGE });
+
+		expect(storage.putFile).not.toHaveBeenCalled();
+		expect(await project()).toMatchObject({ last_synced_commit_sha: BASE, sync_status: 'failed', sync_error: OUT_OF_TIME_MESSAGE });
+		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
+	});
+
+	it('skips a submodule bump instead of failing on its "blob"', async () => {
+		github(
+			{ files: [{ sha: 'c'.repeat(40), filename: 'vendored', status: 'modified' }, { sha: 'b2', filename: 'docs/gone.md', status: 'removed' }] },
+			{},
+			{ vendored: { submodule: true } }
+		);
+
+		expect(await sync()).toMatchObject({ success: true, commitSha: HEAD });
+
+		expect(storage.deleteFile).toHaveBeenCalledWith(projectId, 'vendored');
+		expect(storage.putFile).not.toHaveBeenCalled();
+	});
+
+	it('stores a symlink as its target, as the archive does', async () => {
+		github({ files: [{ sha: 'd'.repeat(40), filename: 'docs/link.md', status: 'added' }] }, {}, { 'docs/link.md': { symlinkTo: 'kept.md' } });
+
+		expect(await sync()).toMatchObject({ success: true, synced: 1 });
+
+		expect(storage.putFile).toHaveBeenCalledWith(projectId, 'docs/link.md', 'kept.md');
+	});
+
+	it('stores a symlink to a regular file as the link\'s own text, though GitHub answers with the target\'s', async () => {
+		const link = '../README.md';
+		github(
+			{ files: [{ sha: gitBlobSha(Buffer.from(link)), filename: 'docs/readme-link.md', status: 'added' }] },
+			{},
+			{ 'docs/readme-link.md': { symlinkToFile: { link, targetText: '# The README\n'.repeat(200) } } }
+		);
+
+		expect(await sync()).toMatchObject({ success: true, synced: 1 });
+
+		expect(storage.putFile).toHaveBeenCalledWith(projectId, 'docs/readme-link.md', link);
+	});
+
+	it('reports a 403 that isn\'t the rate limit as that file\'s failure, with GitHub\'s message', async () => {
+		const fetchMock = github({ files: [{ sha: 'b1', filename: 'docs/kept.md', status: 'modified' }] });
+		const inner = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+		fetchMock.mockImplementation(async (url: string) =>
+			url.includes('/contents/') ? Response.json({ message: 'This API returns blobs up to 1 MB in size.' }, { status: 403 }) : inner(url));
+
+		const result = await sync();
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('docs/kept.md: GitHub Contents API error: 403 This API returns blobs up to 1 MB in size.');
+		expect(result.error).not.toContain('rate limit');
+	});
+
+	it('fails on a file the head doesn\'t have after all', async () => {
+		github({ files: [{ sha: 'missing', filename: 'docs/kept.md', status: 'modified' }] });
+
+		const result = await sync();
+
+		expect(result).toMatchObject({ success: false });
+		expect(result.error).toContain('docs/kept.md');
+		expect((await project()).last_synced_commit_sha).toBe(BASE);
+	});
+
+	it('records a file a push made binary', async () => {
+		const binary = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 1, 2, 3]);
+		github({ files: [{ sha: 'bin', filename: 'docs/kept.md', status: 'modified' }] }, { bin: binary });
+
+		expect(await sync()).toMatchObject({ success: true, unavailable: 1 });
+
+		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'binary', 'bin', binary.length);
+	});
+
+	it('removes the old path of a file renamed into a skipped directory', async () => {
+		github({ files: [{ sha: 'b1', filename: 'node_modules/old.md', status: 'renamed', previous_filename: 'docs/old.md' }] });
+
+		expect(await sync()).toMatchObject({ success: true, removed: 1, synced: 0 });
+
+		expect(storage.deleteFile).toHaveBeenCalledWith(projectId, 'docs/old.md');
+		expect(storage.putFile).not.toHaveBeenCalled();
+	});
 });
+

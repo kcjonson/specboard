@@ -23,6 +23,8 @@ export interface ChangedFile {
 	renamedTo?: string;
 	/** With renamedTo: the file under its new name is exactly what's committed now (their latest version). */
 	renameKeepsCommitted?: boolean;
+	/** The draft writes over a committed file that's binary or too large to edit here; it can only be discarded. */
+	overUnavailable?: boolean;
 }
 
 export interface CommitError {

@@ -16,7 +16,7 @@ vi.mock('./index.ts', () => ({
 	transaction: <T>(fn: (client: Transaction) => Promise<T>) => state.db!.transaction(fn),
 }));
 
-import { getPendingChange, isDraftBaseHash, listPendingChanges, promoteCommit, rebasePendingChanges, undoPendingRename, upsertPendingChange, upsertProjectDocument } from './queries.ts';
+import { getPendingChange, isDraftBaseHash, listPendingChanges, markDocumentUnavailable, promoteCommit, rebasePendingChanges, undoPendingRename, upsertPendingChange, upsertProjectDocument } from './queries.ts';
 
 const PROJECT = '00000000-0000-0000-0000-000000000001';
 const USER = '00000000-0000-0000-0000-000000000002';
@@ -44,7 +44,7 @@ async function commitVersion(path: string, hash: string): Promise<void> {
 	await upsertProjectDocument(PROJECT, path, `${PROJECT}/files/${path}`, hash, 1);
 }
 
-async function listed(path: string): Promise<{ baseContentHash: string | null; conflict: boolean; action: string } | undefined> {
+async function listed(path: string): Promise<{ baseContentHash: string | null; conflict: boolean; committedUnavailable: boolean; action: string } | undefined> {
 	return (await listPendingChanges(PROJECT, USER)).find((c) => c.path === path);
 }
 
@@ -191,6 +191,26 @@ describe('the base a writer gives', () => {
 		await commitVersion('docs/a.md', 'mine');
 
 		expect(await listed('docs/a.md')).toMatchObject({ conflict: false });
+	});
+
+	it('always counts a draft writing over a file a sync found it can\'t hold, whatever the hashes say', async () => {
+		await commitVersion('docs/a.md', 'v1');
+		await upsertPendingChange(PROJECT, USER, 'docs/a.md', '# Mine', null, 'modified', null, { given: true, hash: 'v1' }, 'mine');
+		// Even a git blob sha that happened to equal the draft's own hash is no no-op.
+		await markDocumentUnavailable(PROJECT, 'docs/a.md', `${PROJECT}/files/docs/a.md`, 'binary', 'mine', 9);
+
+		expect(await listed('docs/a.md')).toMatchObject({ conflict: true, committedUnavailable: true });
+	});
+
+	it('lets a deletion of such a file stand until the file changes again', async () => {
+		await markDocumentUnavailable(PROJECT, 'docs/big.md', `${PROJECT}/files/docs/big.md`, 'too_large', 'blob1', 600_000);
+		await upsertPendingChange(PROJECT, USER, 'docs/big.md', null, null, 'deleted', null);
+
+		expect(await listed('docs/big.md')).toMatchObject({ baseContentHash: 'blob1', conflict: false });
+
+		await markDocumentUnavailable(PROJECT, 'docs/big.md', `${PROJECT}/files/docs/big.md`, 'too_large', 'blob2', 700_000);
+
+		expect(await listed('docs/big.md')).toMatchObject({ conflict: true });
 	});
 });
 

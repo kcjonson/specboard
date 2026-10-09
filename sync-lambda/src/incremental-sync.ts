@@ -4,7 +4,10 @@
  */
 
 import type { SpecPathChanges } from '@specboard/db';
-import { shouldSkipDirectory, shouldSyncFile } from './file-filter.ts';
+import { isInSkippedDirectory } from '@specboard/core/sync-paths';
+import { isBinaryContent, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
+import { fetchTreeEntry } from './tree.ts';
+import { UNLIMITED_TIME, type TimeBudget } from './time-budget.ts';
 import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
 import { SUPERSEDED, syncArchive } from './initial-sync.ts';
 import { getHeadCommitSha } from './zip-stream.ts';
@@ -27,12 +30,16 @@ export interface IncrementalSyncParams {
 	lastCommitSha: string;
 	/** The pending lock the API took for this sync. */
 	lockToken: Date;
+	/** How long it may run; unlimited when run in-process in development. */
+	budget?: TimeBudget;
 }
 
 export interface IncrementalSyncResult {
 	success: boolean;
 	synced: number;
 	removed: number;
+	/** Files now on the branch that the editor can't hold (binary, too large). */
+	unavailable: number;
 	commitSha: string | null;
 	error?: string;
 }
@@ -51,13 +58,6 @@ interface GitHubCompareResponse {
 	total_commits: number;
 	commits: Array<{ sha: string }>;
 	files?: GitHubCompareFile[];
-}
-
-interface GitHubBlob {
-	content: string;
-	encoding: 'base64' | 'utf-8';
-	sha: string;
-	size: number;
 }
 
 /** GitHub's compare lists at most this many files, and its `commits` at most 250. */
@@ -126,56 +126,19 @@ export function comparedSpecPathChanges(files: GitHubCompareFile[]): SpecPathCha
 }
 
 /**
- * Fetch a blob's content from GitHub as a Buffer.
- */
-async function fetchBlobBuffer(
-	owner: string,
-	repo: string,
-	sha: string,
-	token: string
-): Promise<Buffer> {
-	const response = await fetch(
-		`${GITHUB_API_URL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${sha}`,
-		{
-			headers: {
-				Accept: 'application/vnd.github+json',
-				Authorization: `Bearer ${token}`,
-				'X-GitHub-Api-Version': '2022-11-28',
-			},
-		}
-	);
-
-	if (!response.ok) {
-		if (response.status === 403 || response.status === 429) {
-			const resetHeader = response.headers.get('X-RateLimit-Reset');
-			const resetAt = resetHeader ? new Date(parseInt(resetHeader, 10) * 1000).toISOString() : 'unknown';
-			throw new Error(`GitHub rate limit exceeded. Resets at ${resetAt}`);
-		}
-		throw new Error(`Failed to fetch blob ${sha}: ${response.status}`);
-	}
-
-	const blob: GitHubBlob = await response.json();
-
-	// Decode content to Buffer
-	if (blob.encoding === 'base64') {
-		return Buffer.from(blob.content, 'base64');
-	}
-
-	return Buffer.from(blob.content, 'utf-8');
-}
-
-/**
- * Process files in batches to avoid rate limiting.
+ * Process files in batches to avoid rate limiting, checking the time budget before each.
  */
 async function processBatches<T, R>(
 	items: T[],
 	batchSize: number,
 	delayMs: number,
-	processor: (item: T) => Promise<R>
+	processor: (item: T) => Promise<R>,
+	budget: TimeBudget
 ): Promise<R[]> {
 	const results: R[] = [];
 
 	for (let i = 0; i < items.length; i += batchSize) {
+		budget.check();
 		const batch = items.slice(i, i + batchSize);
 		const batchResults = await Promise.all(batch.map(processor));
 		results.push(...batchResults);
@@ -200,8 +163,8 @@ export async function performIncrementalSync(
 	storageServiceUrl: string,
 	storageApiKey: string
 ): Promise<IncrementalSyncResult> {
-	const { projectId, owner, repo, branch, token, lastCommitSha, lockToken } = params;
-	const failed = (error: string): IncrementalSyncResult => ({ success: false, synced: 0, removed: 0, commitSha: null, error });
+	const { projectId, owner, repo, branch, token, lastCommitSha, lockToken, budget = UNLIMITED_TIME } = params;
+	const failed = (error: string): IncrementalSyncResult => ({ success: false, synced: 0, removed: 0, unavailable: 0, commitSha: null, error });
 
 	const lock = await markSyncing(projectId, lockToken);
 	if (!lock) return failed(SUPERSEDED);
@@ -209,75 +172,88 @@ export async function performIncrementalSync(
 	try {
 		const headSha = await getHeadCommitSha(owner, repo, branch, token);
 		const { files, complete } = await getChangedFiles(owner, repo, lastCommitSha, headSha, token);
-		const storageClient = createStorageClient(storageServiceUrl, storageApiKey);
+		const storageClient = createStorageClient(storageServiceUrl, storageApiKey, { beforeSleep: (ms) => budget.check(ms) });
 
 		let synced = 0;
 		let removed = 0;
+		let unavailable = 0;
 		let linkChanges: SpecPathChanges;
 		if (complete) {
-			// Pre-filter files by directory (early skip, no content fetch needed)
-			const notInSkipDir = (f: GitHubCompareFile): boolean => !shouldSkipDirectory(f.filename);
-
-			// Separate files by action
-			const toSync = files.filter(
-				(f) =>
-					(f.status === 'added' || f.status === 'modified') &&
-					notInSkipDir(f)
-			);
-
-			const toRemove = files.filter(
-				(f) => f.status === 'removed' && notInSkipDir(f)
-			);
-
-			// Handle renamed files: remove old, add new
-			const renamed = files.filter(
-				(f) => f.status === 'renamed' && notInSkipDir(f)
-			);
-			for (const file of renamed) {
-				if (file.previous_filename && !shouldSkipDirectory(file.previous_filename)) {
-					toRemove.push({
-						...file,
-						filename: file.previous_filename,
-						status: 'removed',
-					});
+			// Files in ignored directories are never stored. A rename keeps its two sides
+			// apart: the old path goes even when the new one lands in a skipped directory.
+			const toSync: GitHubCompareFile[] = [];
+			const toRemove: string[] = [];
+			for (const file of files) {
+				if (file.status === 'removed') {
+					if (!isInSkippedDirectory(file.filename)) toRemove.push(file.filename);
+					continue;
 				}
-				toSync.push({ ...file, status: 'added' });
+				if (file.status === 'renamed' && file.previous_filename && !isInSkippedDirectory(file.previous_filename)) {
+					toRemove.push(file.previous_filename);
+				}
+				if (!isInSkippedDirectory(file.filename)) toSync.push(file);
 			}
 
-			// Sync added/modified files in batches
-			// Fetch content, check size + binary, then upload if valid
+			// Every file has to land: one that didn't would leave storage behind the sync
+			// point that claims it's current. Failures are gathered, and the sync fails
+			// after the batch without moving that point, so a retry or the next pull
+			// redoes them.
+			const failures: string[] = [];
+			const fail = (path: string, err: unknown): void => {
+				failures.push(`${path}: ${err instanceof Error ? err.message : String(err)}`);
+			};
+
+			// What the head commit has at each changed path decides how it's stored: a
+			// submodule (the compare lists it with its commit as the "blob") has no content
+			// in this repository and isn't stored; a file over the limit is recorded
+			// unavailable from its size; a smaller one is stored, or recorded unavailable
+			// if it's binary. Looked up path by path, so the repository's size doesn't
+			// matter, only how many files changed.
 			await processBatches(toSync, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
 				try {
-					const buffer = await fetchBlobBuffer(owner, repo, file.sha, token);
-
-					// Check if file should be synced (size + binary detection)
-					if (!(await shouldSyncFile(file.filename, buffer))) {
+					const entry = await fetchTreeEntry(owner, repo, headSha, file.filename, token);
+					if (!entry) throw new Error('not in the head commit');
+					if (entry.kind !== 'file') {
+						// It may have been a file before; it isn't stored now.
+						await storageClient.deleteFile(projectId, file.filename);
 						return;
 					}
-
-					const content = buffer.toString('utf-8');
-					await storageClient.putFile(projectId, file.filename, content);
+					if (entry.size > MAX_FILE_SIZE_BYTES) {
+						await storageClient.markUnavailable(projectId, file.filename, 'too_large', entry.sha, entry.size);
+						unavailable++;
+						return;
+					}
+					if (!entry.content) throw new Error('GitHub sent no content for a file under the size limit');
+					if (await isBinaryContent(entry.content)) {
+						await storageClient.markUnavailable(projectId, file.filename, 'binary', entry.sha, entry.size);
+						unavailable++;
+						return;
+					}
+					await storageClient.putFile(projectId, file.filename, entry.content.toString('utf-8'));
 					synced++;
 				} catch (err) {
-					console.error(`Failed to sync ${file.filename}:`, err);
+					fail(file.filename, err);
 				}
-			});
+			}, budget);
 
-			// Remove deleted files
-			await processBatches(toRemove, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
+			await processBatches(toRemove, BATCH_SIZE, BATCH_DELAY_MS, async (path) => {
 				try {
-					await storageClient.deleteFile(projectId, file.filename);
+					await storageClient.deleteFile(projectId, path);
 					removed++;
 				} catch (err) {
-					console.error(`Failed to remove ${file.filename}:`, err);
+					fail(path, err);
 				}
-			});
+			}, budget);
+
+			if (failures.length > 0) {
+				throw new Error(`Couldn't sync ${failures.length} file(s): ${failures.slice(0, 3).join('; ')}`);
+			}
 
 			// Commits pulled in here move spec links the way a commit made in the editor
 			// does, together with the sync point below.
 			linkChanges = comparedSpecPathChanges(files);
 		} else {
-			const result = await syncArchive({ projectId, owner, repo, branch, token }, storageClient, headSha);
+			const result = await syncArchive({ projectId, owner, repo, branch, token, budget }, storageClient, headSha);
 			synced = result.synced;
 			removed = result.pruned;
 			// A full sync can't tell a rename from a delete and an add, so it leaves spec links.
@@ -289,7 +265,7 @@ export async function performIncrementalSync(
 		if (!(await completeSync(projectId, lock, lastCommitSha, headSha, linkChanges))) {
 			return failed(SUPERSEDED);
 		}
-		return { success: true, synced, removed, commitSha: headSha };
+		return { success: true, synced, removed, unavailable, commitSha: headSha };
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
 		await markSyncFailed(projectId, lock, errorMessage);

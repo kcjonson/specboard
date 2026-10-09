@@ -361,3 +361,21 @@ describe('Editor and the version a draft is made against', () => {
 	});
 });
 
+describe('Editor on a file a sync found binary or too large', () => {
+	it('says why it can\'t open it', async () => {
+		serve('docs', { grantedRole: 'editor', effectiveRole: 'editor' });
+		const files = get.getMockImplementation()!;
+		const reason = 'This file is binary or larger than 500 KB, so it can\'t be opened or edited here. Change it in the repository directly.';
+		get.mockImplementation(async (url: string) => {
+			if (url.startsWith('/api/projects/acme/docs/files')) {
+				throw new FetchError('HTTP 409: Conflict', 409, undefined, { error: reason, code: 'FILE_UNAVAILABLE' });
+			}
+			return files(url);
+		});
+
+		const { findByText } = renderEditor('docs');
+
+		expect(await findByText(reason)).toBeTruthy();
+	});
+});
+

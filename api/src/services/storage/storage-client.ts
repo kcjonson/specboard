@@ -6,16 +6,23 @@
 const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://storage.internal:3003';
 const STORAGE_SERVICE_API_KEY = process.env.STORAGE_SERVICE_API_KEY;
 
+/** Why a file on the branch has no content here: binary, or over the sync's size limit. */
+export type UnavailableReason = 'too_large' | 'binary';
+
 interface StorageFile {
 	path: string;
 	contentHash: string;
 	sizeBytes: number;
 	syncedAt: string;
+	/** Set for a file on the branch the editor can't hold; it has no content here. */
+	unavailable?: UnavailableReason | null;
 }
 
-interface StorageFileContent extends StorageFile {
-	content: string;
-}
+/** A committed file: its content, or none when it's one the editor can't hold. */
+type StorageFileContent = StorageFile & (
+	| { content: string; unavailable?: null }
+	| { content: null; unavailable: UnavailableReason }
+);
 
 interface PendingChange {
 	path: string;
@@ -30,6 +37,8 @@ interface PendingChange {
 	contentHash: string | null;
 	/** The committed file's hash at this path now; null when none is. */
 	committedHash: string | null;
+	/** The committed file at this path is one the editor can't hold (binary, too large). */
+	committedUnavailable: boolean;
 	hasContent: boolean;
 	isLarge: boolean;
 	updatedAt: string;
@@ -43,6 +52,14 @@ export interface PendingChangeContent {
 	/** The committed version the draft was made against; null when none was committed. */
 	baseContentHash: string | null;
 	updatedAt: string;
+}
+
+/**
+ * A path as it goes into a storage URL: each segment encoded, so `#`, `?`, `%`, spaces,
+ * and non-ASCII names reach the service as the path they are.
+ */
+export function storageUrlPath(path: string): string {
+	return path.split('/').map(encodeURIComponent).join('/');
 }
 
 /**
@@ -123,7 +140,7 @@ export class StorageClient {
 		try {
 			return await this.request<StorageFileContent>(
 				'GET',
-				`/files/${projectId}/${path}`
+				`/files/${projectId}/${storageUrlPath(path)}`
 			);
 		} catch (error) {
 			if (error instanceof Error && error.message.includes('not found')) {
@@ -159,7 +176,7 @@ export class StorageClient {
 		try {
 			return await this.request<PendingChangeContent>(
 				'GET',
-				`/pending/${projectId}/${userId}/${path}`
+				`/pending/${projectId}/${userId}/${storageUrlPath(path)}`
 			);
 		} catch (error) {
 			if (error instanceof Error && error.message.includes('not found')) {
@@ -184,7 +201,7 @@ export class StorageClient {
 	): Promise<{ path: string; action: string; isLarge: boolean }> {
 		// Storage reads a missing baseContentHash key as "not known" and an explicit null
 		// as "nothing was committed", so the key is only sent when there is one.
-		return this.request('PUT', `/pending/${projectId}/${userId}/${path}`, {
+		return this.request('PUT', `/pending/${projectId}/${userId}/${storageUrlPath(path)}`, {
 			content,
 			action,
 			renamedFrom,
@@ -196,7 +213,7 @@ export class StorageClient {
 	 * Delete pending change.
 	 */
 	async deletePendingChange(projectId: string, userId: string, path: string): Promise<void> {
-		await this.request('DELETE', `/pending/${projectId}/${userId}/${path}`);
+		await this.request('DELETE', `/pending/${projectId}/${userId}/${storageUrlPath(path)}`);
 	}
 
 	/** Undo the user's rename of oldPath to newPath: both drafts dropped in one storage transaction. */

@@ -157,6 +157,17 @@ describe('DraftConflictsDialog', () => {
 		expect(getByText('You renamed it; /docs/d2.md has their latest version')).toBeTruthy();
 	});
 
+	it('offers only discarding for a draft over a file now binary or too large', () => {
+		const model = gitStatus();
+		model.files = [{ path: '/docs/logo.md', status: 'modified', isUntracked: false, conflict: true, overUnavailable: true }];
+		const { getByRole, getByText, queryByRole } = render(<DraftConflictsDialog open gitStatus={model} onClose={vi.fn()} />);
+
+		expect(getByText('Now binary or over 500 KB in the repository, so change it there')).toBeTruthy();
+		expect(getByRole('button', { name: 'Discard mine: /docs/logo.md' })).toBeTruthy();
+		expect(queryByRole('button', { name: 'Keep mine: /docs/logo.md' })).toBeNull();
+		expect(queryByRole('button', { name: 'Compare versions of /docs/logo.md' })).toBeNull();
+	});
+
 	it('marks only the row being resolved as busy', async () => {
 		const model = gitStatus();
 		vi.mocked(model.keepMine).mockImplementationOnce(() => new Promise(() => {}));

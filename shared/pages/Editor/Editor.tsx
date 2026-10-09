@@ -18,7 +18,7 @@ import {
 	clearLocalStorage,
 	type DocumentComment,
 } from '@specboard/models';
-import { fetchClient, FetchError } from '@specboard/fetch';
+import { fetchClient, FetchError, fetchErrorText } from '@specboard/fetch';
 import { captureError } from '@specboard/telemetry';
 import { FileBrowser } from '../FileBrowser/FileBrowser';
 import { ItemPicker } from '../ItemPicker/ItemPicker';
@@ -91,6 +91,11 @@ function saveSelectedFile(projectId: string, filePath: string | null): void {
 	} catch {
 		// Ignore storage errors
 	}
+}
+
+/** The server's refusal of a file a sync found binary or over its size limit. */
+function isFileUnavailable(err: unknown): boolean {
+	return err instanceof FetchError && err.status === 409 && (err.data as { code?: string } | undefined)?.code === 'FILE_UNAVAILABLE';
 }
 
 /**
@@ -303,7 +308,10 @@ export function Editor(props: RouteProps): JSX.Element {
 			// Clear the saved selection so we don't try to load a deleted/missing file on refresh
 			if (projectId) saveSelectedFile(projectId, null);
 			setLoadError({
-				message: 'Unable to load this file. The file may have been deleted or moved.',
+				// A file the sync found binary or too large says so in the server's words.
+				message: isFileUnavailable(err)
+					? fetchErrorText(err, 'This file can\'t be opened here.')
+					: 'Unable to load this file. The file may have been deleted or moved.',
 				filePath: path,
 			});
 		}
@@ -353,8 +361,9 @@ export function Editor(props: RouteProps): JSX.Element {
 		} catch (err) {
 			// A refusal (403) is the role having moved under the page: writeFailure re-reads
 			// the project so the editor turns read-only, and retrying would only be refused
-			// again. Anything else may be transient and is retried.
-			const refused = err instanceof FetchError && err.status === 403;
+			// again. So is a file that became one the editor can't hold. Anything else may
+			// be transient and is retried.
+			const refused = (err instanceof FetchError && err.status === 403) || isFileUnavailable(err);
 			const errorMessage = writeFailure(err, 'Failed to save', projectRef);
 			console.error('Server save failed:', errorMessage);
 

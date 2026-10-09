@@ -19,6 +19,8 @@ import {
 	sortPathsByDepth,
 	getDisplayName,
 	readDraftBase,
+	fileUnavailableResponse,
+	notSyncedPathResponse,
 } from './utils.ts';
 
 const MAX_EXPANDED_PATHS = 200;
@@ -208,6 +210,8 @@ export async function handleReadFile(context: Context): Promise<Response> {
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
+		const unavailable = fileUnavailableResponse(context, error);
+		if (unavailable) return unavailable;
 		if (message === 'BINARY_FILE') {
 			return context.json({ error: 'Cannot read binary file', code: 'BINARY_FILE' }, 400);
 		}
@@ -255,6 +259,9 @@ export async function handleCreateFile(context: Context, redis: Redis): Promise<
 		if (!isPathWithinRoots(filePath, project.rootPaths)) {
 			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
+
+		const notSynced = notSyncedPathResponse(context, project, filePath);
+		if (notSynced) return notSynced;
 
 		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
@@ -329,6 +336,9 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			return context.json({ error: 'Destination path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
 
+		const notSynced = notSyncedPathResponse(context, project, newPath);
+		if (notSynced) return notSynced;
+
 		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
 			return context.json({ error: 'No repository configured' }, 404);
@@ -376,6 +386,8 @@ export async function handleRenameFile(context: Context, redis: Redis): Promise<
 			success: true,
 		});
 	} catch (error) {
+		const unavailable = fileUnavailableResponse(context, error);
+		if (unavailable) return unavailable;
 		console.error('Failed to rename file:', error);
 		return context.json({ error: 'Failed to rename file', code: 'FILE_RENAME_FAILED' }, 500);
 	}
@@ -508,6 +520,9 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 			return context.json({ error: 'Path is outside project boundaries', code: 'PATH_OUTSIDE_ROOTS' }, 403);
 		}
 
+		const notSynced = notSyncedPathResponse(context, project, filePath);
+		if (notSynced) return notSynced;
+
 		const provider = getStorageProvider(project, userId, access);
 		if (!provider) {
 			return context.json({ error: 'No repository configured' }, 404);
@@ -525,6 +540,8 @@ export async function handleWriteFile(context: Context, redis: Redis): Promise<R
 			success: true,
 		});
 	} catch (error) {
+		const unavailable = fileUnavailableResponse(context, error);
+		if (unavailable) return unavailable;
 		console.error('Failed to write file:', error);
 		return context.json({ error: 'Server error' }, 500);
 	}

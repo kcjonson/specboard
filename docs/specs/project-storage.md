@@ -308,7 +308,7 @@ API passes the pending token to the Lambda in its event; the Lambda only moves t
 exact lock to `syncing` (a late or repeated invocation finds nothing to take), and if it
 fails before then (configuration, secrets, the GitHub token) it marks that lock failed
 so commits aren't blocked. A lock older than 20 minutes is stale and can be taken over:
-a Lambda stops at 15 minutes and a commit request long before, so a lock that old
+a Lambda stops at 5 minutes and a commit request long before, so a lock that old
 belongs to something that crashed. A commit that took one over leaves the project's
 sync showing failed ("The last sync didn't finish. Pull again.") rather than putting
 the dead holder's state back.
@@ -445,13 +445,14 @@ A pull takes the sync lock and starts the incremental sync, which resolves the b
 head to its full SHA, reads GitHub's compare from the sync point to it, writes the
 changed files into the committed files, and then, in one transaction that checks it
 still holds the lock and the sync point is still where it started, moves the sync point
-to that head and moves spec links for `removed` and `renamed` files. A failed sync
-retries all of it. When the compare can't list everything (300 files, or more commits
-than it returns) or the branch was rewritten (a force-push makes it `diverged` or
-`behind`, and it then diffs from the merge base), the sync falls back to a full sync of
-that head instead. With no new
-commits it still stores the head's full SHA. The editor waits for the sync to finish
-before it refreshes.
+to that head and moves spec links for `removed` and `renamed` files. Every file has to
+land: if any write or removal fails, the sync fails without moving the sync point or
+the links, and a retry or the next pull redoes the whole range (writes are idempotent).
+When the compare can't list everything (300 files, or more commits than it returns) or
+the branch was rewritten (a force-push makes it `diverged` or `behind`, and it then
+diffs from the merge base), the sync falls back to a full sync of that head instead.
+With no new commits it still stores the head's full SHA. The editor waits for the sync
+to finish before it refreshes.
 
 A pull never touches pending changes: each member's drafts stay as they were, shown
 over the new committed files. A draft of a file the pull also changed now conflicts,
@@ -459,9 +460,88 @@ and git status flags it (`conflict: true`), so the file tree marks it and the ed
 offers to resolve it before the commit is refused.
 
 A full sync (`initial`, or the fallback above) streams the head commit's archive into
-storage and then removes committed files the archive no longer has; any file in the
-archive stays, including ones the sync filter skips or that failed to upload. It can't
-tell a rename from a delete, so it leaves spec links alone.
+storage, then removes committed files storage didn't take from the archive: files the
+branch no longer has and files in skipped directories. It fails without pruning or
+moving the sync point if any file failed to upload. It can't tell a rename from a
+delete, so it leaves spec links alone.
+
+### Files the editor can't hold
+
+Syncs store text files up to 500 KB. Files in skipped directories (`node_modules`,
+`.git`, build output, tool settings; the list is `@specboard/core/sync-paths`, shared by
+the sync and the API) are never stored, and for a cloud project the API refuses to
+create a file in one, or rename one into it (`400 PATH_NOT_SYNCED`), since a commit
+would put it on GitHub where no sync brings it back. Submodules (gitlinks) have no
+content in this repository and aren't stored either: GitHub's compare lists a submodule
+bump as a changed file, and the sync skips it; the archive a full sync reads holds no
+files for one.
+
+Neither kind of sync reads the commit's whole tree, which GitHub truncates for very
+large repositories. An incremental sync looks up each path the compare names with the
+contents API (`GET contents/<path>?ref=<head>`), which gives its type (a submodule is
+skipped), git blob sha, and size, and inlines the content up to 1 MB. A file over the
+limit is recorded from that size; a smaller one is recorded if it's binary, stored
+otherwise. A full sync reads sizes from the archive's entry headers: a file over the
+limit is hashed as git does (sha1 of `blob <size>\0` and the bytes) as it streams past,
+never buffered, and a binary one is hashed from the bytes it read. An entry whose size
+the archive defers past its bytes is read up to the limit and no further; if it turns
+out larger, its sha and size come from the contents API for that one path. Recorded
+means stored as a row with no content (`project_documents.unavailable_reason`,
+`too_large` or `binary`; storage migration 004) whose `content_hash` is the file's git
+blob sha, and any older content stored for it is removed. Both kinds of sync do this,
+including for a file a push just made too large or binary, so nobody reads or commits
+over an older copy. A later sync that finds the file editable again stores it as usual.
+
+An available file's `content_hash` is sha1 of its content, an unavailable one's the git
+blob sha. Draft bases only ever come from a committed hash, so the two kinds meet only
+when a file crosses between held and not held, and then they differ, as the file did. A
+draft that writes over an unavailable file is listed as a conflict regardless of hashes
+(git status flags it with `overUnavailable`), so it also shows among the draft
+conflicts, where the only way on is discarding it: keep mine answers `409
+FILE_UNAVAILABLE`, since nobody here has seen what it would replace. A deletion of an
+unavailable file takes the blob sha as its base and conflicts only if the file changes
+again.
+
+Such a file is listed, but reading it, saving a draft of it, or renaming it answers `409
+FILE_UNAVAILABLE` with a message saying it's binary or too large to edit here; the
+editor shows that message instead of the file, and doesn't retry the save. Deleting it
+is allowed. A commit answers `409` with `reason: 'unavailable_files'` and the paths, and
+writes nothing, when a draft (other than a deletion) would put back what the sync can't
+store: a draft over a file that has since become unavailable, a rename of one, or a
+draft in a skipped directory. The way on is to discard those drafts and change the
+files in the repository directly. The commit checks this before draft conflicts, from
+the same listing of drafts and one listing of the committed files, since no keep can
+fix it.
+
+A sync checks the Lambda's remaining time as it goes (before each batch of changed
+files, each archive entry as its upload starts, each prune, and before any wait to retry
+the storage service) and, with 30 seconds still left, stops and records the failure:
+"The repository is too large to sync in one pass." The sync point stays where it was, so
+a later pull redoes the range; what was written meanwhile is idempotent. Without that,
+the Lambda's 5-minute timeout would end it with no chance to release the lock, which
+would sit until it went stale. A full sync feeds the archive to its parser only while a
+few entries are outstanding (the parser would otherwise queue the whole archive in
+memory and read it all before the first upload finished), so the budget sees the real
+pace. A full sync is bounded by how much it can download from GitHub and upload in those
+five minutes, so a large repository can hit the limit every time; the fix then is a
+smaller repository, or one just for the docs, or a longer Lambda timeout (an
+infrastructure setting, `timeout` on the sync function).
+
+### Sync traffic to the storage service
+
+The storage service rate-limits each API key and client per minute, in memory per
+task: 1000 requests for the API, 30,000 for the sync Lambda, which sends
+`X-Storage-Client: sync`. Separate budgets keep a large full sync from using up the
+API's and the API's interactive traffic from stalling a sync. The sync's is sized to
+let one full sync run at its upload concurrency for a whole minute (ten at once at
+20 to 50 ms a write is 12,000 to 30,000) while still capping a runaway client; the
+key is held by the API and the Lambda alone, and which budget a request counts against
+is the caller's own say (the header), so the limit guards against a loop, not abuse. A full sync uploads at most ten files at once, holding the archive back
+while it waits. On a 429 the sync waits as long as Retry-After says (backing off when it
+says nothing) and tries again, up to eight times, before failing; other refusals aren't
+retried, and server errors are retried three times. Paths go into storage URLs encoded
+segment by segment, so names with `#`, `?`, `%`, spaces, or non-ASCII characters arrive
+as themselves.
 
 ### Managed Checkout Location
 

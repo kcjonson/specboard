@@ -14,6 +14,12 @@ import type {
 	PullResult,
 } from './types.ts';
 
+/**
+ * Thrown for a file on the branch that the editor can't hold (binary, or over the sync's
+ * size limit): there's no content here to read, and a draft over it isn't allowed.
+ */
+export const FILE_UNAVAILABLE = 'FILE_UNAVAILABLE';
+
 /** API paths have a leading slash; storage paths don't. */
 function toStoragePath(relativePath: string): string {
 	return relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
@@ -185,7 +191,9 @@ export class CloudStorageProvider implements StorageProvider {
 		}
 
 		const file = await this.client.getFile(this.projectId, storagePath);
-		return file ? { content: file.content, origin: storagePath, base: file.contentHash } : null;
+		if (!file) return null;
+		if (file.content === null) throw new Error(FILE_UNAVAILABLE);
+		return { content: file.content, origin: storagePath, base: file.contentHash };
 	}
 
 	async writeFile(relativePath: string, content: string, baseContentHash?: string | null): Promise<void> {
@@ -204,6 +212,8 @@ export class CloudStorageProvider implements StorageProvider {
 		baseContentHash: string | null | undefined
 	): Promise<void> {
 		const committed = await this.client.getFile(this.projectId, storagePath);
+		// A draft over a file the editor can't hold would replace it, unseen, on commit.
+		if (committed?.content === null) throw new Error(FILE_UNAVAILABLE);
 
 		// Writing the committed content back clears the pending change instead of
 		// journaling a no-op that would keep the file dirty until the next commit.
@@ -257,6 +267,11 @@ export class CloudStorageProvider implements StorageProvider {
 		// discards the creation rather than recording a phantom deletion. The new side
 		// records where the file was committed, which is how a commit tells this rename
 		// from an unrelated delete and create and moves the file's spec links with it.
+		// A draft over a file that has since become one the editor can't hold would carry
+		// stale text to the new name, and the commit would delete the real file.
+		if ((await this.client.getFile(this.projectId, toStoragePath(oldPath)))?.content === null) {
+			throw new Error(FILE_UNAVAILABLE);
+		}
 		const file = await this.readWithOrigin(toStoragePath(oldPath));
 		if (!file) {
 			throw new Error(`File not found: ${oldPath}`);
@@ -320,6 +335,7 @@ export class CloudStorageProvider implements StorageProvider {
 				path: '/' + change.path,
 				status,
 				conflict: change.conflict,
+				...(change.committedUnavailable && change.action !== 'deleted' ? { overUnavailable: true } : {}),
 				...(movedTo
 					? {
 						renamedTo: '/' + movedTo.path,

@@ -39,6 +39,8 @@ const storage = vi.hoisted(() => {
 		content === undefined ? null : createHash('sha1').update(content).digest('hex');
 	interface Pending { content: string | null; action: Action; renamedFrom: string | null; updatedAt: string; base: string | null }
 	const committed = new Map<string, string>();
+	// Committed files a sync found binary or too large: a row with no content.
+	const unavailable = new Set<string>();
 	const pending = new Map<string, Map<string, Pending>>();
 	let clock = 0;
 	const flags = { failPromote: false };
@@ -50,25 +52,37 @@ const storage = vi.hoisted(() => {
 		}
 		return changes;
 	};
+	// What's committed at a path names it by: sha1 of the content, or the git blob sha
+	// (any 40 hex will do here) for a file the editor can't hold.
+	const committedHashOf = (path: string): string | null =>
+		unavailable.has(path) && committed.has(path) ? 'b'.repeat(40) : hashOf(committed.get(path));
 	// A draft holding exactly what's committed now would commit as a no-op: not a conflict.
+	// One writing over a file the editor can't hold always is.
 	const list = (userId: string): Array<Pending & { path: string; conflict: boolean }> =>
 		[...mine(userId)].map(([path, change]) => {
-			const now = hashOf(committed.get(path));
+			const now = committedHashOf(path);
+			const overUnavailable = change.action !== 'deleted' && unavailable.has(path) && committed.has(path);
 			const noOp = change.action !== 'deleted' && change.content === (committed.get(path) ?? null);
 			return {
 				path,
 				...change,
-				conflict: change.base !== now && !noOp,
+				conflict: overUnavailable || (change.base !== now && !noOp),
 				baseContentHash: change.base,
 				contentHash: change.content === null ? null : hashOf(change.content),
 				committedHash: now,
+				committedUnavailable: unavailable.has(path) && committed.has(path),
 			};
 		});
 	const client = {
-		listFiles: async () => [...committed.keys()].map((path) => ({ path, contentHash: 'h', sizeBytes: 1, syncedAt: 'then' })),
+		listFiles: async () => [...committed.keys()].map((path) => ({
+			path, contentHash: 'h', sizeBytes: 1, syncedAt: 'then', unavailable: unavailable.has(path) ? 'binary' : null,
+		})),
 		getFile: async (_projectId: string, path: string) => {
 			const content = committed.get(path);
-			return content === undefined ? null : { path, content, contentHash: hashOf(content) };
+			if (content === undefined) return null;
+			return unavailable.has(path)
+				? { path, content: null, contentHash: 'b'.repeat(40), unavailable: 'binary' }
+				: { path, content, contentHash: hashOf(content) };
 		},
 		listPendingChanges: async (_projectId: string, userId: string) => list(userId),
 		listPendingChangesWithContent: async (_projectId: string, userId: string) => list(userId),
@@ -83,7 +97,7 @@ const storage = vi.hoisted(() => {
 			const existing = mine(userId).get(path);
 			const kept = renamedFrom ?? existing?.renamedFrom ?? null;
 			const updatedAt = new Date(Date.UTC(2026, 0, 1) + ++clock).toISOString();
-			const base = existing ? existing.base : baseContentHash !== undefined ? baseContentHash : hashOf(committed.get(path));
+			const base = existing ? existing.base : baseContentHash !== undefined ? baseContentHash : committedHashOf(path);
 			mine(userId).set(path, { content, action, renamedFrom: action === 'deleted' ? null : kept, updatedAt, base });
 			return { path, action, isLarge: false };
 		},
@@ -110,7 +124,7 @@ const storage = vi.hoisted(() => {
 			for (const path of paths) {
 				const draft = mine(userId).get(path);
 				if (!draft) continue;
-				const now = hashOf(committed.get(path));
+				const now = committedHashOf(path);
 				if (draft.action === 'deleted' && now === null) {
 					mine(userId).delete(path);
 					dropped.push(path);
@@ -123,7 +137,7 @@ const storage = vi.hoisted(() => {
 			return { rebased, dropped };
 		},
 	};
-	return { committed, pending, mine, client, flags, hashOf };
+	return { committed, unavailable, pending, mine, client, flags, hashOf };
 });
 
 /** A local project's checkout, in memory. */
@@ -146,6 +160,9 @@ vi.mock('../../services/storage/local-provider.ts', () => ({
 		}
 		async deleteFile(path: string): Promise<void> {
 			disk.files.delete(path);
+		}
+		async writeFile(path: string): Promise<void> {
+			disk.files.add(path);
 		}
 	},
 }));
@@ -309,6 +326,7 @@ beforeEach(async () => {
 	vi.mocked(createGitHubCommit).mockResolvedValue({ success: true, sha: COMMIT_SHA, url: 'https://github.com/acme/docs/commit/c0ffee0', filesCommitted: 1 });
 
 	storage.committed.clear();
+	storage.unavailable.clear();
 	storage.pending.clear();
 	storage.flags.failPromote = false;
 	storage.committed.set('docs/spec.md', '# Spec');
@@ -937,6 +955,112 @@ describe('a draft someone else\'s commit changed under', () => {
 		const status = (await (await call('erin', 'GET', 'git/status')).json()) as { changedFiles: Array<{ path: string; renameKeepsCommitted?: boolean }> };
 
 		expect(status.changedFiles.find((f) => f.path === '/docs/spec.md')).toMatchObject({ renamedTo: '/docs/d2.md', renameKeepsCommitted: true, conflict: true });
+	});
+});
+
+describe('a file a sync found binary or too large', () => {
+	it('can\'t be opened or saved, and says why', async () => {
+		storage.unavailable.add('docs/spec.md');
+
+		const read = await call('erin', 'GET', 'files?path=/docs/spec.md');
+		const write = await call('erin', 'PUT', 'files?path=/docs/spec.md', { content: '# Mine' });
+
+		expect(read.status).toBe(409);
+		expect(await read.json()).toMatchObject({ code: 'FILE_UNAVAILABLE', error: expect.stringContaining('500 KB') });
+		expect(write.status).toBe(409);
+		expect(storage.mine(erin).size).toBe(0);
+	});
+
+	it('refuses a commit with a draft made before the file became one, and writes nothing', async () => {
+		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, mine' });
+		// A pull brings in a push that made spec.md binary.
+		storage.unavailable.add('docs/spec.md');
+
+		const response = await commit();
+
+		// The draft is a conflict too; the commit names what no "keep mine" can fix first.
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			reason: 'unavailable_files',
+			files: [{ path: '/docs/spec.md' }],
+			error: { stage: 'commit', message: expect.stringContaining('/docs/spec.md') },
+		});
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+		expect(storage.mine(alice).size).toBe(1);
+	});
+
+	it('shows a draft made before the file became one as a conflict that only discarding resolves', async () => {
+		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, mine' });
+		storage.unavailable.add('docs/spec.md');
+
+		const status = (await (await call('alice', 'GET', 'git/status')).json()) as { changedFiles: unknown[] };
+		const kept = await call('alice', 'POST', 'git/keep-mine', { paths: ['/docs/spec.md'] });
+
+		expect(status.changedFiles).toEqual([
+			{ path: '/docs/spec.md', status: 'modified', isUntracked: false, conflict: true, overUnavailable: true },
+		]);
+		expect(kept.status).toBe(409);
+		expect(await kept.json()).toMatchObject({ code: 'FILE_UNAVAILABLE', paths: ['/docs/spec.md'] });
+		expect(storage.mine(alice).get('docs/spec.md')).toMatchObject({ base: storage.hashOf('# Spec') });
+	});
+
+	it('can still be deleted', async () => {
+		storage.unavailable.add('docs/other.md');
+
+		expect((await deleteFile('/docs/other.md')).status).toBe(200);
+		expect((await commit()).status).toBe(200);
+		expect(storage.committed.has('docs/other.md')).toBe(false);
+	});
+
+	it('can\'t be renamed with a draft made before it became one', async () => {
+		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, mine' });
+		storage.unavailable.add('docs/spec.md');
+
+		const response = await renameFile('/docs/spec.md', '/docs/renamed.md');
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ code: 'FILE_UNAVAILABLE' });
+		expect([...storage.mine(alice).keys()]).toEqual(['docs/spec.md']);
+	});
+
+	it('refuses a commit carrying a rename of one made before it became one', async () => {
+		await renameFile('/docs/spec.md', '/docs/renamed.md');
+		storage.unavailable.add('docs/spec.md');
+
+		const response = await commit();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ reason: 'unavailable_files', files: [{ path: '/docs/renamed.md', why: 'unavailable' }] });
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+	});
+});
+
+describe('a folder the sync never stores', () => {
+	it('refuses creating a file there, or renaming one into it', async () => {
+		const created = await call('alice', 'POST', 'files?path=/docs/build/notes.md');
+		const renamed = await renameFile('/docs/spec.md', '/node_modules/spec.md');
+
+		expect(created.status).toBe(400);
+		expect(await created.json()).toMatchObject({ code: 'PATH_NOT_SYNCED' });
+		expect(renamed.status).toBe(400);
+		expect(storage.mine(alice).size).toBe(0);
+	});
+
+	it('refuses committing a draft that got there before the check', async () => {
+		await storage.client.putPendingChange('', alice, 'docs/build/notes.md', '# Notes', 'created', null, null);
+
+		const response = await commit();
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ files: [{ path: '/docs/build/notes.md', why: 'not_synced' }] });
+		expect(createGitHubCommit).not.toHaveBeenCalled();
+	});
+
+	it('leaves a local project\'s folders alone', async () => {
+		const created = await call('alice', 'POST', 'files?path=/docs/build/notes.md', undefined, 'local');
+
+		expect(created.status).toBe(200);
+		expect(disk.files.has('/docs/build/notes.md')).toBe(true);
 	});
 });
 

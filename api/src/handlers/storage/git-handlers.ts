@@ -4,7 +4,8 @@
 
 import type { Context } from 'hono';
 import type { Redis } from 'ioredis';
-import { getStorageProvider, isPathWithinRoots, normalizePath } from './utils.ts';
+import { FILE_UNAVAILABLE_MESSAGE, getStorageProvider, isPathWithinRoots, normalizePath } from './utils.ts';
+import { FILE_UNAVAILABLE } from '../../services/storage/cloud-provider.ts';
 import { handleGitHubCommit, handleGitHubSync } from '../github-sync.ts';
 import { isCloudRepository, isLocalRepository, type RepositoryConfig } from '@specboard/db';
 import { apiUserId, loadAuthorizedProject, requireAccess } from '../../project-access.ts';
@@ -50,13 +51,14 @@ export async function handleGetGitStatus(context: Context): Promise<Response> {
 
 		// Combine staged, unstaged, and untracked into a single changedFiles array
 		// Use a Map to dedupe by path, preferring staged status
-		type ChangedFile = { path: string; status: string; isUntracked: boolean; conflict: boolean; renamedTo?: string; renameKeepsCommitted?: boolean };
+		type ChangedFile = { path: string; status: string; isUntracked: boolean; conflict: boolean; renamedTo?: string; renameKeepsCommitted?: boolean; overUnavailable?: boolean };
 		const changedMap = new Map<string, ChangedFile>();
 		const changed = (file: FileChange): ChangedFile => ({
 			path: file.path,
 			status: file.status,
 			isUntracked: false,
 			conflict: file.conflict === true,
+			...(file.overUnavailable ? { overUnavailable: true } : {}),
 			...(file.renamedTo ? { renamedTo: file.renamedTo, renameKeepsCommitted: file.renameKeepsCommitted === true } : {}),
 		});
 
@@ -308,7 +310,20 @@ export async function handleKeepMine(context: Context, redis: Redis): Promise<Re
 	}
 
 	try {
-		const result = await getStorageClient().rebasePendingChanges(project.id, userId, paths);
+		const storageClient = getStorageClient();
+		// A draft writing over a file the editor can't hold can't be kept: nobody here has
+		// seen what it would replace, and the commit refuses it anyway.
+		const wanted = new Set(paths);
+		const overUnavailable = (await storageClient.listPendingChanges(project.id, userId))
+			.filter((change) => wanted.has(change.path) && change.committedUnavailable && change.action !== 'deleted');
+		if (overUnavailable.length > 0) {
+			return context.json({
+				error: FILE_UNAVAILABLE_MESSAGE,
+				code: FILE_UNAVAILABLE,
+				paths: overUnavailable.map((change) => '/' + change.path),
+			}, 409);
+		}
+		const result = await storageClient.rebasePendingChanges(project.id, userId, paths);
 		if (paths.some((path) => isConventionFile('/' + path))) {
 			await invalidateRepoConventions(project.id, userId, redis);
 		}
