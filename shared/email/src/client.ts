@@ -66,9 +66,13 @@ function isEmailAllowed(email: string): boolean {
 }
 
 /**
- * Log email to console (for development/testing)
+ * Log an email instead of sending it. Only console mode (local development) prints the
+ * body, since that's how a developer reads the sign-in and invite links. Everywhere else
+ * the body stays out of the logs: it carries live tokens (invites, magic links, codes),
+ * and a blocked staging send or a misconfigured client would otherwise leave them in
+ * CloudWatch.
  */
-function logEmail(options: SendEmailOptions, reason: string): void {
+function logEmail(options: SendEmailOptions, reason: string, includeBody: boolean): void {
 	console.log('\n========================================');
 	console.log(`EMAIL ${reason}`);
 	console.log('========================================');
@@ -79,11 +83,15 @@ function logEmail(options: SendEmailOptions, reason: string): void {
 	}
 	console.log(`Subject: ${options.subject}`);
 	console.log('----------------------------------------');
-	console.log('Text Body:');
-	console.log(options.textBody);
-	if (options.htmlBody) {
-		console.log('----------------------------------------');
-		console.log('HTML Body: [omitted - see text body above]');
+	if (includeBody) {
+		console.log('Text Body:');
+		console.log(options.textBody);
+		if (options.htmlBody) {
+			console.log('----------------------------------------');
+			console.log('HTML Body: [omitted - see text body above]');
+		}
+	} else {
+		console.log('Body: [omitted - it may carry tokens]');
 	}
 	console.log('========================================\n');
 }
@@ -105,14 +113,14 @@ export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
 
 	// Development mode: always log to console
 	if (NODE_ENV === 'development' || EMAIL_MODE === 'console') {
-		logEmail(options, '(CONSOLE MODE - not sent)');
+		logEmail(options, '(CONSOLE MODE - not sent)', true);
 		return false;
 	}
 
 	// Non-production app environment: check allowlist
 	if (APP_ENV !== 'production') {
 		if (!isEmailAllowed(to)) {
-			logEmail(options, `(BLOCKED - ${to} not in allowlist: ${EMAIL_ALLOWLIST || 'none'})`);
+			logEmail(options, `(BLOCKED - ${to} not in allowlist: ${EMAIL_ALLOWLIST || 'none'})`, false);
 			return false;
 		}
 		console.log(`[Email] Sending to ${to} (allowed by EMAIL_ALLOWLIST)`);
@@ -120,7 +128,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
 
 	if (!sesClient) {
 		console.error('[Email] SES client not initialized but trying to send email');
-		logEmail(options, '(ERROR - SES client not initialized)');
+		logEmail(options, '(ERROR - SES client not initialized)', false);
 		return false;
 	}
 

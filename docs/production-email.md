@@ -27,7 +27,9 @@ Gotchas encoded in the stack, do not "simplify" them away:
 | Staging | noreply@staging.specboard.io | `EMAIL_ALLOWLIST=specboard.io` hard-blocks everything else |
 | Production | noreply@specboard.io | unrestricted (empty allowlist) |
 
-Send path: handler → `@specboard/email` `sendEmail()` → SES. Templates in `shared/email/src/templates.ts`. Only four emails exist: signup verification, verification resend, password reset, and the waitlist confirmation. All user-triggered.
+A staging send to an address outside the allowlist is logged with its recipient and subject but not its body, so invite links, magic links and sign-in codes never land in CloudWatch. Only development's console mode prints the body. To try invites or sign-in on staging, use a `specboard.io` address.
+
+Send path: handler → `@specboard/email` `sendEmail()` → SES. Templates in `shared/email/src/templates.ts`. Every email is user-triggered: sign-in links and codes, signup verification and its resend, password reset, the waitlist confirmation, and project invitations.
 
 The waitlist confirmation is sent until one succeeds per address: `waitlist_signups.confirmation_sent_at` is stamped when SES accepts it, a failed send leaves it NULL so submitting the form again retries, and `SELECT email FROM waitlist_signups WHERE confirmation_sent_at IS NULL` lists who never got one. Rows from before that column existed (migration 031) are NULL too, since nothing recorded whether they were sent.
 
