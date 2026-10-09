@@ -5,7 +5,7 @@
  */
 
 import { streamGitHubZipToStorage, getHeadCommitSha } from './zip-stream.ts';
-import { fetchTree } from './tree.ts';
+import { UNLIMITED_TIME, type TimeBudget } from './time-budget.ts';
 import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
 import { createStorageClient, type StorageClient } from './shared/storage-client.ts';
 
@@ -17,6 +17,8 @@ export interface InitialSyncParams {
 	token: string;
 	/** The pending lock the API took for this sync. */
 	lockToken: Date;
+	/** How long it may run; unlimited when run in-process in development. */
+	budget?: TimeBudget;
 }
 
 export interface InitialSyncResult {
@@ -41,9 +43,8 @@ export async function syncArchive(
 	storageClient: StorageClient,
 	head: string
 ): Promise<{ synced: number; skipped: number; pruned: number }> {
-	const { projectId, owner, repo, token } = params;
-	const tree = await fetchTree(owner, repo, head, token);
-	const result = await streamGitHubZipToStorage(owner, repo, head, token, projectId, storageClient, tree);
+	const { projectId, owner, repo, token, budget = UNLIMITED_TIME } = params;
+	const result = await streamGitHubZipToStorage(owner, repo, head, token, projectId, storageClient, budget);
 	// A file that didn't make it in would otherwise be pruned, or left stale, under a
 	// sync point that says it's current: fail, and leave it to a retry.
 	if (result.errors.length > 0) {
@@ -52,6 +53,7 @@ export async function syncArchive(
 
 	const stale = (await storageClient.listFiles(projectId)).filter((path) => !result.kept.has(path));
 	for (const path of stale) {
+		budget.check();
 		await storageClient.deleteFile(projectId, path);
 	}
 	return { synced: result.synced, skipped: result.skipped, pruned: stale.length };
@@ -67,7 +69,7 @@ export async function performInitialSync(
 	storageServiceUrl: string,
 	storageApiKey: string
 ): Promise<InitialSyncResult> {
-	const { projectId, owner, repo, branch, token, lockToken } = params;
+	const { projectId, owner, repo, branch, token, lockToken, budget } = params;
 	const failed = (error: string): InitialSyncResult => ({ success: false, synced: 0, skipped: 0, pruned: 0, commitSha: null, error });
 
 	const lock = await markSyncing(projectId, lockToken);
@@ -75,7 +77,7 @@ export async function performInitialSync(
 
 	try {
 		const head = await getHeadCommitSha(owner, repo, branch, token);
-		const result = await syncArchive(params, createStorageClient(storageServiceUrl, storageApiKey), head);
+		const result = await syncArchive({ projectId, owner, repo, branch, token, budget }, createStorageClient(storageServiceUrl, storageApiKey), head);
 
 		// A full sync can't tell a rename from a delete and an add, so it leaves spec links.
 		if (!(await completeSync(projectId, lock, undefined, head, { renamed: [], deleted: [] }))) {

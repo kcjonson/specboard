@@ -6,7 +6,8 @@
 import type { SpecPathChanges } from '@specboard/db';
 import { isInSkippedDirectory } from '@specboard/core/sync-paths';
 import { isBinaryContent, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
-import { fetchTree } from './tree.ts';
+import { fetchTreeEntry } from './tree.ts';
+import { UNLIMITED_TIME, type TimeBudget } from './time-budget.ts';
 import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
 import { SUPERSEDED, syncArchive } from './initial-sync.ts';
 import { getHeadCommitSha } from './zip-stream.ts';
@@ -29,6 +30,8 @@ export interface IncrementalSyncParams {
 	lastCommitSha: string;
 	/** The pending lock the API took for this sync. */
 	lockToken: Date;
+	/** How long it may run; unlimited when run in-process in development. */
+	budget?: TimeBudget;
 }
 
 export interface IncrementalSyncResult {
@@ -55,13 +58,6 @@ interface GitHubCompareResponse {
 	total_commits: number;
 	commits: Array<{ sha: string }>;
 	files?: GitHubCompareFile[];
-}
-
-interface GitHubBlob {
-	content: string;
-	encoding: 'base64' | 'utf-8';
-	sha: string;
-	size: number;
 }
 
 /** GitHub's compare lists at most this many files, and its `commits` at most 250. */
@@ -130,56 +126,19 @@ export function comparedSpecPathChanges(files: GitHubCompareFile[]): SpecPathCha
 }
 
 /**
- * Fetch a blob's content from GitHub as a Buffer.
- */
-async function fetchBlobBuffer(
-	owner: string,
-	repo: string,
-	sha: string,
-	token: string
-): Promise<Buffer> {
-	const response = await fetch(
-		`${GITHUB_API_URL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${sha}`,
-		{
-			headers: {
-				Accept: 'application/vnd.github+json',
-				Authorization: `Bearer ${token}`,
-				'X-GitHub-Api-Version': '2022-11-28',
-			},
-		}
-	);
-
-	if (!response.ok) {
-		if (response.status === 403 || response.status === 429) {
-			const resetHeader = response.headers.get('X-RateLimit-Reset');
-			const resetAt = resetHeader ? new Date(parseInt(resetHeader, 10) * 1000).toISOString() : 'unknown';
-			throw new Error(`GitHub rate limit exceeded. Resets at ${resetAt}`);
-		}
-		throw new Error(`Failed to fetch blob ${sha}: ${response.status}`);
-	}
-
-	const blob: GitHubBlob = await response.json();
-
-	// Decode content to Buffer
-	if (blob.encoding === 'base64') {
-		return Buffer.from(blob.content, 'base64');
-	}
-
-	return Buffer.from(blob.content, 'utf-8');
-}
-
-/**
- * Process files in batches to avoid rate limiting.
+ * Process files in batches to avoid rate limiting, checking the time budget before each.
  */
 async function processBatches<T, R>(
 	items: T[],
 	batchSize: number,
 	delayMs: number,
-	processor: (item: T) => Promise<R>
+	processor: (item: T) => Promise<R>,
+	budget: TimeBudget
 ): Promise<R[]> {
 	const results: R[] = [];
 
 	for (let i = 0; i < items.length; i += batchSize) {
+		budget.check();
 		const batch = items.slice(i, i + batchSize);
 		const batchResults = await Promise.all(batch.map(processor));
 		results.push(...batchResults);
@@ -204,7 +163,7 @@ export async function performIncrementalSync(
 	storageServiceUrl: string,
 	storageApiKey: string
 ): Promise<IncrementalSyncResult> {
-	const { projectId, owner, repo, branch, token, lastCommitSha, lockToken } = params;
+	const { projectId, owner, repo, branch, token, lastCommitSha, lockToken, budget = UNLIMITED_TIME } = params;
 	const failed = (error: string): IncrementalSyncResult => ({ success: false, synced: 0, removed: 0, unavailable: 0, commitSha: null, error });
 
 	const lock = await markSyncing(projectId, lockToken);
@@ -244,38 +203,38 @@ export async function performIncrementalSync(
 				failures.push(`${path}: ${err instanceof Error ? err.message : String(err)}`);
 			};
 
-			// The head's tree says how to store each changed file before anything is
-			// downloaded: a submodule (the compare lists it with its commit as the "blob")
-			// has no content in this repository and isn't stored; a file over the limit is
-			// recorded unavailable from its listed size; only the rest is downloaded, and a
-			// binary one is recorded unavailable too.
-			const tree = await fetchTree(owner, repo, headSha, token);
+			// What the head commit has at each changed path decides how it's stored: a
+			// submodule (the compare lists it with its commit as the "blob") has no content
+			// in this repository and isn't stored; a file over the limit is recorded
+			// unavailable from its size; a smaller one is stored, or recorded unavailable
+			// if it's binary. Looked up path by path, so the repository's size doesn't
+			// matter, only how many files changed.
 			await processBatches(toSync, BATCH_SIZE, BATCH_DELAY_MS, async (file) => {
 				try {
-					const listed = tree.get(file.filename);
-					if (!listed) throw new Error('not in the head commit\'s tree');
-					if (listed.submodule) {
+					const entry = await fetchTreeEntry(owner, repo, headSha, file.filename, token);
+					if (!entry) throw new Error('not in the head commit');
+					if (entry.kind !== 'file') {
 						// It may have been a file before; it isn't stored now.
 						await storageClient.deleteFile(projectId, file.filename);
 						return;
 					}
-					if (listed.size > MAX_FILE_SIZE_BYTES) {
-						await storageClient.markUnavailable(projectId, file.filename, 'too_large', listed.sha, listed.size);
+					if (entry.size > MAX_FILE_SIZE_BYTES) {
+						await storageClient.markUnavailable(projectId, file.filename, 'too_large', entry.sha, entry.size);
 						unavailable++;
 						return;
 					}
-					const buffer = await fetchBlobBuffer(owner, repo, listed.sha, token);
-					if (await isBinaryContent(buffer)) {
-						await storageClient.markUnavailable(projectId, file.filename, 'binary', listed.sha, listed.size);
+					if (!entry.content) throw new Error('GitHub sent no content for a file under the size limit');
+					if (await isBinaryContent(entry.content)) {
+						await storageClient.markUnavailable(projectId, file.filename, 'binary', entry.sha, entry.size);
 						unavailable++;
 						return;
 					}
-					await storageClient.putFile(projectId, file.filename, buffer.toString('utf-8'));
+					await storageClient.putFile(projectId, file.filename, entry.content.toString('utf-8'));
 					synced++;
 				} catch (err) {
 					fail(file.filename, err);
 				}
-			});
+			}, budget);
 
 			await processBatches(toRemove, BATCH_SIZE, BATCH_DELAY_MS, async (path) => {
 				try {
@@ -284,7 +243,7 @@ export async function performIncrementalSync(
 				} catch (err) {
 					fail(path, err);
 				}
-			});
+			}, budget);
 
 			if (failures.length > 0) {
 				throw new Error(`Couldn't sync ${failures.length} file(s): ${failures.slice(0, 3).join('; ')}`);
@@ -294,7 +253,7 @@ export async function performIncrementalSync(
 			// does, together with the sync point below.
 			linkChanges = comparedSpecPathChanges(files);
 		} else {
-			const result = await syncArchive({ projectId, owner, repo, branch, token }, storageClient, headSha);
+			const result = await syncArchive({ projectId, owner, repo, branch, token, budget }, storageClient, headSha);
 			synced = result.synced;
 			removed = result.pruned;
 			// A full sync can't tell a rename from a delete and an add, so it leaves spec links.

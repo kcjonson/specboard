@@ -471,19 +471,36 @@ Syncs store text files up to 500 KB. Files in skipped directories (`node_modules
 `.git`, build output, tool settings; the list is `@specboard/core/sync-paths`, shared by
 the sync and the API) are never stored, and for a cloud project the API refuses to
 create a file in one, or rename one into it (`400 PATH_NOT_SYNCED`), since a commit
-would put it on GitHub where no sync brings it back. Submodules (gitlinks in the tree)
-have no content in this repository and aren't stored either; GitHub's compare lists a
-submodule bump as a changed file, and the sync skips it.
+would put it on GitHub where no sync brings it back. Submodules (gitlinks) have no
+content in this repository and aren't stored either: GitHub's compare lists a submodule
+bump as a changed file, and the sync skips it; the archive a full sync reads holds no
+files for one.
 
-Before downloading anything, a sync reads the commit's tree (`GET git/trees/<sha>
-?recursive=1`) for each file's blob sha and size, and refuses a truncated tree. A file
-over the limit is recorded from its listed size without downloading it; a smaller one is
-downloaded, and if it's binary it's recorded too. Recorded means stored as a row with no
-content (`project_documents.unavailable_reason`, `too_large` or `binary`; storage
-migration 004) whose `content_hash` is the file's git blob sha, and any older content
-stored for it is removed. Both kinds of sync do this, including for a file a push just
-made too large or binary, so nobody reads or commits over an older copy. A later sync
-that finds the file editable again stores it as usual.
+Neither kind of sync reads the commit's whole tree, which GitHub truncates for very
+large repositories. An incremental sync looks up each path the compare names with the
+contents API (`GET contents/<path>?ref=<head>`), which gives its type (a submodule is
+skipped), git blob sha, and size, and inlines the content up to 1 MB. A file over the
+limit is recorded from that size; a smaller one is recorded if it's binary, stored
+otherwise. A full sync reads sizes from the archive's entry headers: a file over the
+limit is hashed as git does (sha1 of `blob <size>\0` and the bytes) as it streams past,
+never buffered, and a binary one is hashed from the bytes it read. An entry whose size
+the archive defers past its bytes is read up to the limit and no further; if it turns
+out larger, its sha and size come from the contents API for that one path. Recorded
+means stored as a row with no content (`project_documents.unavailable_reason`,
+`too_large` or `binary`; storage migration 004) whose `content_hash` is the file's git
+blob sha, and any older content stored for it is removed. Both kinds of sync do this,
+including for a file a push just made too large or binary, so nobody reads or commits
+over an older copy. A later sync that finds the file editable again stores it as usual.
+
+An available file's `content_hash` is sha1 of its content, an unavailable one's the git
+blob sha. Draft bases only ever come from a committed hash, so the two kinds meet only
+when a file crosses between held and not held, and then they differ, as the file did. A
+draft that writes over an unavailable file is listed as a conflict regardless of hashes
+(git status flags it with `overUnavailable`), so it also shows among the draft
+conflicts, where the only way on is discarding it: keep mine answers `409
+FILE_UNAVAILABLE`, since nobody here has seen what it would replace. A deletion of an
+unavailable file takes the blob sha as its base and conflicts only if the file changes
+again.
 
 Such a file is listed, but reading it, saving a draft of it, or renaming it answers `409
 FILE_UNAVAILABLE` with a message saying it's binary or too large to edit here; the
@@ -492,14 +509,30 @@ is allowed. A commit answers `409` with `reason: 'unavailable_files'` and the pa
 writes nothing, when a draft (other than a deletion) would put back what the sync can't
 store: a draft over a file that has since become unavailable, a rename of one, or a
 draft in a skipped directory. The way on is to discard those drafts and change the
-files in the repository directly.
+files in the repository directly. The commit checks this before draft conflicts, from
+the same listing of drafts and one listing of the committed files, since no keep can
+fix it.
+
+A sync checks the Lambda's remaining time as it goes (before each batch of changed
+files, each archive entry, and each prune) and, with 30 seconds still left, stops and
+records the failure: "The repository is too large to sync in one pass." The sync point
+stays where it was, so a later pull redoes the range; what was written meanwhile is
+idempotent. Without that, the Lambda's 15-minute timeout would end it with no chance to
+release the lock, which would sit until it went stale. A full sync is bounded by how
+much it can stream from GitHub and upload in that time, so a repository with many
+thousands of files can hit it every time; the fix then is a smaller repository, or one
+just for the docs.
 
 ### Sync traffic to the storage service
 
-The storage service rate-limits each API key and client to 1000 requests a minute, in
-memory per task. The sync Lambda sends `X-Storage-Client: sync` and has its own budget,
-so a large full sync doesn't use up the API's, and the API's interactive traffic doesn't
-stall a sync. A full sync uploads at most ten files at once, holding the archive back
+The storage service rate-limits each API key and client per minute, in memory per
+task: 1000 requests for the API, 30,000 for the sync Lambda, which sends
+`X-Storage-Client: sync`. Separate budgets keep a large full sync from using up the
+API's and the API's interactive traffic from stalling a sync. The sync's is sized to
+let one full sync run at its upload concurrency for a whole minute (ten at once at
+20 to 50 ms a write is 12,000 to 30,000) while still capping a runaway client; the
+sync's key is a secret only the Lambda holds, so the budget guards against a loop, not
+abuse. A full sync uploads at most ten files at once, holding the archive back
 while it waits. On a 429 the sync waits as long as Retry-After says (backing off when it
 says nothing) and tries again, up to eight times, before failing; other refusals aren't
 retried, and server errors are retried three times. Paths go into storage URLs encoded

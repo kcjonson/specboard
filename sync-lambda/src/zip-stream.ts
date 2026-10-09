@@ -9,7 +9,8 @@ import unzipper from 'unzipper';
 import { isInSkippedDirectory } from '@specboard/core/sync-paths';
 import { isBinaryContent, stripRootFolder, MAX_FILE_SIZE_BYTES } from './file-filter.ts';
 import type { StorageClient } from './shared/storage-client.ts';
-import type { TreeEntry } from './tree.ts';
+import { fetchTreeEntry, gitBlobSha, GitBlobHash } from './tree.ts';
+import type { TimeBudget } from './time-budget.ts';
 
 /**
  * Entries handled at once. The parser only moves on once an entry is read, so waiting
@@ -61,7 +62,7 @@ export async function streamGitHubZipToStorage(
 	token: string,
 	projectId: string,
 	storageClient: Pick<StorageClient, 'putFile' | 'markUnavailable'>,
-	tree: Map<string, TreeEntry>
+	budget: TimeBudget
 ): Promise<StreamResult> {
 	const result: StreamResult = {
 		synced: 0,
@@ -128,30 +129,48 @@ export async function streamGitHubZipToStorage(
 			}
 
 			try {
-				// The tree is the commit's file list: a file the archive has and it doesn't
-				// means the two don't describe the same commit.
-				const listed = tree.get(path);
-				if (!listed || listed.submodule) {
-					entry.autodrain();
-					throw new Error('not in the commit\'s tree');
+				// The archive's local header gives the size, unless the entry defers it to a
+				// data descriptor after the bytes (flag bit 3). unzipper parses the field (and
+				// its zip64 form) but its published types leave it off.
+				const vars = entry.vars as typeof entry.vars & { uncompressedSize: number };
+				const declared = (vars.flags & 0x08) === 0 ? vars.uncompressedSize : null;
+
+				// Too large to hold, by its header: hashed as git does, never buffered.
+				if (declared !== null && declared > MAX_FILE_SIZE_BYTES) {
+					const hash = new GitBlobHash(declared);
+					let seen = 0;
+					for await (const chunk of entry) {
+						hash.update(chunk as Buffer);
+						seen += (chunk as Buffer).length;
+					}
+					if (seen !== declared) throw new Error(`archive entry is ${seen} bytes, header said ${declared}`);
+					await storageClient.markUnavailable(projectId, path, 'too_large', hash.digest(), declared);
+					result.skipped++;
+					result.kept.add(path);
+					return;
 				}
 
-				// Too large to hold: recorded from the tree without reading the bytes.
-				if (listed.size > MAX_FILE_SIZE_BYTES) {
-					entry.autodrain();
+				// Otherwise read it, never keeping more than the limit whatever the header said.
+				const chunks: Buffer[] = [];
+				let size = 0;
+				for await (const chunk of entry) {
+					size += (chunk as Buffer).length;
+					if (size <= MAX_FILE_SIZE_BYTES) chunks.push(chunk as Buffer);
+				}
+				if (size > MAX_FILE_SIZE_BYTES) {
+					// Over the limit with no size up front, so its git hash couldn't be taken
+					// while reading: ask GitHub for this one file's.
+					const listed = await fetchTreeEntry(owner, repo, ref, path, token);
+					if (listed?.kind !== 'file') throw new Error('not a file in the commit');
 					await storageClient.markUnavailable(projectId, path, 'too_large', listed.sha, listed.size);
 					result.skipped++;
 					result.kept.add(path);
 					return;
 				}
 
-				const chunks: Buffer[] = [];
-				for await (const chunk of entry) {
-					chunks.push(chunk as Buffer);
-				}
 				const buffer = Buffer.concat(chunks);
 				if (await isBinaryContent(buffer)) {
-					await storageClient.markUnavailable(projectId, path, 'binary', listed.sha, listed.size);
+					await storageClient.markUnavailable(projectId, path, 'binary', gitBlobSha(buffer), buffer.length);
 					result.skipped++;
 				} else {
 					await storageClient.putFile(projectId, path, buffer.toString('utf-8'));
@@ -166,13 +185,31 @@ export async function streamGitHubZipToStorage(
 		};
 		const limit = createLimiter(UPLOAD_CONCURRENCY);
 
+		let stopped = false;
+
 		nodeStream
 			.pipe(unzipper.Parse())
 			.on('entry', (entry: unzipper.Entry) => {
+				if (stopped) {
+					entry.autodrain();
+					return;
+				}
+				try {
+					budget.check();
+				} catch (err) {
+					// Out of time: stop reading, let what's started finish, and let the sync
+					// record why.
+					stopped = true;
+					entry.autodrain();
+					nodeStream.destroy();
+					Promise.allSettled(inFlight).then(() => reject(err));
+					return;
+				}
 				inFlight.push(limit(() => handleEntry(entry)));
 			})
 			.on('error', reject)
 			.on('close', () => {
+				if (stopped) return;
 				Promise.all(inFlight).then(() => resolve(), reject);
 			});
 	});

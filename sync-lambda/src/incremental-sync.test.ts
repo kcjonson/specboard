@@ -1,6 +1,6 @@
 /**
  * Incremental sync against real @specboard/db on migrated Postgres (PGlite); GitHub's
- * ref, compare, and blob endpoints are stubbed, and so is the storage service.
+ * ref, compare, and contents endpoints are stubbed, and so is the storage service.
  *
  * The sync point it stores is the branch head as a full SHA (the only form GitHub's
  * commit API takes back), it moves spec links for what the pulled commits renamed and
@@ -32,6 +32,7 @@ vi.mock('./initial-sync.ts', async (importOriginal) => ({
 import { migratedDb } from '@specboard/db/test-support';
 import { comparedSpecPathChanges, performIncrementalSync } from './incremental-sync.ts';
 import { syncArchive, SUPERSEDED } from './initial-sync.ts';
+import { OUT_OF_TIME_MESSAGE, SyncOutOfTimeError, type TimeBudget } from './time-budget.ts';
 
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
 /** The pending lock token the API took and put in the event. */
@@ -47,36 +48,32 @@ function json(body: unknown): Response {
 interface CompareFile { sha: string; filename: string; status: string; previous_filename?: string }
 
 /**
- * GitHub with the branch at HEAD, this compare from the base, and these blobs by sha
- * ("# New" otherwise). The head's tree lists every file the compare names as a 5-byte
- * blob, unless `tree` says otherwise (a size, or a submodule).
+ * GitHub with the branch at HEAD and this compare from the base. The head has every file
+ * the compare names (except removed ones and sha "missing"), served by the contents API
+ * with these blobs by sha ("# New" otherwise), unless `entries` says otherwise (a listed
+ * size, or a submodule). Anything else, a tree listing included, is an error.
  */
 function github(
 	compare: { files: CompareFile[]; total_commits?: number; commits?: unknown[]; status?: string },
 	blobs: Record<string, Buffer> = {},
-	tree: Record<string, { size?: number; submodule?: boolean }> = {}
+	entries: Record<string, { size?: number; submodule?: boolean; symlinkTo?: string }> = {}
 ): ReturnType<typeof vi.fn> {
 	const fetchMock = vi.fn(async (url: string) => {
 		if (url.includes('/git/refs/heads/')) return json({ object: { sha: HEAD } });
 		if (url.includes('/compare/')) {
 			return json({ status: 'ahead', ahead_by: 1, behind_by: 0, total_commits: 1, commits: [{ sha: HEAD }], ...compare });
 		}
-		if (url.includes('/git/trees/')) {
-			return json({
-				truncated: false,
-				tree: compare.files.filter((f) => f.status !== 'removed').map((f) => ({
-					path: f.filename,
-					mode: tree[f.filename]?.submodule ? '160000' : '100644',
-					type: tree[f.filename]?.submodule ? 'commit' : 'blob',
-					sha: f.sha,
-					...(tree[f.filename]?.submodule ? {} : { size: tree[f.filename]?.size ?? blobs[f.sha]?.length ?? 5 }),
-				})),
-			});
+		if (url.includes('/contents/')) {
+			const path = decodeURIComponent(new URL(url).pathname.split('/contents/')[1]!);
+			const file = compare.files.find((f) => f.filename === path && f.status !== 'removed');
+			if (!file || file.sha === 'missing') return new Response('{}', { status: 404 });
+			if (entries[path]?.submodule) return json({ type: 'submodule', sha: file.sha, size: 0 });
+			const target = entries[path]?.symlinkTo;
+			if (target) return json({ type: 'symlink', sha: file.sha, size: target.length, target });
+			const blob = blobs[file.sha] ?? Buffer.from('# New');
+			return json({ type: 'file', sha: file.sha, size: entries[path]?.size ?? blob.length, content: blob.toString('base64'), encoding: 'base64' });
 		}
-		const sha = url.split('/git/blobs/')[1]!;
-		if (sha === 'missing') return new Response('{}', { status: 404 });
-		const blob = blobs[sha] ?? Buffer.from('# New');
-		return json({ content: blob.toString('base64'), encoding: 'base64', sha, size: blob.length });
+		throw new Error(`unexpected GitHub request: ${url}`);
 	});
 	vi.stubGlobal('fetch', fetchMock);
 	return fetchMock;
@@ -94,9 +91,9 @@ async function links(): Promise<string[]> {
 	return result.rows.map((r) => r.path);
 }
 
-function sync(lastCommitSha = BASE, lockToken = PENDING): ReturnType<typeof performIncrementalSync> {
+function sync(lastCommitSha = BASE, lockToken = PENDING, budget?: TimeBudget): ReturnType<typeof performIncrementalSync> {
 	return performIncrementalSync(
-		{ projectId, owner: 'acme', repo: 'docs', branch: 'main', token: 'token', lastCommitSha, lockToken },
+		{ projectId, owner: 'acme', repo: 'docs', branch: 'main', token: 'token', lastCommitSha, lockToken, budget },
 		'http://storage',
 		'key'
 	);
@@ -250,19 +247,51 @@ describe('performIncrementalSync', () => {
 		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
 	});
 
-	it('records a file a push made too large from its listed size, without downloading it', async () => {
-		const fetchMock = github({ files: [{ sha: 'b'.repeat(40), filename: 'docs/kept.md', status: 'modified' }] }, {}, { 'docs/kept.md': { size: 600_000 } });
+	it('records a file a push made too large from its listed size', async () => {
+		github({ files: [{ sha: 'b'.repeat(40), filename: 'docs/kept.md', status: 'modified' }] }, {}, { 'docs/kept.md': { size: 600_000 } });
 
 		expect(await sync()).toMatchObject({ success: true, unavailable: 1, synced: 0 });
 
 		expect(storage.markUnavailable).toHaveBeenCalledWith(projectId, 'docs/kept.md', 'too_large', 'b'.repeat(40), 600_000);
 		expect(storage.putFile).not.toHaveBeenCalled();
-		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/git/blobs/'))).toBe(false);
 		expect((await project()).last_synced_commit_sha).toBe(HEAD);
 	});
 
+	it('looks up only the paths the compare names, never the whole tree, so a repository too big to list still syncs', async () => {
+		const fetchMock = github({
+			files: [
+				{ sha: 'b1', filename: 'docs/C# notes?/100% done.md', status: 'added' },
+				{ sha: 'b2', filename: 'docs/gone.md', status: 'removed' },
+			],
+		});
+
+		expect(await sync()).toMatchObject({ success: true, synced: 1, commitSha: HEAD });
+
+		const urls = fetchMock.mock.calls.map(([url]) => String(url));
+		expect(urls.some((url) => url.includes('/git/trees/'))).toBe(false);
+		expect(urls.filter((url) => url.includes('/contents/'))).toEqual([
+			`https://api.github.com/repos/acme/docs/contents/docs/C%23%20notes%3F/100%25%20done.md?ref=${HEAD}`,
+		]);
+		expect(storage.putFile).toHaveBeenCalledWith(projectId, 'docs/C# notes?/100% done.md', '# New');
+	});
+
+	it('stops with a clear message, and the sync point where it was, when it runs out of time', async () => {
+		github({ files: [{ sha: 'b1', filename: 'docs/new.md', status: 'renamed', previous_filename: 'docs/old.md' }] });
+		const outOfTime: TimeBudget = {
+			check(): void {
+				throw new SyncOutOfTimeError();
+			},
+		};
+
+		expect(await sync(BASE, PENDING, outOfTime)).toMatchObject({ success: false, error: OUT_OF_TIME_MESSAGE });
+
+		expect(storage.putFile).not.toHaveBeenCalled();
+		expect(await project()).toMatchObject({ last_synced_commit_sha: BASE, sync_status: 'failed', sync_error: OUT_OF_TIME_MESSAGE });
+		expect(await links()).toEqual(['/docs/gone.md', '/docs/kept.md', '/docs/old.md']);
+	});
+
 	it('skips a submodule bump instead of failing on its "blob"', async () => {
-		const fetchMock = github(
+		github(
 			{ files: [{ sha: 'c'.repeat(40), filename: 'vendored', status: 'modified' }, { sha: 'b2', filename: 'docs/gone.md', status: 'removed' }] },
 			{},
 			{ vendored: { submodule: true } }
@@ -272,10 +301,17 @@ describe('performIncrementalSync', () => {
 
 		expect(storage.deleteFile).toHaveBeenCalledWith(projectId, 'vendored');
 		expect(storage.putFile).not.toHaveBeenCalled();
-		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/git/blobs/'))).toBe(false);
 	});
 
-	it('fails on a blob that\'s genuinely missing', async () => {
+	it('stores a symlink as its target, as the archive does', async () => {
+		github({ files: [{ sha: 'd'.repeat(40), filename: 'docs/link.md', status: 'added' }] }, {}, { 'docs/link.md': { symlinkTo: 'kept.md' } });
+
+		expect(await sync()).toMatchObject({ success: true, synced: 1 });
+
+		expect(storage.putFile).toHaveBeenCalledWith(projectId, 'docs/link.md', 'kept.md');
+	});
+
+	it('fails on a file the head doesn\'t have after all', async () => {
 		github({ files: [{ sha: 'missing', filename: 'docs/kept.md', status: 'modified' }] });
 
 		const result = await sync();

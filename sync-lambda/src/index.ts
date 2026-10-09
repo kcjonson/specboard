@@ -12,6 +12,7 @@ import {
 import { decrypt, type EncryptedData } from '@specboard/auth/encryption';
 import { performInitialSync, type InitialSyncResult } from './initial-sync.ts';
 import { markPendingFailed } from './shared/db-utils.ts';
+import { timeBudget, UNLIMITED_TIME } from './time-budget.ts';
 import {
 	performIncrementalSync,
 	type IncrementalSyncResult,
@@ -145,10 +146,16 @@ async function initializeSecrets(): Promise<{ storageApiKey: string }> {
 	return { storageApiKey };
 }
 
+/** The part of the Lambda context a sync uses: how long it has left. */
+export interface SyncContext {
+	getRemainingTimeInMillis(): number;
+}
+
 /**
- * Lambda handler entry point.
+ * Lambda handler entry point. `context` is the Lambda's (absent when the API runs the
+ * handler in-process in development, which has no time limit).
  */
-export async function handler(event: SyncEvent): Promise<SyncResponse> {
+export async function handler(event: SyncEvent, context?: SyncContext): Promise<SyncResponse> {
 	console.log('Sync event received:', {
 		projectId: event.projectId,
 		userId: event.userId,
@@ -160,6 +167,7 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 	});
 
 	const lockToken = new Date(event.lockToken);
+	const budget = context ? timeBudget(() => context.getRemainingTimeInMillis()) : UNLIMITED_TIME;
 
 	try {
 		// Validate required fields
@@ -196,6 +204,7 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 					branch: event.branch,
 					token,
 					lockToken,
+					budget,
 				},
 				storageServiceUrl,
 				storageApiKey
@@ -221,6 +230,7 @@ export async function handler(event: SyncEvent): Promise<SyncResponse> {
 					token,
 					lastCommitSha: event.lastCommitSha as string, // Validated above
 					lockToken,
+					budget,
 				},
 				storageServiceUrl,
 				storageApiKey

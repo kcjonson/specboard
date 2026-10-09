@@ -62,6 +62,7 @@ pendingRoutes.get('/:projectId/:userId', async (c) => {
 			baseContentHash: change.baseContentHash,
 			contentHash: change.contentHash,
 			committedHash: change.committedHash,
+			committedUnavailable: change.committedUnavailable,
 			hasContent: change.content !== null || change.s3Key !== null,
 			isLarge: change.s3Key !== null,
 			updatedAt: change.updatedAt.toISOString(),

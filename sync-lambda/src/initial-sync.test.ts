@@ -32,8 +32,6 @@ vi.mock('./shared/db-utils.ts', () => ({
 	completeSync: vi.fn(async () => true),
 }));
 
-vi.mock('./tree.ts', () => ({ fetchTree: vi.fn(async () => new Map()) }));
-
 vi.mock('./zip-stream.ts', () => ({
 	streamGitHubZipToStorage: vi.fn(),
 	getHeadCommitSha: vi.fn(async () => HEAD),
@@ -42,6 +40,7 @@ vi.mock('./zip-stream.ts', () => ({
 import { performInitialSync, SUPERSEDED } from './initial-sync.ts';
 import { streamGitHubZipToStorage } from './zip-stream.ts';
 import { completeSync, markSyncFailed, markSyncing } from './shared/db-utils.ts';
+import { OUT_OF_TIME_MESSAGE, SyncOutOfTimeError } from './time-budget.ts';
 
 const PENDING = new Date('2026-10-08T11:59:00.000Z');
 const PARAMS = { projectId: 'p1', owner: 'acme', repo: 'docs', branch: 'main', token: 't', lockToken: PENDING };
@@ -96,6 +95,23 @@ describe('performInitialSync', () => {
 		expect(result).toMatchObject({ success: false, pruned: 0 });
 		expect(storage.deleteFile).not.toHaveBeenCalled();
 		expect(markSyncFailed).toHaveBeenCalledWith('p1', LOCK, 'GitHub API error: 502 Bad Gateway');
+		expect(completeSync).not.toHaveBeenCalled();
+	});
+
+	it('stops before pruning, with a clear message, when it runs out of time', async () => {
+		vi.mocked(streamGitHubZipToStorage).mockResolvedValue({ synced: 2, skipped: 0, errors: [], kept: new Set(['docs/kept.md']) });
+		let checks = 0;
+		const budget = {
+			check(): void {
+				if (++checks > 1) throw new SyncOutOfTimeError();
+			},
+		};
+
+		const result = await performInitialSync({ ...PARAMS, budget }, 'http://storage', 'key');
+
+		expect(result).toMatchObject({ success: false, error: OUT_OF_TIME_MESSAGE });
+		expect(storage.deleteFile).toHaveBeenCalledTimes(1);
+		expect(markSyncFailed).toHaveBeenCalledWith('p1', LOCK, OUT_OF_TIME_MESSAGE);
 		expect(completeSync).not.toHaveBeenCalled();
 	});
 

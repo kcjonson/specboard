@@ -335,6 +335,7 @@ export class CloudStorageProvider implements StorageProvider {
 				path: '/' + change.path,
 				status,
 				conflict: change.conflict,
+				...(change.committedUnavailable && change.action !== 'deleted' ? { overUnavailable: true } : {}),
 				...(movedTo
 					? {
 						renamedTo: '/' + movedTo.path,

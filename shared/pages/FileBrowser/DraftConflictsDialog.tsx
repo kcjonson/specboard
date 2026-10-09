@@ -16,8 +16,11 @@ export interface DraftConflictsDialogProps {
 	onRenameUndone?: (oldPath: string, newPath: string) => void | Promise<void>;
 }
 
-/** How the row describes what the caller did, and what its two actions are called. */
-function describe(file: ChangedFile): { did: string; keep: string; discard: string } {
+/** How the row describes what the caller did, and what its actions are called; no keep when it can't be kept. */
+function describe(file: ChangedFile): { did: string; keep: string | null; discard: string } {
+	if (file.overUnavailable) {
+		return { did: 'Now binary or over 500 KB in the repository, so change it there', keep: null, discard: 'Discard mine' };
+	}
 	if (file.status === 'deleted' && file.renamedTo) {
 		const did = file.renameKeepsCommitted
 			? `You renamed it; ${file.renamedTo} has their latest version`
@@ -182,33 +185,39 @@ export function DraftConflictsDialog({
 									<div class={styles.row}>
 										<span class={styles.path}>{file.path}</span>
 										<span class={styles.label}>{copy.did}</span>
-										<span data-first-action>
+										{copy.keep !== null && (
+											<>
+												<span data-first-action>
+													<Button
+														class="secondary size-sm"
+														aria-label={`Compare versions of ${file.path}`}
+														aria-expanded={isComparing}
+														aria-controls={regionId(file.path)}
+														onClick={() => toggleCompare(file)}
+													>
+														{isComparing ? 'Hide' : 'Compare'}
+													</Button>
+												</span>
+												<Button
+													class="secondary size-sm"
+													busy={rowBusy}
+													aria-label={`${copy.keep}: ${file.path}`}
+													onClick={() => resolve(file, 'keep')}
+												>
+													{copy.keep}
+												</Button>
+											</>
+										)}
+										<span data-first-action={copy.keep === null ? true : undefined}>
 											<Button
 												class="secondary size-sm"
-												aria-label={`Compare versions of ${file.path}`}
-												aria-expanded={isComparing}
-												aria-controls={regionId(file.path)}
-												onClick={() => toggleCompare(file)}
+												busy={rowBusy}
+												aria-label={`${copy.discard}: ${file.path}`}
+												onClick={() => setConfirmDiscard(file)}
 											>
-												{isComparing ? 'Hide' : 'Compare'}
+												{copy.discard}
 											</Button>
 										</span>
-										<Button
-											class="secondary size-sm"
-											busy={rowBusy}
-											aria-label={`${copy.keep}: ${file.path}`}
-											onClick={() => resolve(file, 'keep')}
-										>
-											{copy.keep}
-										</Button>
-										<Button
-											class="secondary size-sm"
-											busy={rowBusy}
-											aria-label={`${copy.discard}: ${file.path}`}
-											onClick={() => setConfirmDiscard(file)}
-										>
-											{copy.discard}
-										</Button>
 									</div>
 									<div id={regionId(file.path)} class={styles.compare} hidden={!isComparing}>
 										{isComparing && loadError && <p class={styles.error}>{loadError}</p>}

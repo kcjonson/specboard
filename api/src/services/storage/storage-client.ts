@@ -37,6 +37,8 @@ interface PendingChange {
 	contentHash: string | null;
 	/** The committed file's hash at this path now; null when none is. */
 	committedHash: string | null;
+	/** The committed file at this path is one the editor can't hold (binary, too large). */
+	committedUnavailable: boolean;
 	hasContent: boolean;
 	isLarge: boolean;
 	updatedAt: string;

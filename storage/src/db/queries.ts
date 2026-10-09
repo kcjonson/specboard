@@ -48,6 +48,8 @@ export interface ListedPendingChange extends PendingChange {
 	conflict: boolean;
 	/** content_hash of the committed file at this path now; null when none is. */
 	committedHash: string | null;
+	/** The committed file at this path is one the editor can't hold (binary, too large). */
+	committedUnavailable: boolean;
 }
 
 // ============================================================
@@ -156,6 +158,10 @@ export async function listProjectDocuments(
 	};
 }
 
+/**
+ * Store a file the editor holds. content_hash is sha1 of its content; a row the editor
+ * can't hold carries the git blob sha instead (see markDocumentUnavailable).
+ */
 export async function upsertProjectDocument(
 	projectId: string,
 	path: string,
@@ -181,6 +187,15 @@ export async function upsertProjectDocument(
  * Record that a file on the branch can't be held here: its row says why and carries
  * the new version's hash, with no content behind it. Whatever older content was stored
  * for it is the caller's to remove.
+ *
+ * content_hash is the file's git blob sha here (the sync names a file it can't hold
+ * without reading it, from GitHub's listing or its archive's bytes), where an available
+ * file's is sha1 of its content. Draft bases are only ever taken from a committed hash,
+ * so the two kinds meet only when a file crosses between held and not held, and then
+ * they differ, as the file did: a draft made before the file went unavailable conflicts
+ * (and listPendingChanges marks any draft writing over an unavailable file as a conflict
+ * outright, whatever its base). A deletion made against the blob sha keeps working until
+ * the file changes again.
  */
 export async function markDocumentUnavailable(
 	projectId: string,
@@ -266,7 +281,9 @@ export async function getPendingChange(
  * what the draft was made against (a changed file, a file deleted under a draft, or a
  * file created where the draft creates one), unless the draft already holds exactly
  * what's committed (the committer's own commit brought in by a pull, say), which would
- * commit as a no-op.
+ * commit as a no-op. A draft that writes over a file the editor can't hold always
+ * conflicts, and only discarding it resolves that: no base or content of the draft's
+ * can stand for a file nobody here has seen.
  */
 export async function listPendingChanges(
 	projectId: string,
@@ -285,14 +302,19 @@ export async function listPendingChanges(
 		base_content_hash: string | null;
 		content_hash: string | null;
 		committed_hash: string | null;
+		committed_unavailable: boolean;
 		conflict: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
 		`SELECT p.id, p.project_id, p.user_id, p.path, p.content, p.s3_key, p.action, p.renamed_from,
 		        p.base_content_hash, p.content_hash, d.content_hash AS committed_hash,
-		        p.base_content_hash IS DISTINCT FROM d.content_hash
-		          AND NOT (p.action <> 'deleted' AND COALESCE(p.content_hash = d.content_hash, false)) AS conflict,
+		        COALESCE(d.unavailable_reason IS NOT NULL, false) AS committed_unavailable,
+		        CASE
+		          WHEN p.action <> 'deleted' AND d.unavailable_reason IS NOT NULL THEN true
+		          ELSE p.base_content_hash IS DISTINCT FROM d.content_hash
+		            AND NOT (p.action <> 'deleted' AND COALESCE(p.content_hash = d.content_hash, false))
+		        END AS conflict,
 		        p.created_at, p.updated_at
 		 FROM pending_changes p
 		 LEFT JOIN project_documents d ON d.project_id = p.project_id AND d.path = p.path
@@ -313,6 +335,7 @@ export async function listPendingChanges(
 		baseContentHash: row.base_content_hash,
 		contentHash: row.content_hash,
 		committedHash: row.committed_hash,
+		committedUnavailable: row.committed_unavailable,
 		conflict: row.conflict,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,

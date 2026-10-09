@@ -52,18 +52,25 @@ const storage = vi.hoisted(() => {
 		}
 		return changes;
 	};
+	// What's committed at a path names it by: sha1 of the content, or the git blob sha
+	// (any 40 hex will do here) for a file the editor can't hold.
+	const committedHashOf = (path: string): string | null =>
+		unavailable.has(path) && committed.has(path) ? 'b'.repeat(40) : hashOf(committed.get(path));
 	// A draft holding exactly what's committed now would commit as a no-op: not a conflict.
+	// One writing over a file the editor can't hold always is.
 	const list = (userId: string): Array<Pending & { path: string; conflict: boolean }> =>
 		[...mine(userId)].map(([path, change]) => {
-			const now = hashOf(committed.get(path));
+			const now = committedHashOf(path);
+			const overUnavailable = change.action !== 'deleted' && unavailable.has(path) && committed.has(path);
 			const noOp = change.action !== 'deleted' && change.content === (committed.get(path) ?? null);
 			return {
 				path,
 				...change,
-				conflict: change.base !== now && !noOp,
+				conflict: overUnavailable || (change.base !== now && !noOp),
 				baseContentHash: change.base,
 				contentHash: change.content === null ? null : hashOf(change.content),
 				committedHash: now,
+				committedUnavailable: unavailable.has(path) && committed.has(path),
 			};
 		});
 	const client = {
@@ -90,7 +97,7 @@ const storage = vi.hoisted(() => {
 			const existing = mine(userId).get(path);
 			const kept = renamedFrom ?? existing?.renamedFrom ?? null;
 			const updatedAt = new Date(Date.UTC(2026, 0, 1) + ++clock).toISOString();
-			const base = existing ? existing.base : baseContentHash !== undefined ? baseContentHash : hashOf(committed.get(path));
+			const base = existing ? existing.base : baseContentHash !== undefined ? baseContentHash : committedHashOf(path);
 			mine(userId).set(path, { content, action, renamedFrom: action === 'deleted' ? null : kept, updatedAt, base });
 			return { path, action, isLarge: false };
 		},
@@ -117,7 +124,7 @@ const storage = vi.hoisted(() => {
 			for (const path of paths) {
 				const draft = mine(userId).get(path);
 				if (!draft) continue;
-				const now = hashOf(committed.get(path));
+				const now = committedHashOf(path);
 				if (draft.action === 'deleted' && now === null) {
 					mine(userId).delete(path);
 					dropped.push(path);
@@ -971,6 +978,7 @@ describe('a file a sync found binary or too large', () => {
 
 		const response = await commit();
 
+		// The draft is a conflict too; the commit names what no "keep mine" can fix first.
 		expect(response.status).toBe(409);
 		expect(await response.json()).toMatchObject({
 			reason: 'unavailable_files',
@@ -979,6 +987,21 @@ describe('a file a sync found binary or too large', () => {
 		});
 		expect(createGitHubCommit).not.toHaveBeenCalled();
 		expect(storage.mine(alice).size).toBe(1);
+	});
+
+	it('shows a draft made before the file became one as a conflict that only discarding resolves', async () => {
+		await call('alice', 'PUT', 'files?path=/docs/spec.md', { content: '# Spec, mine' });
+		storage.unavailable.add('docs/spec.md');
+
+		const status = (await (await call('alice', 'GET', 'git/status')).json()) as { changedFiles: unknown[] };
+		const kept = await call('alice', 'POST', 'git/keep-mine', { paths: ['/docs/spec.md'] });
+
+		expect(status.changedFiles).toEqual([
+			{ path: '/docs/spec.md', status: 'modified', isUntracked: false, conflict: true, overUnavailable: true },
+		]);
+		expect(kept.status).toBe(409);
+		expect(await kept.json()).toMatchObject({ code: 'FILE_UNAVAILABLE', paths: ['/docs/spec.md'] });
+		expect(storage.mine(alice).get('docs/spec.md')).toMatchObject({ base: storage.hashOf('# Spec') });
 	});
 
 	it('can still be deleted', async () => {
@@ -1024,7 +1047,7 @@ describe('a folder the sync never stores', () => {
 	});
 
 	it('refuses committing a draft that got there before the check', async () => {
-		await storage.client.putPendingChange('', alice, 'docs/build/notes.md', '# Notes', 'created', null);
+		await storage.client.putPendingChange('', alice, 'docs/build/notes.md', '# Notes', 'created', null, null);
 
 		const response = await commit();
 

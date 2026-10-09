@@ -9,7 +9,7 @@ import { createRateLimit } from './rate-limit.ts';
 
 function app(): Hono {
 	const hono = new Hono();
-	hono.use('*', createRateLimit({ maxRequests: 2, now: () => 1_000 }));
+	hono.use('*', createRateLimit({ apiMaxRequests: 2, syncMaxRequests: 3, now: () => 1_000 }));
 	hono.get('/x', (c) => c.json({ ok: true }));
 	return hono;
 }
@@ -21,9 +21,10 @@ function call(hono: Hono, client?: string): Promise<Response> {
 }
 
 describe('createRateLimit', () => {
-	it('counts sync requests apart from the API\'s', async () => {
+	it('counts sync requests apart from the API\'s, each against its own limit', async () => {
 		const hono = app();
 
+		expect((await call(hono, 'sync')).status).toBe(200);
 		expect((await call(hono, 'sync')).status).toBe(200);
 		expect((await call(hono, 'sync')).status).toBe(200);
 		const refused = await call(hono, 'sync');

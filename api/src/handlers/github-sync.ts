@@ -592,14 +592,19 @@ async function commitLocked(context: Context, projectId: string, userId: string,
 		}, 409);
 	}
 
-	// A draft is the whole file, so one made against a committed version that has since
-	// changed would replace that change wholesale. Refuse until the caller keeps or
-	// discards each one. Commits and pulls hold the same lock, so what's committed can't
-	// move between this check and GitHub; expectedHeadOid covers pushes from outside.
+	// Two checks before anything goes to GitHub, read from one listing of the drafts and
+	// one of the committed files. Commits and pulls hold the same lock, so neither can
+	// change between here and GitHub; expectedHeadOid covers pushes from outside.
 	const storageClient = getStorageClient();
-	let conflicts;
+	let drafts;
+	let unavailable: Set<string>;
 	try {
-		conflicts = (await storageClient.listPendingChanges(projectId, userId)).filter((change) => change.conflict);
+		const [listed, files] = await Promise.all([
+			storageClient.listPendingChanges(projectId, userId),
+			storageClient.listFiles(projectId),
+		]);
+		drafts = listed;
+		unavailable = new Set(files.filter((file) => file.unavailable).map((file) => file.path));
 	} catch (err) {
 		log({
 			type: 'storage',
@@ -611,6 +616,38 @@ async function commitLocked(context: Context, projectId: string, userId: string,
 		});
 		return context.json({ success: false, error: { stage: 'commit', message: 'Failed to load pending changes. Please try again.' } }, 500);
 	}
+
+	// First, drafts the sync could never bring back as written: one over a file the editor
+	// can't hold (a sync found it binary or over its size limit since the draft began), a
+	// rename of such a file (the stale text would land under the new name and the real
+	// file would be deleted), or one in a directory syncs skip. Each would leave GitHub
+	// ahead of storage under a sync point that claims otherwise; no "keep mine" can make
+	// them right, so they're reported before conflicts. Deleting is fine.
+	const unsyncable = drafts.flatMap((change): Array<{ path: string; why: 'unavailable' | 'not_synced' }> => {
+		if (change.action === 'deleted') return [];
+		if (unavailable.has(change.path) || (change.renamedFrom !== null && unavailable.has(change.renamedFrom))) {
+			return [{ path: '/' + change.path, why: 'unavailable' }];
+		}
+		if (isInSkippedDirectory(change.path)) return [{ path: '/' + change.path, why: 'not_synced' }];
+		return [];
+	});
+	if (unsyncable.length > 0) {
+		const paths = unsyncable.map((file) => file.path).join(', ');
+		return context.json({
+			success: false,
+			reason: 'unavailable_files',
+			files: unsyncable,
+			error: {
+				stage: 'commit',
+				message: `These files can't be committed from here: ${paths}. A file that's binary or larger than 500 KB on the branch, or that's in a folder the sync skips, has to be changed in the repository directly. Discard your changes to them, then commit.`,
+			},
+		}, 409);
+	}
+
+	// Then, a draft is the whole file, so one made against a committed version that has
+	// since changed would replace that change wholesale. Refuse until the caller keeps or
+	// discards each one.
+	const conflicts = drafts.filter((change) => change.conflict);
 	if (conflicts.length > 0) {
 		return context.json({
 			success: false,
@@ -645,41 +682,6 @@ async function commitLocked(context: Context, projectId: string, userId: string,
 
 	if (pendingChanges.length === 0) {
 		return context.json({ error: 'No changes to commit' }, 400);
-	}
-
-	// Drafts the sync could never bring back as written: one over a file the editor can't
-	// hold (a sync found it binary or over its size limit since the draft began), a rename
-	// of such a file (the stale text would land under the new name and the real file
-	// would be deleted), or one in a directory syncs skip. Each would leave GitHub ahead
-	// of storage under a sync point that claims otherwise. Deleting is fine.
-	let unsyncable;
-	try {
-		const unavailable = new Set(
-			(await storageClient.listFiles(projectId)).filter((file) => file.unavailable).map((file) => file.path)
-		);
-		unsyncable = pendingChanges.flatMap((change): Array<{ path: string; why: 'unavailable' | 'not_synced' }> => {
-			if (change.action === 'deleted') return [];
-			if (unavailable.has(change.path) || (change.renamedFrom !== null && unavailable.has(change.renamedFrom))) {
-				return [{ path: '/' + change.path, why: 'unavailable' as const }];
-			}
-			if (isInSkippedDirectory(change.path)) return [{ path: '/' + change.path, why: 'not_synced' as const }];
-			return [];
-		});
-	} catch (err) {
-		log({ type: 'storage', level: 'error', event: 'list_files_failed', userId, projectId, error: err instanceof Error ? err.message : String(err) });
-		return context.json({ success: false, error: { stage: 'commit', message: 'Failed to check the committed files. Please try again.' } }, 500);
-	}
-	if (unsyncable.length > 0) {
-		const paths = unsyncable.map((file) => file.path).join(', ');
-		return context.json({
-			success: false,
-			reason: 'unavailable_files',
-			files: unsyncable,
-			error: {
-				stage: 'commit',
-				message: `These files can't be committed from here: ${paths}. A file that's binary or larger than 500 KB on the branch, or that's in a folder the sync skips, has to be changed in the repository directly. Discard your changes to them, then commit.`,
-			},
-		}, 409);
 	}
 
 	// Convert to PendingChange format for the commit service
