@@ -16,7 +16,7 @@
 		"@specboard/platform-electron": "*"
 	},
 	"devDependencies": {
-		"electron": "43.4.1",
+		"electron": "43.7.8",
 		"typescript": "5.9.3"
 	}
 }

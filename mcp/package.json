@@ -21,8 +21,8 @@
 		"@specboard/core": "*",
 		"@specboard/db": "*",
 		"@hono/node-server": "2.1.1",
-		"hono": "4.13.5",
-		"@modelcontextprotocol/sdk": "1.30.0",
+		"hono": "4.13.13",
+		"@modelcontextprotocol/sdk": "1.31.0",
 		"zod": "3.25.76"
 	},
 	"devDependencies": {
