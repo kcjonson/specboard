@@ -377,9 +377,10 @@ Shared with you
 
 ### Header
 
-`WebHeader` shows the project as `owner / project`, with the owner part linking
-to `/projects`. When the effective role is viewer it shows a **View only** badge
-next to it.
+`WebHeader` shows the project's name only, never its owner: the address already
+carries the owner, and a person's own slug in every header is noise. Whose project it
+is shows on the projects list's Shared with you cards. When the effective role is
+viewer it shows a **View only** badge next to the name.
 
 ### Read-only mode
 
@@ -445,7 +446,7 @@ each one.
    signup, onboarding `next`, accept/decline/revoke/resend.
 4. **Project settings page and member management.** Settings page replacing the
    edit dialog, Members section, invite dialog, projects list grouping and
-   invitation cards, leave project, header `owner / project`, and the `Avatar`
+   invitation cards, leave project, the header's settings gear, and the `Avatar`
    component (moved here from phase 6, since this is the first phase that shows
    other people).
 5. **Read-only mode and GitHub gating.** `useProjectRole`, board and editor
@@ -628,7 +629,7 @@ Phase 4 (project settings page and member management, SPE-208) is built:
   is gone (404) reloads the list with a notice), then **Your projects**, then **Shared with you**, whose cards show the owner's
   avatar and name and the granted role (with "View only until you connect GitHub" for a
   granted editor without it), and offer no settings or retry-sync.
-- `WebHeader` shows `owner / project`, the owner's slug linking to `/projects`, and a settings
+- `WebHeader` shows the project's name (not its owner) and a settings
   gear after Planning and Pages (a Settings row in the small-screen menu).
 - `Avatar` (`@specboard/ui`) replaced the three `getInitials` copies in `UserMenu`, `ItemCard`
   and `InlineComment`. Nothing writes `users.avatar_url` yet, so in practice every avatar is

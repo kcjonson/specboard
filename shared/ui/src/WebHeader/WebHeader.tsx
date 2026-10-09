@@ -1,7 +1,6 @@
 import { useMemo, useEffect } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
 import { getCookie, setCookie } from '@specboard/core/cookies';
-import { parseProjectRef } from '@specboard/core/identifiers';
 import { projectModel, projectRoleState, refreshProject, useModel, UserModel } from '@specboard/models';
 import { Badge } from '../Badge/Badge';
 import { UserMenu } from '../UserMenu/UserMenu';
@@ -71,8 +70,6 @@ export function WebHeader({
 		setCookie('lastProjectName', loadedName, 30);
 	}, [projectRef, loadedName]);
 	const projectName = loadedName ?? (projectRef && getCookie('lastProjectRef') === projectRef ? getCookie('lastProjectName') : null);
-	// The owner half comes straight from the address, so it never waits on the project read.
-	const ownerSlug = projectRef ? parseProjectRef(projectRef)?.owner ?? null : null;
 	const viewOnly = project ? projectRoleState(project).effectiveRole === 'viewer' : false;
 
 	// Router navigation swaps the page under the popover but the popover element
@@ -90,15 +87,7 @@ export function WebHeader({
 				<span class={styles.brandDivider} />
 				{projectRef ? (
 					<>
-						<span class={styles.projectTitle}>
-							{ownerSlug && (
-								<>
-									<a href="/projects" class={styles.ownerLink} title="All projects">{ownerSlug}</a>
-									<span class={styles.titleSeparator} aria-hidden="true">/</span>
-								</>
-							)}
-							<span class={styles.projectName}>{projectName ?? ''}</span>
-						</span>
+						<span class={styles.projectName}>{projectName ?? ''}</span>
 						{viewOnly && (
 							<Badge class="size-sm" title="You can see this project but not change it">
 								View only
@@ -149,7 +138,7 @@ export function WebHeader({
 							<Icon name="menu" />
 						</button>
 						<div popover="auto" id="sb-nav-menu" class={styles.menuPopover} onClick={handleMenuNavClick}>
-							{projectName && <div class={styles.menuProject}>{ownerSlug ? `${ownerSlug} / ${projectName}` : projectName}</div>}
+							{projectName && <div class={styles.menuProject}>{projectName}</div>}
 							<div class={styles.menuDivider} />
 							{[...NAV_TABS, SETTINGS_TAB].map((tab) => (
 								<a
