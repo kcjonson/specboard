@@ -37,6 +37,8 @@ export interface RetryOptions {
 	/** Longest single wait, whatever Retry-After says. */
 	maxDelayMs: number;
 	sleep: (ms: number) => Promise<void>;
+	/** Called with each wait before it starts; throwing ends the retrying (the caller is out of time). */
+	beforeSleep?: (ms: number) => void;
 }
 
 const DEFAULT_RETRY: RetryOptions = {
@@ -53,7 +55,7 @@ const DEFAULT_RETRY: RetryOptions = {
  * request's fault and isn't retried.
  */
 export async function withRetry<T>(fn: () => Promise<T>, options: Partial<RetryOptions> = {}): Promise<T> {
-	const { maxRetries, maxRateLimitRetries, baseDelayMs, maxDelayMs, sleep } = { ...DEFAULT_RETRY, ...options };
+	const { maxRetries, maxRateLimitRetries, baseDelayMs, maxDelayMs, sleep, beforeSleep } = { ...DEFAULT_RETRY, ...options };
 	let retries = 0;
 	let rateLimitRetries = 0;
 
@@ -66,13 +68,16 @@ export async function withRetry<T>(fn: () => Promise<T>, options: Partial<RetryO
 				if (rateLimitRetries >= maxRateLimitRetries) throw err;
 				const backoff = baseDelayMs * Math.pow(2, rateLimitRetries);
 				rateLimitRetries++;
-				await sleep(Math.min((err as StorageRequestError).retryAfterMs ?? backoff, maxDelayMs));
+				const wait = Math.min((err as StorageRequestError).retryAfterMs ?? backoff, maxDelayMs);
+				beforeSleep?.(wait);
+				await sleep(wait);
 				continue;
 			}
 			if (status !== null && status >= 400 && status < 500) throw err;
 			if (retries >= maxRetries) throw err;
 			const delay = Math.min(baseDelayMs * Math.pow(2, retries), maxDelayMs);
 			retries++;
+			beforeSleep?.(delay);
 			await sleep(delay);
 		}
 	}

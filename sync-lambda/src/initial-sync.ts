@@ -77,7 +77,7 @@ export async function performInitialSync(
 
 	try {
 		const head = await getHeadCommitSha(owner, repo, branch, token);
-		const result = await syncArchive({ projectId, owner, repo, branch, token, budget }, createStorageClient(storageServiceUrl, storageApiKey), head);
+		const result = await syncArchive({ projectId, owner, repo, branch, token, budget }, createStorageClient(storageServiceUrl, storageApiKey, { beforeSleep: (ms) => (budget ?? UNLIMITED_TIME).check(ms) }), head);
 
 		// A full sync can't tell a rename from a delete and an add, so it leaves spec links.
 		if (!(await completeSync(projectId, lock, undefined, head, { renamed: [], deleted: [] }))) {

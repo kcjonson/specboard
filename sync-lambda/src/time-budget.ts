@@ -18,8 +18,8 @@ export class SyncOutOfTimeError extends Error {
 }
 
 export interface TimeBudget {
-	/** Throws SyncOutOfTimeError once less than the reserve is left. */
-	check(): void;
+	/** Throws SyncOutOfTimeError once less than the reserve would be left after `waitMs` more (default none). */
+	check(waitMs?: number): void;
 }
 
 /**
@@ -28,8 +28,8 @@ export interface TimeBudget {
  */
 export function timeBudget(remainingMs: () => number, reserveMs = 30_000): TimeBudget {
 	return {
-		check(): void {
-			if (remainingMs() < reserveMs) throw new SyncOutOfTimeError();
+		check(waitMs = 0): void {
+			if (remainingMs() - waitMs < reserveMs) throw new SyncOutOfTimeError();
 		},
 	};
 }

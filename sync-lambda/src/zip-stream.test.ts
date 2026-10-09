@@ -77,9 +77,11 @@ function zip(entries: Array<ZipEntry | [string, string | Buffer]>): Buffer {
 }
 
 /** GitHub, serving this archive for any zipball and these entries from the contents API. */
-function github(archive: Buffer, contents: Record<string, object> = {}): ReturnType<typeof vi.fn> {
+function github(archive: Buffer, contents: Record<string, object> = {}, blobs: Record<string, Buffer> = {}): ReturnType<typeof vi.fn> {
 	const fetchMock = vi.fn(async (url: string) => {
 		if (url.includes('/zipball/')) return new Response(new Uint8Array(archive));
+		const blob = blobs[url.split('/git/blobs/')[1] ?? ''];
+		if (blob) return new Response(new Uint8Array(blob));
 		const path = decodeURIComponent(new URL(url).pathname.split('/contents/')[1] ?? '');
 		const entry = contents[path];
 		return entry ? Response.json(entry) : new Response('Not Found', { status: 404 });
@@ -166,7 +168,8 @@ describe('streamGitHubZipToStorage', () => {
 				{ name: 'acme-docs-1/docs/streamed.md', body: huge, deferSize: true },
 				{ name: 'acme-docs-1/docs/small.md', body: '# Small', deferSize: true },
 			]),
-			{ 'docs/streamed.md': { type: 'file', sha: gitBlobSha(huge), size: huge.length } }
+			{ 'docs/streamed.md': { type: 'file', sha: gitBlobSha(huge), size: huge.length, content: '', encoding: 'none' } },
+			{ [gitBlobSha(huge)]: huge }
 		);
 		const putFile = vi.fn(async () => {});
 		const markUnavailable = vi.fn(async () => {});
@@ -177,6 +180,8 @@ describe('streamGitHubZipToStorage', () => {
 		expect(markUnavailable).toHaveBeenCalledWith('p1', 'docs/streamed.md', 'too_large', gitBlobSha(huge), 600_000);
 		expect(putFile).toHaveBeenCalledWith('p1', 'docs/small.md', '# Small');
 		expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/contents/'))).toHaveLength(1);
+		// The blob is read only as far as the limit, never held.
+		expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/git/blobs/'))).toHaveLength(1);
 	});
 
 	it('stops reading once out of time, after what it started has settled', async () => {
@@ -198,7 +203,40 @@ describe('streamGitHubZipToStorage', () => {
 		await expect(
 			streamGitHubZipToStorage('acme', 'docs', 'a'.repeat(40), 'token', 'p1', { putFile, markUnavailable: vi.fn() }, budget)
 		).rejects.toBeInstanceOf(SyncOutOfTimeError);
-		expect(putFile).toHaveBeenCalledTimes(5);
+		// Whatever was mid-read when the sixth entry tripped the budget is stopped with it.
+		expect(putFile.mock.calls.length).toBeLessThanOrEqual(5);
+		expect(active).toBe(0);
+	});
+
+	it('stops mid-drain when the budget trips, uploading almost nothing after it', async () => {
+		const files = Array.from({ length: 400 }, (_, i): [string, string] => [`acme-docs-1/docs/${i}.md`, `# ${i}`.padEnd(2000, 'x')]);
+		github(zip(files));
+		let checks = 0;
+		let tripped = 0;
+		const budget: TimeBudget = {
+			check(): void {
+				if (++checks > 60) {
+					tripped ||= putFile.mock.calls.length;
+					throw new SyncOutOfTimeError();
+				}
+			},
+		};
+		let active = 0;
+		const putFile = vi.fn(async () => {
+			active++;
+			await new Promise((resolve) => setTimeout(resolve, 15));
+			active--;
+		});
+
+		await expect(
+			streamGitHubZipToStorage('acme', 'docs', 'a'.repeat(40), 'token', 'p1', { putFile, markUnavailable: vi.fn() }, budget)
+		).rejects.toBeInstanceOf(SyncOutOfTimeError);
+
+		// Sixty entries passed the check, so no more than sixty uploads, and the other
+		// three hundred and forty were neither read nor uploaded.
+		expect(putFile.mock.calls.length).toBeLessThanOrEqual(60);
+		expect(putFile.mock.calls.length).toBeGreaterThan(40);
+		expect(putFile.mock.calls.length - tripped).toBeLessThanOrEqual(10);
 		expect(active).toBe(0);
 	});
 

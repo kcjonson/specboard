@@ -172,7 +172,7 @@ export async function performIncrementalSync(
 	try {
 		const headSha = await getHeadCommitSha(owner, repo, branch, token);
 		const { files, complete } = await getChangedFiles(owner, repo, lastCommitSha, headSha, token);
-		const storageClient = createStorageClient(storageServiceUrl, storageApiKey);
+		const storageClient = createStorageClient(storageServiceUrl, storageApiKey, { beforeSleep: (ms) => budget.check(ms) });
 
 		let synced = 0;
 		let removed = 0;

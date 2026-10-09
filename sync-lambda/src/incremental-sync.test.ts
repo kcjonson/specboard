@@ -32,6 +32,8 @@ vi.mock('./initial-sync.ts', async (importOriginal) => ({
 import { migratedDb } from '@specboard/db/test-support';
 import { comparedSpecPathChanges, performIncrementalSync } from './incremental-sync.ts';
 import { syncArchive, SUPERSEDED } from './initial-sync.ts';
+import { MAX_FILE_SIZE_BYTES } from './file-filter.ts';
+import { gitBlobSha } from './tree.ts';
 import { OUT_OF_TIME_MESSAGE, SyncOutOfTimeError, type TimeBudget } from './time-budget.ts';
 
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
@@ -56,7 +58,7 @@ interface CompareFile { sha: string; filename: string; status: string; previous_
 function github(
 	compare: { files: CompareFile[]; total_commits?: number; commits?: unknown[]; status?: string },
 	blobs: Record<string, Buffer> = {},
-	entries: Record<string, { size?: number; submodule?: boolean; symlinkTo?: string }> = {}
+	entries: Record<string, { size?: number; submodule?: boolean; symlinkTo?: string; symlinkToFile?: { link: string; targetText: string } }> = {}
 ): ReturnType<typeof vi.fn> {
 	const fetchMock = vi.fn(async (url: string) => {
 		if (url.includes('/git/refs/heads/')) return json({ object: { sha: HEAD } });
@@ -70,8 +72,27 @@ function github(
 			if (entries[path]?.submodule) return json({ type: 'submodule', sha: file.sha, size: 0 });
 			const target = entries[path]?.symlinkTo;
 			if (target) return json({ type: 'symlink', sha: file.sha, size: target.length, target });
+			const symlinked = entries[path]?.symlinkToFile;
+			if (symlinked) {
+				// What GitHub does for a symlink to a regular file: the link's own sha, the target's text and size.
+				const text = Buffer.from(symlinked.targetText);
+				return json({ type: 'file', sha: gitBlobSha(Buffer.from(symlinked.link)), size: text.length, content: text.toString('base64'), encoding: 'base64' });
+			}
 			const blob = blobs[file.sha] ?? Buffer.from('# New');
-			return json({ type: 'file', sha: file.sha, size: entries[path]?.size ?? blob.length, content: blob.toString('base64'), encoding: 'base64' });
+			const size = entries[path]?.size ?? blob.length;
+			// Over 1 MB GitHub sends no content; anything the test lists as that large is treated the same.
+			return size > MAX_FILE_SIZE_BYTES
+				? json({ type: 'file', sha: file.sha, size, content: '', encoding: 'none' })
+				: json({ type: 'file', sha: file.sha, size, content: blob.toString('base64'), encoding: 'base64' });
+		}
+		if (url.includes('/git/blobs/')) {
+			const sha = url.split('/git/blobs/')[1]!;
+			const file = compare.files.find((f) => f.sha === sha || entries[f.filename]?.symlinkToFile && gitBlobSha(Buffer.from(entries[f.filename]!.symlinkToFile!.link)) === sha);
+			if (!file) return new Response('{}', { status: 404 });
+			const symlinked = entries[file.filename]?.symlinkToFile;
+			if (symlinked) return new Response(symlinked.link);
+			const size = entries[file.filename]?.size;
+			return new Response(new Uint8Array(size && size > MAX_FILE_SIZE_BYTES ? Buffer.alloc(size, 'a') : (blobs[sha] ?? Buffer.from('# New'))));
 		}
 		throw new Error(`unexpected GitHub request: ${url}`);
 	});
@@ -309,6 +330,32 @@ describe('performIncrementalSync', () => {
 		expect(await sync()).toMatchObject({ success: true, synced: 1 });
 
 		expect(storage.putFile).toHaveBeenCalledWith(projectId, 'docs/link.md', 'kept.md');
+	});
+
+	it('stores a symlink to a regular file as the link\'s own text, though GitHub answers with the target\'s', async () => {
+		const link = '../README.md';
+		github(
+			{ files: [{ sha: gitBlobSha(Buffer.from(link)), filename: 'docs/readme-link.md', status: 'added' }] },
+			{},
+			{ 'docs/readme-link.md': { symlinkToFile: { link, targetText: '# The README\n'.repeat(200) } } }
+		);
+
+		expect(await sync()).toMatchObject({ success: true, synced: 1 });
+
+		expect(storage.putFile).toHaveBeenCalledWith(projectId, 'docs/readme-link.md', link);
+	});
+
+	it('reports a 403 that isn\'t the rate limit as that file\'s failure, with GitHub\'s message', async () => {
+		const fetchMock = github({ files: [{ sha: 'b1', filename: 'docs/kept.md', status: 'modified' }] });
+		const inner = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+		fetchMock.mockImplementation(async (url: string) =>
+			url.includes('/contents/') ? Response.json({ message: 'This API returns blobs up to 1 MB in size.' }, { status: 403 }) : inner(url));
+
+		const result = await sync();
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('docs/kept.md: GitHub Contents API error: 403 This API returns blobs up to 1 MB in size.');
+		expect(result.error).not.toContain('rate limit');
 	});
 
 	it('fails on a file the head doesn\'t have after all', async () => {

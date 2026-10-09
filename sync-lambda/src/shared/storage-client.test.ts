@@ -29,6 +29,21 @@ describe('createStorageClient', () => {
 		expect(sleep).toHaveBeenCalledWith(7000);
 	});
 
+	it('stops retrying, without waiting, once the caller says there is no time for the wait', async () => {
+		const fetchMock = vi.fn(async () => respond(429, { error: 'Too many requests' }, { 'Retry-After': '45' }));
+		vi.stubGlobal('fetch', fetchMock);
+		const sleep = vi.fn(async () => {});
+		const beforeSleep = vi.fn((ms: number) => {
+			if (ms > 30_000) throw new Error('out of time');
+		});
+
+		await expect(createStorageClient('http://storage', 'key', { sleep, beforeSleep }).putFile('p1', 'a.md', 'x'))
+			.rejects.toThrow('out of time');
+		expect(beforeSleep).toHaveBeenCalledWith(45_000);
+		expect(sleep).not.toHaveBeenCalled();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 	it('gives up on a 429 after its retries', async () => {
 		vi.stubGlobal('fetch', vi.fn(async () => respond(429, { error: 'Too many requests' }, { 'Retry-After': '1' })));
 		const sleep = vi.fn(async () => {});

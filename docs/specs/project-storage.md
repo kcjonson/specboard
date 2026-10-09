@@ -308,7 +308,7 @@ API passes the pending token to the Lambda in its event; the Lambda only moves t
 exact lock to `syncing` (a late or repeated invocation finds nothing to take), and if it
 fails before then (configuration, secrets, the GitHub token) it marks that lock failed
 so commits aren't blocked. A lock older than 20 minutes is stale and can be taken over:
-a Lambda stops at 15 minutes and a commit request long before, so a lock that old
+a Lambda stops at 5 minutes and a commit request long before, so a lock that old
 belongs to something that crashed. A commit that took one over leaves the project's
 sync showing failed ("The last sync didn't finish. Pull again.") rather than putting
 the dead holder's state back.
@@ -514,14 +514,18 @@ the same listing of drafts and one listing of the committed files, since no keep
 fix it.
 
 A sync checks the Lambda's remaining time as it goes (before each batch of changed
-files, each archive entry, and each prune) and, with 30 seconds still left, stops and
-records the failure: "The repository is too large to sync in one pass." The sync point
-stays where it was, so a later pull redoes the range; what was written meanwhile is
-idempotent. Without that, the Lambda's 15-minute timeout would end it with no chance to
-release the lock, which would sit until it went stale. A full sync is bounded by how
-much it can stream from GitHub and upload in that time, so a repository with many
-thousands of files can hit it every time; the fix then is a smaller repository, or one
-just for the docs.
+files, each archive entry as its upload starts, each prune, and before any wait to retry
+the storage service) and, with 30 seconds still left, stops and records the failure:
+"The repository is too large to sync in one pass." The sync point stays where it was, so
+a later pull redoes the range; what was written meanwhile is idempotent. Without that,
+the Lambda's 5-minute timeout would end it with no chance to release the lock, which
+would sit until it went stale. A full sync feeds the archive to its parser only while a
+few entries are outstanding (the parser would otherwise queue the whole archive in
+memory and read it all before the first upload finished), so the budget sees the real
+pace. A full sync is bounded by how much it can download from GitHub and upload in those
+five minutes, so a large repository can hit the limit every time; the fix then is a
+smaller repository, or one just for the docs, or a longer Lambda timeout (an
+infrastructure setting, `timeout` on the sync function).
 
 ### Sync traffic to the storage service
 
@@ -531,8 +535,8 @@ task: 1000 requests for the API, 30,000 for the sync Lambda, which sends
 API's and the API's interactive traffic from stalling a sync. The sync's is sized to
 let one full sync run at its upload concurrency for a whole minute (ten at once at
 20 to 50 ms a write is 12,000 to 30,000) while still capping a runaway client; the
-sync's key is a secret only the Lambda holds, so the budget guards against a loop, not
-abuse. A full sync uploads at most ten files at once, holding the archive back
+key is held by the API and the Lambda alone, and which budget a request counts against
+is the caller's own say (the header), so the limit guards against a loop, not abuse. A full sync uploads at most ten files at once, holding the archive back
 while it waits. On a 429 the sync waits as long as Retry-After says (backing off when it
 says nothing) and tries again, up to eight times, before failing; other refusals aren't
 retried, and server errors are retried three times. Paths go into storage URLs encoded
