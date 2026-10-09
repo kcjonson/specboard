@@ -1,6 +1,6 @@
 /**
- * The header on a project page: `owner / project`, the owner linking to the projects
- * list, and the settings gear beside the tabs.
+ * The header on a project page: the project's name, never its owner, and the settings
+ * gear beside the tabs.
  *
  * @vitest-environment jsdom
  */
@@ -30,14 +30,11 @@ beforeEach(() => {
 });
 
 describe('WebHeader on a project page', () => {
-	it('shows owner / project, the owner linking to the projects list', async () => {
-		const { findByText, getByRole } = render(<WebHeader projectRef="acme/roadmap" activeTab="Planning" />);
+	it('shows the project name without its owner', async () => {
+		const { findAllByText, container } = render(<WebHeader projectRef="acme/roadmap" activeTab="Planning" />);
 
-		await findByText('Roadmap');
-		const owner = getByRole('link', { name: 'acme' });
-		expect(owner.getAttribute('href')).toBe('/projects');
-		expect(owner.nextElementSibling?.textContent).toBe('/');
-		expect(owner.nextElementSibling?.nextElementSibling?.textContent).toBe('Roadmap');
+		await findAllByText('Roadmap');
+		expect(container.textContent).not.toContain('acme');
 	});
 
 	it('has a settings gear after the tabs, current on the settings page', async () => {
