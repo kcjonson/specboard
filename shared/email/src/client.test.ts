@@ -39,15 +39,22 @@ async function loadClient(env: Record<string, string>): Promise<typeof import('.
 }
 
 describe('sendEmail logging', () => {
-	it('keeps the body, and its token, out of the log for a staging allowlist miss', async () => {
+	it('prints the body for a staging allowlist miss, where a tester needs the link', async () => {
 		const { sendEmail } = await loadClient({ NODE_ENV: 'production', APP_ENV: 'staging', EMAIL_ALLOWLIST: 'specboard.io', EMAIL_MODE: '' });
+
+		expect(await sendEmail(message)).toBe(false);
+		expect(logged).toContain('BLOCKED');
+		expect(logged).toContain(TOKEN);
+	});
+
+	it('keeps the body out of the log for an allowlist miss in any other environment', async () => {
+		const { sendEmail } = await loadClient({ NODE_ENV: 'production', APP_ENV: 'development', EMAIL_ALLOWLIST: 'specboard.io', EMAIL_MODE: '' });
 
 		expect(await sendEmail(message)).toBe(false);
 		expect(logged).toContain('BLOCKED');
 		expect(logged).toContain(message.subject);
 		expect(logged).not.toContain(TOKEN);
 	});
-
 	it('prints the body in local console mode, where a developer needs the link', async () => {
 		const { sendEmail } = await loadClient({ NODE_ENV: 'development', APP_ENV: 'development', EMAIL_ALLOWLIST: '', EMAIL_MODE: '' });
 

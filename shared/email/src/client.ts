@@ -66,11 +66,11 @@ function isEmailAllowed(email: string): boolean {
 }
 
 /**
- * Log an email instead of sending it. Only console mode (local development) prints the
- * body, since that's how a developer reads the sign-in and invite links. Everywhere else
- * the body stays out of the logs: it carries live tokens (invites, magic links, codes),
- * and a blocked staging send or a misconfigured client would otherwise leave them in
- * CloudWatch.
+ * Log an email instead of sending it. The body carries live tokens (invites, magic
+ * links, codes), so it's printed only where reading it is the point: local console
+ * mode, and a staging send the allowlist blocked, which is how a tester reaches an
+ * invite or sign-in link for an address staging won't mail. Staging holds no real
+ * data. Every other path logs recipient and subject only.
  */
 function logEmail(options: SendEmailOptions, reason: string, includeBody: boolean): void {
 	console.log('\n========================================');
@@ -120,7 +120,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
 	// Non-production app environment: check allowlist
 	if (APP_ENV !== 'production') {
 		if (!isEmailAllowed(to)) {
-			logEmail(options, `(BLOCKED - ${to} not in allowlist: ${EMAIL_ALLOWLIST || 'none'})`, false);
+			logEmail(options, `(BLOCKED - ${to} not in allowlist: ${EMAIL_ALLOWLIST || 'none'})`, APP_ENV === 'staging');
 			return false;
 		}
 		console.log(`[Email] Sending to ${to} (allowed by EMAIL_ALLOWLIST)`);
