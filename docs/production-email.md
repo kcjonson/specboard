@@ -27,7 +27,7 @@ Gotchas encoded in the stack, do not "simplify" them away:
 | Staging | noreply@staging.specboard.io | `EMAIL_ALLOWLIST=specboard.io` hard-blocks everything else |
 | Production | noreply@specboard.io | unrestricted (empty allowlist) |
 
-A staging send to an address outside the allowlist is logged with its recipient and subject but not its body, so invite links, magic links and sign-in codes never land in CloudWatch. Only development's console mode prints the body. To try invites or sign-in on staging, use a `specboard.io` address.
+A staging send to an address outside the allowlist isn't sent; it's logged in full, body included, to `/ecs/staging/api`. That's how a tester gets an invite link, magic link or sign-in code for an address staging won't mail: filter the log group for `EMAIL (BLOCKED` and the recipient. Staging holds no real data, so live staging tokens in CloudWatch are acceptable. Production never logs a body, and neither does any other blocked or failed send; only development's console mode and the staging allowlist miss print one.
 
 Send path: handler → `@specboard/email` `sendEmail()` → SES. Templates in `shared/email/src/templates.ts`. Every email is user-triggered: sign-in links and codes, signup verification and its resend, password reset, the waitlist confirmation, and project invitations.
 
