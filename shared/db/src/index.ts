@@ -67,8 +67,8 @@ export const pool = {
 				connectionString: getDatabaseUrl(),
 				max: 20,
 				idleTimeoutMillis: 30000,
-				// A burst against an idle pool opens up to `max` TLS connections at
-				// once; on a small RDS instance some handshakes take well over 2s.
+				// A burst against an idle pool opens up to `max` connections at once,
+				// and TLS plus SCRAM setup on a 0.25 vCPU task can take over 2s each.
 				connectionTimeoutMillis: 10000,
 				ssl: getSslConfig(),
 			});
