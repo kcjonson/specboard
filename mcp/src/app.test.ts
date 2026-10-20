@@ -9,6 +9,8 @@ import type { McpTokenPayload } from '@specboard/auth';
 
 const state = vi.hoisted(() => ({
 	token: {} as McpTokenPayload,
+	authCalls: 0,
+	rejectAuth: false,
 	servers: [] as Array<{
 		options: { instructions?: string };
 		handlers: Map<unknown, (request: unknown) => Promise<unknown>>;
@@ -19,7 +21,14 @@ const state = vi.hoisted(() => ({
 
 vi.mock('@specboard/core', () => ({ logRequest: vi.fn() }));
 vi.mock('@specboard/auth', () => ({
-	mcpAuthMiddleware: () => async (c: { set: (k: string, v: unknown) => void }, next: () => Promise<void>) => {
+	mcpAuthMiddleware: () => async (
+		c: { set: (k: string, v: unknown) => void; json: (body: unknown, status: number) => Response },
+		next: () => Promise<void>,
+	) => {
+		state.authCalls++;
+		if (state.rejectAuth) {
+			return c.json({ error: 'auth_required' }, 401);
+		}
 		c.set('mcpToken', state.token);
 		await next();
 	},
@@ -119,6 +128,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	state.authCalls = 0;
+	state.rejectAuth = false;
 	state.servers.length = 0;
 	state.transports.length = 0;
 	state.token = {
@@ -231,10 +242,24 @@ describe('POST /mcp', () => {
 });
 
 describe('GET and DELETE /mcp', () => {
-	it.each(['GET', 'DELETE'])('%s answers 405 with Allow: POST', async (method) => {
-		const res = await createApp().request('http://localhost/mcp', { method, headers: { 'mcp-session-id': 'x' } }, env());
+	it.each(['GET', 'DELETE'])('%s with a token answers 405 without running auth', async (method) => {
+		const res = await createApp().request(
+			'http://localhost/mcp',
+			{ method, headers: { authorization: 'Bearer abc', 'mcp-session-id': 'x' } },
+			env(),
+		);
 
 		expect(res.status).toBe(405);
 		expect(res.headers.get('allow')).toBe('POST');
+		expect(state.authCalls).toBe(0);
+	});
+
+	it.each(['GET', 'DELETE'])('%s with no token gets auth\'s 401', async (method) => {
+		state.rejectAuth = true;
+
+		const res = await createApp().request('http://localhost/mcp', { method }, env());
+
+		expect(res.status).toBe(401);
+		expect(state.authCalls).toBe(1);
 	});
 });
