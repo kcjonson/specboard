@@ -190,7 +190,7 @@ export const epicTools: Tool[] = [
 				},
 				promote_to_top_level: {
 					type: 'boolean',
-					description: 'true moves the item out of its parent to the top level. Not combinable with parent_key.',
+					description: 'Send true to move the item out of its parent to the top level. Omit parent_key when you send this.',
 				},
 				title: {
 					type: 'string',

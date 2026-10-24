@@ -257,3 +257,22 @@ describe('create_item with a bad spec link', () => {
 		expect(listed.total).toBe(0);
 	});
 });
+
+describe('top-level moves', () => {
+	const create = async (args: Record<string, unknown>): Promise<string> =>
+		(JSON.parse(text(await callTool('create_item', { project: 'acme/roadmap', ...args }, owner, undefined))) as { created: { key: string } }).created.key;
+
+	it('promotes a child to top-level with promote_to_top_level', async () => {
+		const epic = await create({ title: 'Container', type: 'epic' });
+		const child = await create({ title: 'Grows up', type: 'task', parent_key: epic });
+
+		const result = await callTool('update_item', { project: 'acme/roadmap', item_key: child, promote_to_top_level: true }, editor, undefined);
+		expect(result.isError).toBeUndefined();
+		expect((await readItem(child)).item.parentKey).toBeNull();
+	});
+
+	it('creates at top-level when create_item gets an empty parent_key', async () => {
+		const key = await create({ title: 'Standalone', type: 'task', parent_key: '' });
+		expect((await readItem(key)).item.parentKey).toBeNull();
+	});
+});

@@ -204,7 +204,7 @@ describe('update_item move', () => {
 		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { title: 'T' }, ACTOR);
 	});
 
-	it.each([null, ''])('refuses parent_key %j and points at promote_to_top_level, writing nothing', async (parent_key) => {
+	it.each([null, '', 'null'])('refuses parent_key %j and points at promote_to_top_level, writing nothing', async (parent_key) => {
 		const result = await updateItem(PROJECT, { item_key: 'SB-1', parent_key, title: 'T' }, ACTOR);
 
 		expect(result.isError).toBe(true);
@@ -213,11 +213,38 @@ describe('update_item move', () => {
 		expect(mockUpdate).not.toHaveBeenCalled();
 	});
 
-	it('refuses parent_key and promote_to_top_level together', async () => {
-		const result = await updateItem(PROJECT, { item_key: 'SB-1', parent_key: 'SB-9', promote_to_top_level: true }, ACTOR);
+	it('refuses parent_key and promote_to_top_level together before writing anything', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', parent_key: 'SB-9', promote_to_top_level: true, title: 'T', note: 'why' }, ACTOR);
 
 		expect(result.isError).toBe(true);
 		expect(vi.mocked(moveItem)).not.toHaveBeenCalled();
+		expect(mockUpdate).not.toHaveBeenCalled();
+		expect(mockAddNote).not.toHaveBeenCalled();
+	});
+
+	it('moves under parent_key when promote_to_top_level is false', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', parent_key: 'SB-9', promote_to_top_level: false }, ACTOR);
+
+		expect(vi.mocked(moveItem)).toHaveBeenCalledWith('proj-1', 1, 9);
+		expect(payload(result).message).toBe('Item moved');
+	});
+
+	it('promotes before the done shortcut and reports the null parent', async () => {
+		vi.mocked(moveItem).mockResolvedValueOnce({ key: 'SB-1', parentKey: null } as Awaited<ReturnType<typeof moveItem>>);
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', promote_to_top_level: true, status: 'done' }, ACTOR);
+
+		expect(vi.mocked(moveItem)).toHaveBeenCalledWith('proj-1', 1, null);
+		expect(vi.mocked(completeItem)).toHaveBeenCalledWith('proj-1', 1, ACTOR);
+		expect(payload(result).updated).toMatchObject({ status: 'done', parentKey: null });
+	});
+
+	it('promotes and appends the note through the general update', async () => {
+		vi.mocked(moveItem).mockResolvedValueOnce({ key: 'SB-1', parentKey: null } as Awaited<ReturnType<typeof moveItem>>);
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', promote_to_top_level: true, note: 'its own epic now' }, ACTOR);
+
+		expect(vi.mocked(moveItem)).toHaveBeenCalledWith('proj-1', 1, null);
+		expect(mockAddNote).toHaveBeenCalledWith('proj-1', 1, 'its own epic now', ACTOR);
+		expect(payload(result).updated).toMatchObject({ parentKey: null });
 	});
 
 	it('refuses a promote_to_top_level that is not a boolean', async () => {
