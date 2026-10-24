@@ -157,8 +157,8 @@ export interface UpdateItemInput {
 	status?: ItemStatus;
 	subStatus?: SubStatus;
 	rank?: number;
-	prUrl?: string;
-	branchName?: string;
+	prUrl?: string | null;
+	branchName?: string | null;
 	/** The assignee's user slug, or null to unassign. They must be the owner or a member. */
 	assignee?: string | null;
 }

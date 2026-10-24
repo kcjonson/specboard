@@ -52,7 +52,7 @@ function pick(db: typeof import('@specboard/db')): Partial<typeof import('@specb
 	};
 }
 
-import { updateItem as updateItemService, moveItem, startItem, completeItem, blockItem, unblockItem, addItemNote, setChecklist, getChecklist, updateChecklistEntry, setSpecs } from '@specboard/db';
+import { updateItem as updateItemService, moveItem, recordWorkerActivity, startItem, completeItem, blockItem, unblockItem, addItemNote, setChecklist, getChecklist, updateChecklistEntry, setSpecs } from '@specboard/db';
 import type { AgentActor } from '@specboard/db';
 import { updateItem } from './writes.ts';
 
@@ -150,6 +150,35 @@ describe('update_item status shortcuts', () => {
 		const writes: unknown[][] = [startItem, completeItem, blockItem, updateItemService].flatMap((fn) => vi.mocked(fn).mock.calls as unknown[][]);
 		expect(writes).toHaveLength(6);
 		for (const call of writes) expect(call.at(-1)).toBe(ACTOR);
+	});
+});
+
+describe('update_item branch_name and pr_url', () => {
+	it('clears both with null and with an empty string', async () => {
+		for (const cleared of [null, '']) {
+			mockUpdate.mockClear();
+			const result = await updateItem(PROJECT, { item_key: 'SB-1', branch_name: cleared, pr_url: cleared }, ACTOR);
+
+			expect(result.isError).toBeFalsy();
+			expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { branchName: null, prUrl: null }, ACTOR);
+		}
+	});
+
+	it('refuses a value that isn\'t a string, before anything is written', async () => {
+		for (const bad of [{ branch_name: 42 }, { pr_url: 42 }, { pr_url: { url: 'https://x/1' } }]) {
+			const result = await updateItem(PROJECT, { item_key: 'SB-1', ...bad }, ACTOR);
+
+			expect(result.isError, JSON.stringify(bad)).toBe(true);
+			expect(result.content[0]!.text).toContain('null or "" to clear it');
+		}
+		expect(mockUpdate).not.toHaveBeenCalled();
+	});
+
+	it('doesn\'t hand a cleared branch to the worker episode', async () => {
+		await updateItem(PROJECT, { item_key: 'SB-1', status: 'in_progress', branch_name: '' }, ACTOR);
+
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { branchName: null }, ACTOR);
+		expect(vi.mocked(recordWorkerActivity)).toHaveBeenCalledWith('proj-1', 1, ACTOR, undefined);
 	});
 });
 

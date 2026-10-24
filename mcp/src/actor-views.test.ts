@@ -246,6 +246,20 @@ describe('assignee', () => {
 	});
 });
 
+describe('branch_name and pr_url', () => {
+	it('clear to null with null and with an empty string', async () => {
+		const created = JSON.parse(text(await callTool('create_item', { project: 'acme/roadmap', title: 'Link it', type: 'task' }, owner, undefined))) as { created: { key: string } };
+		const key = created.created.key;
+
+		for (const cleared of [null, '']) {
+			text(await callTool('update_item', { project: 'acme/roadmap', item_key: key, branch_name: 'feat/x', pr_url: 'https://x/1' }, editor, undefined));
+			expect((await readItem(key)).item).toMatchObject({ branchName: 'feat/x', prUrl: 'https://x/1' });
+			text(await callTool('update_item', { project: 'acme/roadmap', item_key: key, branch_name: cleared, pr_url: cleared }, editor, undefined));
+			expect((await readItem(key)).item).toMatchObject({ branchName: null, prUrl: null });
+		}
+	});
+});
+
 describe('create_item with a bad spec link', () => {
 	it('refuses before creating, so a retry can\'t file the item twice', async () => {
 		const result = await callTool('create_item', {
