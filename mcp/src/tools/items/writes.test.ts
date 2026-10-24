@@ -188,6 +188,44 @@ describe('update_item move', () => {
 		expect(mockUpdate).not.toHaveBeenCalled();
 		expect(mockAddNote).not.toHaveBeenCalled();
 	});
+
+	it('promotes to top-level on promote_to_top_level true', async () => {
+		vi.mocked(moveItem).mockResolvedValueOnce({ key: 'SB-1', parentKey: null } as Awaited<ReturnType<typeof moveItem>>);
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', promote_to_top_level: true }, ACTOR);
+
+		expect(vi.mocked(moveItem)).toHaveBeenCalledWith('proj-1', 1, null);
+		expect(payload(result)).toMatchObject({ updated: { parentKey: null }, message: 'Item promoted to top-level' });
+	});
+
+	it('leaves the parent alone on promote_to_top_level false', async () => {
+		await updateItem(PROJECT, { item_key: 'SB-1', promote_to_top_level: false, title: 'T' }, ACTOR);
+
+		expect(vi.mocked(moveItem)).not.toHaveBeenCalled();
+		expect(mockUpdate).toHaveBeenCalledWith('proj-1', 1, { title: 'T' }, ACTOR);
+	});
+
+	it.each([null, ''])('refuses parent_key %j and points at promote_to_top_level, writing nothing', async (parent_key) => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', parent_key, title: 'T' }, ACTOR);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]!.text).toContain('promote_to_top_level');
+		expect(vi.mocked(moveItem)).not.toHaveBeenCalled();
+		expect(mockUpdate).not.toHaveBeenCalled();
+	});
+
+	it('refuses parent_key and promote_to_top_level together', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', parent_key: 'SB-9', promote_to_top_level: true }, ACTOR);
+
+		expect(result.isError).toBe(true);
+		expect(vi.mocked(moveItem)).not.toHaveBeenCalled();
+	});
+
+	it('refuses a promote_to_top_level that is not a boolean', async () => {
+		const result = await updateItem(PROJECT, { item_key: 'SB-1', promote_to_top_level: 'true' }, ACTOR);
+
+		expect(result.isError).toBe(true);
+		expect(vi.mocked(moveItem)).not.toHaveBeenCalled();
+	});
 });
 
 describe('update_item note handling', () => {
