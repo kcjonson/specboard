@@ -153,7 +153,10 @@ Library` without a second request.
   silent no-op rather than a move.
 - **`null` promotes to top-level, and there is no "leave unchanged".** The route
   takes a destination, and no parent is a destination; an absent `parentKey` means
-  top-level, not "don't touch it".
+  top-level, not "don't touch it". The MCP's `update_item` exposes promotion as
+  `promote_to_top_level: true` instead and refuses a null, `""`, or `"null"`
+  `parent_key`: tool-use clients that flatten arguments to text can't send a JSON
+  null, and a stray empty string shouldn't detach an item from its epic.
 - **A move always re-ranks the item to the bottom of its destination sibling
   group.** Rank is scoped to the sibling group, so the old value means nothing in
   the new one; appending is the only answer that doesn't collide.
