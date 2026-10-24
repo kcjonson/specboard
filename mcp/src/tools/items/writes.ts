@@ -441,13 +441,20 @@ export async function updateItem(
 	const argumentError = await checkArguments(project, args, note, fields);
 	if (argumentError) return argumentError;
 
-	// Reparent (move under another item) or promote to top-level (parent_key null).
+	// Reparent (move under another item) or promote to top-level. Promotion is its
+	// own boolean rather than a null parent_key: clients that flatten arguments to
+	// text can't send a JSON null, and an empty string reaching a structural move by
+	// accident would pull the item out of its epic.
 	// A prelude, not a path of its own: everything else sent alongside the move
 	// still runs below, and every response from here on reports the new parent.
+	const promote = args.promote_to_top_level;
+	if (promote !== undefined && typeof promote !== 'boolean') return err('promote_to_top_level must be true or false');
+	if (args.parent_key === null || args.parent_key === '') return err('parent_key must name a parent item; to make the item top-level, send promote_to_top_level: true');
+	if (promote === true && args.parent_key !== undefined) return err('Send either parent_key or promote_to_top_level, not both');
 	let moved: { key: string; parentKey: string | null } | undefined;
 	let newParentNumber: number | null = null;
-	if (args.parent_key !== undefined) {
-		if (args.parent_key !== null) {
+	if (args.parent_key !== undefined || promote === true) {
+		if (args.parent_key !== undefined) {
 			newParentNumber = itemNumberInProject(args.parent_key, project.key);
 			if (newParentNumber === null) return badKey(args.parent_key, project, 'parent_key');
 			if (!(await verifyItemOwnership(project.id, newParentNumber))) return err('Parent item not found');
