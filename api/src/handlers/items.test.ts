@@ -221,6 +221,20 @@ describe('status writes', () => {
 		expect(await response.json()).toMatchObject({ startedAt: '2026-10-01T10:00:00.000Z', completedAt: '2026-10-02T10:00:00.000Z' });
 	});
 
+	it('a PUT clears branchName and prUrl with null or an empty string, and refuses a non-string prUrl', async () => {
+		vi.mocked(updateItem).mockResolvedValue(STAMPED as never);
+
+		for (const cleared of [null, '']) {
+			vi.mocked(updateItem).mockClear();
+			expect((await send('PUT', '', { branchName: cleared, prUrl: cleared })).status).toBe(200);
+			expect(vi.mocked(updateItem).mock.calls[0]![2]).toMatchObject({ branchName: null, prUrl: null });
+		}
+
+		vi.mocked(updateItem).mockClear();
+		expect((await send('PUT', '', { prUrl: 42 })).status).toBe(400);
+		expect(updateItem).not.toHaveBeenCalled();
+	});
+
 	it('the lifecycle routes record the signed-in user as the actor', async () => {
 		for (const fn of [startItem, completeItem, blockItem, unblockItem]) vi.mocked(fn).mockResolvedValue(STAMPED as never);
 

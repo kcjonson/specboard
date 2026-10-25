@@ -260,6 +260,7 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 	if (body.branchName != null && (typeof body.branchName !== 'string' || !isValidBranchName(body.branchName))) {
 		return context.json({ error: `branchName must be at most ${MAX_BRANCH_NAME_LENGTH} characters` }, 400);
 	}
+	if (body.prUrl != null && typeof body.prUrl !== 'string') return context.json({ error: 'prUrl must be a string' }, 400);
 	const assignee = body.assigneeSlug;
 	if (assignee !== undefined && assignee !== null && (typeof assignee !== 'string' || assignee === '')) {
 		return context.json({ error: 'assigneeSlug must be a member\'s user slug, or null to unassign' }, 400);
@@ -272,8 +273,9 @@ export async function handleUpdateItem(context: Context): Promise<Response> {
 			status: body.status as ItemStatus | undefined,
 			subStatus: body.subStatus as SubStatus | undefined,
 			rank: body.rank as number | undefined,
-			prUrl: body.prUrl as string | undefined,
-			branchName: body.branchName as string | undefined,
+			// "" clears like null, so a cleared field reads back the same from either.
+			prUrl: body.prUrl === undefined ? undefined : (body.prUrl as string | null) || null,
+			branchName: body.branchName === undefined ? undefined : (body.branchName as string | null) || null,
 			assignee: assignee as string | null | undefined,
 		}, apiActor(context));
 		if (!item) return context.json({ error: 'Item not found' }, 404);

@@ -269,12 +269,11 @@ async function checkArguments(
 	if (args.title !== undefined && (typeof args.title !== 'string' || !isValidTitle(args.title))) {
 		return err(`title must be a string of 1 to ${MAX_TITLE_LENGTH} characters`);
 	}
-	if (args.branch_name !== undefined && (typeof args.branch_name !== 'string' || !isValidBranchName(args.branch_name))) {
-		return err(`branch_name must be a string of at most ${MAX_BRANCH_NAME_LENGTH} characters`);
+	if (args.branch_name != null && (typeof args.branch_name !== 'string' || !isValidBranchName(args.branch_name))) {
+		return err(`branch_name must be a string of at most ${MAX_BRANCH_NAME_LENGTH} characters, or null or "" to clear it`);
 	}
-	for (const field of ['description', 'pr_url'] as const) {
-		if (args[field] !== undefined && typeof args[field] !== 'string') return err(`${field} must be a string`);
-	}
+	if (args.description !== undefined && typeof args.description !== 'string') return err('description must be a string');
+	if (args.pr_url != null && typeof args.pr_url !== 'string') return err('pr_url must be a string, or null or "" to clear it');
 	const statuses = args.checklist_status;
 	if (statuses != null && (typeof statuses !== 'object' || Array.isArray(statuses))) {
 		return err('checklist_status must be an object mapping entry id to status, e.g. { "<id>": "done" }');
@@ -408,8 +407,9 @@ export async function updateItem(
 	if (args.title !== undefined) fields.title = args.title as string;
 	if (args.description !== undefined) fields.description = args.description as string;
 	if (args.sub_status !== undefined) fields.subStatus = args.sub_status as SubStatus;
-	if (args.branch_name !== undefined) fields.branchName = args.branch_name as string;
-	if (args.pr_url !== undefined) fields.prUrl = args.pr_url as string;
+	// Both checked in checkArguments; "" clears like null, as for assignee.
+	if (args.branch_name !== undefined) fields.branchName = (args.branch_name as string | null) || null;
+	if (args.pr_url !== undefined) fields.prUrl = (args.pr_url as string | null) || null;
 	if (args.assignee !== undefined) {
 		if (args.assignee !== null && typeof args.assignee !== 'string') return err('assignee must be a member\'s user slug, or null or "" to unassign');
 		fields.assignee = args.assignee || null;
@@ -489,7 +489,7 @@ export async function updateItem(
 		if (!item) return err('Item not found');
 		const noteError = await appendNote();
 		if (noteError) return noteError;
-		await recordWorkerActivity(project.id, number, actor, args.branch_name as string | undefined);
+		await recordWorkerActivity(project.id, number, actor, fields.branchName ?? undefined);
 		const blockers = await applyBlockers();
 		if ('content' in blockers) return blockers;
 		const checklist = await applyChecklist();
@@ -578,7 +578,7 @@ export async function updateItem(
 	// session active on it. Transitions out of in_progress end episodes inside the
 	// item service, so every surface behaves the same.
 	if (item.status === 'in_progress') {
-		await recordWorkerActivity(project.id, number, actor, args.branch_name as string | undefined);
+		await recordWorkerActivity(project.id, number, actor, fields.branchName ?? undefined);
 	}
 
 	return ok({

@@ -223,11 +223,11 @@ export const epicTools: Tool[] = [
 				},
 				branch_name: {
 					type: 'string',
-					description: 'Git branch name linked to this item',
+					description: 'Git branch name linked to this item. null or "" clears it.',
 				},
 				pr_url: {
 					type: 'string',
-					description: 'Pull request URL',
+					description: 'Pull request URL. null or "" clears it.',
 				},
 				assignee: {
 					type: 'string',
