@@ -125,6 +125,17 @@ export function createApp(): Hono<{ Bindings: HttpBindings; Variables: McpAuthVa
 	// Health check endpoint - no auth required (ALB needs this)
 	app.get('/mcp/health', (c) => c.json({ status: 'ok' }));
 
+	// No sessions means no standalone SSE stream to open and nothing to terminate; the
+	// Streamable HTTP spec's answer for both is 405. Answered before auth so a client
+	// closing many sessions at once costs no token lookups. A request with no token
+	// still gets auth's 401, which clients use to discover the OAuth flow.
+	app.on(['GET', 'DELETE'], '/mcp', (c, next) => {
+		if (!c.req.header('Authorization')) {
+			return next();
+		}
+		return c.json({ error: 'Method not allowed' }, 405, { Allow: 'POST' });
+	});
+
 	app.use('/mcp', mcpAuthMiddleware({
 		excludePaths: ['/mcp/health'],
 	}));
@@ -195,10 +206,6 @@ export function createApp(): Hono<{ Bindings: HttpBindings; Variables: McpAuthVa
 		await transport.handleRequest(req, res, body);
 		return RESPONSE_ALREADY_SENT;
 	});
-
-	// No sessions means no standalone SSE stream to open and nothing to terminate; the
-	// Streamable HTTP spec's answer for both is 405.
-	app.on(['GET', 'DELETE'], '/mcp', (c) => c.json({ error: 'Method not allowed' }, 405, { Allow: 'POST' }));
 
 	app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
