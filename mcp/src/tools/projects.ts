@@ -28,6 +28,7 @@ export const projectTools: Tool[] = [
 			type: 'object',
 			properties: {},
 		},
+		annotations: { readOnlyHint: true, openWorldHint: false },
 	},
 ];
 
