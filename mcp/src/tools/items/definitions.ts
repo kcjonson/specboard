@@ -60,6 +60,7 @@ export const epicTools: Tool[] = [
 			},
 			required: [],
 		},
+		annotations: { readOnlyHint: true, openWorldHint: false },
 	},
 	{
 		name: 'create_item',
@@ -120,6 +121,7 @@ export const epicTools: Tool[] = [
 			},
 			required: ['title'],
 		},
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 	},
 	{
 		name: 'create_items',
@@ -162,6 +164,7 @@ export const epicTools: Tool[] = [
 			},
 			required: ['parent_key', 'items'],
 		},
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 	},
 	{
 		name: 'update_item',
@@ -269,6 +272,7 @@ export const epicTools: Tool[] = [
 			},
 			required: ['item_key'],
 		},
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 	},
 	{
 		name: 'delete_item',
@@ -294,5 +298,6 @@ export const epicTools: Tool[] = [
 			},
 			required: ['item_key'],
 		},
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
 	},
 ];

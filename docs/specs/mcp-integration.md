@@ -179,6 +179,15 @@ the not-found above. A tool is dispatched only through its declared role, so one
 a declaration can't be called, and the role-matrix suite (`mcp/src/role-matrix.test.ts`) fails
 it.
 
+**Annotations.** Each tool also carries MCP tool annotations, which clients use to decide whether a
+call needs the user's approval (Claude Code's plan mode lets through only tools marked read-only,
+allow rules notwithstanding). The viewer tools are `readOnlyHint: true`; the editor tools are
+writes, with `destructiveHint: true` only on `delete_item`. `update_item` is not idempotent since
+its note appends to the activity log, and every tool is `openWorldHint: false` because the server
+touches only its own data. They are hints, not enforcement; the declared role is the gate.
+`mcp/src/tools/annotations.test.ts` pins them per tool and fails if `readOnlyHint` disagrees with
+the tool's role.
+
 **Why the address is committed directly.** The first version of this put the project's UUID in the
 header, which meant a personal identifier landed in version control. The planned fix was an
 indirection: commit a repo slug instead, and keep a server-side `(user, repo_slug) -> project`
